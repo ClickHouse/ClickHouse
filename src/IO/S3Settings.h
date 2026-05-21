@@ -6,6 +6,7 @@
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <IO/S3Common.h>
 #include <IO/S3AuthSettings.h>
@@ -68,7 +69,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    std::map<const String, const S3Settings> s3_settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    MapWithMemoryTracking<const String, const S3Settings> s3_settings;
 };
 
 

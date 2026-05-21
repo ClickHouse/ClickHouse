@@ -86,7 +86,7 @@ void deleteFilesFromS3(
     size_t batch_size,
     BlobStorageLogWriterPtr blob_storage_log,
     const Strings & local_paths_for_blob_storage_log,
-    const std::vector<size_t> & file_sizes_for_blob_storage_log, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log,
     std::optional<ProfileEvents::Event> profile_event)
 {
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));

@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/ListWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Server/CloudPlacementInfo.h>
@@ -526,7 +527,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     using AZGetter = std::function<String()>;
 
-    std::vector<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters = // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
     {
         /// mimics original behavior Placement logic relies on
         ///   skip AWS_ZONE_ID (in favour of AWS_ZONE_NAME) and CLICKHOUSE
