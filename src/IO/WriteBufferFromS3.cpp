@@ -197,8 +197,8 @@ void WriteBufferFromS3::preFinalize()
         writeMultipartUpload();
         task_tracker->addFinal([this]()
         {
-            completeMultipartUpload();
-            multipart_upload_finished = true;
+            if (completeMultipartUpload())
+                multipart_upload_finished = true;
         });
     }
 }
@@ -612,7 +612,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     task_tracker->add(std::move(upload_worker));
 }
 
-void WriteBufferFromS3::completeMultipartUpload()
+bool WriteBufferFromS3::completeMultipartUpload()
 {
     LOG_TEST(limited_log, "Completing multipart upload. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
 
@@ -625,9 +625,10 @@ void WriteBufferFromS3::completeMultipartUpload()
     {
         const auto tag = multipart_tags.at(i);
         if (tag.empty())
-            throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Failed to complete multipart upload. Part {} haven't been uploaded.", i);
+        {
+            // One of the earlier uploads failed.
+            return false;
+        }
     }
 
     S3::CompleteMultipartUploadRequest req;
@@ -674,7 +675,7 @@ void WriteBufferFromS3::completeMultipartUpload()
         if (outcome.IsSuccess())
         {
             LOG_TRACE(limited_log, "Multipart upload has completed. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
-            return;
+            return true;
         }
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
