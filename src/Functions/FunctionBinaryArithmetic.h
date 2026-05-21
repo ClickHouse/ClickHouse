@@ -3162,7 +3162,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
+class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
@@ -3474,7 +3474,7 @@ private:
 };
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
+class BinaryArithmeticOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;

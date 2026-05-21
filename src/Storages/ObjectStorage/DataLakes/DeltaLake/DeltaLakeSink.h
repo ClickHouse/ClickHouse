@@ -20,7 +20,7 @@ class DeltaLakeMetadataDeltaKernel;
  * Sink to write non-partitioned data to DeltaLake.
  * Writes a single data file and commits it to DeltaLake metadata.
  */
-class DeltaLakeSink : public SinkToStorage, private WithContext
+class DeltaLakeSink final : public SinkToStorage, private WithContext
 {
 public:
     DeltaLakeSink(

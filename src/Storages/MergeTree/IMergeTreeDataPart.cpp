@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
+#include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
@@ -727,7 +728,9 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
     columns_description = columns_descriptions.original;
-    columns_description_with_collected_nested = columns_descriptions.with_collected_nested;
+    columns_description_with_collected_nested = columns_descriptions.with_collected_nested
+        ? columns_descriptions.with_collected_nested
+        : columns_descriptions.original;
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -1113,14 +1116,8 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
-    /// `<col>.null` subcolumn may appear in required_columns when
-    /// optimize_functions_to_subcolumns=1, keep stats for the parent column in that case.
-    if (!required_columns.empty()
-        && !required_columns.contains(column_name)
-        && !required_columns.contains(column_name + ".null"))
-    {
+    if (!required_columns.empty() && !required_columns.contains(column_name))
         return nullptr;
-    }
 
     return all_columns.tryGet(column_name);
 }

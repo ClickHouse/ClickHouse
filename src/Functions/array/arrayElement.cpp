@@ -51,7 +51,7 @@ class NullMapBuilder;
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
   */
 template <ArrayElementExceptionMode mode = ArrayElementExceptionMode::Zero>
-class FunctionArrayElement : public IFunction
+class FunctionArrayElement final : public IFunction
 {
 public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);

@@ -785,9 +785,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     ActionsDAG & inverted_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
-    bool need_inversion,
-    const NameSet * null_subcolumns_to_normalize = nullptr,
-    bool is_predicate_context = true);
+    bool need_inversion);
 
 /// Rewrite `<op>(coalesce(a_1, ..., a_N), const)` (or with `ifNull`, or with the constant on the
 /// left) into
@@ -938,9 +936,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     ActionsDAG & inverted_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
-    const bool need_inversion,
-    const NameSet * null_subcolumns_to_normalize,
-    bool is_predicate_context)
+    const bool need_inversion)
 {
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
@@ -955,20 +951,6 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 input = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
 
             res = input;
-
-            if (null_subcolumns_to_normalize
-                && is_predicate_context
-                && node.result_type
-                && isUInt8(node.result_type)
-                && null_subcolumns_to_normalize->contains(node.result_name))
-            {
-                const auto * const_zero = &inverted_dag.addColumn(
-                    {DataTypeUInt8().createColumnConst(1, UInt64(0)), std::make_shared<DataTypeUInt8>(), "0"});
-                const auto * func_name = need_inversion ? "equals" : "notEquals";
-                auto function_builder = FunctionFactory::instance().get(func_name, context);
-                res = &inverted_dag.addFunction(function_builder, {res, const_zero}, "");
-                handled_inversion = true;
-            }
             break;
         }
         case (ActionsDAG::ActionType::COLUMN):
@@ -992,13 +974,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, null_subcolumns_to_normalize, is_predicate_context);
+            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
             handled_inversion = true;
             break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
-            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false, null_subcolumns_to_normalize, false);
+            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
@@ -1007,7 +989,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, null_subcolumns_to_normalize, is_predicate_context);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion);
                 handled_inversion = true;
             }
             else if (name == "indexHint")
@@ -1021,7 +1003,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, null_subcolumns_to_normalize, is_predicate_context);
+                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
                     }
                 }
 
@@ -1031,7 +1013,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (name == "materialize")
             {
                 /// Remove "materialize" from index analysis.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, null_subcolumns_to_normalize, is_predicate_context);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
@@ -1040,7 +1022,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (isTrivialCast(node))
             {
                 /// Remove trivial cast and keep its first argument.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, null_subcolumns_to_normalize, is_predicate_context);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT CAST(x = 0, 'UInt8')` -> `not(notEquals(x, 0))`.
@@ -1050,9 +1032,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
-                /// Children of `and`/`or` are always predicates, regardless of the parent context.
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, null_subcolumns_to_normalize, /*is_predicate_context=*/true);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
 
                 FunctionOverloadResolverPtr function_builder;
 
@@ -1078,9 +1059,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
-                bool children_are_predicates = (name == "and" || name == "or");
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, null_subcolumns_to_normalize, children_are_predicates);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
 
                 auto it = inverse_relations.find(name);
                 if (it != inverse_relations.end())
@@ -1134,14 +1114,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     return *res;
 }
 
-static ActionsDAG cloneDAGWithInversionPushDown(
-    const ActionsDAG::Node * predicate, const ContextPtr & context, const NameSet * null_subcolumns_to_normalize = nullptr)
+static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
 {
     ActionsDAG res;
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
 
-    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false, null_subcolumns_to_normalize);
+    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false);
 
     res.getOutputs() = {predicate};
 
@@ -1247,8 +1226,7 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
     }
 }
 
-ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(
-    const ActionsDAG::Node * predicate_, const ContextPtr & context, const NameSet * null_subcolumns_to_normalize)
+ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context)
 {
     if (!predicate_)
         return;
@@ -1260,7 +1238,7 @@ ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(
     * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
     * are pushed down and applied (when possible) to leaf nodes.
     */
-    dag = cloneDAGWithInversionPushDown(predicate_, context, null_subcolumns_to_normalize);
+    dag = cloneDAGWithInversionPushDown(predicate_, context);
 
     predicate = dag->getOutputs()[0];
 }
