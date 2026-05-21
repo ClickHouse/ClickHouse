@@ -25,7 +25,6 @@ namespace ProfileEvents
     extern const Event WriteBufferFromS3Bytes;
     extern const Event WriteBufferFromS3Microseconds;
     extern const Event WriteBufferFromS3RequestsErrors;
-    extern const Event WriteBufferFromS3WaitInflightLimitMicroseconds;
 
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
@@ -270,11 +269,7 @@ namespace
             size_t end_position = start_offset + size;
 
             LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
-            TaskTracker task_tracker(
-                schedule,
-                request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
-                limited_log,
-                ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds);
+            TaskTracker task_tracker(schedule, request_settings[S3RequestSetting::max_inflight_parts_for_one_file], limited_log);
 
             try
             {

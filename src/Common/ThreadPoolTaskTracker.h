@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <list>
 
@@ -20,11 +19,7 @@ class TaskTracker
 public:
     using Callback = std::function<void()>;
 
-    TaskTracker(
-        ThreadPoolCallbackRunnerUnsafe<void> scheduler_,
-        size_t max_tasks_inflight_,
-        LogSeriesLimiterPtr limited_log_,
-        ProfileEvents::Event wait_event_);
+    TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limited_log_);
     ~TaskTracker();
 
     static ThreadPoolCallbackRunnerUnsafe<void> syncRunner();
@@ -57,7 +52,6 @@ private:
     using FutureList = std::list<std::future<void>>;
     FutureList futures;
     LogSeriesLimiterPtr limited_log;
-    ProfileEvents::Event wait_event;
 
     std::mutex mutex;
     std::condition_variable has_finished TSA_GUARDED_BY(mutex);

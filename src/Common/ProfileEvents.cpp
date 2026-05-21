@@ -803,7 +803,6 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromGCSMicroseconds, "Time spent on writing to GCS.", ValueType::Microseconds) \
     M(WriteBufferFromGCSBytes, "Bytes written to GCS.", ValueType::Bytes) \
     M(WriteBufferFromGCSRequestsErrors, "Number of exceptions while writing to GCS.", ValueType::Number) \
-    M(WriteBufferFromGCSWaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.", ValueType::Microseconds) \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \

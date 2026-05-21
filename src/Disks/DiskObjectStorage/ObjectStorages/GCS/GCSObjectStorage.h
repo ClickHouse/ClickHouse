@@ -40,10 +40,10 @@ public:
 #if USE_GOOGLE_CLOUD && USE_AWS_S3
     GCSObjectStorage(
         GCSObjectStorageSettings settings_,
-        std::shared_ptr<GCS::HighLevelClient> high_level_client_,
+        std::shared_ptr<GCS::Client> gcs_client_,
         std::shared_ptr<const S3::Client> xml_multipart_client_ = nullptr);
 #elif USE_GOOGLE_CLOUD
-    GCSObjectStorage(GCSObjectStorageSettings settings_, std::shared_ptr<GCS::HighLevelClient> high_level_client_);
+    GCSObjectStorage(GCSObjectStorageSettings settings_, std::shared_ptr<GCS::Client> gcs_client_);
 #else
     explicit GCSObjectStorage(GCSObjectStorageSettings settings_);
 #endif
@@ -112,7 +112,7 @@ private:
     [[noreturn]] void throwNotImplemented(std::string_view operation) const;
     GCSObjectStorageSettings settings;
 #if USE_GOOGLE_CLOUD
-    std::shared_ptr<GCS::HighLevelClient> high_level_client;
+    std::shared_ptr<GCS::Client> gcs_client;
 #endif
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> xml_multipart_client;

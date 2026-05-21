@@ -17,7 +17,6 @@
 #include <IO/HTTPRequestThrottler.h>
 #include <IO/SessionAwareIOStream.h>
 #include <IO/S3Defines.h>
-#include <IO/S3/ProviderType.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
@@ -65,7 +64,6 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool for_disk_s3;
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
-    ProfileEventsNamespace profile_events_namespace = ProfileEventsNamespace::S3;
 
     HTTPHeaderEntries extra_headers;
     String http_client;
@@ -226,7 +224,6 @@ protected:
     const UInt64 http_max_field_value_size = 128 * 1024;
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
-    ProfileEventsNamespace profile_events_namespace = ProfileEventsNamespace::S3;
 
     HTTPRequestThrottler request_throttler;
 

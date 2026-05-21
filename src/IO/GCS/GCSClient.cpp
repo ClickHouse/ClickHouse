@@ -338,7 +338,7 @@ google::cloud::storage::ObjectMetadata makeCloudObjectMetadata(const std::map<st
 }
 
 template <typename Response, typename Call>
-Result<Response> executeHighLevelStatusOrRequest(const ClientSettings & settings, const OperationEvents & events, Call && call)
+Result<Response> executeStatusOrRequest(const ClientSettings & settings, const OperationEvents & events, Call && call)
 {
     Result<Response> result;
     const UInt64 attempts = maxAttempts(settings);
@@ -367,7 +367,7 @@ Result<Response> executeHighLevelStatusOrRequest(const ClientSettings & settings
 }
 
 template <typename Call>
-Status executeHighLevelStatusRequest(const ClientSettings & settings, const OperationEvents & events, Call && call)
+Status executeStatusRequest(const ClientSettings & settings, const OperationEvents & events, Call && call)
 {
     Status status;
     const UInt64 attempts = maxAttempts(settings);
@@ -434,7 +434,7 @@ google::cloud::Options makeGrpcClientOptions(const ClientSettings & settings)
     return options;
 }
 
-HighLevelClient::HighLevelClient(ClientSettings settings_, google::cloud::Options options_, google::cloud::storage::Client client_)
+Client::Client(ClientSettings settings_, google::cloud::Options options_, google::cloud::storage::Client client_)
     : settings(std::move(settings_))
     , options(std::move(options_))
     , client(std::move(client_))
@@ -442,10 +442,10 @@ HighLevelClient::HighLevelClient(ClientSettings settings_, google::cloud::Option
     configureRequestThrottlerEvents(settings);
 }
 
-HighLevelReadResult HighLevelClient::readObject(
+ReadResult Client::readObject(
     const std::string & bucket, const std::string & object, size_t offset, std::optional<size_t> limit)
 {
-    HighLevelReadResult result;
+    ReadResult result;
     const UInt64 attempts = maxAttempts(settings);
     for (UInt64 attempt = 1; attempt <= attempts; ++attempt)
     {
@@ -479,13 +479,13 @@ HighLevelReadResult HighLevelClient::readObject(
     return result;
 }
 
-void HighLevelClient::recordReadObjectFailure(const Status & status) const
+void Client::recordReadObjectFailure(const Status & status) const
 {
     if (!status.ok())
         recordFailure(read_object_events, settings.for_disk, status.code);
 }
 
-Result<google::cloud::storage::ObjectMetadata> HighLevelClient::insertObject(
+Result<google::cloud::storage::ObjectMetadata> Client::insertObject(
     const std::string & bucket,
     const std::string & object,
     std::string_view payload,
@@ -493,7 +493,7 @@ Result<google::cloud::storage::ObjectMetadata> HighLevelClient::insertObject(
     bool if_generation_match_zero)
 {
     auto payload_view = absl::string_view(payload.data(), payload.size());
-    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+    return executeStatusOrRequest<google::cloud::storage::ObjectMetadata>(
         settings,
         write_object_events,
         [&]
@@ -514,7 +514,7 @@ Result<google::cloud::storage::ObjectMetadata> HighLevelClient::insertObject(
         });
 }
 
-Result<google::cloud::storage::ObjectMetadata> HighLevelClient::composeObject(
+Result<google::cloud::storage::ObjectMetadata> Client::composeObject(
     const std::string & bucket,
     const std::vector<std::string> & sources,
     const std::string & destination,
@@ -526,7 +526,7 @@ Result<google::cloud::storage::ObjectMetadata> HighLevelClient::composeObject(
     for (const auto & source : sources)
         source_objects.push_back(google::cloud::storage::ComposeSourceObject{source, {}, {}});
 
-    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+    return executeStatusOrRequest<google::cloud::storage::ObjectMetadata>(
         settings,
         write_object_events,
         [&]
@@ -547,7 +547,7 @@ Result<google::cloud::storage::ObjectMetadata> HighLevelClient::composeObject(
         });
 }
 
-Result<google::cloud::storage::ObjectMetadata> HighLevelClient::rewriteObject(
+Result<google::cloud::storage::ObjectMetadata> Client::rewriteObject(
     const std::string & source_bucket,
     const std::string & source_object,
     const std::string & destination_bucket,
@@ -555,7 +555,7 @@ Result<google::cloud::storage::ObjectMetadata> HighLevelClient::rewriteObject(
     const std::map<std::string, std::string> & metadata,
     bool if_generation_match_zero)
 {
-    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+    return executeStatusOrRequest<google::cloud::storage::ObjectMetadata>(
         settings,
         write_object_events,
         [&]
@@ -583,14 +583,14 @@ Result<google::cloud::storage::ObjectMetadata> HighLevelClient::rewriteObject(
         });
 }
 
-Result<google::cloud::storage::ObjectMetadata> HighLevelClient::getObjectMetadata(
+Result<google::cloud::storage::ObjectMetadata> Client::getObjectMetadata(
     const std::string & bucket, const std::string & object)
 {
-    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+    return executeStatusOrRequest<google::cloud::storage::ObjectMetadata>(
         settings, get_object_events, [&] { return client.GetObjectMetadata(bucket, object); });
 }
 
-Result<std::vector<google::cloud::storage::ObjectMetadata>> HighLevelClient::listObjects(
+Result<std::vector<google::cloud::storage::ObjectMetadata>> Client::listObjects(
     const std::string & bucket, const std::string & prefix, size_t max_keys, const std::optional<std::string> & start_after)
 {
     Result<std::vector<google::cloud::storage::ObjectMetadata>> result;
@@ -646,22 +646,22 @@ Result<std::vector<google::cloud::storage::ObjectMetadata>> HighLevelClient::lis
     return result;
 }
 
-Status HighLevelClient::deleteObject(const std::string & bucket, const std::string & object)
+Status Client::deleteObject(const std::string & bucket, const std::string & object)
 {
-    return executeHighLevelStatusRequest(settings, delete_object_events, [&] { return client.DeleteObject(bucket, object); });
+    return executeStatusRequest(settings, delete_object_events, [&] { return client.DeleteObject(bucket, object); });
 }
 
-void HighLevelClient::recordWriteObjectFailure(const Status & status) const
+void Client::recordWriteObjectFailure(const Status & status) const
 {
     if (!status.ok())
         recordFailure(write_object_events, settings.for_disk, status.code);
 }
 
-std::shared_ptr<HighLevelClient> createHighLevelClient(const ClientSettings & settings)
+std::shared_ptr<Client> createClient(const ClientSettings & settings)
 {
     auto options = makeGrpcClientOptions(settings);
     auto client = google::cloud::storage::MakeGrpcClient(options);
-    return std::make_shared<HighLevelClient>(settings, std::move(options), std::move(client));
+    return std::make_shared<Client>(settings, std::move(options), std::move(client));
 }
 
 #endif

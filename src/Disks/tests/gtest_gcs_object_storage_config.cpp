@@ -270,10 +270,10 @@ google::cloud::Status cloudStatusFromGrpcStatus(const grpc::Status & status)
     }
 }
 
-class FakeHighLevelObjectReadSource final : public google::cloud::storage::internal::ObjectReadSource
+class FakeObjectReadSource final : public google::cloud::storage::internal::ObjectReadSource
 {
 public:
-    FakeHighLevelObjectReadSource(String data_, google::cloud::Status finish_status_)
+    FakeObjectReadSource(String data_, google::cloud::Status finish_status_)
         : data(std::move(data_))
         , finish_status(std::move(finish_status_))
     {
@@ -319,7 +319,7 @@ private:
     bool open = true;
 };
 
-std::pair<size_t, std::optional<size_t>> highLevelReadRange(
+std::pair<size_t, std::optional<size_t>> objectReadRange(
     const google::cloud::storage::internal::ReadObjectRangeRequest & request)
 {
     if (request.HasOption<google::cloud::storage::ReadRange>())
@@ -419,7 +419,7 @@ google::cloud::Status objectNotFoundStatus(std::string message = "fake object no
     return google::cloud::Status(google::cloud::StatusCode::kNotFound, std::move(message));
 }
 
-std::shared_ptr<GCS::HighLevelClient> makeFakeHighLevelClient(
+std::shared_ptr<GCS::Client> makeFakeClient(
     const std::shared_ptr<FakeGCSClient> & fake_stub, const GCS::ClientSettings & settings)
 {
     auto mock = std::make_shared<::testing::NiceMock<google::cloud::storage::testing::MockClient>>();
@@ -428,7 +428,7 @@ std::shared_ptr<GCS::HighLevelClient> makeFakeHighLevelClient(
             [fake_stub](const google::cloud::storage::internal::ReadObjectRangeRequest & request)
                 -> google::cloud::StatusOr<std::unique_ptr<google::cloud::storage::internal::ObjectReadSource>>
             {
-                const auto [offset, limit] = highLevelReadRange(request);
+                const auto [offset, limit] = objectReadRange(request);
 
                 google::storage::v2::ReadObjectRequest captured;
                 captured.set_bucket(bucketResourceNameForFake(request.bucket_name()));
@@ -464,7 +464,7 @@ std::shared_ptr<GCS::HighLevelClient> makeFakeHighLevelClient(
 
                 data = applyReadRange(std::move(data), offset, limit);
                 std::unique_ptr<google::cloud::storage::internal::ObjectReadSource> source
-                    = std::make_unique<FakeHighLevelObjectReadSource>(
+                    = std::make_unique<FakeObjectReadSource>(
                         std::move(data), cloudStatusFromGrpcStatus(fake_stub->read_object_finish_status));
                 return source;
             }));
@@ -489,7 +489,7 @@ std::shared_ptr<GCS::HighLevelClient> makeFakeHighLevelClient(
                 fake_stub->write_object_requests.push_back(captured);
 
                 if (fake_stub->write_object_write_returns_false || fake_stub->write_object_writes_done_returns_false)
-                    return google::cloud::Status(google::cloud::StatusCode::kUnavailable, "fake high-level write stream closed");
+                    return google::cloud::Status(google::cloud::StatusCode::kUnavailable, "fake write stream closed");
                 if (!fake_stub->write_object_finish_status.ok())
                     return cloudStatusFromGrpcStatus(fake_stub->write_object_finish_status);
 
@@ -721,7 +721,7 @@ std::shared_ptr<GCS::HighLevelClient> makeFakeHighLevelClient(
 
     auto options = GCS::makeGrpcClientOptions(settings);
     auto storage_client = google::cloud::storage::testing::UndecoratedClientFromMock(mock);
-    return std::make_shared<GCS::HighLevelClient>(settings, std::move(options), std::move(storage_client));
+    return std::make_shared<GCS::Client>(settings, std::move(options), std::move(storage_client));
 }
 
 std::shared_ptr<GCSObjectStorage> makeFakeGCSObjectStorage(
@@ -749,8 +749,8 @@ std::shared_ptr<GCSObjectStorage> makeFakeGCSObjectStorage(
     settings.client_settings.for_disk = true;
     settings.blob_storage_log_writer_factory = std::move(blob_storage_log_writer_factory);
 
-    auto high_level_client = makeFakeHighLevelClient(fake_stub, settings.client_settings);
-    return std::make_shared<GCSObjectStorage>(settings, std::move(high_level_client));
+    auto gcs_client = makeFakeClient(fake_stub, settings.client_settings);
+    return std::make_shared<GCSObjectStorage>(settings, std::move(gcs_client));
 }
 
 
@@ -1184,7 +1184,7 @@ TEST(GCSObjectStorageCore, XMLMultipartWriteTransportConstructsS3WriteBufferWith
     settings.write_transport = GCS::WriteTransport::XMLMultipart;
     settings.xml_client_settings = GCS::makeXMLMultipartClientSettings(settings.client_settings, settings.xml_endpoint);
 
-    auto high_level_client = makeFakeHighLevelClient(fake_stub, settings.client_settings);
+    auto gcs_client = makeFakeClient(fake_stub, settings.client_settings);
     auto provider = std::make_shared<GCS::CallbackXMLBearerTokenProvider>(
         GCS::CredentialMode::GoogleDefault,
         []
@@ -1202,7 +1202,7 @@ TEST(GCSObjectStorageCore, XMLMultipartWriteTransportConstructsS3WriteBufferWith
         provider);
     std::shared_ptr<const S3::Client> xml_client = std::shared_ptr<S3::Client>(std::move(unique_xml_client));
 
-    auto storage = std::make_shared<GCSObjectStorage>(std::move(settings), std::move(high_level_client), std::move(xml_client));
+    auto storage = std::make_shared<GCSObjectStorage>(std::move(settings), std::move(gcs_client), std::move(xml_client));
     StoredObject object("clickhouse-data/xml-mode-object", "xml-mode-object");
     auto out = storage->writeObject(object, WriteMode::Rewrite, ObjectAttributes{{"owner", "clickhouse"}}, 4, {});
 

@@ -17,7 +17,6 @@ namespace ProfileEvents
     extern const Event AzureUpload;
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
-    extern const Event WriteBufferFromS3WaitInflightLimitMicroseconds;
 
     extern const Event DiskAzureUpload;
     extern const Event DiskAzureStageBlock;
@@ -74,8 +73,7 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
           std::make_unique<TaskTracker>(
               std::move(schedule_),
               settings_->max_inflight_parts_for_one_file,
-              limited_log,
-              ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds))
+              limited_log))
     , check_objects_after_upload(settings_->check_objects_after_upload)
     , container_for_logging(container_for_logging_)
     , blob_log(std::move(blob_log_))

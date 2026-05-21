@@ -58,7 +58,7 @@ struct Result
 Status fromCloudStatus(const google::cloud::Status & status);
 google::cloud::Options makeGrpcClientOptions(const ClientSettings & settings);
 
-struct HighLevelReadResult
+struct ReadResult
 {
     Status status;
     google::cloud::storage::ObjectReadStream stream;
@@ -66,17 +66,17 @@ struct HighLevelReadResult
     bool ok() const { return status.ok(); }
 };
 
-class HighLevelClient
+class Client
 {
 public:
-    HighLevelClient(ClientSettings settings_, google::cloud::Options options_, google::cloud::storage::Client client_);
+    Client(ClientSettings settings_, google::cloud::Options options_, google::cloud::storage::Client client_);
 
     const ClientSettings & getSettings() const { return settings; }
     const google::cloud::Options & getOptions() const { return options; }
     google::cloud::storage::Client & getStorageClient() { return client; }
     const google::cloud::storage::Client & getStorageClient() const { return client; }
 
-    HighLevelReadResult readObject(
+    ReadResult readObject(
         const std::string & bucket, const std::string & object, size_t offset, std::optional<size_t> limit);
     Result<google::cloud::storage::ObjectMetadata> insertObject(
         const std::string & bucket,
@@ -110,7 +110,7 @@ private:
     google::cloud::storage::Client client;
 };
 
-std::shared_ptr<HighLevelClient> createHighLevelClient(const ClientSettings & settings);
+std::shared_ptr<Client> createClient(const ClientSettings & settings);
 
 #endif
 

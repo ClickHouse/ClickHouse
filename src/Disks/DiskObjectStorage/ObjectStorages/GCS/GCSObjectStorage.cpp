@@ -171,7 +171,7 @@ class GCSReadBuffer final : public ReadBufferFromFileBase
 {
 public:
     GCSReadBuffer(
-        std::shared_ptr<GCS::HighLevelClient> high_level_client_,
+        std::shared_ptr<GCS::Client> gcs_client_,
         String bucket_,
         String object_name_,
         size_t buf_size,
@@ -183,7 +183,7 @@ public:
         ThrottlerPtr remote_throttler_,
         BlobStorageLogWriterPtr blob_storage_log_)
         : ReadBufferFromFileBase(buf_size, nullptr, 0, file_size_)
-        , high_level_client(std::move(high_level_client_))
+        , gcs_client(std::move(gcs_client_))
         , bucket(std::move(bucket_))
         , object_name(std::move(object_name_))
         , read_hint(read_hint_)
@@ -297,7 +297,7 @@ private:
 
     struct SequentialStream
     {
-        GCS::HighLevelReadResult result;
+        GCS::ReadResult result;
         std::optional<size_t> limit;
         size_t bytes_read_from_stream = 0;
     };
@@ -328,7 +328,7 @@ private:
                     break;
 
                 const size_t bytes_to_read = internal_buffer.size() - bytes_read;
-                const size_t stream_bytes = readFromHighLevelStream(
+                const size_t stream_bytes = readFromStream(
                     sequential_stream->result.stream, internal_buffer.begin() + bytes_read, bytes_to_read);
                 if (stream_bytes == 0)
                 {
@@ -426,7 +426,7 @@ private:
         Stopwatch init_watch;
         sequential_stream.emplace();
         sequential_stream->limit = limit;
-        sequential_stream->result = high_level_client->readObject(bucket, object_name, offset, limit);
+        sequential_stream->result = gcs_client->readObject(bucket, object_name, offset, limit);
         ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSInitMicroseconds, init_watch.elapsedMicroseconds());
 
         if (!sequential_stream->result.ok())
@@ -447,13 +447,13 @@ private:
         std::optional<size_t> bytes_to_discard_before_final_status;
         if (!ignore_close_errors && limit && bytes_read_from_stream < *limit)
             bytes_to_discard_before_final_status = *limit - bytes_read_from_stream;
-        auto close_status = closeHighLevelStream(
+        auto close_status = closeStream(
             sequential_stream->result.stream, ignore_close_errors, bytes_to_discard_before_final_status);
         sequential_stream.reset();
 
         if (!close_status.ok() && !ignore_close_errors)
         {
-            high_level_client->recordReadObjectFailure(close_status);
+            gcs_client->recordReadObjectFailure(close_status);
             GCS::throwIfError(close_status, "ReadObject");
         }
 
@@ -474,7 +474,7 @@ private:
             sequential_eof = true;
     }
 
-    size_t readFromHighLevelStream(ReadObjectStream & stream, char * to, size_t limit) const
+    size_t readFromStream(ReadObjectStream & stream, char * to, size_t limit) const
     {
         if (limit == 0)
             return 0;
@@ -484,13 +484,13 @@ private:
         auto status = GCS::fromCloudStatus(stream.status());
         if (!status.ok())
         {
-            high_level_client->recordReadObjectFailure(status);
+            gcs_client->recordReadObjectFailure(status);
             GCS::throwIfError(status, "ReadObject");
         }
         return bytes_read;
     }
 
-    static GCS::Status drainHighLevelStreamStatus(ReadObjectStream & stream, std::optional<size_t> bytes_to_discard_before_final_status)
+    static GCS::Status drainStreamStatus(ReadObjectStream & stream, std::optional<size_t> bytes_to_discard_before_final_status)
     {
         std::array<char, DBMS_DEFAULT_BUFFER_SIZE> discard_buffer{};
         while (stream.IsOpen() && bytes_to_discard_before_final_status && *bytes_to_discard_before_final_status > 0)
@@ -521,7 +521,7 @@ private:
         return GCS::fromCloudStatus(stream.status());
     }
 
-    static GCS::Status closeHighLevelStream(
+    static GCS::Status closeStream(
         ReadObjectStream & stream, bool ignore_close_errors, std::optional<size_t> bytes_to_discard_before_final_status = std::nullopt)
     {
         GCS::Status close_status;
@@ -529,7 +529,7 @@ private:
         {
             if (bytes_to_discard_before_final_status)
             {
-                close_status = drainHighLevelStreamStatus(stream, bytes_to_discard_before_final_status);
+                close_status = drainStreamStatus(stream, bytes_to_discard_before_final_status);
                 if (!close_status.ok())
                     return close_status;
             }
@@ -593,7 +593,7 @@ private:
             CurrentThread::ReadThrottlingScope read_throttling_scope(remote_throttler);
 
             Stopwatch init_watch;
-            auto stream_result = high_level_client->readObject(bucket, object_name, offset, limit);
+            auto stream_result = gcs_client->readObject(bucket, object_name, offset, limit);
             ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSInitMicroseconds, init_watch.elapsedMicroseconds());
             if (!stream_result.ok())
             {
@@ -608,7 +608,7 @@ private:
             while (bytes_read < limit && !cancelled)
             {
                 const size_t bytes_to_read = std::min(internal_buffer.size(), limit - bytes_read);
-                const size_t stream_bytes = readFromHighLevelStream(stream_result.stream, to + bytes_read, bytes_to_read);
+                const size_t stream_bytes = readFromStream(stream_result.stream, to + bytes_read, bytes_to_read);
                 if (stream_bytes == 0)
                     break;
 
@@ -620,14 +620,14 @@ private:
             std::optional<size_t> bytes_to_discard_before_final_status;
             if (!cancelled && bytes_read < limit)
                 bytes_to_discard_before_final_status = limit - bytes_read;
-            auto finish_status = closeHighLevelStream(stream_result.stream, cancelled, bytes_to_discard_before_final_status);
+            auto finish_status = closeStream(stream_result.stream, cancelled, bytes_to_discard_before_final_status);
             if (!finish_status.ok() && !cancelled)
             {
                 error_code = GCS::errorCodeForStatus(finish_status.code);
                 error_message = statusLogMessage(finish_status);
                 ProfileEvents::increment(ProfileEvents::ReadBufferFromGCSRequestsErrors);
                 addBlobLogEvent(bytes_read, watch.elapsedMicroseconds(), error_code, error_message);
-                high_level_client->recordReadObjectFailure(finish_status);
+                gcs_client->recordReadObjectFailure(finish_status);
                 GCS::throwIfError(finish_status, "ReadObject");
             }
 
@@ -652,7 +652,7 @@ private:
         }
     }
 
-    std::shared_ptr<GCS::HighLevelClient> high_level_client;
+    std::shared_ptr<GCS::Client> gcs_client;
     String bucket;
     String object_name;
     std::optional<size_t> read_hint;
@@ -673,7 +673,7 @@ class GCSWriteBuffer final : public WriteBufferFromFileBase
 {
 public:
     GCSWriteBuffer(
-        std::shared_ptr<GCS::HighLevelClient> high_level_client_,
+        std::shared_ptr<GCS::Client> gcs_client_,
         String bucket_,
         String object_name_,
         std::optional<ObjectAttributes> attributes_,
@@ -683,7 +683,7 @@ public:
         ThrottlerPtr remote_throttler_,
         BlobStorageLogWriterPtr blob_storage_log_)
         : WriteBufferFromFileBase(buf_size, nullptr, 0)
-        , high_level_client(std::move(high_level_client_))
+        , gcs_client(std::move(gcs_client_))
         , bucket(std::move(bucket_))
         , object_name(std::move(object_name_))
         , attributes(std::move(attributes_))
@@ -920,7 +920,7 @@ private:
 
     void composeObjectsOnce(const std::vector<String> & sources, const String & destination, bool final_object)
     {
-        auto result = high_level_client->composeObject(
+        auto result = gcs_client->composeObject(
             bucket,
             sources,
             destination,
@@ -944,7 +944,7 @@ private:
 
         for (auto it = objects_to_delete.rbegin(); it != objects_to_delete.rend(); ++it)
         {
-            auto status = high_level_client->deleteObject(bucket, *it);
+            auto status = gcs_client->deleteObject(bucket, *it);
             if (status.code == GCS::StatusCode::NotFound)
                 continue;
             GCS::throwIfError(status, "DeleteObject temporary parallel GCS write object");
@@ -958,7 +958,7 @@ private:
         bool if_generation_match_zero,
         bool record_failure)
     {
-        auto result = high_level_client->insertObject(bucket, target_object, payload, metadata, if_generation_match_zero);
+        auto result = gcs_client->insertObject(bucket, target_object, payload, metadata, if_generation_match_zero);
         if (!result.status.ok())
         {
             if (record_failure)
@@ -1019,7 +1019,7 @@ private:
         addUploadBlobLogEvent(error_code, error_message);
     }
 
-    std::shared_ptr<GCS::HighLevelClient> high_level_client;
+    std::shared_ptr<GCS::Client> gcs_client;
     String bucket;
     String object_name;
     std::optional<ObjectAttributes> attributes;
@@ -1054,17 +1054,17 @@ private:
 #if USE_GOOGLE_CLOUD && USE_AWS_S3
 GCSObjectStorage::GCSObjectStorage(
     GCSObjectStorageSettings settings_,
-    std::shared_ptr<GCS::HighLevelClient> high_level_client_,
+    std::shared_ptr<GCS::Client> gcs_client_,
     std::shared_ptr<const S3::Client> xml_multipart_client_)
     : settings(std::move(settings_))
-    , high_level_client(std::move(high_level_client_))
+    , gcs_client(std::move(gcs_client_))
     , xml_multipart_client(std::move(xml_multipart_client_))
 {
 }
 #elif USE_GOOGLE_CLOUD
-GCSObjectStorage::GCSObjectStorage(GCSObjectStorageSettings settings_, std::shared_ptr<GCS::HighLevelClient> high_level_client_)
+GCSObjectStorage::GCSObjectStorage(GCSObjectStorageSettings settings_, std::shared_ptr<GCS::Client> gcs_client_)
     : settings(std::move(settings_))
-    , high_level_client(std::move(high_level_client_))
+    , gcs_client(std::move(gcs_client_))
 {
 }
 #else
@@ -1101,7 +1101,7 @@ GCSObjectStorage::readObject(const StoredObject & object, const ReadSettings & r
     }
 
     return std::make_unique<GCSReadBuffer>(
-        high_level_client,
+        gcs_client,
         settings.bucket,
         objectName(object.remote_path),
         read_settings.remote_fs_buffer_size,
@@ -1172,8 +1172,7 @@ std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject(
             std::move(blob_storage_log),
             std::move(attributes),
             std::move(scheduler),
-            disk_write_settings,
-            S3::ProfileEventsNamespace::GCS);
+            disk_write_settings);
 #else
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -1186,7 +1185,7 @@ std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject(
         blob_storage_log->local_path = object.local_path;
 
     return std::make_unique<GCSWriteBuffer>(
-        high_level_client,
+        gcs_client,
         settings.bucket,
         objectName(object.remote_path),
         std::move(attributes),
@@ -1215,7 +1214,7 @@ void GCSObjectStorage::removeObjectIfExistsImpl(const StoredObject & object, con
 {
 #if USE_GOOGLE_CLOUD
     Stopwatch watch;
-    auto status = high_level_client->deleteObject(settings.bucket, objectName(object.remote_path));
+    auto status = gcs_client->deleteObject(settings.bucket, objectName(object.remote_path));
     if (blob_storage_log)
         blob_storage_log->addEvent(
             BlobStorageLogElement::EventType::Delete,
@@ -1268,7 +1267,7 @@ void GCSObjectStorage::rewriteObjectFromGCS(
 
     validateNativeGCSWriteSettings(write_settings);
 
-    auto result = high_level_client->rewriteObject(
+    auto result = gcs_client->rewriteObject(
         source_storage.settings.bucket,
         objectName(object_from.remote_path),
         settings.bucket,
@@ -1339,7 +1338,7 @@ ObjectMetadata GCSObjectStorage::getObjectMetadata(const std::string & path, boo
 std::optional<ObjectMetadata> GCSObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
 #if USE_GOOGLE_CLOUD
-    auto result = high_level_client->getObjectMetadata(settings.bucket, objectName(path));
+    auto result = gcs_client->getObjectMetadata(settings.bucket, objectName(path));
     if (result.status.code == GCS::StatusCode::NotFound)
         return std::nullopt;
     GCS::throwIfError(result.status, "GetObjectMetadata");
@@ -1355,7 +1354,7 @@ void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
 {
 #if USE_GOOGLE_CLOUD
     const size_t target_keys = max_keys;
-    auto result = high_level_client->listObjects(settings.bucket, objectName(path), max_keys, std::nullopt);
+    auto result = gcs_client->listObjects(settings.bucket, objectName(path), max_keys, std::nullopt);
     GCS::throwIfError(result.status, "ListObjects");
 
     for (const auto & object : result.response)
@@ -1378,7 +1377,7 @@ ObjectStorageIteratorPtr GCSObjectStorage::iterate(
 #if USE_GOOGLE_CLOUD
     RelativePathsWithMetadata files;
     const size_t fetch_max_keys = start_after && !start_after->empty() && max_keys ? max_keys + 1 : max_keys;
-    auto result = high_level_client->listObjects(settings.bucket, objectName(path_prefix), fetch_max_keys, start_after);
+    auto result = gcs_client->listObjects(settings.bucket, objectName(path_prefix), fetch_max_keys, start_after);
     GCS::throwIfError(result.status, "ListObjects");
 
     for (const auto & object : result.response)
@@ -1511,7 +1510,7 @@ ObjectStoragePtr createGCSObjectStorage(
     GCS::assertGrpcAvailable();
 
 #if USE_GOOGLE_CLOUD
-    auto high_level_client = GCS::createHighLevelClient(settings.client_settings);
+    auto gcs_client = GCS::createClient(settings.client_settings);
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> xml_multipart_client;
     if (settings.write_transport == GCS::WriteTransport::XMLMultipart)
@@ -1525,9 +1524,9 @@ ObjectStoragePtr createGCSObjectStorage(
             token_provider);
         xml_multipart_client = std::shared_ptr<S3::Client>(std::move(unique_xml_client));
     }
-    return std::make_shared<GCSObjectStorage>(std::move(settings), std::move(high_level_client), std::move(xml_multipart_client));
+    return std::make_shared<GCSObjectStorage>(std::move(settings), std::move(gcs_client), std::move(xml_multipart_client));
 #else
-    return std::make_shared<GCSObjectStorage>(std::move(settings), std::move(high_level_client));
+    return std::make_shared<GCSObjectStorage>(std::move(settings), std::move(gcs_client));
 #endif
 #else
     throw Exception(

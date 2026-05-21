@@ -239,7 +239,6 @@ std::unique_ptr<S3::Client> createXMLMultipartClient(
     client_configuration.requestTimeoutMs = client_settings.request_timeout_ms;
     client_configuration.endpointOverride = endpoint;
     client_configuration.http_client = String(gcp_oauth_http_client);
-    client_configuration.profile_events_namespace = S3::ProfileEventsNamespace::GCS;
     client_configuration.gcs_oauth_token_provider = [token_provider]
     {
         return token_provider->getToken().token;
