@@ -2,6 +2,7 @@ set optimize_syntax_fuse_functions = 0;
 
 set enable_analyzer = 1;
 set read_in_order_max_primary_key_ratio = 1.0;
+SET optimize_truncate_order_by_after_group_by_keys = 1; -- CI may inject False; ORDER BY keys after GROUP BY keys not truncated → sum(y) ASC stays in sort description instead of being removed
 
 drop table if exists tab;
 create table tab (x UInt32, y UInt32) engine = MergeTree order by x;
