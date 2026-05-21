@@ -71,7 +71,7 @@ class GH:
             sha = info.sha
         else:
             repo_name = Shell.get_output(
-                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
+                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\2#'",
                 strict=True,
             )
             sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
