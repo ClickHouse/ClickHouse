@@ -1,5 +1,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
@@ -15,7 +16,10 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Functions/IFunction.h>
+#include <stack>
+#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -29,6 +33,118 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+namespace
+{
+
+using ConstantColumnAfterFilter = std::pair<size_t, Field>;
+
+const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return node;
+}
+
+std::optional<Field> tryGetConstantField(const ActionsDAG::Node * node)
+{
+    node = unwrapAlias(node);
+    if (!node->column || !isColumnConst(*node->column) || node->column->empty())
+        return {};
+
+    return (*node->column)[0];
+}
+
+std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
+    const ActionsDAG::Node * column_node,
+    const ActionsDAG::Node * constant_node,
+    const ActionsDAG & dag,
+    const Block & transformed_header)
+{
+    const auto * unwrapped_column_node = unwrapAlias(column_node);
+    if (unwrapped_column_node->type != ActionsDAG::ActionType::INPUT)
+        return {};
+
+    auto constant_field = tryGetConstantField(constant_node);
+    if (!constant_field)
+        return {};
+
+    auto position = transformed_header.findPositionByName(column_node->result_name);
+    if (!position && column_node != unwrapped_column_node)
+        position = transformed_header.findPositionByName(unwrapped_column_node->result_name);
+    if (!position)
+    {
+        for (const auto * output : dag.getOutputs())
+        {
+            if (unwrapAlias(output) != unwrapped_column_node)
+                continue;
+
+            position = transformed_header.findPositionByName(output->result_name);
+            if (position)
+                break;
+        }
+    }
+    if (!position)
+        return {};
+
+    const auto & result_column = transformed_header.getByPosition(*position);
+
+    try
+    {
+        auto converted = convertFieldToTypeOrThrow(*constant_field, *result_column.type, constant_node->result_type.get());
+        return ConstantColumnAfterFilter{*position, std::move(converted)};
+    }
+    catch (Exception &)
+    {
+        return {};
+    }
+}
+
+std::vector<ConstantColumnAfterFilter> collectConstantColumnsAfterFilter(
+    const ActionsDAG & dag,
+    const String & filter_column_name,
+    const Block & transformed_header)
+{
+    std::vector<ConstantColumnAfterFilter> result;
+    std::unordered_set<size_t> added_positions;
+
+    const auto * filter = &dag.findInOutputs(filter_column_name);
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(filter);
+
+    while (!nodes.empty())
+    {
+        const auto * node = unwrapAlias(nodes.top());
+        nodes.pop();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            continue;
+
+        const auto & function_name = node->function_base->getName();
+        if (function_name == "and")
+        {
+            for (const auto * child : node->children)
+                nodes.push(child);
+            continue;
+        }
+
+        if (function_name != "equals" || node->children.size() != 2)
+            continue;
+
+        std::optional<ConstantColumnAfterFilter> constant_column;
+        if (tryGetConstantField(node->children[1]))
+            constant_column = tryMakeConstantColumnAfterFilter(node->children[0], node->children[1], dag, transformed_header);
+        if (!constant_column && tryGetConstantField(node->children[0]))
+            constant_column = tryMakeConstantColumnAfterFilter(node->children[1], node->children[0], dag, transformed_header);
+
+        if (constant_column && added_positions.insert(constant_column->first).second)
+            result.push_back(std::move(*constant_column));
+    }
+
+    return result;
+}
+
 }
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
@@ -93,6 +209,9 @@ FilterTransform::FilterTransform(
 
     if (expression)
     {
+        constant_columns_after_filter
+            = collectConstantColumnsAfterFilter(expression->getActionsDAG(), filter_column_name, transformed_header);
+
         /// Special check to stop queries like "WHERE ignore(...)"
         const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
         while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -157,6 +276,18 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
         columns.erase(columns.begin() + filter_column_position);
 }
 
+void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const
+{
+    for (const auto & constant_column : constant_columns_after_filter)
+    {
+        if (constant_column.first == filter_column_position && remove_filter_column)
+            continue;
+
+        const auto & type = transformed_header.getByPosition(constant_column.first).type;
+        columns[constant_column.first] = type->createColumnConst(num_rows, constant_column.second);
+    }
+}
+
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
@@ -189,6 +320,8 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
+        if (constant_filter_description.always_true && !on_totals && !isVirtualRow(chunk))
+            applyConstantColumnsAfterFilter(columns, num_rows_before_filtration);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -272,6 +405,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (num_filtered_rows == num_rows_before_filtration)
     {
         /// No need to touch the rest of the columns.
+        applyConstantColumnsAfterFilter(columns, num_rows_before_filtration);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -294,6 +428,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
+    applyConstantColumnsAfterFilter(columns, num_filtered_rows);
     removeFilterIfNeed(columns);
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }

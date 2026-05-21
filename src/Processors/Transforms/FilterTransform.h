@@ -1,7 +1,10 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
+#include <Core/Field.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -57,10 +60,13 @@ private:
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
+    std::vector<std::pair<size_t, Field>> constant_columns_after_filter;
+
     bool are_prepared_sets_initialized = false;
 
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
+    void applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const;
 
     void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
 };
