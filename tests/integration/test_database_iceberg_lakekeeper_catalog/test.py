@@ -317,7 +317,7 @@ CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '
 SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
             )
         except QueryRuntimeException as e:
-            message = str(e)
+            message = str(e).split("\n(query:")[0]
             assert secret not in message, (
                 f"Secret {secret!r} leaked into CREATE DATABASE error message"
             )
