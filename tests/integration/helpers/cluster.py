@@ -347,6 +347,14 @@ def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p.communicate()
     return p.returncode == 0
 
+def check_postgresql_dotnet_client_is_available(docker_id):
+    p = subprocess.Popen(
+        docker_exec(docker_id, "dotnet", "--version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
 def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "dotnet", "--version"),
@@ -653,6 +661,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_postgresql_dotnet_client = False
         self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
@@ -820,6 +829,12 @@ class ClickHouseCluster:
         self.postgresql_java_client_host = "java"
         self.postgresql_java_client_docker_id = self.get_instance_docker_id(
             self.postgresql_java_client_host
+        )
+
+        # available when with_postgresql_dotnet_client = True
+        self.postgresql_dotnet_client_host = "postgresql-dotnet-client"
+        self.postgresql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_dotnet_client_host
         )
 
         # available when with_mysql_dotnet_client = True
@@ -1527,6 +1542,29 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
 
+    def setup_postgresql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir,
+                    "docker_compose_postgresql_dotnet_client.yml",
+                ),
+            ]
+        )
+        self.base_postgresql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(
+                docker_compose_yml_dir,
+                "docker_compose_postgresql_dotnet_client.yml",
+            ),
+        )
+
     def setup_mysql_dotnet_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1790,6 +1828,9 @@ class ClickHouseCluster:
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
         env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
+        env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
+            docker_compose_yml_dir, "hms_core_site_minio1.xml"
+        )
         self.base_cmd.extend(
             [
                 "--file",
@@ -1815,7 +1856,6 @@ class ClickHouseCluster:
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
         env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
-        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -2019,6 +2059,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_postgresql_dotnet_client=False,
         with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
@@ -2187,6 +2228,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_postgresql_dotnet_client=with_postgresql_dotnet_client,
             with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
@@ -2298,6 +2340,13 @@ class ClickHouseCluster:
                 )
             )
 
+        if with_postgresql_dotnet_client and not self.with_postgresql_dotnet_client:
+            cmds.append(
+                self.setup_postgresql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
             cmds.append(
                 self.setup_mysql_dotnet_client_cmd(
@@ -2379,6 +2428,10 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+
+        # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
+        if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
+            with_minio = True
 
         if with_minio and not self.with_minio:
             cmds.append(
@@ -2997,6 +3050,21 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_postgresql_dotnet_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_dotnet_client_is_available(
+                    self.postgresql_dotnet_client_docker_id
+                ):
+                    logging.debug("PostgreSQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL C# Client container")
+
     def wait_mysql_dotnet_client(self, timeout=30):
         start = time.time()
         while time.time() - start < timeout:
@@ -3260,6 +3328,48 @@ class ClickHouseCluster:
             logging.debug("Unable to get logs from docker.")
 
         raise Exception("Can't wait Minio to start")
+
+    def create_minio_buckets(self, buckets, set_public_policy=False):
+        """Create additional buckets on the standard MinIO (minio1).
+
+        Must be called after wait_minio_to_start() which sets self.minio_client.
+        """
+        assert self.minio_client is not None, (
+            "create_minio_buckets called before wait_minio_to_start"
+        )
+        for bucket in buckets:
+            if self.minio_client.bucket_exists(bucket):
+                delete_object_list = map(
+                    lambda x: x.object_name,
+                    self.minio_client.list_objects_v2(bucket, recursive=True),
+                )
+                errors = self.minio_client.remove_objects(bucket, delete_object_list)
+                for error in errors:
+                    logging.error(f"Error occurred when deleting object {error}")
+                self.minio_client.remove_bucket(bucket)
+            self.minio_client.make_bucket(bucket)
+            logging.info("S3 bucket '%s' created on standard MinIO", bucket)
+
+        if set_public_policy:
+            for bucket in buckets:
+                policy = json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": "*"},
+                                "Action": ["s3:*"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{bucket}",
+                                    f"arn:aws:s3:::{bucket}/*",
+                                ],
+                            }
+                        ],
+                    }
+                )
+                self.minio_client.set_bucket_policy(bucket, policy)
+                logging.info("Public policy set on S3 bucket '%s'", bucket)
 
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
@@ -3732,6 +3842,17 @@ class ClickHouseCluster:
                 self.wait_postgresql_java_client()
 
             if (
+                self.with_postgresql_dotnet_client
+                and self.base_postgresql_dotnet_client_cmd
+            ):
+                logging.debug("Setup Postgres C# Client")
+                subprocess_check_call(
+                    self.base_postgresql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_dotnet_client()
+
+            if (
                 self.with_mysql_dotnet_client
                 and self.base_mysql_dotnet_client_cmd
             ):
@@ -3880,23 +4001,44 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            # Catalogs use the standard MinIO (minio1). Create their
+            # buckets on it before starting the catalog services.
+            if self.with_glue_catalog or self.with_hms_catalog or self.with_iceberg_catalog:
+                catalog_buckets = []
+                if self.with_glue_catalog:
+                    catalog_buckets.append("warehouse-glue")
+                if self.with_hms_catalog:
+                    catalog_buckets.append("warehouse-hms")
+                if self.with_iceberg_catalog:
+                    catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
+                self.create_minio_buckets(catalog_buckets, set_public_policy=True)
+
+                # Some catalogs (Nessie) vend an S3 endpoint to clients via the
+                # REST `loadTable` response. The hostname `minio1` is only
+                # resolvable inside the Docker network, so the host-side
+                # `pyiceberg` client cannot reach it. Re-export the env file
+                # with `MINIO_IP` set to the standard MinIO container's IP
+                # (resolvable from both the host and from other containers in
+                # the same Docker bridge network) so catalog compose files can
+                # vend a host-reachable URL.
+                if self.minio_ip:
+                    self.env_variables["MINIO_IP"] = self.minio_ip
+                    _create_env_file(self.env_file, self.env_variables)
+
             if self.with_glue_catalog and self.base_glue_catalog_cmd:
-                logging.info("Trying to connect to Minio for glue catalog...")
+                logging.info("Starting Glue catalog...")
                 subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-glue"], "minio", 9000)
 
             if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
+                logging.info("Starting HMS catalog...")
                 subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-hms"], "minio", 9000)
 
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
-                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                logging.info("Starting Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-rest"], "minio", 9000)
 
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
@@ -4623,6 +4765,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_postgresql_dotnet_client,
         with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
@@ -4715,6 +4858,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_postgresql_dotnet_client = with_postgresql_dotnet_client
         self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
