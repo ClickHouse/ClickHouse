@@ -7,6 +7,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Clean up on EXIT so a mid-script abort (set -e + a failing query) cannot
+# leave the short filenames `a`, `b`, `c` in `user_files_path` and break
+# other tests that rely on them being absent.
+cleanup() {
+    rm -f "${USER_FILES_PATH}"/{a,b,c}.txt
+    rm -f "${USER_FILES_PATH}"/{a,b,c}
+    rm -f /tmp/c.txt
+    rm -rf "${USER_FILES_PATH}"/dir
+}
+trap cleanup EXIT
+
 echo -n aaaaaaaaa > ${USER_FILES_PATH}/a.txt
 echo -n bbbbbbbbb > ${USER_FILES_PATH}/b.txt
 echo -n ccccccccc > ${USER_FILES_PATH}/c.txt
@@ -81,8 +92,4 @@ echo -n World > ${USER_FILES_PATH}/c
 ${CLICKHOUSE_CLIENT} --query "SELECT file(arrayJoin(['a', 'b', 'c'])) AS s, count() GROUP BY s ORDER BY s"
 ${CLICKHOUSE_CLIENT} --query "SELECT s, count() FROM file('?', TSV, 's String') GROUP BY s ORDER BY s"
 
-# Restore
-rm ${USER_FILES_PATH}/{a,b,c}.txt
-rm ${USER_FILES_PATH}/{a,b,c}
-rm /tmp/c.txt
-rm -rf ${USER_FILES_PATH}/dir
+# Cleanup is handled by the `trap cleanup EXIT` at the top of this script.
