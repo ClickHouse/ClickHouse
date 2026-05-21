@@ -1060,13 +1060,18 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     if (!source_archive)
         return;
 
+    /// Route reads through readFile (a virtual on the storage), not source_archive->readFile.
+    /// Equivalent on full storage today (the existing looksLikePackedSkipIndexFile overlay ends
+    /// up calling the same archive reader), but storage subclasses where skp_idx.packed isn't a
+    /// flat disk file need this entry point so the virtual readFile can compose the read
+    /// correctly. Keeps the helper subclass-friendly without adding behavioural risk here.
     for (const auto & file_name : file_names)
     {
         if (!source_archive->exists(file_name))
             continue;
 
         const auto file_size = source_archive->getFileSize(file_name);
-        auto src = source_archive->readFile(file_name, read_settings, file_size);
+        auto src = readFile(file_name, read_settings, file_size);
         auto dst = target.writeFile(file_name, write_settings);
         copyData(*src, *dst);
         dst->finalize();
@@ -1104,7 +1109,9 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
 
         any_kept = true;
         const auto file_size = source_archive->getFileSize(file_name);
-        auto src = source_archive->readFile(file_name, read_settings, file_size);
+        /// See copyPackedSkipIndicesFilesInto: go through the storage's readFile so subclasses
+        /// that need to compose the read (e.g. archive-in-archive) get a chance to intervene.
+        auto src = readFile(file_name, read_settings, file_size);
         auto dst = writer.writeFile(file_name, write_settings);
         copyData(*src, *dst);
         dst->finalize();
