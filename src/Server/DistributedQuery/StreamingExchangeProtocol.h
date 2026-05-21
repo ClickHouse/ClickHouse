@@ -13,6 +13,11 @@ namespace StreamingExchangeProtocol
     /// Sanity cap for the body of a Hello packet.
     static constexpr UInt64 MAX_HELLO_BODY_BYTES = 64 * 1024;
 
+    /// Per-recv/send timeout applied to the Hello exchange on the server side.
+    /// The handshake runs inline on the accept thread, so a silent peer must not
+    /// hold it indefinitely.
+    static constexpr int HELLO_TIMEOUT_SECONDS = 10;
+
     /// Packet types between StreamingExchangeSink and StreamingExchangeSource.
     /// SourceHello/SinkHello magic numbers were changed when framing was introduced,
     /// so peers on the older unframed handshake fail with UNEXPECTED_PACKET_FROM_CLIENT.

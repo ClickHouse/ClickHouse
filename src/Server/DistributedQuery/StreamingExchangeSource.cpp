@@ -31,6 +31,13 @@ StreamingExchangeSource::~StreamingExchangeSource()
 void StreamingExchangeSource::onStart()
 {
     connect();
+
+    /// The handshake runs synchronously on a blocking socket. Apply per-call
+    /// timeouts so a stalled peer cannot freeze the source startup indefinitely.
+    Poco::Timespan hello_timeout(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, 0);
+    socket->setReceiveTimeout(hello_timeout);
+    socket->setSendTimeout(hello_timeout);
+
     sendHello();
     receiveHello();
 

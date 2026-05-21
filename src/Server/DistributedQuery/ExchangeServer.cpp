@@ -125,6 +125,13 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
 {
     LOG_TRACE(log, "Connection from {}", socket.peerAddress().toString());
 
+    /// The handshake runs inline on the accept thread on a blocking socket.
+    /// Apply per-call timeouts so a silent or stalling peer cannot hold this thread
+    /// (and block subsequent accepts) for longer than HELLO_TIMEOUT_SECONDS.
+    Poco::Timespan hello_timeout(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, 0);
+    socket.setReceiveTimeout(hello_timeout);
+    socket.setSendTimeout(hello_timeout);
+
     StreamingExchangeProtocol::PacketHeader header{};
     receiveAll(socket, &header, sizeof(header), "SourceHello header");
 
