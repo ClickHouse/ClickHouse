@@ -1912,8 +1912,12 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    const std::string * geo_json_str = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    if (settings.allow_geoparquet_parser)
+    {
+        const std::string * geo_json_str = extractGeoMetadata(metadata);
+        geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    }
 
     for (const auto & field : schema.fields())
     {
@@ -2034,8 +2038,12 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    const std::string * geo_json_str = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    if (settings.allow_geoparquet_parser)
+    {
+        const std::string * geo_json_str = extractGeoMetadata(metadata);
+        geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    }
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {
