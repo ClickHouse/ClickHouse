@@ -78,7 +78,7 @@ namespace
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
-            const std::optional<std::map<String, String>> & object_metadata_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_)
@@ -102,7 +102,7 @@ namespace
         const String & dest_bucket;
         const String & dest_key;
         const S3::S3RequestSettings & request_settings;
-        const std::optional<std::map<String, String>> & object_metadata; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        const std::optional<ObjectAttributes> & object_metadata;
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
@@ -423,7 +423,7 @@ namespace
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
-            const std::optional<std::map<String, String>> & object_metadata_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
@@ -610,7 +610,7 @@ namespace
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
             const ReadSettings & read_settings_,
-            const std::optional<std::map<String, String>> & object_metadata_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_)
@@ -824,7 +824,7 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<std::map<String, String>> & object_metadata) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::optional<ObjectAttributes> & object_metadata)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -855,7 +855,7 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer& fallback_file_reader,
-    const std::optional<std::map<String, String>> & object_metadata) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::optional<ObjectAttributes> & object_metadata)
 {
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;

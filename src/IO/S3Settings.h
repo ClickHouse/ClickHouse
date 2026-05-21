@@ -17,6 +17,8 @@ namespace Poco::Util { class AbstractConfiguration; }
 namespace DB
 {
 
+using ObjectAttributes = std::map<std::string, std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
 struct Settings;
 
 struct S3Settings

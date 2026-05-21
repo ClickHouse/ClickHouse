@@ -42,7 +42,7 @@ public:
         size_t buf_size_,
         const S3::S3RequestSettings & request_settings_,
         BlobStorageLogWriterPtr blob_log_,
-        std::optional<std::map<String, String>> object_metadata_ = std::nullopt, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::optional<ObjectAttributes> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
         const WriteSettings & write_settings_ = {});
 
@@ -87,7 +87,7 @@ private:
     const S3::S3RequestSettings request_settings;
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
-    const std::optional<std::map<String, String>> object_metadata; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::optional<ObjectAttributes> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 

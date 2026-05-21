@@ -7,11 +7,6 @@
 #include <base/types.h>
 #include <IO/S3/Client.h>
 
-namespace DB
-{
-using ObjectAttributes = std::map<std::string, std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-}
-
 namespace DB::S3
 {
 
