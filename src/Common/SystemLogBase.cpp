@@ -158,10 +158,12 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
 {
     LOG_DEBUG(log, "Requested flush up to offset {}", expected_flushed_index);
 
-    // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
-    // too fast for our parallel functional tests, probably because they
-    // heavily load the disk.
-    const int timeout_seconds = 180;
+    // Use an arbitrary timeout to avoid endless waiting. Earlier bumps
+    // (60s -> 180s) still produced TIMEOUT_EXCEEDED in `SYSTEM FLUSH LOGS`
+    // on heavily loaded parallel CI runners. Raised to 600s for the same
+    // reason: heavy parallel tests on slow disks can stall flush longer
+    // than 180s without anything actually going wrong.
+    const int timeout_seconds = 600;
 
     std::unique_lock lock(mutex);
 
