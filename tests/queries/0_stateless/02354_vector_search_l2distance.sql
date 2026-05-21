@@ -16,7 +16,7 @@ SETTINGS index_granularity = 2;
 -- Vectors chosen so L2 and L2-squared are clearly different
 -- L2([1,1], [0,0]) = sqrt(2) = 1.41421...
 -- L2^2([1,1], [0,0]) = 2
-INSERT INTO tab_l2_mismatch VALUES (1, [0.0, 0.0]), (2, [1.0, 0.0]), (3, [0.0, 1.0]), (4, [1.0, 1.0]), (5, [0.0, 3.0]);
+INSERT INTO tab_l2_mismatch VALUES (1, [0.0, 0.0]), (2, [1.0, 0.0]), (3, [0.0, 1.5]), (4, [1.0, 1.0]), (5, [0.0, 3.0]);
 
 -- With rescoring ON: L2Distance function runs on actual data, correct sqrt values
 SELECT 'rescoring=true (baseline)';
