@@ -325,9 +325,15 @@ TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
     /// After the first window read, a prefetch is in flight for [500, 1000).
     /// Seeking to 750 (inside the prefetched range) must:
     ///   - leave executor.getPosition() == 750 (not 500), and
-    ///   - cause the next readNextWindow to return a rope starting at logical 750.
-    /// Pre-fix: position was rewound to prefetch_range.offset and the returned
-    /// rope still started at 500, so direct callers got bytes from the wrong offset.
+    ///   - cause the next readNextWindow to return a rope starting at logical 750
+    ///     with content matching the source at offset 750.
+    ///
+    /// The returned size depends on which branch the executor takes:
+    ///   - Wait branch (worker already running): rope is the prefetched [500, 1000)
+    ///     sliced to [750, 1000), size 250.
+    ///   - Cancel branch (worker hadn't started): a fresh window from position 750
+    ///     of size min(window_size, file_size - 750), so the rope spans [750, 1250).
+    /// Both are valid outcomes and the test accepts either.
 
     String content(2000, 0);
     for (size_t i = 0; i < content.size(); ++i)
@@ -352,7 +358,8 @@ TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
 
     auto rope2 = executor.readNextWindow();
     EXPECT_EQ(rope2.range().offset, 750u);
-    EXPECT_EQ(rope2.range().size, 250u);  /// [750, 1000)
+    EXPECT_TRUE(rope2.range().size == 250u || rope2.range().size == 500u)
+        << "got size " << rope2.range().size;
     ASSERT_FALSE(rope2.getNodes().empty());
     EXPECT_EQ(rope2.getNodes().front().data()[0], content[750]);
 }

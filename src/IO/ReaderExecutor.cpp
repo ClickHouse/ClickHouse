@@ -181,26 +181,43 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {})", next_physical_window.offset, next_physical_window.end());
 
-    prefetch_future = prefetch_pool->submit([this, next_physical_window, next_logical_offset]()
+    auto handle = prefetch_pool->submit([this, next_physical_window, next_logical_offset]()
     {
         return decryptRope(readPhysicalWindow(next_physical_window), next_logical_offset);
     });
+
+    if (!handle)
+    {
+        /// Prefetch pool's queue is full. The next readNextWindow will do a
+        /// synchronous fetch — that's the correct fallback under overload.
+        LOG_TRACE(log, "Prefetch: pool queue full, will fetch synchronously on next read");
+        return;
+    }
+
+    prefetch_handle = std::move(handle);
     /// Track prefetch_range in logical coordinates — same space as `position`
-    /// and as the decrypted rope returned by the future.
+    /// and as the decrypted rope returned by the handle.
     prefetch_range = ByteRange{next_logical_offset, next_size};
     prefetch_valid = true;
 }
 
 void ReaderExecutor::discardPrefetch()
 {
-    if (prefetch_valid)
+    if (!prefetch_valid)
+        return;
+
+    LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
+
+    if (prefetch_handle)
     {
-        LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
-        if (prefetch_future.valid())
+        /// If the task hadn't started, cancel it — no need to wait. Otherwise
+        /// we must wait for the worker to finish so its capture of `this` is
+        /// safe to drop.
+        if (!prefetch_handle->tryCancel())
         {
             try
             {
-                std::ignore = prefetch_future.get();
+                std::ignore = prefetch_handle->get();
             }
             catch (...)
             {
@@ -212,8 +229,9 @@ void ReaderExecutor::discardPrefetch()
                 tryLogCurrentException(log, "Discarded prefetch task threw");
             }
         }
-        prefetch_valid = false;
+        prefetch_handle.reset();
     }
+    prefetch_valid = false;
 }
 
 void ReaderExecutor::addDecryptionLayer(
@@ -374,19 +392,38 @@ Rope ReaderExecutor::readNextWindow()
 
     Rope rope;
 
-    if (prefetch_valid && prefetch_future.valid())
+    if (prefetch_valid && prefetch_handle)
     {
-        LOG_TRACE(log, "readNextWindow: using prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
-        rope = prefetch_future.get();
-        prefetch_valid = false;
-
-        /// If seek landed us in the middle of the prefetched window, drop the
-        /// prefix bytes that come before our current logical position so
-        /// rope.range().offset matches `position`.
-        if (!rope.empty() && position > rope.range().offset)
+        if (prefetch_handle->tryCancel())
         {
-            size_t end = rope.range().end();
-            rope = rope.slice(ByteRange{position, end - position});
+            /// Worker hadn't picked up the task — cancel and read from the
+            /// current position with a full window. If a seek landed inside
+            /// the prefetched range we'd otherwise re-read the pre-seek bytes
+            /// only to discard them; starting at `position` instead lets us
+            /// return a full window of useful data.
+            LOG_TRACE(log, "readNextWindow: prefetch was queued, cancelling and reading from position {}", position);
+            prefetch_handle.reset();
+            prefetch_valid = false;
+
+            size_t win_size = std::min(window_size, logical_size - position);
+            ByteRange physical_window{position + data_start_offset, win_size};
+            rope = decryptRope(readPhysicalWindow(physical_window), position);
+        }
+        else
+        {
+            /// Worker already running or done — wait. If a seek landed inside
+            /// the prefetched window, trim the prefix so rope.range().offset
+            /// matches `position`.
+            LOG_TRACE(log, "readNextWindow: waiting on prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
+            rope = prefetch_handle->get();
+            prefetch_handle.reset();
+            prefetch_valid = false;
+
+            if (!rope.empty() && position > rope.range().offset)
+            {
+                size_t end = rope.range().end();
+                rope = rope.slice(ByteRange{position, end - position});
+            }
         }
     }
     else

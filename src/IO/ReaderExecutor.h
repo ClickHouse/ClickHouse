@@ -23,6 +23,7 @@ namespace DB
 {
 
 class PrefetchThreadPool;
+class PrefetchHandle;
 
 class ReaderExecutor
 {
@@ -117,7 +118,7 @@ private:
     size_t position = 0;
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
-    std::future<Rope> prefetch_future;
+    std::unique_ptr<PrefetchHandle> prefetch_handle;
     ByteRange prefetch_range;      /// range the in-flight prefetch covers
     bool prefetch_valid = false;
 
