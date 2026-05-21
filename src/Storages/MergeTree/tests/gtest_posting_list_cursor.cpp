@@ -117,7 +117,7 @@ std::vector<uint32_t> linearOrToDocIds(PostingListCursorPtr cursor, size_t row_o
 /// Helper: perform intersection using lazyIntersectPostingLists and return doc IDs.
 std::vector<uint32_t> intersectAndCollect(
     PostingListCursorMap & postings,
-    const std::vector<String> & tokens,
+    const VectorWithMemoryTracking<String> & tokens,
     size_t row_offset,
     size_t num_rows,
     bool brute_force,
@@ -137,7 +137,7 @@ std::vector<uint32_t> intersectAndCollect(
 /// Helper: perform union using lazyUnionPostingLists and return doc IDs.
 std::vector<uint32_t> unionAndCollect(
     PostingListCursorMap & postings,
-    const std::vector<String> & tokens,
+    const VectorWithMemoryTracking<String> & tokens,
     size_t row_offset,
     size_t num_rows)
 {
@@ -873,7 +873,7 @@ TEST(PostingListCursorTest, IntersectEightCursors)
     auto docs = generateRange(0, 6, 10); // 0,10,20,30,40,50
     std::vector<MultiBlockTestData> data(8);
     PostingListCursorMap postings;
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
 
     for (int i = 0; i < 8; ++i)
     {
@@ -898,7 +898,7 @@ TEST(PostingListCursorTest, IntersectNineCursorsHeap)
     auto docs = generateRange(0, 3, 20); // 0,20,40
     std::vector<TokenPostingsInfo> infos(9);
     PostingListCursorMap postings;
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
 
     for (int i = 0; i < 9; ++i)
     {
@@ -917,7 +917,7 @@ TEST(PostingListCursorTest, IntersectTenCursorsWithVaryingDocs)
 {
     std::vector<MultiBlockTestData> data(10);
     PostingListCursorMap postings;
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
 
     for (int i = 0; i < 10; ++i)
     {
@@ -1245,7 +1245,7 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
         std::vector<std::set<uint32_t>> sets(4);
         std::vector<MultiBlockTestData> data(4);
         PostingListCursorMap postings;
-        std::vector<String> tokens;
+        VectorWithMemoryTracking<String> tokens;
 
         for (int i = 0; i < 4; ++i)
         {
@@ -1285,7 +1285,7 @@ TEST(PostingListCursorTest, StressRandomUnion)
         std::set<uint32_t> all;
         std::vector<MultiBlockTestData> data(3);
         PostingListCursorMap postings;
-        std::vector<String> tokens;
+        VectorWithMemoryTracking<String> tokens;
 
         for (int i = 0; i < 3; ++i)
         {

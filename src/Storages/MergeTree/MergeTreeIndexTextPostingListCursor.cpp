@@ -1087,7 +1087,7 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
 void lazyUnionPostingLists(
     IColumn & column,
     const PostingListCursorMap & postings,
-    const std::vector<String> & search_tokens,
+    const VectorWithMemoryTracking<String> & search_tokens,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows)
@@ -1123,7 +1123,7 @@ void lazyUnionPostingLists(
 void lazyIntersectPostingLists(
     IColumn & column,
     const PostingListCursorMap & postings,
-    const std::vector<String> & search_tokens,
+    const VectorWithMemoryTracking<String> & search_tokens,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,

@@ -6,6 +6,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 
 #include <memory>
@@ -170,7 +171,7 @@ using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCu
 void lazyUnionPostingLists(
     IColumn & column,
     const PostingListCursorMap & postings,
-    const std::vector<String> & search_tokens,
+    const VectorWithMemoryTracking<String> & search_tokens,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows);
@@ -187,7 +188,7 @@ void lazyUnionPostingLists(
 void lazyIntersectPostingLists(
     IColumn & column,
     const PostingListCursorMap & postings,
-    const std::vector<String> & search_tokens,
+    const VectorWithMemoryTracking<String> & search_tokens,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
