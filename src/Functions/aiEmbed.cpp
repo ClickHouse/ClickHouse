@@ -315,7 +315,7 @@ requests a vector of the given size; otherwise the model's native size is return
         = {{"Embed a single string", "SELECT aiEmbed('ai_credentials', 'Hello world')", ""},
            {"With explicit dimensions", "SELECT aiEmbed('ai_credentials', 'Hello world', 256)", ""},
            {"Embed a column of texts", "SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10", ""}},
-        .introduced_in = {26, 5},
+        .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::AI});
 }
 
