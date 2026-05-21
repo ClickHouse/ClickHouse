@@ -261,6 +261,7 @@ directories_to_lint_std_containers_usages=(
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do
     grep "/$dir/" "$STYLE_TMPDIR/all_excluded" |
         xargs rg -Hn 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
+        grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|//|/\*)' |
         grep -v "STYLE_CHECK_ALLOW_STD_CONTAINERS" && echo "Use an -WithMemoryTracking alternative or mark these usages with STYLE_CHECK_ALLOW_STD_CONTAINERS"
 done
 } > "$O.08" 2>&1 &
