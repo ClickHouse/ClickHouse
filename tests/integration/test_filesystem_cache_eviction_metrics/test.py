@@ -44,8 +44,27 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     `system.dimensional_metrics` / `system.histogram_metrics` when a real
     `clickhouse-server` process is configured with
     `filesystem_cache_expose_prometheus_eviction_metrics=true` on a
-    disk-backed cache and a workload
-    drives evictions through it.
+    disk-backed cache and a workload drives evictions through it.
+
+    Eviction model
+    --------------
+    The SLRU cache is 100 KiB (50 KiB probationary + 50 KiB protected).
+
+    1. INSERT batches 0–2 (rows 0–299, ~800 KiB each) go to disk only;
+       `cache_on_write_operations` is intentionally unset at the disk level
+       so writes bypass the cache.
+    2. Read batch-0 rows (id < 100) once → fills the PROBATIONARY queue.
+       Because all rows are in one MergeTree part, MergeTree reads the blob
+       column file sequentially; the first 50 KiB (5 × 10 KiB segments) land
+       in probationary, the rest bypass the full cache.
+    3. Read batch-0 rows again → the cached segments are cache-hits;
+       `tryIncreasePriority` promotes them from probationary → PROTECTED.
+       This is what we assert with `slru_promotions_total`.
+    4. Read batch-1+2 rows (id >= 100) → completely different files (different
+       MergeTree parts), so all segments are cache-misses.  The protected
+       queue now holds the batch-0 segments which are fully RELEASED (query 3
+       has finished), so `tryReserve` can evict them to make room.  That is
+       what we assert with `evictions_total`.
     """
     node.query(
         """
@@ -55,21 +74,36 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
         """
     )
 
-    # Cache is 100 KiB; each INSERT writes ~800 KiB so the cache must evict.
-    # Re-reading then forces further evictions as old segments get displaced.
     for batch in range(3):
         node.query(
-            "INSERT INTO eviction_metrics_test SELECT number + ?, repeat('x', 8192) FROM numbers(100)"
-            .replace("?", str(batch * 100))
+            "INSERT INTO eviction_metrics_test "
+            "SELECT number + {offset}, repeat('x', 8192) FROM numbers(100)".format(
+                offset=batch * 100
+            )
         )
-        node.query("SELECT sum(length(blob)) FROM eviction_metrics_test SETTINGS enable_filesystem_cache = 1")
 
-    evictions = sum_dim("filesystem_cache_evictions_total")
+    read_settings = "SETTINGS enable_filesystem_cache = 1"
+
+    # Step 2: fill probationary with batch-0 segments.
+    node.query(
+        f"SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id < 100 {read_settings}"
+    )
+    # Step 3: re-read batch-0 → cache-hits → promote to protected.
+    node.query(
+        f"SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id < 100 {read_settings}"
+    )
+    # Step 4: read batch-1+2 (different parts, different cache keys) →
+    # the released protected segments are evicted to make room.
+    node.query(
+        f"SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id >= 100 {read_settings}"
+    )
+
     debug = node.query(
         "SELECT * FROM system.dimensional_metrics "
         "WHERE metric LIKE 'filesystem_cache_%' FORMAT Vertical"
     )
 
+    evictions = sum_dim("filesystem_cache_evictions_total")
     assert evictions > 0, f"Aggregate eviction counter did not advance:\n{debug}"
     assert sum_dim("filesystem_cache_evicted_bytes_total") > 0
     hits = sum_hist("filesystem_cache_evicted_segment_hits")
@@ -78,11 +112,10 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     assert int(evictions) == sizes, f"counter={evictions} size_observations={sizes}"
     assert sum_dim("filesystem_cache_evictions_by_client_total") > 0
 
-    # Verify the `queue` label is correctly populated for SLRU. Initial inserts
-    # land in probationary; subsequent reads promote segments to protected. At
-    # least some evictions must be labelled `probationary` or `protected` — if
-    # all were `unknown` the queue_type lookup inside EvictionCandidates::evict
-    # silently regressed (e.g. dynamic-resize path losing original_queue_types).
+    # Verify the `queue` label is correctly populated for SLRU.  At least some
+    # evictions must be labelled `probationary` or `protected` — if all were
+    # `unknown` the queue_type lookup inside `EvictionCandidates::evict`
+    # silently regressed.
     slru_queue_evictions = float(node.query(
         "SELECT coalesce(sum(value), 0) FROM system.dimensional_metrics "
         "WHERE metric = 'filesystem_cache_evictions_total' "
@@ -92,9 +125,8 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
         f"No evictions with probationary/protected queue label — all unknown?\n{debug}"
     )
 
-    # SLRU is configured; repeated SELECTs over the same blob data promote
-    # probationary segments to protected, which must show up in the
-    # promotions counter (same flag enables it).
+    # SLRU is configured; step 3 promotes probationary segments to protected,
+    # which must show up in the promotions counter.
     assert sum_dim("filesystem_cache_slru_promotions_total") > 0, (
         "SLRU promotion counter did not advance:\n" + debug
     )
