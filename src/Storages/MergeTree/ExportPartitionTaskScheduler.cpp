@@ -3,9 +3,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
 #include "Storages/MergeTree/ExportPartitionUtils.h"
 #include "Storages/MergeTree/MergeTreePartExportManifest.h"
 #include "Formats/FormatFactory.h"
@@ -20,6 +22,7 @@ namespace ProfileEvents
     extern const Event ExportPartitionZooKeeperSet;
     extern const Event ExportPartitionZooKeeperRemove;
     extern const Event ExportPartitionZooKeeperMulti;
+    extern const Event ExportPartsRejectedByMemoryLimit;
 }
 
 
@@ -50,6 +53,20 @@ void ExportPartitionTaskScheduler::run()
     if (available_move_executors == 0)
     {
         LOG_INFO(storage.log, "ExportPartition scheduler task: No available move executors, skipping");
+        return;
+    }
+
+    /// Respect the background memory soft-limit: refuse to schedule new export-part tasks when
+    /// background tasks are already pressing the limit. The task is rescheduled by the parent
+    /// background pool a few seconds later, so this just defers work without losing it.
+    if (!canEnqueueBackgroundTask())
+    {
+        ProfileEvents::increment(ProfileEvents::ExportPartsRejectedByMemoryLimit);
+        LOG_TRACE(storage.log,
+            "ExportPartition scheduler task: Reached memory limit for the background tasks ({}), "
+            "so won't select new parts to export. Current background tasks memory usage: {}.",
+            formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
+            formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
         return;
     }
 

@@ -381,6 +381,7 @@
     M(ExportPartitionZooKeeperRemoveRecursive, "Number of 'removeRecursive' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
     M(ExportPartitionZooKeeperMulti, "Number of 'multi' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
     M(ExportPartitionZooKeeperExists, "Number of 'exists' requests to ZooKeeper made by the export partition feature.", ValueType::Number) \
+    M(ExportPartsRejectedByMemoryLimit, "Number of background export part tasks rejected due to background memory limit.", ValueType::Number) \
     \
     M(DistributedConnectionTries, "Total count of distributed connection attempts.", ValueType::Number) \
     M(DistributedConnectionUsable, "Total count of successful distributed connections to a usable server (with required table, but maybe stale).", ValueType::Number) \
