@@ -4,6 +4,10 @@
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
+
 namespace StreamingExchangeProtocol
 {
     /// Wire-format version. Bumped on any change to packet layouts.
@@ -36,6 +40,31 @@ namespace StreamingExchangeProtocol
     {
         UInt64 packet_type;
         UInt64 bytes_size;  /// Size of the packet body (does not include this header)
+    };
+
+    /// Wire format of the SourceHello body. Parsing is split in two phases because
+    /// only the version field is guaranteed to live at a fixed offset across protocol
+    /// versions: peers on a different version may use a different layout for the rest,
+    /// so the version must be read and validated first.
+    struct SourceHelloBody
+    {
+        UInt64 source_version = 0;
+        String query_id;
+        String stream_name;
+
+        static UInt64 readVersion(ReadBuffer & in);
+        void readAfterVersion(ReadBuffer & in);
+        void write(WriteBuffer & out) const;
+    };
+
+    /// Wire format of the SinkHello body. Currently carries the sink's protocol version
+    /// so the source can produce a precise diagnostic on a mismatch.
+    struct SinkHelloBody
+    {
+        UInt64 sink_version = 0;
+
+        void read(ReadBuffer & in);
+        void write(WriteBuffer & out) const;
     };
 }
 }

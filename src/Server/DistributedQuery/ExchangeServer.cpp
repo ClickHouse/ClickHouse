@@ -156,14 +156,15 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
     if (!body_buffer.empty())
         receiveAll(socket, body_buffer.data(), body_buffer.size(), "SourceHello body");
 
-    /// Parse only the version field first. Fields after it depend on the negotiated layout,
-    /// so peers on a different protocol version must not have their body further interpreted.
+    /// Read only the version field first. The layout of fields after it can change between
+    /// protocol versions, so a peer on a different version must not have its body further parsed.
     ReadBufferFromMemory body_in(body_buffer.data(), body_buffer.size());
-    UInt64 source_version = 0;
-    readIntBinary(source_version, body_in);
+    StreamingExchangeProtocol::SourceHelloBody source_hello;
+    source_hello.source_version = StreamingExchangeProtocol::SourceHelloBody::readVersion(body_in);
 
     WriteBufferFromOwnString reply_body;
-    writeIntBinary(StreamingExchangeProtocol::PROTOCOL_VERSION, reply_body);
+    StreamingExchangeProtocol::SinkHelloBody sink_hello{.sink_version = StreamingExchangeProtocol::PROTOCOL_VERSION};
+    sink_hello.write(reply_body);
     reply_body.finalize();
     const std::string & reply_body_str = reply_body.str();
 
@@ -185,7 +186,7 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
         out.finalize();
     };
 
-    if (source_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
+    if (source_hello.source_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
     {
         try
         {
@@ -197,21 +198,19 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
         }
         throw Exception(ErrorCodes::PROTOCOL_VERSION_MISMATCH,
             "Streaming exchange protocol version mismatch from {}: peer speaks version {}, this node speaks version {}",
-            socket.peerAddress().toString(), source_version,
+            socket.peerAddress().toString(), source_hello.source_version,
             StreamingExchangeProtocol::PROTOCOL_VERSION);
     }
 
-    /// Versions match — body layout is known, parse the rest.
-    String query_id;
-    readStringBinary(query_id, body_in);
-    String stream_name;
-    readStringBinary(stream_name, body_in);
+    /// Versions match - body layout is known, parse the rest.
+    source_hello.readAfterVersion(body_in);
 
-    LOG_TRACE(log, "Query id: {}, stream: {}, peer protocol version: {}", query_id, stream_name, source_version);
+    LOG_TRACE(log, "Query id: {}, stream: {}, peer protocol version: {}",
+        source_hello.query_id, source_hello.stream_name, source_hello.source_version);
 
     send_sink_hello();
 
-    connections->addConnection(query_id, stream_name, socket);
+    connections->addConnection(source_hello.query_id, source_hello.stream_name, socket);
 }
 
 }

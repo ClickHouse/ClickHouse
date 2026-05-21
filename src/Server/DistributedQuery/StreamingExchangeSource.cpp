@@ -60,9 +60,12 @@ void StreamingExchangeSource::connect()
 void StreamingExchangeSource::sendHello()
 {
     WriteBufferFromOwnString body;
-    writeIntBinary(StreamingExchangeProtocol::PROTOCOL_VERSION, body);
-    writeStringBinary(query_id, body);
-    writeStringBinary(stream_name, body);
+    StreamingExchangeProtocol::SourceHelloBody source_hello{
+        .source_version = StreamingExchangeProtocol::PROTOCOL_VERSION,
+        .query_id = query_id,
+        .stream_name = stream_name,
+    };
+    source_hello.write(body);
     body.finalize();
     const std::string & body_str = body.str();
 
@@ -112,13 +115,13 @@ void StreamingExchangeSource::receiveHello()
             stream_name, body_buffer.size(), body_position));
 
     ReadBufferFromMemory body_in(body_buffer.data(), body_buffer.size());
-    UInt64 sink_version = 0;
-    readIntBinary(sink_version, body_in);
+    StreamingExchangeProtocol::SinkHelloBody sink_hello;
+    sink_hello.read(body_in);
 
-    if (sink_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
+    if (sink_hello.sink_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
         throw Exception(ErrorCodes::PROTOCOL_VERSION_MISMATCH,
             "Streaming exchange protocol version mismatch for stream {}: this node speaks version {}, sink at {}:{} speaks version {}",
-            stream_name, StreamingExchangeProtocol::PROTOCOL_VERSION, host, port, sink_version);
+            stream_name, StreamingExchangeProtocol::PROTOCOL_VERSION, host, port, sink_hello.sink_version);
 }
 
 IProcessor::Status StreamingExchangeSource::prepare()
