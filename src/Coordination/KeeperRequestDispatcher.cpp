@@ -396,10 +396,7 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
                 /// Also prevent sending any future responses for this session to avoid breaking
                 /// ordering. The client will disconnect after session timeout.
-                {
-                    std::shared_lock sessions_lock(sessions_mutex);
-                    sessions.erase(response.session_id);
-                }
+                finishSession(response.session_id);
                 return;
             }
         }
