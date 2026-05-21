@@ -119,9 +119,6 @@ private:
      */
     void compress(UInt32 max_bins)
     {
-        if (size <= max_bins)
-            return;
-
         auto cmp = [](const WeightedValue & a, const WeightedValue & b){ return a.mean < b.mean; };
         if (sorted_prefix == 0)
         {
@@ -133,6 +130,11 @@ private:
             ::sort(points + sorted_prefix, points + size, cmp);
             std::inplace_merge(points, points + sorted_prefix, points + size, cmp);
         }
+        sorted_prefix = size;
+
+        if (size <= max_bins)
+            return;
+
         auto new_size = size;
 
         // Maintain doubly-linked list of "active" points
