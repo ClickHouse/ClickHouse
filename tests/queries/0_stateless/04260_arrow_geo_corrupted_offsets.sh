@@ -13,7 +13,7 @@ DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_geo.arrow"
 DATA_FILE_VALID="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_geo_valid.arrow"
 trap 'rm -f "$DATA_FILE" "$DATA_FILE_VALID"' EXIT
 
-# Build a valid Arrow IPC file with WKB Point rows and geo footer metadata.
+# Build a valid Arrow IPC file with WKB Point rows and geo schema metadata.
 # Before the fix, buffer->mutable_data() returned nullptr for read-only IPC
 # buffers, causing a null-pointer dereference on any geo-tagged Arrow column.
 python3 - "$DATA_FILE_VALID" <<'EOF'
@@ -31,15 +31,23 @@ wkb_point = struct.pack('<BIdd', 1, 1, 1.0, 2.0)
 arr = pa.array([wkb_point, wkb_point], type=pa.binary())
 tbl = pa.Table.from_arrays([arr], names=['x'])
 geo_meta = json.dumps({'columns': {'x': {'encoding': 'WKB', 'geometry_types': ['Point']}}})
+
+# Geo metadata must be attached to the schema (schema->metadata()), not to the
+# IPC footer (file_reader->metadata()), which is what ArrowBlockInputFormat reads.
+meta = tbl.schema.metadata or {}
+meta[b'geo'] = geo_meta.encode()
+tbl = tbl.replace_schema_metadata(meta)
+
 with pa.OSFile(path, 'wb') as f:
-    w = ipc.new_file(f, tbl.schema, metadata={'geo': geo_meta})
+    w = ipc.new_file(f, tbl.schema)
     w.write_table(tbl)
     w.close()
 EOF
 
-$CLICKHOUSE_LOCAL --query "SELECT x FROM file('${DATA_FILE_VALID}', 'Arrow')" 2>&1
+$CLICKHOUSE_LOCAL --input_format_parquet_allow_geoparquet_parser=1 \
+    --query "SELECT x FROM file('${DATA_FILE_VALID}', 'Arrow')" 2>&1
 
-# Build an Arrow IPC file with WKB binary rows, geo footer metadata, and a
+# Build an Arrow IPC file with WKB binary rows, geo schema metadata, and a
 # corrupted offset that makes value_length(0) = 1 GiB.
 # Before the fix, this caused a heap-buffer-overflow in parseWKBFormat.
 # After the fix, it must be rejected with INCORRECT_DATA.
@@ -57,8 +65,13 @@ wkb_point = struct.pack('<BIdd', 1, 1, 1.0, 2.0)  # 21 bytes
 arr = pa.array([wkb_point, wkb_point, wkb_point], type=pa.binary())
 tbl = pa.Table.from_arrays([arr], names=['x'])
 geo_meta = json.dumps({'columns': {'x': {'encoding': 'WKB', 'geometry_types': ['Point']}}})
+
+meta = tbl.schema.metadata or {}
+meta[b'geo'] = geo_meta.encode()
+tbl = tbl.replace_schema_metadata(meta)
+
 with pa.OSFile(path, 'wb') as f:
-    w = ipc.new_file(f, tbl.schema, metadata={'geo': geo_meta})
+    w = ipc.new_file(f, tbl.schema)
     w.write_table(tbl)
     w.close()
 
@@ -73,5 +86,6 @@ data[idx + 4 : idx + 8] = struct.pack('<I', 0x40000000)
 open(path, 'wb').write(bytes(data))
 EOF
 
-$CLICKHOUSE_LOCAL --query "SELECT x FROM file('${DATA_FILE}', 'Arrow')" 2>&1 \
+$CLICKHOUSE_LOCAL --input_format_parquet_allow_geoparquet_parser=1 \
+    --query "SELECT x FROM file('${DATA_FILE}', 'Arrow')" 2>&1 \
     | grep -oF 'INCORRECT_DATA' || echo 'FAIL: expected INCORRECT_DATA'
