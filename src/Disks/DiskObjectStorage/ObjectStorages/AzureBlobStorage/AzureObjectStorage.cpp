@@ -506,6 +506,13 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     auto client_ptr = client.get();
     auto blob_storage_log = BlobStorageLogWriter::create(name);
 
+    if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
+    {
+        for (const auto & object : objects)
+            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);
+        return;
+    }
+
     removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
 }
 

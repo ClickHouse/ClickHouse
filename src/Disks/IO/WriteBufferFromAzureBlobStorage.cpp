@@ -18,6 +18,7 @@ namespace ProfileEvents
     extern const Event AzureStageBlock;
     extern const Event AzureCommitBlockList;
 
+    extern const Event DiskAzureUpload;
     extern const Event DiskAzureStageBlock;
     extern const Event DiskAzureCommitBlockList;
 }

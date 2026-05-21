@@ -16,7 +16,6 @@
 namespace ProfileEvents
 {
     extern const Event AzureUpload;
-    extern const Event DiskAzureUpload;
 }
 
 namespace DB
@@ -132,16 +131,10 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
     if (canceled)
     {
         LOG_INFO(log, "WriteBufferFromAzureDataLakeStorage was canceled. File `{}` may be left in an incomplete state.", blob_path);
-        return;
     }
-
-    try
+    else if (!finalized)
     {
-        finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, fmt::format("Failed to finalize ADLS Gen2 file `{}`", blob_path));
+        LOG_INFO(log, "WriteBufferFromAzureDataLakeStorage is not finalized in destructor. File `{}` may not be written to ADLS Gen2.", blob_path);
     }
 }
 
