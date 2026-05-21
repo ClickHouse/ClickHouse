@@ -131,6 +131,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     chassert(argument_index == args.size());
 
+    promql_query_string = PrometheusQueryParsingUtil::replaceStartEndTimestampModifiers(
+        promql_query_string, start_time, end_time, timestamp_scale);
     PrometheusQueryTree promql_query{promql_query_string, timestamp_scale};
 
     Configuration config;

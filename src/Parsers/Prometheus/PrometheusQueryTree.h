@@ -139,17 +139,13 @@ public:
     /// Represents a change of the evaluation time applied to an instant selector or a range selector or a subquery.
     /// Examples: <expression> offset 1d
     ///           <expression> @ 1609746000
-    ///           <expression> @ start() offset -1d
+    ///           <expression> @ 1609746000 offset -1d
     class Offset : public Node
     {
     public:
-        enum class AtModifier { None, Timestamp, Start, End };
-
-        AtModifier at_modifier = AtModifier::None;
         std::optional<TimestampType> at_timestamp;
         std::optional<DurationType> offset_value;
         const Node * getExpression() const { return children.at(0); }
-        bool hasAtModifier() const { return at_modifier != AtModifier::None; }
         Offset() { node_type = NodeType::Offset; }
         Node * clone(std::vector<std::unique_ptr<Node>> & node_list_) const override;
         String dumpNode(const PrometheusQueryTree & tree, size_t indent) const override;

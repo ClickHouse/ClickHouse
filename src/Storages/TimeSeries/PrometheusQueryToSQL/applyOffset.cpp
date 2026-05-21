@@ -189,7 +189,7 @@ namespace
 
 SQLQueryPiece applyOffset(const PQT::Offset * offset_node, SQLQueryPiece && expression, ConverterContext & context)
 {
-    if (offset_node->hasAtModifier())
+    if (offset_node->at_timestamp)
     {
         /// Set fixed evaluation time.
         return setEvaluationTime(offset_node, std::move(expression), context);

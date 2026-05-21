@@ -157,7 +157,7 @@ SQLQueryPiece applyFunctionOverRange(
     if (argument.store_method == StoreMethod::RAW_DATA && argument.node->node_type == NodeType::Offset)
     {
         const auto * offset_node = static_cast<const PQT::Offset *>(argument.node);
-        if (offset_node->hasAtModifier())
+        if (offset_node->at_timestamp)
             fixed_argument_range = context.node_range_getter.get(offset_node->getExpression());
     }
 

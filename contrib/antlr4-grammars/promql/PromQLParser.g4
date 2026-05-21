@@ -112,8 +112,6 @@ parens
 
 timestamp
     : NUMBER
-    | START LEFT_PAREN RIGHT_PAREN
-    | END LEFT_PAREN RIGHT_PAREN
     ;
 
 duration
@@ -238,8 +236,6 @@ keyword
     | GROUP_RIGHT
     | OFFSET
     | BOOL
-    | START
-    | END
     | AGGREGATION_OPERATOR
     | FUNCTION
     ;

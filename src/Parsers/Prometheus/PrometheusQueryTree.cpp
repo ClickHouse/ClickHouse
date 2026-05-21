@@ -187,21 +187,8 @@ String PrometheusQueryTree::Subquery::dumpNode(const PrometheusQueryTree & tree,
 String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}Offset:", makeIndent(indent));
-    switch (at_modifier)
-    {
-        case AtModifier::None:
-            break;
-        case AtModifier::Timestamp:
-            chassert(at_timestamp);
-            str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
-            break;
-        case AtModifier::Start:
-            str += fmt::format("\n{}at: start()", makeIndent(indent + 1));
-            break;
-        case AtModifier::End:
-            str += fmt::format("\n{}at: end()", makeIndent(indent + 1));
-            break;
-    }
+    if (at_timestamp)
+        str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
     if (offset_value)
         str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.timestamp_scale));
     str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
@@ -403,21 +390,10 @@ String PrometheusQueryTree::Subquery::toString(const PrometheusQueryTree & tree)
 String PrometheusQueryTree::Offset::toString(const PrometheusQueryTree & tree) const
 {
     String str = getExpression()->toString(tree);
-    switch (at_modifier)
+    if (at_timestamp)
     {
-        case AtModifier::None:
-            break;
-        case AtModifier::Timestamp:
-            chassert(at_timestamp);
-            str += " @ ";
-            str += DB::toString(Decimal64{*at_timestamp}, tree.timestamp_scale);
-            break;
-        case AtModifier::Start:
-            str += " @ start()";
-            break;
-        case AtModifier::End:
-            str += " @ end()";
-            break;
+        str += " @ ";
+        str += DB::toString(Decimal64{*at_timestamp}, tree.timestamp_scale);
     }
     if (offset_value)
     {

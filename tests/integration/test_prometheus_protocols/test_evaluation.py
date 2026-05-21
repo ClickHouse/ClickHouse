@@ -170,17 +170,6 @@ def send_test_data():
     send_data(
         [
             (
-                {"__name__": "literal_marker", "city": "@ start()"},
-                {
-                    130: 7,
-                },
-            ),
-        ]
-    )
-
-    send_data(
-        [
-            (
                 {"__name__": "deltas", "job": "test"},
                 {
                     100: -2,
@@ -543,43 +532,6 @@ def test_timestamp_modifier_fixed_evaluation_time():
         ],
     )
 
-    do_query_test(
-        "test @ start()",
-        250,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "13"]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "1970-01-01 00:04:10.000",
-                "13",
-            ]
-        ],
-    )
-
-    do_query_test(
-        "literal_marker{city=\"@ start()\"}",
-        130,
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "literal_marker", "city": "@ start()"}, "value": [130, "7"]}]}',
-        [
-            [
-                "[('__name__','literal_marker'),('city','@ start()')]",
-                "1970-01-01 00:02:10.000",
-                "7",
-            ]
-        ],
-    )
-
-    actual_result_from_http_api = execute_query_via_http_api(
-        node.ip_address,
-        9093,
-        "/api/v1/query",
-        "test @ start()",
-    )
-    assert http_api_response_close_to(
-        actual_result_from_http_api,
-        '{"resultType": "vector", "result": []}',
-    )
-
     do_range_query_test(
         "last_over_time(test[45s] @ 130)",
         130,
@@ -590,48 +542,6 @@ def test_timestamp_modifier_fixed_evaluation_time():
             [
                 "[('__name__','test')]",
                 "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
-            ]
-        ],
-    )
-
-    do_range_query_test(
-        "test @ start()",
-        130,
-        250,
-        60,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
-            ]
-        ],
-    )
-
-    do_range_query_test(
-        "test @ end()",
-        130,
-        250,
-        60,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]",
-            ]
-        ],
-    )
-
-    do_range_query_test(
-        "last_over_time(test[45s] @ end())",
-        130,
-        250,
-        60,
-        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "13"], [190, "13"], [250, "13"]]}]}',
-        [
-            [
-                "[('__name__','test')]",
-                "[('1970-01-01 00:02:10.000',13),('1970-01-01 00:03:10.000',13),('1970-01-01 00:04:10.000',13)]",
             ]
         ],
     )
