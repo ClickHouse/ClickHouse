@@ -365,10 +365,10 @@ def test_alter_table_columns(cluster, node_name):
     )
 
     assert node.query("SELECT distinct(col1) FROM s3_test FORMAT Values") == "('1')"
-    # and file with mutation
+    # and file with mutation (2 blobs: original + finish_time append)
     existing_objects = wait_for_delete_s3_objects(
         cluster,
-        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1,
+        FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 2,
     )
 
     assert_deleted_in_log(objects_before, existing_objects)
@@ -376,9 +376,9 @@ def test_alter_table_columns(cluster, node_name):
 
     node.query("ALTER TABLE s3_test DROP COLUMN col1", settings={"mutations_sync": 2})
 
-    # and 2 files with mutations
+    # and 2 files with mutations (each has 2 blobs: original + finish_time append)
     existing_objects = wait_for_delete_s3_objects(
-        cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
+        cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 4
     )
     assert_deleted_in_log(objects_before, existing_objects)
     objects_before = existing_objects
