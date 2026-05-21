@@ -861,7 +861,12 @@ void QueryResultCache::Entry::serializeTo(WriteBuffer & buf, const Block & heade
         writeChunkAsBlock(*extremes, header_ptr, buf);
 }
 
-QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(ReadBuffer & buf, const Block & header, size_t max_chunks)
+QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
+    ReadBuffer & buf,
+    const Block & header,
+    size_t max_chunks,
+    size_t max_entry_size_in_bytes,
+    size_t max_entry_size_in_rows)
 {
     /// Format version check — reject unknown versions as cache misses.
     UInt8 format_version = 0;
@@ -872,6 +877,20 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(ReadBuffer & bu
 
     Entry entry;
 
+    size_t total_bytes = 0;
+    size_t total_rows = 0;
+    auto check_bounds = [&](const Chunk & chunk)
+    {
+        total_bytes += chunk.allocatedBytes();
+        total_rows += chunk.getNumRows();
+        if (max_entry_size_in_bytes && total_bytes > max_entry_size_in_bytes)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cached query result exceeds max_entry_size_in_bytes: {} > {}", total_bytes, max_entry_size_in_bytes);
+        if (max_entry_size_in_rows && total_rows > max_entry_size_in_rows)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cached query result exceeds max_entry_size_in_rows: {} > {}", total_rows, max_entry_size_in_rows);
+    };
+
     UInt32 chunks_count = 0;
     readIntBinary(chunks_count, buf);
     if (chunks_count > max_chunks)
@@ -879,17 +898,26 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(ReadBuffer & bu
             "Too many chunks in cached query entry: {} (max {})", chunks_count, max_chunks);
     entry.chunks.reserve(chunks_count);
     for (UInt32 i = 0; i < chunks_count; ++i)
+    {
         entry.chunks.push_back(readBlockAsChunk(header, buf));
+        check_bounds(entry.chunks.back());
+    }
 
     UInt8 has_totals = 0;
     readIntBinary(has_totals, buf);
     if (has_totals)
+    {
         entry.totals = readBlockAsChunk(header, buf);
+        check_bounds(*entry.totals);
+    }
 
     UInt8 has_extremes = 0;
     readIntBinary(has_extremes, buf);
     if (has_extremes)
+    {
         entry.extremes = readBlockAsChunk(header, buf);
+        check_bounds(*entry.extremes);
+    }
 
     return entry;
 }

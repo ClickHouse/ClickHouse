@@ -188,7 +188,15 @@ struct QueryResultCache
         void serializeTo(WriteBuffer & buf, const Block & header) const;
 
         /// Deserialize from binary buffer. header provides column type context for NativeReader.
-        static Entry deserializeFrom(ReadBuffer & buf, const Block & header, size_t max_chunks = DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_CHUNKS);
+        /// `max_entry_size_in_bytes` and `max_entry_size_in_rows` bound the cumulative size of
+        /// the decoded chunks and protect against oversized Redis payloads (corruption, manual
+        /// writes, namespace collisions). Zero means "unbounded".
+        static Entry deserializeFrom(
+            ReadBuffer & buf,
+            const Block & header,
+            size_t max_chunks = DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_CHUNKS,
+            size_t max_entry_size_in_bytes = 0,
+            size_t max_entry_size_in_rows = 0);
     };
 
     struct KeyHasher

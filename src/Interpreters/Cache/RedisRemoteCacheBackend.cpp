@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXTERNAL_QUERY_RESULT_CACHE_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -90,10 +91,24 @@ std::string tagGenerationKey(const String & tag)
 
 }
 
-RedisRemoteCacheBackend::RedisRemoteCacheBackend(RedisConfiguration config_, size_t max_entry_chunks_)
+RedisRemoteCacheBackend::RedisRemoteCacheBackend(
+    RedisConfiguration config_,
+    size_t max_entry_chunks_,
+    size_t max_entry_size_in_bytes_,
+    size_t max_entry_size_in_rows_)
     : config(std::move(config_))
     , max_entry_chunks(max_entry_chunks_)
+    , max_entry_size_in_bytes(max_entry_size_in_bytes_)
+    , max_entry_size_in_rows(max_entry_size_in_rows_)
 {
+}
+
+void RedisRemoteCacheBackend::setEntrySizeLimits(
+    size_t max_entry_size_in_bytes_,
+    size_t max_entry_size_in_rows_)
+{
+    max_entry_size_in_bytes.store(max_entry_size_in_bytes_, std::memory_order_relaxed);
+    max_entry_size_in_rows.store(max_entry_size_in_rows_, std::memory_order_relaxed);
 }
 
 RedisConnectionPtr RedisRemoteCacheBackend::borrowConnection()
@@ -202,13 +217,27 @@ std::string RedisRemoteCacheBackend::serializeValue(
 }
 
 /// Reconstruct a Key + Entry pair from the binary Redis value
-/// produced by `serializeValue`.
+/// produced by `serializeValue`. Bounds are passed through to
+/// `Entry::deserializeFrom` so a malformed Redis payload cannot allocate
+/// arbitrarily large memory before hitting the existing size checks.
 std::pair<QueryResultCache::Key, QueryResultCache::Entry>
-RedisRemoteCacheBackend::deserializeValue(const std::string & data, size_t max_entry_chunks)
+RedisRemoteCacheBackend::deserializeValue(
+    const std::string & data,
+    size_t max_entry_chunks,
+    size_t max_entry_size_in_bytes,
+    size_t max_entry_size_in_rows)
 {
+    /// Reject the entire blob if the raw serialized value already exceeds the configured byte
+    /// budget. This short-circuits the per-chunk check below for the gross-corruption case.
+    if (max_entry_size_in_bytes && data.size() > max_entry_size_in_bytes)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Cached query result blob exceeds max_entry_size_in_bytes: {} > {}",
+            data.size(), max_entry_size_in_bytes);
+
     ReadBufferFromString buf(data);
     auto key = QueryResultCache::Key::deserializeFrom(buf);
-    auto entry = QueryResultCache::Entry::deserializeFrom(buf, *key.header, max_entry_chunks);
+    auto entry = QueryResultCache::Entry::deserializeFrom(
+        buf, *key.header, max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows);
     return {std::move(key), std::move(entry)};
 }
 
@@ -242,7 +271,7 @@ try
     if (result.isNull())
         return std::nullopt;
 
-    return deserializeValue(result.value(), max_entry_chunks);
+    return deserializeValue(result.value(), max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows);
 }
 catch (...)
 {
@@ -434,7 +463,7 @@ RedisRemoteCacheBackend::dump(size_t max_keys)
             if (key_bs.value().ends_with(":lock"))
                 continue;
 
-            result.push_back(deserializeValue(val_bs.value(), max_entry_chunks));
+            result.push_back(deserializeValue(val_bs.value(), max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows));
         }
         catch (...)
         {
