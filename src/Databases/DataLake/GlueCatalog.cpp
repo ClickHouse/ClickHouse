@@ -106,7 +106,12 @@ GlueCatalog::GlueCatalog(
     , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
 {
     DB::S3::CredentialsConfiguration creds_config;
-    creds_config.use_environment_credentials = true;
+    /// `DatabaseDataLake::validateSettings` already requires user-supplied
+    /// `aws_access_key_id` and `aws_secret_access_key` for Glue catalog, so the AWS
+    /// credential chain never needs to fall back to the server environment / IMDS / IRSA
+    /// / STS providers from a user-SQL path. Keep this disabled as defense in depth in
+    /// case any future code path reaches here with empty credentials.
+    creds_config.use_environment_credentials = false;
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
 

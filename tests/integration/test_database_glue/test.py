@@ -206,6 +206,15 @@ def create_clickhouse_glue_database(
         "region": "us-east-1",
     }
 
+    # `GlueCatalog` itself authenticates with `aws_access_key_id` / `aws_secret_access_key`
+    # from settings (positional engine arguments only authenticate the underlying object
+    # storage reads, not Glue API calls). Forward the test minio keys as settings whenever
+    # the caller wants credentials, so the Glue catalog hardening check in
+    # `DatabaseDataLake::validateSettings` does not block the test setup.
+    if with_credentials:
+        settings.setdefault("aws_access_key_id", minio_access_key)
+        settings.setdefault("aws_secret_access_key", minio_secret_key)
+
     settings.update(additional_settings)
 
     credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""
@@ -951,6 +960,24 @@ def test_glue_role_arn_requires_explicit_keys(started_cluster):
             node,
             db_name,
             additional_settings={"aws_role_arn": "arn::role"},
+            with_credentials=False,
+        )
+
+    assert "ACCESS_DENIED" in str(exc_info.value)
+
+
+def test_glue_requires_explicit_keys(started_cluster):
+    """Glue catalog must reject SQL that supplies no `aws_access_key_id` /
+    `aws_secret_access_key`, since the AWS client would otherwise fall back to
+    the server's environment / IMDS / IRSA credentials."""
+    node = started_cluster.instances["node1"]
+    db_name = f"db_no_keys_{uuid.uuid4().hex}"
+
+    with pytest.raises(Exception) as exc_info:
+        create_clickhouse_glue_database(
+            started_cluster,
+            node,
+            db_name,
             with_credentials=False,
         )
 

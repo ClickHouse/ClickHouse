@@ -146,6 +146,13 @@ void DatabaseDataLake::validateSettings()
                 ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue Catalog. "
                 "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
 
+        /// `GlueCatalog` configures the AWS client with `use_environment_credentials = true`, so
+        /// when no explicit keys are supplied the credential chain falls back to the server's
+        /// environment / IMDS / IRSA / STS credentials. That is a user-controlled credential
+        /// inheritance path, which is exactly what this hardening forbids. Require both keys
+        /// here so the chain is constrained to user-supplied static credentials. This subsumes
+        /// the previous `aws_role_arn`-specific check (which is left as a more descriptive
+        /// error when only `aws_role_arn` is provided).
         if (!settings[DatabaseDataLakeSetting::aws_role_arn].value.empty()
             && (settings[DatabaseDataLakeSetting::aws_access_key_id].value.empty()
                 || settings[DatabaseDataLakeSetting::aws_secret_access_key].value.empty()))
@@ -154,6 +161,15 @@ void DatabaseDataLake::validateSettings()
                 ErrorCodes::ACCESS_DENIED,
                 "Using `aws_role_arn` without user-supplied `aws_access_key_id` and `aws_secret_access_key` "
                 "in Glue catalog settings is not allowed");
+        }
+
+        if (settings[DatabaseDataLakeSetting::aws_access_key_id].value.empty()
+            || settings[DatabaseDataLakeSetting::aws_secret_access_key].value.empty())
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Glue catalog requires user-supplied `aws_access_key_id` and `aws_secret_access_key` "
+                "in settings. Falling back to server environment credentials is not allowed.");
         }
     }
     else if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
