@@ -28,9 +28,10 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Streaming/WatermarkCalculatorStep.h>
 #include <Processors/QueryPlan/Streaming/WatermarkMergerStep.h>
-#include <Processors/Streaming/IdleMarker.h>
 #include <Processors/Streaming/WatermarkCalculatorTransform.h>
 #include <Processors/Streaming/WatermarkMerger.h>
+#include <Processors/Streaming/MarkerIdle.h>
+#include <Processors/Streaming/MarkerWatermark.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
@@ -167,13 +168,13 @@ QueryPlanPtr buildPartitionReadingPlan(
 
 QueryPlanPtr buildPlaceholderPipe(
     const SharedHeader & output_header,
-    const std::variant<std::monostate, IdleMarker, WatermarkInfo> marker)
+    const std::variant<std::monostate, IdleMarker, WatermarkMarker> marker)
 {
-    Chunk chunk(output_header->cloneEmptyColumns(), 0);
+    Chunk chunk;
     if (std::holds_alternative<IdleMarker>(marker))
-        chunk.getChunkInfos().add(std::make_shared<IdleMarker>(std::get<IdleMarker>(marker)));
-    else if (std::holds_alternative<WatermarkInfo>(marker))
-        chunk.getChunkInfos().add(std::make_shared<WatermarkInfo>(std::get<WatermarkInfo>(marker)));
+        chunk = makeIdleMarkerChunk(*output_header);
+    else if (std::holds_alternative<WatermarkMarker>(marker))
+        chunk = makeWatermarkMarkerChunk(*output_header, std::get<WatermarkMarker>(marker).watermark);
 
     auto storage = std::make_shared<StorageValues>(
         StorageID("dummy", "dummy"),
@@ -264,10 +265,10 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
         }
         else if (stream_settings.watermark)
         {
-            std::variant<std::monostate, IdleMarker, WatermarkInfo> marker;
+            std::variant<std::monostate, IdleMarker, WatermarkMarker> marker;
 
             if (last_watermark.contains(partition_id))
-                marker.emplace<WatermarkInfo>(WatermarkInfo{last_watermark.at(partition_id)});
+                marker.emplace<WatermarkMarker>(WatermarkMarker{last_watermark.at(partition_id)});
 
             if (stream_settings.watermark->idle_timeout.count() > 0)
                 if (last_snapshot_time.contains(partition_id))
