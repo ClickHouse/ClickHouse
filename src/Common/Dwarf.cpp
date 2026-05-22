@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -24,6 +24,10 @@
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/Exception.h>
+
+#if defined(OS_DARWIN)
+#include <Common/MachO.h>
+#endif
 
 #define DW_CHILDREN_no 0
 
@@ -166,6 +170,29 @@ Dwarf::Dwarf(const std::shared_ptr<Elf> & elf)
         elf_ = nullptr;
     }
 }
+
+#if defined(OS_DARWIN)
+Dwarf::Dwarf(const std::shared_ptr<MachO> & macho)
+    : elf_(nullptr)
+    , macho_(macho)
+    , abbrev_(getSection(".debug_abbrev"))
+    , addr_(getSection(".debug_addr"))
+    , aranges_(getSection(".debug_aranges"))
+    , info_(getSection(".debug_info"))
+    , line_(getSection(".debug_line"))
+    , line_str_(getSection(".debug_line_str"))
+    , loclists_(getSection(".debug_loclists"))
+    , ranges_(getSection(".debug_ranges"))
+    , rnglists_(getSection(".debug_rnglists"))
+    , str_(getSection(".debug_str"))
+    , str_offsets_(getSection(".debug_str_offsets"))
+{
+    if (info_.empty() || abbrev_.empty() || line_.empty() || str_.empty())
+    {
+        macho_ = nullptr;
+    }
+}
+#endif
 
 Dwarf::Section::Section(std::string_view d) : is64_bit(false), data(d)
 {
@@ -449,6 +476,19 @@ bool Dwarf::Section::next(std::string_view & chunk)
 
 std::string_view Dwarf::getSection(const char * name) const
 {
+#if defined(OS_DARWIN)
+    if (macho_)
+    {
+        auto section = macho_->findSectionByName(name);
+        if (!section)
+            return {};
+        return {section->begin(), section->size()};
+    }
+#endif
+
+    if (!elf_)
+        return {};
+
     std::optional<Elf::Section> elf_section = elf_->findSectionByName(name);
     if (!elf_section)
         return {};
@@ -1027,7 +1067,7 @@ bool Dwarf::findLocation(
     const LocationInfoMode mode,
     CompilationUnit & cu,
     LocationInfo & info,
-    std::vector<SymbolizedFrame> & inline_frames,
+    VectorWithMemoryTracking<SymbolizedFrame> & inline_frames,
     bool assume_in_cu_range) const
 {
     Die die = getDieAtOffset(cu, cu.first_die);
@@ -1141,7 +1181,7 @@ bool Dwarf::findLocation(
             // they can be used for the second last location when we don't have
             // enough inline frames for all inline functions call stack.
             const size_t max_size = Dwarf::kMaxInlineLocationInfoPerFrame + 1;
-            std::vector<CallLocation> call_locations;
+            VectorWithMemoryTracking<CallLocation> call_locations;
             call_locations.reserve(Dwarf::kMaxInlineLocationInfoPerFrame + 1);
 
             findInlinedSubroutineDieForAddress(cu, subprogram, line_vm, address, base_addr_cu, call_locations, max_size);
@@ -1279,7 +1319,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
     const LineNumberVM & line_vm,
     uint64_t address,
     std::optional<uint64_t> base_addr_cu,
-    std::vector<CallLocation> & locations,
+    VectorWithMemoryTracking<CallLocation> & locations,
     const size_t max_size) const
 {
     if (locations.size() >= max_size)
@@ -1451,7 +1491,7 @@ void Dwarf::findInlinedSubroutineDieForAddress(
 }
 
 bool Dwarf::findAddress(
-    uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const
+    uintptr_t address, LocationInfo & locationInfo, LocationInfoMode mode, VectorWithMemoryTracking<SymbolizedFrame> & inline_frames) const
 {
     locationInfo = LocationInfo();
 
@@ -1460,10 +1500,14 @@ bool Dwarf::findAddress(
         return false;
     }
 
-    if (!elf_)
-    { // No file.
+    bool has_debug_info = static_cast<bool>(elf_)
+#if defined(OS_DARWIN)
+        || static_cast<bool>(macho_)
+#endif
+        ;
+
+    if (!has_debug_info)
         return false;
-    }
 
     if (!aranges_.empty())
     {
@@ -2203,7 +2247,9 @@ Dwarf::Path Dwarf::LineNumberVM::getFullFileName(uint64_t index) const
     // Program Header and relies on the CU's DW_AT_comp_dir.
     // DWARF 5: the current directory is explicitly present.
     const std::string_view base_dir = version_ == 5 ? "" : compilationDirectory_;
-    return Path(base_dir, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
+    const std::string_view include_dir = getIncludeDirectory(fn.directoryIndex);
+    // A directory entry of "." is the current directory and adds no meaningful prefix.
+    return Path(base_dir, include_dir == "." ? std::string_view{} : include_dir, fn.relativeName);
 }
 
 bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column)

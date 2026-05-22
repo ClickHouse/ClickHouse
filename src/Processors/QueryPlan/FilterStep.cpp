@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -194,29 +195,34 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void FilterStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
 
     auto cloned_dag = actions_dag.clone();
 
     std::vector<ActionsAndName> and_atoms;
-    if (!actions_dag.hasStatefulFunctions())
+    if (!settings.pretty && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 
     for (auto & and_atom : and_atoms)
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
         settings.out << prefix << "AND column: " << and_atom.name << '\n';
-        expression->describeActions(settings.out, prefix);
+        if (!settings.compact)
+        {
+            auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
+            expression->describeActions(settings.out, prefix);
+        }
     }
 
-    settings.out << prefix << "Filter column: " << filter_column_name;
+    settings.out << prefix << "Filter column: "
+        << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
 
-    if (remove_filter_column)
+    if (!settings.pretty && remove_filter_column)
         settings.out << " (removed)";
     settings.out << '\n';
 
     auto expression = std::make_shared<ExpressionActions>(std::move(cloned_dag));
-    expression->describeActions(settings.out, prefix);
+    if (!settings.compact)
+        expression->describeActions(settings.out, prefix);
 }
 
 void FilterStep::describeActions(JSONBuilder::JSONMap & map) const

@@ -52,7 +52,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         if (shard_info.isLocal())
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
+            return table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
         }
 
         auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
@@ -64,7 +64,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         {
             context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
+            return storage_ptr->getInMemoryMetadataPtr(context, false)->getColumns();
         }
 
         /// Request for a table description
@@ -156,7 +156,12 @@ ColumnsDescription getStructureOfRemoteTable(
         if (shard_info.isLocal())
         {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
-            chassert(!res.empty());
+
+            /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
+            /// In that case, fall through to try remote shards.
+            if (res.empty())
+                break;
+
             return res;
         }
     }

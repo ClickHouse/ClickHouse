@@ -193,6 +193,47 @@ bool isCompatible(ASTPtr & node)
             if (!isCompatible(expr))
                 return false;
 
+        /// When the parser's fast-path literal conversion produces
+        /// `ASTLiteral(Tuple)` as the IN set (e.g. `(id, name) IN ((1, 'a'))`
+        /// parsed as `in(tuple(id, name), ASTLiteral(Tuple{1, 'a'}))`),
+        /// we must wrap it in a function with empty name so that it
+        /// formats with an extra pair of parentheses: `((1, 'a'))`.
+        /// Without this, `ASTLiteral(Tuple)` formats as `(1, 'a')` and the
+        /// IN clause becomes `IN (1, 'a')` — which MySQL misinterprets
+        /// as two separate scalar values instead of one tuple.
+        ///
+        /// We only do this when:
+        /// 1. The LHS of IN is a multi-column tuple (`ASTFunction("tuple")`).
+        ///    For scalar IN like `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})`
+        ///    is a flat list of values and must NOT be wrapped.
+        /// 2. The tuple literal represents a single row (its elements are
+        ///    plain values, not nested tuples). For multi-row sets like
+        ///    `(id, name) IN ((1, 'a'), (2, 'b'))` the literal is
+        ///    `Tuple{Tuple{1, 'a'}, Tuple{2, 'b'}}` which already formats
+        ///    with the correct nested parentheses.
+        if ((name == "in" || name == "notIn") && function->arguments->children.size() == 2)
+        {
+            const auto & lhs = function->arguments->children[0];
+            const auto * lhs_func = lhs->as<ASTFunction>();
+            bool lhs_is_tuple = lhs_func && lhs_func->name == "tuple";
+
+            if (lhs_is_tuple)
+            {
+                auto & rhs = function->arguments->children[1];
+                if (const auto * rhs_literal = rhs->as<ASTLiteral>())
+                {
+                    if (rhs_literal->value.getType() == Field::Types::Tuple)
+                    {
+                        const auto & tup = rhs_literal->value.safeGet<Tuple>();
+                        bool is_single_row = !tup.empty()
+                            && tup[0].getType() != Field::Types::Tuple;
+                        if (is_single_row)
+                            rhs = makeASTFunction("", rhs);
+                    }
+                }
+            }
+        }
+
         /// It should be formatted in the operator form.
         function->setIsOperator(true);
 

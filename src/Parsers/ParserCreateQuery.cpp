@@ -269,7 +269,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_index(Keyword::INDEX);
     ParserKeyword s_type(Keyword::TYPE);
     ParserExpressionWithOptionalArguments type_p;
-    ParserExpression expression_p;
+    ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr name;
     ASTPtr query;
@@ -290,7 +290,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
     else if (s_index.ignore(pos, expected))
     {
-        if (!expression_p.parse(pos, index, expected))
+        if (!expression_list_p.parse(pos, index, expected))
             return false;
 
         if (!s_type.ignore(pos, expected))
@@ -559,9 +559,31 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!s_rparen.ignore(pos, expected))
         return false;
 
+    /// Remove ASTStorageOrderByElement wrappers when ALL elements have default (ASC) direction.
+    /// We must unwrap all-or-nothing because KeyDescription expects either all children to be
+    /// wrapped in ASTStorageOrderByElement, or none of them.
+    bool all_default_direction = true;
+    for (const auto & child : order_by->children)
+    {
+        if (const auto * elem = child->as<ASTStorageOrderByElement>(); !elem || elem->direction < 0)
+        {
+            all_default_direction = false;
+            break;
+        }
+    }
+    if (all_default_direction)
+    {
+        for (auto & child : order_by->children)
+        {
+            if (const auto * elem = child->as<ASTStorageOrderByElement>())
+                child = elem->children.front();
+        }
+    }
+
     auto tuple_function = make_intrusive<ASTFunction>();
     tuple_function->name = "tuple";
     tuple_function->arguments = std::move(order_by);
+    tuple_function->children.push_back(tuple_function->arguments);
 
     node = std::move(tuple_function);
     return true;
@@ -577,6 +599,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_sample_by(Keyword::SAMPLE_BY);
     ParserKeyword s_ttl(Keyword::TTL);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_unique_key(Keyword::UNIQUE_KEY);
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
@@ -591,6 +614,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr order_by;
     ASTPtr sample_by;
     ASTPtr ttl_table;
+    ASTPtr unique_key;
     ASTPtr settings;
 
     bool storage_like = false;
@@ -630,6 +654,16 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!order_by && s_order_by.ignore(pos, expected))
         {
             if (order_by_p.parse(pos, order_by, expected))
+            {
+                storage_like = true;
+                continue;
+            }
+            return false;
+        }
+
+        if (!unique_key && s_unique_key.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, unique_key, expected))
             {
                 storage_like = true;
                 continue;
@@ -695,6 +729,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->ttl_table, ttl_table);
+    storage->set(storage->unique_key, unique_key);
     storage->set(storage->settings, settings);
 
     node = storage;
@@ -821,6 +856,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->table = table_id->getTable();
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+        query->has_uuid_clause = table_id->has_uuid;
+        query->has_inner_uuid_clause = to_inner_uuid != nullptr;
         query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
@@ -979,6 +1016,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
+    query->has_inner_uuid_clause = to_inner_uuid != nullptr;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1002,7 +1041,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->set(query->storage->primary_key, query->columns_list->primary_key->ptr());
-
+        /// Remove from columns_list: ASTColumns::formatImpl does not output primary_key,
+        /// so keeping it causes AST inconsistency after format+reparse.
+        query->columns_list->reset(query->columns_list->primary_key);
+        /// Normalize children order: `set()` always appends, but the canonical order
+        /// (used by clone/format) expects primary_key before order_by.
+        query->storage->normalizeChildrenOrder();
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
@@ -1014,6 +1058,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->set(query->storage->primary_key, query->columns_list->primary_key_from_columns->ptr());
+        /// Remove from columns_list for the same reason as above.
+        query->columns_list->reset(query->columns_list->primary_key_from_columns);
+        query->storage->normalizeChildrenOrder();
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
@@ -1225,6 +1272,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
+    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1424,6 +1473,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!name_p.parse(pos, database, expected))
         return false;
 
+    bool has_uuid_clause = false;
     if (s_uuid.ignore(pos, expected))
     {
         ParserStringLiteral uuid_p;
@@ -1431,6 +1481,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         if (!uuid_p.parse(pos, ast_uuid, expected))
             return false;
         uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        has_uuid_clause = true;
     }
 
     if (s_on.ignore(pos, expected))
@@ -1453,6 +1504,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     query->uuid = uuid;
     query->has_uuid = uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = has_uuid_clause;
     query->cluster = cluster_str;
     query->database = database;
 
@@ -1533,7 +1585,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     sql_security_p.parse(pos, sql_security, expected);
 
-    if (!replace_view && s_materialized.ignore(pos, expected))
+    if (s_materialized.ignore(pos, expected))
     {
         is_materialized_view = true;
     }
@@ -1710,6 +1762,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
+    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1736,6 +1790,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
         storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key->ptr());
+        /// Remove from columns_list: ASTColumns::formatImpl does not output primary_key,
+        /// so keeping it causes AST inconsistency after format+reparse.
+        query->columns_list->reset(query->columns_list->primary_key);
+        storage_ref.normalizeChildrenOrder();
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
@@ -1747,6 +1805,9 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
         storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key_from_columns->ptr());
+        /// Remove from columns_list for the same reason as above.
+        query->columns_list->reset(query->columns_list->primary_key_from_columns);
+        storage_ref.normalizeChildrenOrder();
     }
 
     boost::intrusive_ptr<ASTViewTargets> targets;
@@ -1936,6 +1997,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
     query->uuid = dict_id->uuid;
+    query->has_uuid = dict_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = dict_id->has_uuid;
 
     if (query->database)
         query->children.push_back(query->database);

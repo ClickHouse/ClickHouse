@@ -1,13 +1,11 @@
 #pragma once
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -48,7 +46,7 @@ struct FunctionRunningDifferenceName<false>
   * So, result of function depends on partition of data to columns and on order of data in columns.
   */
 template <bool is_first_line_zero>
-class FunctionRunningDifferenceImpl : public IFunction
+class FunctionRunningDifferenceImpl final : public IFunction
 {
 private:
     /// It is possible to track value from previous columns, to calculate continuously across all columns. Not implemented.

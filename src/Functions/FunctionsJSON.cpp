@@ -7,6 +7,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
 
@@ -126,7 +127,7 @@ public:
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
             size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -251,52 +252,35 @@ public:
             if (path.empty())
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
-            /// Extract literal subcolumn (json.path returns the scalar value at that path).
-            auto literal_type = data_type_object.getSubcolumnType(path);
-            auto literal_subcolumn = data_type_object.getSubcolumn(path, object_column);
+            /// Use combined `@` subcolumn that merges literal value and sub-object.
+            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
+            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
+            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
+            auto merged_type = data_type_object.getSubcolumnType(combined_name);
+            auto merged = data_type_object.getSubcolumn(combined_name, object_column);
 
-            ColumnPtr merged;
-            DataTypePtr merged_type;
+            /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
+            /// cast the extracted value to UInt8 and silently return the value itself.
+            constexpr bool is_has = std::string_view(TName::name) == std::string_view("JSONHas");
 
-            /// When the path has a type hint (literal_type is not Dynamic), the subobject may not be convertible to that type.
-            /// For typed paths we skip the subobject merge and use only the literal subcolumn.
-            if (literal_type && !isDynamic(literal_type))
+            if constexpr (is_has)
             {
-                merged = literal_subcolumn;
-                merged_type = literal_type;
+                auto result = ColumnVector<UInt8>::create(input_rows_count);
+                auto & data = result->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    data[i] = merged->isDefaultAt(i) ? 0 : 1;
+                return result;
             }
-            else
-            {
-                /// Extract subobject subcolumn (json.^`path` returns nested object at that path).
-                String sub_object_name = "^`" + path + "`";
-                auto sub_object_type = data_type_object.getSubcolumnType(sub_object_name);
-                ColumnPtr sub_object_subcolumn = data_type_object.getSubcolumn(sub_object_name, object_column);
 
-                /// Merge literal and subobject subcolumns (same logic as `getObjectElement' in tupleElement.cpp):
-                /// For each row: prefer literal (scalar) value, if absent, use subobject (nested JSON).
-                if (sub_object_subcolumn->getNumberOfDefaultRows() == sub_object_subcolumn->size())
-                {
-                    /// No nested subobject at this path (only literal exists).
-                    merged = literal_subcolumn;
-                    merged_type = literal_type;
-                }
-                else
-                {
-                    /// Both exist: merge row-by-row.
-                    auto casted_sub_object = castColumn({sub_object_subcolumn, sub_object_type, ""}, literal_type);
-                    auto result_col = literal_type->createColumn();
-                    for (size_t i = 0; i < input_rows_count; ++i)
-                    {
-                        if (!literal_subcolumn->isDefaultAt(i))
-                            result_col->insertFrom(*literal_subcolumn, i);
-                        else if (!sub_object_subcolumn->isDefaultAt(i))
-                            result_col->insertFrom(*casted_sub_object, i);
-                        else
-                            result_col->insertDefault();
-                    }
-                    merged = std::move(result_col);
-                    merged_type = literal_type;
-                }
+            /// JSONExtractBool must return UInt8 {0,1} with boolean semantics. Cast to `Bool` instead
+            /// of `UInt8` so that `convertToBool` normalizes any non-zero numeric value to 1.
+            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
+
+            if constexpr (is_extract_bool)
+            {
+                auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, DataTypeFactory::instance().get("Bool"));
+                return removeNullable(casted);
             }
 
             /// For JSONExtractRaw: serialize each value as a JSON string
@@ -352,13 +336,13 @@ private:
         String key;
     };
 
-    static std::vector<FunctionJSONHelpers::Move> prepareMoves(
+    static VectorWithMemoryTracking<FunctionJSONHelpers::Move> prepareMoves(
         const char * function_name,
         const ColumnsWithTypeAndName & columns,
         size_t first_index_argument,
         size_t num_index_arguments)
     {
-        std::vector<Move> moves;
+        VectorWithMemoryTracking<Move> moves;
         moves.reserve(num_index_arguments);
         for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
         {
@@ -392,7 +376,7 @@ private:
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser, bool case_insensitive = false>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
-                             const typename JSONParser::Element & document, const std::vector<Move> & moves,
+                             const typename JSONParser::Element & document, const VectorWithMemoryTracking<Move> & moves,
                              typename JSONParser::Element & element, std::string_view & last_key)
     {
         typename JSONParser::Element res_element = document;
@@ -548,7 +532,7 @@ constexpr bool functionForcesTheReturnType()
 }
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class ExecutableFunctionJSON : public IExecutableFunction
+class ExecutableFunctionJSON final : public IExecutableFunction
 {
 
 public:
@@ -636,7 +620,7 @@ private:
 
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class FunctionBaseFunctionJSON : public IFunctionBase
+class FunctionBaseFunctionJSON final : public IFunctionBase
 {
 public:
     explicit FunctionBaseFunctionJSON(
@@ -686,7 +670,7 @@ private:
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver : public IFunctionOverloadResolver
+class JSONOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
@@ -884,7 +868,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        static const std::vector<std::pair<String, Int8>> values = {
+        static const DataTypeEnum<Int8>::Values values = {
             {"Array", '['},
             {"Object", '{'},
             {"String", '"'},
@@ -959,7 +943,7 @@ public:
     {
         NumberType value;
 
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/false, /*allow_type_conversion=*/true, /*no_int_truncation_from_double=*/false, error))
             return false;
         auto & col_vec = assert_cast<ColumnVector<NumberType> &>(dest);
         col_vec.insertValue(value);

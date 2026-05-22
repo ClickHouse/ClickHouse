@@ -1,4 +1,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
 #include <base/hex.h>
@@ -23,6 +25,7 @@
 
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
+#include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
@@ -37,7 +40,6 @@
 #include <fmt/ranges.h>
 #include <Poco/String.h>
 #include <Common/transformEndianness.h>
-#include <Columns/ColumnString.h>
 #include <base/extended_types.h>
 #include <base/arithmeticOverflow.h>
 
@@ -85,13 +87,15 @@ UserDefinedWebAssemblyFunction::UserDefinedWebAssemblyFunction(
     const Strings & argument_names_,
     const DataTypes & arguments_,
     const DataTypePtr & result_type_,
-    WebAssemblyFunctionSettings function_settings_)
+    WebAssemblyFunctionSettings function_settings_,
+    bool is_deterministic_)
     : function_name(function_name_)
     , argument_names(argument_names_)
     , arguments(arguments_)
     , result_type(result_type_)
     , wasm_module(wasm_module_)
     , settings(std::move(function_settings_))
+    , is_deterministic(is_deterministic_)
 {
 }
 
@@ -135,25 +139,10 @@ public:
     }
 
 
-    template <typename Callable, typename... Args>
-    static bool tryExecuteForColumnTypes(Callable && callable, Args &&... args)
-    {
-        return (
-            callable.template operator()<Int32>(args...)
-            || callable.template operator()<UInt32>(args...)
-            || callable.template operator()<Int64>(args...)
-            || callable.template operator()<UInt64>(args...)
-            || callable.template operator()<Float32>(args...)
-            || callable.template operator()<Float64>(args...)
-            || callable.template operator()<Int128>(args...)
-            || callable.template operator()<UInt128>(args...)
-        );
-    }
-
     static void checkDataTypeWithWasmValKind(const IDataType * type, WasmValKind kind)
     {
-        bool is_data_type_compatible = tryExecuteForColumnTypes(
-            [type, kind]<typename T>() { return typeid_cast<const DataTypeNumber<T> *>(type) && WasmValTypeToKind<T>::value == kind; });
+        bool is_data_type_compatible = tryExecuteForNumericTypes(
+            [type, kind]<typename T>() { return typeid_cast<const DataTypeNumber<T> *>(type) && wasmKindFor<T>() == kind; });
         if (!is_data_type_compatible)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -171,36 +160,36 @@ public:
         {
             if (auto * column_typed = checkAndGetColumn<ColumnVector<T>>(column))
             {
-                val = std::bit_cast<typename NativeToWasmType<T>::Type>(column_typed->getElement(row_idx));
+                val = static_cast<typename WasmStorageType<T>::Type>(column_typed->getElement(row_idx));
                 return true;
             }
             return false;
         };
 
         MutableColumnPtr result_column = result_type->createColumn();
-        auto invoke_and_set_column = [&]<typename T>(const std::vector<WasmVal> & args)
+        auto invoke_and_set_column = [&]<typename T>(const VectorWithMemoryTracking<WasmVal> & args)
         {
             if (auto * column_typed = typeid_cast<ColumnVector<T> *>(result_column.get()))
             {
-                auto value = compartment->invoke<typename NativeToWasmType<T>::Type>(function_name, args, stop_token);
-                column_typed->insertValue(std::bit_cast<T>(value));
+                auto value = compartment->invoke<typename WasmStorageType<T>::Type>(function_name, args, stop_token);
+                column_typed->insertValue(static_cast<T>(value));
                 return true;
             }
             return false;
         };
 
         size_t num_columns = block.columns();
-        std::vector<WasmVal> wasm_args(num_columns);
+        VectorWithMemoryTracking<WasmVal> wasm_args(num_columns);
         for (size_t row_idx = 0; row_idx < num_rows; ++row_idx)
         {
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
             {
                 const auto & column = block.getByPosition(col_idx);
-                if (!tryExecuteForColumnTypes(get_column_element, column.column.get(), row_idx, wasm_args[col_idx]))
+                if (!tryExecuteForNumericTypes(get_column_element, column.column.get(), row_idx, wasm_args[col_idx]))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert {} to WebAssembly type", column.type->getName());
             }
 
-            if (!tryExecuteForColumnTypes(invoke_and_set_column, wasm_args))
+            if (!tryExecuteForNumericTypes(invoke_and_set_column, wasm_args))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot get value of type {} from result of WebAssembly function {}",
@@ -227,8 +216,8 @@ public:
     constexpr static std::string_view allocate_function_name = "clickhouse_create_buffer";
     constexpr static std::string_view deallocate_function_name = "clickhouse_destroy_buffer";
 
-    static WasmFunctionDeclaration allocateFunctionDeclaration() { return {allocate_function_name, {WasmValKind::I32}, WasmValKind::I32}; }
-    static WasmFunctionDeclaration deallocateFunctionDeclaration() { return {deallocate_function_name, {WasmValKind::I32}, std::nullopt}; }
+    static WasmFunctionDeclaration allocateFunctionDeclaration() { return {"", allocate_function_name, {WasmValKind::I32}, WasmValKind::I32}; }
+    static WasmFunctionDeclaration deallocateFunctionDeclaration() { return {"", deallocate_function_name, {WasmValKind::I32}, std::nullopt}; }
 
     explicit WasmMemoryManagerV01(WasmCompartment * compartment_, StopToken stop_token_)
         : compartment(compartment_)
@@ -246,17 +235,9 @@ public:
 
         auto raw_buffer_span = compartment->getMemory(handle, sizeof(WasmBuffer));
         const auto * raw_buffer_ptr = raw_buffer_span.data();
-        WasmBuffer buffer;
-        if (reinterpret_cast<uintptr_t>(raw_buffer_ptr) % alignof(WasmBuffer) != 0)
-        {
-            std::memcpy(&buffer, raw_buffer_ptr, sizeof(WasmBuffer));
-        }
-        else
-        {
-            buffer = *reinterpret_cast<const WasmBuffer *>(raw_buffer_ptr);
-        }
-
-        return compartment->getMemory(buffer.ptr, buffer.size);
+        auto ptr = loadFromWasmMemory<WasmPtr>(raw_buffer_ptr);
+        auto size = loadFromWasmMemory<WasmSizeT>(raw_buffer_ptr + sizeof(WasmPtr));
+        return compartment->getMemory(ptr, size);
     }
 
 private:
@@ -280,7 +261,7 @@ public:
 
     void checkSignature() const
     {
-        checkFunction(WasmFunctionDeclaration(function_name, {WasmValKind::I32, WasmValKind::I32}, WasmValKind::I32));
+        checkFunction(WasmFunctionDeclaration("", function_name, {WasmValKind::I32, WasmValKind::I32}, WasmValKind::I32));
         checkFunction(WasmMemoryManagerV01::allocateFunctionDeclaration());
         checkFunction(WasmMemoryManagerV01::deallocateFunctionDeclaration());
     }
@@ -330,16 +311,6 @@ public:
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
             StringWithMemoryTracking input_data;
-
-            std::vector<const ColumnString *> string_columns;
-            for (const auto & col : block)
-            {
-                const auto * string_col = checkAndGetColumn<ColumnString>(col.column.get());
-                if (string_col && col.type->equals(DataTypeString()))
-                    string_columns.push_back(string_col);
-                else
-                    string_columns.clear();
-            }
 
             {
                 WriteBufferFromStringWithMemoryTracking buf(input_data);
@@ -394,16 +365,20 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
     const DataTypes & arguments_,
     const DataTypePtr & result_type_,
     WasmAbiVersion abi_type,
-    WebAssemblyFunctionSettings function_settings)
+    WebAssemblyFunctionSettings function_settings,
+    bool is_deterministic_)
 {
     switch (abi_type)
     {
         case WasmAbiVersion::RowDirect:
             return std::make_unique<UserDefinedWebAssemblyFunctionSimple>(
-                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings));
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
         case WasmAbiVersion::BufferedV1:
             return std::make_unique<UserDefinedWebAssemblyFunctionBufferedV1>(
-                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings));
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
+        case WasmAbiVersion::AssemblyScript:
+            return createUserDefinedWebAssemblyFunctionAssemblyScript(
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -417,6 +392,8 @@ String toString(WasmAbiVersion abi_type)
             return "ROW_DIRECT";
         case WasmAbiVersion::BufferedV1:
             return "BUFFERED_V1";
+        case WasmAbiVersion::AssemblyScript:
+            return "ASSEMBLYSCRIPT";
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -424,7 +401,7 @@ String toString(WasmAbiVersion abi_type)
 
 WasmAbiVersion getWasmAbiFromString(const String & str)
 {
-    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1})
+    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 
@@ -439,10 +416,14 @@ public:
     using ObjectPtr = Base::ObjectPtr;
 
     explicit WasmCompartmentPool(
-        unsigned limit, std::shared_ptr<WebAssembly::WasmModule> wasm_module_, WebAssembly::WasmModule::Config module_cfg_)
+        unsigned limit,
+        std::shared_ptr<WebAssembly::WasmModule> wasm_module_,
+        WebAssembly::WasmModule::Config module_cfg_,
+        StopToken stop_token_)
         : Base(limit, getLogger("WasmCompartmentPool"))
         , wasm_module(std::move(wasm_module_))
         , module_cfg(std::move(module_cfg_))
+        , stop_token(std::move(stop_token_))
     {
         LOG_DEBUG(log, "WasmCompartmentPool created with limit: {}", limit);
     }
@@ -453,12 +434,15 @@ protected:
     ObjectPtr allocObject() override
     {
         LOG_DEBUG(log, "Allocating new WasmCompartment");
-        return wasm_module->instantiate(module_cfg);
+        return wasm_module->instantiate(module_cfg, stop_token);
     }
 
 private:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
     WebAssembly::WasmModule::Config module_cfg;
+
+    std::mutex acquire_mutex;
+    StopToken stop_token;
 };
 
 
@@ -475,7 +459,7 @@ WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
     return cfg;
 }
 
-class FunctionUserDefinedWasm : public IFunction
+class FunctionUserDefinedWasm final : public IFunction
 {
 public:
     FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_, ContextPtr context_)
@@ -484,16 +468,18 @@ public:
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
         , context(std::move(context_))
+        , interrupt_source()
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
               wasm_module,
-              getWasmModuleConfig(context))
+              getWasmModuleConfig(context),
+              interrupt_source.get_token())
     {
     }
 
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
@@ -512,6 +498,12 @@ public:
             if (arguments[i]->equals(*expected_arguments[i]))
                 continue;
 
+            /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
+            auto actual_kind = wasmKindForDataType(arguments[i].get());
+            auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
+            if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
+                continue;
+
             auto get_type_names = std::views::transform([](const auto & arg) { return arg->getName(); });
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -522,21 +514,41 @@ public:
         return user_defined_function->getResultType();
     }
 
-    bool useDefaultImplementationForConstants() const override { return false; }
+    /// When the function is deterministic, returning true here causes the framework to
+    /// call executeImpl with a single-row block and wrap the result in ColumnConst.
+    /// That ColumnConst is then recognised by the Analyzer's constant-folding check
+    /// (isColumnConst(*column) in resolveFunction.cpp). Without this, executeImpl
+    /// returns a plain ColumnVector which the Analyzer does not fold.
+    bool useDefaultImplementationForConstants() const override { return user_defined_function->getIsDeterministic(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
 
-    bool isSuitableForConstantFolding() const override { return false; }
+    bool isSuitableForConstantFolding() const override { return user_defined_function->getIsDeterministic(); }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto compartment_entry = compartment_pool.acquire();
         auto * compartment_ptr = &(*compartment_entry);
-        return execute(compartment_ptr, arguments, input_rows_count);
+        try
+        {
+            return execute(compartment_ptr, arguments, input_rows_count);
+        }
+        catch (...)
+        {
+            /// A trapped/faulted compartment may have leftovers, half-allocated buffers,
+            /// or otherwise inconsistent guest state. Drop it so the pool recreates it.
+            compartment_entry.expire();
+            throw;
+        }
     }
 
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Deterministic functions must actually run during dry-run so the Analyzer can constant-fold them.
+        /// Non-deterministic functions return defaults to avoid WASM execution at query-analysis time.
+        if (user_defined_function->getIsDeterministic())
+            return executeImpl(arguments, result_type, input_rows_count);
+
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
         result_column->insertManyDefaults(input_rows_count);
         return result_column;
@@ -579,12 +591,19 @@ private:
 
     Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
     {
+        const auto & declared_arguments = user_defined_function->getArguments();
         Block arguments_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             ColumnPtr column = arguments[i].column->convertToFullColumnIfConst()->cut(start_idx, length);
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
-            arguments_block.insert(ColumnWithTypeAndName(column, arguments[i].type, column_name));
+            /// Cast to the declared type so serialization uses the correct width.
+            /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
+            /// as 1 byte by RowBinary instead of 4, causing the WASM module to read garbage.
+            const DataTypePtr & declared_type = declared_arguments[i];
+            if (!arguments[i].type->equals(*declared_type))
+                column = castColumn(ColumnWithTypeAndName(column, arguments[i].type, column_name), declared_type);
+            arguments_block.insert(ColumnWithTypeAndName(column, declared_type, column_name));
         }
         return arguments_block;
     }
@@ -636,14 +655,15 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
         function_def.argument_types,
         function_def.result_type,
         function_def.abi_version,
-        function_def.settings);
+        function_def.settings,
+        function_def.is_deterministic);
 
     std::unique_lock lock(registry_mutex);
-    registry[function_def.function_name] = wasm_func;
+    registry[function_def.function_name] = RegistryEntry{wasm_func, create_function_query};
     return wasm_func;
 }
 
-bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name)
+bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) const
 {
     std::shared_lock lock(registry_mutex);
     return registry.contains(function_name);
@@ -663,7 +683,22 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
                 function_name,
                 fmt::join(registry | std::views::transform([](const auto & pair) { return pair.first; }), ", "));
         }
-        wasm_func = it->second;
+        wasm_func = it->second.function;
+    }
+
+    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
+}
+
+FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::tryGet(const String & function_name, ContextPtr context)
+{
+    std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;
+    {
+        std::shared_lock lock(registry_mutex);
+        auto it = registry.find(function_name);
+        if (it == registry.end())
+            return nullptr;
+        wasm_func = it->second.function;
     }
 
     auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
@@ -674,6 +709,16 @@ bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function
 {
     std::unique_lock lock(registry_mutex);
     return registry.erase(function_name) > 0;
+}
+
+VectorWithMemoryTracking<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> UserDefinedWebAssemblyFunctionFactory::getAllFunctions() const
+{
+    std::shared_lock lock(registry_mutex);
+    VectorWithMemoryTracking<RegisteredFunction> result;
+    result.reserve(registry.size());
+    for (const auto & [sql_name, entry] : registry)
+        result.push_back(RegisteredFunction{sql_name, entry.function, entry.create_query});
+    return result;
 }
 
 UserDefinedWebAssemblyFunctionFactory & UserDefinedWebAssemblyFunctionFactory::instance()
@@ -715,17 +760,17 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
                 },
                 Field(default_value));
         }
-        std::unordered_set<String> values;
+        UnorderedSetWithMemoryTracking<String> values;
     };
 
-    const std::unordered_map<String, SettingDefinition> settings_def = {
+    const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
     };
 
-    std::vector<String> getAllRegisteredNames() const override
+    Strings getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        Strings result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

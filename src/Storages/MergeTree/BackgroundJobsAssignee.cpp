@@ -57,7 +57,7 @@ void BackgroundJobsAssignee::postpone()
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
     size_t next_time_to_execute = static_cast<size_t>(
-        1000 * (std::min(
+        1000 * (data.getBiasBackoffSeconds() + std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
             sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
         + random_addition));
@@ -125,10 +125,19 @@ void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
 
 void BackgroundJobsAssignee::finish()
 {
-    /// No lock here, because scheduled tasks could call trigger method
-    if (holder)
+    /// Move the holder to a local variable under the lock, then release the lock
+    /// before calling deactivate(). We cannot hold holder_mutex during deactivate()
+    /// because it waits for the background task (threadFunc) to finish, and threadFunc
+    /// calls trigger()/postpone() which also lock holder_mutex — that would deadlock.
+    BackgroundSchedulePoolTaskHolder local_holder;
     {
-        holder->deactivate();
+        std::lock_guard lock(holder_mutex);
+        local_holder = std::move(holder);
+    }
+
+    if (local_holder)
+    {
+        local_holder->deactivate();
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);

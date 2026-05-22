@@ -168,8 +168,10 @@ public:
                 }
                 else
                 {
-                    // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+                    // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+                    if (constant_node.hasSourceExpression()
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -520,6 +522,21 @@ public:
         return node_name_to_node.contains(node_name);
     }
 
+    /// Add a DAG ALIAS node so that `alias_name` resolves to `child`.
+    /// Used when a table column inside a lambda body was given a disambiguated
+    /// name at the lambda scope; other scopes still have the column under its
+    /// original name and need this alias for expression building and capture.
+    const ActionsDAG::Node * addAliasIfNecessary(const std::string & alias_name, const ActionsDAG::Node * child)
+    {
+        auto it = node_name_to_node.find(alias_name);
+        if (it != node_name_to_node.end())
+            return it->second;
+
+        const auto * node = &actions_dag.addAlias(*child, alias_name);
+        node_name_to_node[node->result_name] = node;
+        return node;
+    }
+
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
     {
         const auto * node = tryGetNode(node_name);
@@ -804,6 +821,75 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         {
             return {column_node_name, Levels(i)};
         }
+
+        /// When a table column's name collides with a lambda argument name (possible
+        /// when use_column_identifier_as_action_node_name = false, e.g. in PREWHERE),
+        /// the INPUT "x" added above is indistinguishable from the lambda argument in
+        /// the capture loop, so the table column would never be captured.  Add a second
+        /// INPUT with a disambiguated name at the lambda scope, and register aliases at
+        /// every outer scope so the capture loop can find the node by that name.
+        ///
+        /// We use the column identifier (e.g. `__table1.x`) as the disambiguated name.
+        /// It is deterministic (same for the same query) and guaranteed to differ from
+        /// any lambda argument name because `createUniqueAliasesIfNecessary` assigns
+        /// a unique alias like `__table1` to every table expression before the planner runs.
+        const auto & scope = actions_stack[i].getScopeNode();
+        if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+        {
+            const auto & lambda_node = scope->as<LambdaNode &>();
+            const auto & arg_names = lambda_node.getArgumentNames();
+            if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
+            {
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
+
+                actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+
+                /// Inner scopes (above i) were already visited by the main loop
+                /// and have "x" under its original name.  Add a DAG ALIAS node so
+                /// the expression builder and removeUnusedActions can find a node
+                /// with result_name equal to the disambiguated name.
+                for (Int64 k = actions_stack_size; k > i; --k)
+                    actions_stack[k].addAliasIfNecessary(disambiguated, actions_stack[k].getNodeOrThrow(column_node_name));
+
+                /// Outer scopes (below i) haven't been visited yet.
+                /// Add the column under its original name and register an alias.
+                ///
+                /// However, if an outer scope is also a lambda whose argument has
+                /// the same name, addInputColumnIfNecessary would return the lambda
+                /// argument node (already registered) instead of a new table-column
+                /// INPUT. Aliasing disambiguated to the lambda argument would be
+                /// incorrect: the inner lambda would capture the outer lambda's
+                /// argument instead of the table column. In that case, add
+                /// disambiguated as a direct INPUT so the capture mechanism provides
+                /// its value from the parent scope.
+                for (Int64 j = i - 1; j >= 0; --j)
+                {
+                    bool outer_lambda_shadows = false;
+                    const auto & outer_scope = actions_stack[j].getScopeNode();
+                    if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    {
+                        const auto & outer_lambda = outer_scope->as<LambdaNode &>();
+                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
+                        outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
+                    }
+
+                    if (outer_lambda_shadows)
+                    {
+                        /// This scope has a lambda argument with the same name.
+                        /// Add disambiguated as a direct INPUT; it will be captured
+                        /// from the parent scope where the table column is available.
+                        actions_stack[j].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+                    }
+                    else
+                    {
+                        const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+                        actions_stack[j].addAliasIfNecessary(disambiguated, input_node);
+                    }
+                }
+
+                return {disambiguated, Levels(0)};
+            }
+        }
     }
 
     return {column_node_name, Levels(0)};
@@ -862,8 +948,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
         }
 
-        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+        // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression()
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
         {
             if (constant_node.receivedFromInitiatorServer())
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -1241,6 +1329,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     {
         auto & actions_stack_node = actions_stack[i];
         actions_stack_node.addInputColumnIfNecessary(correlated_subquery_name, query_node.getResultType());
+    }
+
+    /// The same correlated subquery can be referenced multiple times in the projection,
+    /// for example when `untuple` expands into multiple `tupleElement` calls sharing
+    /// the same argument.
+    for (const auto & existing : correlated_subtrees.subqueries)
+    {
+        if (existing.action_node_name == correlated_subquery_name)
+            return {correlated_subquery_name, levels};
     }
 
     const auto & correlated_columns = query_node.getCorrelatedColumns().getNodes();

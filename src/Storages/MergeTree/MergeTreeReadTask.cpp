@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeReaderIndex.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
@@ -90,8 +92,8 @@ MergeTreeReadTask::MergeTreeReadTask(
         {
             chassert(updater);
             const auto & part_columns = info->data_part->getColumns();
-            const auto & column_sizes = info->data_part->getColumnSizes();
-            updater->recordInputColumns(columns, part_columns, column_sizes, read_bytes, should_continue_sampling);
+            auto column_sizes = info->data_part->getColumnSizes();
+            updater->recordInputColumns(columns, part_columns, *column_sizes, read_bytes, should_continue_sampling);
         };
     }
 }
@@ -178,15 +180,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     {
         if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step))
         {
-            /// Do not skip marks for queries with FINAL in the reader,
-            /// because it may affect the result of the merging algorithm.
-            bool can_skip_marks = !index_read_task->is_final;
-
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
                 index_read_task->index,
                 pre_columns_per_step,
-                can_skip_marks));
+                read_info->read_hints.index_granules));
         }
         else
         {
@@ -243,6 +241,15 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     size_t num_readers = prewhere_actions.steps.size() + task_readers.prewhere.size() + 1;
     range_readers.reserve(num_readers);
 
+    /// Compute a combined flag: true only if ALL readers in the chain support incomplete granules.
+    /// This ensures that the first reader in the chain (which decides batch boundaries) does not
+    /// create mid-mark boundaries when a later reader cannot handle them.
+    bool can_read_incomplete_granules = task_readers.main->canReadIncompleteGranules()
+        && std::ranges::all_of(task_readers.prewhere, [](const auto & reader)
+        {
+            return reader->canReadIncompleteGranules();
+        });
+
     if (task_readers.prepared_index)
     {
         range_readers.emplace_back(
@@ -250,7 +257,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             Block{},
             /*prewhere_info_=*/ nullptr,
             read_steps_performance_counters.getCounterForIndexStep(),
-            /*main_reader_=*/ false);
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
     }
 
     size_t counter_idx = 0;
@@ -261,7 +269,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
             read_steps_performance_counters.getCountersForStep(counter_idx++),
-            /*main_reader_=*/ false);
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
     }
 
     if (!task_readers.main->getColumns().empty())
@@ -271,7 +280,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
             read_steps_performance_counters.getCountersForStep(counter_idx),
-            /*main_reader_=*/ true);
+            /*main_reader_=*/ true,
+            can_read_incomplete_granules);
     }
 
     return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
@@ -313,18 +323,23 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     if (lazy_materializing_rows)
     {
         part_rows = &lazy_materializing_rows->rows_in_parts[getInfo().part_index_in_query];
-        // std::cerr << "Initialized index for part " << getInfo().part_index_in_query << " with " << part_rows->size() << " rows\n";
+    }
+
+    /// Pass pre-computed text index granules to prewhere readers.
+    /// The granules were captured during filterMarksUsingIndex in MergeTreeSkipIndexReader::read.
+    if (index_read_result && index_read_result->skip_index_read_result)
+    {
+        const auto & granules = index_read_result->skip_index_read_result->index_granules;
+        for (auto & reader : readers.prewhere)
+        {
+            if (auto * text_reader = dynamic_cast<MergeTreeReaderTextIndex *>(reader.get()))
+                text_reader->setPrecomputedGranule(granules);
+        }
     }
 
     if (index_read_result || lazy_materializing_rows)
     {
-        bool can_read_incomplete_granules = readers.main->canReadIncompleteGranules()
-            && std::ranges::all_of(readers.prewhere, [](const auto & reader)
-            {
-                return reader->canReadIncompleteGranules();
-            });
-
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows, can_read_incomplete_granules);
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
     }
 
 }

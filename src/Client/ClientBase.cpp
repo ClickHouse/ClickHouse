@@ -58,6 +58,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
@@ -102,6 +103,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <Common/config_version.h>
 #include <Common/XDGBaseDirectories.h>
@@ -121,6 +123,7 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
+    extern const SettingsBool send_table_structure_on_insert_with_inline_data;
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
@@ -136,6 +139,8 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
@@ -408,6 +413,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     else if (dialect == Dialect::promql)
         parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+    else if (dialect == Dialect::polyglot)
+        parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
     else
         parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -453,7 +460,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
         output_stream << std::endl;
 #if USE_REPLXX
-        output_stream << highlighted(res_buf.str(), *client_context);
+        output_stream << highlighted(res_buf.str(), *client_context, rainbow_parentheses);
 #else
         output_stream << res_buf.str();
 #endif
@@ -792,6 +799,12 @@ try
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block, format_settings);
 
         output_format->setAutoFlush();
+
+        /// Replay progress that was accumulated before the output format was created
+        /// (e.g. from scalar subqueries evaluated during query analysis on the server).
+        auto replayed = pending_progress.fetchAndResetPiecewiseAtomically();
+        if (replayed.read_rows || replayed.read_bytes)
+            output_format->onProgress(replayed);
 
         if ((!select_into_file || select_into_file_and_stdout)
             && stdout_is_a_tty
@@ -1221,11 +1234,16 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
             out_file = out_file_node.value.safeGet<std::string>();
 
-            if (query_with_output->isOutfileTruncate())
+            if (query_with_output->isOutfileTruncate() && fs::is_regular_file(out_file))
             {
                 out_file_if_truncated = out_file;
                 fs::path out_file_path(out_file);
                 out_file = (out_file_path.parent_path() / fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file_path.filename().string())).string();
+
+                /// Update the AST literal so that initOutputFormat writes to the temp file
+                /// and performAtomicRename reads the temp path from the AST.
+                auto & out_file_node_mutable = query_with_output->out_file->as<ASTLiteral &>();
+                out_file_node_mutable.value = out_file;
             }
 
             if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
@@ -1313,6 +1331,11 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+            /// Allow cancellation during query analysis (e.g. scalar subqueries).
+            /// For TCP connections this is handled by receivePacketsExpectCancel;
+            /// for local connections this callback checks the signal handler flag.
+            connection->setCancelCallback([this]() { return query_interrupt_handler.cancelled(); });
+
             try
             {
                 connection->sendQuery(
@@ -1332,8 +1355,8 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
             catch (const NetException &)
             {
-                // Clean up temporary file if it exists
-                cleanupTempFile(parsed_query, out_file);
+                if (!out_file_if_truncated.empty())
+                    cleanupTempFile(parsed_query, out_file);
 
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
@@ -1342,15 +1365,20 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
-            // After successful query execution, perform atomic rename for TRUNCATE mode
-            performAtomicRename(parsed_query, out_file_if_truncated);
+            if (!out_file_if_truncated.empty())
+            {
+                if (have_error)
+                    cleanupTempFile(parsed_query, out_file);
+                else
+                    performAtomicRename(parsed_query, out_file_if_truncated);
+            }
 
             break;
         }
         catch (const Exception & e)
         {
-            // Clean up temporary file if it exists
-            cleanupTempFile(parsed_query, out_file);
+            if (!out_file_if_truncated.empty())
+                cleanupTempFile(parsed_query, out_file);
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
@@ -1536,6 +1564,8 @@ void ClientBase::onProgress(const Progress & value)
 
     if (output_format)
         output_format->onProgress(value);
+    else
+        pending_progress.incrementPiecewiseAtomically(value);
 
     if (need_render_progress && tty_buf)
     {
@@ -1638,6 +1668,9 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].memory_usage = value;
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
                 thread_times[host_name].peak_memory_usage = value;
+            /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
+            else if (event_name == "TemporaryDataOnDiskUsage")
+                thread_times[host_name].temp_data_on_disk_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
@@ -1714,6 +1747,7 @@ void ClientBase::resetOutput()
     }
 
     output_format.reset();
+    pending_progress.reset();
 
     logs_out_stream.reset();
 
@@ -2003,7 +2037,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         try
         {
-            auto metadata = storage->getInMemoryMetadataPtr();
+            auto metadata = storage->getInMemoryMetadataPtr(client_context, false);
             QueryPlan plan;
             storage->read(
                 plan,
@@ -2369,8 +2403,16 @@ void ClientBase::processParsedSingleQuery(
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
+        /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
+        /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
+        /// on the client side: both paths send the data inline with the query, and the explicit user choice
+        /// determines which client-side flow (and rejection message) applies.
+        bool is_inline_insert_data = (inline_insert_data || !client_context->getSettingsRef()[Setting::send_table_structure_on_insert_with_inline_data])
+            && insert && insert->hasInlinedData() && !insert->select;
+
         /// Update async_insert after applying settings from server
-        is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert] && insert && insert->hasInlinedData();
+        is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert]
+            && insert && insert->hasInlinedData() && !is_inline_insert_data;
 
         if (is_async_insert_with_inlined_data)
         {
@@ -2382,18 +2424,28 @@ void ClientBase::processParsedSingleQuery(
                     "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
         }
 
+        if (is_inline_insert_data)
+        {
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            bool have_external_data = have_data_in_stdin || insert->infile;
+
+            if (have_external_data)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Processing inline insert data with both inlined and external data (from stdin or infile) is not supported");
+        }
+
         String query;
         /// An INSERT query may have the data that follows query text.
         /// Send part of the query without data, because data will be sent separately.
-        /// But for asynchronous inserts we don't extract data, because it's needed
-        /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
-        if (insert && insert->data && !is_async_insert_with_inlined_data && insert_query_without_data_length)
+        /// But for asynchronous inserts or inline insert data mode we don't extract data,
+        /// because it's needed to be done on server side.
+        if (insert && insert->data && !is_async_insert_with_inlined_data && !is_inline_insert_data && insert_query_without_data_length)
             query = query_.substr(0, insert_query_without_data_length);
         else
             query = query_;
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function))
+        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function) && !is_inline_insert_data)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -2698,9 +2750,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
                 TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.hasServerErrors())
+                if (hint.hasServerErrors() && !hint.hasClientErrors())
                 {
-                    // Syntax errors are considered as client errors
+                    // Syntax errors are considered as client errors.
+                    // Reject hints that expect only server errors (serverError hint),
+                    // but fall through when both are set (error hint) so the
+                    // client error check below can handle it.
                     current_exception->addMessage("\nExpected server error: {}.", hint.serverErrors());
                     current_exception->rethrow();
                 }
@@ -2956,6 +3011,17 @@ bool ClientBase::processQueryText(const String & text)
     if (exit_strings.contains(trimmed_input))
         return false;
 
+    /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
+    /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
+    /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
+        && (is_interactive || supportsLocalMetaCommands()))
+    {
+        if (stdout_is_a_tty)
+            output_stream << "\033[2J\033[H" << std::flush;
+        return true;
+    }
+
     if (trimmed_input.starts_with("\\i"))
     {
         size_t skip_prefix_size = std::strlen("\\i");
@@ -2965,6 +3031,16 @@ bool ClientBase::processQueryText(const String & text)
 
         return processMultiQueryFromFile(file_name);
     }
+
+    // Handle `ls` metacommand
+    if (supportsLocalMetaCommands() && boost::iequals(trimmed_input, "ls"))
+    {
+        // Rewrites `ls` into a query that returns the list of all files of the current working directory
+        // TODO: Use the filesystem table engine once https://github.com/ClickHouse/ClickHouse/pull/53610 is merged
+        const String ls_query = "SELECT _file AS file FROM file('*', 'One') ORDER BY file";
+        return executeMultiQuery(ls_query);
+    }
+
 
 #if USE_CLIENT_AI
     // Handle "?? <free_text>" command
@@ -3306,7 +3382,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
 
         ("disable_suggestion,A", "Disable loading suggestions. Note that suggestions are loaded asynchronously through a second connection to ClickHouse server. Recommended when pasting queries with TAB characters.") /// Shorthand -A like in MySQL client
-        ("wait_for_suggestions_to_load", "Load suggestion data synchonously")
+        ("wait_for_suggestions_to_load", "Load suggestion data synchronously")
         ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch")
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -3532,7 +3608,10 @@ void ClientBase::runInteractive()
     initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
+    /// because it accesses the environment (API keys) which could be a security concern.
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -3571,7 +3650,7 @@ void ClientBase::runInteractive()
     {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
-            highlight(query, colors, *client_context, pos);
+            highlight(query, colors, *client_context, pos, rainbow_parentheses);
         };
     }
 
@@ -3630,7 +3709,6 @@ void ClientBase::runInteractive()
         .in_fd = stdin_fd,
         .out_fd = stdout_fd,
         .err_fd = stderr_fd,
-        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
 
     lr = std::make_unique<ReplxxLineReader>(std::move(options));
@@ -3781,9 +3859,14 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
+    /// For `clickhouse-local` only: same entry point as `-q` / stdin so meta-commands (`clear`, `ls`,
+    /// `\i`, …) work for whole-file input. Remote `clickhouse-client` keeps `executeMultiQuery` so
+    /// `--queries-file` does not apply `exit_strings` and other text-level metas (avoids silent
+    /// behavior changes for batch automation).
+    if (supportsLocalMetaCommands())
+        return processQueryText(queries_from_file);
     return executeMultiQuery(queries_from_file);
 }
-
 
 void ClientBase::runNonInteractive()
 {
@@ -3791,7 +3874,8 @@ void ClientBase::runNonInteractive()
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
-    initAIProvider();
+    if (!isEmbeeddedClient())
+        initAIProvider();
 #endif
 
     if (!buzz_house && !queries_files.empty())

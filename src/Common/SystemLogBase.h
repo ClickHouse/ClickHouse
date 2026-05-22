@@ -38,6 +38,7 @@
     M(ZooKeeperConnectionLogElement) \
     M(IcebergMetadataLogElement) \
     M(DeltaMetadataLogElement) \
+    M(PredicateStatisticsLogElement) \
 
 #define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
     M(DistributedCacheLogElement) \
@@ -76,6 +77,9 @@ public:
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.
     virtual Index getLastLogIndex() = 0;
+    /// Notifies the implementation that a manual flush up to `target_index` was requested.
+    virtual void setManualFlushTargetIndex(Index /* target_index */) {}
+
     /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
     virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
     /// Call this method to wait until the logs are flushed up to expected_flushed_index. It is blocking call.

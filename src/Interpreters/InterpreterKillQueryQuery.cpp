@@ -132,7 +132,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-class SyncKillQuerySource : public ISource
+class SyncKillQuerySource final : public ISource
 {
 public:
     SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
@@ -451,6 +451,9 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
 
     if (!tmp_block.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
+
+    /// Materialize const columns, because callers use typeid_cast to concrete column types.
+    materializeBlockInplace(res);
 
     return res;
 }
