@@ -160,6 +160,7 @@ void MaterializingCTETransform::onCancel() noexcept
         /// Already fulfilled (e.g. `generate` finished just before cancellation
         /// arrived); the reader has already observed the success or the prior
         /// failure - suppress the `future_error` to keep `onCancel` noexcept.
+        tryLogCurrentException(getLogger("MaterializingCTETransform"), "Failed to set_exception for promise");
     }
 }
 
