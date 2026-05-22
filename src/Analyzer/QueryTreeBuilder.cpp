@@ -963,7 +963,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 bool has_final = table_expression.final;
                 std::optional<Rational> sample_size_ratio;
                 std::optional<Rational> sample_offset_ratio;
-                std::optional<StreamSettings> stream_settings;
+                std::optional<StreamingSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -981,7 +981,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 {
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
 
-                    stream_settings = StreamSettings{};
+                    stream_settings = StreamingSettings{};
 
                     if (ast_stream_settings.cursor.has_value())
                         stream_settings->cursor = buildCursorTree(ast_stream_settings.cursor.value());
@@ -993,6 +993,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                         stream_settings->watermark->column = ast_watermark.column;
                         if (ast_watermark.expression)
                             stream_settings->watermark->expression = buildExpression(ast_watermark.expression, context);
+                        if (ast_stream_settings.idle_timeout_seconds.has_value())
+                            stream_settings->watermark->idle_timeout_seconds = *ast_stream_settings.idle_timeout_seconds;
                     }
                 }
 

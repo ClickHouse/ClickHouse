@@ -858,7 +858,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 if (!storage->supportsStreaming())
                     throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
 
-                const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+                const auto & stream_settings = table_expression_modifiers->getStreamingSettings();
                 const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
                 if (stream_settings->watermark)
