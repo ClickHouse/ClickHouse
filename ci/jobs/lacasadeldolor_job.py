@@ -250,6 +250,7 @@ def main():
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        "CLICKHOUSE_IS_SANITIZED": "1" if is_sanitized else "0",
     }
     # Apply environment
     for key, value in (test_env or {}).items():
@@ -280,6 +281,8 @@ def main():
     config_xml = workspace_path / "config.xml"
     # Generated user configuration file for servers
     users_xml = workspace_path / "users.xml"
+    # Generated keeper configuration file
+    keeper_xml = workspace_path / "keeper.xml"
     # Query log files for queries sent to other databases
     postgresql_query_log = workspace_path / "postgresql.sql"
     mysql_query_log = workspace_path / "mysql.sql"
@@ -293,6 +296,7 @@ def main():
         server_cmd,
         config_xml,
         users_xml,
+        keeper_xml,
         dolor_log,
         postgresql_query_log,
         mysql_query_log,
@@ -414,9 +418,10 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 
     # Copy generated configuration files from container to host for further analysis
     for pattern in [
-        ("buzzhouse_*.json", buzzconfig),
-        ("user_*.xml", users_xml),
-        ("config_*.xml", config_xml),
+        ("buzzhouse*.json", buzzconfig),
+        ("user*.xml", users_xml),
+        ("config*.xml", config_xml),
+        ("keeper*.xml", keeper_xml),
     ]:
         for f in Path(workspace_path).glob(pattern[0]):
             shutil.copy2(f, pattern[1])

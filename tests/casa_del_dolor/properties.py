@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import os
 import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
@@ -1751,7 +1752,9 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
         session_timeout_ms_xml = ET.SubElement(
             coordination_settings_xml, "session_timeout_ms"
         )
-        session_timeout_ms_xml.text = "15000"
+        session_timeout_ms_xml.text = (
+            "60000" if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1" else "15000"
+        )
         raft_logs_level_xml = ET.SubElement(
             coordination_settings_xml, "raft_logs_level"
         )
