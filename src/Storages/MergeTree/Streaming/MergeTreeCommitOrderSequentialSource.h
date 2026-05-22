@@ -63,6 +63,7 @@ private:
     std::map<String, PartitionCursor> last_emitted_positions;
     std::map<String, Field> last_watermark;
     std::map<String, std::chrono::steady_clock::time_point> last_snapshot_time;
+    bool emitted_global_idle = false;
 
     Processors current_sub_pipeline;
     std::unique_ptr<QueryPlanResourceHolder> current_resources;

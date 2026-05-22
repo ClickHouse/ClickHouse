@@ -31,6 +31,7 @@ public:
 
         std::optional<Clock::time_point> nextDeadline() const;
         std::optional<Key> popExpired();
+        std::optional<Key> popMin();
 
     private:
         using Queue = std::multimap<Clock::time_point, Key>;
@@ -57,6 +58,7 @@ private:
 
     TaskData getTask(std::unique_lock<std::mutex> & lock, int timeout);
     TaskData popExpiredDeadlineTask();
+    TaskData popMinDeadlineTask();
 
 public:
     PollingQueue();

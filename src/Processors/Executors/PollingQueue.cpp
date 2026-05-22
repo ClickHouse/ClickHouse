@@ -61,6 +61,18 @@ std::optional<PollingQueue::Key> PollingQueue::Deadlines::popExpired()
     return key;
 }
 
+std::optional<PollingQueue::Key> PollingQueue::Deadlines::popMin()
+{
+    if (queue.empty())
+        return std::nullopt;
+
+    auto it = queue.begin();
+    auto key = it->second;
+    queue.erase(it);
+    index.erase(key);
+    return key;
+}
+
 PollingQueue::PollingQueue()
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
@@ -100,6 +112,22 @@ PollingQueue::TaskData PollingQueue::popExpiredDeadlineTask()
     auto task_it = tasks.find(expired_key.value());
     if (task_it == tasks.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expired-deadline task {} missing from task map", *expired_key);
+
+    auto res = task_it->second;
+    tasks.erase(task_it);
+    epoll.remove(res.fd);
+    return res;
+}
+
+PollingQueue::TaskData PollingQueue::popMinDeadlineTask()
+{
+    auto min_key = deadlines.popMin();
+    if (!min_key)
+        return {};
+
+    auto task_it = tasks.find(min_key.value());
+    if (task_it == tasks.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Min-deadline task {} missing from task map", *min_key);
 
     auto res = task_it->second;
     tasks.erase(task_it);
@@ -149,7 +177,12 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
     lock.lock();
 
     if (num_events == 0)
-        return popExpiredDeadlineTask();
+    {
+        if (effective_timeout != timeout)
+            return popMinDeadlineTask();
+
+        return {};
+    }
 
     if (event.data.ptr == pipe_fd)
         return {};

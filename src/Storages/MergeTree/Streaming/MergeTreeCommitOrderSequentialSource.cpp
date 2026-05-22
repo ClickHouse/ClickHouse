@@ -405,19 +405,15 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 
     auto chunk = input.pull(/*set_not_needed=*/true);
 
-    if (auto idle_marker = chunk.getChunkInfos().extract<IdleMarker>())
+    if (chunk.getChunkInfos().extract<IdleMarker>())
     {
-        LOG_TEST(log, "Got idle marker from - likely snapshot reading pipeline should be finished");
-        input.setNeeded();
-        return Status::NeedData;
+        LOG_TEST(log, "Got idle marker - snapshot reading pipeline should be finished");
     }
 
     if (auto watermark_info = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
     {
         last_watermark[watermark_info->partition_id] = watermark_info->watermark;
         LOG_TEST(log, "Watermark for partition '{}' updated from chunk to {}", watermark_info->partition_id, watermark_info->watermark);
-        input.setNeeded();
-        return Status::NeedData;
     }
 
     if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
@@ -427,6 +423,9 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
         position.block_offset = cursor->last_block_offset;
         LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, position.block_number, position.block_offset);
     }
+
+    if (!input.isFinished())
+        input.setNeeded();
 
     output.push(std::move(chunk));
     return Status::PortFull;
@@ -452,14 +451,18 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions, last_snapshot_time, stream_settings.watermark);
 
     if (!classification.readable.empty())
+    {
+        emitted_global_idle = false;
         return Status::Ready;
+    }
 
-    if (classification.idle.size() == safe_block_numbers.size())
+    if (!emitted_global_idle && !safe_block_numbers.empty() && classification.idle.size() == safe_block_numbers.size())
     {
         if (!output.canPush())
             return Status::PortFull;
 
         output.push(makeIdleMarkerChunk(output.getHeader()));
+        emitted_global_idle = true;
         return Status::PortFull;
     }
 
@@ -484,8 +487,6 @@ void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
 
 IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
 {
-    LOG_TEST(log, "Running prepare");
-
     const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
     if (has_running_sub_pipeline)
         return handleRunningPipeline();
@@ -558,11 +559,11 @@ std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSequentialSource::scheduleF
             next_idle_time = deadline;
     }
 
-    chassert(next_idle_time.time_since_epoch().count() != 0);
-    const int64_t timeout_ms = next_idle_time > now ? std::chrono::duration_cast<std::chrono::milliseconds>(next_idle_time - now).count() : -1;
-    LOG_TEST(log, "Scheduling sleep for {} ms", timeout_ms);
+    if (next_idle_time.time_since_epoch().count() == 0)
+        return {subscription->fd(), epoll_flags, -1};
 
-    return {subscription->fd(), 0x001 | 0x008, timeout_ms};
+    const int64_t timeout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(next_idle_time - now).count();
+    return {subscription->fd(), epoll_flags, timeout_ms};
 }
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline()
