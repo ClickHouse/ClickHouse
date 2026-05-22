@@ -361,32 +361,36 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
+    /// Walk the offsets array (small: only non-default rows) and for the runs of default
+    /// rows between offsets accumulate `res_offset` via SIMD popcount over `filt`. This
+    /// is O(non_defaults + _size/64) instead of O(_size).
+    const auto & src_offsets_data = getOffsetsData();
+    const size_t num_offsets = src_offsets_data.size();
+    const UInt8 * filt_data = filt.data();
+
     size_t res_offset = 0;
-    auto offset_it = begin();
-    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
-    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
-    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    size_t prev = 0;
+    for (size_t k = 0; k < num_offsets; ++k)
     {
-        if (!offset_it.isDefault())
+        const size_t row = src_offsets_data[k];
+        if (row > prev)
+            res_offset += countBytesInFilter(filt_data, prev, row);
+
+        if (filt_data[row])
         {
-            if (filt[i])
-            {
-                res_offsets_data.push_back(res_offset);
-                values_filter.push_back(static_cast<UInt8>(1));
-                ++res_offset;
-                ++values_result_size_hint;
-            }
-            else
-            {
-                values_filter.push_back(static_cast<UInt8>(0));
-            }
-            offset_it.increaseCurrentOffset();
+            res_offsets_data.push_back(res_offset);
+            values_filter.push_back(static_cast<UInt8>(1));
+            ++res_offset;
+            ++values_result_size_hint;
         }
         else
         {
-            res_offset += filt[i] != 0;
+            values_filter.push_back(static_cast<UInt8>(0));
         }
+        prev = row + 1;
     }
+    if (_size > prev)
+        res_offset += countBytesInFilter(filt_data, prev, _size);
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
@@ -404,38 +408,40 @@ void ColumnSparse::filter(const Filter & filt)
     }
 
     auto & res_offsets_data = getOffsetsData();
+    const size_t num_offsets = res_offsets_data.size();
     size_t res_offsets_pos = 0;
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
     values_filter.push_back(static_cast<UInt8>(1));
 
+    /// See the const overload for the algorithm: walk the offsets and SIMD-popcount the
+    /// runs of default rows between them. In-place write into `res_offsets_data` is safe
+    /// because `res_offsets_pos <= k` always.
+    const UInt8 * filt_data = filt.data();
     size_t res_offset = 0;
-    auto offset_it = begin();
-    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
-    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
-    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    size_t prev = 0;
+    for (size_t k = 0; k < num_offsets; ++k)
     {
-        if (!offset_it.isDefault())
+        const size_t row = res_offsets_data[k];
+        if (row > prev)
+            res_offset += countBytesInFilter(filt_data, prev, row);
+
+        if (filt_data[row])
         {
-            if (filt[i])
-            {
-                res_offsets_data[res_offsets_pos] = res_offset;
-                values_filter.push_back(static_cast<UInt8>(1));
-                ++res_offsets_pos;
-                ++res_offset;
-            }
-            else
-            {
-                values_filter.push_back(static_cast<UInt8>(0));
-            }
-            offset_it.increaseCurrentOffset();
+            res_offsets_data[res_offsets_pos] = res_offset;
+            values_filter.push_back(static_cast<UInt8>(1));
+            ++res_offsets_pos;
+            ++res_offset;
         }
         else
         {
-            res_offset += filt[i] != 0;
+            values_filter.push_back(static_cast<UInt8>(0));
         }
+        prev = row + 1;
     }
+    if (_size > prev)
+        res_offset += countBytesInFilter(filt_data, prev, _size);
 
     values->filter(values_filter);
     res_offsets_data.resize_assume_reserved(res_offsets_pos);
