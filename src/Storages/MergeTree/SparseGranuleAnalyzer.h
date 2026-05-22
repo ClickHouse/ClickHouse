@@ -14,7 +14,7 @@ namespace DB
 class MergeTreeData;
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
-class StorageSnapshot;
+struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 struct RangesInDataPart;
 

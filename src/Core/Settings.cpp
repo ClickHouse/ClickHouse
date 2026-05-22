@@ -4476,7 +4476,6 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
-
     DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
 Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
 queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
