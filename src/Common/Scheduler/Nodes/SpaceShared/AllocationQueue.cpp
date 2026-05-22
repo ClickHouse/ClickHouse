@@ -102,6 +102,8 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
     chassert(decrease_size > 0);
 
     std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
     chassert(!allocation.decreasing_hook.is_linked());
     chassert(allocation.running_hook.is_linked());
     allocation.decrease.prepare(decrease_size, /*removing_allocation=*/ false);
@@ -113,6 +115,8 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
 {
     std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
