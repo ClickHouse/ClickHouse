@@ -2699,9 +2699,19 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                 {
                     const auto size = storage_ref.getFileSize(virtual_file);
                     substream_size.data_compressed = size;
-                    /// We don't track per-virtual-file uncompressed sizes in the archive index,
-                    /// so approximate uncompressed == compressed (the compressed frame is opaque
-                    /// to the archive layer).
+                    /// data_uncompressed is approximated as compressed size for packed substreams:
+                    /// the archive's per-virtual-file index records only the on-disk (compressed)
+                    /// size, and the uncompressed count is lost once `MergeTreeWriterStream` is
+                    /// destroyed. The undercount matters in one place behaviorally:
+                    /// `ReadFromMergeTree::get_indexes_size` gates `distributed_index_analysis`
+                    /// activation on `data_uncompressed`, so a packed skip index that compresses
+                    /// well (`set` / `bloom_filter` over strings) may not cross
+                    /// `distributed_index_analysis_min_indexes_bytes_to_activate` and distributed
+                    /// index analysis won't trigger. The fallback is the normal query plan, not
+                    /// a wrong result. Elsewhere `data_uncompressed` only feeds telemetry in
+                    /// `system.data_skipping_indices` / `system.parts`. To remove this
+                    /// approximation entirely, add `uncompressed_size` to
+                    /// `PackedFilesIO::Index` entries and bump the archive format version.
                     substream_size.data_uncompressed = size;
                 }
             }

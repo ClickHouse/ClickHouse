@@ -1918,6 +1918,15 @@ namespace ErrorCodes
     The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
     substreams from inside it transparently. Changing this setting affects newly written parts
     only; existing parts retain whatever layout they had at write time.
+
+    Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
+    `system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
+    substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
+    monitoring with one functional consequence:
+    `distributed_index_analysis_min_indexes_bytes_to_activate` compares against
+    `data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
+    strings) may not cross the activation threshold even if the real uncompressed size would.
+    The fallback is the normal query plan, not a wrong result.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
