@@ -292,7 +292,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             };
 
             impl = DistributedCache::readWithDistributedCache(
-                source->objects.at(0).remote_path,
+                source->objects.at(0).local_path,
                 source->objects,
                 settings,
                 *dc_obj_source->storage,
@@ -500,7 +500,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             /// async prefetch) wraps it — matches the gather path and master behavior.
             bool use_ext_buf_for_dc = memory_cache.has_value() || async_prefetch.has_value();
             impl = DistributedCache::readWithDistributedCache(
-                source->objects.at(0).remote_path,
+                source->objects.at(0).local_path,
                 source->objects,
                 settings,
                 *dc_obj_source->storage,
