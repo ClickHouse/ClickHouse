@@ -32,6 +32,15 @@ void enqueueMarker(std::deque<Chunk> & queue, Chunk marker)
         queue.push_back(std::move(marker));
 }
 
+void drainQueue(OutputPort * output, std::deque<Chunk> & queue)
+{
+    if (!queue.empty() && output->canPush())
+    {
+        output->push(std::move(queue.front()));
+        queue.pop_front();
+    }
+}
+
 }
 
 WatermarkMerger::WatermarkMerger(SharedHeader header, size_t num_inputs, size_t num_outputs)
@@ -56,16 +65,10 @@ void WatermarkMerger::handleOutputUpdate(OutputPort * output, OutputState & stat
     {
         state.queue.clear();
         finished_outputs.insert(output);
+        return;
     }
 
-    if (!output->canPush())
-        return;
-
-    if (state.queue.empty())
-        return;
-
-    output->push(std::move(state.queue.front()));
-    state.queue.pop_front();
+    drainQueue(output, state.queue);
 }
 
 void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_state)
@@ -98,6 +101,7 @@ void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_st
     }
     else
     {
+        OutputPort * picked_output = nullptr;
         OutputState * picked_output_state = nullptr;
         for (auto & [output, output_state] : outputs_state)
         {
@@ -105,13 +109,17 @@ void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_st
                 continue;
 
             if (!picked_output_state || output_state.queue.size() < picked_output_state->queue.size())
+            {
+                picked_output = output;
                 picked_output_state = &output_state;
+            }
         }
 
-        if (!picked_output_state)
+        if (!picked_output)
             return;
 
         picked_output_state->queue.push_back(std::move(chunk));
+        drainQueue(picked_output, picked_output_state->queue);
     }
 }
 
@@ -121,7 +129,7 @@ void WatermarkMerger::broadcastAlignedMarker()
     std::optional<Field> min_watermark;
     for (const auto & [input, input_state] : inputs_state)
     {
-        if (input_state.idle)
+        if (input_state.idle || !input_state.pending_watermark)
             num_idle += 1;
 
         else if (!min_watermark || *min_watermark > *input_state.pending_watermark)
@@ -132,8 +140,13 @@ void WatermarkMerger::broadcastAlignedMarker()
     {
         /// Broadcast idle state to upstream.
         for (auto & [output, output_state] : outputs_state)
-            if (!output->isFinished())
-                enqueueMarker(output_state.queue, makeIdleMarkerChunk(output->getHeader()));
+        {
+            if (output->isFinished())
+                continue;
+
+            enqueueMarker(output_state.queue, makeIdleMarkerChunk(output->getHeader()));
+            drainQueue(output, output_state.queue);
+        }
 
         /// Drop watermark markers for used streams.
         for (auto & [input, input_state] : inputs_state)
@@ -151,8 +164,13 @@ void WatermarkMerger::broadcastAlignedMarker()
     {
         /// Broadcast min watermark to upstream.
         for (auto & [output, output_state] : outputs_state)
-            if (!output->isFinished())
-                enqueueMarker(output_state.queue, makeWatermarkMarkerChunk(output->getHeader(), *min_watermark));
+        {
+            if (output->isFinished())
+                continue;
+
+            enqueueMarker(output_state.queue, makeWatermarkMarkerChunk(output->getHeader(), *min_watermark));
+            drainQueue(output, output_state.queue);
+        }
 
         /// Drop watermark markers for used streams.
         for (auto & [input, input_state] : inputs_state)
