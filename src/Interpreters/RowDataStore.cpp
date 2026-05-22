@@ -140,8 +140,6 @@ void RowDataStore::scatterRows(std::vector<IColumn *> & columns, size_t start, s
             IColumn & nested_column = nullable_column->getNestedColumn();
             const size_t value_size = field_layout.size - 1;
 
-            null_map.reserve(null_map.size() + length);
-            nested_column.reserve(nested_column.size() + length);
             for (size_t row = 0; row < length; ++row)
             {
                 const char * row_data = base + row * row_length + field_layout.offset;
@@ -151,7 +149,6 @@ void RowDataStore::scatterRows(std::vector<IColumn *> & columns, size_t start, s
         }
         else
         {
-            columns[i]->reserve(columns[i]->size() + length);
             for (size_t row = 0; row < length; ++row)
                 columns[i]->insertData(base + row * row_length + field_layout.offset, field_layout.size);
         }
