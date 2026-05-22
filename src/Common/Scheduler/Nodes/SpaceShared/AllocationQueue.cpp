@@ -122,8 +122,15 @@ void AllocationQueue::purgeQueue()
 {
     std::lock_guard lock(mutex);
 
-    /// Only detached queue can be purged to keep parents consistent it also means there is no scheduled activation
+    /// Only a detached queue can be purged so we don't disturb its parent.
     chassert(parent == nullptr);
+
+    // Cancel any pending activation event for this node. `detach` does not do this,
+    // so without an explicit cancel the activation hook would remain linked in the
+    // EventQueue when the queue is destroyed — triggering the
+    // `activation_event_id == 0` chassert in `~ISchedulerNode` (and a dangling
+    // intrusive hook in release builds).
+    cancelActivation();
 
     // Fail all allocations so their owners (e.g. MemoryReservation) mark themselves
     // as removed/failed and do not call back into the queue from their destructors.
