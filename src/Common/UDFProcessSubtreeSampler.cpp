@@ -339,6 +339,12 @@ void UDFProcessSubtreeSampler::recordReleased()
 void UDFProcessSubtreeSampler::recordExecutableFinished(
     UInt64 user_time_us_, UInt64 system_time_us_, UInt64 peak_rss_bytes_) noexcept
 {
+    /// Guard against duplicate calls: the header contract says "at most once",
+    /// but a doubled call from a future call-site bug must not overwrite the
+    /// first call's measurements. Leave them intact and return early.
+    if (executable_finished)
+        return;
+
     /// Wall time from sampler construction to child exit. There is no pool-wait
     /// interval to subtract for the executable path — the child is spawned fresh
     /// for every invocation, so the full duration is attributed to the borrow.

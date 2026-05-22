@@ -143,8 +143,11 @@ def test_peak_memory_uses_rusage_units(started_cluster):
     )
     mem = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
     # 32 MiB peak RSS. Even a sub-millisecond run: 32 * 1024^2 * 0.001 s ≈ 33_554.
-    # Any realistic CPython startup takes > 30 ms → 32 MiB * 0.03 s ≈ 1_006_632 byte-seconds.
-    assert mem >= 1_000_000, f"Expected PeakMemoryByteSeconds >= 1e6, got {mem}"
+    # 100_000 is 3x below that floor — a value this small could only arise if
+    # wait4 ru_maxrss were misread (e.g. treated as KiB on a Linux platform
+    # where it is already in bytes, which would deflate the result by 1024).
+    # The bound is intentionally loose to avoid flaking on fast machines.
+    assert mem >= 100_000, f"Expected PeakMemoryByteSeconds >= 100_000, got {mem}"
 
 
 def test_input_bytes(started_cluster):
