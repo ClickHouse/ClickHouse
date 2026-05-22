@@ -154,6 +154,15 @@ parser.add_argument(
     action="store_true",
     help="Don't create or drop the tables, use the existing ones instead.",
 )
+parser.add_argument(
+    "--jemalloc-purge",
+    choices=["disabled", "after-fill", "before-each-query", "before-each-run"],
+    default="before-each-run",
+    help="When to issue SYSTEM JEMALLOC PURGE on all server connections. "
+    "Purging equalises per-process jemalloc dirty-page state between LEFT and "
+    "RIGHT, which otherwise diverges across the test and causes background "
+    "purges to do asymmetric work during measured queries.",
+)
 args = parser.parse_args()
 
 reportStageEnd("start")
@@ -469,6 +478,22 @@ if not args.use_existing_tables:
 
     reportStageEnd("create")
 
+
+def purge_jemalloc_on_all_connections(reason):
+    for conn_index, c in enumerate(all_connections):
+        try:
+            c.execute("SYSTEM JEMALLOC PURGE")
+            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}\t{reason}")
+        except KeyboardInterrupt:
+            raise
+        except:
+            continue
+
+
+if args.jemalloc_purge != "disabled":
+    purge_jemalloc_on_all_connections("after-fill")
+
+
 # Let's sync the data to avoid writeback affects performance
 os.system("sync")
 reportStageEnd("sync")
@@ -501,15 +526,8 @@ for query_index in queries_to_run:
 
     print(f"display-name\t{query_index}\t{tsv_escape(query_display_name)}")
 
-    for conn_index, c in enumerate(all_connections):
-        try:
-            c.execute("SYSTEM JEMALLOC PURGE")
-
-            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}")
-        except KeyboardInterrupt:
-            raise
-        except:
-            continue
+    if args.jemalloc_purge in ("before-each-query", "before-each-run"):
+        purge_jemalloc_on_all_connections(f"before-query-{query_index}")
 
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
@@ -592,7 +610,16 @@ for query_index in queries_to_run:
     while True:
         run_id = f"{query_prefix}.run{run}"
 
-        for conn_index, c in enumerate(this_query_connections):
+        if args.jemalloc_purge == "before-each-run":
+            purge_jemalloc_on_all_connections(f"before-{run_id}")
+
+        # Alternate the server order each measured run (L,R,R,L,L,R,...) so that
+        # the post-query / pre-purge idle time averages out between connections.
+        conn_order = list(enumerate(this_query_connections))
+        if run % 2 == 1:
+            conn_order = list(reversed(conn_order))
+
+        for conn_index, c in conn_order:
             try:
                 elapsed = execute_query_group(
                     c, q_list, run_id, {"max_execution_time": args.max_query_seconds}
