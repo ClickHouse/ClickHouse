@@ -294,9 +294,16 @@ struct BinaryOperation
     {
         /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
         /// The compiler "vectorizes" by extracting each element, doing scalar div,
-        /// and re-inserting — bloating the loop ~3-5x for no benefit. Operations
-        /// that use div/mod set `no_vectorize` to opt out.
-        static constexpr bool disable_vectorization = requires { requires bool(Op::no_vectorize); };
+        /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
+        /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
+        /// don't define the member are treated as opting in to vectorization.
+        static constexpr bool disable_vectorization = []
+        {
+            if constexpr (requires { Op::no_vectorize; })
+                return bool(Op::no_vectorize);
+            else
+                return false;
+        }();
 
         if constexpr (op_case == OpCase::RightConstant)
         {
