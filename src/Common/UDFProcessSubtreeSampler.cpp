@@ -8,7 +8,6 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/resource.h>
 
 #include <algorithm>
 #include <fstream>
@@ -337,38 +336,25 @@ void UDFProcessSubtreeSampler::recordReleased()
 }
 
 
-void UDFProcessSubtreeSampler::recordExecutableFinished(const ::rusage & ru) noexcept
+void UDFProcessSubtreeSampler::recordExecutableFinished(
+    UInt64 user_time_us_, UInt64 system_time_us_, UInt64 peak_rss_bytes_) noexcept
 {
     /// Wall time from sampler construction to child exit. There is no pool-wait
     /// interval to subtract for the executable path — the child is spawned fresh
     /// for every invocation, so the full duration is attributed to the borrow.
     elapsed_us = entry_watch.elapsedMicroseconds();
 
-    user_time_us
-        = static_cast<UInt64>(ru.ru_utime.tv_sec) * 1'000'000ULL
-        + static_cast<UInt64>(ru.ru_utime.tv_usec);
-
-    system_time_us
-        = static_cast<UInt64>(ru.ru_stime.tv_sec) * 1'000'000ULL
-        + static_cast<UInt64>(ru.ru_stime.tv_usec);
-
-    /// `ru_maxrss` unit conventions differ by platform:
-    ///   macOS          -- bytes
-    ///   Linux / FreeBSD / illumos -- kibibytes
-#if defined(OS_DARWIN)
-    UInt64 peak_rss_bytes = static_cast<UInt64>(ru.ru_maxrss);
-#else
-    UInt64 peak_rss_bytes = static_cast<UInt64>(ru.ru_maxrss) * 1024ULL;
-#endif
+    user_time_us = user_time_us_;
+    system_time_us = system_time_us_;
 
     /// PeakMemoryByteSeconds = peak_rss × elapsed_wall_seconds. Identical
     /// overflow handling to `recordReleased` — use `common::mulOverflow` so
     /// UBSan does not flag the intentional saturation.
     UInt64 product = 0;
-    if (common::mulOverflow(peak_rss_bytes, elapsed_us, product))
+    if (common::mulOverflow(peak_rss_bytes_, elapsed_us, product))
         peak_memory_byte_seconds = std::numeric_limits<UInt64>::max();
     else
-        peak_memory_byte_seconds = product / 1'000'000ULL;
+        peak_memory_byte_seconds = product / 1000000ULL;
 
     executable_finished = true;
 }

@@ -23,6 +23,19 @@
 #include <Common/waitForPid.h>
 
 
+namespace DB
+{
+
+/// Opaque wrapper around `::rusage` so callers of `ShellCommand` do not need
+/// to include `<sys/resource.h>`.
+struct LastChildResourceUsage
+{
+    ::rusage rusage{};
+};
+
+}  // namespace DB
+
+
 namespace
 {
     /// By these return codes from the child process, we learn (for sure) about errors when creating it.
@@ -330,13 +343,15 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
 
     while (waitpid_retcode < 0)
     {
-        /// `wait4` is identical to `waitpid` in return-value and error semantics;
-        /// the extra `rusage` argument is populated atomically when the child exits,
-        /// giving accurate per-child CPU and memory figures without a separate procfs walk.
+        /// `wait4` behaves like `waitpid` for our purposes — same pid/status/options
+        /// and EINTR semantics — and additionally fills `rusage` atomically when the
+        /// child is reaped, giving accurate per-child CPU and memory without a
+        /// separate procfs walk.
         waitpid_retcode = wait4(pid, &status, options, &local_rusage);
         if (waitpid_retcode > 0)
         {
-            last_rusage = local_rusage;
+            last_resource_usage = std::make_unique<LastChildResourceUsage>();
+            last_resource_usage->rusage = local_rusage;
             break;
         }
         if (!blocking && !waitpid_retcode)
@@ -418,6 +433,47 @@ void ShellCommand::wait()
 {
     int retcode = tryWaitImpl(true).retcode;
     handleProcessRetcode(retcode);
+}
+
+
+bool ShellCommand::wasChildReaped() const noexcept
+{
+    return last_resource_usage != nullptr;
+}
+
+
+UInt64 ShellCommand::getLastChildUserTimeMicroseconds() const noexcept
+{
+    if (!last_resource_usage)
+        return 0;
+    const auto & ru = last_resource_usage->rusage;
+    return static_cast<UInt64>(ru.ru_utime.tv_sec) * 1000000ULL
+        + static_cast<UInt64>(ru.ru_utime.tv_usec);
+}
+
+
+UInt64 ShellCommand::getLastChildSystemTimeMicroseconds() const noexcept
+{
+    if (!last_resource_usage)
+        return 0;
+    const auto & ru = last_resource_usage->rusage;
+    return static_cast<UInt64>(ru.ru_stime.tv_sec) * 1000000ULL
+        + static_cast<UInt64>(ru.ru_stime.tv_usec);
+}
+
+
+UInt64 ShellCommand::getLastChildPeakRssBytes() const noexcept
+{
+    if (!last_resource_usage)
+        return 0;
+    const auto & ru = last_resource_usage->rusage;
+#if defined(OS_DARWIN)
+    /// macOS reports `ru_maxrss` already in bytes.
+    return static_cast<UInt64>(ru.ru_maxrss);
+#else
+    /// Linux, FreeBSD, and illumos report `ru_maxrss` in kibibytes.
+    return static_cast<UInt64>(ru.ru_maxrss) * 1024ULL;
+#endif
 }
 
 

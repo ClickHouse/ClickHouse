@@ -97,9 +97,11 @@ def test_invocations(started_cluster):
 def test_elapsed_microseconds(started_cluster):
     _skip_msan()
     qid = "exec-elapsed-1"
-    # Sleep argument is interpreted by udf_sleep.py as seconds per row.
+    # Single-row scalar query: the UDF receives the literal 0.2 and sleeps
+    # for that many seconds. `max_block_size` is irrelevant for a scalar
+    # expression with no `FROM` clause.
     _run(
-        "SELECT test_udf_sleep(0.2) SETTINGS max_block_size = 1",
+        "SELECT test_udf_sleep(0.2)",
         qid,
     )
     elapsed = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")

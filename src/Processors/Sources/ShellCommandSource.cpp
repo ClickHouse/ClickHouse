@@ -540,14 +540,12 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            /// Resource accounting must observe the borrow's resident set before
-            /// the worker is torn down or the slot is handed back to the pool —
-            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
-            /// would then read zero CPU and zero `VmHWM`.
-            /// `recordReleased` reads procfs and may throw, but `cleanup` is
-            /// called from the destructor — swallow any exception so the
-            /// destructor stays noexcept.
-            if (configuration.sampler)
+            /// Pool path only: sample procfs once more BEFORE the worker is torn down
+            /// or the slot is returned to the pool — either path destroys
+            /// `/proc/<pid>/{stat,status}` and a later sampler read would see zeros.
+            /// `recordReleased` reads procfs and may throw; `cleanup` is called from
+            /// the destructor, so swallow exceptions.
+            if (configuration.sampler && configuration.sampler->borrowAcquired())
             {
                 try
                 {
@@ -559,27 +557,37 @@ namespace
                 }
             }
 
-            /// Executable (non-pool) path: `wait4` populated `last_rusage` when
-            /// the child exited. On the success path `prepare()` already called
-            /// `command->wait()`, which in turn calls `tryWaitImpl`. On error
-            /// paths or when `check_exit_code` is false the child may still be
-            /// running here — call `tryWait` so the child is reaped before the
-            /// command object destructs. `tryWait` can throw if the child was
-            /// signal-terminated; swallow the exception because `cleanup` runs
-            /// from the destructor.
+            /// Executable (non-pool) path: `wait4` populated child rusage when it
+            /// exited. On the success path `prepare()` already called `command->wait()`,
+            /// which in turn calls `tryWaitImpl`. On error paths the child may still
+            /// be running here — try a NON-blocking reap so we never extend the
+            /// destructor's bounded SIGTERM path; if the child is stuck, the
+            /// ShellCommand destructor handles termination as before and the rusage
+            /// is unavailable for this invocation.
+            ///
+            /// `waitIfProccesTerminated` calls `tryWaitImpl(false)`, which sets
+            /// `last_resource_usage` on the wait4 success branch BEFORE any throw for
+            /// `WIFSIGNALED` / `WIFSTOPPED` / non-zero exit. So we read
+            /// `wasChildReaped` regardless of whether the inner call threw.
             if (configuration.sampler && command && !process_pool)
             {
-                try
+                if (!command->isWaitCalled())
                 {
-                    if (!command->isWaitCalled())
-                        command->tryWait();
-                    if (const auto & ru = command->getLastRusage())
-                        configuration.sampler->recordExecutableFinished(*ru);
+                    try
+                    {
+                        command->waitIfProccesTerminated();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("ShellCommandSource");
+                    }
                 }
-                catch (...)
-                {
-                    tryLogCurrentException("ShellCommandSource");
-                }
+
+                if (command->wasChildReaped())
+                    configuration.sampler->recordExecutableFinished(
+                        command->getLastChildUserTimeMicroseconds(),
+                        command->getLastChildSystemTimeMicroseconds(),
+                        command->getLastChildPeakRssBytes());
             }
 
             if (command_is_invalid)

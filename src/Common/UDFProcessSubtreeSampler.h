@@ -7,7 +7,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <sys/resource.h>
 #include <sys/types.h>
 
 
@@ -38,8 +37,8 @@ namespace DB
   *   Lifecycle:
   *     ctor                    -- starts the entry wall clock
   *     recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
-  *     recordExecutableFinished -- called from ShellCommandSource::cleanup with
-  *                                 the rusage from `wait4`; fills all accumulators
+  *     recordExecutableFinished -- called from ShellCommandSource::cleanup after
+  *                                 `wait4` reaps the child; fills all accumulators
   *
   * Created by `UserDefinedExecutableFunctionFactory::executeImpl` and passed
   * via `ShellCommandSourceConfiguration` into the IO machinery. The factory
@@ -56,10 +55,11 @@ public:
     void recordOutputBytes(size_t bytes) noexcept;
     void recordReleased();
 
-    /// Executable (non-pool) path: consume the rusage from `wait4` and fill
-    /// elapsed_us, user_time_us, system_time_us, and peak_memory_byte_seconds.
-    /// Must be called at most once per sampler lifetime.
-    void recordExecutableFinished(const ::rusage & ru) noexcept;
+    /// Executable (non-pool) path: fill elapsed_us, user_time_us,
+    /// system_time_us, and peak_memory_byte_seconds from the scalars returned
+    /// by `ShellCommand::getLastChild*`. Must be called at most once per
+    /// sampler lifetime.
+    void recordExecutableFinished(UInt64 user_time_us, UInt64 system_time_us, UInt64 peak_rss_bytes) noexcept;
 
     /// Pool wait = entry → borrow acquired.
     /// Zero if the borrow never happened (caller should still report 0).

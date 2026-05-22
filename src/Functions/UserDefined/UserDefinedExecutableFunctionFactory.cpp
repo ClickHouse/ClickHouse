@@ -233,14 +233,13 @@ public:
                 shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
             }
 
-            /// Flush resource accumulators into ProfileEvents on every exit
-            /// path — successful return AND exception thrown from the
-            /// pipeline. The pipeline / executor below are declared after
-            /// this `SCOPE_EXIT`, so by the C++ stack unwinding rules they
-            /// destruct first; the pool path calls `recordReleased` and the
-            /// executable path calls `recordExecutableFinished` from
-            /// `~ShellCommandSource`, so both fill the sampler accumulators
-            /// before this guard runs.
+            /// Flush resource accumulators into ProfileEvents on every exit path —
+            /// successful return AND exception thrown from the pipeline. The pipeline
+            /// / executor below are declared after this `SCOPE_EXIT`, so C++ stack
+            /// unwinding destructs them first; the pool path then calls
+            /// `recordReleased` and the executable path calls `recordExecutableFinished`
+            /// from `~ShellCommandSource`, so the sampler holds the final counters by
+            /// the time this guard runs.
             SCOPE_EXIT({
                 /// `PoolWaitMicroseconds` fires whenever `tryBorrowObject`
                 /// returned (success OR timeout). On timeout the throw

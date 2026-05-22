@@ -1,17 +1,18 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <unordered_map>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/VectorWithMemoryTracking.h>
-
-#include <sys/resource.h>
+#include <base/types.h>
 
 
 namespace DB
 {
+
+/// Forward declaration only — keeps `<sys/resource.h>` out of this header.
+struct LastChildResourceUsage;
 
 
 /** Lets you run the command,
@@ -86,13 +87,22 @@ public:
         do_not_terminate = true;
     }
 
-    /// Returns the resource usage of the child process as reported by the
-    /// most recent successful `wait4` call. The optional is empty until the
-    /// child has been reaped by `tryWaitImpl`.
-    const std::optional<::rusage> & getLastRusage() const noexcept
-    {
-        return last_rusage;
-    }
+    /// True once the child has been reaped by `tryWaitImpl` and its
+    /// resource usage was captured.
+    bool wasChildReaped() const noexcept;
+
+    /// User-mode CPU time consumed by the reaped child. Zero if
+    /// `wasChildReaped` returns false.
+    UInt64 getLastChildUserTimeMicroseconds() const noexcept;
+
+    /// Kernel-mode CPU time consumed by the reaped child. Zero if
+    /// `wasChildReaped` returns false.
+    UInt64 getLastChildSystemTimeMicroseconds() const noexcept;
+
+    /// Peak resident set size of the reaped child, in bytes. Zero if
+    /// `wasChildReaped` returns false. Cross-platform: macOS reports
+    /// `ru_maxrss` in bytes; Linux, FreeBSD, and illumos in kibibytes.
+    UInt64 getLastChildPeakRssBytes() const noexcept;
 
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
@@ -124,7 +134,7 @@ private:
     Config config;
     bool wait_called = false;
     bool do_not_terminate = false;
-    std::optional<::rusage> last_rusage;
+    std::unique_ptr<LastChildResourceUsage> last_resource_usage;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
