@@ -1996,6 +1996,29 @@ def test_math_binary_operators():
         ),
     )
 
+    # Behavior: symbolic `@` modifiers resolve before vector matching and special-float arithmetic.
+    do_query_test(
+        'special_l{case="neginf"} @ start() - special_r{case="neginf"} @ end()',
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"case": "neginf"}, "value": [160, "NaN"]}]}',
+        [["[('case','neginf')]", "1970-01-01 00:02:40.000", "nan"]],
+    )
+
+    # Behavior: range-query `@ start()` and `@ end()` bounds compose with binary special values.
+    do_range_query_test(
+        'special_l{case="posinf"} @ start() + special_r{case="posinf"} @ end()',
+        100,
+        160,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"case": "posinf"}, "values": [[100, "+Inf"], [160, "+Inf"]]}]}',
+        [
+            [
+                "[('case','posinf')]",
+                "[('1970-01-01 00:01:40.000',inf),('1970-01-01 00:02:40.000',inf)]",
+            ]
+        ],
+    )
+
     # Behavior: Prometheus keeps arithmetic `NaN` results produced by IEEE subtraction instead of filtering them.
     do_query_test_order_insensitive(
         "special_l - special_r",
