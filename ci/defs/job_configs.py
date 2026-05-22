@@ -664,29 +664,6 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        # Run ARM MSan stateless tests in parallel with AMD MSan so we can
-        # compare. AMD MSan on x86-64-v3 hits long SystemLog flush waits due
-        # to AVX2 vzeroupper insertion around MSan RTL calls; aarch64 has no
-        # analogous codegen problem, so this should serve as a slowdown
-        # comparison and a longer-term migration option.
-        *[
-            Job.ParamSet(
-                parameter=f"arm_msan, WasmEdge, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.ARM_LARGE,
-                requires=[ArtifactNames.CH_ARM_MSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
-        *[
-            Job.ParamSet(
-                parameter=f"arm_msan, WasmEdge, sequential, {batch}/{total_batches}",
-                runs_on=RunnerLabels.ARM_SMALL_MEM,
-                requires=[ArtifactNames.CH_ARM_MSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
         Job.ParamSet(
             parameter="amd_debug, distributed plan, s3 storage, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
