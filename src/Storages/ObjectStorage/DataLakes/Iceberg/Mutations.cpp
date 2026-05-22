@@ -527,7 +527,11 @@ static bool writeMetadataFiles(
             });
 
             auto hint_path = filename_generator.generateVersionHint();
-            if (!catalog && !writeMetadataFileAndVersionHint(
+            /// Skip writing `vN.metadata.json` ourselves only when the catalog generates it server-side
+            /// (Iceberg REST / OneLake). For file-based catalogs (Glue, Hive) and no-catalog mode,
+            /// the client is responsible for writing the metadata.json file.
+            const bool catalog_writes_metadata_file = catalog && catalog->generatesMetadataFile();
+            if (!catalog_writes_metadata_file && !writeMetadataFileAndVersionHint(
                     path_resolver,
                     metadata_info,
                     json_representation,
