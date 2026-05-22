@@ -2,6 +2,7 @@
 
 #include <string>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -17,7 +18,9 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
