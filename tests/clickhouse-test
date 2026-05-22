@@ -1118,7 +1118,7 @@ def auto_statistics_generator():
 
 
 def randomize_external_sort_group_by():
-    """Returns a dict of 4 settings for external sort/group by.
+    """Returns a dict of 6 settings for external sort/group by/join.
     The Bytes-vs-Ratio choice is made per call (not per process),
     so each test run gets an independent choice."""
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
@@ -1126,16 +1126,20 @@ def randomize_external_sort_group_by():
         return {
             "max_bytes_before_external_sort": generator(),
             "max_bytes_before_external_group_by": generator(),
+            "max_bytes_before_external_join": generator(),
             "max_bytes_ratio_before_external_sort": 0,
             "max_bytes_ratio_before_external_group_by": 0,
+            "max_bytes_ratio_before_external_join": 0,
         }
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
     return {
         "max_bytes_before_external_sort": 0,
         "max_bytes_before_external_group_by": 0,
+        "max_bytes_before_external_join": 0,
         "max_bytes_ratio_before_external_sort": round(generator(), 2),
         "max_bytes_ratio_before_external_group_by": round(generator(), 2),
+        "max_bytes_ratio_before_external_join": round(generator(), 2),
     }
 
 
@@ -1303,6 +1307,17 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
+        # Exercise the UNION ALL stream-narrowing path: occasionally clamp to a small
+        # number of simultaneously active streams, occasionally leave it unlimited.
+        "max_streams_for_union_step": lambda: random.choice([0, 1, 2, 4, 8]),
+        "max_streams_for_union_step_to_max_threads_ratio": lambda: random.choice([0, 0.5, 1, 2, 8]),
+        # Default-true: disable occasionally to keep both planner paths covered.
+        "optimize_dictget_tuple_element": lambda: random.random() > 0.05,
+        "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
+        # Default 16 MiB; randomize across small/large to exercise both the coalescing
+        # path and the cap that splits long miss runs into multiple reads.
+        "page_cache_max_coalesced_bytes": lambda: random.choice([4096, 65536, 1048576, 16777216, 67108864]),
     }
 
     dependent_settings = {
