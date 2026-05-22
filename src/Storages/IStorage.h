@@ -678,6 +678,18 @@ public:
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
+    /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,
+    /// taken from per-part `SerializationInfo`. Returns nullopt when the storage cannot
+    /// supply an exact count -- see `Storages/MergeTree/SparsityFilter.h` for the precise
+    /// reliability rules. Default implementation returns nullopt.
+    struct ColumnDefaultnessStats
+    {
+        UInt64 num_rows = 0;
+        UInt64 num_defaults = 0;
+    };
+    virtual std::optional<ColumnDefaultnessStats>
+    getColumnDefaultnessStats(const String & /*column_name*/, ContextPtr) const { return {}; }
+
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)
     /// - disk (compressed)

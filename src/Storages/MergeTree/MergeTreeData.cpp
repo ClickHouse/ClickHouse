@@ -5842,6 +5842,45 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
     return total_uncompressed_bytes_in_patches.load();
 }
 
+std::optional<IStorage::ColumnDefaultnessStats>
+MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
+{
+    /// Reliability rules are documented in `Storages/MergeTree/SparsityFilter.h`.
+
+    /// An active transaction can change which parts are visible relative to the snapshot
+    /// we want to reason about. Same restriction as `optimize_trivial_count_query`.
+    if (query_context->getCurrentTransaction())
+        return std::nullopt;
+
+    /// Lightweight updates / deletes apply patch parts at read time and are not folded
+    /// into base parts' `serialization.json`, so `num_defaults` would be stale.
+    if (!getPatchPartsVectorForInternalUsage().empty())
+        return std::nullopt;
+
+    ColumnDefaultnessStats aggregate;
+    for (const auto & part : getVisibleDataPartsVector(query_context))
+    {
+        const auto & infos = part->getSerializationInfos();
+        auto it = infos.find(column_name);
+        if (it == infos.end())
+            return std::nullopt;
+
+        /// `SerializationInfo::Data::add(IColumn)` records the exact count, and the
+        /// writer persists `exact_num_defaults: true` in `serialization.json` so old
+        /// parts (pre-flag) are treated as non-trustworthy. The Sparse-kind check is
+        /// defence in depth -- only sparse-encoded columns get the flag set.
+        const auto & info = *it->second;
+        const auto & info_data = info.getData();
+        if (!info_data.exact_num_defaults
+            || !ISerialization::hasKind(info.getKindStack(), ISerialization::Kind::SPARSE))
+            return std::nullopt;
+
+        aggregate.num_rows += part->rows_count;
+        aggregate.num_defaults += info_data.num_defaults;
+    }
+    return aggregate;
+}
+
 size_t MergeTreeData::getActivePartsCount() const
 {
     return total_active_size_parts.load();

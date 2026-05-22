@@ -1,6 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-#include <Columns/ColumnSparse.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
@@ -28,6 +28,7 @@ constexpr auto KEY_VERSION = "version";
 constexpr auto KEY_NUM_ROWS = "num_rows";
 constexpr auto KEY_COLUMNS = "columns";
 constexpr auto KEY_NUM_DEFAULTS = "num_defaults";
+constexpr auto KEY_EXACT_NUM_DEFAULTS = "exact_num_defaults";
 constexpr auto KEY_KIND = "kind";
 constexpr auto KEY_NAME = "name";
 
@@ -65,29 +66,39 @@ void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
 
 void SerializationInfo::Data::add(const IColumn & column)
 {
-    size_t rows = column.size();
-    double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-
-    num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
+    /// We use the exact count rather than `getRatioOfDefaultRows` sampling.
+    /// Cost is O(rows) -- comparable to the per-row work the writer is about
+    /// to do anyway -- and consumers (trivial count rewrite, sparse-based part
+    /// pruning) need the value to be trustworthy.
+    bool was_empty = (num_rows == 0);
+    num_rows += column.size();
+    num_defaults += column.getNumberOfDefaultRows();
+    /// Exactness is the AND of all contributions. A fresh Data hasn't seen any
+    /// data yet, so the first exact contribution "starts" the tracking as exact.
+    if (was_empty)
+        exact_num_defaults = true;
 }
 
 void SerializationInfo::Data::add(const Data & other)
 {
     num_rows += other.num_rows;
     num_defaults += other.num_defaults;
+    /// Aggregate is exact only if both sides are exact.
+    exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
 void SerializationInfo::Data::remove(const Data & other)
 {
     num_rows -= other.num_rows;
     num_defaults -= other.num_defaults;
+    exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
 void SerializationInfo::Data::addDefaults(size_t length)
 {
     num_rows += length;
     num_defaults += length;
+    /// Adding a known number of defaults preserves exactness.
 }
 
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
@@ -301,6 +312,9 @@ void SerializationInfo::toJSON(Poco::JSON::Object & object) const
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
+    /// Only emit when true so old readers (which would not know the key) stay compatible.
+    if (data.exact_num_defaults)
+        object.set(KEY_EXACT_NUM_DEFAULTS, true);
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
@@ -312,6 +326,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
     data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
+    data.exact_num_defaults = object.has(KEY_EXACT_NUM_DEFAULTS) && object.getValue<bool>(KEY_EXACT_NUM_DEFAULTS);
     kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
 }
 

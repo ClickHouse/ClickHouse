@@ -24,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/SparsityFilter.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
@@ -119,6 +120,7 @@ namespace Setting
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_trivial_count_query;
+    extern const SettingsBool optimize_trivial_count_with_sparsity_filter;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -422,6 +424,122 @@ bool applyTrivialCountIfPossible(
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
     auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
     prepared_count->setStepDescription("Optimized trivial count");
+    query_plan.addStep(std::move(prepared_count));
+
+    return true;
+}
+
+/// Extension of `applyTrivialCountIfPossible` for queries of shape
+///     SELECT count() FROM t WHERE <op>
+/// where `<op>` exactly partitions rows into defaults and non-defaults of one column,
+/// and that column has reliable per-part `(num_rows, num_defaults)` stats. See
+/// `Storages/MergeTree/SparsityFilter.h` for what "reliable" means and which predicates
+/// are recognised. Sister of `applyTrivialCountIfPossible`; same opt-outs except this
+/// one *requires* a WHERE.
+bool applyTrivialCountWithSparsityFilterIfPossible(
+    QueryPlan & query_plan,
+    SelectQueryInfo & select_query_info,
+    const TableNode * table_node,
+    const TableFunctionNode * table_function_node,
+    const QueryTreeNodePtr & query_tree,
+    const QueryTreeNodePtr & table_expression_node,
+    ContextMutablePtr & query_context,
+    const Names & columns_names)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!settings[Setting::optimize_trivial_count_with_sparsity_filter])
+        return false;
+
+    const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+    if (!storage->supportsTrivialCountOptimization(
+            table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
+        return false;
+
+    if (getEffectiveRowPolicyFilter(storage, query_context))
+        return false;
+
+    if (select_query_info.additional_filter_ast)
+        return false;
+
+    /// Same transaction caveat as `applyTrivialCountIfPossible`.
+    if (query_context->getCurrentTransaction())
+        return false;
+
+    /// FINAL / SAMPLE - same as applyTrivialCountIfPossible.
+    if (table_node && table_node->getTableExpressionModifiers().has_value() &&
+        (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
+         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+        return false;
+    if (table_function_node && table_function_node->getTableExpressionModifiers().has_value()
+        && (table_function_node->getTableExpressionModifiers()->hasFinal()
+            || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio()
+            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+        return false;
+
+    /// Differ from `applyTrivialCountIfPossible`: we *need* a WHERE to classify, and we
+    /// don't accept GROUP BY / PREWHERE / HAVING / QUALIFY because those reshape the count.
+    auto & main_query_node = query_tree->as<QueryNode &>();
+    if (!main_query_node.hasWhere())
+        return false;
+    if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasHaving() || main_query_node.hasQualify())
+        return false;
+
+    if (settings[Setting::allow_experimental_query_deduplication] || settings[Setting::empty_result_for_aggregation_by_empty_set])
+        return false;
+
+    QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
+    if (aggregates.size() != 1)
+        return false;
+    const auto & function_node = aggregates.front().get()->as<const FunctionNode &>();
+    chassert(function_node.getAggregateFunction() != nullptr);
+    const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node.getAggregateFunction().get());
+    if (!count_func)
+        return false;
+
+    auto classified = classifySparsityPredicate(main_query_node.getWhere(), table_expression_node);
+    if (!classified)
+        return false;
+
+    auto stats = storage->getColumnDefaultnessStats(classified->column_name, query_context);
+    if (!stats)
+        return false;
+
+    /// Same parallel-replicas guard as the regular trivial-count path: avoid each remote
+    /// shard independently rewriting and multiplying the count.
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    {
+        if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
+            settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY)
+            return false;
+        query_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_TRACE(getLogger("Planner"), "Disabling parallel replicas to be able to use a trivial count with sparsity filter optimization");
+    }
+
+    select_query_info.optimize_trivial_count = true;
+
+    UInt64 num_rows = (classified->predicate_class == SparsityPredicateClass::MatchesDefault)
+        ? stats->num_defaults
+        : (stats->num_rows - stats->num_defaults);
+
+    const AggregateFunctionCount & agg_count = *count_func;
+    std::vector<char> state(agg_count.sizeOfData());
+    AggregateDataPtr place = state.data();
+    agg_count.create(place);
+    SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
+    AggregateFunctionCount::set(place, num_rows);
+
+    auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
+    column->insertFrom(place);
+
+    auto block_with_count = std::make_shared<const Block>(Block{
+        {std::move(column),
+         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), agg_count.getArgumentTypes(), Array{}),
+         columns_names.front()}});
+
+    auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
+    auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    prepared_count->setStepDescription("Optimized trivial count with sparsity filter");
     query_plan.addStep(std::move(prepared_count));
 
     return true;
@@ -926,17 +1044,30 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             }
         }
 
-        /// Apply trivial_count optimization if possible
+        /// Apply trivial_count optimization if possible. The "with sparsity filter" variant
+        /// covers `SELECT count() FROM t WHERE col != default(col)` (and friends) by reading
+        /// per-part `num_defaults` from `serialization.json`. Only one of the two paths can
+        /// fire: the plain one rejects when there is a WHERE, the sparsity-filter one *needs*
+        /// a WHERE.
         bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates
-            && applyTrivialCountIfPossible(
-                query_plan,
-                table_expression_query_info,
-                table_node,
-                table_function_node,
-                select_query_info.query_tree,
-                planner_context->getMutableQueryContext(),
-                table_expression_data.getColumnNames());
+            && (applyTrivialCountIfPossible(
+                    query_plan,
+                    table_expression_query_info,
+                    table_node,
+                    table_function_node,
+                    select_query_info.query_tree,
+                    planner_context->getMutableQueryContext(),
+                    table_expression_data.getColumnNames())
+                || applyTrivialCountWithSparsityFilterIfPossible(
+                    query_plan,
+                    table_expression_query_info,
+                    table_node,
+                    table_function_node,
+                    select_query_info.query_tree,
+                    table_expression,
+                    planner_context->getMutableQueryContext(),
+                    table_expression_data.getColumnNames()));
 
         if (is_trivial_count_applied)
         {

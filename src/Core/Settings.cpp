@@ -4473,8 +4473,29 @@ The optimization is suppressed when the user has explicitly set `group_by_overfl
 
 Possible values:
 
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
+
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
+Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
+queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
+exactly partitions rows into defaults and non-defaults of `col`. The count is then
+served from the per-column `num_defaults` / `num_rows` counters that MergeTree already
+keeps in `serialization.json`, with no data scan.
+
+Patterns recognised: `col = default(col)`, `col != default(col)`, `IS NULL` / `IS NOT NULL`
+on Nullable columns, `empty(col)` / `notEmpty(col)` on String columns, and (for unsigned
+integer columns) `col > 0`, `col >= 1`, `col < 1`, `col <= 0`.
+
+Possible values:
+
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
+
+See also:
+
+- [optimize_trivial_count_query](#optimize_trivial_count_query)
 )", 0) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
