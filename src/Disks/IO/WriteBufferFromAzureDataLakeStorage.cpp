@@ -65,7 +65,7 @@ constexpr size_t ADLFS_MAX_RETRIES = 10;
 
 bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint)
 {
-    return endpoint.storage_account_url.contains("dfs.fabric.microsoft.com/iceberg");
+    return endpoint.storage_account_url.contains("dfs.fabric.microsoft.com");
 }
 
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
