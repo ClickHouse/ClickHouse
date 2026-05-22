@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/SparseGranuleAnalyzer.h>
 
 #include <Columns/ColumnSparse.h>
+#include <Core/Settings.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
@@ -19,6 +20,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_query_condition_cache;
+}
 
 namespace
 {
@@ -85,6 +91,7 @@ analyzeSparseColumnGranules(
     const MarkRanges & ranges,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & query_context,
     LoggerPtr log)
 {
     /// Phase B only applies when this column is sparse-encoded on this part. Otherwise the
@@ -109,8 +116,12 @@ analyzeSparseColumnGranules(
     /// being asked about -- a granule is "all-default" or "all-non-default" purely as
     /// a function of the column's data. Cache both bitmaps under synthetic keys so
     /// repeated queries (with any classifiable predicate on the same column) hit it
-    /// without re-running the analyzer or its per-part reader setup.
-    auto cache = storage.getContext()->getQueryConditionCache();
+    /// without re-running the analyzer or its per-part reader setup. Gated on the
+    /// same `use_query_condition_cache` setting as the regular cache path; the setting
+    /// is per-query so it must come from `query_context`, not the storage's context.
+    auto cache = query_context->getSettingsRef()[Setting::use_query_condition_cache]
+        ? query_context->getQueryConditionCache()
+        : nullptr;
     if (cache && table_uuid != UUIDHelpers::Nil)
     {
         const UInt64 hash_defaults = syntheticConditionHash(CACHE_DOMAIN_DEFAULTS, column_name);
@@ -259,10 +270,12 @@ MergeTreeSparsityReader::MergeTreeSparsityReader(
     std::vector<RecognisedSparsityPredicate> predicates_,
     const MergeTreeData & data_,
     StorageSnapshotPtr storage_snapshot_,
+    ContextPtr query_context_,
     LoggerPtr log_)
     : predicates(std::move(predicates_))
     , data(data_)
     , storage_snapshot(std::move(storage_snapshot_))
+    , query_context(std::move(query_context_))
     , log(std::move(log_))
 {
 }
@@ -277,7 +290,7 @@ SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & par
     for (const auto & predicate : predicates)
     {
         auto analysis = analyzeSparseColumnGranules(
-            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, log);
+            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, log);
         if (!analysis)
             continue;
         any_predicate_used = true;

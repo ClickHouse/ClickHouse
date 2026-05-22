@@ -977,7 +977,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
         for (const auto & pred : conjuncts)
         {
             auto analysis = analyzeSparseColumnGranules(
-                part.data_part, pred.column_name, part.ranges, data, storage_snapshot, log);
+                part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, log);
             if (!analysis)
                 continue;
 

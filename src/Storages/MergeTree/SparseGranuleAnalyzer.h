@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Common/Logger.h>
@@ -45,6 +46,7 @@ analyzeSparseColumnGranules(
     const MarkRanges & ranges,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & query_context,
     LoggerPtr log);
 
 
@@ -70,6 +72,7 @@ public:
         std::vector<RecognisedSparsityPredicate> predicates_,
         const MergeTreeData & data_,
         StorageSnapshotPtr storage_snapshot_,
+        ContextPtr query_context_,
         LoggerPtr log_);
 
     SparsityReadResultPtr read(const RangesInDataPart & part);
@@ -78,6 +81,7 @@ private:
     std::vector<RecognisedSparsityPredicate> predicates;
     const MergeTreeData & data;
     StorageSnapshotPtr storage_snapshot;
+    ContextPtr query_context;
     LoggerPtr log;
 };
 

@@ -3699,6 +3699,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                         std::move(conjuncts),
                         data,
                         storage_snapshot,
+                        context,
                         getLogger("MergeTreeSparsityReader"));
                 }
             }
