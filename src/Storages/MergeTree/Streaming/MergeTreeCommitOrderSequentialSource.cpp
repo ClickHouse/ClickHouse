@@ -1,3 +1,4 @@
+#include <Core/Streaming/Settings.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/StreamingChunkCursor.h>
 #include <Storages/MergeTree/Streaming/SaveLastWatermark.h>
@@ -53,30 +54,36 @@ namespace DB
 namespace
 {
 
-std::vector<std::string> getPartitionsCanBeRead(
-    const std::map<String, Int64> & safe_block_numbers,
-    const std::map<String, PartitionCursor> & last_emitted_positions)
+struct ClassifiedPartitions
 {
-    std::vector<std::string> partitions_to_read;
+    std::vector<std::string> readable;
+    std::vector<std::string> idle;
+};
+
+ClassifiedPartitions getPartitionsClassification(
+    const std::map<String, Int64> & safe_block_numbers,
+    const std::map<String, PartitionCursor> & last_emitted_positions,
+    const std::map<String, std::chrono::steady_clock::time_point> & last_snapshot_time,
+    const WatermarkSettingsPtr & watermark)
+{
+    const auto now = std::chrono::steady_clock::now();
+
+    ClassifiedPartitions classification;
     for (const auto & [partition_id, safe_block_number] : safe_block_numbers)
     {
-        auto it = last_emitted_positions.find(partition_id);
+        if (!last_emitted_positions.contains(partition_id))
+            classification.readable.push_back(partition_id);
 
-        if (it == last_emitted_positions.end())
-            partitions_to_read.push_back(partition_id);
+        else if (last_emitted_positions.at(partition_id).block_number <= safe_block_number)
+            classification.readable.push_back(partition_id);
 
-        else if (it->second.block_number <= safe_block_number)
-            partitions_to_read.push_back(partition_id);
+        else if (watermark)
+            if (last_snapshot_time.contains(partition_id))
+                if (isIdleExpired(now, last_snapshot_time.at(partition_id), watermark))
+                    classification.idle.push_back(partition_id);
     }
 
-    return partitions_to_read;
-}
-
-bool canConstructReadingPipeline(
-    const std::map<String, Int64> & safe_block_numbers,
-    const std::map<String, PartitionCursor> & last_emitted_positions)
-{
-    return !getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions).empty();
+    return classification;
 }
 
 struct PipeWithResources
@@ -268,10 +275,9 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
             if (last_watermark.contains(partition_id))
                 marker.emplace<WatermarkMarker>(WatermarkMarker{last_watermark.at(partition_id)});
 
-            if (stream_settings.watermark->idle_timeout.count() > 0)
-                if (last_snapshot_time.contains(partition_id))
-                    if (now - last_snapshot_time.at(partition_id) >= stream_settings.watermark->idle_timeout)
-                        marker.emplace<IdleMarker>();
+            if (last_snapshot_time.contains(partition_id))
+                if (isIdleExpired(now, last_snapshot_time.at(partition_id), stream_settings.watermark))
+                    marker.emplace<IdleMarker>();
 
             if (!std::holds_alternative<std::monostate>(marker))
             {
@@ -442,8 +448,20 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         return Status::Finished;
     }
 
-    if (canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
+    const auto safe_block_numbers = subscription->snapshot();
+    const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions, last_snapshot_time, stream_settings.watermark);
+
+    if (!classification.readable.empty())
         return Status::Ready;
+
+    if (classification.idle.size() == safe_block_numbers.size())
+    {
+        if (!output.canPush())
+            return Status::PortFull;
+
+        output.push(makeIdleMarkerChunk(output.getHeader()));
+        return Status::PortFull;
+    }
 
     if (!current_sub_pipeline.empty())
         return Status::UpdatePipeline;
@@ -466,6 +484,8 @@ void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
 
 IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
 {
+    LOG_TEST(log, "Running prepare");
+
     const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
     if (has_running_sub_pipeline)
         return handleRunningPipeline();
@@ -481,16 +501,16 @@ void MergeTreeCommitOrderSequentialSource::work()
     chassert(!pending_snapshot.has_value());
 
     subscription->drain();
-    auto safe_block_numbers = subscription->snapshot();
+    const auto safe_block_numbers = subscription->snapshot();
+    const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions, last_snapshot_time, stream_settings.watermark);
 
     if (subscription->isDisabled())
         return;
 
-    if (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
+    if (classification.readable.empty())
         return;
 
-    const auto partitions_to_read = getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions);
-    for (const auto & partition_id : partitions_to_read)
+    for (const auto & partition_id : classification.readable)
         reading_up_to_block_numbers[partition_id] = safe_block_numbers.at(partition_id);
 
     auto result = buildNextSnapshotReadingPipeline(
@@ -539,7 +559,10 @@ std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSequentialSource::scheduleF
     }
 
     chassert(next_idle_time.time_since_epoch().count() != 0);
-    return {subscription->fd(), 0x001 | 0x008, std::chrono::duration_cast<std::chrono::milliseconds>(next_idle_time - now).count()};
+    const int64_t timeout_ms = next_idle_time > now ? std::chrono::duration_cast<std::chrono::milliseconds>(next_idle_time - now).count() : -1;
+    LOG_TEST(log, "Scheduling sleep for {} ms", timeout_ms);
+
+    return {subscription->fd(), 0x001 | 0x008, timeout_ms};
 }
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline()
@@ -553,6 +576,7 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
     {
         chassert(!inputs.empty());
         chassert(inputs.front().isConnected());
+        LOG_TEST(log, "Tear down previous snapshot reading sub-pipeline");
 
         auto & input = inputs.front();
         disconnect(input.getOutputPort(), input);
@@ -566,6 +590,7 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
     {
         auto sub_pipe = std::exchange(pending_snapshot, std::nullopt);
         chassert(sub_pipe->numOutputPorts() == 1);
+        LOG_TEST(log, "Connecting next snapshot reading sub-pipeline");
 
         if (inputs.empty())
             inputs.emplace_back(*header, this);

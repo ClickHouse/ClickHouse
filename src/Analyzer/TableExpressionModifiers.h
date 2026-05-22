@@ -5,25 +5,10 @@
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <Core/Streaming/CursorTree_fwd.h>
+#include <Core/Streaming/Settings.h>
 
 namespace DB
 {
-
-using Rational = ASTSampleRatio::Rational;
-
-struct WatermarkSettings
-{
-    String column;
-    QueryTreeNodePtr expression;
-    std::chrono::milliseconds idle_timeout;
-};
-using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
-
-struct StreamingSettings
-{
-    CursorTreeNodePtr cursor;
-    WatermarkSettingsPtr watermark;
-};
 
 /** Modifiers that can be used for table, table function and subquery in JOIN TREE.
   *
@@ -32,6 +17,8 @@ struct StreamingSettings
 class TableExpressionModifiers
 {
 public:
+    using Rational = ASTSampleRatio::Rational;
+
     TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
