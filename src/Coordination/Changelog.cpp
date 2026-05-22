@@ -207,15 +207,6 @@ public:
                             current_file_description->from_log_index,
                             *last_index_written,
                             current_file_description->extension);
-
-                        /// Keep the in-memory to_log_index aligned with the new filename so
-                        /// readers (e.g. system.keeper_changelogs) don't see a stale rotation
-                        /// target after a size-based rotation cut the file short.
-                        current_file_description->withLock(
-                            [&]
-                            {
-                                current_file_description->to_log_index = *last_index_written;
-                            });
                     }
 
                     if (move_changelog_cb)
@@ -2817,48 +2808,29 @@ std::vector<KeeperChangelogStatus> Changelog::getChangelogsStatus() const
 
         const bool active = active_description && description == active_description;
 
-        /// disk, path, and to_log_index are all mutated together under file_mutex
-        /// (see moveChangelogBetweenDisks and ChangelogWriter::setFile). Snapshot them
-        /// together so we don't see a half-applied move (e.g. old disk + new path).
-        DiskPtr disk;
-        String path;
-        uint64_t to_log_index = 0;
-        description->withLock(
-            [&]
-            {
-                disk = description->disk;
-                path = description->path;
-                to_log_index = description->to_log_index;
-            });
-
         std::optional<uint64_t> last_entry_index;
         uint64_t entries = 0;
-        if (active)
+        if (!active)
         {
-            if (current_max_log_id >= description->from_log_index)
-            {
-                const uint64_t capped = std::min(to_log_index, current_max_log_id);
-                last_entry_index = capped;
-                entries = capped - description->from_log_index + 1;
-            }
+            last_entry_index = description->to_log_index;
+            entries = description->to_log_index - description->from_log_index + 1;
         }
-        else if (!description->broken_at_end)
+        else if (current_max_log_id >= description->from_log_index)
         {
-            last_entry_index = to_log_index;
-            entries = to_log_index - description->from_log_index + 1;
+            const uint64_t capped = std::min(description->to_log_index, current_max_log_id);
+            last_entry_index = capped;
+            entries = capped - description->from_log_index + 1;
         }
-        /// broken_at_end: valid prefix is unknown without re-reading the file;
-        /// leave last_entry_index unset and entries = 0.
 
         const bool is_compressed = description->extension.ends_with("zstd");
 
         result.push_back(KeeperChangelogStatus{
             .from_log_index = description->from_log_index,
-            .to_log_index = to_log_index,
+            .to_log_index = description->to_log_index,
             .last_entry_index = last_entry_index,
             .entries = entries,
-            .path = std::move(path),
-            .disk = std::move(disk),
+            .path = description->getPathSafe(),
+            .disk = description->disk,
             .is_compressed = is_compressed,
             .active = active,
             .is_broken = description->broken_at_end,
