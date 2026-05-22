@@ -15,6 +15,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/validateGroupByKeyType.h>
 #include <Columns/IColumn.h>
 
 #include <Interpreters/Aggregator.h>
@@ -378,7 +379,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                             }
                         }
 
-                        NameAndTypePair key{column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
+                        NameAndTypePair key{column_name, use_nulls ? makeNullableOrLowCardinalityNullableSafe(node->result_type) : node->result_type };
 
                         grouping_set_list.push_back(key);
 
@@ -432,7 +433,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                         }
                     }
 
-                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
+                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullableOrLowCardinalityNullableSafe(node->result_type) : node->result_type };
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
@@ -692,6 +693,13 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
             auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
+
+            for (const auto & col : actions_dag->getResultColumns())
+            {
+                if (col.name == with_alias->getColumnName())
+                    DB::validateGroupByKeyType(col.type, context_.getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
+            }
+
             desc.partition_by_actions.push_back(std::move(actions_dag));
         }
     }
@@ -1490,22 +1498,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
 
 void SelectQueryExpressionAnalyzer::validateGroupByKeyType(const DB::DataTypePtr & key_type) const
 {
-    if (getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
-        return;
-
-    auto check = [](const IDataType & type)
-    {
-        if (isDynamic(type) || isVariant(type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
-                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
-                "its a JSON path subcolumn) or casting this column to a specific data type. "
-                "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
-    };
-
-    check(*key_type);
-    key_type->forEachChild(check);
+    DB::validateGroupByKeyType(key_type, getContext()->getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
 }
 
 void SelectQueryExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
