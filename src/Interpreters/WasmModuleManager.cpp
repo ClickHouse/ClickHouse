@@ -168,8 +168,6 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
             "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
             module_name, hashToHex(expected_hash), hashToHex(actual_hash));
 
-    const String module_name_key(module_name);
-
     {
         UniqueLock lock(modules_mutex);
         auto it = modules.find(module_name);
@@ -208,7 +206,7 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
             }
         }
 
-        auto [reserved_it, inserted] = modules.emplace(module_name_key, ModuleRef{});
+        auto [reserved_it, inserted] = modules.emplace(String(module_name), ModuleRef{});
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected WebAssembly module '{}' reservation collision", module_name);
         reserved_it->second.writes_in_progress = 1;
@@ -219,7 +217,7 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
         if (is_published)
             return;
         UniqueLock lock(modules_mutex);
-        if (auto it = modules.find(module_name_key); it != modules.end())
+        if (auto it = modules.find(module_name); it != modules.end())
         {
             if (it->second.writes_in_progress > 0)
                 --it->second.writes_in_progress;
@@ -239,7 +237,7 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
 
     {
         UniqueLock lock(modules_mutex);
-        auto it = modules.find(module_name_key);
+        auto it = modules.find(module_name);
         if (it == modules.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "WebAssembly module '{}' save reservation was removed before publish", module_name);
         if (it->second.writes_in_progress == 0)
@@ -278,9 +276,8 @@ std::string WasmModuleManager::loadModuleImpl(std::string_view module_name)
 
 std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name, FuelMode fuel_mode)
 {
-    const String module_name_key(module_name);
-    const size_t requested_idx = fuelModeIndex(fuel_mode);
-    const size_t other_idx = requested_idx == 0 ? 1 : 0;
+    const bool requires_fuel_specialization = engine->requiresFuelSpecialization();
+    const size_t cache_idx = requires_fuel_specialization ? fuelModeIndex(fuel_mode) : 0;
 
     {
         SharedLockGuard lock(modules_mutex);
@@ -288,36 +285,8 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
         auto it = modules.find(module_name);
         if (it != modules.end())
         {
-            if (auto module = it->second.ptrs[requested_idx].lock())
+            if (auto module = it->second.ptrs[cache_idx].lock())
                 return {module, it->second.hash};
-        }
-    }
-
-    if (!engine->requiresFuelSpecialization())
-    {
-        std::shared_ptr<WasmModule> other_module;
-        {
-            SharedLockGuard lock(modules_mutex);
-            auto it = modules.find(module_name);
-            if (it != modules.end())
-            {
-                if (auto module = it->second.ptrs[requested_idx].lock())
-                    return {module, it->second.hash};
-                other_module = it->second.ptrs[other_idx].lock();
-            }
-        }
-
-        if (other_module)
-        {
-            UniqueLock lock(modules_mutex);
-            auto it = modules.find(module_name);
-            if (it != modules.end())
-            {
-                if (auto module = it->second.ptrs[requested_idx].lock())
-                    return {module, it->second.hash};
-                it->second.ptrs[requested_idx] = other_module;
-                return {other_module, it->second.hash};
-            }
         }
     }
 
@@ -326,7 +295,7 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
         auto it = modules.find(module_name);
         if (it == modules.end())
         {
-            auto [inserted_it, _] = modules.emplace(module_name_key, ModuleRef{});
+            auto [inserted_it, _] = modules.emplace(String(module_name), ModuleRef{});
             it = inserted_it;
             it->second.is_transient_load_reservation = true;
         }
@@ -338,25 +307,16 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
                     "Cannot load WebAssembly module '{}' while it is being saved",
                     module_name);
 
-            if (auto module = it->second.ptrs[requested_idx].lock())
+            if (auto module = it->second.ptrs[cache_idx].lock())
                 return {module, it->second.hash};
-
-            if (!engine->requiresFuelSpecialization())
-            {
-                if (auto module = it->second.ptrs[other_idx].lock())
-                {
-                    it->second.ptrs[requested_idx] = module;
-                    return {module, it->second.hash};
-                }
-            }
         }
 
         ++it->second.loads_in_progress;
     }
 
-    SCOPE_EXIT_SAFE({
-        UniqueLock lock(modules_mutex);
-        auto it = modules.find(module_name_key);
+    auto release_load_reservation_unlocked = [&]() TSA_REQUIRES(modules_mutex)
+    {
+        auto it = modules.find(module_name);
         if (it == modules.end())
             return;
 
@@ -371,7 +331,20 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
         {
             modules.erase(it);
         }
-    });
+    };
+
+    scope_guard release_load_reservation = [&]()
+    {
+        try
+        {
+            UniqueLock lock(modules_mutex);
+            release_load_reservation_unlocked();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    };
 
     auto module_path = getFilePath(module_name);
     if (!user_scripts_disk->existsFile(module_path))
@@ -384,19 +357,29 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
     linkHostFunctions(*local_module);
 
+    release_load_reservation.release();
     UniqueLock lock(modules_mutex);
+    scope_guard release_load_reservation_under_lock = [&]() TSA_REQUIRES(modules_mutex)
+    {
+        try
+        {
+            release_load_reservation_unlocked();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    };
 
     auto publish_module = [&](ModuleRef & module_ref)
     {
-        module_ref.ptrs[requested_idx] = local_module;
-        if (!engine->requiresFuelSpecialization())
-            module_ref.ptrs[other_idx] = local_module;
+        module_ref.ptrs[cache_idx] = local_module;
     };
 
     auto it = modules.find(module_name);
     if (it == modules.end())
     {
-        auto [inserted_it, _] = modules.emplace(module_name_key, ModuleRef{{}, local_hash});
+        auto [inserted_it, _] = modules.emplace(String(module_name), ModuleRef{{}, local_hash});
         publish_module(inserted_it->second);
         return {local_module, inserted_it->second.hash};
     }
@@ -406,16 +389,8 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     {
         module_ref.hash = local_hash;
         module_ref.is_transient_load_reservation = false;
-        if (auto module = module_ref.ptrs[requested_idx].lock())
+        if (auto module = module_ref.ptrs[cache_idx].lock())
             return {module, module_ref.hash};
-        if (!engine->requiresFuelSpecialization())
-        {
-            if (auto module = module_ref.ptrs[other_idx].lock())
-            {
-                module_ref.ptrs[requested_idx] = module;
-                return {module, module_ref.hash};
-            }
-        }
         publish_module(module_ref);
         return {local_module, module_ref.hash};
     }
@@ -428,16 +403,8 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
             hashToHex(module_ref.hash),
             hashToHex(local_hash));
 
-    if (auto module = module_ref.ptrs[requested_idx].lock())
+    if (auto module = module_ref.ptrs[cache_idx].lock())
         return {module, module_ref.hash};
-    if (!engine->requiresFuelSpecialization())
-    {
-        if (auto module = module_ref.ptrs[other_idx].lock())
-        {
-            module_ref.ptrs[requested_idx] = module;
-            return {module, module_ref.hash};
-        }
-    }
 
     publish_module(module_ref);
     return {local_module, module_ref.hash};

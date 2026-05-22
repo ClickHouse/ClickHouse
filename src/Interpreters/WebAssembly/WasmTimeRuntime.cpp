@@ -554,12 +554,12 @@ private:
 
 std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(
     std::string_view module_name,
-    std::string_view module_bytes,
+    std::string_view wasm_code,
     FuelMode fuel_mode) const
 {
     auto & engine = fuel_mode == FuelMode::Enabled ? impl->engine_with_fuel : impl->engine_without_fuel;
     const char * phase_label = fuel_mode == FuelMode::Enabled ? "fuel" : "no-fuel";
-    auto module = compileModuleWithEngine(engine, module_bytes, phase_label);
+    auto module = compileModuleWithEngine(engine, wasm_code, phase_label);
 
     return std::make_unique<WasmTimeModule>(module_name, engine, std::move(module), fuel_mode);
 };
@@ -587,7 +587,7 @@ WasmTimeRuntime::WasmTimeRuntime() : impl(std::make_unique<Impl>()) { }
 
 std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(
     std::string_view /* module_name */,
-    std::string_view /* module_bytes */,
+    std::string_view /* wasm_code */,
     FuelMode /*fuel_mode*/) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Wasmtime support is disabled");
