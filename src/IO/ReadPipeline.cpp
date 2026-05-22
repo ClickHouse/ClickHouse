@@ -585,8 +585,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         /// `page_cache_block_size` as the prefetch alignment. That alignment MUST
         /// match the block size the memory-cache stage was configured with,
         /// otherwise prefetches don't line up with cache blocks.
-        size_t async_page_cache_block_size = memory_cache
-            ? memory_cache->page_cache_settings.page_cache_block_size
+        size_t async_page_cache_block_size = (memory_cache && memory_cache->page_cache_settings)
+            ? memory_cache->page_cache_settings->page_cache_block_size
             : settings.page_cache_block_size;
 
         impl = std::make_unique<AsynchronousBoundedReadBuffer>(
