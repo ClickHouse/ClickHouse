@@ -2307,8 +2307,8 @@ ColumnPtr probeFixedHashMap(
     const UInt8 * null_map = nm_col ? nm_col->getData().data() : nullptr;
 
     const bool dispatched = castTypeToEither<
-        ColumnVector<UInt8>, ColumnVector<UInt16>, ColumnVector<UInt32>, ColumnVector<UInt64>, ColumnVector<UInt128>,
-        ColumnVector<Int8>, ColumnVector<Int16>, ColumnVector<Int32>, ColumnVector<Int64>, ColumnVector<Int128>>(
+        ColumnVector<UInt8>, ColumnVector<UInt16>, ColumnVector<UInt32>, ColumnVector<UInt64>,
+        ColumnVector<Int8>, ColumnVector<Int16>, ColumnVector<Int32>, ColumnVector<Int64>>(
         col,
         [&](const auto & typed_col) -> bool
         {
@@ -2540,6 +2540,13 @@ void HashJoin::publishSharedRuntimeFilters()
 
         auto existing = lookup->find(filter_name);
         if (!existing)
+            continue;
+
+        /// If the optimizer chose Int128/UInt128 as common_type (e.g. probe column is Int128),
+        /// the per-row narrow + bounds-check overhead on wide integers outweighs the array-index
+        /// win; leave the existing Set/BF filter in place.
+        const WhichDataType target_which(removeNullable(existing->getFilterColumnTargetType()));
+        if (target_which.isInt128() || target_which.isUInt128())
             continue;
 
         auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(

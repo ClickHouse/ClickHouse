@@ -58,6 +58,7 @@ public:
 
     Float64 getPassRatioThresholdForDisabling() const { return pass_ratio_threshold_for_disabling; }
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
+    const DataTypePtr & getFilterColumnTargetType() const { return filter_column_target_type; }
 
 protected:
 
