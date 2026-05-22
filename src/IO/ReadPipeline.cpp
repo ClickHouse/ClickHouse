@@ -22,22 +22,24 @@
 #include <DistributedCache/Utils.h>
 #endif
 
-/// Helper for std::visit with multiple lambdas.
-template <class... Ts>
-struct overloaded : Ts...
-{
-    using Ts::operator()...;
-};
-template <class... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
-
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    /// Helper for std::visit with multiple lambdas.
+    template <class... Ts>
+    struct Overloaded : Ts...
+    {
+        using Ts::operator()...;
+    };
+    template <class... Ts>
+    Overloaded(Ts...) -> Overloaded<Ts...>;
 }
 
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
@@ -443,7 +445,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             else
             {
                 /// -- Stage 1 only: Source (no cache, no gather) --
-                impl = std::visit(overloaded{
+                impl = std::visit(Overloaded{
                     [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
                     {
                         return s.storage->readObject(object, settings, s.read_hint, use_ext_buf, /* restrict_seek */ false);
@@ -633,7 +635,7 @@ String ReadPipeline::describe() const
 
     if (source)
     {
-        std::visit(overloaded{
+        std::visit(Overloaded{
             [&](const ObjectStorageSource &) { append("Source(ObjectStorage)"); },
             [&](const LocalFileSource &) { append("Source(LocalFile)"); },
             [&](const BackupSource &) { append("Source(Backup)"); },
