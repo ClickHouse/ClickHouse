@@ -157,11 +157,6 @@ public:
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) override;
 
-    void listRecursive(
-        const String & path,
-        uint32_t get_children_recursive_nodes_limit,
-        ListRecursiveCallback callback) override;
-
     void exists(
         const String & path,
         ExistsCallback callback,
@@ -302,7 +297,6 @@ private:
     std::mutex operations_mutex;
 
     Watches watches TSA_GUARDED_BY(watches_mutex);
-    Watches list_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference

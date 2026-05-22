@@ -437,12 +437,8 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
-    /// Check if hash join post build optimizations could be performed.
-    if (hash_join && getNumBuckets() <= 1)
-    {
-        std::lock_guard lock(hash_join_mutex);
-        hash_join->runPostBuildPhase();
-    }
+    if (rightTableCanBeReranged())
+        tryRerangeRightTableData();
 
     if (block.rows() == 0)
         return hash_join->joinBlock(block);
@@ -799,6 +795,20 @@ size_t GraceHashJoin::getNumBuckets() const
 {
     std::shared_lock lock(rehash_mutex);
     return buckets.size();
+}
+
+bool GraceHashJoin::rightTableCanBeReranged() const
+{
+    if (hash_join && getNumBuckets() <= 1)
+        return hash_join->rightTableCanBeReranged();
+    return false;
+}
+
+void GraceHashJoin::tryRerangeRightTableData()
+{
+    std::lock_guard lock(hash_join_mutex);
+    if (hash_join)
+        hash_join->tryRerangeRightTableData();
 }
 
 GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const

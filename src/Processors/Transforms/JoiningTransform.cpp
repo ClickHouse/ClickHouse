@@ -9,7 +9,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event JoinBuildPostProcessingMicroseconds;
     extern const Event JoinBuildTableRowCount;
     extern const Event JoinProbeTableRowCount;
     extern const Event JoinResultRowCount;
@@ -271,12 +270,6 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 {
     auto & output = outputs.front();
 
-    if (post_build_phase)
-    {
-        output.finish();
-        return Status::Finished;
-    }
-
     /// Check can output.
     if (output.isFinished())
     {
@@ -332,14 +325,7 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
     }
 
     if (finish_counter->isLast())
-    {
         join->onBuildPhaseFinish();
-        if (join->hasPostBuildPhase())
-        {
-            post_build_phase = true;
-            return Status::Ready;
-        }
-    }
 
     output.finish();
     return Status::Finished;
@@ -347,13 +333,6 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
-    if (post_build_phase)
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
-        join->runPostBuildPhase();
-        return;
-    }
-
     auto & input = inputs.front();
     auto num_rows = chunk.getNumRows();
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
@@ -365,6 +344,9 @@ void FillingRightJoinSideTransform::work()
         ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
         stop_reading = !join->addBlockToJoin(block, num_rows, true);
     }
+
+    if (input.isFinished() && !join->supportParallelJoin())
+        join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }

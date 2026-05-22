@@ -883,7 +883,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
     parquet::ArrowReaderProperties arrow_properties;
-    parquet::ReaderProperties reader_properties(arrow::default_memory_pool());
+    parquet::ReaderProperties reader_properties(ArrowMemoryPool::instance());
     arrow_properties.set_use_threads(false);
     arrow_properties.set_batch_size(row_group_batch.adaptive_chunk_size);
     reader_properties.set_page_checksum_verification(format_settings.parquet.verify_checksums);
@@ -940,7 +940,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     parquet::arrow::FileReaderBuilder builder;
     THROW_ARROW_NOT_OK(builder.Open(arrow_file, reader_properties, metadata));
     builder.properties(arrow_properties);
-    builder.memory_pool(arrow::default_memory_pool());
+    builder.memory_pool(ArrowMemoryPool::instance());
     // should get raw reader before build, raw_reader will set null after build
     auto * parquet_file_reader = builder.raw_reader();
     THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));

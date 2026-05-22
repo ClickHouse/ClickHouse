@@ -564,7 +564,6 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         .supports_arguments = true,
         .supports_settings = true,
         .supports_table_overrides = true,
-        .is_external = true,
     });
 }
 }

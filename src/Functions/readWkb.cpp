@@ -7,13 +7,11 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
 #include <Functions/geometryConverters.h>
 #include <Columns/ColumnVariant.h>
-#include <Interpreters/Context.h>
 
 #include <memory>
 #include <variant>
@@ -28,11 +26,6 @@ extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-namespace Setting
-{
-    extern const SettingsUInt64 max_wkb_geometry_elements;
-}
-
 namespace
 {
 
@@ -40,7 +33,7 @@ template <class ReturnDataTypeName, class Geometry, class Serializer, class Name
 class FunctionReadWKB : public IFunction
 {
 public:
-    explicit FunctionReadWKB(UInt32 max_wkb_elements_) : max_wkb_elements(max_wkb_elements_) {}
+    explicit FunctionReadWKB() = default;
 
     static constexpr const char * name = NameHolder::name;
 
@@ -71,11 +64,7 @@ public:
             auto str = column->getDataAt(i);
             ReadBufferFromString in_buffer(str);
 
-            auto object = parseWKBFormat(in_buffer, max_wkb_elements);
-            if (!std::holds_alternative<Geometry>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Function {}: expected geometry type {}, got variant index {}",
-                    NameHolder::name, ReturnDataTypeName().getName(), object.index());
+            auto object = parseWKBFormat(in_buffer);
             auto boost_object = std::get<Geometry>(object);
             serializer.add(boost_object);
         }
@@ -84,14 +73,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>(
-            static_cast<UInt32>(std::min<UInt64>(context->getSettingsRef()[Setting::max_wkb_geometry_elements], MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT)));
+        return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>();
     }
-
-private:
-    UInt32 max_wkb_elements;
 };
 
 struct ReadWKBPointNameHolder
@@ -131,7 +116,7 @@ public:
         Polygon,
     };
 
-    explicit FunctionReadWKBCommon(UInt32 max_wkb_elements_) : max_wkb_elements(max_wkb_elements_) {}
+    explicit FunctionReadWKBCommon() = default;
 
     static constexpr const char * name = "readWKB";
 
@@ -175,7 +160,7 @@ public:
             auto str = column->getDataAt(i);
             ReadBufferFromString in_buffer(str);
 
-            auto object = parseWKBFormat(in_buffer, max_wkb_elements);
+            auto object = parseWKBFormat(in_buffer);
             UInt8 converted_type = -1;
             if (std::holds_alternative<CartesianPoint>(object))
             {
@@ -224,14 +209,10 @@ public:
         return true;
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionReadWKBCommon>(
-            static_cast<UInt32>(std::min<UInt64>(context->getSettingsRef()[Setting::max_wkb_geometry_elements], MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT)));
+        return std::make_shared<FunctionReadWKBCommon>();
     }
-
-private:
-    UInt32 max_wkb_elements;
 };
 
 }

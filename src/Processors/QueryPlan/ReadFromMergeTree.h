@@ -83,12 +83,11 @@ public:
     enum class IndexType : uint8_t
     {
         None,
-        PartitionMinMax,
+        MinMax,
         Partition,
         PrimaryKey,
         Skip,
         PrimaryKeyExpand,
-        Statistics
     };
 
     struct DistributedIndexStat
@@ -393,9 +392,6 @@ public:
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
     void deferFiltersAfterFinalIfNeeded();
-
-    const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
-    const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
 
 private:
     MergeTreeSettingsPtr data_settings;

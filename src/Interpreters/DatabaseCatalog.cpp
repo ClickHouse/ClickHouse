@@ -87,7 +87,6 @@ namespace Setting
 {
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 namespace MergeTreeSetting
@@ -2237,12 +2236,9 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
-    if (!database)
-        return {};
-    /// DataLakeCatalog::getAllTableNames lists all tables from remote catalog - expensive. Skip when user opted out.
-    if (database->isDatalakeCatalog() && context && !context->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
-        return {};
-    return database->getAllTableNames(context);
+    if (database)
+        return database->getAllTableNames(context);
+    return {};
 }
 
 }
