@@ -1214,10 +1214,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.6",
-        {
-
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
