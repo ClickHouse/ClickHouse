@@ -72,7 +72,7 @@ TEST(ExchangeServerHandshake, MismatchedVersionRejectedBeforeParsingBody)
     {
         try
         {
-            ExchangeServer::handleConnection(std::move(server_side), connections, log);
+            ExchangeServer::handleConnection(server_side, connections, log);
         }
         catch (const Exception & e)
         {

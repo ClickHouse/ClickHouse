@@ -71,8 +71,7 @@ void ExchangeServer::run()
             {
                 try
                 {
-                    Poco::Net::StreamSocket ss = server_socket.acceptConnection();
-                    handleConnection(std::move(ss), connections, log);
+                    handleConnection(server_socket.acceptConnection(), connections, log);
                 }
                 // Termination request
                 catch (Poco::InvalidArgumentException &)
