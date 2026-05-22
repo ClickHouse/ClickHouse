@@ -7,6 +7,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFileDecorator.h>
@@ -158,8 +159,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (!source)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set, call setSource first");
 
+    /// Empty objects = zero-blob file. Master's `DiskObjectStorage::readFile` handled
+    /// this by returning `ReadBufferFromEmptyFile` directly; do the same here so that
+    /// callers don't need workarounds (e.g. injecting a dummy `StoredObject`).
     if (source->objects.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source has no stored objects");
+        return std::make_unique<ReadBufferFromEmptyFile>();
 
     const auto & settings = source->read_settings;
 

@@ -2,7 +2,6 @@
 #include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
 #include <Common/CurrentThread.h>
 
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/Stopwatch.h>
@@ -757,21 +756,18 @@ void DiskObjectStorage::prepareRead(
     ReadPipeline & pipeline) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
-    if (storage_objects.empty())
-    {
-        pipeline.setSource(
-            [](const StoredObject &, const ReadSettings &, bool, bool)
-            {
-                return std::make_unique<ReadBufferFromEmptyFile>();
-            },
-            StoredObjects{StoredObject("", "", 0)},
-            settings);
-        return;
-    }
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
+
+    /// Empty objects (zero-blob file) — set an empty source so `ReadPipeline::build`
+    /// returns `ReadBufferFromEmptyFile`. No stages are needed below the source.
+    if (storage_objects.empty())
+    {
+        pipeline.setSource(std::move(storage), StoredObjects{}, settings);
+        return;
+    }
 
     /// Distributed cache — computed early because prefer_bigger_buffer_size needs to be known.
 #if ENABLE_DISTRIBUTED_CACHE
