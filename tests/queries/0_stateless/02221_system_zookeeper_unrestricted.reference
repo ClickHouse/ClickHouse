@@ -56,8 +56,8 @@ metadata_version
 metadata_version
 min_unprocessed_insert_time
 min_unprocessed_insert_time
-mutation_finish_time
-mutation_finish_time
+mutation_finish_times
+mutation_finish_times
 mutation_pointer
 mutation_pointer
 mutations

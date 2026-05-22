@@ -4,6 +4,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -544,6 +545,35 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldMutations()
     if (entries.empty())
         return 0;
 
+    /// Finish-time znodes are removed only after the corresponding mutation entry has been successfully
+    /// deleted, so that a failed or retried multi never leaves a mutation entry without its finish time.
+    /// Removals are batched; ZNONODE is silently ignored (pre-upgrade mutations lack the znode),
+    /// and other errors are logged as warnings.
+    Coordination::Requests finish_time_removes;
+    finish_time_removes.reserve(entries.size() * replicas.size());
+
+    SCOPE_EXIT({
+        for (size_t start = 0; start < finish_time_removes.size(); start += zkutil::MULTI_BATCH_SIZE)
+        {
+            const size_t end = std::min(start + zkutil::MULTI_BATCH_SIZE, finish_time_removes.size());
+            Coordination::Requests batch(finish_time_removes.begin() + start, finish_time_removes.begin() + end);
+            Coordination::Responses responses;
+            Coordination::Error rc = zookeeper->tryMultiNoThrow(batch, responses);
+            if (rc != Coordination::Error::ZOK)
+            {
+                for (size_t k = 0; k < responses.size(); ++k)
+                {
+                    const auto resp_err = responses[k]->error;
+                    if (resp_err != Coordination::Error::ZOK
+                        && resp_err != Coordination::Error::ZNONODE // pre-upgrade replicas without mutation_finish_times znode
+                        && resp_err != Coordination::Error::ZRUNTIMEINCONSISTENCY) // set on sibling ops when another op in the same multi fails
+                        LOG_WARNING(log, "Failed to remove mutation finish time znode {}: {}",
+                            batch[k]->getPath(), resp_err);
+                }
+            }
+        }
+    });
+
     Coordination::Requests ops;
     size_t batch_start_i = 0;
     for (size_t i = 0; i < entries.size(); ++i)
@@ -568,6 +598,16 @@ size_t ReplicatedMergeTreeCleanupThread::clearOldMutations()
             }
             LOG_DEBUG(log, "Removed {} old mutation entries: {} - {}",
                 i + 1 - batch_start_i, entries[batch_start_i], entries[i]);
+
+            for (size_t j = batch_start_i; j <= i; ++j)
+            {
+                for (const String & replica : replicas)
+                {
+                    finish_time_removes.emplace_back(zkutil::makeRemoveRequest(
+                        storage.zookeeper_path + "/replicas/" + replica + "/mutation_finish_times/" + entries[j], -1));
+                }
+            }
+
             batch_start_i = i + 1;
             ops.clear();
         }

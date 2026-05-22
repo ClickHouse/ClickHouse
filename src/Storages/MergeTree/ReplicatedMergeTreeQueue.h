@@ -180,8 +180,6 @@ private:
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
-    /// Finish time of the mutation at mutation_pointer, persisted in Keeper under replica_path/mutation_finish_time.
-    time_t mutation_pointer_finish_time = 0;
 
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
