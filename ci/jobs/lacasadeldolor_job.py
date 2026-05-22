@@ -424,7 +424,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
         ("keeper*.xml", keeper_xml),
     ]:
         for f in Path(workspace_path).glob(pattern[0]):
-            shutil.copy2(f, pattern[1])
+            if f.resolve() != pattern[1].resolve():
+                shutil.copy2(f, pattern[1])
     # Copy logs from container to host
     for i in range(number_of_nodes):
         for cont_log, host_log in zip(
