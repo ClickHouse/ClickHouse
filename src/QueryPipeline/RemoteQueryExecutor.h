@@ -275,7 +275,7 @@ private:
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
-    ExternalTablesDataPerReplica external_tables_data;
+    std::vector<ExternalTablesData> external_tables_data; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::mutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet

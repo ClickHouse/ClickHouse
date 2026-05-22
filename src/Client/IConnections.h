@@ -7,8 +7,6 @@ namespace DB
 {
 struct ClusterFunctionReadTaskResponse;
 
-using ExternalTablesDataPerReplica = std::vector<ExternalTablesData>;
-
 /// Base class for working with multiple replicas (connections)
 /// from one shard within a single thread
 class IConnections : boost::noncopyable
