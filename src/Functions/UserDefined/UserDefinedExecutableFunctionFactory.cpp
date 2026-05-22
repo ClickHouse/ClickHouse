@@ -219,32 +219,29 @@ public:
 
             ShellCommandSourceConfiguration shell_command_source_configuration;
 
-            std::shared_ptr<UDFProcessSubtreeSampler> sampler;
+            /// Every successful `executeImpl` entry (input_rows_count > 0) is
+            /// one UDF invocation, regardless of whether the spawn or borrow
+            /// subsequently fails.
+            ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
+
+            auto sampler = std::make_shared<UDFProcessSubtreeSampler>();
+            shell_command_source_configuration.sampler = sampler;
+
             if (coordinator_configuration.is_executable_pool)
             {
                 shell_command_source_configuration.read_fixed_number_of_rows = true;
                 shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
-
-                /// Count every executeImpl call against the pool path, even those
-                /// that fail before/inside the borrow. Resource counters below
-                /// only fire when the borrow actually completed.
-                ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
-
-                sampler = std::make_shared<UDFProcessSubtreeSampler>();
-                shell_command_source_configuration.sampler = sampler;
             }
 
             /// Flush resource accumulators into ProfileEvents on every exit
             /// path — successful return AND exception thrown from the
             /// pipeline. The pipeline / executor below are declared after
             /// this `SCOPE_EXIT`, so by the C++ stack unwinding rules they
-            /// destruct first; `recordReleased` fires from
-            /// `~ShellCommandSource` during that destruction and the
-            /// sampler holds the final counters by the time this guard runs.
+            /// destruct first; the pool path calls `recordReleased` and the
+            /// executable path calls `recordExecutableFinished` from
+            /// `~ShellCommandSource`, so both fill the sampler accumulators
+            /// before this guard runs.
             SCOPE_EXIT({
-                if (!sampler)
-                    return;
-
                 /// `PoolWaitMicroseconds` fires whenever `tryBorrowObject`
                 /// returned (success OR timeout). On timeout the throw
                 /// short-circuits the borrow but pool contention still
@@ -252,9 +249,9 @@ public:
                 if (sampler->poolWaitDone())
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
 
-                /// The remaining counters depend on the worker actually being
-                /// borrowed and observable via `/proc/<pid>`.
-                if (sampler->borrowAcquired())
+                /// Pool path: `borrowAcquired` becomes true after `recordPidAcquired`.
+                /// Executable path: `executableFinished` becomes true after `recordExecutableFinished`.
+                if (sampler->borrowAcquired() || sampler->executableFinished())
                 {
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getUserTimeMicroseconds());

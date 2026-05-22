@@ -7,35 +7,43 @@
 #include <unordered_map>
 #include <vector>
 
+#include <sys/resource.h>
 #include <sys/types.h>
 
 
 namespace DB
 {
 
-/** Per-borrow resource accounting for an executable_pool UDF call.
+/** Per-invocation resource accounting for `executable` and `executable_pool` UDFs.
+  *
+  * Two mutually exclusive modes, selected by which record* methods the caller invokes:
+  *
+  * Pool mode (`executable_pool`):
+  *   CPU and memory are derived by sampling /proc/<pid>/{stat,status} across
+  *   the entire process subtree. The pre-snapshot resets VmHWM via
+  *   /proc/<pid>/clear_refs (mode 5) so the reported peak reflects only the
+  *   duration of the borrow. Procfs failures are silently skipped.
+  *
+  *   Lifecycle (callbacks tolerate being skipped):
+  *     ctor                    -- starts the wall clock for pool wait
+  *     recordPoolWaitDone      -- `tryBorrowObject` returned (success OR timeout)
+  *     recordPidAcquired       -- `buildCommand` returned; pid known (success only)
+  *     recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
+  *     recordReleased          -- ShellCommandSource cleanup, before returnObject
+  *
+  * Executable mode (`executable`):
+  *   CPU and memory are read from the `rusage` struct populated by `wait4` when
+  *   the child exits. No procfs access needed.
+  *
+  *   Lifecycle:
+  *     ctor                    -- starts the entry wall clock
+  *     recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
+  *     recordExecutableFinished -- called from ShellCommandSource::cleanup with
+  *                                 the rusage from `wait4`; fills all accumulators
   *
   * Created by `UserDefinedExecutableFunctionFactory::executeImpl` and passed
-  * via `ShellCommandSourceConfiguration` into the borrow/IO machinery. The
-  * factory queries the accumulators after the pipeline drains and feeds them
-  * into ProfileEvents.
-  *
-  * Lifecycle (callbacks tolerate being skipped — e.g. `tryBorrowObject`
-  * may time out, in which case only `recordPoolWaitDone` fires):
-  *   ctor                    -- implicitly starts the wall clock for pool wait
-  *   recordPoolWaitDone      -- `tryBorrowObject` returned (success OR timeout)
-  *   recordPidAcquired       -- `buildCommand` returned; pid known (success only)
-  *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
-  *   recordReleased          -- ShellCommandSource cleanup, before returnObject
-  *
-  * CPU and memory deltas are derived by sampling /proc/<pid>/{stat,status} for
-  * every descendant of the pool's child process. The pre-snapshot zeroes
-  * VmHWM via /proc/<pid>/clear_refs (mode 5) so VmHWM at release reflects the
-  * peak observed during this borrow, not the lifetime peak of the worker.
-  *
-  * Procfs failures (ENOENT after a worker died, EACCES, malformed) are
-  * silently skipped: CPU/memory increments are dropped but the other events
-  * still fire.
+  * via `ShellCommandSourceConfiguration` into the IO machinery. The factory
+  * reads the accumulators from the SCOPE_EXIT guard and emits ProfileEvents.
   */
 class UDFProcessSubtreeSampler
 {
@@ -48,11 +56,17 @@ public:
     void recordOutputBytes(size_t bytes) noexcept;
     void recordReleased();
 
+    /// Executable (non-pool) path: consume the rusage from `wait4` and fill
+    /// elapsed_us, user_time_us, system_time_us, and peak_memory_byte_seconds.
+    /// Must be called at most once per sampler lifetime.
+    void recordExecutableFinished(const ::rusage & ru) noexcept;
+
     /// Pool wait = entry → borrow acquired.
     /// Zero if the borrow never happened (caller should still report 0).
     UInt64 getPoolWaitMicroseconds() const noexcept { return pool_wait_us; }
 
-    /// Borrow-internal wall = borrow acquired → released.
+    /// Pool mode: borrow-internal wall time (borrow acquired → released).
+    /// Executable mode: entry-wall time (ctor → child exit).
     UInt64 getElapsedMicroseconds() const noexcept { return elapsed_us; }
 
     UInt64 getUserTimeMicroseconds() const noexcept { return user_time_us; }
@@ -63,6 +77,7 @@ public:
 
     bool poolWaitDone() const noexcept { return pool_wait_done; }
     bool borrowAcquired() const noexcept { return borrow_acquired; }
+    bool executableFinished() const noexcept { return executable_finished; }
 
 private:
     Stopwatch entry_watch;
@@ -71,6 +86,7 @@ private:
     pid_t root_pid = -1;
     bool pool_wait_done = false;
     bool borrow_acquired = false;
+    bool executable_finished = false;
 
     UInt64 pool_wait_us = 0;
     UInt64 elapsed_us = 0;

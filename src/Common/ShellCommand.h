@@ -1,10 +1,13 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/VectorWithMemoryTracking.h>
+
+#include <sys/resource.h>
 
 
 namespace DB
@@ -83,6 +86,14 @@ public:
         do_not_terminate = true;
     }
 
+    /// Returns the resource usage of the child process as reported by the
+    /// most recent successful `wait4` call. The optional is empty until the
+    /// child has been reaped by `tryWaitImpl`.
+    const std::optional<::rusage> & getLastRusage() const noexcept
+    {
+        return last_rusage;
+    }
+
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
     static std::unique_ptr<ShellCommand> execute(const Config & config);
@@ -113,6 +124,7 @@ private:
     Config config;
     bool wait_called = false;
     bool do_not_terminate = false;
+    std::optional<::rusage> last_rusage;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 

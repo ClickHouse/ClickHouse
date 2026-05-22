@@ -559,6 +559,29 @@ namespace
                 }
             }
 
+            /// Executable (non-pool) path: `wait4` populated `last_rusage` when
+            /// the child exited. On the success path `prepare()` already called
+            /// `command->wait()`, which in turn calls `tryWaitImpl`. On error
+            /// paths or when `check_exit_code` is false the child may still be
+            /// running here — call `tryWait` so the child is reaped before the
+            /// command object destructs. `tryWait` can throw if the child was
+            /// signal-terminated; swallow the exception because `cleanup` runs
+            /// from the destructor.
+            if (configuration.sampler && command && !process_pool)
+            {
+                try
+                {
+                    if (!command->isWaitCalled())
+                        command->tryWait();
+                    if (const auto & ru = command->getLastRusage())
+                        configuration.sampler->recordExecutableFinished(*ru);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSource");
+                }
+            }
+
             if (command_is_invalid)
                 command = nullptr;
 

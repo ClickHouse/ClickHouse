@@ -1,3 +1,10 @@
+/// `wait4` is declared under `_DEFAULT_SOURCE` on Linux glibc.
+/// The define must appear before the first system header that guards it.
+#if defined(OS_LINUX) && !defined(_DEFAULT_SOURCE)
+#   define _DEFAULT_SOURCE
+#endif
+
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
@@ -319,12 +326,17 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
     int options = ((!blocking) ? WNOHANG : 0);
     int status = 0;
     int waitpid_retcode = -1;
+    ::rusage local_rusage{};
 
     while (waitpid_retcode < 0)
     {
-        waitpid_retcode = waitpid(pid, &status, options);
+        /// `wait4` is identical to `waitpid` in return-value and error semantics;
+        /// the extra `rusage` argument is populated atomically when the child exits,
+        /// giving accurate per-child CPU and memory figures without a separate procfs walk.
+        waitpid_retcode = wait4(pid, &status, options, &local_rusage);
         if (waitpid_retcode > 0)
         {
+            last_rusage = local_rusage;
             break;
         }
         if (!blocking && !waitpid_retcode)
