@@ -118,24 +118,14 @@ String joinByComma(const T & t)
 
 bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const GranuleRowFilter & filter)
 {
-    const MergeTreeIndexGranularity * index_granularity = filter.index_granularity;
-
-    const size_t base_mark = filter.index_mark * filter.skip_index_granularity;
-    const size_t marks_without_final = index_granularity->getMarksCountWithoutFinal();
-    if (base_mark >= marks_without_final)
-        return false;
-
-    const size_t end_mark = std::min(base_mark + filter.skip_index_granularity, marks_without_final);
-    const size_t granule_row_base = index_granularity->getMarkStartingRow(base_mark);
-    const size_t granule_row_end = index_granularity->getMarkStartingRow(end_mark);
-    if (granule_row_end <= granule_row_base)
+    if (filter.granule_row_end <= filter.granule_row_base)
         return false;
 
     const auto key_u64 = static_cast<UInt64>(key);
-    if (key_u64 >= granule_row_end - granule_row_base)
+    if (key_u64 >= filter.granule_row_end - filter.granule_row_base)
         return false;
 
-    const size_t part_row = granule_row_base + static_cast<size_t>(key_u64);
+    const size_t part_row = filter.granule_row_base + static_cast<size_t>(key_u64);
     for (const auto & [row_begin, row_end] : filter.allowed_part_row_ranges)
     {
         if (part_row >= row_begin && part_row < row_end)
