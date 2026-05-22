@@ -49,7 +49,6 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
