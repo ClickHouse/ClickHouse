@@ -1,3 +1,8 @@
+-- Tags: no-random-settings
+-- `UNION ALL` with duplicate values followed by `ORDER BY a`: ties within each
+-- value group have undefined order, sensitive to pipeline shape changes from
+-- `max_streams_for_union_step` etc.
+
 -- Regression test for "Column identifier is already registered" exception
 -- when additional_result_filter is used with UNION/EXCEPT queries.
 -- https://github.com/ClickHouse/ClickHouse/issues/99931

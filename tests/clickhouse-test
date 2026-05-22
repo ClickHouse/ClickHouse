@@ -1507,12 +1507,12 @@ class SettingsRandomizer:
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
-        # `max_streams_for_union_step` and `max_streams_for_union_step_to_max_threads_ratio`
-        # are intentionally NOT randomized here: changing the active-stream count reshapes
-        # the UNION ALL pipeline, which surfaces pre-existing non-deterministic ordering
-        # in tests that rely on the default pipeline shape (UNION ALL + ORDER BY with
-        # constant keys, NaN sort keys, or `ORDER BY tuple()`). Revisit after the affected
-        # tests are made order-deterministic.
+        # Exercise the UNION ALL stream-narrowing path: occasionally clamp to a small
+        # number of simultaneously active streams, occasionally leave it unlimited.
+        # Tests whose output order is fragile to pipeline shape must opt out via
+        # `-- Tags: no-random-settings`.
+        "max_streams_for_union_step": lambda: random.choice([0, 1, 2, 4, 8]),
+        "max_streams_for_union_step_to_max_threads_ratio": lambda: random.choice([0, 0.5, 1, 2, 8]),
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.

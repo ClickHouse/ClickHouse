@@ -1,3 +1,8 @@
+-- Tags: no-random-settings
+-- Several queries `UNION ALL` virtual `_table` columns whose downstream
+-- `ORDER BY` has ties; row order within each tie group is sensitive to
+-- pipeline shape changes from `max_streams_for_union_step` etc.
+
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS m0;
