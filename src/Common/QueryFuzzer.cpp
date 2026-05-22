@@ -99,6 +99,39 @@ namespace ErrorCodes
 extern const int TOO_DEEP_RECURSION;
 }
 
+static const Strings insert_formats = {
+    "Values",
+    "CSV",
+    "TSV",
+    "TabSeparated",
+    "TabSeparatedRaw",
+    "TSKV",
+    "JSON",
+    "JSONCompact",
+    "JSONColumns",
+    "JSONColumnsWithMetadata",
+    "JSONEachRow",
+    "JSONStringsEachRow",
+    "JSONLines",
+    "JSONCompactEachRow",
+    "JSONCompactStringsEachRow",
+    "JSONObjectEachRow",
+    "JSONCompactColumns",
+    "BSONEachRow",
+    "Native",
+    "RowBinary",
+    "MsgPack",
+    "LineAsString",
+    "RawBLOB",
+    "Parquet",
+    "Arrow",
+    "ArrowStream",
+    "ORC",
+    "Avro",
+    "AvroConfluent",
+    "CustomSeparated",
+};
+
 static const Strings data_formats = {
     "Values",
     "CSV",
@@ -4408,7 +4441,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Swap format string — only safe when there is no inline data
         if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
         {
-            insert_query->format = data_formats[fuzz_rand() % data_formats.size()];
+            insert_query->format = insert_formats[fuzz_rand() % insert_formats.size()];
         }
         /// Occasionally drop inline SETTINGS
         if (insert_query->settings_ast && fuzz_rand() % 100 == 0)
