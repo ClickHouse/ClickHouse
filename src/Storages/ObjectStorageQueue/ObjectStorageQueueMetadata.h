@@ -12,7 +12,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/CacheBase.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>

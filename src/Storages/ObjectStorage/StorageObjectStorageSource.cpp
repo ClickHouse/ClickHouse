@@ -12,7 +12,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -359,11 +358,6 @@ void StorageObjectStorageSource::lazyInitialize()
         reader_future = createReaderAsync();
     }
     initialized = true;
-}
-
-void StorageObjectStorageSource::onFinish()
-{
-    parser_shared_resources->finishStream();
 }
 
 Chunk StorageObjectStorageSource::generate()

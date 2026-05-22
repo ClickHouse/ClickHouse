@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 namespace
 {
-    class FunctionLogTrace final : public IFunction
+    class FunctionLogTrace : public IFunction
     {
     public:
         static constexpr auto name = "logTrace";

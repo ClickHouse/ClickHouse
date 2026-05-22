@@ -190,61 +190,17 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
     PaddedPODArray<UInt8> & column_chars = assert_cast<ColumnString &>(*internal_column).getChars();
     PaddedPODArray<UInt64> & column_offsets = assert_cast<ColumnString &>(*internal_column).getOffsets();
 
-    /// Pre-flight: validate every non-null row's offset+length against the actual buffer and
-    /// accumulate an exact chars_size. This prevents both the source read overflow and the
-    /// destination write overflow via insert_assume_reserved.
-    ///
-    /// Using buffer->size() as the bound (rather than value_offset(N-1)+value_length(N-1))
-    /// is deliberate: corrupted offsets can make intermediate value_length(i) entries much
-    /// larger than the buffer while keeping the last entry's value look correct. Counting
-    /// per-row also handles non-monotonic (rewinding) offsets at null rows, which would let
-    /// later non-null rows re-read the same range and exceed a buffer-size-based reserve.
-    ///
-    /// Casting a negative signed offset/length to size_t wraps to a huge value, so the
-    /// two-part check (safe_offset > buf || safe_length > buf - safe_offset) catches negative
-    /// values without a separate signed test.
     size_t chars_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
-        std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
-        const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
 
-        if (chunk.null_count() == 0)
+        if (chunk_length > 0)
         {
-            for (size_t i = 0; i < chunk_length; ++i)
-            {
-                const size_t safe_offset = static_cast<size_t>(chunk.value_offset(i));
-                const size_t safe_length = static_cast<size_t>(chunk.value_length(i));
-                if (unlikely(safe_offset > buffer_size || safe_length > buffer_size - safe_offset))
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Arrow BinaryArray offsets exceed data buffer bounds: "
-                        "row {} has offset {} and length {} but buffer is {} bytes",
-                        i, chunk.value_offset(i), chunk.value_length(i), buffer_size);
-                chars_size += safe_length;
-            }
+            chars_size += chunk.value_offset(chunk_length - 1) + chunk.value_length(chunk_length - 1);
+            chars_size += chunk_length;
         }
-        else
-        {
-            for (size_t i = 0; i < chunk_length; ++i)
-            {
-                if (!chunk.IsNull(i))
-                {
-                    const size_t safe_offset = static_cast<size_t>(chunk.value_offset(i));
-                    const size_t safe_length = static_cast<size_t>(chunk.value_length(i));
-                    if (unlikely(safe_offset > buffer_size || safe_length > buffer_size - safe_offset))
-                        throw Exception(
-                            ErrorCodes::INCORRECT_DATA,
-                            "Arrow BinaryArray offsets exceed data buffer bounds: "
-                            "row {} has offset {} and length {} but buffer is {} bytes",
-                            i, chunk.value_offset(i), chunk.value_length(i), buffer_size);
-                    chars_size += safe_length;
-                }
-            }
-        }
-        chars_size += chunk_length; // one null terminator per row
     }
 
     column_chars.reserve(chars_size);
@@ -261,12 +217,8 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
         {
             for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
             {
-                const auto value_length = chunk.value_length(offset_i);
-                if (value_length > 0)
-                {
-                    const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
-                    column_chars.insert_assume_reserved(raw_data, raw_data + value_length);
-                }
+                const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
+                column_chars.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
                 column_offsets.emplace_back(column_chars.size());
             }
         }
@@ -793,33 +745,16 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
         arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
-        const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
 
         for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
+            auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
             {
                 column->insertDefault();
                 continue;
             }
-
-            if (!buffer)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Arrow BinaryArray has no data buffer for non-null geo row {}",
-                    offset_i);
-
-            const size_t safe_offset = static_cast<size_t>(chunk.value_offset(offset_i));
-            const size_t safe_length = static_cast<size_t>(chunk.value_length(offset_i));
-            if (unlikely(safe_offset > buffer_size || safe_length > buffer_size - safe_offset))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Arrow BinaryArray offsets exceed data buffer bounds: "
-                    "row {} has offset {} and length {} but buffer is {} bytes",
-                    offset_i, chunk.value_offset(offset_i), chunk.value_length(offset_i), buffer_size);
-
-            const auto * raw_data = buffer->data() + safe_offset;
-            ReadBuffer in_buffer(const_cast<char *>(reinterpret_cast<const char *>(raw_data)), safe_length, 0);
+            ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
             GeometricObject result_object;
             switch (geo_metadata.encoding)
             {
@@ -1916,12 +1851,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (const auto & field : schema.fields())
     {
@@ -2042,12 +1973,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {
