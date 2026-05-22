@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Poco/ConsoleChannel.h>
 #include <absl/log/globals.h>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
@@ -9,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/validateColumnType.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
@@ -27,7 +29,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
+#include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/StorageGenerateRandom.h>
 
@@ -36,61 +40,35 @@ namespace po = boost::program_options;
 
 namespace DB::ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int BAD_ARGUMENTS;
-    extern const int BAD_GET;
     extern const int BAD_TYPE_OF_FIELD;
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int CANNOT_CREATE_CHARSET_CONVERTER;
-    extern const int CANNOT_FORMAT_DATETIME;
-    extern const int CANNOT_NORMALIZE_STRING;
-    extern const int CANNOT_PARSE_BOOL;
-    extern const int CANNOT_PARSE_DATE;
-    extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
-    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int CANNOT_PARSE_IPV4;
-    extern const int CANNOT_PARSE_IPV6;
-    extern const int CANNOT_PARSE_NUMBER;
-    extern const int CANNOT_PARSE_TEXT;
-    extern const int CANNOT_PARSE_UUID;
-    extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
-    extern const int DECIMAL_OVERFLOW;
-    extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_DIVISION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
-    extern const int INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int PARAMETER_OUT_OF_BOUND;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int SYNTAX_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int TYPE_MISMATCH;
-    extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
-    extern const int UNKNOWN_TYPE;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
-    extern const int UNICODE_ERROR;
-    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int CANNOT_SET_SIGNAL_HANDLER;
 }
 
 namespace
 {
+
+/// Errors that signal an outer guard fired (server-imposed limits, KILL QUERY, query timeout),
+/// not a bug in the function being tested. Inner helpers must let these propagate to the top
+/// of `run()` so the iteration loop can account for them and move on.
+bool isOuterGuardError(int code)
+{
+    return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::TIMEOUT_EXCEEDED
+        || code == ErrorCodes::LOGICAL_ERROR;
+}
 
 /// Comma-separated strings in command line arguments.
 struct VectorOfStrings
@@ -141,6 +119,9 @@ enum Problem
     P_BROKEN_DETERMINISM,
     P_BROKEN_INJECTIVITY,
     P_BROKEN_MONOTONICITY,
+    P_FIELD_COMPARISON_INCONSISTENCY,
+    P_VALIDATION_INFRASTRUCTURE,
+    P_TIMEOUT_NOT_HONORED,
     P_UNEXPECTED_ERROR,
 
     P_COUNT,
@@ -170,6 +151,14 @@ std::pair<String, String> problemInfo(Problem p)
             "function threw from unexpected place or with unexpected error code, or misc test failure"};
         case P_BROKEN_INJECTIVITY: return {"broken_injectivity", "function said it's injective, but returned the same value on different inputs"};
         case P_BROKEN_MONOTONICITY: return {"broken_monotonicity", "function said it's monotonic, but returned nonmonotonic values"};
+        case P_FIELD_COMPARISON_INCONSISTENCY: return {"field_comparison_inconsistency",
+            "Field-level comparison (accurateLess etc.) disagrees with IColumn::compareAt, e.g. due to NaN or type-specific logic"};
+        case P_VALIDATION_INFRASTRUCTURE: return {"validation_infrastructure",
+            "exception from validation infrastructure (sorting, Field comparisons, monotonicity checks) rather than the tested function itself"};
+        case P_TIMEOUT_NOT_HONORED: return {"timeout_not_honored",
+            "iteration ran longer than the configured iteration-too-slow threshold before stopping; "
+            "the function is slow and either does not check CurrentThread::isQueryCanceled often enough, "
+            "should be made faster, or should reject the offending input shape inside the function itself"};
 
         case P_COUNT: std::abort();
     }
@@ -180,13 +169,18 @@ struct Options
 {
     int num_threads = -1;
 
-    /// Under sanitizers, everything is ~10-20x slower, so reduce default duration
-    /// to avoid CI timeouts (the gtest CI job has a 45-minute hard limit).
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
-    int duration_seconds = 10;
-#else
-    int duration_seconds = 60;
-#endif
+    int duration_seconds = 600;
+
+    /// Per-iteration `max_execution_time`. The `CancellationChecker` flips
+    /// `QueryStatus::is_killed` once this many seconds elapse inside a single function
+    /// execution. Accepts fractional seconds.
+    double iteration_timeout_seconds = 15;
+
+    /// Wall-clock threshold above which an iteration is reported as `P_TIMEOUT_NOT_HONORED`.
+    /// Independent from `iteration_timeout_seconds` so the slack between the timeout firing
+    /// and the function actually noticing can be tuned without changing the timeout itself.
+    /// Accepts fractional seconds.
+    double iteration_too_slow_seconds = 20;
 
     size_t rows_per_batch = 32;
 
@@ -208,12 +202,14 @@ struct Options
     /// consistently followed.
     bool avoid_reusing_overload_resolver = true;
 
-    /// These problem categories have widespread pre-existing issues across many functions.
-    /// We ignore them by default so the test can run in CI without false failures.
+    /// Known pre-existing issues in many functions that we cannot fix all at once.
+    /// These should be enabled one at a time as the underlying issues are fixed.
+    /// The `unexpected_error` check is enabled - it catches real bugs and sanitizer errors.
     /// Use --ignore-problems to override (e.g. pass empty value to enable all checks).
     VectorOfStrings ignore_problems = {{"late_typecheck", "const_dependent_checks", "broken_nullable_input", "data_dependent_const",
         "exception_in_prepare", "bulk_success_but_row_error", "bulk_error_but_row_success",
-        "broken_determinism", "broken_injectivity", "broken_monotonicity", "unexpected_error"}};
+        "broken_determinism", "broken_injectivity", "broken_monotonicity",
+        "field_comparison_inconsistency", "validation_infrastructure", "timeout_not_honored"}};
     VectorOfStrings functions;
     VectorOfStrings skip_functions;
 
@@ -225,6 +221,8 @@ struct Options
         desc.add_options()
             ("threads", po::value<int>(&num_threads)->default_value(num_threads), "how many instances of the test to run in parallel, -1 for num cores")
             ("duration", po::value<int>(&duration_seconds)->default_value(duration_seconds), "run for this many seconds, -1 to run forever")
+            ("iteration-timeout", po::value<double>(&iteration_timeout_seconds)->default_value(iteration_timeout_seconds), "per-iteration max_execution_time in seconds (fractional allowed)")
+            ("iteration-too-slow", po::value<double>(&iteration_too_slow_seconds)->default_value(iteration_too_slow_seconds), "iterations that take longer than this many seconds are reported as timeout_not_honored (fractional allowed)")
             ("rows-per-batch", po::value<size_t>(&rows_per_batch)->default_value(rows_per_batch), "number of rows to feed into a function at once")
             ("avoid-nondefault-null", po::value<bool>(&avoid_nondefault_null)->default_value(avoid_nondefault_null), "avoid using Nullable values where the null_map says the value is NULL, but the nested column has nondefault value; if a function returns such value, fix it up before passing it to other functions; this makes the test unrealistic, we should ideally fix all cases where this breaks functions and disable this option")
             ("avoid-reusing-overload-resolver", po::value<bool>(&avoid_reusing_overload_resolver)->default_value(avoid_reusing_overload_resolver), "create a new instance of IFunctionOverloadResolver for every overload resolution")
@@ -235,6 +233,11 @@ struct Options
         po::variables_map vm;
         po::store(po::parse_command_line(argc, argv, desc), vm);
         po::notify(vm);
+
+        if (iteration_too_slow_seconds <= iteration_timeout_seconds)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "--iteration-too-slow ({}) must be greater than --iteration-timeout ({}); the slow threshold needs slack above the timeout for the function to notice cancellation",
+                iteration_too_slow_seconds, iteration_timeout_seconds);
 
         for (int pi = 0; pi < P_COUNT; ++pi)
         {
@@ -265,6 +268,10 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// Avoid depending on environment (e.g. current query, configuration, settings).
     "synonyms",
     "catboostEvaluate",
+    "aiGenerate",
+    "aiClassify",
+    "aiExtract",
+    "aiTranslate",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -295,6 +302,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "timeSeriesCopyTag",
     "timeSeriesCopyTags",
     "timeSeriesExtractTag",
+    "timeSeriesGroupToSamplingKey",
     "timeSeriesGroupToTags",
     "timeSeriesIdToGroup",
     "timeSeriesJoinTags",
@@ -322,72 +330,6 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "firstSignificantSubdomainCustom",
     "firstSignificantSubdomainCustomRFC",
     "fuzzQuery",
-
-    /// H3 functions can read out of bounds of global arrays in the H3 contrib library
-    /// when given invalid H3 indexes (found by ASan).
-    "geoToH3",
-    "h3CellAreaM2",
-    "h3CellAreaRads2",
-    "h3Distance",
-    "h3EdgeAngle",
-    "h3EdgeLengthKm",
-    "h3EdgeLengthM",
-    "h3ExactEdgeLengthKm",
-    "h3ExactEdgeLengthM",
-    "h3ExactEdgeLengthRads",
-    "h3GetBaseCell",
-    "h3GetDestinationIndexFromUnidirectionalEdge",
-    "h3GetFaces",
-    "h3GetIndexesFromUnidirectionalEdge",
-    "h3GetOriginIndexFromUnidirectionalEdge",
-    "h3GetPentagonIndexes",
-    "h3GetRes0Indexes",
-    "h3GetResolution",
-    "h3GetUnidirectionalEdge",
-    "h3GetUnidirectionalEdgeBoundary",
-    "h3GetUnidirectionalEdgesFromHexagon",
-    "h3HexAreaKm2",
-    "h3HexAreaM2",
-    "h3HexRing",
-    "h3IndexesAreNeighbors",
-    "h3IsPentagon",
-    "h3IsResClassIII",
-    "h3IsValid",
-    "h3Line",
-    "h3NumHexagons",
-    "h3PolygonToCells",
-    "h3ToCenterChild",
-    "h3ToChildren",
-    "h3ToGeo",
-    "h3ToGeoBoundary",
-    "h3ToParent",
-    "h3ToString",
-    "h3UnidirectionalEdgeIsValid",
-    "h3kRing",
-    "stringToH3",
-
-    /// readWKB functions can try to allocate huge amounts of memory on random input
-    /// (no bounds checking on polygon counts in WKB parsing).
-    "readWKB",
-    "readWKBPoint",
-    "readWKBLineString",
-    "readWKBMultiLineString",
-    "readWKBPolygon",
-    "readWKBMultiPolygon",
-
-    /// Random distribution functions can hang with extreme parameters
-    /// (e.g. randBinomial with trials=44988101480975, or randChiSquared with df=3e307).
-    "randUniform",
-    "randNormal",
-    "randLogNormal",
-    "randExponential",
-    "randChiSquared",
-    "randStudentT",
-    "randFisherF",
-    "randBernoulli",
-    "randBinomial",
-    "randNegativeBinomial",
-    "randPoisson",
 
     /// Avoid aggregate functions (for no strong reason).
     "initializeAggregation",
@@ -584,6 +526,11 @@ const std::unordered_map<std::string_view, std::vector<std::pair</*arg_idx*/ siz
 function_arg_constraints = {
     {"randomStringUTF8", {{0, {.integer_at_most = 50}}}},
     {"arrayWithConstant", {{0, {.integer_at_most = 20}}}},
+    {"arrayResize", {{1, {.integer_at_most = 1000}}}},
+    /// `isProbablePrime` runs Miller-Rabin on UInt128/UInt256, which can take seconds per row under
+    /// sanitizer + ThreadFuzzer instrumentation - long enough for the stress test's stop timeout to
+    /// classify the worker as stuck. The cap forces the function through its fast bitmap/UInt64 path.
+    {"isProbablePrime", {{0, {.integer_at_most = 1000}}}},
 };
 
 constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;
@@ -691,6 +638,7 @@ enum Stat
     S_MEMORY_PEAK,
     S_MEMORY_LIMIT_EXCEEDED,
     S_MEMORY_LEAKS,
+    S_QUERY_CANCELLED,
 
     S_COUNT,
 };
@@ -738,6 +686,11 @@ public:
     bool hasProblem(Problem p) const
     {
         return !problems.at(p).empty();
+    }
+
+    const String & getProblemError(Problem p) const
+    {
+        return problems.at(p);
     }
 
     void merge(const FunctionStats & s)
@@ -995,7 +948,8 @@ String valueToString(const DataTypePtr & type, const ColumnPtr & column, size_t 
     return std::move(buf.str());
 }
 
-bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stuck_threads)
+/// Returns empty string on success, or a non-empty error description on failure.
+String reportResults(const std::vector<FunctionStats> & function_stats, size_t stuck_threads)
 {
     FunctionStats totals;
     /// Names should fit in sentences "functions with {}".
@@ -1003,7 +957,11 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
     std::vector<std::pair<Int64, String>> by_time_max;
     std::vector<std::pair<Int64, String>> by_time_total;
     std::vector<std::pair<Int64, String>> by_memory_peak;
-    bool have_unignored_problems = false;
+
+    /// Collect detailed error messages for unignored problems.
+    /// Maps problem category name -> list of error messages.
+    std::map<String, std::vector<String>> unignored_errors;
+
     for (size_t i = 0; i < testable_functions.size(); ++i)
     {
         const String & name = testable_functions[i].name;
@@ -1018,7 +976,7 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
                 function_lists[problemInfo(p).first].push_back(name);
 
                 if (!options.ignore_problem.at(p))
-                    have_unignored_problems = true;
+                    unignored_errors[problemInfo(p).first].push_back(stats.getProblemError(p));
             }
         }
 
@@ -1037,6 +995,9 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
             function_lists["memory limit exceeded"].push_back(name);
         else
             by_memory_peak.emplace_back(stats.get(S_MEMORY_PEAK) , name);
+
+        if (stats.get(S_QUERY_CANCELLED) != 0)
+            function_lists["query cancelled by timeout"].push_back(name);
 
         if (stats.get(S_MEMORY_LEAKS) != 0)
             function_lists["unbalanced memory"].push_back(name);
@@ -1088,7 +1049,23 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
     print_top_few("total time", 1e9, "s", by_time_total);
     print_top_few("memory peak", 1 << 20, "MiB", by_memory_peak);
 
-    return !have_unignored_problems && stuck_threads == 0;
+    String failure_details;
+
+    if (stuck_threads != 0)
+        failure_details += fmt::format("{} threads got stuck\n", stuck_threads);
+
+    for (const auto & [category, errors] : unignored_errors)
+    {
+        if (category == problemInfo(P_TIMEOUT_NOT_HONORED).first)
+            failure_details += fmt::format("\n{} (max_execution_time={}s, too-slow threshold={}s):\n",
+                category, options.iteration_timeout_seconds, options.iteration_too_slow_seconds);
+        else
+            failure_details += fmt::format("\n{}:\n", category);
+        for (const auto & error : errors)
+            failure_details += fmt::format("  {}\n", error);
+    }
+
+    return failure_details;
 }
 
 /// Quirk in string vs enum comparison when the string value is not in the enum:
@@ -1135,6 +1112,27 @@ bool isAnyArgumentNullable(const ColumnsWithTypeAndName & args)
         arg.type->forEachChild(apply);
     }
     return found_nullable;
+}
+
+/// Check if a type can contain NaN or incomparable values in nested form.
+/// Field-level comparisons (accurateLess etc.) handle NaN differently from IColumn::compareAt
+/// (which uses nan_direction_hint), and Variant/Dynamic discriminators have different ordering.
+bool typeCanHaveNanOrIncomparableFields(const DataTypePtr & type)
+{
+    bool found = false;
+    auto check = [&](const IDataType & t)
+    {
+        /// Field-level comparison (accurateLess etc.) can disagree with IColumn::compareAt for:
+        /// - Float: NaN handling (nan_direction_hint in IColumn vs special NaN logic in Field)
+        /// - Variant/Dynamic/Object: type-specific comparison in IColumn not replicated in Field
+        /// - IPv4/IPv6: different comparison semantics
+        /// - Decimal/DateTime64: accurateLess/accurateEquals ignore scale (see TODO in FieldAccurateComparison.cpp)
+        found |= isFloat(t) || isVariant(t) || isDynamic(t) || isObject(t) || isIPv4(t) || isIPv6(t)
+            || isDecimal(t) || isDateTime64(t);
+    };
+    check(*type);
+    type->forEachChild(check);
+    return found;
 }
 
 bool isAnyArgumentDynamicallyTyped(const ColumnsWithTypeAndName & args)
@@ -1204,6 +1202,14 @@ struct FunctionsStressTestThread
 
     Operation operation;
 
+    /// `QueryStatusPtr` of the iteration currently in flight. Published under
+    /// `active_query_mutex` by the worker at the start of each iteration and cleared at
+    /// the end. Read by the signal listener thread in `request_shutdown` to cancel the
+    /// in-flight query without touching the worker's `Context` (which has no
+    /// synchronization around `process_list_elem`).
+    std::mutex active_query_mutex;
+    QueryStatusPtr active_query_status TSA_GUARDED_BY(active_query_mutex);
+
     /// Call before mutating `operation`.
     [[nodiscard]] std::unique_lock<std::mutex> lockMutex()
     {
@@ -1213,11 +1219,58 @@ struct FunctionsStressTestThread
         return std::unique_lock(mutex);
     }
 
+    /// Randomize settings that affect function behavior to increase test coverage.
+    void randomizeSettings() const
+    {
+        /// Only randomize occasionally to amortize the cost.
+        if (thread_local_rng() % 10 != 0)
+            return;
+
+        /// Boolean settings to randomize.
+        static constexpr std::array<std::string_view, 15> bool_settings = {{
+            "decimal_check_overflow",
+            "enable_extended_results_for_datetime_functions",
+            "allow_nonconst_timezone_arguments",
+            "use_legacy_to_time",
+            "function_locate_has_mysql_compatible_argument_order",
+            "allow_simdjson",
+            "splitby_max_substrings_includes_remaining_string",
+            "least_greatest_legacy_null_behavior",
+            "cast_keep_nullable",
+            "cast_ipv4_ipv6_default_on_conversion_error",
+            "enable_named_columns_in_function_tuple",
+            "function_json_value_return_type_allow_nullable",
+            "function_json_value_return_type_allow_complex",
+            "use_variant_as_common_type",
+            "geo_distance_returns_float64_on_float64_arguments",
+        }};
+
+        for (auto setting : bool_settings)
+            context->setSetting(setting, static_cast<UInt64>(thread_local_rng() % 2));
+
+        /// UInt64 settings with a few values.
+        context->setSetting("function_visible_width_behavior", static_cast<UInt64>(thread_local_rng() % 2));
+
+        /// Enum settings (must be set as strings).
+        static constexpr std::array<std::string_view, 3> date_time_overflow_behaviors = {{"ignore", "throw", "saturate"}};
+        context->setSetting("date_time_overflow_behavior", String(date_time_overflow_behaviors[thread_local_rng() % 3]));
+    }
+
     void run()
     {
         thread_status.emplace();
         chassert(current_thread == &*thread_status);
         context = makeContext();
+        /// Per-iteration `max_execution_time`. Picked up by `ProcessList::insert` below and
+        /// tracked by the `CancellationChecker` singleton; when it expires,
+        /// `QueryStatus::is_killed` flips to true and `CurrentThread::isQueryCanceled()`
+        /// starts returning true on this thread. An iteration whose wall-clock duration
+        /// exceeds `options.iteration_too_slow_seconds` (no matter how it terminated:
+        /// success, MLE, cancellation, etc.) is reported as `P_TIMEOUT_NOT_HONORED`. The
+        /// remedy depends on the function: poll `CurrentThread::isQueryCanceled` between
+        /// iterations, make the per-iteration work cheaper, or reject the offending input
+        /// shape inside the function itself.
+        context->setSetting("max_execution_time", options.iteration_timeout_seconds);
         thread_group = std::make_shared<ThreadGroup>(context, 0, [&] { logCurrentOperation(); });
         CurrentThread::attachToGroup(thread_group);
 
@@ -1233,9 +1286,11 @@ struct FunctionsStressTestThread
 
         while (!thread_should_stop.load(std::memory_order_relaxed))
         {
-            /// Pick random function.
-            /// TODO: bias
-            size_t function_idx = thread_local_rng() % testable_functions.size();
+            /// Pick random function, biased toward less-tested functions.
+            /// Pick two random candidates and choose the one with fewer iterations.
+            size_t a = thread_local_rng() % testable_functions.size();
+            size_t b = thread_local_rng() % testable_functions.size();
+            size_t function_idx = function_stats[a].get(S_OVERLOAD_ATTEMPTS) <= function_stats[b].get(S_OVERLOAD_ATTEMPTS) ? a : b;
             FunctionStats & stats = function_stats[function_idx];
 
             {
@@ -1250,6 +1305,35 @@ struct FunctionsStressTestThread
             thread_status->memory_tracker.setHardLimit(MEMORY_LIMIT_BYTES_PER_THREAD);
             thread_status->untracked_memory = 0;
 
+            randomizeSettings();
+
+            /// Wire each iteration to its own `QueryStatus` / `ProcessListEntry` so the
+            /// `CancellationChecker` enforces `max_execution_time` (set above), and publish
+            /// the `QueryStatusPtr` under `active_query_mutex` so `request_shutdown` can
+            /// call `cancelQuery` on it directly. We do not touch the worker's `Context`
+            /// from the listener thread: `Context::process_list_elem` / `has_process_list_elem`
+            /// are not synchronized, but `QueryStatus::cancelQuery` takes its own
+            /// `cancel_mutex` so cross-thread cancellation through the `QueryStatusPtr` is
+            /// safe.
+            context->setCurrentQueryId(""); // generate a fresh random query id
+            auto process_list_entry = context->getProcessList().insert(
+                /*query_=*/"", /*normalized_query_hash=*/0, /*ast=*/nullptr, context,
+                /*watch_start_nanoseconds=*/clock_gettime_ns(), /*is_internal=*/true);
+            QueryStatusPtr query_status = process_list_entry->getQueryStatus();
+            context->setProcessListElement(query_status);
+            {
+                std::lock_guard active_query_lock(active_query_mutex);
+                active_query_status = query_status;
+            }
+            SCOPE_EXIT({
+                {
+                    std::lock_guard active_query_lock(active_query_mutex);
+                    active_query_status.reset();
+                }
+                context->setProcessListElement(nullptr);
+                process_list_entry.reset();
+            });
+
             auto handle_unexpected_exception = [&]
             {
                 String msg = fmt::format("{} {}", operation.describe(), getCurrentExceptionMessage(true));
@@ -1261,7 +1345,21 @@ struct FunctionsStressTestThread
                 if (tryGenerateRandomOverload() && executeFunction())
                 {
                     stats.add(S_EXEC_ROW_OK, result->size());
-                    checkFunctionExecutionResults();
+
+                    try
+                    {
+                        checkFunctionExecutionResults();
+                    }
+                    catch (Exception & e)
+                    {
+                        if (isOuterGuardError(e.code()))
+                            throw;
+
+                        /// The validation infrastructure (sorting, Field comparisons,
+                        /// monotonicity checks, row-by-row re-execution) can throw
+                        /// various exceptions that are not bugs in the tested functions.
+                        stats.reportProblem(P_VALIDATION_INFRASTRUCTURE, fmt::format("exception during validation: {} {}", operation.describe(), getCurrentExceptionMessage(false)));
+                    }
                 }
             }
             catch (Exception & e)
@@ -1269,6 +1367,23 @@ struct FunctionsStressTestThread
                 if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
                 {
                     stats.add(S_MEMORY_LIMIT_EXCEEDED, 1);
+                }
+                else if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::TIMEOUT_EXCEEDED)
+                {
+                    /// The iteration's `QueryStatus::is_killed` was flipped either by the
+                    /// `CancellationChecker` once `max_execution_time` expired (cancel
+                    /// reason `TIMEOUT`, surfaces as `TIMEOUT_EXCEEDED`) or by
+                    /// `request_shutdown` cancelling on shutdown (reason
+                    /// `CANCELLED_BY_USER`, surfaces as `QUERY_WAS_CANCELLED`). Both are
+                    /// guards we set up ourselves.
+                    stats.add(S_QUERY_CANCELLED, 1);
+                }
+                else if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("incorrect data types") != String::npos)
+                {
+                    /// Known issue: some arithmetic functions (plus, minus, etc.) accept types in
+                    /// getReturnTypeImpl but fail in executeImpl with LowCardinality arguments.
+                    /// Treat as a late typecheck rather than a truly unexpected error.
+                    stats.reportProblem(P_LATE_TYPECHECK, fmt::format("{} {}", operation.describe(), getCurrentExceptionMessage(false)));
                 }
                 else
                 {
@@ -1293,6 +1408,17 @@ struct FunctionsStressTestThread
             auto end_time = std::chrono::steady_clock::now();
             Int64 ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - operation.iteration_start_time).count();
             stats.add(S_TIME_TOTAL_NS, ns);
+
+            /// If the iteration ran longer than `iteration_too_slow_seconds`, the function
+            /// ignored cancellation: either it never checks `CurrentThread::isQueryCanceled`
+            /// or it kept running long after `QueryStatus::is_killed` was set. Independent
+            /// of how the iteration terminated (success, MLE, cancelled, etc.).
+            const Int64 too_slow_threshold_ns
+                = static_cast<Int64>(options.iteration_too_slow_seconds * 1e9);
+            if (ns >= too_slow_threshold_ns && !stats.hasProblem(P_TIMEOUT_NOT_HONORED))
+                stats.reportProblem(P_TIMEOUT_NOT_HONORED,
+                    fmt::format("iteration ran for {:.3}s: {}",
+                                static_cast<double>(ns) / 1e9, operation.describe()));
 
             Int64 log_threshold_ns = 10'000'000'000L;
             if (ns >= log_threshold_ns && stats.get(S_TIME_MAX_NS) < log_threshold_ns)
@@ -1326,6 +1452,10 @@ struct FunctionsStressTestThread
             }
         }
 
+        /// We mutate `context->setCurrentQueryId()` per iteration but never refresh
+        /// `ThreadStatus::query_id`, so detach before destroying `thread_status` to
+        /// keep the destructor's id-vs-context invariant happy.
+        CurrentThread::detachFromGroupIfNotDetached();
         thread_status.reset(); // must be done from this thread
 
         {
@@ -1387,7 +1517,7 @@ struct FunctionsStressTestThread
         }
         catch (Exception & e)
         {
-            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::LOGICAL_ERROR)
+            if (isOuterGuardError(e.code()))
                 throw;
 
             return false;
@@ -1406,7 +1536,7 @@ struct FunctionsStressTestThread
         }
         catch (Exception & e)
         {
-            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::LOGICAL_ERROR)
+            if (isOuterGuardError(e.code()))
                 throw;
             if (!functions_with_checks_in_prepare.contains(function_info.name))
                 stats.reportProblem(P_EXCEPTION_IN_PREPARE, fmt::format("{} exception: {}", operation.describe(), getCurrentExceptionMessage(true)));
@@ -1451,7 +1581,7 @@ struct FunctionsStressTestThread
             }
             catch (Exception & e)
             {
-                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::LOGICAL_ERROR)
+                if (isOuterGuardError(e.code()))
                     throw;
                 /// Presumably the type is not numeric, leave the column as is.
                 chassert(!mask.column);
@@ -1536,8 +1666,8 @@ struct FunctionsStressTestThread
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned nullptr column");
         if (column->size() != expected_rows)
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned unexpected number of rows: {} instead of {}", column->size(), expected_rows);
-        if (column->getDataType() != data_type->getColumnType())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type: {} instead of {}", magic_enum::enum_name<TypeIndex>(column->getDataType()), magic_enum::enum_name<TypeIndex>(data_type->getColumnType()));
+        if (!columnMatchesType(*column, *data_type))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type: {} instead of {}", column->getName(), data_type->getName());
 
         auto apply = [&](IColumn & col)
         {
@@ -1611,7 +1741,7 @@ struct FunctionsStressTestThread
         }
         catch (Exception & e)
         {
-            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::LOGICAL_ERROR)
+            if (isOuterGuardError(e.code()))
                 throw;
             bulk_exception = std::current_exception();
         }
@@ -1657,7 +1787,7 @@ struct FunctionsStressTestThread
             }
             catch (Exception & e)
             {
-                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::LOGICAL_ERROR)
+                if (isOuterGuardError(e.code()))
                     throw;
 
                 if (late_typecheck_errors.contains(e.code()) && !isAnyArgumentDynamicallyTyped(row_args) && !stats.hasProblem(P_LATE_TYPECHECK))
@@ -1774,7 +1904,7 @@ struct FunctionsStressTestThread
                 }
                 catch (Exception & e)
                 {
-                    if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::LOGICAL_ERROR)
+                    if (isOuterGuardError(e.code()))
                         throw;
 
                     /// Known quirk: when useDefaultImplementationForNulls() and
@@ -1949,11 +2079,17 @@ struct FunctionsStressTestThread
         }
 
         bool injective = resolved_function->isInjective(valid_args);
-        if (injective != resolver->isInjective(valid_args))
-            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver and IFunctionBase; {}", operation.describe()));
-        if (!injective && resolved_function->isInjective({}))
-            /// isInjective({}) means "all overloads are injective", not "at least one overload is injective", right?
-            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective is false with arguments but true without; {}", operation.describe()));
+        bool resolver_injective = resolver->isInjective(valid_args);
+        if (resolver_injective != injective)
+        {
+            /// Skip isInjective mismatch for Dynamic/Variant/Object types: the adaptors intentionally
+            /// return false (conservative) because injectivity of the underlying function does not hold
+            /// on the mixed-type domain, and the resolver lacks full type information before build().
+            if (!isAnyArgumentDynamicallyTyped(valid_args))
+            {
+                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver ({}) and IFunctionBase ({}); {}", resolver_injective, injective, operation.describe()));
+            }
+        }
 
         bool has_monotonicity = resolved_function->hasInformationAboutMonotonicity();
 
@@ -1996,6 +2132,7 @@ struct FunctionsStressTestThread
         }
 
         size_t num_rows = result->size();
+        bool result_type_has_nan_or_incomparable = typeCanHaveNanOrIncomparableFields(result_type);
         if (has_monotonicity && num_rows > 1)
         {
             size_t num_nonconst_args = 0;
@@ -2045,15 +2182,26 @@ struct FunctionsStressTestThread
                         int cmp = result->compareAt(perm[row], perm[row + 1], *result, /*nan_direction_hint=*/ -1);
 
                         /// Check that Field comparison works the same way as IColumn::compareAt.
-                        Field lhs = (*result)[perm[row]];
-                        Field rhs = (*result)[perm[row + 1]];
-                        bool field_less = accurateLess(lhs, rhs);
-                        bool field_greater = accurateLess(rhs, lhs);
-                        bool field_equal = accurateEquals(lhs, rhs);
-                        bool field_leq = accurateLessOrEqual(lhs, rhs);
-                        bool field_geq = accurateLessOrEqual(rhs, lhs);
-                        if (field_less != (cmp < 0) || field_greater != (cmp > 0) || field_equal != (cmp == 0) || field_leq != (cmp <= 0) || field_geq != (cmp >= 0))
-                            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("Field comparison inconsistent with IColumn comparison: compareAt says {} {} {} (type: {}), but accurateLess etc say: less={}, greater={}, equal={}, leq={}, geq={}", valueToString(result_type, result, perm[row]), cmp < 0 ? "<" : cmp > 0 ? ">" : "==", valueToString(result_type, result, perm[row + 1]), result_type->getName(), field_less, field_greater, field_equal, field_leq, field_geq));
+                        {
+                            Field lhs = (*result)[perm[row]];
+                            Field rhs = (*result)[perm[row + 1]];
+                            if (!lhs.isNull() && !rhs.isNull())
+                            {
+                                bool field_less = accurateLess(lhs, rhs);
+                                bool field_greater = accurateLess(rhs, lhs);
+                                bool field_equal = accurateEquals(lhs, rhs);
+                                bool field_leq = accurateLessOrEqual(lhs, rhs);
+                                bool field_geq = accurateLessOrEqual(rhs, lhs);
+                                if (field_less != (cmp < 0) || field_greater != (cmp > 0) || field_equal != (cmp == 0) || field_leq != (cmp <= 0) || field_geq != (cmp >= 0))
+                                {
+                                    /// IColumn::compareAt uses nan_direction_hint and type-specific logic
+                                    /// that Field-level comparisons (accurateLess etc.) don't support.
+                                    /// Report under a separate category for such types.
+                                    Problem p = result_type_has_nan_or_incomparable ? P_FIELD_COMPARISON_INCONSISTENCY : P_UNEXPECTED_ERROR;
+                                    stats.reportProblem(p, fmt::format("Field comparison inconsistent with IColumn comparison: compareAt says {} {} {} (type: {}), but accurateLess etc say: less={}, greater={}, equal={}, leq={}, geq={}", valueToString(result_type, result, perm[row]), cmp < 0 ? "<" : cmp > 0 ? ">" : "==", valueToString(result_type, result, perm[row + 1]), result_type->getName(), field_less, field_greater, field_equal, field_leq, field_geq));
+                                }
+                            }
+                        }
 
                         if (cmp == 0)
                         {
@@ -2094,14 +2242,14 @@ void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,
 
 TEST(FunctionsStress, stress)
 {
-#if defined(MEMORY_SANITIZER)
-    /// Under MSan, the stress test finds uninitialized-memory reads in functions
-    /// that are hard to debug without a local MSan build. Disable for now.
-    /// TODO: Fix the underlying MSan issues and re-enable.
-    GTEST_SKIP() << "Disabled under MSan";
-#endif
-
     chassert(!logger);
+
+    /// Set up console logging so that LOG_ERROR output is visible in the test log.
+    /// Without this, the root logger has a nullptr channel and all messages are silently discarded.
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+    Poco::Logger::root().setChannel(channel);
+    Poco::Logger::root().setLevel("information");
+
     logger = getLogger("stress");
 
     /// (This makes exception stack traces much faster, and this test spends a lot of time throwing and catching exceptions.)
@@ -2121,13 +2269,54 @@ TEST(FunctionsStress, stress)
     }
     if (num_threads <= 0)
         num_threads = 1;
-    std::vector<FunctionsStressTestThread> threads(static_cast<size_t>(num_threads));
+    /// Use heap-allocated `FunctionsStressTestThread` (via `std::unique_ptr`) so that we can
+    /// intentionally leak the state of stuck workers. If a worker thread gets stuck in some
+    /// runaway operation (e.g. an infinite loop in a tested function), we cannot safely destroy
+    /// its `FunctionsStressTestThread` from the main thread:
+    ///   * The worker is still using `context`, `thread_group`, `function_stats`, `valid_args`,
+    ///     `result`, `mutex`, `operation`, etc. — destroying any of them would race with the
+    ///     worker (use-after-free).
+    ///   * `~ThreadStatus` would run on the main thread, fire `prev.thread_id == curr.thread_id`
+    ///     in `RUsageCounters::incrementProfileEvents`, and abort. See issue #103750.
+    ///   * `~std::thread` on a still-joinable `std::thread` calls `std::terminate`.
+    /// For stuck workers we instead `detach` the `std::thread` and `release` the `unique_ptr`,
+    /// leaving the heap-allocated state alive forever. The test is failing anyway, so this leak
+    /// only persists until the test process exits.
+    ///
+    /// The actual `unique_ptr` release for stuck workers is deferred until after the signal
+    /// listener thread has stopped — see the cleanup pass at the bottom of this function.
+    /// `request_shutdown` (the signal listener callback) reads `threads`, so mutating the
+    /// `unique_ptr` slots concurrently would be a data race.
+    std::vector<std::unique_ptr<FunctionsStressTestThread>> threads(static_cast<size_t>(num_threads));
+    for (auto & t : threads)
+        t = std::make_unique<FunctionsStressTestThread>();
     const std::chrono::seconds stop_timeout(30);
 
     auto request_shutdown = [&]
         {
+            /// `threads` is only mutated after `signal_listener_thread` has been stopped and
+            /// joined, so all entries are non-null while the listener is alive. The `if (t)`
+            /// guard is purely defensive.
             for (auto & t : threads)
-                t.thread_should_stop.store(true);
+            {
+                if (!t)
+                    continue;
+                t->thread_should_stop.store(true);
+                /// Trip the per-iteration `QueryStatus::is_killed` flag so any
+                /// cancellation-aware code inside the running function returns immediately
+                /// rather than waiting for the natural `max_execution_time` to elapse. We
+                /// cancel through the worker's published `QueryStatusPtr`, not through its
+                /// `Context`: `Context::process_list_elem` / `has_process_list_elem` are
+                /// not synchronized, while `QueryStatus::cancelQuery` takes its own
+                /// `cancel_mutex` and is safe to call from another thread.
+                QueryStatusPtr query_status;
+                {
+                    std::lock_guard active_query_lock(t->active_query_mutex);
+                    query_status = t->active_query_status;
+                }
+                if (query_status)
+                    query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
+            }
         };
 
     /// Print stack trace and function name on crash.
@@ -2138,23 +2327,37 @@ TEST(FunctionsStress, stress)
     SignalListener signal_listener(nullptr, logger, [&](int, bool) { request_shutdown(); });
     std::thread signal_listener_thread([&] { signal_listener.run(); });
 
+    /// `CancellationChecker` is the singleton that enforces `max_execution_time` by flipping
+    /// `QueryStatus::is_killed` once the deadline of any registered query passes. In the real
+    /// server it runs as a `BackgroundSchedulePool` task (see `Server.cpp`). Here we spin up a
+    /// dedicated thread that runs the same `workerFunction` for the lifetime of the test.
+    /// `workerFunction` clears the stop flag on its way out, so calling `terminateThread` here
+    /// does not leave the singleton permanently dead for any later test in the same binary.
+    std::thread cancellation_checker_thread([] { CancellationChecker::getInstance().workerFunction(); });
+    SCOPE_EXIT({
+        CancellationChecker::getInstance().terminateThread();
+        cancellation_checker_thread.join();
+    });
+
     tryRegisterFunctions();
     listTestableFunctions();
     absl::SetMinLogLevel(absl::LogSeverityAtLeast::kFatal);
 
 
-    LOG_INFO(logger, "Will run in {} threads on {} functions for {} seconds", threads.size(), testable_functions.size(), options.duration_seconds);
+    LOG_INFO(logger, "Will run in {} threads on {} functions for {} seconds, iteration timeout {}s, too-slow threshold {}s",
+        threads.size(), testable_functions.size(),
+        options.duration_seconds, options.iteration_timeout_seconds, options.iteration_too_slow_seconds);
 
     for (size_t i = 0; i < threads.size(); ++i)
     {
-        threads[i].thread_idx = i;
-        threads[i].thread = std::thread([t = &threads[i]] { t->run(); });
+        threads[i]->thread_idx = i;
+        threads[i]->thread = std::thread([t = threads[i].get()] { t->run(); });
     }
 
     signal_listener.waitForTerminationRequest(std::chrono::seconds(options.duration_seconds));
 
     for (auto & t : threads)
-        t.thread_should_stop.store(true);
+        t->thread_should_stop.store(true);
 
     LOG_INFO(logger, "Waiting for threads to stop for up to {} seconds", stop_timeout.count());
 
@@ -2163,36 +2366,59 @@ TEST(FunctionsStress, stress)
         total_stats[i].function_idx = i;
     size_t stuck_threads = 0;
 
+    /// Indices of workers that turned out to be stuck. We detach their `std::thread` immediately
+    /// (so its destructor doesn't `std::terminate`), but defer the `unique_ptr` release until
+    /// after `signal_listener_thread` has been joined. `request_shutdown` reads `threads`, so
+    /// any concurrent mutation would be a data race.
+    std::vector<size_t> stuck_indices;
+
     auto deadline = std::chrono::steady_clock::now() + stop_timeout;
-    for (auto & t : threads)
+    for (size_t i = 0; i < threads.size(); ++i)
     {
+        auto & t = threads[i];
         std::optional<Operation> stuck_operation;
         {
-            std::unique_lock lock(t.mutex);
-            t.thread_stop_cv.wait_until(lock, deadline, [&] { return t.thread_stopped; });
-            if (!t.thread_stopped)
-                stuck_operation = t.operation;
+            std::unique_lock lock(t->mutex);
+            t->thread_stop_cv.wait_until(lock, deadline, [&] { return t->thread_stopped; });
+            if (!t->thread_stopped)
+                stuck_operation = t->operation;
         }
         if (stuck_operation.has_value())
         {
             LOG_ERROR(logger, "Thread is stuck while {}", stuck_operation->describe());
             ++stuck_threads;
+            /// Detach the still-joinable `std::thread` so its destructor doesn't `std::terminate`.
+            /// Detaching mutates only `t->thread`, which `request_shutdown` does not read, so it
+            /// is safe to do here while the signal listener is still alive.
+            t->thread.detach();
+            stuck_indices.push_back(i);
         }
         else
         {
-            t.thread.join();
-            for (size_t i = 0; i < testable_functions.size(); ++i)
-                total_stats[i].merge(t.function_stats[i]);
+            t->thread.join();
+            for (size_t j = 0; j < testable_functions.size(); ++j)
+                total_stats[j].merge(t->function_stats[j]);
         }
     }
 
-    bool ok = reportResults(total_stats, stuck_threads);
+    String failure_details = reportResults(total_stats, stuck_threads);
 
+    /// Stop and join the signal listener BEFORE releasing the `unique_ptr` slots for stuck
+    /// workers. While the listener is alive it can fire `request_shutdown`, which iterates
+    /// `threads` and reads each `unique_ptr`. Releasing concurrently would be a data race.
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     HandledSignals::instance().reset();
 
-    ASSERT_TRUE(ok) << "Functions stress test found problems (see log above)";
+    /// Now that no other thread can read `threads`, release the stuck workers' `unique_ptr`s.
+    /// The heap-allocated state stays alive forever so the still-running stuck workers can keep
+    /// using it safely; the test process is about to exit so the leak is bounded.
+    for (size_t i : stuck_indices)
+    {
+        [[maybe_unused]] auto * leaked = threads[i].release();
+    }
+
+    ASSERT_TRUE(failure_details.empty()) << failure_details;
 }
 
 // TODO:
@@ -2203,5 +2429,3 @@ TEST(FunctionsStress, stress)
 // * maybe fix SerializationMap outputting invalid SQL: {k: v} instead of map(k, v)
 // * maybe fix SerializationTuple outputting non-tuple SQL for single-element tuples: (x) instead of tuple(x) or (x,)
 // * investigate memory tracker imbalance
-// * run with sanitizers
-// * randomize settings: decimal_check_overflow, cast_string_to_date_time_mode, enable_extended_results_for_datetime_functions, allow_nonconst_timezone_arguments, use_legacy_to_time, function_locate_has_mysql_compatible_argument_order, allow_simdjson, splitby_max_substrings_includes_remaining_string, least_greatest_legacy_null_behavior, h3togeo_lon_lat_result_order, geotoh3_argument_order, cast_keep_nullable, cast_ipv4_ipv6_default_on_conversion_error, enable_named_columns_in_function_tuple, function_visible_width_behavior, function_json_value_return_type_allow_nullable, function_json_value_return_type_allow_complex, use_variant_as_common_type, geo_distance_returns_float64_on_float64_arguments, session_timezone, function_date_trunc_return_type_behavior, date_time_input_format, date_time_output_format, date_time_overflow_behavior

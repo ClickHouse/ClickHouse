@@ -61,7 +61,7 @@ protected:
 
 /** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
  *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'.
- *  There is also special delimiters `.:` and `.^` for JSON type subcolumns. In case of special delimiter
+ *  There is also special delimiters `.:`, `.^` and `.@` for JSON type subcolumns. In case of special delimiter
  *  the next identifier part after it will include special delimiter and be back quoted always: json.a.b.:UInt32 -> ['json', 'a', 'b', ':`UInt32`'].
  *  It's needed to distinguish identifiers json.a.b.:UInt32 and json.a.b.`:UInt32`.
  *  There is also a special syntax sugar for reading JSON subcolumns of type Array(JSON): json.a.b[][].c -> json.a.b.:Array(Array(JSON)).c
@@ -78,7 +78,7 @@ public:
     }
 
     /// Checks if the identirier is actually a pair of a special delimiter and the identifier in back quotes.
-    /// For example: :`UInt64` or ^`path` from special JSON subcolumns.
+    /// For example: :`UInt64`, ^`path` or @`path` from special JSON subcolumns.
     static std::optional<std::pair<char, String>> splitSpecialDelimiterAndIdentifierIfAny(const String & name);
 
 protected:
@@ -87,6 +87,7 @@ protected:
         NONE = '\0',
         JSON_PATH_DYNAMIC_TYPE = ':',
         JSON_PATH_PREFIX = '^',
+        JSON_PATH_COMBINED = '@',
     };
 
     const char * getName() const override { return "compound identifier"; }

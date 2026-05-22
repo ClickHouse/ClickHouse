@@ -178,6 +178,24 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
     }
 }
 
+bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
+{
+    auto marks = marks_loader->loadMarks();
+    size_t num_transitions = 0;
+    MarkInCompressedFile last_mark{std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
+    for (size_t i = 0; i < marks_count; ++i)
+    {
+        auto mark = marks->getMark(i, 0);
+        if (mark != last_mark)
+        {
+            last_mark = mark;
+            if (++num_transitions > max_transitions)
+                return false;
+        }
+    }
+    return true;
+}
+
 void MergeTreeReaderStream::seekToStart()
 {
     init();
@@ -291,7 +309,7 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// It consists of 2 parts of data - during the serialization the first part is written before the data and second - after the data.
     /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
     /// whole file size.
-    if (settings.is_dynamic_or_object_structure)
+    if (settings.is_metadata_file)
         return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,

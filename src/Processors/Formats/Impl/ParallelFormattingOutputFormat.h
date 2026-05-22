@@ -3,7 +3,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/ThreadPool.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -65,7 +64,7 @@ namespace ErrorCodes
  * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
  * function is blocked until the Collector thread is done.
 */
-class ParallelFormattingOutputFormat : public IOutputFormat
+class ParallelFormattingOutputFormat final : public IOutputFormat
 {
 public:
     /// Used to recreate formatter on every new data piece.

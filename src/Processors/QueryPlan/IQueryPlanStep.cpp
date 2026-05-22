@@ -1,9 +1,12 @@
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
-
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -56,7 +59,7 @@ bool IQueryPlanStep::canRemoveColumnsFromOutput() const
 
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
+    return false;
 }
 
 const SharedHeader & IQueryPlanStep::getOutputHeader() const
