@@ -39,10 +39,12 @@ class ClickHouseService:
         try:
             Utils.add_to_PATH(temp_dir)
 
-            # Download binary if absent
+            # Download binary if absent; CI release artifacts extract the
+            # binary without the executable bit, so chmod afterwards.
             clickhouse_bin = Path(temp_dir) / "clickhouse"
             if not clickhouse_bin.exists():
                 self._download_binary()
+            clickhouse_bin.chmod(0o755)
 
             # Create symlinks if absent
             for link_name in ("clickhouse-server", "clickhouse-client", "clickhouse-local"):
@@ -139,16 +141,11 @@ class ClickHouseService:
     @staticmethod
     def _download_binary() -> None:
         dest = Path(temp_dir) / "clickhouse"
-        if dest.exists():
-            print(f"ClickHouse binary already present at [{dest}], skipping download")
-            dest.chmod(0o755)
-            return
         arch = "aarch64" if Utils.is_arm() else "amd64"
         url = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{arch}/clickhouse"
         print(f"Downloading ClickHouse binary from [{url}] to [{dest}]")
         try:
             urllib.request.urlretrieve(url, dest)
-            dest.chmod(0o755)
         except Exception as e:
             raise RuntimeError(f"Failed to download ClickHouse binary: {e}") from e
 
