@@ -561,9 +561,12 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (targets)
     {
-        targets->formatTarget(ViewTarget::Samples, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Tags, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Metrics, ostr, settings, state, frame);
+        for (const auto & target : targets->targets)
+        {
+            /// `To` and `Inner` are formatted separately above (for materialized / window views).
+            if ((target.kind != ViewTarget::To) && (target.kind != ViewTarget::Inner))
+                ASTViewTargets::formatTarget(target, ostr, settings, state, frame);
+        }
     }
 
     if (dictionary)
