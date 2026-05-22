@@ -158,10 +158,10 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (!source)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set, call setSource first");
 
-    const auto & settings = source->read_settings;
-
     if (source->objects.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source has no stored objects");
+
+    const auto & settings = source->read_settings;
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
 
