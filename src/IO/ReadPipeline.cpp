@@ -549,7 +549,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     }
 
     /// -- Stage 5: Async prefetch --
-
+    /// Only applied when a caller explicitly requests it via `needAsyncPrefetch`.
+    /// Today that's `DiskObjectStorage::prepareRead` (for remote reads with
+    /// `remote_fs_method=threadpool` or distributed cache) and
+    /// `StorageObjectStorageSource`. Local reads do not use this stage — they
+    /// rely on `createReadBufferFromFileBase` (which can itself be async at the
+    /// file-descriptor level via `pread_threadpool`/`io_uring`).
     if (async_prefetch && async_prefetch->reader)
     {
         size_t total_size = getTotalSize(source->objects);
