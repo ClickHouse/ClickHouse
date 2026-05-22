@@ -73,10 +73,11 @@ void WatermarkMerger::handleOutputUpdate(OutputPort * output, OutputState & stat
 
 void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_state)
 {
-    if (input->isFinished())
+    if (input->isFinished() && !input_state.finished)
     {
         input_state.finished = true;
         input_state.idle = true;
+        input_state.pending_watermark.reset();
         finished_inputs.insert(input);
         marked_inputs.insert(input);
     }
@@ -89,12 +90,18 @@ void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_st
 
     if (chunk.getChunkInfos().has<IdleMarker>())
     {
+        if (input_state.finished)
+            return;
+
         input_state.idle = true;
         input_state.pending_watermark = std::nullopt;
         marked_inputs.insert(input);
     }
     else if (chunk.getChunkInfos().has<WatermarkMarker>())
     {
+        if (input_state.finished)
+            return;
+
         input_state.idle = false;
         input_state.pending_watermark = chunk.getChunkInfos().get<WatermarkMarker>()->watermark;
         marked_inputs.insert(input);
@@ -129,7 +136,7 @@ void WatermarkMerger::broadcastAlignedMarker()
     std::optional<Field> min_watermark;
     for (const auto & [input, input_state] : inputs_state)
     {
-        if (input_state.idle || !input_state.pending_watermark)
+        if (input_state.idle)
             num_idle += 1;
 
         else if (!min_watermark || *min_watermark > *input_state.pending_watermark)
@@ -148,9 +155,12 @@ void WatermarkMerger::broadcastAlignedMarker()
             drainQueue(output, output_state.queue);
         }
 
-        /// Drop watermark markers for used streams.
+        /// Drop watermark markers for used streams. Finished inputs stay marked permanently.
         for (auto & [input, input_state] : inputs_state)
         {
+            if (input_state.finished)
+                continue;
+
             if (!input_state.idle)
                 continue;
 
@@ -172,9 +182,12 @@ void WatermarkMerger::broadcastAlignedMarker()
             drainQueue(output, output_state.queue);
         }
 
-        /// Drop watermark markers for used streams.
+        /// Drop watermark markers for used streams. Finished inputs stay marked permanently.
         for (auto & [input, input_state] : inputs_state)
         {
+            if (input_state.finished)
+                continue;
+
             if (!input_state.pending_watermark)
                 continue;
 

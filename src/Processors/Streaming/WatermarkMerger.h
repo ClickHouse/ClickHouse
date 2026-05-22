@@ -21,10 +21,6 @@ namespace DB
 /// published a marker since the last broadcast, the merger computes `min(latest_watermark[i])`
 /// over non-idle slots and appends the broadcast marker to every still-open output queue
 /// (or an `IdleMarker` if every still-open slot is idle).
-///
-/// Consecutive trailing markers in an output queue are overwritten: at most one marker ever
-/// sits at the tail. Combined with the strict broadcast cycle this bounds marker accumulation
-/// even when one output is permanently stalled.
 class WatermarkMerger final : public IProcessor
 {
     struct InputState
