@@ -1,4 +1,5 @@
 import os
+import re
 import socket
 import subprocess
 import time
@@ -352,22 +353,31 @@ def test_ssh_interactive_pty_with_high_fds(started_cluster):
             # Wait for the query result. With the bug, `wait_for_input` is
             # spinning on EINVAL and no input is ever delivered to the client,
             # so the result never appears and we time out.
+            #
+            # `SELECT 1 FORMAT TSV` returns the bare line "1", followed by
+            # the client footer `"<N> row in set. Elapsed: ..."`. The query
+            # itself is echoed back by replxx (with ANSI colors), so a naive
+            # `b"1" in buf` would match the echoed query and produce a false
+            # positive even on a hung session. The footer string is printed
+            # only after the result has been emitted and never appears in
+            # echoed input, so use it as the unambiguous completion marker.
+            # Strip ANSI escape sequences before searching, since replxx
+            # interleaves SGR / cursor codes throughout the output stream.
+            ansi_re = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
             buf = b""
+            got_result = False
             deadline = time.time() + 15
             while time.time() < deadline:
                 if channel.recv_ready():
                     buf += channel.recv(65536)
-                    # `SELECT 1 FORMAT TSV` returns the bare line "1".
-                    # The line-edited query is also echoed back by replxx,
-                    # so look for the result *after* the query terminator.
-                    after = buf.split(b";\n", 1)[-1] if b";\n" in buf else buf
-                    after = buf.split(b"\n", 1)[-1]
-                    if b"1\n" in after or b"1\r\n" in after:
+                    clean = ansi_re.sub(b"", buf)
+                    if b"1 row in set" in clean:
+                        got_result = True
                         break
                 else:
                     time.sleep(0.05)
 
-            assert b"1" in buf, (
+            assert got_result, (
                 "interactive SSH PTY session did not return query result "
                 "within timeout — likely select(2)/fd_set overflow hang in "
                 f"replxx::Terminal::wait_for_input. raw output: {buf!r}"
