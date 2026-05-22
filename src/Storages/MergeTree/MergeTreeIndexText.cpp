@@ -188,7 +188,12 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
 {
     if (header & IsCompressed)
     {
-        chassert(posting_list_codec);
+        if (!posting_list_codec)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Posting list header marks compressed data but no codec is configured");
+        }
+
         static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
 
         if (serialization_version < required_version)
@@ -199,7 +204,12 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
                 posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
         }
 
-        chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
+        if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Posting list header marks compressed data but configured codec is None");
+        }
+
         auto postings = std::make_shared<PostingList>();
         posting_list_codec->decode(istr, *postings);
         return postings;

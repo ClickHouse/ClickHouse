@@ -103,8 +103,20 @@ def create_and_populate(node, table, posting_list_codec):
     node.query(f"OPTIMIZE TABLE {table} FINAL")
 
 
-def run_search_queries(node, table):
-    return [node.query(q.format(table=table)).strip() for q, _ in SEARCH_QUERIES]
+# Exercise the lazy posting list apply mode against the upgraded binary:
+# pre-WithCodec granules silently fall back to eager mode, while the new-format
+# part inserted after the upgrade actually uses the cursor-based reader.
+LAZY_APPLY_SETTINGS = {
+    "allow_experimental_text_index_lazy_apply": 1,
+    "text_index_posting_list_apply_mode": "lazy",
+}
+
+
+def run_search_queries(node, table, settings=None):
+    return [
+        node.query(q.format(table=table), settings=settings).strip()
+        for q, _ in SEARCH_QUERIES
+    ]
 
 
 def expected_results():
@@ -132,13 +144,15 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
     node.restart_with_latest_version()
 
     # Same data, same queries, same answers under the upgraded binary.
-    assert run_search_queries(node, table) == expected_results()
+    # Lazy mode falls back to materialize for these pre-WithCodec granules.
+    assert run_search_queries(node, table, settings=LAZY_APPLY_SETTINGS) == expected_results()
 
     # Confirm the text index is engaged after upgrade; without this check a
     # silent fallback to full scan would still pass the queries above.
     explain = node.query(
         f"EXPLAIN indexes = 1 "
-        f"SELECT count() FROM {table} WHERE hasToken(s, 'unique42')"
+        f"SELECT count() FROM {table} WHERE hasToken(s, 'unique42')",
+        settings=LAZY_APPLY_SETTINGS,
     )
     assert "Name: idx" in explain, (
         f"text index `idx` not picked up after upgrade:\n{explain}"
@@ -171,12 +185,15 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
         "3751",  # hasAnyTokens ['rare', 'unique42']
         "[42]",  # arraySort(groupArray(k)) for 'unique42'
     ]
-    assert run_search_queries(node, table) == mixed_expected
+    # Mixed run: old-format parts take the materialize fallback; the new-format
+    # part can satisfy the lazy-mode preconditions.
+    assert run_search_queries(node, table, settings=LAZY_APPLY_SETTINGS) == mixed_expected
 
     # Confirm the new-format part is indexed for the new token.
     assert (
         node.query(
-            f"SELECT count() FROM {table} WHERE hasToken(s, 'unique5042')"
+            f"SELECT count() FROM {table} WHERE hasToken(s, 'unique5042')",
+            settings=LAZY_APPLY_SETTINGS,
         ).strip()
         == "1"
     )
@@ -197,11 +214,13 @@ def test_text_index_upgrade(started_cluster, posting_list_codec):
     )
 
     # Same queries against the merged part: checks mixed-version index data
-    # was correctly merged, not just readable.
-    assert run_search_queries(node, table) == mixed_expected
+    # was correctly merged, not just readable. The merged part is new-format,
+    # so lazy mode is now actually engaged for every query.
+    assert run_search_queries(node, table, settings=LAZY_APPLY_SETTINGS) == mixed_expected
     assert (
         node.query(
-            f"SELECT count() FROM {table} WHERE hasToken(s, 'unique5042')"
+            f"SELECT count() FROM {table} WHERE hasToken(s, 'unique5042')",
+            settings=LAZY_APPLY_SETTINGS,
         ).strip()
         == "1"
     )
