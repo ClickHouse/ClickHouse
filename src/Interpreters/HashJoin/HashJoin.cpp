@@ -2348,6 +2348,10 @@ SharedFixedHashTableRuntimeFilter::ProbeFn buildSharedFilterProbeFn(
 
 void HashJoin::publishSharedRuntimeFilters()
 {
+    if (shared_runtime_filters_publish_attempted)
+        return;
+    shared_runtime_filters_publish_attempted = true;
+
     if (!table_join->enableJoinRuntimeFilterSharedFixedHashTable())
         return;
 
