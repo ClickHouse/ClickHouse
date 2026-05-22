@@ -41,8 +41,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric ReaderExecutorActive;
-    extern const Metric ReaderExecutorPrefetchInFlight;
-    extern const Metric ReaderExecutorBufferSlotsInUse;
 }
 
 namespace HistogramMetrics
