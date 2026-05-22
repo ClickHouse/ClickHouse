@@ -2,6 +2,11 @@
 
 #include <base/types.h>
 
+namespace Poco::Net
+{
+    class StreamSocket;
+}
+
 namespace DB
 {
 
@@ -66,5 +71,10 @@ namespace StreamingExchangeProtocol
         void read(ReadBuffer & in);
         void write(WriteBuffer & out) const;
     };
+
+    /// Single receive that retries on EINTR. Returns bytes read, or 0 if the socket
+    /// would block. Throws Poco::Net::NetException on early EOF or other socket error;
+    /// `description` labels the call site in the exception message.
+    ssize_t tryReceive(Poco::Net::StreamSocket & socket, char * buffer, size_t size, const String & description);
 }
 }

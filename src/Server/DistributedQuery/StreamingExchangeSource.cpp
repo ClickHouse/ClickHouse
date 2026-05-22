@@ -183,29 +183,11 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
 {
     while (position < buffer_size)
     {
-        size_t remaining_size = buffer_size - position;
-
-        ssize_t received = socket->receiveBytes(buffer + position, static_cast<int>(remaining_size));
-        if (received < 0)
+        ssize_t received = StreamingExchangeProtocol::tryReceive(*socket, buffer + position, buffer_size - position, stream_name);
+        if (received == 0)
         {
-            auto last_error = errno;
-            if (last_error == EINTR)
-            {
-                continue;
-            }
-            else if (last_error == EAGAIN || last_error == EWOULDBLOCK)
-            {
-                /// Socket is not ready for reading, wait for epoll event
-                break;
-            }
-            else
-            {
-                throw Poco::Net::NetException(fmt::format("Failed to receive data from socket for exchange {}, error {}", stream_name, last_error));
-            }
-        }
-        else if (received == 0)
-        {
-            throw Poco::Net::NetException(fmt::format("Failed to receive data from socket for exchange {}, socket was unexpectedly closed", stream_name));
+            /// Socket is not ready for reading, wait for epoll event.
+            break;
         }
 
         LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket->sockfd());

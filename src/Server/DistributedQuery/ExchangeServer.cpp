@@ -96,26 +96,20 @@ void ExchangeServer::run()
 namespace
 {
     /// Read exactly `size` bytes from a blocking socket. Throws on EOF or transport error.
-    void receiveAll(Poco::Net::StreamSocket & socket, void * buffer, size_t size, const String & context)
+    /// On a blocking socket with setReceiveTimeout, EAGAIN cannot surface (Poco raises
+    /// TimeoutException instead), so the would-block return from `tryReceive` would
+    /// indicate the socket was reconfigured non-blocking by mistake — we treat it as an error.
+    void receiveAll(Poco::Net::StreamSocket & socket, void * buffer, size_t size, const String & description)
     {
         char * dst = static_cast<char *>(buffer);
         size_t position = 0;
         while (position < size)
         {
-            size_t remaining = size - position;
-            ssize_t received = socket.receiveBytes(dst + position, static_cast<int>(remaining));
-            if (received < 0)
-            {
-                auto last_error = errno;
-                if (last_error == EINTR)
-                    continue;
-                throw Poco::Net::NetException(fmt::format(
-                    "Failed to receive {} from {}, errno {}", context, socket.peerAddress().toString(), last_error));
-            }
+            ssize_t received = StreamingExchangeProtocol::tryReceive(socket, dst + position, size - position, description);
             if (received == 0)
                 throw Poco::Net::NetException(fmt::format(
-                    "Failed to receive {} from {}, peer closed connection after {} of {} bytes",
-                    context, socket.peerAddress().toString(), position, size));
+                    "Failed to receive {} from {}, socket reported would-block on a blocking handshake after {} of {} bytes",
+                    description, socket.peerAddress().toString(), position, size));
             position += received;
         }
     }
