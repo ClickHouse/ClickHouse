@@ -2084,6 +2084,114 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
     }
 }
 
+/// Recording ICacheProvider: reports a configurable hit range and records the
+/// exact range passed to handle->get. Used to verify ReaderExecutor clamps the
+/// cache-hit range to the requested window before calling get().
+namespace
+{
+    struct RecordingHandle : public ICacheHandle
+    {
+        ByteRange hit_range;
+        std::vector<ByteRange> & recorded;
+        std::string data;
+
+        RecordingHandle(ByteRange hit_, std::vector<ByteRange> & rec_, std::string data_)
+            : hit_range(hit_), recorded(rec_), data(std::move(data_)) {}
+
+        CacheLookupResult status() const override
+        {
+            return CacheLookupResult{{hit_range}, {}};
+        }
+        Rope get(ByteRange range) override
+        {
+            recorded.push_back(range);
+            /// Return a single rope node sized to the requested range
+            /// (mirrors DiskCacheHandle::get, which allocates overlap_size).
+            size_t lo = std::max(hit_range.offset, range.offset);
+            size_t hi = std::min(hit_range.end(), range.end());
+            if (lo >= hi)
+                return {};
+            auto buf = std::make_shared<OwnedRopeBuffer>(hi - lo);
+            std::memcpy(buf->data(), data.data() + (lo - hit_range.offset), hi - lo);
+            Rope r;
+            r.append(RopeNode{std::move(buf), 0, hi - lo, lo});
+            return r;
+        }
+        bool put(ByteRange, Rope) override { return false; }
+    };
+
+    struct RecordingCacheProvider : public ICacheProvider
+    {
+        ByteRange hit_range;
+        std::vector<ByteRange> recorded_gets;
+        std::string data;
+
+        RecordingCacheProvider(ByteRange hit_, std::string data_)
+            : hit_range(hit_), data(std::move(data_)) {}
+
+        std::unique_ptr<ICacheHandle> lookup(CacheKey, ByteRange) override
+        {
+            return std::make_unique<RecordingHandle>(hit_range, recorded_gets, data);
+        }
+        String name() const override { return "Recording"; }
+    };
+}
+
+TEST_F(FileCacheTest, ReaderExecutorClampsHitToRequestedWindow)
+{
+    /// Regression: `readPhysicalWindow` used to call `handle->get(hit)` with the
+    /// cache's full segment range. With large segments (default
+    /// `max_file_segment_size` = 4 MiB) and many concurrent readers, allocations
+    /// in `DiskCacheHandle::get` (sized to the segment, not the window) blew
+    /// past per-query memory limits — `INSERT INTO test.hits_s3 SELECT *
+    /// FROM test.hits` hit `MEMORY_LIMIT_EXCEEDED` at 27.94 GiB on master.
+    ///
+    /// After the fix, `readPhysicalWindow` clamps the hit range to the
+    /// requested window before calling `get`, so the allocation is at most
+    /// `window_size` regardless of segment size.
+
+    ServerUUID::setRandomForUnitTests();
+
+    /// File content is 30 bytes of distinct values; the recording provider
+    /// pretends the whole [0, 30) range is one cached segment.
+    std::string data(30, 'X');
+    std::string file_path = fs::current_path() / "test_clamp_dummy";
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    auto recording = std::make_shared<RecordingCacheProvider>(ByteRange{0, 30}, data);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// window_size = 10, segment "hit" size = 30. Each readNextWindow should
+    /// trigger get() with a range no larger than the window, not the segment.
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader, objects,
+        std::vector<std::shared_ptr<ICacheProvider>>{recording},
+        /*window_size=*/10,
+        /*min_bytes_for_seek=*/0,
+        CacheKey{file_path, ""});
+
+    PipelineReadBuffer buf(std::move(executor));
+    WriteBufferFromOwnString result;
+    copyData(buf, result);
+    ASSERT_EQ(result.str(), data);
+
+    /// Verify every recorded get() asked for at most window_size bytes.
+    ASSERT_FALSE(recording->recorded_gets.empty());
+    for (const auto & rg : recording->recorded_gets)
+        ASSERT_LE(rg.size, 10u)
+            << "ReaderExecutor passed an unclamped segment range to handle->get: "
+            << "[" << rg.offset << ", " << rg.end() << "), size " << rg.size;
+}
+
 TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
 {
     /// Regression: dynamic resize temporarily clears the queue iterator before

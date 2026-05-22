@@ -696,10 +696,26 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})",
                     cache->name(), hit.offset, hit.end());
 
-                auto useful = covered.subtract(hit);
+                /// `hit` is the cache's *segment* range (typically
+                /// `max_file_segment_size`, default 4 MiB). Our actual request
+                /// is `r` (a window slice). Clamp to the intersection so
+                /// `handle->get` doesn't allocate buffer memory for segment
+                /// bytes outside `r`. With many concurrent readers, the
+                /// unclamped allocations push past the per-query memory limit
+                /// (`MEMORY_LIMIT_EXCEEDED` in the dataset-preload INSERT).
+                /// Miss ranges are intentionally left segment-sized: the wider
+                /// miss is what enables the next cache layer (or the source)
+                /// to fully populate this cache via `put`.
+                size_t lo = std::max(hit.offset, r.offset);
+                size_t hi = std::min(hit.end(), r.end());
+                if (lo >= hi)
+                    continue;
+                ByteRange clamped{lo, hi - lo};
+
+                auto useful = covered.subtract(clamped);
                 if (useful.empty())
                     continue;
-                Rope hit_rope = handle->get(hit);
+                Rope hit_rope = handle->get(clamped);
                 for (const auto & sub : useful)
                 {
                     Rope sub_slice = hit_rope.slice(sub);
