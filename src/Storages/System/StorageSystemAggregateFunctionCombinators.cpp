@@ -1,8 +1,4 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 
 namespace DB

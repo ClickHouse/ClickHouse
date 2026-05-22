@@ -37,8 +37,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -51,7 +49,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -59,7 +56,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
-#include <Common/ErrnoException.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -113,7 +109,6 @@ namespace Setting
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -162,7 +157,7 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            (void)fs::canonical(path_for_ls + for_match);
+            fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
@@ -201,14 +196,8 @@ void listFilesWithRegexpMatchingImpl(
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
     const fs::directory_iterator end;
-    std::error_code ec;
-    for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
+    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
     {
-        if (ec)
-        {
-            return;
-        }
-
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
@@ -218,13 +207,7 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size(ec);
-                if (ec)
-                {
-                    ec.clear();
-                    continue;
-                }
-
+                total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
@@ -285,119 +268,6 @@ void checkCreationIsAllowed(
     }
 }
 
-/// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
-/// the first ("archive.zip") and second ("file*.parquet") parts.
-/// If the source string doesn't follow the archive syntax, the function just returns it in the second part.
-std::pair<String, String> splitToArchivePathAndPathInArchive(const String & source)
-{
-    size_t pos = source.find("::");
-    if (pos == String::npos)
-        return {{}, source};
-
-    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
-    while (path_to_archive_view.ends_with(' '))
-        path_to_archive_view.remove_suffix(1);
-
-    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.starts_with(' '))
-        filename_view.remove_prefix(1);
-
-    if (filename_view.empty() || path_to_archive_view.empty())
-        return {{}, source};
-
-    /// possible situations when the first part can be archive is only if one of the following is true:
-    /// - it contains supported archive extension
-    /// - it contains characters that could mean glob expression
-    if (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos)
-        return {{}, source};
-
-    return {String{path_to_archive_view}, String{filename_view}};
-}
-
-/// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
-{
-    fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
-    fs::path fs_pattern(path_with_globs);
-    if (fs_pattern.is_relative())
-        fs_pattern = user_files_absolute_path / fs_pattern;
-
-    Strings paths;
-
-    /// Do not use fs::canonical or fs::weakly_canonical.
-    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-    String pattern = fs::absolute(fs_pattern).lexically_normal(); /// Normalize path.
-    bool can_be_directory = true;
-
-    if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
-    {
-        /// Patterns containing "{_partition_id}" are not used for reading and require special handling for writing
-        /// so we don't make a list of files here.
-        paths.push_back(pattern);
-    }
-    else if (pattern.find_first_of("*?{") == std::string::npos)
-    {
-        if (!fs::is_directory(pattern))
-        {
-            std::error_code error;
-            size_t size = fs::file_size(pattern, error);
-            if (!error)
-                total_bytes_to_read += size;
-
-            paths.push_back(pattern);
-        }
-        else
-        {
-            /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
-            can_be_directory = false;
-        }
-    }
-    else
-    {
-        /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
-        can_be_directory = false;
-    }
-
-    for (const auto & path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
-
-    return paths;
-}
-
-/// Gathers information about one or multiple files located in one or multiple archives.
-/// Both parameters `path_to_archive` and `file_in_archive` can contain globs.
-StorageFile::ArchiveInfo getArchiveInfo(
-    const std::string & path_to_archive,
-    const std::string & file_in_archive,
-    const std::string & user_files_path,
-    const ContextPtr & context,
-    size_t & total_bytes_to_read
-)
-{
-    StorageFile::ArchiveInfo archive_info;
-    archive_info.path_in_archive = file_in_archive;
-
-    if (file_in_archive.find_first_of("*?{") != std::string::npos)
-    {
-        auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(file_in_archive));
-        if (!matcher->ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", file_in_archive, matcher->error());
-
-        archive_info.filter = [matcher, matcher_mutex = std::make_shared<std::mutex>()](const std::string & p) mutable
-        {
-            std::lock_guard lock(*matcher_mutex);
-            return re2::RE2::FullMatch(p, *matcher);
-        };
-    }
-
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
-
-    return archive_info;
-}
-
 std::unique_ptr<ReadBuffer> selectReadBuffer(
     const String & current_path,
     bool use_table_fd,
@@ -419,10 +289,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (context->getApplicationType() == Context::ApplicationType::SERVER && read_method == LocalFSReadMethod::mmap)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using storage_file_read_method=mmap is not safe in server mode. Consider using pread.");
 
-    /// Avoid zero-length mmap: empty regular files still read as empty via `pread`, while
-    /// pseudo-files such as `/proc` and `/sys` may report `st_size == 0` despite readable content.
-    /// See #69070.
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap && file_stat.st_size > 0)
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -513,6 +380,55 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
+}
+
+Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
+{
+    fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
+    fs::path fs_table_path(table_path);
+    if (fs_table_path.is_relative())
+        fs_table_path = user_files_absolute_path / fs_table_path;
+
+    Strings paths;
+
+    /// Do not use fs::canonical or fs::weakly_canonical.
+    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+    String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
+    bool can_be_directory = true;
+
+    if (path.contains(PartitionedSink::PARTITION_ID_WILDCARD))
+    {
+        paths.push_back(path);
+    }
+    else if (path.find_first_of("*?{") == std::string::npos)
+    {
+        if (!fs::is_directory(path))
+        {
+            std::error_code error;
+            size_t size = fs::file_size(path, error);
+            if (!error)
+                total_bytes_to_read += size;
+
+            paths.push_back(path);
+        }
+        else
+        {
+            /// We list non-directory files under that directory.
+            paths = listFilesWithRegexpMatching(path / fs::path("*"), total_bytes_to_read);
+            can_be_directory = false;
+        }
+    }
+    else
+    {
+        /// We list only non-directory files.
+        paths = listFilesWithRegexpMatching(path, total_bytes_to_read);
+        can_be_directory = false;
+    }
+
+    for (const auto & cur_path : paths)
+        checkCreationIsAllowed(context, user_files_absolute_path, cur_path, can_be_directory);
+
+    return paths;
 }
 
 namespace
@@ -965,58 +881,6 @@ namespace
     };
 }
 
-StorageFile::FileSource StorageFile::FileSource::parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax)
-{
-    String filename;
-    String path_to_archive;
-
-    if (!allow_archive_path_syntax)
-        allow_archive_path_syntax = context->getSettingsRef()[Setting::allow_archive_path_syntax];
-
-    if (*allow_archive_path_syntax)
-        std::tie(path_to_archive, filename) = splitToArchivePathAndPathInArchive(source);
-    else
-        filename = source;
-
-    FileSource res;
-    String user_files_path = context->getUserFilesPath();
-
-    if (!path_to_archive.empty())
-        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
-    else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
-
-    res.with_globs = res.paths.size() > 1;
-
-    if (res.archive_info)
-    {
-        res.format_from_filenames = FormatFactory::instance().tryGetFormatFromFileName(res.archive_info->path_in_archive);
-    }
-    else
-    {
-        for (const String & path : res.paths)
-        {
-            auto single_file_format = FormatFactory::instance().tryGetFormatFromFileName(path);
-            if (!res.format_from_filenames)
-            {
-                res.format_from_filenames = single_file_format;
-            }
-            else if (res.format_from_filenames != single_file_format)
-            {
-                res.format_from_filenames = {};
-                break;
-            }
-        }
-    }
-
-    if (!res.paths.empty())
-        res.path_for_partitioned_write = res.paths.front();
-    else
-        res.path_for_partitioned_write = filename;
-
-    return res;
-}
-
 std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFileDescriptor(std::optional<String> format, const ContextPtr & context)
 {
     /// If we want to read schema from file descriptor we should create
@@ -1136,15 +1000,14 @@ bool StorageFile::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
-    /// Currently don't support prewhere for virtual columns, columns with default expressions,
-    /// and columns taken from file path (hive partitioning).
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    /// Currently don't support prewhere for virtual columns and columns with default expressions.
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -1177,23 +1040,28 @@ StorageFile::StorageFile(int table_fd_, CommonArguments args)
     setStorageMetadata(args);
 }
 
-StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
+StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args)
     : StorageFile(args)
 {
-    paths = std::move(file_source_.paths);
-    is_path_with_globs = file_source_.with_globs;
-    path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
-    archive_info = std::move(file_source_.archive_info);
+    if (!args.path_to_archive.empty())
+        archive_info = getArchiveInfo(args.path_to_archive, table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    else
+        paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
 
     is_db_table = false;
+    is_path_with_globs = paths.size() > 1;
+    if (!paths.empty())
+        path_for_partitioned_write = paths.front();
+    else
+        path_for_partitioned_write = table_path_;
 
     file_renamer = FileRenamer(args.rename_after_processing);
 
     setStorageMetadata(args);
 }
 
-StorageFile::StorageFile(FileSource file_source_, bool distributed_processing_, CommonArguments args)
-    : StorageFile(std::move(file_source_), args)
+StorageFile::StorageFile(const std::string & table_path_, const std::string & user_files_path, bool distributed_processing_, CommonArguments args)
+    : StorageFile(table_path_, user_files_path, args)
 {
     distributed_processing = distributed_processing_;
 }
@@ -1285,7 +1153,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1314,7 +1182,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_, hive_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
     if (filter_dag)
     {
@@ -1575,23 +1443,6 @@ Chunk StorageFileSource::generate()
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
-                /// Build a sub-second-precision version token for the format metadata cache key.
-                /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
-                /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
-
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
 
@@ -1603,66 +1454,24 @@ Chunk StorageFileSource::generate()
 
             size_t file_num = 0;
             if (storage->archive_info)
-                file_num = storage->archive_info->paths_to_archives.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                file_num = storage->archive_info->paths_to_archives.size();
             else
-                file_num = storage->paths.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                file_num = storage->paths.size();
 
             chassert(file_num > 0);
 
-            /// For real local files, build a synthetic RelativePathWithMetadata so the
-            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
-            /// "etag" is just any version identifier the cache compares for equality —
-            /// for local files we use the precomputed `current_file_cache_version`
-            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
-            /// the cache even when the new file has the same length and is written
-            /// within the same wall-clock second.
-            std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
-                && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value())
-            {
-                ObjectMetadata md;
-                md.size_bytes = *current_file_size;
-                md.last_modified = *current_file_last_modified;
-                md.etag = *current_file_cache_version;
-                object_with_metadata.emplace(current_path, std::move(md));
-            }
-
-            if (object_with_metadata.has_value())
-            {
-                input_format = FormatFactory::instance().getInputWithMetadata(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    object_with_metadata,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
-            else
-            {
-                /// No usable metadata (e.g. archive entries, fd-backed storage, missing
-                /// stat info). Fall back to the regular creator — it doesn't trigger the
-                /// `getInputWithMetadata` chassert and the format-level metadata cache
-                /// just isn't consulted on this read.
-                input_format = FormatFactory::instance().getInput(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
+            input_format = FormatFactory::instance().getInput(
+                storage->format_name,
+                *read_buf,
+                block_for_format,
+                getContext(),
+                max_block_size,
+                storage->format_settings,
+                parser_shared_resources,
+                format_filter_info,
+                /*is_remote_fs=*/false,
+                CompressionMethod::None,
+                need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
 
@@ -1718,10 +1527,9 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
-                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified,
+                    .last_modified = current_file_last_modified
                 }, getContext());
 
             return chunk;
@@ -1739,7 +1547,7 @@ Chunk StorageFileSource::generate()
 
         /// Close file prematurely if stream was ended.
         reader.reset();
-        pipeline = nullptr;
+        pipeline.reset();
         input_format.reset();
 
         if (files_iterator->isReadFromArchive() && !files_iterator->isSingleFileReadFromArchive())
@@ -1760,8 +1568,6 @@ Chunk StorageFileSource::generate()
 
     return {};
 }
-
-void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
@@ -1834,8 +1640,9 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromFile::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -1849,9 +1656,6 @@ void StorageFile::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
-
     if (use_table_fd)
     {
         paths = {""};   /// when use fd, paths are empty
@@ -1887,11 +1691,10 @@ void StorageFile::read(
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
     if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && context->getSettingsRef()[Setting::optimize_count_from_files]
-        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
+        && context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto reading = std::make_unique<ReadFromFile>(
         column_names,
@@ -1916,7 +1719,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        storage->getVirtualsList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);
@@ -1949,7 +1752,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         progress_callback(FileProgress(0, storage->total_bytes_to_read));
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr);
+    format_filter_info->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2391,7 +2195,7 @@ void StorageFile::truncate(
 void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
-        args[0] = make_intrusive<ASTLiteral>(format_name);
+        args[0] = std::make_shared<ASTLiteral>(format_name);
 }
 
 void registerStorageFile(StorageFactory & factory)
@@ -2418,6 +2222,7 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.columns,
                 factory_args.constraints,
                 factory_args.comment,
+                {},
                 {},
             };
 
@@ -2453,7 +2258,7 @@ void registerStorageFile(StorageFactory & factory)
 
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
             int source_fd = -1;
-            std::optional<StorageFile::FileSource> file_source;
+            String source_path;
 
             if (auto opt_name = tryGetIdentifierName(engine_args_ast[1]))
             {
@@ -2475,7 +2280,11 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
                 else if (type == Field::Types::String)
-                    file_source = StorageFile::FileSource::parse(literal->value.safeGet<String>(), factory_args.getLocalContext());
+                    StorageFile::parseFileSource(
+                        literal->value.safeGet<String>(),
+                        source_path,
+                        storage_args.path_to_archive,
+                        factory_args.getLocalContext()->getSettingsRef()[Setting::allow_archive_path_syntax]);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
@@ -2491,11 +2300,8 @@ void registerStorageFile(StorageFactory & factory)
             if (0 <= source_fd) /// File descriptor
                 return std::make_shared<StorageFile>(source_fd, storage_args);
 
-            if (!file_source)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
-
             /// User's file
-            return std::make_shared<StorageFile>(*file_source, storage_args);
+            return std::make_shared<StorageFile>(source_path, context->getUserFilesPath(), false, storage_args);
         },
         storage_features);
 }
@@ -2504,6 +2310,73 @@ SchemaCache & StorageFile::getSchemaCache(const ContextPtr & context)
 {
     static SchemaCache schema_cache(context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_file", DEFAULT_SCHEMA_CACHE_ELEMENTS));
     return schema_cache;
+}
+
+void StorageFile::parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax)
+{
+    if (!allow_archive_path_syntax)
+    {
+        filename = std::move(source);
+        return;
+    }
+
+    size_t pos = source.find("::");
+    if (pos == String::npos)
+    {
+        filename = std::move(source);
+        return;
+    }
+
+    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    while (path_to_archive_view.ends_with(' '))
+        path_to_archive_view.remove_suffix(1);
+
+    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
+    while (filename_view.starts_with(' '))
+        filename_view.remove_prefix(1);
+
+    /// possible situations when the first part can be archive is only if one of the following is true:
+    /// - it contains supported extension
+    /// - it contains characters that could mean glob expression
+    if (filename_view.empty() || path_to_archive_view.empty()
+        || (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
+    {
+        filename = std::move(source);
+        return;
+    }
+
+    path_to_archive = path_to_archive_view;
+    filename = filename_view;
+}
+
+StorageFile::ArchiveInfo StorageFile::getArchiveInfo(
+    const std::string & path_to_archive,
+    const std::string & file_in_archive,
+    const std::string & user_files_path,
+    const ContextPtr & context,
+    size_t & total_bytes_to_read
+)
+{
+    ArchiveInfo archive_info;
+    archive_info.path_in_archive = file_in_archive;
+
+    if (file_in_archive.find_first_of("*?{") != std::string::npos)
+    {
+        auto matcher = std::make_shared<re2::RE2>(makeRegexpPatternFromGlobs(file_in_archive));
+        if (!matcher->ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "Cannot compile regex from glob ({}): {}", file_in_archive, matcher->error());
+
+        archive_info.filter = [matcher, matcher_mutex = std::make_shared<std::mutex>()](const std::string & p) mutable
+        {
+            std::lock_guard lock(*matcher_mutex);
+            return re2::RE2::FullMatch(p, *matcher);
+        };
+    }
+
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+
+    return archive_info;
 }
 
 }

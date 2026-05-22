@@ -20,7 +20,7 @@ namespace DB
 
 /** A stream of blocks from a shared vector of blocks
   */
-class BlocksSource final : public ISource
+class BlocksSource : public ISource
 {
 public:
     /// Acquires shared ownership of the blocks vector
@@ -42,7 +42,6 @@ protected:
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = res.info.bucket_num;
         info->is_overflows = res.info.is_overflows;
-        info->out_of_order_buckets = res.info.out_of_order_buckets;
 
         auto chunk = Chunk(res.getColumns(), res.rows());
         chunk.getChunkInfos().add(std::move(info));
