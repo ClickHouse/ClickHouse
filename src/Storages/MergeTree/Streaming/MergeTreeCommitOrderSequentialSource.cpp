@@ -461,6 +461,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         if (!output.canPush())
             return Status::PortFull;
 
+        LOG_TEST(log, "Sending global idle marker");
         output.push(makeIdleMarkerChunk(output.getHeader()));
         emitted_global_idle = true;
         return Status::PortFull;
