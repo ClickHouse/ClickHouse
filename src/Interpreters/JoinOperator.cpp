@@ -367,6 +367,13 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     serializeJoinKind(kind, out);
     serializeJoinStrictness(strictness, out);
     serializeJoinLocality(locality, out);
+
+    writeVarUInt(shared_runtime_filter_descriptors.size(), out);
+    for (const auto & [filter_name, build_key_name] : shared_runtime_filter_descriptors)
+    {
+        writeStringBinary(filter_name, out);
+        writeStringBinary(build_key_name, out);
+    }
 }
 
 static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
@@ -404,6 +411,18 @@ JoinOperator JoinOperator::deserialize(ReadBuffer & in, JoinExpressionActions & 
     JoinOperator result(kind, strictness, locality);
     result.expression = std::move(actions);
     result.residual_filter = std::move(residual_filter);
+
+    size_t num_descriptors;
+    readVarUInt(num_descriptors, in);
+    result.shared_runtime_filter_descriptors.reserve(num_descriptors);
+    for (size_t i = 0; i < num_descriptors; ++i)
+    {
+        String filter_name;
+        String build_key_name;
+        readStringBinary(filter_name, in);
+        readStringBinary(build_key_name, in);
+        result.shared_runtime_filter_descriptors.emplace_back(std::move(filter_name), std::move(build_key_name));
+    }
 
     return result;
 }
