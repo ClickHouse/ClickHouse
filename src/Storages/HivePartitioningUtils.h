@@ -3,6 +3,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/MapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ class Chunk;
 
 namespace HivePartitioningUtils
 {
-using HivePartitioningKeysAndValues = std::map<std::string_view, std::string_view>;
+using HivePartitioningKeysAndValues = MapWithMemoryTracking<std::string_view, std::string_view>;
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const std::string & path);
 
