@@ -409,21 +409,23 @@ class S3:
         AccessDenied), so callers can fail loud instead of silently
         treating missing access as a cache miss.
         """
-        client = cls._get_boto3_client()
-        assert (
-            client
-        ), "boto3 client is required for S3 read-access probe"
         s3_path = str(s3_path).removeprefix("s3://")
         bucket, key = s3_path.split("/", maxsplit=1)
-        try:
-            client.head_object(Bucket=bucket, Key=key)
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code", "")
-            if error_code in ("404", "NoSuchKey", "NotFound"):
-                return
-            raise RuntimeError(
-                f"S3 read-access probe failed for [s3://{bucket}/{key}]: {error_code}"
-            ) from e
+        client = cls._get_boto3_client()
+        assert client, "boto3 client is required for S3 read-access probe"
+
+        def _probe():
+            try:
+                client.head_object(Bucket=bucket, Key=key)
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code in ("404", "NoSuchKey", "NotFound"):
+                    return
+                raise RuntimeError(
+                    f"S3 read-access probe failed for [s3://{bucket}/{key}]: {error_code}"
+                ) from e
+
+        cls._retry_on_no_credentials(_probe)
 
     @classmethod
     def delete(cls, s3_path):
