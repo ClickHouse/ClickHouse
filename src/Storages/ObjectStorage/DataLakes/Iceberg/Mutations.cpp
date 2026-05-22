@@ -3,11 +3,13 @@
 #include <Columns/ColumnString.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
@@ -46,6 +48,7 @@ extern const int LIMIT_EXCEEDED;
 namespace DB::DataLakeStorageSetting
 {
 extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
+extern const DataLakeStorageSettingsString iceberg_metadata_file_path;
 }
 
 namespace DB::FailPoints
@@ -577,19 +580,60 @@ void mutate(
     while (--max_retries > 0)
     {
         auto log = getLogger("IcebergMutations");
-        /// Mutations must always operate on the actual latest metadata, regardless of
-        /// any explicit iceberg_metadata_file_path set on the table (used for time-travel reads).
-        auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-            object_storage,
-            persistent_table_components.table_path,
-            data_lake_settings,
-            persistent_table_components.metadata_cache,
-            context,
-            log.get(),
-            persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method,
-            /* force_fetch_latest_metadata */ true,
-            /* ignore_explicit_metadata_file_path */ true);
+
+        int last_version;
+        String metadata_path;
+        CompressionMethod compression_method;
+        if (!catalog)
+        {
+            auto last_version_info = getLatestOrExplicitMetadataFileAndVersion(
+                object_storage,
+                persistent_table_components.table_path,
+                data_lake_settings,
+                persistent_table_components.metadata_cache,
+                context,
+                log.get(),
+                persistent_table_components.table_uuid,
+                persistent_table_components.metadata_compression_method,
+                /* force_fetch_latest_metadata */ true,
+                /* ignore_explicit_metadata_file_path */ true);
+            last_version = last_version_info.version;
+            metadata_path = last_version_info.path;
+            compression_method = last_version_info.compression_method;
+        }
+        else
+        {
+            DataLake::TableMetadata table_metadata;
+            table_metadata.withDataLakeSpecificProperties().withLocation();
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+            auto specific_properties = table_metadata.getDataLakeSpecificProperties();
+            if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Catalog did not return a metadata file location for table '{}.{}'",
+                    namespace_name, table_name);
+
+            DataLakeStorageSettings effective_settings = data_lake_settings;
+            effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
+                = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
+
+            auto last_version_info = getLatestOrExplicitMetadataFileAndVersion(
+                object_storage,
+                persistent_table_components.table_path,
+                effective_settings,
+                persistent_table_components.metadata_cache,
+                context,
+                log.get(),
+                persistent_table_components.table_uuid,
+                persistent_table_components.metadata_compression_method,
+                /* force_fetch_latest_metadata */ true,
+                /* ignore_explicit_metadata_file_path */ false);
+            last_version = last_version_info.version;
+            metadata_path = last_version_info.path;
+            compression_method = last_version_info.compression_method;
+        }
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
