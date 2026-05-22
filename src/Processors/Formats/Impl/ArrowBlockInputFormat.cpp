@@ -6,6 +6,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/NetUtils.h>
 #include <IO/WriteHelpers.h>
@@ -15,6 +16,9 @@
 #include <arrow/result.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -175,8 +179,86 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     return *stream_reader_status;
 }
 
+static std::shared_ptr<arrow::ipc::RecordBatchFileReader> openFileReader(
+    const std::shared_ptr<arrow::io::RandomAccessFile> & arrow_file,
+    arrow::ipc::IpcReadOptions options)
+{
+    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
+    if (!file_reader_status.ok())
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
+            "Error while opening a table: {}", file_reader_status.status().ToString());
+
+    return *file_reader_status;
+}
+
+static bool hasDuplicateTopLevelFields(const arrow::Schema & schema)
+{
+    std::unordered_set<String> field_names;
+    for (const auto & field : schema.fields())
+    {
+        if (!field_names.emplace(field->name()).second)
+            return true;
+    }
+
+    return false;
+}
+
+static std::unordered_map<String, int> makeCaseInsensitiveFieldIndices(const arrow::Schema & schema)
+{
+    std::unordered_map<String, int> indices;
+    for (int i = 0; i < schema.num_fields(); ++i)
+    {
+        auto field_name = schema.field(i)->name();
+        boost::to_lower(field_name);
+        indices[field_name] = i;
+    }
+
+    return indices;
+}
+
+static int findArrowFieldIndex(
+    const arrow::Schema & schema,
+    const std::unordered_map<String, int> & lower_case_field_indices,
+    bool ignore_case,
+    String name)
+{
+    if (!ignore_case)
+        return schema.GetFieldIndex(name);
+
+    boost::to_lower(name);
+    auto it = lower_case_field_indices.find(name);
+    if (it == lower_case_field_indices.end())
+        return -1;
+    return it->second;
+}
+
+static std::vector<int> collectIncludedFields(
+    const arrow::Schema & schema,
+    const Block & header,
+    bool ignore_case)
+{
+    const auto lower_case_field_indices = ignore_case
+        ? makeCaseInsensitiveFieldIndices(schema)
+        : std::unordered_map<String, int>{};
+
+    std::vector<int> included_fields;
+    std::unordered_set<int> included_field_indices;
+    for (const auto & column : header)
+    {
+        int field_index = findArrowFieldIndex(schema, lower_case_field_indices, ignore_case, column.name);
+        if (field_index == -1)
+            field_index = findArrowFieldIndex(schema, lower_case_field_indices, ignore_case, Nested::extractTableName(column.name));
+
+        if (field_index != -1 && included_field_indices.emplace(field_index).second)
+            included_fields.push_back(field_index);
+    }
+
+    return included_fields;
+}
+
 static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
     ReadBuffer & in,
+    const Block & header,
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
@@ -186,11 +268,23 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
 
     auto options = arrow::ipc::IpcReadOptions::Defaults();
     options.memory_pool = ArrowMemoryPool::instance();
-    auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
-    if (!file_reader_status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-            "Error while opening a table: {}", file_reader_status.status().ToString());
-    return *file_reader_status;
+
+    auto file_reader = openFileReader(arrow_file, options);
+    const auto & schema = *file_reader->schema();
+
+    /// Keep the old duplicate-column error path intact. Otherwise projecting a single
+    /// ambiguous field would hide the duplicate when `ArrowColumnToCHColumn` builds the
+    /// name-to-column map.
+    if (hasDuplicateTopLevelFields(schema))
+        return file_reader;
+
+    auto included_fields = collectIncludedFields(schema, header, format_settings.arrow.case_insensitive_column_matching);
+
+    if (included_fields.empty() || included_fields.size() == static_cast<size_t>(schema.num_fields()))
+        return file_reader;
+
+    options.included_fields = std::move(included_fields);
+    return openFileReader(arrow_file, options);
 }
 
 
@@ -204,7 +298,7 @@ void ArrowBlockInputFormat::prepareReader()
     }
     else
     {
-        file_reader = createFileReader(*in, format_settings, is_stopped);
+        file_reader = createFileReader(*in, getPort().getHeader(), format_settings, is_stopped);
         if (!file_reader)
             return;
         schema = file_reader->schema();
@@ -246,7 +340,7 @@ void ArrowSchemaReader::initializeIfNeeded()
     else
     {
         std::atomic<int> is_stopped = 0;
-        file_reader = createFileReader(in, format_settings, is_stopped);
+        file_reader = createFileReader(in, Block(), format_settings, is_stopped);
     }
 }
 
