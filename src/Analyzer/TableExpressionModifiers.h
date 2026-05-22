@@ -15,7 +15,7 @@ struct WatermarkSettings
 {
     String column;
     QueryTreeNodePtr expression;
-    Int64 idle_timeout_ms = -1;
+    std::chrono::milliseconds idle_timeout;
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 

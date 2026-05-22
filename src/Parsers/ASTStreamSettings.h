@@ -20,7 +20,7 @@ public:
     {
         String column;
         ASTPtr expression;
-        Int64 idle_timeout_ms = -1;
+        UInt64 idle_timeout_ms = 0;
     };
 
     std::optional<Map> cursor;

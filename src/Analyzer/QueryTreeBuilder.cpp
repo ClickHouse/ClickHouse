@@ -1,5 +1,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <chrono>
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
@@ -991,7 +992,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                         const auto & ast_watermark = ast_stream_settings.watermark.value();
                         stream_settings->watermark = std::make_shared<WatermarkSettings>();
                         stream_settings->watermark->column = ast_watermark.column;
-                        stream_settings->watermark->idle_timeout_ms = ast_watermark.idle_timeout_ms;
+                        stream_settings->watermark->idle_timeout = std::chrono::milliseconds(ast_watermark.idle_timeout_ms);
                         if (ast_watermark.expression)
                             stream_settings->watermark->expression = buildExpression(ast_watermark.expression, context);
                     }

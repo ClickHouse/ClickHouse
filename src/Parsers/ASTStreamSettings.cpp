@@ -47,7 +47,7 @@ void formatWatermark(
     wb << "FOR " << backQuoteIfNeed(node.column) << " AS ";
     node.expression->format(wb, format_settings, state, frame);
 
-    if (node.idle_timeout_ms >= 0)
+    if (node.idle_timeout_ms > 0)
         wb << " IDLE TIMEOUT INTERVAL " << node.idle_timeout_ms << " MILLISECOND";
 }
 
