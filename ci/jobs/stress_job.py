@@ -1,11 +1,12 @@
 import csv
 import logging
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika.info import Info
@@ -13,34 +14,23 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 
-def sanitize_test_result_line(line: str) -> str:
-    return line.replace("\0", "\\0")
+class SensitiveFormatter(logging.Formatter):
+    @staticmethod
+    def _filter(s):
+        return re.sub(
+            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
+        )
+
+    def format(self, record):
+        original = logging.Formatter.format(self, record)
+        return self._filter(original)
 
 
 def read_test_results(results_path: Path, with_raw_logs: bool = True):
     results = []
     with open(results_path, "r", encoding="utf-8") as descriptor:
-        reader = csv.reader(
-            (sanitize_test_result_line(line) for line in descriptor),
-            delimiter="\t",
-        )
-        for line_number, line in enumerate(reader, start=1):
-            # Blank lines (typically a trailing newline at end of file, or
-            # a separator artifact between writes) are common in practice
-            # and carry no information — skip them. A row with at least
-            # one cell but fewer than two cells is genuinely malformed:
-            # the writer either crashed mid-write or the file was
-            # truncated. Surface that with the offending content and the
-            # line number so investigators can diagnose without having to
-            # re-fetch the artifact.
-            if not line:
-                continue
-            if len(line) < 2:
-                raise ValueError(
-                    f"malformed row at line {line_number} in "
-                    f"{results_path}: expected at least 2 tab-separated "
-                    f"fields (name, status), got {len(line)}: {line!r}"
-                )
+        reader = csv.reader(descriptor, delimiter="\t")
+        for line in reader:
             name = line[0]
             status = line[1]
             time = None
@@ -72,6 +62,13 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     from ci.jobs.ci_utils import is_extended_run
 
     result = []
+    if not info.is_local_run:
+        azure_connection_string = Shell.get_output(
+            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+            verbose=True,
+            strict=True,
+        )
+        result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
@@ -81,9 +78,6 @@ def get_additional_envs(info, check_name: str) -> List[str]:
 
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
-
-    if "serverfuzz" in info.job_name:
-        result.append("ENABLE_SERVER_FUZZER=1")
 
     result.append(
         f"STRESS_GLOBAL_TIME_LIMIT={'3600' if is_extended_run() else '1200'}"
@@ -97,7 +91,6 @@ def get_run_command(
     result_path: Path,
     repo_tests_path: Path,
     server_log_path: Path,
-    cores_path: Path,
     additional_envs: List[str],
     image: DockerImage,
     upgrade_check: bool,
@@ -114,17 +107,13 @@ def get_run_command(
         "docker run --cap-add=SYS_PTRACE "
         # For dmesg and sysctl
         "--privileged "
-        # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
-        "--ulimit nofile=1048576:1048576 "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
         f"--volume={repo_tests_path}/..:/repo "
-        f"--volume={server_log_path}:/var/log/clickhouse-server "
-        f"--volume={cores_path}:/cores "
-        f"{env_str} {image} {run_script}"
+        f"--volume={server_log_path}:/var/log/clickhouse-server {env_str} {image} {run_script}"
     )
 
     return cmd
@@ -167,6 +156,9 @@ def process_results(
 def run_stress_test(upgrade_check: bool = False) -> None:
     info = Info()
     logging.basicConfig(level=logging.INFO)
+    for handler in logging.root.handlers:
+        # pylint: disable=protected-access
+        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Utils.Stopwatch()
     temp_path = Path(Utils.cwd()) / "ci/tmp"
@@ -187,9 +179,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
-    cores_path = temp_path / "cores"
-    cores_path.mkdir(parents=True, exist_ok=True)
-
     additional_envs = get_additional_envs(info, check_name)
 
     run_command = get_run_command(
@@ -197,7 +186,6 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         result_path,
         repo_tests_path,
         server_log_path,
-        cores_path,
         additional_envs,
         docker_image,
         upgrade_check,
@@ -206,9 +194,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
 
     exit_code = Shell.run(run_command)
 
-    Utils.fix_ownership_after_docker(temp_path, docker_image)
-
-    core_files = ClickHouseService.collect_cores(cores_path)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     is_oom = False
 
@@ -226,22 +212,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         )
         is_oom = is_oom or server_log_oom
 
-    # Generate fatal.log from all server logs
-    fatal_log = result_path / "fatal.log"
-    if server_log_path.exists():
-        Shell.check(
-            f"rg --text '\\s<Fatal>\\s' {server_log_path}/clickhouse-server*.log > {fatal_log}"
-        )
-
     test_results, additional_logs = process_results(result_path, server_log_path)
 
     server_died = False
     failed_results = []
     for test_result in test_results:
         if test_result.name == "Server died":
+            # This result from stress.py indicates a server crash - we use it as a flag
+            # to trigger detailed log parsing below, but don't include it in the CI report
+            # since we'll create a more informative result from the parsed logs
             server_died = True
-            continue
-        if not test_result.is_ok():
+        elif not test_result.is_ok():
             failed_results.append(test_result)
 
     if server_died:
@@ -274,7 +255,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 Result.create_from(
                     name="Unknown error",
                     info="no server logs found",
-                    status=Result.Status.FAIL,
+                    status=Result.Status.FAILED,
                 )
             )
         else:
@@ -312,7 +293,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     Result.create_from(
                         name=name,
                         info=description,
-                        status=Result.Status.FAIL,
+                        status=Result.StatusExtended.FAIL,
                         files=files,
                     )
                 )
@@ -321,36 +302,26 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     Result.create_from(
                         name="Parse failure error",
                         info="All log parsing attempts failed",
-                        status=Result.Status.FAIL,
+                        status=Result.Status.FAILED,
                     )
                 )
-
-    if server_died and not failed_results:
-        failed_results.append(
-            Result.create_from(
-                name="Server died",
-                info="Server died and no specific error was extracted",
-                status=Result.Status.FAIL,
-            )
-        )
 
     if exit_code != 0:
         failed_results.append(
             Result.create_from(
                 name="Check failed",
                 info=f"Check failed with exit code {exit_code}",
-                status=Result.Status.FAIL,
+                status=Result.Status.FAILED,
             )
         )
 
-    all_results = failed_results + [r for r in test_results if r.is_ok()]
     r = Result.create_from(
-        results=all_results,
-        status=Result.Status.OK if not failed_results else "",
+        results=failed_results,
+        status=Result.Status.SUCCESS if not failed_results else "",
         stopwatch=stopwatch,
     )
     if not r.is_ok() and is_oom:
-        r.set_status(Result.Status.OK)
+        r.set_status(Result.Status.SUCCESS)
         r.set_info("OOM error (allowed in stress tests)")
 
     if r.is_ok() and exit_code != 0 and not is_oom:
@@ -358,7 +329,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"Unknown error: Test script failed with exit code {exit_code}"
         )
 
-    r.set_files(additional_logs).set_files(core_files).complete_job()
+    r.set_files(additional_logs).complete_job()
 
 
 if __name__ == "__main__":
