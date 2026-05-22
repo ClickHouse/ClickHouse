@@ -1,6 +1,8 @@
 #include <IO/PrefetchThreadPool.h>
 #include <IO/Rope.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <stdexcept>
 
@@ -39,10 +41,22 @@ std::unique_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()>
     auto shared = std::make_shared<PrefetchHandle::SharedState>();
     auto future = shared->promise.get_future();
 
+    /// Capture the submitter's ThreadGroup so the worker can attach to it.
+    /// Without this, the worker has no `current_thread`, and downstream code
+    /// (e.g. `ReadBufferFromS3::sendRequest` -> `ReadThrottlingScope`) silently
+    /// skips per-user throttler attachment because `attachReadThrottler` bails
+    /// on null `current_thread`. The query then bypasses
+    /// `max_network_bandwidth_for_user` for every byte that flowed through
+    /// the prefetch path.
+    auto submitter_thread_group = getCurrentThreadGroup();
+
     /// Non-blocking schedule: return nullptr immediately if the queue is full.
     /// The caller treats that as "do it synchronously on next read".
-    bool scheduled = pool.trySchedule([shared, t = std::move(task)]() mutable
+    bool scheduled = pool.trySchedule(
+        [shared, t = std::move(task), thread_group = std::move(submitter_thread_group)]() mutable
     {
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFETCH_READER);
+
         auto expected = PrefetchHandle::State::Queued;
         if (!shared->state.compare_exchange_strong(expected, PrefetchHandle::State::Running))
         {
