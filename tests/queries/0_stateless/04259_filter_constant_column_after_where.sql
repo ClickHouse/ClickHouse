@@ -117,4 +117,12 @@ SELECT count()
 FROM 04259_filter_constant_column_after_where
 WHERE x = 'missing';
 
+SELECT reinterpretAsUInt64(f)
+FROM
+(
+    SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0)), reinterpretAsFloat64(toUInt64(9223372036854775808))]) AS f
+)
+WHERE f = 0.0
+ORDER BY reinterpretAsUInt64(f);
+
 DROP TABLE 04259_filter_constant_column_after_where;

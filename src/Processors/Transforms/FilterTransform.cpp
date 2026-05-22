@@ -8,6 +8,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -70,25 +71,27 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     if (!constant_field)
         return {};
 
-    auto position = transformed_header.findPositionByName(column_node->result_name);
+    std::optional<size_t> position;
+
+    for (const auto * output : dag.getOutputs())
+    {
+        if (unwrapAlias(output) != unwrapped_column_node)
+            continue;
+
+        position = transformed_header.findPositionByName(output->result_name);
+        if (position)
+            break;
+    }
+    if (!position)
+        position = transformed_header.findPositionByName(column_node->result_name);
     if (!position && column_node != unwrapped_column_node)
         position = transformed_header.findPositionByName(unwrapped_column_node->result_name);
-    if (!position)
-    {
-        for (const auto * output : dag.getOutputs())
-        {
-            if (unwrapAlias(output) != unwrapped_column_node)
-                continue;
-
-            position = transformed_header.findPositionByName(output->result_name);
-            if (position)
-                break;
-        }
-    }
     if (!position)
         return {};
 
     const auto & result_column = transformed_header.getByPosition(*position);
+    if (isFloat(removeLowCardinalityAndNullable(result_column.type)))
+        return {};
 
     try
     {
@@ -284,7 +287,10 @@ void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t 
             continue;
 
         const auto & type = transformed_header.getByPosition(constant_column.first).type;
-        columns[constant_column.first] = type->createColumnConst(num_rows, constant_column.second);
+        auto column = type->createColumnConst(num_rows, constant_column.second);
+        if (isNullableOrLowCardinalityNullable(type))
+            column = column->convertToFullColumnIfConst();
+        columns[constant_column.first] = std::move(column);
     }
 }
 

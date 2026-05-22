@@ -9,8 +9,10 @@ UInt64, UInt64(size = 2)	2
 UInt64, UInt64(size = 3)	3
 UInt64, Const(size = 1, UInt64(size = 1))	1
 UInt64, UInt64(size = 1)	1
-Nullable(UInt64), Const(size = 1, Nullable(size = 1, UInt64(size = 1), UInt8(size = 1)))	1
+Nullable(UInt64), Nullable(size = 1, UInt64(size = 1), UInt8(size = 1))	1
 LowCardinality(String), Const(size = 2, LowCardinality(size = 1, UInt8(size = 1), Unique(size = 2, String(size = 2))))	2
 UInt64, UInt64(size = 2)	2
 String, Const(size = 1, String(size = 1))	1
 0
+0
+9223372036854775808
