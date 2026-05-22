@@ -5682,9 +5682,12 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         }
         empty_info.level += 1;
 
-        const auto & partition = parts_to_remove.front()->partition;
+        const auto & source_part = parts_to_remove.front();
+        const auto & partition = source_part->partition;
         String empty_part_name = empty_info.getPartNameAndCheckFormat(format_version);
-        auto [new_data_part, tmp_dir_holder] = createEmptyPart(empty_info, partition, empty_part_name, NO_TRANSACTION_PTR);
+        /// Use the source part's metadata so patch parts pick up patch-part metadata.
+        auto [new_data_part, tmp_dir_holder] = createEmptyPart(
+            empty_info, partition, empty_part_name, source_part->getMetadataSnapshot(), NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
@@ -10825,32 +10828,9 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const MergeTreeTransactionPtr & txn)
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn)
 {
     auto settings = getSettings();
-
-    StorageMetadataPtr metadata_snapshot;
-    if (new_part_info.isPatch())
-    {
-        /// When dropping/truncating a patch partition (e.g. `ALTER TABLE ... DROP PARTITION ID 'patch-...'`)
-        /// we create an empty part to cover the dropped patch parts. This empty part lives in the patch
-        /// partition, so it must be written using patch-part metadata, not the table metadata. Otherwise:
-        ///   * `partition.dat` is not written (a normal table with `ORDER BY tuple()` has no partition
-        ///     key, while a patch part has `__patchPartitionID(_part, hash)`);
-        ///   * the part lacks patch system columns (`_part`, `_part_offset`, `_part_data_version`,
-        ///     `_block_number`, `_block_offset`) and the auto-minmax skip indices over them;
-        /// and re-loading the part fails with `FILE_DOESNT_EXIST` (or, before commit
-        /// `1316b57d9863fd666c141674f802e2b0beba12e7`, `UNKNOWN_IDENTIFIER`), leaving a
-        /// `broken-on-start_patch-...` entry in `system.detached_parts` after a server restart or
-        /// `DETACH`/`ATTACH` cycle (issue #93132).
-        auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
-        ColumnsDescription patch_part_desc(table_metadata->getColumns().getOrdinary());
-        metadata_snapshot = getPatchPartMetadata(patch_part_desc, new_part_info.getPartitionId(), getContext());
-    }
-    else
-    {
-        metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    }
 
     auto block = metadata_snapshot->getSampleBlock();
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());

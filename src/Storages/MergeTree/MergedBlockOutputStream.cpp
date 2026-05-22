@@ -338,10 +338,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk, otherwise `loadSourcePartsSet`
-            /// throws `CORRUPTED_DATA`. Empty covering patch parts created by `createEmptyPart`
-            /// have an empty `SourcePartsSetForPatch`; we still need to serialize it so the file
-            /// exists (the empty serialization is just version + zero count).
+            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
+            /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
             if (new_part->info.isPatch())
             {
                 write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)

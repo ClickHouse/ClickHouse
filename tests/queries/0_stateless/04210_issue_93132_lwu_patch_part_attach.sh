@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree
-# Tag no-fasttest: requires `allow_experimental_lightweight_update`.
+# Tags: no-replicated-database, no-shared-merge-tree
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

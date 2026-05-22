@@ -11138,20 +11138,24 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
 
     auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
 
     MergeTreePartition partition;
+    /// Use a sibling part's metadata when possible so patch parts get patch-part metadata.
+    StorageMetadataPtr metadata_snapshot = table_metadata;
     {
         auto lock = readLockParts();
 
         auto parts_in_partition = getDataPartsPartitionRange(new_part_info.getPartitionId());
         if (!parts_in_partition.empty())
         {
-            partition = (*parts_in_partition.begin())->partition;
+            const auto & source_part = *parts_in_partition.begin();
+            partition = source_part->partition;
+            metadata_snapshot = source_part->getMetadataSnapshot();
         }
         else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
                      new_part_info.getPartitionId(),
-                     metadata_snapshot->getPartitionKey().sample_block))
+                     table_metadata->getPartitionKey().sample_block))
         {
             partition = MergeTreePartition(*parsed_partition);
         }
@@ -11163,7 +11167,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         }
     }
 
-    auto [new_data_part, tmp_dir_holder] = createEmptyPart(new_part_info, partition, lost_part_name, NO_TRANSACTION_PTR);
+    auto [new_data_part, tmp_dir_holder] = createEmptyPart(new_part_info, partition, lost_part_name, metadata_snapshot, NO_TRANSACTION_PTR);
     new_data_part->setName(lost_part_name);
 
     try
