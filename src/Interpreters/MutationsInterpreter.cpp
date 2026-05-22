@@ -824,6 +824,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             auto alter = command.ast();
             auto column_to_update = alter ? getColumnToUpdateExpression(*alter) : std::unordered_map<String, ASTPtr>{};
 
+            /// Compute partition+predicate once per command; cloned per assignment below.
+            ASTPtr base_condition = getPartitionAndPredicateExpressionForMutationCommand(command);
+
             for (const auto & [column_name, update_expr] : column_to_update)
             {
                 auto materialized_it = column_to_affected_materialized.find(column_name);
@@ -860,7 +863,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
 
                 auto type_literal = make_intrusive<ASTLiteral>(type->getName());
-                ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
+                ASTPtr condition = base_condition ? base_condition->clone() : nullptr;
 
                 /// And new check validateNestedArraySizes for Nested subcolumns.
                 /// When share_nested_offsets is disabled, sibling Array columns are independent

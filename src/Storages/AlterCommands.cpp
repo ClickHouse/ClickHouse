@@ -1312,10 +1312,12 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.rename_to = rename_to;
     }
 
-    result.ast_text = ast->formatWithSecretsOneLine();
     const auto & settings = context->getSettingsRef();
     result.max_parser_depth = settings[Setting::max_parser_depth];
     result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
+    auto * alter = ast->as<ASTAlterCommand>();
+    chassert(alter);
+    result.setAst(boost::intrusive_ptr<ASTAlterCommand>(alter));
     apply(metadata, context);
     return result;
 }
@@ -1929,7 +1931,7 @@ static MutationCommand createMaterializeTTLCommand()
     auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
-    command.ast_text = ast->formatWithSecretsOneLine();
+    command.setAst(std::move(ast));
     return command;
 }
 
@@ -1959,12 +1961,14 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         }
         else if (with_alters)
         {
-            result.push_back(MutationCommand{
-                .ast_text = alter_cmd.ast->formatWithSecretsOneLine(),
-                .max_parser_depth = max_parser_depth,
-                .max_parser_backtracks = max_parser_backtracks,
-                .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
-            });
+            MutationCommand command;
+            command.max_parser_depth = max_parser_depth;
+            command.max_parser_backtracks = max_parser_backtracks;
+            command.type = MutationCommand::Type::ALTER_WITHOUT_MUTATION;
+            auto * alter = alter_cmd.ast->as<ASTAlterCommand>();
+            chassert(alter);
+            command.setAst(boost::intrusive_ptr<ASTAlterCommand>(alter));
+            result.push_back(std::move(command));
         }
     }
 

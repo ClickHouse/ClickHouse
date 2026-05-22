@@ -52,22 +52,18 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.max_parser_backtracks = command.max_parser_backtracks;
     res.ast_text = command.ast_text;
 
-    /// Open a mutating scope on `res` so the handle's destructor (which
-    /// serializes the modified AST back into `res.ast_text`) runs before
-    /// `return res`, regardless of whether NRVO is applied.
+    auto handle = res.mutateAst();
+    auto new_assignments = make_intrusive<ASTExpressionList>();
+
+    for (const auto & child : handle->update_assignments->children)
     {
-        auto handle = res.mutateAst();
-        auto new_assignments = make_intrusive<ASTExpressionList>();
-
-        for (const auto & child : handle->update_assignments->children)
-        {
-            const auto & assignment = assert_cast<const ASTAssignment &>(*child);
-            if (available_columns.contains(assignment.column_name))
-                new_assignments->children.push_back(child->clone());
-        }
-
-        handle->update_assignments = handle->children.emplace_back(std::move(new_assignments)).get();
+        const auto & assignment = assert_cast<const ASTAssignment &>(*child);
+        if (available_columns.contains(assignment.column_name))
+            new_assignments->children.push_back(child->clone());
     }
+
+    handle->update_assignments = handle->children.emplace_back(std::move(new_assignments)).get();
+    handle.commit();
     return res;
 }
 
