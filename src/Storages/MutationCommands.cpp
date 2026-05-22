@@ -90,16 +90,7 @@ boost::intrusive_ptr<ASTAlterCommand> parseAlterCommand(const String & ast_text,
 
 boost::intrusive_ptr<const ASTAlterCommand> MutationCommand::ast() const
 {
-    if (!cached_ast)
-        cached_ast = parseAlterCommand(ast_text, max_parser_depth, max_parser_backtracks);
-    return cached_ast;
-}
-
-void MutationCommand::setAst(boost::intrusive_ptr<ASTAlterCommand> alter)
-{
-    chassert(alter);
-    ast_text = alter->formatWithSecretsOneLine();
-    cached_ast = std::move(alter);
+    return parseAlterCommand(ast_text, max_parser_depth, max_parser_backtracks);
 }
 
 MutationCommand::MutableAst::MutableAst(MutationCommand & owner_)
@@ -120,7 +111,6 @@ void MutationCommand::MutableAst::commit()
     if (!ast)
         return;
     owner.ast_text = ast->formatWithSecretsOneLine();
-    owner.cached_ast = ast;
 }
 
 std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCommand & alter)
@@ -147,10 +137,6 @@ std::optional<MutationCommand> MutationCommand::parse(
     res.ast_text = command.formatWithSecretsOneLine();
     res.max_parser_depth = max_parser_depth;
     res.max_parser_backtracks = max_parser_backtracks;
-    /// The caller holds the AST via an `intrusive_ptr`, so refcounting `&command`
-    /// extends its lifetime to match `res`. This populates the cache up front so
-    /// later `ast()` calls don't have to reparse `ast_text`.
-    res.cached_ast = boost::intrusive_ptr<const ASTAlterCommand>(&command);
     if (with_pure_metadata_commands)
     {
         res.type = ALTER_WITHOUT_MUTATION;

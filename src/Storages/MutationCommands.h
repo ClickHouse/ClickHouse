@@ -8,13 +8,13 @@
 #include <Core/Defines.h>
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
+class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
@@ -56,20 +56,16 @@ struct MutationCommand
 
     Type type = EMPTY;
 
-    /// Returns the parsed alter command (shareable, const). The first call
-    /// parses `ast_text` and caches the result; further calls return the cache.
-    /// Returns nullptr if `ast_text` is empty.
+    /// Parses `ast_text` and returns the resulting alter command (shareable,
+    /// const). The parsed AST is *not* cached on the `MutationCommand`, so
+    /// callers that access several sub-trees of the same command should hoist
+    /// the result into a local. Returns nullptr if `ast_text` is empty.
     boost::intrusive_ptr<const ASTAlterCommand> ast() const;
 
-    /// Set the cached AST and refresh `ast_text` from it. The pointer must be
-    /// non-null. Use this when the AST is already in hand to skip parsing on
-    /// the first `ast()` call.
-    void setAst(boost::intrusive_ptr<ASTAlterCommand> alter);
-
     /// RAII handle for editing the AST of a `MutationCommand` in place. The
-    /// constructor takes a mutable copy of the AST. To publish edits, call
-    /// `commit` (it serializes the AST back into `ast_text` and refreshes the
-    /// cache, and may throw); otherwise the destructor discards them.
+    /// constructor parses a mutable copy of `ast_text`. To publish edits, call
+    /// `commit` (it serializes the AST back into `ast_text` and may throw);
+    /// otherwise the destructor discards them.
     /// Neither copyable nor movable.
     class MutableAst
     {
@@ -86,8 +82,8 @@ struct MutationCommand
         ASTAlterCommand * operator->() const { return ast.get(); }
         ASTAlterCommand * get() const { return ast.get(); }
 
-        /// Serialize the (possibly modified) AST back to `owner.ast_text` and
-        /// refresh `owner.cached_ast`. May throw.
+        /// Serialize the (possibly modified) AST back into `owner.ast_text`.
+        /// May throw.
         void commit();
 
     private:
@@ -132,11 +128,6 @@ struct MutationCommand
         bool with_pure_metadata_commands = false,
         UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
         UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    /// Lazily populated by `ast`. Hot paths re-read this without re-parsing.
-    /// Set eagerly by `setAst` / `MutableAst::commit` when an AST is in hand.
-    /// Implementation detail — prefer `ast` / `setAst` over touching it directly.
-    mutable boost::intrusive_ptr<const ASTAlterCommand> cached_ast = {};
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;

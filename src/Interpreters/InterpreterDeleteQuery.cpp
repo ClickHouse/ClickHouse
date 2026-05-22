@@ -102,9 +102,9 @@ BlockIO InterpreterDeleteQuery::execute()
         auto alter_command = make_intrusive<ASTAlterCommand>();
         alter_command->type = ASTAlterCommand::DELETE;
         alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
+        mut_command.ast_text = alter_command->formatWithSecretsOneLine();
         mut_command.max_parser_depth = settings[Setting::max_parser_depth];
         mut_command.max_parser_backtracks = settings[Setting::max_parser_backtracks];
-        mut_command.setAst(std::move(alter_command));
 
         mutation_commands.emplace_back(mut_command);
 
