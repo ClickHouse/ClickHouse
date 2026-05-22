@@ -22,9 +22,9 @@ Expression (Project names)
               Ranges: 1
       LazilyReadFromMergeTree
 12 rows, index_granularity = 3, GRANULARITY = 2 --> 4 granules, 2 indexed block
-6	[0,2]	0
-7	[0,2.1]	0.09999990463256836
-8	[0,2.2]	0.20000004768371582
+0	[1,0]	2.23606797749979
+1	[1.1,0]	2.282542453592504
+2	[1.2,0]	2.3323807824711897
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -46,9 +46,9 @@ Expression (Project names)
       LazilyReadFromMergeTree
 Special cases
 -- Non-default metric, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction
-6	[1,9.3]	0.005731362878640178
-4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -85,8 +85,8 @@ Expression (Project names)
       LazilyReadFromMergeTree
 -- Test all distance metrics x all quantization
 1	[2,3.2]	2.3323807824711897
-4	[2.4,5.2]	3.9999999046325727
-2	[4.2,3.4]	4.427188573446585
+5	[5.3,2.3]	5.308483963730074
+3	[5.3,2.9]	5.375872226295094
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -107,8 +107,8 @@ Expression (Project names)
               Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
-4	[2.4,5.2]	3.9999999046325727
-2	[4.2,3.4]	4.427188573446585
+5	[5.3,2.3]	5.308483963730074
+3	[5.3,2.9]	5.375872226295094
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -129,8 +129,8 @@ Expression (Project names)
               Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
-4	[2.4,5.2]	3.9999999046325727
-2	[4.2,3.4]	4.427188573446585
+5	[5.3,2.3]	5.308483963730074
+3	[5.3,2.9]	5.375872226295094
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -151,8 +151,8 @@ Expression (Project names)
               Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
-4	[2.4,5.2]	3.9999999046325727
-2	[4.2,3.4]	4.427188573446585
+5	[5.3,2.3]	5.308483963730074
+3	[5.3,2.9]	5.375872226295094
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -173,8 +173,8 @@ Expression (Project names)
               Ranges: 1
       LazilyReadFromMergeTree
 1	[2,3.2]	2.3323807824711897
-4	[2.4,5.2]	3.9999999046325727
 2	[4.2,3.4]	4.427188573446585
+0	[4.6,2.3]	4.609772130377966
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -194,9 +194,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	0.005731362878640178
-4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -216,9 +216,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	0.005731362878640178
-4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -238,9 +238,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	0.005731362878640178
-4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -260,9 +260,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	0.005731362878640178
-4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -282,9 +282,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	0.005731362878640178
-4	[2.4,5.2]	0.09204062768384846
 1	[2,3.2]	0.15200169244542905
+2	[4.2,3.4]	0.37080174340866845
+0	[4.6,2.3]	0.5527864045000421
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -304,9 +304,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	18.600000381469727
-4	[2.4,5.2]	10.399999618530273
-7	[5.5,4.7]	9.399999618530273
+2	[4.2,3.4]	6.800000190734863
+1	[2,3.2]	6.400000095367432
+0	[4.6,2.3]	4.599999904632568
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -326,9 +326,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	18.600000381469727
-4	[2.4,5.2]	10.399999618530273
-7	[5.5,4.7]	9.399999618530273
+2	[4.2,3.4]	6.800000190734863
+1	[2,3.2]	6.400000095367432
+0	[4.6,2.3]	4.599999904632568
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -348,9 +348,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	18.600000381469727
-4	[2.4,5.2]	10.399999618530273
-7	[5.5,4.7]	9.399999618530273
+2	[4.2,3.4]	6.800000190734863
+1	[2,3.2]	6.400000095367432
+0	[4.6,2.3]	4.599999904632568
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -370,9 +370,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	18.600000381469727
-4	[2.4,5.2]	10.399999618530273
-7	[5.5,4.7]	9.399999618530273
+2	[4.2,3.4]	6.800000190734863
+1	[2,3.2]	6.400000095367432
+0	[4.6,2.3]	4.599999904632568
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -392,9 +392,9 @@ Expression (Project names)
                 Granules: 3/4
               Ranges: 1
       LazilyReadFromMergeTree
-6	[1,9.3]	18.600000381469727
-4	[2.4,5.2]	10.399999618530273
-7	[5.5,4.7]	9.399999618530273
+2	[4.2,3.4]	6.800000190734863
+1	[2,3.2]	6.400000095367432
+0	[4.6,2.3]	4.599999904632568
 Expression (Project names)
   Expression
     JoinLazyColumnsStep
@@ -415,17 +415,17 @@ Expression (Project names)
               Ranges: 1
       LazilyReadFromMergeTree
 -- Index on Array(Float64) column
-6	[0,2]	0
-7	[0,2.1]	0.10000000000000009
-8	[0,2.2]	0.20000000000000018
+0	[1,0]	2.23606797749979
+1	[1.1,0]	2.2825424421026654
+2	[1.2,0]	2.33238075793812
 -- Index on Array(BFloat16) column
-6	[0,2]	0
-7	[0,2.09375]	0.09375
-8	[0,2.1875]	0.1875
+0	[1,0]	2.23606797749979
+1	[1.09375,0]	2.2795370281046106
+2	[1.1953125,0]	2.3299725261591067
 -- dotProduct distance function
-6	[1,9.3]	18.600000381469727
-4	[2.4,5.2]	10.399999618530273
-7	[5.5,4.7]	9.399999618530273
+2	[4.2,3.4]	6.800000190734863
+1	[2,3.2]	6.400000095367432
+0	[4.6,2.3]	4.599999904632568
 Expression (Project names)
   Expression
     JoinLazyColumnsStep

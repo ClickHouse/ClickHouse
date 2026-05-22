@@ -27,8 +27,6 @@ Ensure rescoring optimization works with enabled and disabled PREWHERE
 Test with enabled rescoring
 16
 19
-18
-17
 With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)
 16
 19
@@ -38,8 +36,6 @@ Check that explicit PREWHERE disables the optimization
 Query with explicit PREWHERE works
 16
 19
-18
-17
 Select all 20 neighbours with the rescoring optimization, distances got from vector index
 16	116	1600
 1	101	100
