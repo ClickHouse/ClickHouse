@@ -124,6 +124,16 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/false);
+    }
+
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/true);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    {
         ColumnPtr left_col = arguments[0].column;
         ColumnPtr right_col = arguments[1].column;
         const ColumnWithTypeAndName & type_and_name_left_col = arguments[0];
@@ -192,7 +202,8 @@ public:
 
         auto executable_func = comparator->build(arguments);
         auto data_type = executable_func->getResultType();
-        res = executable_func->execute(arguments, data_type, input_rows_count, /* dry_run = */ false);
+        /// Forward dry_run so header-time partial evaluation does not materialise the inner comparator on placeholder columns.
+        res = executable_func->execute(arguments, data_type, input_rows_count, dry_run);
 
         return res;
     }
