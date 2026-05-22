@@ -17,7 +17,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Coordination/KeeperCommon.h>

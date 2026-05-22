@@ -89,27 +89,19 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
 {
-    /// These are valid identifiers but are problematic if present unquoted in SQL query
-    /// because they are keywords that the parser interprets as clause starters or modifiers,
-    /// causing the formatted AST to fail parsing back.
-    auto isCaseInsensitiveEqual = [](std::string_view a, std::string_view b)
-    {
-        return a.size() == b.size()
-            && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
-    };
-
+    static constexpr std::string_view distinct_str = "distinct";
+    static constexpr std::string_view all_str = "all";
+    static constexpr std::string_view table_str = "table";
+    static constexpr std::string_view select_str = "select";
     if (isValidIdentifier(s)
-        && !isCaseInsensitiveEqual(s, "distinct")
-        && !isCaseInsensitiveEqual(s, "all")
-        && !isCaseInsensitiveEqual(s, "table")
+        /// These are valid identifiers but are problematic if present unquoted in SQL query.
+        && !(s.size() == distinct_str.size() && 0 == strncasecmp(s.data(), "distinct", s.size()))
+        && !(s.size() == all_str.size() && 0 == strncasecmp(s.data(), "all", s.size()))
+        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size()))
         /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
         /// re-parses as a subquery (SELECT [x]) with a different structure.
-        && !isCaseInsensitiveEqual(s, "select")
-        /// These keywords cause parsing ambiguity when used as function or identifier names
-        /// because the parser consumes them as clause-starting keywords.
-        && !isCaseInsensitiveEqual(s, "from")
-        && !isCaseInsensitiveEqual(s, "values"))
+        && !(s.size() == select_str.size() && 0 == strncasecmp(s.data(), "select", s.size())))
     {
         writeString(s, buf);
     }
