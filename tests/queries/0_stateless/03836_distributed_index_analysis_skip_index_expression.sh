@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default='legacy'"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 # Test that distributed index analysis works correctly when skip index contains
 # expressions over columns (e.g. toStartOfMinute(timestamp)), not just plain
 # column references.

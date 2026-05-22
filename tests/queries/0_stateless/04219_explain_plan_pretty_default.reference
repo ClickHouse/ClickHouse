@@ -1,5 +1,20 @@
-1
-1
-1
-1
-1
+Output: b, sum(c), count(), avg(c)
+
+Limit (preliminary LIMIT)
+│  Limit 5
+│  Offset 0
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(c) DESC
+   │  Limit 5
+   └──Filter (HAVING)
+      │  Filter column: sum(c) > 50
+      └──Aggregating
+         │  Keys: b
+         │  Aggregates: sum(c), count(), avg(c)
+         │  Skip merging: 0
+         └──Filter ((WHERE + Change column names to column identifiers))
+            │  Filter column: a > 10 AND c < 100
+            └──ReadFromMergeTree (default.t_explain_default)
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: b, c, a
