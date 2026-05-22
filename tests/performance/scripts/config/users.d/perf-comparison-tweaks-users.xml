@@ -23,6 +23,15 @@
             <compile_aggregate_expressions>0</compile_aggregate_expressions>
             <compile_sort_description>0</compile_sort_description>
 
+            <!--
+                When a test opts back into JIT, force compilation on the first call
+                so the prewarm run populates the JIT cache and the measured runs are
+                not skewed by compilation cost. See https://github.com/ClickHouse/ClickHouse/issues/100759.
+            -->
+            <min_count_to_compile_expression>0</min_count_to_compile_expression>
+            <min_count_to_compile_aggregate_expression>0</min_count_to_compile_aggregate_expression>
+            <min_count_to_compile_sort_description>0</min_count_to_compile_sort_description>
+
             <!-- Don't fail some prewarm queries too early -->
             <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>
 

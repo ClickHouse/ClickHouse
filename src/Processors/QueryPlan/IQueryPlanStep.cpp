@@ -1,4 +1,5 @@
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
@@ -58,7 +59,7 @@ bool IQueryPlanStep::canRemoveColumnsFromOutput() const
 
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
+    return false;
 }
 
 const SharedHeader & IQueryPlanStep::getOutputHeader() const

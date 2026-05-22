@@ -846,7 +846,7 @@ ColumnPtr fillColumnWithRandomData(
 namespace
 {
 
-class GenerateSource : public ISource
+class GenerateSource final : public ISource
 {
 public:
     GenerateSource(
@@ -978,7 +978,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
         }
 
         if (engine_args.size() == 3)
