@@ -13,6 +13,36 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+
+def _umount_with_retry(node, mount_point, retries=15, delay=1.0):
+    """Run ``umount`` on a container mount point, retrying briefly on EBUSY.
+
+    The disk health check thread (controlled by ``local_disk_check_period_ms``)
+    periodically opens directories under storage paths, so ``umount`` can
+    transiently fail with ``target is busy``. The descriptor is dropped at the
+    end of each polling cycle, so a short retry loop is sufficient. The final
+    attempt propagates its exception unchanged so that genuine failures still
+    surface.
+    """
+    for _ in range(retries - 1):
+        try:
+            node.exec_in_container(
+                ["bash", "-c", "umount {}".format(mount_point)],
+                privileged=True,
+                user="root",
+            )
+            return
+        except Exception as e:
+            if "target is busy" not in str(e):
+                raise
+            time.sleep(delay)
+    node.exec_in_container(
+        ["bash", "-c", "umount {}".format(mount_point)],
+        privileged=True,
+        user="root",
+    )
+
+
 node1 = cluster.add_instance(
     "node1",
     main_configs=[
@@ -108,11 +138,7 @@ def test_jbod_ha(start_cluster):
         # Mimic disk recovery
         #
         # NOTE: this will unmount only proc from /test_jbod_ha_jbod1 and leave tmpfs
-        node1.exec_in_container(
-            ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
-            privileged=True,
-            user="root",
-        )
+        _umount_with_retry(node1, "/test_jbod_ha_jbod1")
 
         node1.restart_clickhouse()
         time.sleep(5)
@@ -160,11 +186,7 @@ def test_jbod_ha_fetch_partition(start_cluster):
         assert int(node2.query("select count(p) from tbl")) == 10
 
         # Mimic disk recovery, just in case we add more tests later
-        node2.exec_in_container(
-            ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
-            privileged=True,
-            user="root",
-        )
+        _umount_with_retry(node2, "/test_jbod_ha_jbod1")
 
         node2.restart_clickhouse()
 
