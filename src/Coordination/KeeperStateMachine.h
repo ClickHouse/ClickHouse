@@ -23,6 +23,15 @@ struct KeeperStorageStats;
 
 struct ISnapshotLoader;
 
+struct KeeperSnapshotStatus
+{
+    uint64_t last_log_index;
+    String path;
+    DiskPtr disk;
+    SnapshotFileInfoPtr pin;
+    bool is_received;
+};
+
 class IKeeperStateMachine : public nuraft::state_machine
 {
 public:

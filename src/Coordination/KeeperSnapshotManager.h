@@ -141,13 +141,6 @@ struct SnapshotFileInfo
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
 
-struct KeeperSnapshotStatus
-{
-    uint64_t last_log_index;
-    String path;
-    DiskPtr disk;
-    bool is_received;
-};
 #if USE_ROCKSDB
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
 #else
@@ -241,7 +234,7 @@ public:
 
     SnapshotFileInfoPtr getLatestSnapshotInfo() const;
 
-    std::vector<KeeperSnapshotStatus> getSnapshotsStatus(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
+    std::map<uint64_t, SnapshotFileInfoPtr> getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
 
     /// Return the map entry for `log_idx`, or `nullptr` if absent. Holding the
     /// result pins the file against unlink and cross-disk moves.

@@ -1126,21 +1126,9 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::getLatestSnapshotInfo() cons
 }
 
 template<typename Storage>
-std::vector<KeeperSnapshotStatus> KeeperSnapshotManager<Storage>::getSnapshotsStatus(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const
+std::map<uint64_t, SnapshotFileInfoPtr> KeeperSnapshotManager<Storage>::getExistingSnapshots(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const
 {
-    std::vector<KeeperSnapshotStatus> result;
-    result.reserve(existing_snapshots.size());
-    for (const auto & [log_idx, file_info] : existing_snapshots)
-    {
-        chassert(file_info);
-        result.push_back(KeeperSnapshotStatus{
-            .last_log_index = log_idx,
-            .path = file_info->path,
-            .disk = file_info->disk,
-            .is_received = false,
-        });
-    }
-    return result;
+    return existing_snapshots;
 }
 
 template<typename Storage>
