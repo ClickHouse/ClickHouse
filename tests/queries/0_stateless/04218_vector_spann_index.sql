@@ -187,6 +187,20 @@ FROM (
     )
 );
 
+SELECT (
+    SELECT id
+    FROM tab_spann_dot
+    ORDER BY dotProduct(vec, [0.0, 2.0]) DESC
+    LIMIT 1
+    SETTINGS use_skip_indexes = 1
+) = (
+    SELECT id
+    FROM tab_spann_dot
+    ORDER BY dotProduct(vec, [0.0, 2.0]) DESC
+    LIMIT 1
+    SETTINGS use_skip_indexes = 0
+);
+
 DROP TABLE tab_spann_dot;
 
 SELECT '5. NaN rejected at insert';
