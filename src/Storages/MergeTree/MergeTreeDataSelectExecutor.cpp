@@ -2135,6 +2135,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         if (use_vector_search_cache)
         {
+            /// Merge PK ranges by `index_mark` once.
             for (size_t i = 0; i < ranges_size; ++i)
             {
                 const MarkRange & index_range = index_ranges[i];
@@ -2163,6 +2164,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     const NearestNeighbours * nn_ptr = nullptr;
                     if (use_vector_search_cache)
                     {
+                        /// Reuse ANN result when the same `index_mark` appears again.
                         auto search_result_it = vector_search_results_by_index_mark.find(index_mark);
                         if (search_result_it == vector_search_results_by_index_mark.end())
                         {
@@ -2231,6 +2233,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     if (has_duplicates)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
+                    /// Same `index_mark` may come from several PK ranges. Merge hints once.
                     if (merged_hints_index_marks.insert(index_mark).second)
                     {
                         if (!nn.distances.has_value())
@@ -2282,6 +2285,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     {
                         auto uses_it = remaining_uses_by_index_mark.find(index_mark);
                         chassert(uses_it != remaining_uses_by_index_mark.end());
+                        /// Drop per-mark cache when this mark is no longer referenced.
                         if (--uses_it->second == 0)
                         {
                             remaining_uses_by_index_mark.erase(uses_it);
