@@ -1,6 +1,8 @@
 -- Tags: no-parallel
 -- ^ failpoint
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS atf_p;
 CREATE TABLE atf_p (x UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO atf_p SELECT number FROM numbers(10);
