@@ -207,6 +207,8 @@ public:
                             current_file_description->from_log_index,
                             *last_index_written,
                             current_file_description->extension);
+
+                        current_file_description->to_log_index = *last_index_written;
                     }
 
                     if (move_changelog_cb)
@@ -2808,29 +2810,35 @@ std::vector<KeeperChangelogStatus> Changelog::getChangelogsStatus() const
 
         const bool active = active_description && description == active_description;
 
+        DiskPtr disk;
+        String path;
+        description->withLock(
+            [&]
+            {
+                disk = description->disk;
+                path = description->path;
+            });
+        const uint64_t to_log_index = description->to_log_index;
+
         std::optional<uint64_t> last_entry_index;
-        uint64_t entries = 0;
-        if (!active)
+        if (active)
         {
-            last_entry_index = description->to_log_index;
-            entries = description->to_log_index - description->from_log_index + 1;
+            if (current_max_log_id >= description->from_log_index)
+                last_entry_index = std::min(to_log_index, current_max_log_id);
         }
-        else if (current_max_log_id >= description->from_log_index)
+        else if (!description->broken_at_end)
         {
-            const uint64_t capped = std::min(description->to_log_index, current_max_log_id);
-            last_entry_index = capped;
-            entries = capped - description->from_log_index + 1;
+            last_entry_index = to_log_index;
         }
 
         const bool is_compressed = description->extension.ends_with("zstd");
 
         result.push_back(KeeperChangelogStatus{
             .from_log_index = description->from_log_index,
-            .to_log_index = description->to_log_index,
+            .to_log_index = to_log_index,
             .last_entry_index = last_entry_index,
-            .entries = entries,
-            .path = description->getPathSafe(),
-            .disk = description->disk,
+            .path = std::move(path),
+            .disk = std::move(disk),
             .is_compressed = is_compressed,
             .active = active,
             .is_broken = description->broken_at_end,
