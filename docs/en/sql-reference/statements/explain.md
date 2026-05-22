@@ -193,9 +193,9 @@ Settings:
 - `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
 :::note
-Starting from ClickHouse 26.5, the server setting `query_plan_pretty_default` is `true` by default. When it is `true`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this.
+Starting from ClickHouse 26.5, the server setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this.
 
-To restore the pre-26.5 verbose output, either run `SET query_plan_pretty_default = 0` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.5`.
+To restore the pre-26.5 verbose output, either run `SET explain_query_plan_default = 'legacy'` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.5`.
 :::
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
