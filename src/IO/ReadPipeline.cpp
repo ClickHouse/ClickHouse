@@ -312,6 +312,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 use_external_buffer,
                 std::move(fallback_creator),
                 distributed_cache->include_credentials_in_cache_key);
+            chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
         }
         else
 #endif
@@ -521,6 +522,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 use_ext_buf_for_dc,
                 std::move(fallback_creator),
                 distributed_cache->include_credentials_in_cache_key);
+            chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
         }
 #endif
     }
