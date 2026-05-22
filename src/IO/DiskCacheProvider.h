@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class FilesystemCacheLog;
+
 /// ICacheHandle for FileCache (filesystem/disk cache).
 /// Holds a FileSegmentsHolder — segments stay pinned until the handle is destroyed.
 class DiskCacheHandle : public ICacheHandle
@@ -19,7 +21,9 @@ public:
         FileCacheKey cache_key,
         ByteRange requested,
         size_t file_size,
-        const FilesystemCacheSettings & cache_settings);
+        const FilesystemCacheSettings & cache_settings,
+        std::shared_ptr<FilesystemCacheLog> cache_log,
+        String source_file_path);
 
     CacheLookupResult status() const override;
     Rope get(ByteRange range) override;
@@ -30,6 +34,9 @@ private:
     FileCacheKey cache_key;
     size_t file_size;
     FilesystemCacheSettings cache_settings;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
+    String source_file_path;
+    ByteRange requested_range;
     FileSegmentsHolderPtr holder;
     LoggerPtr log = getLogger("DiskCacheHandle");
 };
@@ -42,10 +49,12 @@ public:
     DiskCacheProvider(
         FileCachePtr cache_,
         size_t file_size_,
-        const FilesystemCacheSettings & cache_settings_)
+        const FilesystemCacheSettings & cache_settings_,
+        std::shared_ptr<FilesystemCacheLog> cache_log_ = nullptr)
         : cache(std::move(cache_))
         , file_size(file_size_)
         , cache_settings(cache_settings_)
+        , cache_log(std::move(cache_log_))
     {
     }
 
@@ -56,6 +65,7 @@ private:
     FileCachePtr cache;
     size_t file_size;
     FilesystemCacheSettings cache_settings;
+    std::shared_ptr<FilesystemCacheLog> cache_log;
 };
 
 }

@@ -248,7 +248,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 {
                     auto fcs = dc.cache_settings.value_or(FilesystemCacheSettings{});
                     executor_caches.push_back(std::make_shared<DiskCacheProvider>(
-                        dc.cache, total_file_size, fcs));
+                        dc.cache, total_file_size, fcs, dc.cache_log));
 
                     if (executor_cache_key.path.empty())
                         executor_cache_key.path = source->objects.front().remote_path;

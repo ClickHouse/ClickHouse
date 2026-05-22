@@ -1,10 +1,13 @@
 #include <IO/DiskCacheProvider.h>
 
 #include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FilesystemCacheLog.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
@@ -19,16 +22,51 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    void appendCacheLogEntry(
+        FilesystemCacheLog & cache_log,
+        const FileSegment & segment,
+        FilesystemCacheLogElement::CacheType cache_type,
+        const String & source_file_path,
+        ByteRange requested_range)
+    {
+        const auto seg_range = segment.range();
+        FilesystemCacheLogElement elem
+        {
+            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .query_id = std::string(CurrentThread::getQueryId()),
+            .source_file_path = source_file_path,
+            .file_segment_range = { seg_range.left, seg_range.right },
+            .requested_range = { requested_range.offset, requested_range.end() },
+            .cache_type = cache_type,
+            .file_segment_key = segment.key().toString(),
+            .file_segment_offset = segment.offset(),
+            .file_segment_size = seg_range.size(),
+            .read_from_cache_attempted = true,
+            .read_buffer_id = {},
+            .user_id = FileCache::getCommonOrigin().user_id,
+        };
+        cache_log.add(std::move(elem));
+    }
+}
+
+
 DiskCacheHandle::DiskCacheHandle(
     FileCachePtr cache_,
     FileCacheKey cache_key_,
     ByteRange requested,
     size_t file_size_,
-    const FilesystemCacheSettings & cache_settings_)
+    const FilesystemCacheSettings & cache_settings_,
+    std::shared_ptr<FilesystemCacheLog> cache_log_,
+    String source_file_path_)
     : cache(std::move(cache_))
     , cache_key(cache_key_)
     , file_size(file_size_)
     , cache_settings(cache_settings_)
+    , cache_log(std::move(cache_log_))
+    , source_file_path(std::move(source_file_path_))
+    , requested_range(requested)
 {
     /// When `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` is set
     /// (used for background merges/mutations via `MergeTreeSequentialSource`),
@@ -142,6 +180,12 @@ Rope DiskCacheHandle::get(ByteRange range)
         /// `system.filesystem_cache.cache_hits` stays at zero and segments
         /// don't move to the protected queue under SLRU.
         segment->increasePriority();
+
+        if (cache_log)
+            appendCacheLogEntry(
+                *cache_log, *segment,
+                FilesystemCacheLogElement::CacheType::READ_FROM_CACHE,
+                source_file_path, requested_range);
     }
     return result;
 }
@@ -222,6 +266,12 @@ bool DiskCacheHandle::put(ByteRange range, Rope data)
 
         LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}]",
             write_size, seg_range.left, seg_range.right);
+
+        if (cache_log)
+            appendCacheLogEntry(
+                *cache_log, *segment,
+                FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
+                source_file_path, requested_range);
     }
 
     return any_written;
@@ -232,7 +282,7 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(CacheKey key, ByteRange 
 {
     auto cache_key = FileCacheKey::fromPath(key.path);
     return std::make_unique<DiskCacheHandle>(
-        cache, cache_key, range, file_size, cache_settings);
+        cache, cache_key, range, file_size, cache_settings, cache_log, key.path);
 }
 
 }
