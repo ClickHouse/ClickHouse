@@ -217,12 +217,19 @@ catch (...)
 }
 
 
-TEST(ReadPipeline, BuildWithEmptyObjectsThrows)
+TEST(ReadPipeline, BuildWithEmptyObjectsReturnsEmptyBuffer)
 try
 {
     ReadPipeline pipeline;
     pipeline.setSource(memoryCreator("data"), StoredObjects{}, ReadSettings{});
-    EXPECT_THROW(pipeline.build(), Exception);
+
+    /// Empty objects = zero-blob file. build() returns ReadBufferFromEmptyFile.
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, "");
 }
 catch (...)
 {
