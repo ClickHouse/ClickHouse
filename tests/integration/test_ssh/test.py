@@ -241,34 +241,18 @@ def test_paramiko_password(started_cluster):
 
 
 def _server_open_files():
-    """
-    Sample `OSOpenFiles` from `system.asynchronous_metrics`. The metric reads
-    `/proc/sys/fs/file-nr` and is host-wide rather than process-specific, so the
-    test only uses it as a delta against a pre-inflation baseline (good enough
-    to confirm our own connections landed and the fd table grew past
-    `FD_SETSIZE` on this server). We force a fresh sample first because async
-    metrics otherwise update on a timer.
-    """
-    instance.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
-    return int(
-        instance.query(
-            "SELECT value FROM system.asynchronous_metrics "
-            "WHERE metric = 'OSOpenFiles'"
-        ).strip()
+    pid = instance.get_process_pid("clickhouse")
+    assert pid is not None, "could not locate clickhouse PID"
+    out = instance.exec_in_container(
+        ["bash", "-c", f"ls -1 /proc/{pid}/fd | wc -l"]
     )
+    return int(out.strip())
 
 
 def _hold_server_fds(port, count):
-    """
-    Open `count` raw TCP sockets to the server and return them. Each connection
-    occupies one fd on the server side until closed. We do not send any data, so
-    the server-side handlers block on read and keep the fd allocated. The caller
-    must close the sockets in a `finally` block.
-    """
     sockets = []
     for _ in range(count):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(10)
         s.connect((instance.ip_address, port))
         sockets.append(s)
     return sockets
@@ -299,20 +283,18 @@ def test_ssh_interactive_pty_with_high_fds(started_cluster):
     # server has already allocated for its own internals, but small enough to
     # stay well under `max_connections` (bumped to 8192 in the test config).
     DUMMY_CONNECTIONS = 1500
-    NATIVE_PORT = 9000
 
     baseline_files = _server_open_files()
-    keepalive = _hold_server_fds(NATIVE_PORT, DUMMY_CONNECTIONS)
+    keepalive = _hold_server_fds(9000, DUMMY_CONNECTIONS)
     try:
-        # Sanity check: the host-wide open-files counter rose by at least most
-        # of our connections (allow some slack for connections that may have
-        # been already in TIME_WAIT or for transient kernel accounting). With
-        # `OSOpenFiles` host-wide it is the *delta* that matters; the absolute
-        # value would be noisy.
+        # Sanity check: the server-process fd count rose by at least most of
+        # our connections (allow some slack: a few connects may have been
+        # rejected, ephemeral handler threads may have closed listener-side
+        # fds, etc.).
         after_files = _server_open_files()
         delta = after_files - baseline_files
-        assert delta >= DUMMY_CONNECTIONS // 2, (
-            f"expected OSOpenFiles to grow by ~{DUMMY_CONNECTIONS}, "
+        assert delta >= DUMMY_CONNECTIONS * 9 // 10, (
+            f"expected clickhouse-server fd count to grow by ~{DUMMY_CONNECTIONS}, "
             f"got delta={delta} (baseline={baseline_files}, after={after_files}); "
             "the fd-inflation step did not take effect"
         )
@@ -336,54 +318,59 @@ def test_ssh_interactive_pty_with_high_fds(started_cluster):
         try:
             channel = client.invoke_shell(term="xterm", width=80, height=24)
             channel.settimeout(20)
-
-            # Drain the initial banner / prompt so the post-query output is
-            # easy to identify. We don't assert on the banner content (it
-            # changes across versions); we just give it a short window to
-            # arrive.
-            banner_deadline = time.time() + 10
-            while time.time() < banner_deadline:
-                if channel.recv_ready():
-                    channel.recv(65536)
-                else:
-                    time.sleep(0.05)
-
-            channel.send("SELECT 1 FORMAT TSV\n")
-
-            # Wait for the query result. With the bug, `wait_for_input` is
-            # spinning on EINVAL and no input is ever delivered to the client,
-            # so the result never appears and we time out.
-            #
-            # `SELECT 1 FORMAT TSV` returns the bare line "1", followed by
-            # the client footer `"<N> row in set. Elapsed: ..."`. The query
-            # itself is echoed back by replxx (with ANSI colors), so a naive
-            # `b"1" in buf` would match the echoed query and produce a false
-            # positive even on a hung session. The footer string is printed
-            # only after the result has been emitted and never appears in
-            # echoed input, so use it as the unambiguous completion marker.
-            # Strip ANSI escape sequences before searching, since replxx
-            # interleaves SGR / cursor codes throughout the output stream.
-            ansi_re = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
-            buf = b""
-            got_result = False
-            deadline = time.time() + 15
-            while time.time() < deadline:
-                if channel.recv_ready():
-                    buf += channel.recv(65536)
-                    clean = ansi_re.sub(b"", buf)
-                    if b"1 row in set" in clean:
-                        got_result = True
+            try:
+                # Drain the initial banner / prompt so the post-query output
+                # is easy to identify. We don't assert on the banner content
+                # (it changes across versions); break once the output has
+                # been quiet for a short idle window.
+                banner_deadline = time.time() + 10
+                last_data = time.time()
+                while time.time() < banner_deadline:
+                    if channel.recv_ready():
+                        channel.recv(65536)
+                        last_data = time.time()
+                    elif time.time() - last_data > 0.5:
                         break
-                else:
-                    time.sleep(0.05)
+                    else:
+                        time.sleep(0.05)
 
-            assert got_result, (
-                "interactive SSH PTY session did not return query result "
-                "within timeout — likely select(2)/fd_set overflow hang in "
-                f"replxx::Terminal::wait_for_input. raw output: {buf!r}"
-            )
+                channel.sendall("SELECT 1 FORMAT TSV\n")
 
-            channel.close()
+                # Wait for the query result. With the bug, `wait_for_input`
+                # is spinning on EINVAL and no input is ever delivered to
+                # the client, so the result never appears and we time out.
+                #
+                # `SELECT 1 FORMAT TSV` returns the bare line "1", followed
+                # by the client footer `"<N> row in set. Elapsed: ..."`.
+                # The query itself is echoed back by replxx (with ANSI
+                # colors), so a naive `b"1" in buf` would match the echoed
+                # query and produce a false positive even on a hung session.
+                # The footer string is printed only after the result has
+                # been emitted and never appears in echoed input, so use it
+                # as the unambiguous completion marker. Strip ANSI escapes
+                # before searching, since replxx interleaves SGR / cursor
+                # codes throughout the output stream.
+                ansi_re = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
+                buf = b""
+                got_result = False
+                deadline = time.time() + 15
+                while time.time() < deadline:
+                    if channel.recv_ready():
+                        buf += channel.recv(65536)
+                        clean = ansi_re.sub(b"", buf)
+                        if b"1 row in set" in clean:
+                            got_result = True
+                            break
+                    else:
+                        time.sleep(0.05)
+
+                assert got_result, (
+                    "interactive SSH PTY session did not return query result "
+                    "within timeout — likely select(2)/fd_set overflow hang "
+                    f"in replxx::Terminal::wait_for_input. raw output: {buf!r}"
+                )
+            finally:
+                channel.close()
         finally:
             client.close()
     finally:
