@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
 
+#if USE_NURAFT
+
 #include <Coordination/KeeperDispatcher.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -92,3 +94,5 @@ void StorageSystemKeeperChangelogs::fillData(MutableColumns & res_columns, Conte
 }
 
 }
+
+#endif

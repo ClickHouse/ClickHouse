@@ -107,7 +107,9 @@
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemZooKeeperWatches.h>
+#if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
+#endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
@@ -285,10 +287,12 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", "Shows all active watches across all [Zoo]Keeper connections.");
     }
 
+#if USE_NURAFT
     if (has_keeper_server)
     {
         attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
     }
+#endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {
