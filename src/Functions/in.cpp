@@ -58,11 +58,18 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// We handle constant folding manually because the default implementation
-    /// unconditionally changes input_rows_count from 0 to 1 when unwrapping constants.
-    /// With a not-ready set (from a subquery), this would cause the function to fail
-    /// during header computation where input_rows_count is 0.
-    bool useDefaultImplementationForConstants() const override { return false; }
+    /// Opt into the default constant-folding wrapper: when all arguments are constants,
+    /// `IExecutableFunction::defaultImplementationForConstantArguments` clones them to size 1,
+    /// runs `executeImpl` with `input_rows_count = 1`, and wraps the result as a ColumnConst.
+    /// This is what makes `WHERE 1 IN (1)` fold to `WHERE 1` (and then to `WHERE 1 = 1` in
+    /// `transformQueryForExternalDatabase`) after `ActionsDAG::addColumn` normalizes ColumnConst
+    /// arguments to size 0 — without the default wrapper, `executeImpl` would receive
+    /// `input_rows_count = 0` and short-circuit to an empty non-ColumnConst column that DAG
+    /// constant folding drops.
+    ///
+    /// `-IgnoreSet` variants must NOT fold, because they're used purely for type analysis
+    /// before the set has been built.
+    bool useDefaultImplementationForConstants() const override { return !ignore_set; }
 
     bool useDefaultImplementationForDynamic() const override
     {
