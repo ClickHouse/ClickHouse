@@ -17,7 +17,6 @@ def only_docs(changed_files):
             file.startswith("docs/")
             or file.startswith("docker/docs")
             or file.endswith(".md")
-            or "aspell-dict.txt" in file
         ):
             continue
         else:
@@ -112,14 +111,6 @@ def should_skip_job(job_name):
                 True,
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
-        return False, ""
-
-    if job_name == JobNames.PR_BODY:
-        # Run the job if AI assistant is explicitly enabled in the PR body
-        if "disable ai pr formatting assistant: true" in _info_cache.pr_body.lower():
-            return True, "AI PR assistant is explicitly disabled in the PR body"
-        if "Reverts ClickHouse/" in _info_cache.pr_body:
-            return True, "Skipped for revert PRs"
         return False, ""
 
     if (
