@@ -343,6 +343,7 @@ namespace Setting
     extern const SettingsBool use_page_cache_for_object_storage;
     extern const SettingsBool use_page_cache_with_distributed_cache;
     extern const SettingsBool use_reader_executor;
+    extern const SettingsBool enable_reader_executor_log;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
@@ -6120,6 +6121,15 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
+std::shared_ptr<ReaderExecutorLog> Context::getReaderExecutorLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->reader_executor_log;
+}
+
 std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -7748,6 +7758,7 @@ ReadSettings Context::getReadSettings() const
     res.mmap_cache = getMMappedFileCache().get();
     res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.use_reader_executor = settings_ref[Setting::use_reader_executor];
+    res.enable_reader_executor_log = settings_ref[Setting::enable_reader_executor_log];
     res.enable_blob_storage_log_for_read_operations = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
     return res;

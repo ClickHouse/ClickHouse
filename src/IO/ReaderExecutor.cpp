@@ -7,6 +7,8 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Interpreters/ReaderExecutorLog.h>
+#include <chrono>
 
 #include "config.h"
 
@@ -154,6 +156,11 @@ ReaderExecutor::ReaderExecutor(
     offset_map.build(objects);
     if (!objects.empty())
         first_object_path = objects.front().remote_path;
+    /// Capture in the ctor — the executor may be destroyed on a worker thread
+    /// whose `CurrentThread` is no longer attached to the query, in which
+    /// case `getQueryId()` would return empty at destruction time and
+    /// `system.reader_executor_log` rows would be unfindable.
+    creator_query_id = String(CurrentThread::getQueryId());
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, caches.size());
 }
@@ -195,6 +202,32 @@ ReaderExecutor::~ReaderExecutor()
         stats.source_read_us, stats.decrypt_us,
         stats.prefetch_wait_us, stats.sync_read_us,
         stats.prefetch_hits, stats.prefetch_cancelled, stats.prefetch_pool_full);
+
+    if (reader_executor_log)
+    {
+        ReaderExecutorLogElement elem;
+        elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        elem.query_id = creator_query_id;
+        elem.source_file_path = cache_key.path;
+        elem.total_size = offset_map.totalSize();
+        elem.cache_hit_bytes = stats.cache_hit_bytes;
+        elem.cache_miss_bytes = stats.cache_miss_bytes;
+        elem.cache_populated_bytes = stats.cache_populated_bytes;
+        elem.allocated_bytes = stats.allocated_bytes;
+        elem.cache_get_requests = stats.cache_get_requests;
+        elem.cache_populate_requests = stats.cache_populate_requests;
+        elem.source_requests = stats.source_requests;
+        elem.cache_get_us = stats.cache_get_us;
+        elem.cache_populate_us = stats.cache_populate_us;
+        elem.source_read_us = stats.source_read_us;
+        elem.decrypt_us = stats.decrypt_us;
+        elem.prefetch_wait_us = stats.prefetch_wait_us;
+        elem.sync_read_us = stats.sync_read_us;
+        elem.prefetch_hits = stats.prefetch_hits;
+        elem.prefetch_cancelled = stats.prefetch_cancelled;
+        elem.prefetch_pool_full = stats.prefetch_pool_full;
+        reader_executor_log->add(std::move(elem));
+    }
 }
 
 std::vector<ByteRange> ReaderExecutor::mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap)
@@ -238,6 +271,11 @@ void ReaderExecutor::setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool)
 void ReaderExecutor::setBufferLimit(std::shared_ptr<SourceBufferLimit> limit)
 {
     buffer_limit = std::move(limit);
+}
+
+void ReaderExecutor::setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log_)
+{
+    reader_executor_log = std::move(log_);
 }
 
 void ReaderExecutor::ensurePreAcquiredSlot()

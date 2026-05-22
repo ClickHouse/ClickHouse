@@ -7,6 +7,8 @@
 #include <IO/DiskCacheProvider.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReaderExecutor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ReaderExecutorLog.h>
 
 #include <Backups/IBackup.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -268,6 +270,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
             if (buffer_limit)
                 executor->setBufferLimit(buffer_limit);
+
+            if (settings.enable_reader_executor_log)
+            {
+                if (auto global = Context::getGlobalContextInstance())
+                    executor->setReaderExecutorLog(global->getReaderExecutorLog());
+            }
 
             for (const auto & dec : decryption_stages)
                 executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);

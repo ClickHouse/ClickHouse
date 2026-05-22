@@ -23,6 +23,7 @@ namespace DB
 {
 
 class PrefetchThreadPool;
+class ReaderExecutorLog;
 class PrefetchHandle;
 
 class ReaderExecutor
@@ -52,6 +53,7 @@ public:
 
     void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
     void setBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
+    void setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log_);
 
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
@@ -145,6 +147,8 @@ private:
 
     std::optional<LiveBuffer> live_buffer;
     std::shared_ptr<SourceBufferLimit> buffer_limit;
+    std::shared_ptr<ReaderExecutorLog> reader_executor_log;
+    String creator_query_id;
 
     /// Slot pre-acquired at the top of readNextWindow. When present, the
     /// next source read is guaranteed to be promoted to live (no re-attempt

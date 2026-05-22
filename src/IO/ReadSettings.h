@@ -120,6 +120,7 @@ struct ReadSettings
 
     /// Use ReaderExecutor-based pipeline instead of matryoshka ReadBuffer assembly.
     bool use_reader_executor = false;
+    bool enable_reader_executor_log = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 

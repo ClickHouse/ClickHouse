@@ -21,6 +21,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/ReaderExecutorLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
