@@ -217,9 +217,7 @@ public:
       * The third element is a timeout in milliseconds. If non-negative, the processor will be re-dispatched after
       * the timeout even when the fd has not become readable. A value of -1 means "no timeout" (block until fd fires).
       */
-#ifdef OS_LINUX
     virtual std::tuple<int, uint32_t, Int64> scheduleForEvent();
-#endif
 
     /* The method is called right after asynchronous job is done
      * i.e. when file descriptor returned by schedule() is readable.
