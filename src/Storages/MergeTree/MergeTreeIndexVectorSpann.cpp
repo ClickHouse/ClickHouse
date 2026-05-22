@@ -641,16 +641,23 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
             parameters->reference_vector.size(),
             params.dimensions);
 
-    std::vector<Float32> query_float(params.dimensions);
-    for (size_t i = 0; i < params.dimensions; ++i)
-        query_float[i] = static_cast<Float32>(parameters->reference_vector[i]);
-
     checkVectorIsSane(
         parameters->reference_vector.data(),
         parameters->reference_vector.size(),
         params.scalar_kind,
         ErrorCodes::INCORRECT_QUERY,
         "reference vector in the SELECT query");
+
+    std::vector<Float32> query_float(params.dimensions);
+    for (size_t i = 0; i < params.dimensions; ++i)
+        query_float[i] = static_cast<Float32>(parameters->reference_vector[i]);
+
+    checkVectorIsSane(
+        query_float.data(),
+        query_float.size(),
+        params.scalar_kind,
+        ErrorCodes::INCORRECT_QUERY,
+        "reference vector in the SELECT query after conversion to Float32");
 
     auto search_centroids = centroid_index->search(
         query_float.data(), max_posting_lists, unum::usearch::index_dense_t::any_thread(), false, expansion_search);
