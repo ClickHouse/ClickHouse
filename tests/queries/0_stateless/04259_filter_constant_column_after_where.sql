@@ -125,4 +125,24 @@ FROM
 WHERE f = 0.0
 ORDER BY reinterpretAsUInt64(f);
 
+DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_decimal;
+
+CREATE TABLE 04259_filter_constant_column_after_where_decimal
+(
+    d Decimal128(18)
+)
+ENGINE = Memory;
+
+INSERT INTO 04259_filter_constant_column_after_where_decimal VALUES
+    (toDecimal128('1.000000000000000000', 18)),
+    (toDecimal128('1.000000000000000001', 18)),
+    (toDecimal128('2.000000000000000000', 18));
+
+SELECT d, count()
+FROM 04259_filter_constant_column_after_where_decimal
+WHERE d = 1.0
+GROUP BY ALL
+ORDER BY ALL;
+
 DROP TABLE 04259_filter_constant_column_after_where;
+DROP TABLE 04259_filter_constant_column_after_where_decimal;

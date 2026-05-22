@@ -90,7 +90,12 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
         return {};
 
     const auto & result_column = transformed_header.getByPosition(*position);
-    if (isFloat(removeLowCardinalityAndNullable(result_column.type)))
+    const auto result_type_without_wrappers = removeLowCardinalityAndNullable(result_column.type);
+    const auto constant_type_without_wrappers = removeLowCardinalityAndNullable(constant_node->result_type);
+
+    if (isFloat(result_type_without_wrappers))
+        return {};
+    if (isDecimal(result_type_without_wrappers) && isFloat(constant_type_without_wrappers))
         return {};
 
     try
