@@ -782,12 +782,13 @@ void DiskObjectStorage::prepareRead(
     bool use_distributed_cache = false;
 #endif
 
+    const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;
+
     /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
     /// Must be done before setSource, which stores read_settings in the pipeline.
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        && storage->supportsCache()
-        && read_settings.enable_filesystem_cache;
+        && file_cache_enabled;
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_bigger_buffer_size)
         prefer_bigger_buffer_size = false;
@@ -807,7 +808,6 @@ void DiskObjectStorage::prepareRead(
         pipeline.needDistributedCache();
 
     /// Memory cache (page cache).
-    const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;
     const bool use_page_cache =
         read_settings.page_cache
         && (use_distributed_cache
