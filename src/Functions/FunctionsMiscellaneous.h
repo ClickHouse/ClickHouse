@@ -5,6 +5,7 @@
 #include <Columns/ColumnSet.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>

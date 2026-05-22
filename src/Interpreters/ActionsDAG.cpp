@@ -299,6 +299,7 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node)
             "ActionsDAG node column must be a ColumnConst, got {} for '{}'",
             res.column->getName(), res.result_name);
 
+    auto & res = nodes.emplace_back(std::move(node));
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 

@@ -198,19 +198,15 @@ public:
             /// `Decimal(9, 2)` (`Decimal32`).
             dst_array_types.push_back(args.back().type);
 
-            /// Check whether `transform` can handle these types.
-            /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
-            /// but the expression is non-Nullable, the cast will fail on NULLs.
+            /// `transform` uses standard equality (`NULL != NULL`), so skip it when WHEN values
+            /// are Nullable; `multiIf` via `caseWhenEquals` handles CASE's `NULL = NULL` semantics.
+            /// See https://github.com/ClickHouse/ClickHouse/issues/101262.
+            /// Also skip Dynamic/Variant: their hash-based lookup keys on type discriminator.
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
-
-            /// The `transform` function cannot handle Dynamic/Variant types because its
-            /// hash-based lookup includes the type discriminator, so values with the same
-            /// logical content but different stored subtypes (e.g. Dynamic(UInt8(1)) vs
-            /// Dynamic(Int64(1))) produce different hashes and never match.
             auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
-                && !(src_supertype->isNullable() && !args.front().type->isNullable())
+                && !isNullableOrLowCardinalityNullable(src_supertype)
                 && !isDynamic(expr_type)
                 && !isVariant(expr_type);
 

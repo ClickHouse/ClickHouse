@@ -123,14 +123,14 @@ IProcessor::Status FilterTransform::prepare()
     {
         are_prepared_sets_initialized = true;
 
-        if (expression && !on_totals)
+        if (!always_false && expression && !on_totals)
         {
             auto header = expression->getActionsDAG().updateHeader(getInputPort().getHeader());
             auto & column = header.getByPosition(filter_column_position).column;
             if (column)
             {
                 ConstantFilterDescription constant_filter(*column);
-                always_false = always_false || constant_filter.always_false;
+                always_false = constant_filter.always_false;
             }
         }
     }
