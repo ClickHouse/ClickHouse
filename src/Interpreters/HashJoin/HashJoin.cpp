@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/castTypeToEither.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
@@ -41,9 +42,6 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
-#include <Columns/ColumnsNumber.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace DB
@@ -2360,15 +2358,9 @@ void HashJoin::publishSharedRuntimeFilters()
     if (descriptors.empty())
         return;
 
-    /// The descriptors hold filter name + build-side key column name. We currently support
-    /// the single-key, single-MapsVariant case (where FixedHashMap conversion is also possible).
-    /// Multi-condition joins fall through to the existing Set/BF runtime filter.
     if (data->maps.size() != 1)
         return;
 
-    /// The right-side hash table must be a FixedHashMap-family variant. Otherwise leave the
-    /// existing Set/BF runtime filter alone. `key8`/`key16` are always FixedHashMap; the
-    /// `range*_key*` types are produced by `tryConvertToFixedHashMap` from `key32`/`key64`.
     const bool is_fixed_hash_table =
         data->type == Type::key8 || data->type == Type::key16 ||
         data->type == Type::range8_key32 || data->type == Type::range16_key32 ||
@@ -2378,11 +2370,8 @@ void HashJoin::publishSharedRuntimeFilters()
     if (!is_fixed_hash_table)
         return;
 
-    /// When the build side has only one distinct key, `RuntimeFilterBase` already specializes to
-    /// a value == const check (`RuntimeFilterLookup.h:144-150`) which is faster than any hash
-    /// table probe (single register compare). Replacing it with FixedHashMap probe is a small
-    /// regression (~4% on TPC-H Q11/Q21 at SF100). Skip publication in this case to leave the
-    /// `== const` specialization active.
+    /// For a single distinct build key, the existing `== const` runtime filter specialization
+    /// is faster than any hash table probe; leave it active.
     if (data->keys_to_join <= 1)
         return;
 
@@ -2393,26 +2382,17 @@ void HashJoin::publishSharedRuntimeFilters()
     if (!lookup)
         return;
 
-    /// Single key column is required: this code uses right_table_keys.getByPosition(0) to find
-    /// the build column. is_fixed_hash_table indirectly guarantees this today (key8/key16 and
-    /// range*_key* all come from single-numeric-column joins per chooseMethod), but make the
-    /// precondition explicit so the assumption survives future changes upstream.
     if (right_table_keys.columns() != 1)
         return;
     const String build_key_name = right_table_keys.getByPosition(0).name;
     const auto & filter_column_type = right_table_keys.getByPosition(0).type;
 
-    /// Determine build-key logical signedness from the build column type. The narrow integer types
-    /// (Int8/UInt8 ... Int64/UInt64) plus Date/DateTime/Date32/Enum8/Enum16 cover all build types
-    /// that map to a FixedHashMap variant. Anything else (Float, Decimal, DateTime64 with scale) is
-    /// not safe to bounds-check on and is skipped.
-    const WhichDataType build_which(removeNullable(filter_column_type));
-    const bool build_signed = build_which.isInt8() || build_which.isInt16() || build_which.isInt32() || build_which.isInt64()
-                           || build_which.isDate32() || build_which.isEnum8() || build_which.isEnum16();
-    const bool build_unsigned = build_which.isUInt8() || build_which.isUInt16() || build_which.isUInt32() || build_which.isUInt64()
-                             || build_which.isDate() || build_which.isDateTime();
-    if (!build_signed && !build_unsigned)
+    /// Only integer-backed build types have meaningful min/max for the bounds check.
+    /// Float, Decimal and DateTime64 (scale) drop out via isValueRepresentedByInteger.
+    const auto build_type = removeNullable(filter_column_type);
+    if (!build_type->isValueRepresentedByInteger())
         return;
+    const bool build_signed = !build_type->isValueRepresentedByUnsignedInteger();
 
     auto build_probe_fn = [&]() -> SharedFixedHashTableRuntimeFilter::ProbeFn
     {

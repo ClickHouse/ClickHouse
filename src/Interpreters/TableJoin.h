@@ -335,10 +335,10 @@ public:
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinRuntimeFilterSharedFixedHashTable() const { return enable_join_runtime_filter_shared_fixed_hash_table; }
 
-    const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
+    std::vector<std::pair<String, String>> getSharedRuntimeFilterDescriptors() const
     {
-        static const std::vector<std::pair<String, String>> empty;
-        return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
+        return join_operator ? join_operator->shared_runtime_filter_descriptors
+                             : std::vector<std::pair<String, String>>{};
     }
 
     bool oneDisjunct() const;
@@ -346,10 +346,7 @@ public:
     ASTTableJoin & getTableJoin() { return table_join; }
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
-    void setJoinOperator(const JoinOperator & join_operator_)
-    {
-        join_operator = join_operator_;
-    }
+    void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }
