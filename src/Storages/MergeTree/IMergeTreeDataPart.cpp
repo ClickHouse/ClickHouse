@@ -852,6 +852,8 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     if (!index_mark_cache)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIndexMarksFromCache");
+
     /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
     /// storage's pointer would poison lookups if a new storage is allocated at the same address.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
