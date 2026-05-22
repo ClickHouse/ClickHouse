@@ -2094,6 +2094,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     const size_t data_range_end = std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity);
                     if (data_range_begin >= data_range_end)
                     {
+                        ++it;
+                        if (it == filtered_granules.end())
+                            break;
                         ++current_granule_num;
                         continue;
                     }
