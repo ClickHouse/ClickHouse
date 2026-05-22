@@ -56,10 +56,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     evaluation_settings.timestamp_data_type = timestamp_data_type;
     evaluation_settings.scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
-    auto query_tree = std::make_shared<PrometheusQueryTree>();
-    query_tree->parse(params.promql_query, timestamp_scale);
-    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
-
     if (params.type == Type::Instant)
     {
         evaluation_settings.mode = PrometheusQueryEvaluationMode::QUERY;
@@ -81,6 +77,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, timestamp_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, timestamp_scale);
     }
+
+    auto query_tree = std::make_shared<PrometheusQueryTree>();
+    query_tree->parse(params.promql_query, timestamp_scale);
+    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
     auto sql_query = converter.getSQL();

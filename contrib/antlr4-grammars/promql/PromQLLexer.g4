@@ -107,6 +107,9 @@ OFFSET: 'offset';
 
 BOOL: 'bool';
 
+START: 'start';
+END: 'end';
+
 AGGREGATION_OPERATOR:
     'sum'
     | 'min'

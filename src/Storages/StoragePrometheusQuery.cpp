@@ -10,6 +10,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
@@ -100,7 +101,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     if (promql_query_field.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'promql_query' must be a literal with type String, got {}", promql_query_field.getType());
 
-    PrometheusQueryTree promql_query{promql_query_field.safeGet<String>(), timestamp_scale};
+    String promql_query_string = promql_query_field.safeGet<String>();
 
     PrometheusQueryEvaluationMode mode;
     DateTime64 start_time;
@@ -129,6 +130,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     }
 
     chassert(argument_index == args.size());
+
+    PrometheusQueryTree promql_query{promql_query_string, timestamp_scale};
 
     Configuration config;
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));

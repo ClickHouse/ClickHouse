@@ -1230,6 +1230,28 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'http_requests_total'
 )");
 
+    EXPECT_EQ(parse("http_requests_total @ start()"), R"(
+http_requests_total @ start()
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: start()
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+)");
+
+    EXPECT_EQ(parse("http_requests_total{job=\"@ start()\", instance=~\"@ end\\\\(\\\\)\"} @ end()"), R"PROMQL(
+http_requests_total{job="@ start()",instance=~"@ end\\(\\)"} @ end()
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: end()
+        InstantSelector:
+            __name__ EQ 'http_requests_total'
+            job EQ '@ start()'
+            instance RE '@ end\\(\\)'
+)PROMQL");
+
     EXPECT_EQ(parse("http_requests_total[5m:1m] offset -10s"), R"(
 http_requests_total[300:60] offset -10
 
