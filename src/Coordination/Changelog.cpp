@@ -2718,15 +2718,19 @@ void Changelog::backgroundChangelogOperationsThread()
             {
                 if (move_operation->new_path != changelog->path)
                 {
-                    try
-                    {
-                        changelog->disk->moveFile(changelog->path, move_operation->new_path);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("File rename failed on disk {}", changelog->disk->getName()));
-                    }
-                    changelog->path = std::move(move_operation->new_path);
+                    changelog->withLock(
+                        [&]
+                        {
+                            try
+                            {
+                                changelog->disk->moveFile(changelog->path, move_operation->new_path);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log, fmt::format("File rename failed on disk {}", changelog->disk->getName()));
+                            }
+                            changelog->path = std::move(move_operation->new_path);
+                        });
                 }
             }
             else
