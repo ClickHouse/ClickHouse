@@ -60,9 +60,6 @@ protected:
         /// Once no functions refer to the module, it can be released from memory
         std::array<std::weak_ptr<WebAssembly::WasmModule>, 2> ptrs;
         UInt256 hash;
-        size_t loads_in_progress = 0;
-        size_t writes_in_progress = 0;
-        bool is_transient_load_reservation = false;
     };
 
     std::map<std::string, ModuleRef, std::less<>> modules TSA_GUARDED_BY(modules_mutex);
