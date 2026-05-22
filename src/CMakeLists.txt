@@ -848,6 +848,11 @@ if (ENABLE_TESTS)
         clickhouse_common_config
         clickhouse_common_zookeeper)
 
+    if (NOT TARGET ch_contrib::nuraft)
+        # `CompactChildrenSet` tests are still built when `Coordination` is not part of `dbms`.
+        target_sources(unit_tests_dbms PRIVATE Coordination/CompactChildrenSet.cpp)
+    endif()
+
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
