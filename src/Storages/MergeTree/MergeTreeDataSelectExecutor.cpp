@@ -2211,10 +2211,17 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                                 allowed_part_row_ranges.resize(merged_size);
                             }
 
-                            ANNSearchOverrides ann_overrides{.row_filter = std::move(granule_row_filter)};
-                            search_result_it = vector_search_results_by_index_mark.emplace(
-                                index_mark,
-                                condition->calculateApproximateNearestNeighbors(granule, ann_overrides)).first;
+                            if (granule_row_filter.allowed_part_row_ranges.empty())
+                            {
+                                search_result_it = vector_search_results_by_index_mark.emplace(index_mark, NearestNeighbours{}).first;
+                            }
+                            else
+                            {
+                                ANNSearchOverrides ann_overrides{.row_filter = std::move(granule_row_filter)};
+                                search_result_it = vector_search_results_by_index_mark.emplace(
+                                    index_mark,
+                                    condition->calculateApproximateNearestNeighbors(granule, ann_overrides)).first;
+                            }
                         }
                         nn_ptr = &search_result_it->second;
                     }
