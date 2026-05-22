@@ -394,8 +394,9 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
         if (use_bad_utf8 && this->nextBool())
         {
             /// Random hex bytes: variable length from 1 to limit bytes
-            const uint32_t nbytes = this->randomInt<uint32_t>(1, std::min(limit, this->nextBool() ? UINT32_C(64) : UINT32_C(4096)));
-            ret += nextHexBytes(nbytes);
+            const uint32_t max_bytes = std::min(limit, this->nextBool() ? UINT32_C(64) : UINT32_C(4096));
+            if (max_bytes > 0)
+                ret += nextHexBytes(this->randomInt<uint32_t>(1, max_bytes));
         }
         /// ~3% chance: repeated single character (stresses compression, string functions like repeat/position/like)
         else if (!use_bad_utf8 && this->nextMediumNumber() < 4)
