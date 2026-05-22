@@ -43,7 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
-            {"text_index_density_threshold", 0.5, 0.5, "New setting for lazy posting list density threshold"},
+            {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {

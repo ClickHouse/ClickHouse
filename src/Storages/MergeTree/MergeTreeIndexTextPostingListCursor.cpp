@@ -164,7 +164,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     if (segment_doc_count > range_span)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupted data in lazy posting list cursor: segment cardinaliry {} exceeds segment row range span {} for segment [{}, {}]",
+            "Corrupted data in lazy posting list cursor: segment cardinality {} exceeds segment row range span {} for segment [{}, {}]",
             segment_doc_count, range_span, info->ranges[segment_idx].begin, info->ranges[segment_idx].end);
     }
 

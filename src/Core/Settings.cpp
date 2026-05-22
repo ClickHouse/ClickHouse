@@ -7932,7 +7932,7 @@ Controls how posting lists are applied during text index queries.
 'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
 'lazy' uses cursor-based on-demand decoding (requires V2 index format and allow_experimental_text_index_lazy_apply).
 )", 0) \
-    DECLARE(Float, text_index_density_threshold, 0.5f, R"(
+    DECLARE(Float, text_index_density_threshold, 0.2f, R"(
 Density threshold for algorithm selection in lazy posting list mode.
 Below threshold: leapfrog intersection. At or above: brute-force bitmap.
 )", 0) \
