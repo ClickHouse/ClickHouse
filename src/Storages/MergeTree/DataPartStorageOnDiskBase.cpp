@@ -1019,6 +1019,8 @@ const PackedFilesReader * DataPartStorageOnDiskBase::getSkipIndicesPackedReader(
     if (skip_indices_packed_probed)
         return skip_indices_packed_reader.get();
 
+    auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
+
     const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
