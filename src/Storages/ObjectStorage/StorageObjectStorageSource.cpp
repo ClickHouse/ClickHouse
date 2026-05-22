@@ -1023,7 +1023,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     ReadPipeline pipeline;
 
-    StoredObject stored_object(object_info.getPath(), "", object_size);
+    /// `local_path` is the logical name used by `ReadPipeline::build` when passing the
+    /// filename to `readWithDistributedCache` (it ends up in `getFileName()` and in
+    /// `system.distributed_cache_log.filename`). Set it to the object path so the DC
+    /// log shows a useful name (master also passed `object_info.getPath()`).
+    StoredObject stored_object(object_info.getPath(), object_info.getPath(), object_size);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
