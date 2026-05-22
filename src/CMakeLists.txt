@@ -418,6 +418,8 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
+add_object_library(clickhouse_processors_streaming Processors/Streaming)
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.

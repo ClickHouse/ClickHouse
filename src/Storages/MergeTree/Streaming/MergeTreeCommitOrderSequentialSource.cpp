@@ -95,7 +95,6 @@ QueryPlanPtr buildPartitionReadingPlan(
     const SelectQueryInfo & query_info,
     const PrewhereInfoPtr & initial_prewhere_info,
     const WatermarkSettingsPtr & watermark_settings,
-    Field & last_watermark_slot,
     const ContextPtr & context,
     const Names & inner_columns,
     size_t requested_num_streams,
@@ -152,7 +151,7 @@ QueryPlanPtr buildPartitionReadingPlan(
     if (watermark_settings)
     {
         plan->addStep(std::make_unique<WatermarkCalculatorStep>(plan->getCurrentHeader(), watermark_settings, context));
-        plan->addStep(std::make_unique<SaveLastWatermarkStep>(plan->getCurrentHeader(), last_watermark_slot));
+        plan->addStep(std::make_unique<SavePartitionWatermarkStep>(plan->getCurrentHeader(), partition_id));
     }
 
     /// Add projection to required header.
@@ -250,7 +249,6 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
                 query_info,
                 initial_prewhere_info,
                 stream_settings.watermark,
-                last_watermark[partition_id],
                 context,
                 columns_to_read,
                 requested_num_streams,
@@ -401,6 +399,13 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 
     auto chunk = input.pull(/*set_not_needed=*/true);
     chassert(!chunk.hasRows() || chunk.getChunkInfos().has<StreamingChunkCursorInfo>());
+
+    if (auto watermark_info = chunk.getChunkInfos().get<PartitionWatermarkInfo>())
+    {
+        last_watermark[watermark_info->partition_id] = watermark_info->watermark;
+        LOG_TEST(log, "Watermark for partition '{}' updated from chunk to {}", watermark_info->partition_id, watermark_info->watermark);
+        return Status::NeedData;
+    }
 
     if (auto cursor = chunk.getChunkInfos().get<StreamingChunkCursorInfo>())
     {
