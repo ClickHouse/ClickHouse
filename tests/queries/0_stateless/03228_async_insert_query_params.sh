@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +29,7 @@ ${CLICKHOUSE_CURL} -sS "$url&param_p2=1000" -d "INSERT INTO t_async_insert_param
 ${CLICKHOUSE_CURL} -sS "$url&param_p2=1000" -d 'INSERT INTO t_async_insert_params FORMAT JSONEachRow {"id": 23}'
 
 $CLICKHOUSE_CLIENT -q "
-    SYSTEM FLUSH ASYNC INSERT QUEUE;
+    SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_params;
     SELECT id FROM t_async_insert_params ORDER BY id;
     DROP TABLE IF EXISTS t_async_insert_params;
 "
