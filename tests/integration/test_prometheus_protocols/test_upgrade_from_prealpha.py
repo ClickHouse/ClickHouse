@@ -28,23 +28,23 @@ def start_cluster():
         cluster.shutdown()
 
 
-# Time series data for "foo" — inserted directly into old inner tables before upgrade.
+# Time series data for "foo" — inserted directly into prealpha inner tables before upgrade.
 foo = [({"__name__": "foo", "job": "prometheus"}, {1000.0: 10.0})]
 
 # Time series data for "bar" — inserted via RemoteWrite after upgrade.
 bar = [({"__name__": "bar", "job": "prometheus"}, {2000.0: 20.0})]
 
 
-# DDL for old-schema inner tables.
+# DDL for prealpha inner tables schema.
 # The "samples" table was named "data".
 # The `type` and `unit` columns were plain `String`, not `LowCardinality(String)`.
 # The `INNER COLUMNS` clause was not used.
-VERSION_1_DATA_DEF = (
+PREALPHA_DATA_DEF = (
     "(id UUID, timestamp DateTime64(3), value Float64)"
     " ENGINE=MergeTree ORDER BY (id, timestamp)"
 )
 
-VERSION_1_TAGS_DEF = (
+PREALPHA_TAGS_DEF = (
     "(id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),"
     " metric_name LowCardinality(String),"
     " tags Map(LowCardinality(String), String),"
@@ -54,13 +54,13 @@ VERSION_1_TAGS_DEF = (
     " ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
 )
 
-VERSION_1_METRICS_DEF = (
+PREALPHA_METRICS_DEF = (
     "(metric_family_name String, type String, unit String, help String)"
     " ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
 )
 
-# Column list as it would appear in the old metadata file.
-VERSION_1_COLUMNS = """\
+# Column list as it would appear in the prealpha metadata file.
+PREALPHA_COLUMNS = """\
 (
     `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
     `timestamp` DateTime64(3),
@@ -77,14 +77,14 @@ VERSION_1_COLUMNS = """\
 NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
 
-# Creates and fills the old version of TimeSeries table.
-# The function builds its inner tables manually, then it writes the old-version metadata,
+# Creates and fills the prealpha version of TimeSeries table.
+# The function builds its inner tables manually, then it writes the prealpha-version metadata,
 # and finally attaches the TimeSeries table.
-def create_and_fill_time_series_version_1(time_series_columns=VERSION_1_COLUMNS,
+def create_and_fill_prealpha_time_series(time_series_columns=PREALPHA_COLUMNS,
                                           time_series_settings="",
-                                          data_def=VERSION_1_DATA_DEF,
-                                          tags_def=VERSION_1_TAGS_DEF,
-                                          metrics_def=VERSION_1_METRICS_DEF):
+                                          data_def=PREALPHA_DATA_DEF,
+                                          tags_def=PREALPHA_TAGS_DEF,
+                                          metrics_def=PREALPHA_METRICS_DEF):
     # This dummy table is to detach, rewrite its metadata and attach again.
     node.query("CREATE TABLE prometheus (dummy UInt8) ENGINE=Null")
 
@@ -93,7 +93,7 @@ def create_and_fill_time_series_version_1(time_series_columns=VERSION_1_COLUMNS,
     ).strip()
 
     # Inner table names depend on whether we're in an Atomic database (UUID != nil) or Ordinary.
-    # The old version used the `data` kind string for the data inner table (before `samples`).
+    # The prealpha version used the `data` kind string for the data inner table (before `samples`).
     if ts_uuid != NIL_UUID:
         data_table_name    = f".inner_id.data.{ts_uuid}"
         tags_table_name    = f".inner_id.tags.{ts_uuid}"
@@ -107,7 +107,7 @@ def create_and_fill_time_series_version_1(time_series_columns=VERSION_1_COLUMNS,
     node.query(f"CREATE TABLE `{tags_table_name}`    {tags_def}")
     node.query(f"CREATE TABLE `{metrics_table_name}` {metrics_def}")
 
-    insert_foo_into_time_series_version_1(data_table_name, tags_table_name, metrics_table_name)
+    insert_foo_into_prealpha_time_series(data_table_name, tags_table_name, metrics_table_name)
 
     data_uuid = node.query(
         f"SELECT uuid FROM system.tables WHERE database='default' AND name='{data_table_name}'"
@@ -153,8 +153,16 @@ def create_and_fill_time_series_version_1(time_series_columns=VERSION_1_COLUMNS,
 
     node.query("ATTACH TABLE prometheus")
 
+    # The prealpha version's outer columns (`id`, `timestamp`, `value`, ...) must be replaced by the canonical
+    # current outer column `time_series Array(Tuple(timestamp, value))` during the load-time normalization.
+    outer_columns = set(node.query(
+        "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus'"
+    ).split())
+    assert "time_series" in outer_columns
+    assert "id" not in outer_columns
 
-def insert_foo_into_time_series_version_1(data_table, tags_table, metrics_table):
+
+def insert_foo_into_prealpha_time_series(data_table, tags_table, metrics_table):
     foo_id = node.query(
         "SELECT reinterpretAsUUID(sipHash128('foo', mapSort(map('__name__', 'foo', 'job', 'prometheus'))))"
     ).strip()
@@ -194,22 +202,22 @@ def cleanup_after_test():
         node.query("DROP TABLE IF EXISTS default.prometheus SYNC")
 
 
-# Checks that an old-version TimeSeries table can be attached and used.
-def test_upgrade_from_version_1():
-    create_and_fill_time_series_version_1()
+# Checks that an prealpha-version TimeSeries table can be attached and used.
+def test_upgrade_from_prealpha():
+    create_and_fill_prealpha_time_series()
     send_bar_via_remote_write()
     check_foo_and_bar()
 
 
-# Checks that an old-version TimeSeries table can be attached and used (Ordinary database).
-def test_upgrade_from_version_1_ordinary_db():
+# Checks that an prealpha-version TimeSeries table can be attached and used (Ordinary database).
+def test_upgrade_from_prealpha_ordinary_db():
     node.query("DROP DATABASE default SYNC")
     node.query(
         "CREATE DATABASE default ENGINE=Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )
 
-    create_and_fill_time_series_version_1()
+    create_and_fill_prealpha_time_series()
     send_bar_via_remote_write()
     check_foo_and_bar()
 
@@ -218,10 +226,10 @@ def test_upgrade_from_version_1_ordinary_db():
     node.query("CREATE DATABASE default")
 
 
-# Checks that an old-version TimeSeries table can be restored and used.
-def test_restore_from_version_1():
-    backup_file = os.path.join(os.path.dirname(__file__), "backups", "time_series_version_1.zip")
-    node.copy_file_to_container(backup_file, "/backups/time_series_version_1.zip")
-    node.query("RESTORE TABLE default.prometheus FROM Disk('backups', 'time_series_version_1.zip')")
+# Checks that an prealpha-version TimeSeries table can be restored and used.
+def test_restore_from_prealpha():
+    backup_file = os.path.join(os.path.dirname(__file__), "backups", "time_series_prealpha.zip")
+    node.copy_file_to_container(backup_file, "/backups/time_series_prealpha.zip")
+    node.query("RESTORE TABLE default.prometheus FROM Disk('backups', 'time_series_prealpha.zip')")
     send_bar_via_remote_write()
     check_foo_and_bar()

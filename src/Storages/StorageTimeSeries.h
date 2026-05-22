@@ -21,19 +21,20 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 /// -OR-
 /// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
 /// -OR-
-/// CREATE TABLE ts (
-///    id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)) CODEC(ZSTD(3)),
-///    instance LowCardinality(String),
-///    job String
-///    ) ENGINE = TimeSeries()
+/// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
-///    SAMPLES ENGINE = ReplicatedMergeTree('zkpath', 'replica'), ...
+///    SAMPLES ENGINE = ReplicatedMergeTree('zkpath', 'replica')
+///    TAGS INNER COLUMNS (
+///        id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)) CODEC(ZSTD(3)),
+///        instance LowCardinality(String),
+///        job String)
+///    ENGINE = ReplacingMergeTree, ...
 ///
 class StorageTimeSeries final : public StorageWithCommonVirtualColumns, WithContext
 {
 public:
     StorageTimeSeries(const StorageID & table_id, const ContextPtr & local_context,
-                      LoadingStrictnessLevel mode,
+                      LoadingStrictnessLevel mode, bool is_restore_from_backup,
                       const ASTCreateQuery & query, const ColumnsDescription & columns, const String & comment);
 
     ~StorageTimeSeries() override;
@@ -122,8 +123,8 @@ private:
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
-    /// Stored for use in ALTER TABLE MODIFY/RESET SETTINGS to re-derive dependent defaults.
-    const boost::intrusive_ptr<const ASTCreateQuery> initial_create_query;
+    /// The CREATE query with normalization applied.
+    const boost::intrusive_ptr<const ASTCreateQuery> normalized_create_query;
 
     MultiVersion<TimeSeriesSettings> storage_settings;
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Common/Logger_fwd.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -50,7 +52,6 @@ public:
     /// The optional `all_tags_*` columns (pass `nullptr` to skip) receive every non-`__name__` tag.
     static void insertSortedTagsToColumns(
         const std::vector<std::pair<std::string_view, std::string_view>> & sorted_tags,
-        IColumn & out_metric_name_column,
         IColumn & out_tags_names,
         IColumn & out_tags_values,
         IColumn & out_tags_offsets,
@@ -89,6 +90,15 @@ private:
     bool insert_tags_and_samples = false;
     bool insert_metrics = false;
     bool async_insert = false;
+
+    /// Source header for the tags pipeline WITHOUT the `id` column.
+    Block tags_header_before_id;
+
+    /// Type of the `id` column in the tags target table.
+    DataTypePtr id_type;
+
+    /// True when the resolved id-generator references the `all_tags` identifier.
+    bool id_generator_uses_all_tags = false;
 
     /// Precomputed ExpressionActions for calculating the "id" column from a tags block.
     std::shared_ptr<ExpressionActions> calculate_id_actions;

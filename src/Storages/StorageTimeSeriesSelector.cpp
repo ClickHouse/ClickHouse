@@ -24,6 +24,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -39,11 +40,9 @@ namespace ErrorCodes
 
 namespace TimeSeriesSetting
 {
-    extern const TimeSeriesSettingsDataType id_type;
-    extern const TimeSeriesSettingsDataType timestamp_type;
-    extern const TimeSeriesSettingsDataType scalar_type;
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
 }
 
 StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
@@ -110,10 +109,11 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto time_series_settings = time_series_storage->getStorageSettings();
-    DataTypePtr id_data_type = (*time_series_settings)[TimeSeriesSetting::id_type];
-    DataTypePtr timestamp_data_type = (*time_series_settings)[TimeSeriesSetting::timestamp_type];
-    DataTypePtr scalar_data_type = (*time_series_settings)[TimeSeriesSetting::scalar_type];
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
+    DataTypePtr id_data_type = tags_target->getInMemoryMetadataPtr(context, false)->columns.get(TimeSeriesColumnNames::ID).type;
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
@@ -447,7 +447,8 @@ void StorageTimeSeriesSelector::readImpl(
 
     std::optional<DateTime64> min_time_to_filter_ids;
     std::optional<DateTime64> max_time_to_filter_ids;
-    if ((*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time])
+    if ((*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
+        && (*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
     {
         min_time_to_filter_ids = config.min_time;
         max_time_to_filter_ids = config.max_time;

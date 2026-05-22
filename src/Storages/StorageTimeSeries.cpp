@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -22,6 +23,7 @@
 #include <filesystem>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -41,6 +43,27 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
+
+
+namespace
+{
+    /// Normalizes the create query.
+    boost::intrusive_ptr<const ASTCreateQuery> makeNormalizedCreateQuery(
+        const ASTCreateQuery & query, const ContextPtr & local_context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    {
+        auto copy = boost::static_pointer_cast<ASTCreateQuery>(query.clone());
+        normalizeTimeSeriesDefinition(*copy, local_context, mode, is_restore_from_backup);
+        return copy;
+    }
+
+    /// We allow altering only two settings: `id_generator` and `filter_by_min_time_and_max_time`.
+    void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
+    {
+        if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
+    }
+}
 
 
 std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
@@ -93,22 +116,37 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     return targets;
 }
 
+
 StorageTimeSeries::StorageTimeSeries(
     const StorageID & table_id,
     const ContextPtr & local_context,
     LoadingStrictnessLevel mode,
+    bool is_restore_from_backup,
     const ASTCreateQuery & query,
     const ColumnsDescription & /*columns*/,
     const String & comment)
     : StorageWithCommonVirtualColumns(table_id)
     , WithContext(local_context->getGlobalContext())
-    , initial_create_query(boost::static_pointer_cast<const ASTCreateQuery>(query.clone()))
-    , storage_settings(std::make_unique<const TimeSeriesSettings>(getNormalizedTimeSeriesSettings(*initial_create_query, local_context)))
-    , targets(buildTargets(*initial_create_query, table_id, local_context, mode))
+    , normalized_create_query(makeNormalizedCreateQuery(query, local_context, mode, is_restore_from_backup))
+    , targets(buildTargets(*normalized_create_query, table_id, local_context, mode))
     , has_inner_tables(std::ranges::any_of(targets, &Target::is_inner_table))
 {
+    /// Load TimeSeries settings from the `SETTINGS` clause.
+    auto settings = std::make_unique<TimeSeriesSettings>();
+    if (normalized_create_query->storage)
+        settings->loadFromQuery(*normalized_create_query->storage);
+    storage_settings.set(std::move(settings));
+
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(generateTimeSeriesColumns(*storage_settings.get()));
+
+    /// Re-derive columns from the normalized AST rather than trusting the `columns` argument.
+    /// For CREATE / RESTORE the query arrives already normalized.
+    /// However for ATTACH InterpreterCreateQuery doesn't normalize the create query,
+    /// so `columns` can contain prealpha outer columns which we should upgrade.
+    auto normalized_columns = InterpreterCreateQuery::getColumnsDescription(
+        *normalized_create_query->columns_list->columns, local_context, mode);
+    storage_metadata.setColumns(normalized_columns);
+
     if (!comment.empty())
         storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
@@ -131,6 +169,7 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
 
 StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const
 {
+    /// `targets` is populated in the `getTargetKinds()` order.
     auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
     if (index >= targets.size() || targets[index].kind != target_kind)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
@@ -207,6 +246,7 @@ StorageID StorageTimeSeries::tryGetTargetTableID(ViewTarget::Kind target_kind, c
 
 bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 {
+    /// `targets` is populated in the `getTargetKinds()` order.
     auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
     if (index >= targets.size() || targets[index].kind != target_kind)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
@@ -382,9 +422,21 @@ void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, Con
 {
     for (const auto & command : commands)
     {
-        if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_SQL_SECURITY
-            && !command.isSettingsAlter())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+        if (command.isCommentAlter() || command.type == AlterCommand::MODIFY_SQL_SECURITY)
+            continue;
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            for (const auto & change : command.settings_changes)
+                checkSettingCanBeAltered(change.name, getName());
+            continue;
+        }
+        if (command.type == AlterCommand::RESET_SETTING)
+        {
+            for (const auto & name : command.settings_resets)
+                checkSettingCanBeAltered(name, getName());
+            continue;
+        }
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
     }
 }
 
@@ -401,15 +453,22 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
     if (has_settings_changes)
     {
         chassert(new_metadata.settings_changes);
-        new_settings = std::make_unique<TimeSeriesSettings>(getNormalizedTimeSeriesSettings(
-            *initial_create_query, local_context, new_metadata.settings_changes->as<const ASTSetQuery &>().changes));
+        /// Round-trip through `TimeSeriesSettings` to validate the names/values and
+        /// to drop entries that equal to the defaults.
+        new_settings = std::make_unique<TimeSeriesSettings>();
+        new_settings->applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        checkTimeSeriesSettings(*new_settings);
+        auto settings_changes = new_settings->changes();
 
-        auto settings_ast = make_intrusive<ASTSetQuery>();
-        settings_ast->is_standalone = false;
-        settings_ast->changes = new_settings->changes();
+        boost::intrusive_ptr<ASTSetQuery> settings_ast;
+        /// Here `settings_changes` can be empty if `RESET SETTING` removed the last override.
+        if (!settings_changes.empty())
+        {
+            settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            settings_ast->changes = std::move(settings_changes);
+        }
         new_metadata.settings_changes = settings_ast;
-
-        new_metadata.setColumns(generateTimeSeriesColumns(*new_settings));
     }
 
     auto time_series_table_id = getStorageID();
@@ -533,7 +592,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
     {
         /// Pass local_context here to convey setting to inner tables.
         return std::make_shared<StorageTimeSeries>(
-            args.table_id, args.getLocalContext(), args.mode,
+            args.table_id, args.getLocalContext(), args.mode, args.is_restore_from_backup,
             args.query, args.columns, args.comment);
     }
     ,

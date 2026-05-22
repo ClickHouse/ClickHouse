@@ -2,7 +2,6 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingFieldASTFunction.h>
-#include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
 
 
@@ -16,7 +15,6 @@ struct TimeSeriesSettingsImpl;
 #define TIMESERIES_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ASTFunction) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, DataType) \
     M(CLASS_NAME, Map) \
 
 TIMESERIES_SETTINGS_SUPPORTED_TYPES(TimeSeriesSettings, DECLARE_SETTING_TRAIT)
@@ -51,4 +49,8 @@ struct TimeSeriesSettings
 private:
     std::unique_ptr<TimeSeriesSettingsImpl> impl;
 };
+
+/// Checks that the combination of settings is consistent.
+void checkTimeSeriesSettings(const TimeSeriesSettings & settings);
+
 }

@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -30,6 +31,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <unordered_set>
 
 
@@ -40,11 +42,8 @@ namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
-    extern const TimeSeriesSettingsDataType id_type;
-    extern const TimeSeriesSettingsDataType scalar_type;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
-    extern const TimeSeriesSettingsDataType timestamp_type;
     extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
 
@@ -64,299 +63,294 @@ namespace
         return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
     }
 
-    /// Extracts the ID generator function from a column's default expression.
-    /// Returns `nullptr` and logs a warning if the expression is not a function.
-    boost::intrusive_ptr<ASTFunction> extractIDGeneratorFromDefaultExpression(ASTPtr default_expression, const StorageID & table_id)
+    /// Conflict-checking setter for `DataTypePtr`.
+    /// Keeps the first non-null value, any subsequent non-null values must equal it.
+    void setOrCheckDataType(
+        DataTypePtr & target, String & target_source,
+        const DataTypePtr & value, const String & value_source,
+        std::string_view what, const StorageID & table_id)
     {
-        if (!default_expression)
-            return nullptr;
-
-        if (!typeid_cast<ASTFunction *>(default_expression.get()))
+        if (!value)
+            return;
+        if (target)
         {
-            /// If the expression to generate ID is not a function then something is wrong.
-            LOG_WARNING(
-                getLogger("TimeSeries"),
-                "{}: Expression {} specified for generating ID (fingerprint) won't work because it's not a function. "
-                "The expression will be replaced with the default one",
-                table_id.getNameForLogs(), default_expression->formatForLogging());
-            return nullptr;
+            if (!target->equals(*value))
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                    "{}: Conflicting {} type: {} declares {} but {} declares {}",
+                    table_id.getNameForLogs(), what,
+                    target_source, target->getName(),
+                    value_source, value->getName());
+            return;
         }
-
-        return boost::static_pointer_cast<ASTFunction>(default_expression->clone());
+        target = value;
+        target_source = value_source;
     }
 
-    /// Extracts types and generators from the columns if they are not specified in the settings.
-    /// Returns true if any setting was changed.
-    bool extractMissingSettingsFromColumns(TimeSeriesSettings & settings, const ASTCreateQuery & create_query)
+    /// Reads the declaration of the outer columns.
+    /// If the `time_series` column is found and it is declared with type `Array(Tuple(timestamp_type, scalar_type))`,
+    /// the function extracts `timestamp_type` and `scalar_type`.
+    void readTypesFromOuterColumns(
+        const ASTCreateQuery & query,
+        DataTypePtr & timestamp_type, String & timestamp_src,
+        DataTypePtr & scalar_type, String & scalar_src,
+        const StorageID & table_id)
     {
-        if (settings[TimeSeriesSetting::timestamp_type] && settings[TimeSeriesSetting::scalar_type] && settings[TimeSeriesSetting::id_type]
-            && settings[TimeSeriesSetting::id_generator])
-            return false; /// Already got these settings
+        if (!query.columns_list || !query.columns_list->columns)
+            return;
 
-        if (!create_query.columns_list || !create_query.columns_list->columns)
-            return false; /// Can't get these settings
-
-        bool changed = false;
-        for (const auto & column : create_query.columns_list->columns->children)
+        for (const auto & column : query.columns_list->columns->children)
         {
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
-            if ((column_declaration->name == TimeSeriesColumnNames::Timestamp) && column_declaration->getType())
-            {
-                if (!settings[TimeSeriesSetting::timestamp_type])
-                {
-                    settings[TimeSeriesSetting::timestamp_type] = DataTypeFactory::instance().get(column_declaration->getType());
-                    changed = true;
-                }
-            }
-            else if ((column_declaration->name == TimeSeriesColumnNames::Value) && column_declaration->getType())
-            {
-                if (!settings[TimeSeriesSetting::scalar_type])
-                {
-                    settings[TimeSeriesSetting::scalar_type] = DataTypeFactory::instance().get(column_declaration->getType());
-                    changed = true;
-                }
-            }
-            else if ((column_declaration->name == TimeSeriesColumnNames::TimeSeries) && column_declaration->getType())
+            const auto & name = column_declaration->name;
+
+            if (name == TimeSeriesColumnNames::TimeSeries && column_declaration->getType())
             {
                 auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
                 const auto * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
                 const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
-                if (tuple_type && tuple_type->getElements().size() >= 2)
-                {
-                    const auto & tuple_elements = tuple_type->getElements();
-                    if (!settings[TimeSeriesSetting::timestamp_type])
-                    {
-                        settings[TimeSeriesSetting::timestamp_type] = tuple_elements[0];
-                        changed = true;
-                    }
-                    if (!settings[TimeSeriesSetting::scalar_type])
-                    {
-                        settings[TimeSeriesSetting::scalar_type] = tuple_elements[1];
-                        changed = true;
-                    }
-                }
-            }
-            else if (column_declaration->name == TimeSeriesColumnNames::ID)
-            {
-                if (!settings[TimeSeriesSetting::id_type] && column_declaration->getType())
-                {
-                    settings[TimeSeriesSetting::id_type] = DataTypeFactory::instance().get(column_declaration->getType());
-                    changed = true;
-                }
+                if (!tuple_type || (tuple_type->getElements().size() != 2))
+                    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                        "{}: Column `{}` must have type Array(Tuple(timestamp, value)), got {}",
+                        table_id.getNameForLogs(), TimeSeriesColumnNames::TimeSeries, column_type->getName());
 
-                if (!settings[TimeSeriesSetting::id_generator] && column_declaration->getDefaultExpression())
-                {
-                    settings[TimeSeriesSetting::id_generator] = extractIDGeneratorFromDefaultExpression(
-                        column_declaration->getDefaultExpression(), StorageID{create_query.getDatabase(), create_query.getTable()});
-                    changed = true;
-                }
+                const auto & elems = tuple_type->getElements();
+                String source = "outer column `time_series`";
+                setOrCheckDataType(timestamp_type, timestamp_src, elems[0], source, "timestamp", table_id);
+                setOrCheckDataType(scalar_type, scalar_src, elems[1], source, "scalar", table_id);
+            }
+
+            /// Columns `id`, `timestamp`, `value` belong to the prealpha version and must not be here.
+            if (name == TimeSeriesColumnNames::Timestamp
+                || name == TimeSeriesColumnNames::Value
+                || name == TimeSeriesColumnNames::ID)
+            {
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "{}: Column `{}` is not allowed in the column list of a TimeSeries table; "
+                    "use INNER COLUMNS to specify inner table column types",
+                    table_id.getNameForLogs(), name);
             }
         }
-        return changed;
     }
 
-    /// Extracts types and generators from an external target table if they are not specified in the settings.
-    /// Returns true if any setting was changed.
-    bool extractMissingSettingsFromTarget(TimeSeriesSettings & settings, const ASTCreateQuery & create_query, ViewTarget::Kind kind, const ContextPtr & context)
+    /// Reads SAMPLES INNER COLUMNS declarations and extracts types
+    /// `timestamp_type`, `scalar_type`, `id_type`.
+    void readTypesFromInnerSamples(
+        const ASTCreateQuery & query,
+        DataTypePtr & timestamp_type, String & timestamp_src,
+        DataTypePtr & scalar_type, String & scalar_src,
+        DataTypePtr & id_type, String & id_src,
+        const StorageID & table_id)
     {
-        if ((kind == ViewTarget::Samples) && settings[TimeSeriesSetting::timestamp_type] && settings[TimeSeriesSetting::scalar_type])
-            return false; /// Already got these settings
-        if ((kind == ViewTarget::Tags) && settings[TimeSeriesSetting::id_type] && settings[TimeSeriesSetting::id_generator])
-            return false; /// Already got these settings
+        const auto * inner_columns = query.getTargetInnerColumns(ViewTarget::Samples);
+        if (!inner_columns || !inner_columns->columns)
+            return;
 
-        if (!create_query.targets)
-            return false; /// No external target table, can't get these settings
-
-        auto target_table_id = create_query.targets->getTableID(kind);
-        if (!target_table_id)
-            return false; /// No external target table, can't get these settings
-
-        auto target_table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(target_table_id), context);
-        if (!target_table)
+        for (const auto & column : inner_columns->columns->children)
         {
-            /// External target table is specified and must exist.
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", target_table_id.getNameForLogs());
+            auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
+            if (!column_declaration->getType())
+                continue;
+            auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
+
+            if (column_declaration->name == TimeSeriesColumnNames::Timestamp)
+                setOrCheckDataType(timestamp_type, timestamp_src, column_type, "samples inner column `timestamp`", "timestamp", table_id);
+            else if (column_declaration->name == TimeSeriesColumnNames::Value)
+                setOrCheckDataType(scalar_type, scalar_src, column_type, "samples inner column `value`", "scalar", table_id);
+            else if (column_declaration->name == TimeSeriesColumnNames::ID)
+                setOrCheckDataType(id_type, id_src, column_type, "samples inner column `id`", "id", table_id);
         }
+    }
 
-        auto metadata = target_table->getInMemoryMetadataPtr(context, false);
+    /// Reads TAGS INNER COLUMNS declarations and extracts type `id_type`.
+    void readTypesFromInnerTags(
+        const ASTCreateQuery & query,
+        DataTypePtr & id_type, String & id_src,
+        const StorageID & table_id)
+    {
+        const auto * inner_columns = query.getTargetInnerColumns(ViewTarget::Tags);
+        if (!inner_columns || !inner_columns->columns)
+            return;
 
-        bool changed = false;
-        for (const auto & column : metadata->columns)
+        for (const auto & column : inner_columns->columns->children)
+        {
+            auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
+            if (column_declaration->name != TimeSeriesColumnNames::ID)
+                continue;
+
+            if (column_declaration->getType())
+            {
+                auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
+                setOrCheckDataType(id_type, id_src, column_type, "tags inner column `id`", "id", table_id);
+            }
+        }
+    }
+
+    /// Reads the declaration of the external samples target table and
+    /// extract types `timestamp_type`, `scalar_type`, id_type`.
+    void readTypesFromExternalSamples(
+        const StorageID & external_table_id, const ColumnsDescription & external_columns,
+        DataTypePtr & timestamp_type, String & timestamp_src,
+        DataTypePtr & scalar_type, String & scalar_src,
+        DataTypePtr & id_type, String & id_src,
+        const StorageID & table_id)
+    {
+        for (const auto & column : external_columns)
         {
             if (column.name == TimeSeriesColumnNames::Timestamp)
-            {
-                if (!settings[TimeSeriesSetting::timestamp_type])
-                {
-                    settings[TimeSeriesSetting::timestamp_type] = column.type;
-                    changed = true;
-                }
-            }
+                setOrCheckDataType(timestamp_type, timestamp_src, column.type,
+                    fmt::format("column `{}` of the external `samples` table {}", column.name, external_table_id.getNameForLogs()),
+                    "timestamp", table_id);
             else if (column.name == TimeSeriesColumnNames::Value)
-            {
-                if (!settings[TimeSeriesSetting::scalar_type])
-                {
-                    settings[TimeSeriesSetting::scalar_type] = column.type;
-                    changed = true;
-                }
-            }
+                setOrCheckDataType(scalar_type, scalar_src, column.type,
+                    fmt::format("column `{}` of the external `samples` table {}", column.name, external_table_id.getNameForLogs()),
+                    "scalar", table_id);
             else if (column.name == TimeSeriesColumnNames::ID)
-            {
-                if (!settings[TimeSeriesSetting::id_type])
-                {
-                    settings[TimeSeriesSetting::id_type] = column.type;
-                    changed = true;
-                }
-
-                /// The default expression for the "id" column is used to calculate it on insertion new time series,
-                /// so we need it.
-                if (!settings[TimeSeriesSetting::id_generator] && column.default_desc.expression)
-                {
-                    settings[TimeSeriesSetting::id_generator]
-                        = extractIDGeneratorFromDefaultExpression(column.default_desc.expression, target_table_id);
-                    changed = true;
-                }
-            }
+                setOrCheckDataType(id_type, id_src, column.type,
+                    fmt::format("column `{}` of the external `samples` table {}", column.name, external_table_id.getNameForLogs()),
+                    "id", table_id);
         }
-        return changed;
     }
 
-    /// Extracts types and generators from external target tables (samples and tags) if they are not specified in the settings.
-    /// Returns true if any setting was changed.
-    bool extractMissingSettingsFromTargets(TimeSeriesSettings & settings, const ASTCreateQuery & create_query, const ContextPtr & context)
+    /// Reads the declaration of the external tags target table and
+    /// extract type `id_type`.
+    void readTypesFromExternalTags(
+        const StorageID & external_table_id, const ColumnsDescription & external_columns,
+        DataTypePtr & id_type, String & id_src,
+        const StorageID & table_id)
     {
-        bool changed = false;
-        changed |= extractMissingSettingsFromTarget(settings, create_query, ViewTarget::Samples, context);
-        changed |= extractMissingSettingsFromTarget(settings, create_query, ViewTarget::Tags, context);
-        return changed;
+        for (const auto & column : external_columns)
+        {
+            if (column.name != TimeSeriesColumnNames::ID)
+                continue;
+
+            setOrCheckDataType(id_type, id_src, column.type,
+                fmt::format("column `{}` of the external `tags` table {}", column.name, external_table_id.getNameForLogs()),
+                "id", table_id);
+        }
     }
 
-    /// Generates a formula for calculating the identifier of a time series from the metric name and all the tags.
-    boost::intrusive_ptr<ASTFunction> makeIDGenerator(const TimeSeriesSettings & settings, const ASTCreateQuery & create_query)
+    /// Reads types from columns of the external target tables referenced in a CREATE query.
+    void readTypesFromExternalTargets(
+        const ASTCreateQuery & query, const ContextPtr & context,
+        DataTypePtr & timestamp_type, String & timestamp_src,
+        DataTypePtr & scalar_type, String & scalar_src,
+        DataTypePtr & id_type, String & id_src,
+        const StorageID & table_id)
     {
-        /// Build a list of arguments for a hash function.
-        /// All hash functions below allow multiple arguments, so we use two arguments: metric_name, all_tags.
-        ASTs arguments_for_hash_function;
-        arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-
-        if (settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
+        auto resolve_external = [&](ViewTarget::Kind kind) -> std::pair<StorageID, ColumnsDescription>
         {
-            arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::AllTags));
-        }
-        else
-        {
-            const Map & tags_to_columns = settings[TimeSeriesSetting::tags_to_columns];
-            for (const auto & tag_name_and_column_name : tags_to_columns)
-            {
-                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-                const auto & column_name = tuple.at(1).safeGet<String>();
-                arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(column_name));
-            }
-            arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
-        }
-
-        auto make_hash_function = [&](const String & function_name) -> boost::intrusive_ptr<ASTFunction>
-        {
-            auto function = make_intrusive<ASTFunction>();
-            function->name = function_name;
-            auto arguments_list = make_intrusive<ASTExpressionList>();
-            arguments_list->children = std::move(arguments_for_hash_function);
-            function->arguments = arguments_list;
-            return function;
+            auto external_table_id = query.getTargetTableID(kind);
+            if (!external_table_id)
+                return {StorageID::createEmpty(), {}};
+            auto external_table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(external_table_id), context);
+            if (!external_table)
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", external_table_id.getNameForLogs());
+            return {external_table_id, external_table->getInMemoryMetadataPtr(context, false)->columns};
         };
 
-        /// The type of the hash function depends on the type of the 'id' column.
-        DataTypePtr id_type = settings[TimeSeriesSetting::id_type];
-        WhichDataType id_which(*id_type);
+        auto [samples_id, samples_columns] = resolve_external(ViewTarget::Samples);
+        if (!samples_id.empty())
+            readTypesFromExternalSamples(samples_id, samples_columns,
+                                         timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src,
+                                         table_id);
 
-        if (id_which.isUInt64())
-            return make_hash_function("sipHash64");
-
-        if (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
-            return make_hash_function("sipHash128");
-
-        if (id_which.isUUID())
-            return makeASTFunction("reinterpretAsUUID", make_hash_function("sipHash128"));
-
-        if (id_which.isUInt128())
-            return makeASTFunction("reinterpretAsUInt128", make_hash_function("sipHash128"));
-
-        StorageID time_series_table_id{create_query.getDatabase(), create_query.getTable()};
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column", time_series_table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
+        auto [tags_id, tags_columns] = resolve_external(ViewTarget::Tags);
+        if (!tags_id.empty())
+            readTypesFromExternalTags(tags_id, tags_columns, id_type, id_src, table_id);
     }
 
-    /// Fills in any missing required settings with their defaults.
-    /// Returns true if any setting was changed.
-    bool setDefaultSettings(TimeSeriesSettings & settings, const ASTCreateQuery & create_query)
+    /// Resolved column types needed during normalization.
+    struct ResolvedTimeSeriesTypes
     {
-        bool changed = false;
+        DataTypePtr timestamp_type;
+        DataTypePtr scalar_type;
+        DataTypePtr id_type;
+    };
 
-        if (!settings[TimeSeriesSetting::timestamp_type])
-        {
-            settings[TimeSeriesSetting::timestamp_type] = std::make_shared<DataTypeDateTime64>(3);
-            changed = true;
-        }
-
-        if (!settings[TimeSeriesSetting::scalar_type])
-        {
-            settings[TimeSeriesSetting::scalar_type] = std::make_shared<DataTypeFloat64>();
-            changed = true;
-        }
-
-        if (!settings[TimeSeriesSetting::id_type])
-        {
-            settings[TimeSeriesSetting::id_type] = std::make_shared<DataTypeUUID>();
-            changed = true;
-        }
-
-        if (!settings[TimeSeriesSetting::id_generator])
-        {
-            settings[TimeSeriesSetting::id_generator] = makeIDGenerator(settings, create_query);
-            changed = true;
-        }
-
-        return changed;
-    }
-
-    /// Checks that the settings are correct.
-    void validateSettings(const TimeSeriesSettings & settings, const ASTCreateQuery & create_query)
+    /// Resolves types `timestamp_type`, `scalar_type`, `id_type`; sets by defaults the types
+    /// which are not set explicitly.
+    /// `check_external_targets` is set when external target tables are expected to exist (CREATE time);
+    /// on ATTACH they are allowed not to be loaded yet.
+    ResolvedTimeSeriesTypes resolveTimeSeriesTypes(
+        const ASTCreateQuery & create_query,
+        const ContextPtr & context,
+        bool check_external_targets)
     {
-        DataTypePtr timestamp_type = settings[TimeSeriesSetting::timestamp_type];
-        WhichDataType timestamp_which{*timestamp_type};
-        bool timestamp_ok = timestamp_which.isDateTime64() || timestamp_which.isDateTime() || timestamp_which.isUInt32();
-        if (!timestamp_ok)
+        StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+
+        DataTypePtr timestamp_type;
+        DataTypePtr scalar_type;
+        DataTypePtr id_type;
+        String timestamp_src;
+        String scalar_src;
+        String id_src;
+
+        readTypesFromOuterColumns(create_query,
+            timestamp_type, timestamp_src, scalar_type, scalar_src, table_id);
+
+        readTypesFromInnerSamples(create_query,
+            timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src, table_id);
+
+        readTypesFromInnerTags(create_query,
+            id_type, id_src, table_id);
+
+        if (check_external_targets)
         {
-            StorageID time_series_table_id{create_query.getDatabase(), create_query.getTable()};
-            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column", time_series_table_id.getNameForLogs(), timestamp_type->getName(), TimeSeriesColumnNames::Timestamp);
+            readTypesFromExternalTargets(create_query, context,
+                timestamp_type, timestamp_src,
+                scalar_type, scalar_src,
+                id_type, id_src,
+                table_id);
         }
 
-        DataTypePtr scalar_type = settings[TimeSeriesSetting::scalar_type];
-        WhichDataType scalar_which{*scalar_type};
-        bool scalar_ok = scalar_which.isFloat64() || scalar_which.isFloat32();
-        if (!scalar_ok)
+        /// Apply defaults for unset types.
+        if (!timestamp_type)
+            timestamp_type = std::make_shared<DataTypeDateTime64>(3);
+        if (!scalar_type)
+            scalar_type = std::make_shared<DataTypeFloat64>();
+        if (!id_type)
+            id_type = std::make_shared<DataTypeUUID>();
+
+        /// Validate types.
         {
-            StorageID time_series_table_id{create_query.getDatabase(), create_query.getTable()};
-            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column", time_series_table_id.getNameForLogs(), scalar_type->getName(), TimeSeriesColumnNames::Value);
+            WhichDataType ts_which{*timestamp_type};
+            if (!(ts_which.isDateTime64() || ts_which.isDateTime() || ts_which.isUInt32()))
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
+                    table_id.getNameForLogs(), timestamp_type->getName(), TimeSeriesColumnNames::Timestamp);
+        }
+        {
+            WhichDataType sc_which{*scalar_type};
+            if (!(sc_which.isFloat64() || sc_which.isFloat32()))
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
+                    table_id.getNameForLogs(), scalar_type->getName(), TimeSeriesColumnNames::Value);
+        }
+        {
+            WhichDataType id_which{*id_type};
+            bool id_ok = id_which.isUInt64()
+                || (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
+                || id_which.isUUID()
+                || id_which.isUInt128();
+            if (!id_ok)
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
+                    table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
         }
 
-        DataTypePtr id_type = settings[TimeSeriesSetting::id_type];
-        WhichDataType id_which{*id_type};
-        bool id_ok = id_which.isUInt64() || (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
-            || id_which.isUUID() || id_which.isUInt128();
-        if (!id_ok)
-        {
-            StorageID time_series_table_id{create_query.getDatabase(), create_query.getTable()};
-            throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column", time_series_table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
-        }
+        return ResolvedTimeSeriesTypes{
+            .timestamp_type = std::move(timestamp_type),
+            .scalar_type = std::move(scalar_type),
+            .id_type = std::move(id_type),
+        };
     }
 
     /// Adds missing required columns to an inner table's column list, building them in canonical order.
-    /// Existing columns are taken from `inner_table_columns`; time_series_columns_map time series columns are copied when available.
+    /// Existing columns are taken from `inner_table_columns`; missing columns are created with the given type.
     /// Returns true if the column list was modified.
     bool normalizeInnerTableColumns(
         ASTColumns & inner_table_columns,
         ViewTarget::Kind inner_table_kind,
-        const ASTColumns * time_series_columns,
-        const TimeSeriesSettings & time_series_settings)
+        const TimeSeriesSettings & time_series_settings,
+        const ResolvedTimeSeriesTypes & resolved_types,
+        const StorageID & table_id)
     {
         /// Build a map of the existing inner columns by name.
         std::map<String, ASTPtr> original;
@@ -366,20 +360,11 @@ namespace
                 original[child->as<ASTColumnDeclaration &>().name] = child;
         }
 
-        /// Build a lookup map for the time_series_columns_map time series columns.
-        std::map<String, ASTPtr> time_series_columns_map;
-        if (time_series_columns && time_series_columns->columns)
-        {
-            for (const auto & child : time_series_columns->columns->children)
-                time_series_columns_map[child->as<ASTColumnDeclaration>()->name] = child;
-        }
-
         auto new_list = make_intrusive<ASTExpressionList>();
         bool changed = false;
 
         /// If `name` exists in `original`, move it to new_list (erasing from map) and return false.
-        /// Otherwise copy from `time_series_columns_map` (if present) or create a new column with `type_ast`,
-        /// mark `changed`, and return true.
+        /// Otherwise create a new column with `type_ast`, mark `changed`, and return true.
         auto add_column_if_missing = [&](const String & name, ASTPtr type_ast) -> bool
         {
             if (auto it = original.find(name); it != original.end())
@@ -388,15 +373,10 @@ namespace
                 original.erase(it);
                 return false;
             }
-            if (auto it = time_series_columns_map.find(name); it != time_series_columns_map.end())
-                new_list->children.push_back(it->second->clone());
-            else
-            {
-                auto decl = make_intrusive<ASTColumnDeclaration>();
-                decl->name = name;
-                decl->setType(std::move(type_ast));
-                new_list->children.push_back(decl);
-            }
+            auto decl = make_intrusive<ASTColumnDeclaration>();
+            decl->name = name;
+            decl->setType(std::move(type_ast));
+            new_list->children.push_back(decl);
             changed = true;
             return true;
         };
@@ -405,44 +385,33 @@ namespace
         {
             case ViewTarget::Samples:
             {
-                /// Column "id" - no default expression in the samples table.
-                /// Reset any default expression if the column was copied from the time series columns -
-                /// the identifier of the samples table is computed in the "tags" inner table,
-                /// because it depends on columns like "metric_name" or "all_tags" which don't exist in the samples table.
-                if (add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(time_series_settings[TimeSeriesSetting::id_type])))
-                {
-                    auto & column = new_list->children.back();
-                    auto & decl = column->as<ASTColumnDeclaration &>();
-                    if (decl.getDefaultExpression() || decl.ephemeral_default || decl.default_specifier != ColumnDefaultSpecifier::Empty)
-                    {
-                        column = column->clone();
-                        auto & new_decl = column->as<ASTColumnDeclaration &>();
-                        new_decl.default_specifier = ColumnDefaultSpecifier::Empty;
-                        new_decl.ephemeral_default = false;
-                        new_decl.resetDefaultExpression();
-                        changed = true;
-                    }
-                }
-
-                add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(time_series_settings[TimeSeriesSetting::timestamp_type]));
-                add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(time_series_settings[TimeSeriesSetting::scalar_type]));
+                /// Column "id" - no DEFAULT in the samples table: the identifier is computed in the "tags"
+                /// inner table because it depends on columns like "metric_name" or "all_tags" which don't
+                /// exist in samples.
+                add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
+                add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
+                add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
 
                 break;
             }
 
             case ViewTarget::Tags:
             {
-                /// Column "id" - with the id_generator expression that computes the identifier from "metric_name" and tags.
-                /// Set the id_generator expression that computes the identifier from "metric_name" and tags.
-                if (add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(time_series_settings[TimeSeriesSetting::id_type])))
+                /// Column "id" - with a DEFAULT expression that computes the identifier from "metric_name" and tags.
+                /// The DEFAULT is auto-added (derived from the id type) only when the `id_generator` setting is not set.
+                add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
                 {
                     auto & column = new_list->children.back();
-                    column = column->clone();
-                    auto & new_decl = column->as<ASTColumnDeclaration &>();
-                    new_decl.default_specifier = ColumnDefaultSpecifier::Default;
-                    new_decl.ephemeral_default = false;
-                    new_decl.setDefaultExpression(time_series_settings[TimeSeriesSetting::id_generator].value->clone());
-                    changed = true;
+                    if (!column->as<ASTColumnDeclaration &>().getDefaultExpression()
+                        && !time_series_settings[TimeSeriesSetting::id_generator].value)
+                    {
+                        column = column->clone();
+                        auto & new_decl = column->as<ASTColumnDeclaration &>();
+                        new_decl.default_specifier = ColumnDefaultSpecifier::Default;
+                        new_decl.ephemeral_default = false;
+                        new_decl.setDefaultExpression(TimeSeriesIDGenerator::getDefault(resolved_types.id_type, time_series_settings, table_id));
+                        changed = true;
+                    }
                 }
 
                 add_column_if_missing(TimeSeriesColumnNames::MetricName,
@@ -483,7 +452,7 @@ namespace
                         /// When aggregation is enabled the columns need a custom SimpleAggregateFunction type.
                         auto make_agg_type = [&](const String & func_name) -> ASTPtr
                         {
-                            DataTypePtr ts_type = makeNullable(time_series_settings[TimeSeriesSetting::timestamp_type]);
+                            DataTypePtr ts_type = makeNullable(resolved_types.timestamp_type);
                             AggregateFunctionProperties properties;
                             auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
                             auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
@@ -497,9 +466,9 @@ namespace
                     else
                     {
                         add_column_if_missing(TimeSeriesColumnNames::MinTime,
-                            dataTypeToAST(makeNullable(time_series_settings[TimeSeriesSetting::timestamp_type])));
+                            dataTypeToAST(makeNullable(resolved_types.timestamp_type)));
                         add_column_if_missing(TimeSeriesColumnNames::MaxTime,
-                            dataTypeToAST(makeNullable(time_series_settings[TimeSeriesSetting::timestamp_type])));
+                            dataTypeToAST(makeNullable(resolved_types.timestamp_type)));
                     }
                 }
 
@@ -530,185 +499,207 @@ namespace
         return true;
     }
 
-    /// Generates the column list for an inner table from scratch, used for upgrading from old format
-    /// where inner columns weren't stored in the query. Time series columns are copied when available.
-    boost::intrusive_ptr<ASTColumns> generateInnerColumnsForOldVersion(
-        ViewTarget::Kind inner_table_kind,
-        const ASTColumns * time_series_columns,
-        const TimeSeriesSettings & time_series_settings)
+    /// Detects prealpha version by outer columns: prealpha had outer columns `id`, `timestamp`, `value`,
+    /// and now we don't have them.
+    bool isPrealpha(const ASTCreateQuery & create_query)
     {
-        /// Build a lookup map for the time series columns.
-        std::map<String, ASTPtr> time_series_columns_map;
-        if (time_series_columns && time_series_columns->columns)
-            for (const auto & child : time_series_columns->columns->children)
-                time_series_columns_map[child->as<ASTColumnDeclaration>()->name] = child;
-
-        auto new_list = make_intrusive<ASTExpressionList>();
-
-        /// Copy from `time_series_columns_map` (if present) or create a new column with `type_ast`.
-        auto add_column = [&](const String & name, ASTPtr type_ast)
+        if (!create_query.columns_list || !create_query.columns_list->columns)
+            return false;
+        for (const auto & column : create_query.columns_list->columns->children)
         {
-            if (auto it = time_series_columns_map.find(name); it != time_series_columns_map.end())
-                new_list->children.push_back(it->second->clone());
-            else
+            const auto & decl = column->as<ASTColumnDeclaration &>();
+            if (decl.name == TimeSeriesColumnNames::Timestamp
+                || decl.name == TimeSeriesColumnNames::Value
+                || decl.name == TimeSeriesColumnNames::ID)
+                return true;
+        }
+        return false;
+    }
+
+    /// Migrates a prealpha CREATE query: generates `INNER COLUMNS` for inner targets and
+    /// replaces outer columns with a single `time_series` column carrying the resolved types.
+    /// Function normalizeTimeSeriesDefinition() will rebuild the full list of the outer columns afterwards.
+    void upgradeFromPrealpha(ASTCreateQuery & create_query, const TimeSeriesSettings & time_series_settings)
+    {
+        StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+
+        /// Map of the original outer columns.
+        std::map<String, ASTPtr> outer_columns_by_name;
+        if (create_query.columns_list && create_query.columns_list->columns)
+        {
+            for (const auto & child : create_query.columns_list->columns->children)
+                outer_columns_by_name[child->as<ASTColumnDeclaration &>().name] = child;
+        }
+
+        auto type_from_outer = [&](const String & name) -> DataTypePtr
+        {
+            if (auto it = outer_columns_by_name.find(name); it != outer_columns_by_name.end())
             {
+                const auto & decl = it->second->as<ASTColumnDeclaration &>();
+                if (decl.getType())
+                    return DataTypeFactory::instance().get(decl.getType());
+            }
+            return nullptr;
+        };
+
+        /// Columns `id`, `timestamp`, `value` were outer columns in the prealpha version.
+        DataTypePtr timestamp_type = type_from_outer(TimeSeriesColumnNames::Timestamp);
+        DataTypePtr scalar_type = type_from_outer(TimeSeriesColumnNames::Value);
+        DataTypePtr id_type = type_from_outer(TimeSeriesColumnNames::ID);
+        chassert(timestamp_type || scalar_type || id_type);
+        if (!timestamp_type)
+            timestamp_type = std::make_shared<DataTypeDateTime64>(3);
+        if (!scalar_type)
+            scalar_type = std::make_shared<DataTypeFloat64>();
+        if (!id_type)
+            id_type = std::make_shared<DataTypeUUID>();
+
+        for (auto inner_table_kind : getTargetKinds())
+        {
+            if (create_query.hasTargetTableID(inner_table_kind))
+                continue;
+            if (create_query.getTargetInnerColumns(inner_table_kind))
+                continue;
+
+            auto new_list = make_intrusive<ASTExpressionList>();
+
+            auto add_column = [&](const String & name, ASTPtr type_ast)
+            {
+                if (auto it = outer_columns_by_name.find(name); it != outer_columns_by_name.end())
+                {
+                    new_list->children.push_back(it->second->clone());
+                    return;
+                }
                 auto decl = make_intrusive<ASTColumnDeclaration>();
                 decl->name = name;
                 decl->setType(std::move(type_ast));
                 new_list->children.push_back(decl);
-            }
-        };
+            };
 
-        switch (inner_table_kind)
-        {
-            case ViewTarget::Samples:
+            switch (inner_table_kind)
             {
-                /// Column "id" - no default expression in the samples table.
-                /// Reset any default expression if the column was copied from the time series columns -
-                /// the identifier of the samples table is computed in the "tags" inner table,
-                /// because it depends on columns like "metric_name" or "all_tags" which don't exist in the samples table.
-                add_column(TimeSeriesColumnNames::ID, dataTypeToAST(time_series_settings[TimeSeriesSetting::id_type]));
-
+                case ViewTarget::Samples:
                 {
-                    auto & new_decl = new_list->children.back()->as<ASTColumnDeclaration &>();
-                    new_decl.default_specifier = ColumnDefaultSpecifier::Empty;
-                    new_decl.ephemeral_default = false;
-                    new_decl.resetDefaultExpression();
-                }
-
-                add_column(TimeSeriesColumnNames::Timestamp, dataTypeToAST(time_series_settings[TimeSeriesSetting::timestamp_type]));
-                add_column(TimeSeriesColumnNames::Value, dataTypeToAST(time_series_settings[TimeSeriesSetting::scalar_type]));
-
-                break;
-            }
-
-            case ViewTarget::Tags:
-            {
-                /// Column "id" - with the id_generator expression that computes the identifier from "metric_name" and tags.
-                add_column(TimeSeriesColumnNames::ID, dataTypeToAST(time_series_settings[TimeSeriesSetting::id_type]));
-
-                {
-                    auto & new_decl = new_list->children.back()->as<ASTColumnDeclaration &>();
-                    new_decl.default_specifier = ColumnDefaultSpecifier::Default;
-                    new_decl.ephemeral_default = false;
-                    new_decl.setDefaultExpression(time_series_settings[TimeSeriesSetting::id_generator].value->clone());
-                }
-
-                add_column(TimeSeriesColumnNames::MetricName,
-                    makeASTDataType("LowCardinality", makeASTDataType("String")));
-
-                /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
-                const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
-                for (const auto & tag_name_and_column_name : tags_to_columns)
-                {
-                    const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-                    const auto & column_name = tuple.at(1).safeGet<String>();
-                    add_column(column_name, makeASTDataType("String"));
-                }
-
-                add_column(TimeSeriesColumnNames::Tags,
-                    makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
-
-                /// Column "all_tags" is ephemeral - only used to calculate the "id" column.
-                if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
-                {
-                    add_column(TimeSeriesColumnNames::AllTags,
-                        makeASTDataType("Map", makeASTDataType("String"), makeASTDataType("String")));
-
+                    add_column(TimeSeriesColumnNames::ID, dataTypeToAST(id_type));
                     {
                         auto & new_decl = new_list->children.back()->as<ASTColumnDeclaration &>();
-                        new_decl.default_specifier = ColumnDefaultSpecifier::Ephemeral;
-                        new_decl.ephemeral_default = true;
+                        new_decl.default_specifier = ColumnDefaultSpecifier::Empty;
+                        new_decl.ephemeral_default = false;
+                        new_decl.resetDefaultExpression();
                     }
+                    add_column(TimeSeriesColumnNames::Timestamp, dataTypeToAST(timestamp_type));
+                    add_column(TimeSeriesColumnNames::Value, dataTypeToAST(scalar_type));
+                    break;
                 }
 
-                /// Columns "min_time" and "max_time".
-                if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
+                case ViewTarget::Tags:
                 {
-                    if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
-                    {
-                        /// When aggregation is enabled the columns need a custom SimpleAggregateFunction type.
-                        auto make_agg_type = [&](const String & func_name) -> ASTPtr
-                        {
-                            DataTypePtr ts_type = makeNullable(time_series_settings[TimeSeriesSetting::timestamp_type]);
-                            AggregateFunctionProperties properties;
-                            auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
-                            auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
-                            auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
-                            return dataTypeToAST(type);
-                        };
+                    add_column(TimeSeriesColumnNames::ID, dataTypeToAST(id_type));
 
-                        add_column(TimeSeriesColumnNames::MinTime, make_agg_type("min"));
-                        add_column(TimeSeriesColumnNames::MaxTime, make_agg_type("max"));
-                    }
-                    else
+                    if (!time_series_settings[TimeSeriesSetting::id_generator].value)
                     {
-                        add_column(TimeSeriesColumnNames::MinTime,
-                            dataTypeToAST(makeNullable(time_series_settings[TimeSeriesSetting::timestamp_type])));
-                        add_column(TimeSeriesColumnNames::MaxTime,
-                            dataTypeToAST(makeNullable(time_series_settings[TimeSeriesSetting::timestamp_type])));
+                        auto & new_decl = new_list->children.back()->as<ASTColumnDeclaration &>();
+                        new_decl.default_specifier = ColumnDefaultSpecifier::Default;
+                        new_decl.ephemeral_default = false;
+                        new_decl.setDefaultExpression(TimeSeriesIDGenerator::getDefault(id_type, time_series_settings, table_id));
                     }
+
+                    add_column(TimeSeriesColumnNames::MetricName,
+                        makeASTDataType("LowCardinality", makeASTDataType("String")));
+
+                    /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
+                    const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
+                    for (const auto & tag_name_and_column_name : tags_to_columns)
+                    {
+                        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+                        const auto & column_name = tuple.at(1).safeGet<String>();
+                        add_column(column_name, makeASTDataType("String"));
+                    }
+
+                    add_column(TimeSeriesColumnNames::Tags,
+                        makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
+
+                    /// Column "all_tags" is ephemeral - only used to calculate the "id" column.
+                    if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
+                    {
+                        add_column(TimeSeriesColumnNames::AllTags,
+                            makeASTDataType("Map", makeASTDataType("String"), makeASTDataType("String")));
+
+                        {
+                            auto & new_decl = new_list->children.back()->as<ASTColumnDeclaration &>();
+                            new_decl.default_specifier = ColumnDefaultSpecifier::Ephemeral;
+                            new_decl.ephemeral_default = true;
+                        }
+                    }
+
+                    /// Columns "min_time" and "max_time".
+                    if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
+                    {
+                        if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
+                        {
+                            /// When aggregation is enabled the columns need a custom SimpleAggregateFunction type.
+                            auto make_agg_type = [&](const String & func_name) -> ASTPtr
+                            {
+                                DataTypePtr ts_type = makeNullable(timestamp_type);
+                                AggregateFunctionProperties properties;
+                                auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
+                                auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
+                                auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+                                return dataTypeToAST(type);
+                            };
+
+                            add_column(TimeSeriesColumnNames::MinTime, make_agg_type("min"));
+                            add_column(TimeSeriesColumnNames::MaxTime, make_agg_type("max"));
+                        }
+                        else
+                        {
+                            add_column(TimeSeriesColumnNames::MinTime,
+                                dataTypeToAST(makeNullable(timestamp_type)));
+                            add_column(TimeSeriesColumnNames::MaxTime,
+                                dataTypeToAST(makeNullable(timestamp_type)));
+                        }
+                    }
+
+                    break;
                 }
 
-                break;
+                case ViewTarget::Metrics:
+                {
+                    add_column(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
+                    add_column(TimeSeriesColumnNames::Type, makeASTDataType("String"));
+                    add_column(TimeSeriesColumnNames::Unit, makeASTDataType("String"));
+                    add_column(TimeSeriesColumnNames::Help, makeASTDataType("String"));
+                    break;
+                }
+
+                default:
+                    UNREACHABLE();
             }
 
-            case ViewTarget::Metrics:
-            {
-                add_column(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
-                add_column(TimeSeriesColumnNames::Type, makeASTDataType("String"));
-                add_column(TimeSeriesColumnNames::Unit, makeASTDataType("String"));
-                add_column(TimeSeriesColumnNames::Help, makeASTDataType("String"));
-                break;
-            }
-
-            default:
-                UNREACHABLE();
+            auto result = make_intrusive<ASTColumns>();
+            result->columns = new_list.get();
+            result->children.push_back(std::move(new_list));
+            create_query.setTargetInnerColumns(inner_table_kind, result);
         }
 
-        auto result = make_intrusive<ASTColumns>();
-        result->columns = new_list.get();
-        result->children.push_back(std::move(new_list));
-        return result;
+        /// Replace the prealpha flat outer columns with a single `time_series` column.
+        auto time_series_decl = make_intrusive<ASTColumnDeclaration>();
+        time_series_decl->name = TimeSeriesColumnNames::TimeSeries;
+        time_series_decl->setType(dataTypeToAST(std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type}))));
+
+        auto new_outer_list = make_intrusive<ASTExpressionList>();
+        new_outer_list->children.push_back(std::move(time_series_decl));
+
+        auto new_outer_columns = make_intrusive<ASTColumns>();
+        new_outer_columns->set(new_outer_columns->columns, new_outer_list);
+        create_query.set(create_query.columns_list, new_outer_columns);
     }
 
 
-    /// Generates the engine definition for an inner table.
-    /// Inherits it from `as_create_query` (AS <other_table>) if provided, or falls back to a default engine based on the target kind and settings.
-    /// Returns `nullptr` if the target has an explicit external table ID (no inner table to generate for).
-    boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const ASTCreateQuery & create_query, const ASTCreateQuery * as_create_query, const TimeSeriesSettings & settings)
+    /// Makes the definition of the default engine for an inner table.
+    boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
-        /// This function is only for inner tables (those without an explicit target table ID).
-        if (create_query.hasTargetTableID(target_kind))
-            return nullptr;
-
-        /// If the engine is already specified in the query, use it as-is.
-        auto * inner_target = create_query.getTargetInnerEngine(target_kind);
-        if (inner_target)
-            return inner_target;
-
-        /// If the table is created AS <other_table>, try to inherit the engine from there.
-        if (as_create_query)
-        {
-            if (as_create_query->hasTargetTableID(target_kind))
-            {
-                /// It's unlikely correct to use "CREATE table AS other_table" when "other_table" has external tables like this:
-                /// CREATE TABLE other_table ENGINE=TimeSeries data mydata
-                /// (because `table` would use the same table "mydata").
-                /// Thus we just prohibit that.
-                StorageID other_table_id{as_create_query->getDatabase(), as_create_query->getTable()};
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Cannot CREATE a table AS {} because it has external tables",
-                    other_table_id.getNameForLogs());
-            }
-
-            auto * other_inner_target = as_create_query->getTargetInnerEngine(target_kind);
-            if (other_inner_target)
-                return other_inner_target;
-        }
-
-        /// Neither the query nor the AS-source specified an engine — build a sensible default.
         auto storage = make_intrusive<ASTStorage>();
 
         if (target_kind == ViewTarget::Samples)
@@ -758,12 +749,14 @@ namespace
         return storage;
     }
 
-    /// Checks that an external target table has all the columns required by the TimeSeries table engine.
+    /// Checks that a target table or an inner-columns list has all the columns required by the
+    /// TimeSeries table engine, and that those columns match the resolved types.
     void checkTargetTable(
-        const StorageID & target_table_id,
         const ColumnsDescription & target_table_columns,
         ViewTarget::Kind target_kind,
-        const TimeSeriesSettings & time_series_settings)
+        const TimeSeriesSettings & time_series_settings,
+        const ResolvedTimeSeriesTypes & resolved_types,
+        const StorageID & table_id)
     {
         auto check_column = [&](std::string_view column_name)
         {
@@ -771,7 +764,7 @@ namespace
                 throw Exception(
                     ErrorCodes::THERE_IS_NO_COLUMN,
                     "{}: Column {} is required for the {} table used by TimeSeries table engine",
-                    target_table_id.getNameForLogs(),
+                    table_id.getNameForLogs(),
                     column_name,
                     target_kind);
         };
@@ -784,7 +777,7 @@ namespace
                 throw Exception(
                     ErrorCodes::BAD_TYPE_OF_FIELD,
                     "{}: Column {} in the {} table has type {}, but expected {}",
-                    target_table_id.getNameForLogs(),
+                    table_id.getNameForLogs(),
                     column_name,
                     target_kind,
                     col->type->getName(),
@@ -799,16 +792,21 @@ namespace
                 throw Exception(
                     ErrorCodes::BAD_TYPE_OF_FIELD,
                     "{}: Column {} in the {} table has type {}, but expected String or LowCardinality(String)",
-                    target_table_id.getNameForLogs(),
+                    table_id.getNameForLogs(),
                     column_name,
                     target_kind,
                     col->type->getName());
         };
 
-        auto check_column_is_string_map = [&](std::string_view column_name)
+        auto check_column_is_string_map = [&](std::string_view column_name, bool if_exists = false)
         {
-            check_column(column_name);
             const auto * col = target_table_columns.tryGet(String(column_name));
+            if (!col)
+            {
+                if (!if_exists)
+                    check_column(column_name);
+                return;
+            }
             WhichDataType which{*col->type};
             bool ok = false;
             if (which.isMap())
@@ -821,25 +819,46 @@ namespace
                 throw Exception(
                     ErrorCodes::BAD_TYPE_OF_FIELD,
                     "{}: Column {} in the {} table has type {}, but expected Map with String or LowCardinality(String) keys and values",
-                    target_table_id.getNameForLogs(),
+                    table_id.getNameForLogs(),
                     column_name,
                     target_kind,
                     col->type->getName());
+        };
+
+        /// Accepts `Nullable(timestamp_type)` or any aggregate function wrapper.
+        auto check_column_min_max_time = [&](std::string_view column_name)
+        {
+            check_column(column_name);
+            const auto * col = target_table_columns.tryGet(String(column_name));
+            if (removeNullable(col->type)->equals(*resolved_types.timestamp_type))
+                return;
+            if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(col->type->getCustomName()))
+                return;
+            if (typeid_cast<const DataTypeAggregateFunction *>(col->type.get()))
+                return;
+            throw Exception(
+                ErrorCodes::BAD_TYPE_OF_FIELD,
+                "{}: Column {} in the {} table has type {}, but expected {} (optionally Nullable) or an aggregate-function wrapper",
+                table_id.getNameForLogs(),
+                column_name,
+                target_kind,
+                col->type->getName(),
+                resolved_types.timestamp_type->getName());
         };
 
         switch (target_kind)
         {
             case ViewTarget::Samples:
             {
-                check_column_type(TimeSeriesColumnNames::ID, time_series_settings[TimeSeriesSetting::id_type]);
-                check_column_type(TimeSeriesColumnNames::Timestamp, time_series_settings[TimeSeriesSetting::timestamp_type]);
-                check_column_type(TimeSeriesColumnNames::Value, time_series_settings[TimeSeriesSetting::scalar_type]);
+                check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
+                check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
+                check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
                 break;
             }
 
             case ViewTarget::Tags:
             {
-                check_column_type(TimeSeriesColumnNames::ID, time_series_settings[TimeSeriesSetting::id_type]);
+                check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_is_string(TimeSeriesColumnNames::MetricName);
 
                 const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
@@ -851,6 +870,13 @@ namespace
                 }
 
                 check_column_is_string_map(TimeSeriesColumnNames::Tags);
+                check_column_is_string_map(TimeSeriesColumnNames::AllTags, /*if_exists=*/ true);
+
+                if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
+                {
+                    check_column_min_max_time(TimeSeriesColumnNames::MinTime);
+                    check_column_min_max_time(TimeSeriesColumnNames::MaxTime);
+                }
                 break;
             }
 
@@ -868,171 +894,166 @@ namespace
         }
     }
 
-    TimeSeriesSettings getNormalizedTimeSeriesSettingsImpl(
-        const ASTCreateQuery & create_query, const SettingsChanges & settings_changes,
-        const ASTCreateQuery * as_create_query, const ContextPtr & context, bool & changed)
+    /// If `create_query` has clause `AS <other_table>`,
+    /// the function reads the CREATE query of the <other_table> and applies outer columns, inner columns, inner engines,
+    /// and the `SETTINGS` clause to the current `create_query`.
+    void applyASClause(ASTCreateQuery & create_query, const ContextPtr & context)
     {
-        TimeSeriesSettings settings;
-        if (as_create_query && as_create_query->storage)
-        {
-            settings.loadFromQuery(*as_create_query->storage);
-            changed = true;
-        }
-        if (create_query.storage)
-            settings.loadFromQuery(*create_query.storage);
-        if (!settings_changes.empty())
-        {
-            settings.applyChanges(settings_changes);
-            changed = true;
-        }
-        changed |= extractMissingSettingsFromColumns(settings, as_create_query ? *as_create_query : create_query);
-        changed |= extractMissingSettingsFromTargets(settings, create_query, context);
-        changed |= setDefaultSettings(settings, create_query);
-        validateSettings(settings, create_query);
-        return settings;
-    }
-}
-
-
-TimeSeriesSettings getNormalizedTimeSeriesSettings(
-    const ASTCreateQuery & create_query, const ContextPtr & context, const SettingsChanges & settings_changes)
-{
-    boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
-    if (!create_query.as_table.empty())
-    {
+        chassert (!create_query.as_table.empty());
         auto other_database = context->resolveDatabase(create_query.as_database);
-        as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
+        auto as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
             DatabaseCatalog::instance().getDatabase(other_database)->getCreateTableQuery(create_query.as_table, context));
+
+        /// Copy settings from the other table.
+        if (as_create_query->storage && as_create_query->storage->settings
+            && (!create_query.storage || !create_query.storage->settings))
+        {
+            if (!create_query.storage)
+                create_query.set(create_query.storage, make_intrusive<ASTStorage>());
+            create_query.storage->set(create_query.storage->settings, as_create_query->storage->settings->clone());
+        }
+
+        /// Copy outer column from the other table.
+        if (!create_query.columns_list && as_create_query->columns_list)
+        {
+            create_query.set(create_query.columns_list,
+                boost::static_pointer_cast<ASTColumns>(as_create_query->columns_list->clone()));
+        }
+
+        /// Copy inner columns and inner engines from the other table.
+        for (auto kind : getTargetKinds())
+        {
+            if (!create_query.getTargetInnerColumns(kind))
+            {
+                if (auto * as_inner_cols = as_create_query->getTargetInnerColumns(kind))
+                    create_query.setTargetInnerColumns(kind, boost::static_pointer_cast<ASTColumns>(as_inner_cols->clone()));
+            }
+
+            if (!create_query.hasTargetTableID(kind) && !create_query.getTargetInnerEngine(kind))
+            {
+                if (as_create_query->hasTargetTableID(kind))
+                {
+                    StorageID other_table_id{as_create_query->getDatabase(), as_create_query->getTable()};
+                    throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Cannot CREATE a table AS {} because it has external tables", other_table_id.getNameForLogs());
+                }
+                if (auto * other_inner_engine = as_create_query->getTargetInnerEngine(kind))
+                    create_query.setTargetInnerEngine(kind, other_inner_engine->clone());
+            }
+        }
     }
-    bool changed = false;
-    return getNormalizedTimeSeriesSettingsImpl(create_query, settings_changes, as_create_query.get(), context, changed);
-}
 
-
-/// Generates the canonical column list for the TimeSeries table from the given settings.
-ColumnsDescription generateTimeSeriesColumns(const TimeSeriesSettings & normalized_settings)
-{
-    ColumnsDescription result;
-
-    auto add_column = [&](const String & name, DataTypePtr type)
+    /// Generates the canonical column list for the TimeSeries table from the resolved types.
+    ColumnsDescription generateTimeSeriesColumns(const DataTypePtr & timestamp_type, const DataTypePtr & scalar_type)
     {
-        result.add(ColumnDescription{name, std::move(type)});
-    };
+        ColumnsDescription result;
 
-    add_column(TimeSeriesColumnNames::MetricName, std::make_shared<DataTypeString>());
+        auto add_column = [&](const String & name, DataTypePtr type)
+        {
+            result.add(ColumnDescription{name, std::move(type)});
+        };
 
-    add_column(TimeSeriesColumnNames::Tags,
-               std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()));
+        add_column(TimeSeriesColumnNames::MetricName, std::make_shared<DataTypeString>());
 
-    add_column(TimeSeriesColumnNames::TimeSeries,
-        std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
-            DataTypes{normalized_settings[TimeSeriesSetting::timestamp_type], normalized_settings[TimeSeriesSetting::scalar_type]})));
+        add_column(TimeSeriesColumnNames::Tags,
+                   std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()));
 
-    add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
-    add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
-    add_column(TimeSeriesColumnNames::Unit, std::make_shared<DataTypeString>());
-    add_column(TimeSeriesColumnNames::Help, std::make_shared<DataTypeString>());
+        add_column(TimeSeriesColumnNames::TimeSeries,
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type})));
 
-    return result;
+        add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());
+        add_column(TimeSeriesColumnNames::Type, std::make_shared<DataTypeString>());
+        add_column(TimeSeriesColumnNames::Unit, std::make_shared<DataTypeString>());
+        add_column(TimeSeriesColumnNames::Help, std::make_shared<DataTypeString>());
+
+        return result;
+    }
+
 }
 
 
-bool normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
 {
     /// Whether we're creating a new table.
     /// `is_new_table` is false if we're restoring from a backup.
     bool is_new_table = (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup;
 
-    /// Resolve AS <other_table> once, so we don't repeat the lookup in multiple places.
-    boost::intrusive_ptr<const ASTCreateQuery> as_create_query;
+    /// Upgrade the create_query if it was created by the old versions.
+    if (!is_new_table && isPrealpha(create_query))
+    {
+        TimeSeriesSettings settings_for_prealpha;
+        if (create_query.storage)
+            settings_for_prealpha.loadFromQuery(*create_query.storage);
+        upgradeFromPrealpha(create_query, settings_for_prealpha);
+        chassert(!isPrealpha(create_query));
+    }
+
+    /// Apply the clause `AS <other_table>` if any.
     if (!create_query.as_table.empty())
     {
-        auto other_database = context->resolveDatabase(create_query.as_database);
-        as_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
-            DatabaseCatalog::instance().getDatabase(other_database)->getCreateTableQuery(create_query.as_table, context));
+        chassert(is_new_table);
+        applyASClause(create_query, context);
     }
 
-    bool changed = false;
+    /// Resolve types timestamp_type, scalar_type, id_type.
+    /// External targets are checked only at CREATE time; on ATTACH they may not be loaded yet.
+    ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(create_query, context, /*check_external_targets=*/ is_new_table);
 
-    /// Load and normalize settings from the query.
-    TimeSeriesSettings settings
-        = getNormalizedTimeSeriesSettingsImpl(create_query, /* settings_changes = */ {}, as_create_query.get(), context, changed);
-
-    if (changed)
+    /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
+    if (is_new_table)
     {
-        if (!create_query.storage)
-            create_query.set(create_query.storage, make_intrusive<ASTStorage>());
-        settings.copyToQuery(*create_query.storage);
-    }
+        TimeSeriesSettings settings;
+        if (create_query.storage)
+            settings.loadFromQuery(*create_query.storage);
+        checkTimeSeriesSettings(settings);
 
-    /// For each target kind: check external tables or normalize inner table definitions.
-    for (auto kind : getTargetKinds())
-    {
-        if (create_query.hasTargetTableID(kind))
+        for (auto kind : getTargetKinds())
         {
-            /// An external target table is specified.
-            /// If it's a new table, check that the specified target table has all the required columns.
-            if (is_new_table)
+            if (create_query.hasTargetTableID(kind))
             {
+                /// An external target table is specified — check it has all the required columns.
                 auto target_table_id = create_query.getTargetTableID(kind);
                 auto target_table = DatabaseCatalog::instance().getTable(target_table_id, context);
                 auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
-                checkTargetTable(target_table_id, target_metadata->columns, kind, settings);
+                checkTargetTable(target_metadata->columns, kind, settings, resolved_types, target_table_id);
             }
-        }
-        else
-        {
-            /// An inner target table should be used.
-            /// Normalize its column definitions and assign a table engine if not specified.
-            boost::intrusive_ptr<ASTColumns> inner_columns;
-            bool inner_columns_changed = false;
-            if (create_query.getTargetInnerColumns(kind))
-                inner_columns = boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone());
+            else
+            {
+                /// An inner target table should be used. Normalize its column definitions and assign a table engine if not specified.
+                StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+                auto inner_columns = create_query.getTargetInnerColumns(kind)
+                    ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
+                    : make_intrusive<ASTColumns>();
+                if (normalizeInnerTableColumns(*inner_columns, kind, settings, resolved_types, table_id))
+                    create_query.setTargetInnerColumns(kind, inner_columns);
 
-            if (is_new_table)
-            {
-                if (!inner_columns)
-                    inner_columns = make_intrusive<ASTColumns>();
-                inner_columns_changed |= normalizeInnerTableColumns(*inner_columns, kind, create_query.columns_list, settings);
-            }
-            else if (!inner_columns)
-            {
-                /// Older versions didn't store inner table column definitions in the `CREATE` query, so reconstruct them now.
-                inner_columns = generateInnerColumnsForOldVersion(kind, create_query.columns_list, settings);
-                inner_columns_changed = true;
-            }
+                /// Validate the user-provided types of the inner columns the same way external targets are validated.
+                auto inner_columns_description = InterpreterCreateQuery::getColumnsDescription(
+                    *inner_columns->columns, context, mode);
+                checkTargetTable(inner_columns_description, kind, settings, resolved_types, table_id);
 
-            if (inner_columns_changed)
-            {
-                create_query.setTargetInnerColumns(kind, inner_columns);
-                changed = true;
-            }
-
-            if (!create_query.getTargetInnerEngine(kind))
-            {
-                create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, create_query, as_create_query.get(), settings));
-                changed = true;
+                if (!create_query.getTargetInnerEngine(kind))
+                    create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
             }
         }
     }
 
-    /// Regenerate the columns of TimeSeries table from the current settings.
+    /// Regenerate the columns of TimeSeries table from the resolved types.
     /// We can change the columns of TimeSeries table because these columns are designed to work
     /// as IO interface. They store no data, in fact the data is stored in target or inner columns.
     {
         auto new_columns_ast = make_intrusive<ASTColumns>();
-        new_columns_ast->set(new_columns_ast->columns, InterpreterCreateQuery::formatColumns(generateTimeSeriesColumns(settings)));
+        new_columns_ast->set(new_columns_ast->columns,
+            InterpreterCreateQuery::formatColumns(generateTimeSeriesColumns(resolved_types.timestamp_type, resolved_types.scalar_type)));
         const auto * old_columns = create_query.columns_list;
         if (!old_columns
             || !old_columns->columns
             || old_columns->formatWithSecretsOneLine() != new_columns_ast->formatWithSecretsOneLine())
         {
             create_query.set(create_query.columns_list, new_columns_ast);
-            changed = true;
         }
     }
-
-    return changed;
 }
+
 
 }
