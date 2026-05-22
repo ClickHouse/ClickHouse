@@ -208,10 +208,7 @@ public:
 
     void injectFault() const;
 
-    void setSampleProbability(double value)
-    {
-        sample_probability = value;
-    }
+    void setSampleProbability(double value) { sample_probability.store(value, std::memory_order_relaxed); }
 
     struct SampleConfig
     {
@@ -227,17 +224,18 @@ public:
     /// leaves the group tracker at -1 and falls through to `total_memory_tracker_sample_probability`.
     SampleConfig getResolvedSampleConfig() const
     {
-        if (sample_probability >= 0)
-            return {sample_probability, min_allocation_size_bytes, max_allocation_size_bytes};
+        const auto probability = sample_probability.load(std::memory_order_relaxed);
+        if (probability >= 0)
+            return {
+                probability,
+                min_allocation_size_bytes.load(std::memory_order_relaxed),
+                max_allocation_size_bytes.load(std::memory_order_relaxed)};
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
             return loaded_next->getResolvedSampleConfig();
         return {};
     }
 
-    void setSampleMinAllocationSize(UInt64 value)
-    {
-        min_allocation_size_bytes = value;
-    }
+    void setSampleMinAllocationSize(UInt64 value) { min_allocation_size_bytes.store(value, std::memory_order_relaxed); }
 
     void setJemallocFlushProfileInterval(UInt64 interval)
     {
@@ -254,14 +252,11 @@ public:
         jemalloc_flush_profile_on_memory_exceeded_interval_s = interval_s;
     }
 
-    void setSampleMaxAllocationSize(UInt64 value)
-    {
-        max_allocation_size_bytes = value;
-    }
+    void setSampleMaxAllocationSize(UInt64 value) { max_allocation_size_bytes.store(value, std::memory_order_relaxed); }
 
     void setProfilerStep(Int64 value)
     {
-        profiler_step = value;
+        profiler_step.store(value, std::memory_order_relaxed);
         setOrRaiseProfilerLimit(value);
     }
 
