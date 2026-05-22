@@ -5,11 +5,14 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Analyzer/TableExpressionModifiers.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <Processors/IProcessor.h>
 
+#include <chrono>
 #include <memory>
 
 namespace DB
@@ -31,14 +34,13 @@ public:
         Names user_requested_columns_,
         size_t requested_num_streams_,
         UInt64 max_block_size_,
-        MergeTreeBoundsSubscriptionPtr subscription_,
-        MergeTreeCursor starting_positions_);
+        MergeTreeBoundsSubscriptionPtr subscription_);
 
     String getName() const override { return "MergeTreeCommitOrderSequentialSource"; }
 
     Status prepare() override;
     void work() override;
-    int schedule() override;
+    std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
     PipelineUpdate updatePipeline() override;
 
     void onUpdatePorts() override;
@@ -54,10 +56,13 @@ private:
     const size_t requested_num_streams;
     const UInt64 max_block_size;
     const MergeTreeBoundsSubscriptionPtr subscription;
+    const StreamingSettings stream_settings;
     const LoggerPtr log;
 
     /// Runtime information
-    MergeTreeCursor last_emitted_positions;
+    std::map<String, PartitionCursor> last_emitted_positions;
+    std::map<String, Field> last_watermark;
+    std::map<String, std::chrono::steady_clock::time_point> last_snapshot_time;
 
     Processors current_sub_pipeline;
     std::unique_ptr<QueryPlanResourceHolder> current_resources;
