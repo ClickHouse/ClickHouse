@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getMostSubtype.h>
@@ -59,6 +60,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override;
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -142,6 +144,19 @@ private:
         void operator()(TypeList<T>);
     };
 };
+
+bool FunctionArrayIntersect::canThrow(const DataTypesWithConstInfo & arguments) const
+{
+    if (arguments.empty())
+        return false;
+
+    /// When all args have the same type no casting issue can happen.
+    DataTypePtr first = recursiveRemoveLowCardinality(arguments[0].type);
+    for (size_t i = 1; i < arguments.size(); ++i)
+        if (!recursiveRemoveLowCardinality(arguments[i].type)->equals(*first))
+            return true;
+    return false;
+}
 
 DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & arguments) const
 {

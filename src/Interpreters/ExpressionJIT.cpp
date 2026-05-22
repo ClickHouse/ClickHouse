@@ -164,6 +164,15 @@ public:
         return true;
     }
 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        for (const auto & f : nested_functions)
+            if (f->canThrow(arguments))
+                return true;
+
+        return false;
+    }
+
     String getName() const override { return name; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }

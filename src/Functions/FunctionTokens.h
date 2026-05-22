@@ -72,6 +72,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool isVariadic() const override { return Generator::isVariadic(); }
 
     size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }

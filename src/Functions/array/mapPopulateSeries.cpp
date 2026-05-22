@@ -42,6 +42,7 @@ private:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     void checkTypes(const DataTypePtr & key_type, const DataTypePtr & value_type, const DataTypePtr & max_key_type) const
     {

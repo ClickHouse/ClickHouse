@@ -32,6 +32,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }

@@ -25,6 +25,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionClamp>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override

@@ -2030,6 +2030,18 @@ public:
                 && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
     }
 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (requires { Op<UInt8, UInt8>::can_throw; })
+            if constexpr (Op<UInt8, UInt8>::can_throw)
+                return true;
+
+        const bool is_decimal = isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type);
+        return ((is_int_div || is_modulo || is_positive_modulo))
+            || (IsOperation<Op>::div_floating && is_decimal)
+            || ((is_plus || is_minus || is_multiply) && is_decimal && check_decimal_overflow);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return getReturnTypeImplStatic(arguments, context);

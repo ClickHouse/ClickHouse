@@ -59,6 +59,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -225,6 +226,7 @@ private:
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
     }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

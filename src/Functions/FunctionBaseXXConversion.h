@@ -23,6 +23,7 @@ struct BaseXXEncode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = false;
+    static constexpr bool can_throw = false;
 
     template <bool /* with_size_optimization */>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t)
@@ -93,6 +94,7 @@ struct BaseXXDecode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = Traits::has_size_optimization;
+    static constexpr bool can_throw = (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException);
 
     template <bool with_size_optimization>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size)
@@ -193,6 +195,7 @@ public:
     bool isVariadic() const override { return has_size_optimization; }
     size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return Func::can_throw; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {

@@ -63,6 +63,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     template <typename LonAndLatType, typename PrecisionType>
     void execute(
         const IColumn * lon_min_column,

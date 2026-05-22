@@ -77,6 +77,8 @@ public:
 
     String getName() const override { return name; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const bool is_year_month_variant = (arguments.size() == 3);
@@ -185,6 +187,8 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionYYYYYMMDDToDate>(); }
 
     String getName() const override { return name; }
+
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return mandatory_argument_names.size(); }
 
@@ -343,6 +347,8 @@ public:
 
     String getName() const override { return name; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -423,6 +429,8 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMakeDateTime64>(); }
 
     String getName() const override { return name; }
+
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -563,6 +571,8 @@ public:
 
     String getName() const override { return name; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -641,6 +651,8 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionYYYYMMDDhhmmssToDateTime64>(); }
 
     String getName() const override { return name; }
+
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

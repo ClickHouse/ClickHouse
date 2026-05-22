@@ -43,6 +43,7 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return (mode == ErrorHandlingMode::Default) ? 2 : 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
 

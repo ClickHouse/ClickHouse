@@ -60,6 +60,7 @@ public:
     bool isVariadic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -75,6 +76,11 @@ public:
         if (!arguments[1].column || !isFloat(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be constant float", getName());
 
+        const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
+        if (inverse_probability < 0.0 || 1.0 < inverse_probability)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Second argument of function {} must be from `0.0` to `1.0`", getName());
+
         return arguments[0].type;
     }
 
@@ -89,11 +95,6 @@ public:
             return col_in_untyped;
 
         const double inverse_probability = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<double>();
-
-        if (inverse_probability < 0.0 || 1.0 < inverse_probability)
-        {
-            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of function {} must be from `0.0` to `1.0`", getName());
-        }
 
         if (const ColumnConst * col_in_untyped_const = checkAndGetColumnConstStringOrFixedString(col_in_untyped.get()))
         {

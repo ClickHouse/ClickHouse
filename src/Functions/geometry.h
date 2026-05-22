@@ -224,6 +224,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     /// Geometry functions work with the Geometry type directly which is a Variant with custom name,
     /// and not with individual variant alternatives. So, don't use default implementation.
     bool useDefaultImplementationForVariant() const override { return false; }

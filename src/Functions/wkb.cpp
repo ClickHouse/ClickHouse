@@ -37,6 +37,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     /*
     * Functions like recursiveRemoveLowCardinality don't pay enough attention to custom types and just erase
     * the information about it during type conversions.

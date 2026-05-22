@@ -29,6 +29,7 @@ public:
 
     String getName() const override { return name; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; } /// Optional timezone argument.
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }

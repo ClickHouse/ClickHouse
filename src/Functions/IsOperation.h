@@ -7,6 +7,8 @@ namespace DB
 template <typename> struct AbsImpl;
 template <typename> struct BitCountImpl;
 template <typename> struct IntExp2Impl;
+template <typename> struct IntExp10Impl;
+template <typename> struct FactorialImpl;
 template <typename> struct NegateImpl;
 template <typename> struct SignImpl;
 template <typename, typename> struct PlusImpl;
@@ -43,6 +45,9 @@ struct IsUnaryOperation
     static constexpr bool negate = std::is_same_v<Op<Int8>, NegateImpl<Int8>>;
     static constexpr bool sign = std::is_same_v<Op<Int8>, SignImpl<Int8>>;
     static constexpr bool bit_count = std::is_same_v<Op<Int8>, BitCountImpl<Int8>>;
+    static constexpr bool int_exp2 = std::is_same_v<Op<Int8>, IntExp2Impl<Int8>>;
+    static constexpr bool int_exp10 = std::is_same_v<Op<Int8>, IntExp10Impl<Int8>>;
+    static constexpr bool factorial = std::is_same_v<Op<Int8>, FactorialImpl<Int8>>;
 };
 
 template <template <typename, typename> typename Op>

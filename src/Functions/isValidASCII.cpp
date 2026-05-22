@@ -87,6 +87,8 @@ public:
         return true;
     }
 
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
 private:
     ColumnPtr executeString(const ColumnString * col_str, size_t input_rows_count) const
     {

@@ -28,6 +28,8 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+        bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto current_tid = getThreadId();

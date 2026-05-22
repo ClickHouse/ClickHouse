@@ -163,6 +163,8 @@ namespace
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+        bool canThrow(const DataTypesWithConstInfo & arguments) const override { return !arguments[1].is_const; }
+
         bool useDefaultImplementationForConstants() const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -176,6 +178,18 @@ namespace
             };
 
             validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+
+            /// Validate constant length.
+            if (const auto * col_length_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))
+            {
+                const Int64 new_length = col_length_const->getInt(0);
+                if (new_length > MAX_NEW_LENGTH)
+                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "New padded length ({}) is too big, maximum is: {}", new_length, MAX_NEW_LENGTH);
+                if (new_length < 0)
+                    throw Exception(ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
+                        "New padded length ({}) is negative", new_length);
+            }
 
             return std::make_shared<DataTypeString>();
         }

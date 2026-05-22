@@ -222,6 +222,12 @@ public:
         return false;
     }
 
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return ((IsUnaryOperation<Op>::int_exp2 || IsUnaryOperation<Op>::int_exp10) && isFloat(arguments[0].type))
+            || (IsUnaryOperation<Op>::factorial && !arguments[0].is_const);
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

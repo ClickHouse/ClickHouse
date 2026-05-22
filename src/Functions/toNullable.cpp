@@ -36,6 +36,7 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     /// Disable the default LowCardinality handling to preserve nested LowCardinality in compound types
     /// (e.g., Tuple(LowCardinality(UInt8), UInt8)). The default implementation would recursively strip
