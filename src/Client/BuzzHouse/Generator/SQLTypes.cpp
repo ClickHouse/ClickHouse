@@ -1575,8 +1575,9 @@ String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, Stateme
 {
     String ret = aggregate;
 
+    ret += "State";
     appendAggrParams(ret, params);
-    ret += "State(";
+    ret += "(";
     for (size_t i = 0; i < subtypes.size(); i++)
     {
         if (i != 0)
@@ -1592,8 +1593,9 @@ String AggregateFunctionType::insertNumberEntry(
 {
     String ret = aggregate;
 
+    ret += "State";
     appendAggrParams(ret, params);
-    ret += "State(";
+    ret += "(";
     for (size_t i = 0; i < subtypes.size(); i++)
     {
         if (i != 0)
