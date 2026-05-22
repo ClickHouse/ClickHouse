@@ -48,6 +48,7 @@ private:
     size_t buf_size;
 };
 
+
 /// Single node in a rope. References a slice of a RopeBuffer.
 struct RopeNode
 {

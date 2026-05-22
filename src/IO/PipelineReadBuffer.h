@@ -23,6 +23,15 @@ public:
     off_t getPosition() override;
     std::optional<size_t> tryGetFileSize() override;
 
+    /// Parquet's prefetcher takes a fast `RandomRead` path when both are true,
+    /// fan-out via `readBigAt` with no shared mutex. Without these overrides
+    /// it falls back to serial seek+read under a single lock, which on big
+    /// remote parquets with a small cache (`03988_cached_read_big_at`) times
+    /// out.
+    bool supportsReadAt() override;
+    size_t readBigAt(char * to, size_t n, size_t offset,
+                     const std::function<bool(size_t)> & progress_callback) const override;
+
 private:
     bool nextImpl() override;
 

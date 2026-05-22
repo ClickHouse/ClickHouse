@@ -8,6 +8,8 @@
 
 
 #include <algorithm>
+#include <atomic>
+#include <random>
 #include <thread>
 
 #include <Core/ServerUUID.h>
@@ -2082,6 +2084,164 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
         ASSERT_EQ(n, 10u);
         ASSERT_EQ(std::string(tmp, 10), "BBBBBBBBBB");
     }
+}
+
+TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
+{
+    /// Regression-guard for `03988_cached_read_big_at`: PipelineReadBuffer must
+    /// implement `supportsReadAt`/`readBigAt`, otherwise Parquet's prefetcher
+    /// serializes every read under one mutex.
+
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 30;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("read_big_at", settings);
+    cache->initialize();
+
+    /// 256-byte file with one distinct character per nibble — gives us a
+    /// deterministic expected value for any slice we read.
+    std::string file_path = fs::current_path() / "test_read_big_at";
+    constexpr size_t file_size = 256;
+    std::string data(file_size, '\0');
+    for (size_t i = 0; i < file_size; ++i)
+        data[i] = static_cast<char>(i);
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader, objects,
+        std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+        /*window_size=*/ReaderExecutor::DEFAULT_WINDOW_SIZE,
+        /*min_bytes_for_seek=*/0,
+        CacheKey{file_path, ""});
+
+    PipelineReadBuffer buf(std::move(executor));
+
+    ASSERT_TRUE(buf.supportsReadAt());
+
+    /// 8 threads doing random readBigAt calls. Each thread compares its
+    /// returned bytes against the expected slice. TSan / ASan should stay
+    /// quiet because readAt only touches caches/source/immutable state.
+    constexpr size_t threads = 8;
+    constexpr size_t calls_per_thread = 200;
+    std::atomic<size_t> failures{0};
+    std::vector<std::thread> workers;
+    workers.reserve(threads);
+    for (size_t t = 0; t < threads; ++t)
+    {
+        workers.emplace_back([&, t]()
+        {
+            std::mt19937 rng(static_cast<uint32_t>(t * 1009 + 17));
+            std::vector<char> tmp(file_size);
+            for (size_t i = 0; i < calls_per_thread; ++i)
+            {
+                size_t offset = rng() % file_size;
+                size_t want = 1 + (rng() % (file_size - offset));
+                size_t got = buf.readBigAt(tmp.data(), want, offset, nullptr);
+                if (got != want)
+                {
+                    ++failures;
+                    return;
+                }
+                if (std::memcmp(tmp.data(), data.data() + offset, want) != 0)
+                {
+                    ++failures;
+                    return;
+                }
+            }
+        });
+    }
+    for (auto & w : workers)
+        w.join();
+
+    ASSERT_EQ(failures.load(), 0u) << "readBigAt returned wrong bytes or short read under concurrency";
+}
+
+TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
+{
+    /// Sanity: readBigAt must NOT disturb the main read cursor or buffered
+    /// data. Mix sequential reads with random readBigAt calls and verify the
+    /// sequential side keeps returning correct bytes.
+
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 30;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("read_big_at_cursor", settings);
+    cache->initialize();
+
+    std::string file_path = fs::current_path() / "test_read_big_at_cursor";
+    constexpr size_t file_size = 128;
+    std::string data(file_size, '\0');
+    for (size_t i = 0; i < file_size; ++i)
+        data[i] = static_cast<char>(i);
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader, objects,
+        std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+        /*window_size=*/16,
+        /*min_bytes_for_seek=*/0,
+        CacheKey{file_path, ""});
+    PipelineReadBuffer buf(std::move(executor));
+
+    /// Read first 32 bytes sequentially.
+    std::vector<char> seq(32);
+    ASSERT_EQ(buf.read(seq.data(), 32), 32u);
+    ASSERT_EQ(std::string(seq.begin(), seq.end()), std::string(data.begin(), data.begin() + 32));
+
+    /// Random readBigAt in between.
+    char rnd[20];
+    ASSERT_EQ(buf.readBigAt(rnd, 20, /*offset=*/60, nullptr), 20u);
+    ASSERT_EQ(std::string(rnd, 20), std::string(data.begin() + 60, data.begin() + 80));
+
+    /// Continue sequential reads — must pick up where we left off.
+    std::vector<char> seq2(32);
+    ASSERT_EQ(buf.read(seq2.data(), 32), 32u);
+    ASSERT_EQ(std::string(seq2.begin(), seq2.end()), std::string(data.begin() + 32, data.begin() + 64));
 }
 
 /// Recording ICacheProvider: reports a configurable hit range and records the

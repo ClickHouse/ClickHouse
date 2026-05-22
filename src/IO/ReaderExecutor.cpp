@@ -145,15 +145,16 @@ ReaderExecutor::ReaderExecutor(
     size_t min_bytes_for_seek_,
     CacheKey cache_key_)
     : source(std::move(source_))
+    , stored_objects(objects)
     , caches(std::move(caches_))
     , cache_key(std::move(cache_key_))
     , window_size(window_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
 {
     CurrentMetrics::add(CurrentMetrics::ReaderExecutorActive);
-    offset_map.build(objects);
-    if (!objects.empty())
-        first_object_path = objects.front().remote_path;
+    offset_map.build(stored_objects);
+    if (!stored_objects.empty())
+        first_object_path = stored_objects.front().remote_path;
     /// Capture in the ctor — the executor may be destroyed on a worker thread
     /// whose `CurrentThread` is no longer attached to the query, in which
     /// case `getQueryId()` would return empty at destruction time and
@@ -452,7 +453,7 @@ void ReaderExecutor::initDecryption()
 #endif
 }
 
-Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offset)
+Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offset) const
 {
 #if USE_SSL
     if (decryption_layers.empty())
@@ -969,6 +970,45 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
     /// Trim to the originally requested physical window.
     return result.slice(physical_window);
+}
+
+std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position) const
+{
+    /// Shared with the parent (immutable; thread-safe to share):
+    ///   - `source` (concurrent `open()` is OK; required by `canReadAt()`)
+    ///   - `stored_objects`, `cache_key`, `window_size`, `min_bytes_for_seek`
+    ///   - `caches` (each `ICacheProvider` is internally thread-safe)
+    ///   - `decryption_layers`, `decryption_headers`, `data_start_offset`
+    ///     (set once in `initDecryption`, never mutated)
+    ///
+    /// Private to the transient (so concurrent `readBigAt` calls don't race
+    /// with each other or with the parent's `next()`/`seek()`):
+    ///   - `position`, `live_buffer`, `prefetch_handle`, `prefetch_valid`,
+    ///     `prefetch_range`, `pre_acquired_slot`, `pre_acquired_slot_path`,
+    ///     `first_object_path`, `stats`, `creator_query_id`,
+    ///     `reader_executor_log` ptr.
+    ///
+    /// Intentionally NOT propagated (the transient runs without them):
+    ///   - `prefetch_pool`: a one-shot read can't amortise prefetch latency;
+    ///     sharing the parent's pool would let a transient steal slots from a
+    ///     concurrently-running sequential reader.
+    ///   - `buffer_limit`: live-buffer slots are for state reuse across calls
+    ///     on the SAME stream; a transient closes immediately.
+    ///   - `reader_executor_log`: the transient's stats land in global
+    ///     `ProfileEvents` via the destructor anyway; we don't want a row per
+    ///     `readBigAt` in `system.reader_executor_log`.
+    auto t = std::make_unique<ReaderExecutor>(
+        source, stored_objects, caches,
+        window_size, min_bytes_for_seek, cache_key);
+
+#if USE_SSL
+    t->decryption_layers = decryption_layers;
+    t->decryption_headers = decryption_headers;
+    t->decryption_initialized = decryption_initialized;
+#endif
+    t->data_start_offset = data_start_offset;
+    t->seek(start_position);
+    return t;
 }
 
 }

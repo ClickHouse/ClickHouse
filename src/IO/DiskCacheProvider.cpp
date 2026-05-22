@@ -190,6 +190,7 @@ Rope DiskCacheHandle::get(ByteRange range)
     return result;
 }
 
+
 bool DiskCacheHandle::put(ByteRange range, Rope data)
 {
     if (!holder)

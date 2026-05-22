@@ -51,6 +51,24 @@ public:
     /// Seek to a new position. Discards any prefetched data.
     void seek(size_t new_position);
 
+    /// Build a transient ReaderExecutor configured to start at `start_position`,
+    /// sharing immutable state (caches, source, objects, cache_key, decryption)
+    /// but owning its own mutable state (position, live_buffer, prefetch).
+    /// Used by `PipelineReadBuffer::readBigAt` to drive a one-shot read via the
+    /// regular pipeline without disturbing this executor or duplicating the
+    /// cache-walk / source-read logic.
+    ///
+    /// The transient deliberately uses neither `prefetch_pool` nor
+    /// `buffer_limit` — those exist to coordinate state across calls on the
+    /// same stream and would compete with the main executor for resources.
+    std::unique_ptr<ReaderExecutor> makeTransientForReadAt(size_t start_position) const;
+
+    /// Whether `makeTransientForReadAt` / `readBigAt` is allowed. All current
+    /// `ISourceReader` implementations support concurrent `open()` (each call
+    /// returns an independent buffer), so this is true whenever a source is
+    /// configured. Kept as a method so future non-reusable sources can opt out.
+    bool canReadAt() const { return static_cast<bool>(source); }
+
     void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
     void setBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
     void setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log_);
@@ -121,9 +139,13 @@ private:
 
     /// Decrypt rope data; returns the input unchanged when no decryption layers
     /// are configured (which is always the case in builds without SSL).
-    Rope decryptRope(Rope rope, size_t logical_offset);
+    /// `const` because decryption_layers/decryption_headers are immutable after
+    /// `initDecryption`; thread-safe for parallel calls (each creates its own
+    /// Encryptor instance).
+    Rope decryptRope(Rope rope, size_t logical_offset) const;
 
     std::shared_ptr<ISourceReader> source;
+    StoredObjects stored_objects;  /// retained for makeTransientForReadAt
     OffsetMap offset_map;
     std::vector<std::shared_ptr<ICacheProvider>> caches;
     CacheKey cache_key;

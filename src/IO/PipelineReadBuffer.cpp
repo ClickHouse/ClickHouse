@@ -2,6 +2,7 @@
 #include <IO/ReaderExecutor.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <cstring>
 
 namespace DB
 {
@@ -160,6 +161,48 @@ std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
 String PipelineReadBuffer::getFileName() const
 {
     return "PipelineReadBuffer";
+}
+
+bool PipelineReadBuffer::supportsReadAt()
+{
+    return executor->canReadAt();
+}
+
+size_t PipelineReadBuffer::readBigAt(
+    char * to, size_t n, size_t offset,
+    const std::function<bool(size_t)> & /*progress_callback*/) const
+{
+    if (n == 0)
+        return 0;
+
+    const size_t total = executor->totalSize();
+    if (offset >= total)
+        return 0;
+    const size_t want = std::min(n, total - offset);
+
+    /// Drive a fresh, isolated `ReaderExecutor` through the regular
+    /// `readNextWindow` path. The transient owns its own position / live_buffer
+    /// / prefetch state so concurrent `readBigAt` calls don't interfere with
+    /// each other or with the main reader. Reusing the existing pipeline avoids
+    /// duplicating the cache-walk + source-read logic.
+    auto sub = executor->makeTransientForReadAt(offset);
+
+    size_t total_copied = 0;
+    while (total_copied < want)
+    {
+        Rope window = sub->readNextWindow();
+        if (window.empty())
+            break;
+        for (const auto & node : window.getNodes())
+        {
+            if (total_copied >= want)
+                break;
+            const size_t copy = std::min(node.size, want - total_copied);
+            std::memcpy(to + total_copied, node.data(), copy);
+            total_copied += copy;
+        }
+    }
+    return total_copied;
 }
 
 }
