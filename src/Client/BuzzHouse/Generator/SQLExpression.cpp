@@ -942,6 +942,10 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             sfn->set_catalog_func(func.fname);
         }
 
+        const uint32_t nfunc_args
+            = (max_args > 0 && max_args >= min_args) ? std::uniform_int_distribution<uint32_t>(min_args, max_args)(rg.generator)
+                                                     : min_args;
+
         if (has_lambda)
         {
             if (rg.nextBool())
@@ -955,29 +959,16 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             }
             else
             {
-                generateLambdaCall(rg, 1, func_call->add_args()->mutable_lambda());
+                generateLambdaCall(rg, std::max(nfunc_args, UINT32_C(1)), func_call->add_args()->mutable_lambda());
             }
             this->width++;
             generated_params++;
         }
-        if (max_args > 0 && max_args >= min_args)
+        for (uint32_t i = 0; i < nfunc_args; i++)
         {
-            std::uniform_int_distribution<uint32_t> nparams(min_args, max_args);
-            const uint32_t nfunc_args = nparams(rg.generator);
-
-            for (uint32_t i = 0; i < nfunc_args; i++)
-            {
-                this->generateExpression(rg, func_call->add_args()->mutable_expr());
-                this->width++;
-                generated_params++;
-            }
-        }
-        else if (min_args > 0)
-        {
-            for (uint32_t i = 0; i < min_args; i++)
-            {
-                generateLiteralValue(rg, true, func_call->add_args()->mutable_expr());
-            }
+            this->generateExpression(rg, func_call->add_args()->mutable_expr());
+            this->width++;
+            generated_params++;
         }
     }
     this->width -= generated_params;
