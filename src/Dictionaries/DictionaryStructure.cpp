@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -23,6 +24,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -307,6 +309,10 @@ VectorWithMemoryTracking<DictionaryAttribute> DictionaryStructure::getAttributes
         bool is_nullable = initial_type->isNullable();
 
         auto non_nullable_type = removeNullable(initial_type);
+
+        if (is_nullable && (isArray(non_nullable_type) || isMap(non_nullable_type)))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Dictionary attribute type '{}' is not supported", initial_type->getName());
 
         const auto underlying_type_opt = tryGetAttributeUnderlyingType(non_nullable_type->getTypeId());
 

@@ -80,7 +80,7 @@ ColumnPtr wrapNullableFoldResult(ColumnPtr result, const ColumnPtr & array_null_
         null_map = materializeNullMapToRowCount(null_map, num_rows);
 
     ColumnPtr nested_result = result;
-    if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(result.get()))
+    while (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(nested_result.get()))
     {
         mergeRowNullMap(null_map, nullable_result->getNullMapColumnPtr(), num_rows);
         nested_result = nullable_result->getNestedColumnPtr();
@@ -255,13 +255,10 @@ public:
 
         if (num_rows == 0)
         {
+            auto empty_result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
             if (result_type->isNullable())
-            {
-                auto empty_result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-                auto null_map = ColumnUInt8::create();
-                return ColumnNullable::create(std::move(empty_result), std::move(null_map));
-            }
-            return arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+                return wrapNullableFoldResult(std::move(empty_result), array_null_map);
+            return empty_result;
         }
 
         const auto & offsets = first_array_col_concrete->getOffsets(); /// the internal offsets column of the first array argument (other array arguments have the same offsets)
@@ -395,7 +392,12 @@ public:
         auto result = result_col->permute(perm, 0);
 
         if (result_type->isNullable())
+        {
+            /// Nullable accumulator with non-nullable arrays: result is already ColumnNullable.
+            if (!array_null_map && checkAndGetColumn<ColumnNullable>(result.get()))
+                return result;
             return wrapNullableFoldResult(std::move(result), array_null_map);
+        }
 
         return result;
     }

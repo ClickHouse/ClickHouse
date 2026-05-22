@@ -666,6 +666,26 @@ private:
     FormatSettings format_settings;
 };
 
+template <typename>
+struct JSONImplAllowsNullableIndexArguments : std::false_type {};
+
+void validateJSONIndexArgumentsNotNullable(
+    const char * function_name,
+    size_t first_index_argument,
+    size_t num_index_arguments,
+    const ColumnsWithTypeAndName & arguments);
+
+template <template<typename> typename Impl>
+void validateJSONIndexArgumentsIfNeeded(const char * function_name, const ColumnsWithTypeAndName & arguments)
+{
+    if constexpr (!JSONImplAllowsNullableIndexArguments<Impl<DummyJSONParser>>::value)
+    {
+        const size_t num_index_arguments = Impl<DummyJSONParser>::getNumberOfIndexArguments(arguments);
+        if (num_index_arguments)
+            validateJSONIndexArgumentsNotNullable(function_name, 1, num_index_arguments, arguments);
+    }
+}
+
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
@@ -696,6 +716,8 @@ public:
 
     FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
+        validateJSONIndexArgumentsIfNeeded<Impl>(Name::name, arguments);
+
         bool has_nothing_argument = false;
         for (const auto & arg : arguments)
             has_nothing_argument |= isNothing(arg.type);
@@ -1262,6 +1284,35 @@ public:
         return true;
     }
 };
+
+template <typename JSONParser>
+struct JSONImplAllowsNullableIndexArguments<JSONExtractInt64Impl<JSONParser>> : std::true_type {};
+template <typename JSONParser>
+struct JSONImplAllowsNullableIndexArguments<JSONExtractUInt64Impl<JSONParser>> : std::true_type {};
+template <typename JSONParser>
+struct JSONImplAllowsNullableIndexArguments<JSONExtractFloat64Impl<JSONParser>> : std::true_type {};
+template <typename JSONParser>
+struct JSONImplAllowsNullableIndexArguments<JSONExtractBoolImpl<JSONParser>> : std::true_type {};
+template <typename JSONParser>
+struct JSONImplAllowsNullableIndexArguments<JSONExtractStringImpl<JSONParser>> : std::true_type {};
+template <typename JSONParser>
+struct JSONImplAllowsNullableIndexArguments<JSONExtractImpl<JSONParser>> : std::true_type {};
+
+void validateJSONIndexArgumentsNotNullable(
+    const char * function_name,
+    size_t first_index_argument,
+    size_t num_index_arguments,
+    const ColumnsWithTypeAndName & arguments)
+{
+    for (size_t i = first_index_argument; i < first_index_argument + num_index_arguments; ++i)
+    {
+        if (arguments[i].type->isNullable())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The argument {} of function {} should be a string specifying key "
+                "or an integer specifying index, illegal type: {}",
+                std::to_string(i + 1), String(function_name), arguments[i].type->getName());
+    }
+}
 
 REGISTER_FUNCTION(JSON)
 {

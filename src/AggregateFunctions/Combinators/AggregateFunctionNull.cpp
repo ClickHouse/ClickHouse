@@ -131,12 +131,10 @@ public:
         const auto & result_type = nested_function->getResultType();
         bool return_type_is_nullable = !properties.returns_default_when_only_null && result_type->canBeInsideNullable();
 
-        /// After `Nullable(Array)` was enabled, `Array::canBeInsideNullable` returns true, which would wrap
-        /// aggregate results such as `Array(Tuple(...))` into `Nullable(Array(...))` and break binary
-        /// compatibility of existing states (for example `sumCountResample` with Nullable arguments).
-        /// The same applies to `Tuple` (see `AggregateFunctionIf::getOwnNullAdapter`).
-        if (return_type_is_nullable
-            && (typeid_cast<const DataTypeTuple *>(result_type.get()) || typeid_cast<const DataTypeArray *>(result_type.get())))
+        /// `DataTypeArray::canBeInsideNullable()` is false, but keep the guard for safety if that ever changes.
+        /// Do not block `Tuple`: the base Null combinator must still return `Nullable(Tuple(...))` when
+        /// arguments are nullable (see `AggregateFunctionIf::getOwnNullAdapter` for *If* only).
+        if (return_type_is_nullable && typeid_cast<const DataTypeArray *>(result_type.get()))
             return_type_is_nullable = false;
 
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;

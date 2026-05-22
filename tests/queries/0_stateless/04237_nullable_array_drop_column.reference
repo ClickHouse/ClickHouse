@@ -1,5 +1,5 @@
 Before drop:
-arr
+arr.array.nested
 arr.null
 arr.size0
 After drop:
