@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_NURAFT
+
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -17,3 +21,5 @@ protected:
 };
 
 }
+
+#endif
