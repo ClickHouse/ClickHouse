@@ -2285,6 +2285,10 @@ enum DictionaryLayouts {
     SPARSE_HASHED = 15;
     SSD_CACHE = 16;
     REGEXP_TREE = 17;
+    POLYGON = 18;
+    POLYGON_SIMPLE = 19;
+    POLYGON_INDEX_EACH = 20;
+    POLYGON_INDEX_CELL = 21;
 }
 
 message DictionaryLayout {

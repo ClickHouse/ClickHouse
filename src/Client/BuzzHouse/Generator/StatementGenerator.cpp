@@ -616,7 +616,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     }
     cv->set_create_opt(
         replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
-    next.is_materialized = (!next.is_temp || rg.nextMediumNumber() < 26) && rg.nextBool();
+    next.is_materialized = !next.is_temp && rg.nextBool();
     cv->set_materialized(next.is_materialized);
     next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
@@ -625,7 +625,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
-        const bool has_to = !replace && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
+        const bool has_to = (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
         next.teng = MergeTree;
         if (!has_to)
@@ -696,14 +696,14 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 }
             }
         }
-        if (!replace && !next.is_deterministic && (next.is_refreshable = rg.nextBool()))
+        if (!next.is_deterministic && (next.is_refreshable = rg.nextBool()))
         {
             generateNextRefreshableView(rg, cv->mutable_refresh());
             cv->set_empty(rg.nextBool());
         }
         else
         {
-            cv->set_populate(!has_to && !replace && rg.nextSmallNumber() < 4);
+            cv->set_populate(!has_to && rg.nextSmallNumber() < 4);
         }
     }
     if (next.cols.empty())

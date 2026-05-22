@@ -2554,6 +2554,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     uint32_t col_counter = 0;
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
+    const bool is_polygon = dl == POLYGON || dl == POLYGON_SIMPLE || dl == POLYGON_INDEX_EACH || dl == POLYGON_INDEX_CELL;
     const bool is_complex_key
         = (dl == COMPLEX_KEY_CACHE || dl == COMPLEX_KEY_DIRECT || dl == COMPLEX_KEY_HASHED || dl == COMPLEX_KEY_HASHED_ARRAY
            || dl == COMPLEX_KEY_RANGE_HASHED || dl == COMPLEX_KEY_SPARSE_HASHED || dl == COMPLEX_KEY_SSD_CACHE);
@@ -2605,6 +2606,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
     /// REGEXP_TREE layout is tied to YAMLRegExpTree source: skip all other source types when this layout is in use.
+    /// Polygon layouts need a ClickHouse/null source (not YAML).
     const uint32_t generic_src_mult = static_cast<uint32_t>(dl != REGEXP_TREE);
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table) * generic_src_mult;
     const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty()) * generic_src_mult;
@@ -2781,7 +2783,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         this->next_type_mask = fc.type_mask
             & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
                 | allow_time | allow_array | (is_complex_key ? UINT64_C(0) : allow_fixed_strings));
-        if (yaml_dsd && i == 0)
+        if (is_polygon && i == 0)
+        {
+            /// Polygon layouts require a key of Array(Array(Array(Array(Float64))))
+            TopTypeName * arr = dc->mutable_type()->mutable_type();
+            for (int d = 0; d < 4; d++)
+                arr = arr->mutable_array();
+            arr->mutable_non_nullable()->set_floats(Float64);
+            col.tp = std::make_unique<ArrayType>(
+                std::make_unique<ArrayType>(std::make_unique<ArrayType>(std::make_unique<ArrayType>(std::make_unique<FloatType>(64)))));
+        }
+        else if (yaml_dsd && i == 0)
         {
             /// YAMLRegExpTree requires the primary key to be exactly one String column.
             dc->mutable_type()->mutable_type()->mutable_non_nullable()->set_standard_string(true);
@@ -2873,7 +2885,20 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             clickhouse_dsd->set_update_lag(rg.randomInt<uint32_t>(0, 3600));
         }
     }
-    if (dl == IP_TRIE || yaml_dsd)
+    if (is_polygon)
+    {
+        /// Polygon layouts require the polygon key column (first column, Array type)
+        std::vector<ColumnPathChain> arr_entries;
+        for (const auto & e : this->entries)
+        {
+            const SQLType * tp = e.getBottomType();
+            if (tp && tp->getTypeClass() == SQLTypeClass::ARRAY)
+                arr_entries.push_back(e);
+        }
+        if (!arr_entries.empty())
+            this->entries = std::move(arr_entries);
+    }
+    else if (dl == IP_TRIE || yaml_dsd)
     {
         /// IP_TRIE and YAMLRegExpTree both require a String primary key
         std::vector<ColumnPathChain> str_entries;
@@ -2907,8 +2932,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         if (!uint64_entries.empty() && !isRange)
             this->entries = std::move(uint64_entries);
     }
-    const size_t kcols
-        = (dl == IP_TRIE || !is_complex_key) ? 1 : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
+    const size_t kcols = (dl == IP_TRIE || is_polygon || !is_complex_key)
+        ? 1
+        : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
     std::shuffle(entries.begin(), entries.end(), rg.generator);
     TableKey * tkey = cd->mutable_primary_key();
     for (size_t i = 0; i < kcols; i++)

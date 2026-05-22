@@ -4329,7 +4329,6 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool replace = create_view.create_opt() != CreateReplaceOption::Create;
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
@@ -4339,19 +4338,11 @@ CONV_FN(CreateView, create_view)
     {
         ret += "TEMPORARY ";
     }
-    if (replace)
+    if (materialized)
     {
-        ret += "TABLE";
+        ret += "MATERIALIZED ";
     }
-    else
-    {
-        if (materialized)
-        {
-            ret += "MATERIALIZED ";
-        }
-        ret += "VIEW";
-    }
-    ret += " ";
+    ret += "VIEW ";
     if (create_view.if_not_exists())
     {
         ret += "IF NOT EXISTS ";
@@ -4369,12 +4360,12 @@ CONV_FN(CreateView, create_view)
     }
     if (materialized)
     {
-        if (!replace && refreshable)
+        if (refreshable)
         {
             ret += " ";
             RefreshableViewToString(ret, create_view.refresh());
         }
-        if (!replace && create_view.has_to())
+        if (create_view.has_to())
         {
             const CreateMatViewTo & cmvt = create_view.to();
 
@@ -4402,7 +4393,7 @@ CONV_FN(CreateView, create_view)
         {
             ret += " POPULATE";
         }
-        if (!replace && refreshable && create_view.empty())
+        if (refreshable && create_view.empty())
         {
             ret += " EMPTY";
         }
