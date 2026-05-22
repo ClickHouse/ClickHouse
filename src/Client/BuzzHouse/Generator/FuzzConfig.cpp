@@ -588,7 +588,7 @@ args_by_function AS
             syntax_line,
             replaceRegexpOne(syntax_line, '^[^\\(]*\\((.*)\\)[^)]*$', '\\1') AS args_raw,
             match(args_raw, '(\\.\\.\\.|…)') AS args_variadic,
-            multiIf(match(trim(args_raw), '^\\['), 1, match(trim(args_raw), '^(func|λ)'), 2, 0) AS lambda_syntax,
+            multiIf(match(trim(args_raw), '^(func|λ)'), 2, 0) AS lambda_syntax,
             replaceRegexpAll(args_raw, '\\[[^\\]]*\\]', '') AS args_required_raw,
             replaceRegexpAll(args_raw, '[\\[\\]]', '') AS args_all_raw,
             if (
