@@ -128,10 +128,6 @@ void WriteBufferFromHDFS::sync()
 
 void WriteBufferFromHDFS::finalizeImpl()
 {
-    /// Flush any data still sitting in the working buffer to HDFS.
-    /// Without this call the trailing bytes (up to `DBMS_DEFAULT_BUFFER_SIZE`)
-    /// written just before `finalize()` never reach HDFS — including the
-    /// Parquet/ORC/Arrow file footer, which makes the resulting file unreadable.
     WriteBufferFromFileBase::finalizeImpl();
 
     if (blob_log)
