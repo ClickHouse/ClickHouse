@@ -2351,7 +2351,13 @@ public:
                 };
                 auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
                 if constexpr (is_division_or_null)
+                {
+                    /// `makeNullableSafe` does not wrap `Array` (`canBeInsideNullable() == false`).
+                    /// Preserve outer nullability when the array argument is `Nullable(Array(...))`.
+                    if (arguments[0]->isNullable())
+                        return makeNullable(array_result);
                     return makeNullableSafe(array_result);
+                }
                 if (arguments[0]->isNullable())
                     return makeNullable(array_result);
                 return array_result;
@@ -2365,7 +2371,11 @@ public:
                 };
                 auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
                 if constexpr (is_division_or_null)
+                {
+                    if (arguments[1]->isNullable())
+                        return makeNullable(array_result);
                     return makeNullableSafe(array_result);
+                }
                 if (arguments[1]->isNullable())
                     return makeNullable(array_result);
                 return array_result;
@@ -3680,6 +3690,13 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
+
+    bool useDefaultImplementationForNulls() const override
+    {
+        /// Match `FunctionBinaryArithmetic::useDefaultImplementationForNulls`: *OrNull operations
+        /// must see real argument types (e.g. `Nullable(Array(...))`), not nested types only.
+        return !IsOperation<Op>::division_or_null;
+    }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
