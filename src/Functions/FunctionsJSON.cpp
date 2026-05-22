@@ -7,6 +7,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
 
@@ -126,7 +127,7 @@ public:
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
             size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -335,13 +336,13 @@ private:
         String key;
     };
 
-    static std::vector<FunctionJSONHelpers::Move> prepareMoves(
+    static VectorWithMemoryTracking<FunctionJSONHelpers::Move> prepareMoves(
         const char * function_name,
         const ColumnsWithTypeAndName & columns,
         size_t first_index_argument,
         size_t num_index_arguments)
     {
-        std::vector<Move> moves;
+        VectorWithMemoryTracking<Move> moves;
         moves.reserve(num_index_arguments);
         for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
         {
@@ -375,7 +376,7 @@ private:
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser, bool case_insensitive = false>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
-                             const typename JSONParser::Element & document, const std::vector<Move> & moves,
+                             const typename JSONParser::Element & document, const VectorWithMemoryTracking<Move> & moves,
                              typename JSONParser::Element & element, std::string_view & last_key)
     {
         typename JSONParser::Element res_element = document;
@@ -531,7 +532,7 @@ constexpr bool functionForcesTheReturnType()
 }
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class ExecutableFunctionJSON : public IExecutableFunction
+class ExecutableFunctionJSON final : public IExecutableFunction
 {
 
 public:
@@ -619,7 +620,7 @@ private:
 
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class FunctionBaseFunctionJSON : public IFunctionBase
+class FunctionBaseFunctionJSON final : public IFunctionBase
 {
 public:
     explicit FunctionBaseFunctionJSON(
@@ -689,7 +690,7 @@ void validateJSONIndexArgumentsIfNeeded(const char * function_name, const Column
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver : public IFunctionOverloadResolver
+class JSONOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
@@ -889,7 +890,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        static const std::vector<std::pair<String, Int8>> values = {
+        static const DataTypeEnum<Int8>::Values values = {
             {"Array", '['},
             {"Object", '{'},
             {"String", '"'},

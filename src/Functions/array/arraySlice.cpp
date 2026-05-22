@@ -34,7 +34,7 @@ namespace ErrorCodes
   *     arraySlice([1, 2, 3, 4, 5, 6], 2, -1) -> [2, 3, 4, 5] (6 - (2 - 1) + (-1) = 4)
   *     arraySlice([1, 2, 3, 4, 5, 6], -5, -1) = arraySlice([1, 2, 3, 4, 5, 6], 2, -1) -> [2, 3, 4, 5]
   */
-class FunctionArraySlice : public IFunction
+class FunctionArraySlice final : public IFunction
 {
 public:
     static constexpr auto name = "arraySlice";

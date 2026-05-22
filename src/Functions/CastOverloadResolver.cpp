@@ -125,7 +125,7 @@ static String getExplicitTimeZoneOfDateTimeArgument(const DataTypePtr & source)
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-class CastOverloadResolverImpl : public IFunctionOverloadResolver, private WithContext
+class CastOverloadResolverImpl final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static const char * getNameImpl(CastType cast_type, bool internal)
