@@ -11,6 +11,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 
 namespace DB
@@ -125,6 +126,26 @@ void StorageObjectStorageConfiguration::initialize(
         if (configuration_to_initialize.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
+        }
+
+        /// Data lake engines write data files in their own format (`Parquet`/`ORC`/`Avro`)
+        /// which already has an internal compression codec. Wrapping the data file with an
+        /// outer codec via `compression_method` is silently ignored on the Iceberg write
+        /// path, while still applied on read, yielding files the engine cannot read back.
+        /// For other data lake formats (DeltaLake, Hudi, Paimon) the outer wrapping
+        /// breaks compatibility with external readers. See issue #105644.
+        String compression_method_lower = configuration_to_initialize.compression_method;
+        boost::algorithm::to_lower(compression_method_lower);
+        if (!compression_method_lower.empty()
+            && compression_method_lower != "auto"
+            && compression_method_lower != "none")
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `compression_method` argument (got '{}') is not supported by data lake engines. "
+                "Data lake formats use their own internal compression codec; set it via the "
+                "format-specific setting (for example, `output_format_parquet_compression_method`) instead.",
+                configuration_to_initialize.compression_method);
         }
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
