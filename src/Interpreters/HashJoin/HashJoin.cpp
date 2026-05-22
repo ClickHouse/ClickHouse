@@ -2509,10 +2509,7 @@ void HashJoin::publishSharedRuntimeFilters()
     if (!probe_fn)
         return;
 
-    /// Publish the shared filter for each descriptor whose build key matches.
-    /// We replace because BuildRuntimeFilterTransform may have already published a Set/BF;
-    /// tuning params (pass-ratio threshold, blocks-to-skip) are lifted from that existing
-    /// filter so settings stay consistent with the rest of the framework.
+    /// Replace any Set/BloomFilter that BuildRuntimeFilterStep installed earlier.
     for (const auto & [filter_name, descr_build_key] : descriptors)
     {
         if (descr_build_key != build_key_name)
@@ -2522,11 +2519,9 @@ void HashJoin::publishSharedRuntimeFilters()
         if (!existing)
             continue;
 
-        /// If the optimizer chose Int128/UInt128 as common_type (e.g. probe column is Int128),
-        /// the per-row narrow + bounds-check overhead on wide integers outweighs the array-index
-        /// win; leave the existing Set/BF filter in place.
-        const WhichDataType target_which(removeNullable(existing->getFilterColumnTargetType()));
-        if (target_which.isInt128() || target_which.isUInt128())
+        /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
+        /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
+        if (!WhichDataType(removeNullable(existing->getFilterColumnTargetType())).isNativeInteger())
             continue;
 
         auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
