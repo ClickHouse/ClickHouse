@@ -361,6 +361,22 @@ String RandomGenerator::nextIdentifier(const String & prefix, const uint32_t cou
     return res;
 }
 
+static const constexpr char hexDigits[] = "0123456789abcdef";
+
+String RandomGenerator::nextHexBytes(const uint32_t nbytes)
+{
+    String ret;
+
+    ret.reserve(nbytes * 2);
+    for (uint32_t i = 0; i < nbytes; i++)
+    {
+        const uint8_t byte = nextRandomUInt8();
+        ret += hexDigits[byte >> 4];
+        ret += hexDigits[byte & 0x0F];
+    }
+    return ret;
+}
+
 String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)
 {
     String ret;
@@ -375,8 +391,14 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     /* A few times generate empty strings */
     if (this->nextMediumNumber() > 2)
     {
+        if (use_bad_utf8 && this->nextBool())
+        {
+            /// Random hex bytes: variable length from 1 to limit bytes
+            const uint32_t nbytes = this->randomInt<uint32_t>(1, std::min(limit, this->nextBool() ? UINT32_C(64) : UINT32_C(4096)));
+            ret += nextHexBytes(nbytes);
+        }
         /// ~3% chance: repeated single character (stresses compression, string functions like repeat/position/like)
-        if (!use_bad_utf8 && this->nextMediumNumber() < 4)
+        else if (!use_bad_utf8 && this->nextMediumNumber() < 4)
         {
             static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '%', '_', '\\', '"', '/', '-'};
             char c = this->pickRandomly(repeat_chars);
@@ -433,8 +455,6 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     ret += delimiter;
     return ret;
 }
-
-static const constexpr char hexDigits[] = "0123456789abcdef";
 
 String RandomGenerator::nextUUID()
 {
