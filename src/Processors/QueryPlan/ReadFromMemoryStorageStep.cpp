@@ -2,6 +2,7 @@
 
 #include <Analyzer/TableNode.h>
 
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/getColumnFromBlock.h>
@@ -30,6 +31,7 @@ namespace ErrorCodes
 {
 
 extern const int LOGICAL_ERROR;
+extern const int UNKNOWN_EXCEPTION;
 
 }
 
@@ -87,7 +89,29 @@ protected:
                         "Reading from materialized CTE '{}' that has not been planned",
                         materialized_cte->cte_name);
 
-                materialized_cte->build_future.get();
+                /// `build_future` is a shared_future: `get()` rethrows the
+                /// same stored exception object to every concurrent waiter.
+                /// The outer execution layer routinely mutates exceptions
+                /// in-flight (e.g. `addMessage` while unwinding through
+                /// `executeQueryImpl`), which would race on the shared
+                /// `Exception` instance across readers of the same CTE.
+                /// Re-create a fresh per-waiter `Exception` so later
+                /// concurrent mutation is safe. Pattern parallel to
+                /// `CreatingSetsTransform::startSubquery`.
+                try
+                {
+                    materialized_cte->build_future.get();
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(e);
+                }
+                catch (...)
+                {
+                    throw Exception::createRuntime(
+                        ErrorCodes::UNKNOWN_EXCEPTION,
+                        getExceptionMessage(std::current_exception(), /* with_stacktrace= */ false));
+                }
             }
 
             initializer_func(data);
