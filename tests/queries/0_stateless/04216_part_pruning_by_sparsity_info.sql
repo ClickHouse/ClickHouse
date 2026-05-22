@@ -48,7 +48,7 @@ SELECT 'mixed != 0 baseline',       count() FROM t_sparsity_prune WHERE mixed !=
 SELECT 'mixed  = 0',                count() FROM t_sparsity_prune WHERE mixed  = 0        SETTINGS use_sparsity_info_for_pruning = 'planning';
 SELECT 'mixed  = 0 baseline',       count() FROM t_sparsity_prune WHERE mixed  = 0        SETTINGS use_sparsity_info_for_pruning = 'off';
 
--- Non-count projection benefits too (Layer C-1 trivial-count wouldn't apply here).
+-- Pruning also helps non-count projections, where the trivial-count rewrite wouldn't apply.
 SELECT 'projection drop-extremal',          count() FROM (SELECT id FROM t_sparsity_prune WHERE all_default != 0 SETTINGS use_sparsity_info_for_pruning = 'planning');
 SELECT 'projection drop-extremal baseline', count() FROM (SELECT id FROM t_sparsity_prune WHERE all_default != 0 SETTINGS use_sparsity_info_for_pruning = 'off');
 

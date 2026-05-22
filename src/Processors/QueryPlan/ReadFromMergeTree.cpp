@@ -3676,11 +3676,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
     }
 
-    /// Phase B `data_read` mode: build a sparsity reader that lazily classifies granules
-    /// per part at scan time. Like skip-indexes-on-data-read, this is subject to the
-    /// invariants in `supportsSkipIndexesOnDataRead` -- no FINAL exact mode, no JOIN
-    /// dependency on plan-time row counts, no max_rows_to_read with throw, no pending
-    /// data mutations or patch parts.
+    /// Lazy sparsity classification at scan time. Invariants mirror
+    /// `supportsSkipIndexesOnDataRead`: no FINAL exact mode, no JOIN dependency on
+    /// plan-time row counts, no `max_rows_to_read` with throw, no pending data
+    /// mutations or patch parts.
     MergeTreeSparsityReaderPtr sparsity_reader;
     {
         const auto & settings = context->getSettingsRef();

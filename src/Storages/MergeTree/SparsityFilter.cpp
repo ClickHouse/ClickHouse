@@ -16,17 +16,11 @@ namespace DB
 namespace
 {
 
-/// `col != default(col)` requires comparing the constant against the type's default,
-/// but Field's operator== is type-strict: a literal `0` parses as Field(UInt64{0})
-/// while e.g. Int16's default is Field(Int64{0}), so a naive `value == default_value`
-/// returns false even though both numerically represent zero. Convert the constant
-/// into the column's data type first; if the conversion succeeds losslessly, compare
-/// the resulting Field against the type's default (which is now guaranteed to share
-/// the same `Types::Which`).
+/// `Field::operator==` is type-strict: `Field(UInt64{0})` (how literal `0` parses)
+/// doesn't compare equal to `Field(Int64{0})` (Int16's default). Convert through
+/// the column's data type so both sides share a `Types::Which` before comparing.
 bool constantEqualsTypeDefault(const Field & value, const DataTypePtr & type)
 {
-    /// Nullable is handled by the `IS NULL` branch -- here we want to compare the
-    /// constant against the *non-null* default of the underlying type.
     DataTypePtr inner_type = type;
     if (inner_type->isNullable())
         inner_type = removeNullable(inner_type);
@@ -41,7 +35,6 @@ bool isUnsignedInteger(const DataTypePtr & type)
     DataTypePtr inner = type;
     if (inner->isNullable())
         inner = removeNullable(inner);
-    /// `WhichDataType::isUInt` covers UInt8..UInt256.
     return WhichDataType(inner).isUInt();
 }
 
@@ -53,8 +46,6 @@ bool isStringLike(const DataTypePtr & type)
     return WhichDataType(inner).isString();
 }
 
-/// If `node` is a ColumnNode whose source is `expected_table_expression`, returns its
-/// (name, type). Otherwise nullopt.
 struct ColumnRef
 {
     String name;
@@ -81,13 +72,10 @@ std::optional<Field> tryAsConstantValue(const QueryTreeNodePtr & node)
     return c->getValue();
 }
 
-/// `0` represented as any numeric Field.
 bool isZero(const Field & value)
 {
     if (value.isNull())
         return false;
-    /// A Field's numeric types (UInt64, Int64, Float64) all compare to 0 the way you'd want.
-    /// Field == Field handles cross-type integer comparisons correctly.
     if (value.getType() == Field::Types::UInt64) return value.safeGet<UInt64>() == 0;
     if (value.getType() == Field::Types::Int64)  return value.safeGet<Int64>()  == 0;
     if (value.getType() == Field::Types::Float64)return value.safeGet<Float64>()== 0.0;
@@ -119,7 +107,6 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     const auto & name = func->getFunctionName();
     const auto & args = func->getArguments().getNodes();
 
-    /// Unary forms: isNull(col) / isNotNull(col) / empty(col) / notEmpty(col).
     if (args.size() == 1)
     {
         auto col = tryAsColumnRef(args[0], table_expression_node);
@@ -156,7 +143,7 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     if (args.size() != 2)
         return std::nullopt;
 
-    /// Try (col, const). For symmetric operators (=, !=) also try (const, col).
+    /// For symmetric operators we also try the (const, col) ordering.
     auto col_opt = tryAsColumnRef(args[0], table_expression_node);
     auto const_opt = col_opt ? tryAsConstantValue(args[1]) : std::nullopt;
     bool symmetric = (name == "equals" || name == "notEquals");
@@ -172,14 +159,11 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     const auto & col = *col_opt;
     const auto & value = *const_opt;
 
-    /// A NULL on a non-Nullable column doesn't match the type's default; skip.
     if (value.isNull())
         return std::nullopt;
 
-    /// Bool's value space is {false, true} = {0, 1}, so `= true` and `!= true` cleanly
-    /// partition the column even though they don't match the type's default. We treat
-    /// `1` as the only "non-default" value for Bool here; other unsigned types fall
-    /// through to the asymmetric comparisons below.
+    /// `Bool` has a two-element value space, so `= true` / `!= true` partition the
+    /// column cleanly even though `true` is not the type default.
     bool col_is_bool = isBool(col.type);
 
     if (name == "equals")
@@ -199,11 +183,8 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
         return std::nullopt;
     }
 
-    /// Asymmetric integer comparisons: only safe for UNSIGNED columns where 0 is the only
-    /// non-positive value, so `col > 0`, `col >= 1`, `col < 1`, `col <= 0` align cleanly
-    /// with the default partition. For these the constant must be on the right and the
-    /// column on the left -- we already returned for symmetric ops above, so re-check
-    /// the (col, const) ordering here.
+    /// Asymmetric ops require unsigned integers so that `0` is the only non-positive
+    /// value and the column-on-left, constant-on-right ordering is fixed.
     if (!isUnsignedInteger(col.type))
         return std::nullopt;
 
@@ -247,8 +228,6 @@ collectSparsityConjuncts(const QueryTreeNodePtr & predicate, const QueryTreeNode
     if (!predicate)
         return out;
 
-    /// Recursive walk: top-level `AND(a, b, c)` flattens (and recurses for nested ANDs).
-    /// Non-AND nodes are classified directly via `classifySparsityPredicate`.
     if (const auto * func = predicate->as<FunctionNode>(); func && func->getFunctionName() == "and")
     {
         for (const auto & arg : func->getArguments().getNodes())

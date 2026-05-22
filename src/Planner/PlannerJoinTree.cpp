@@ -429,13 +429,10 @@ bool applyTrivialCountIfPossible(
     return true;
 }
 
-/// Extension of `applyTrivialCountIfPossible` for queries of shape
-///     SELECT count() FROM t WHERE <op>
-/// where `<op>` exactly partitions rows into defaults and non-defaults of one column,
-/// and that column has reliable per-part `(num_rows, num_defaults)` stats. See
-/// `Storages/MergeTree/SparsityFilter.h` for what "reliable" means and which predicates
-/// are recognised. Sister of `applyTrivialCountIfPossible`; same opt-outs except this
-/// one *requires* a WHERE.
+/// Serve `SELECT count() FROM t WHERE <predicate>` from per-column `(num_rows, num_defaults)`
+/// stats when `<predicate>` partitions rows into defaults vs non-defaults of one column.
+/// Sister of `applyTrivialCountIfPossible` with the same opt-outs, but this path *requires*
+/// a `WHERE`. `SparsityFilter.h` documents the reliability rules and recognised shapes.
 bool applyTrivialCountWithSparsityFilterIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -461,11 +458,9 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     if (select_query_info.additional_filter_ast)
         return false;
 
-    /// Same transaction caveat as `applyTrivialCountIfPossible`.
     if (query_context->getCurrentTransaction())
         return false;
 
-    /// FINAL / SAMPLE - same as applyTrivialCountIfPossible.
     if (table_node && table_node->getTableExpressionModifiers().has_value() &&
         (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
          table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
@@ -476,8 +471,8 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
         return false;
 
-    /// Differ from `applyTrivialCountIfPossible`: we *need* a WHERE to classify, and we
-    /// don't accept GROUP BY / PREWHERE / HAVING / QUALIFY because those reshape the count.
+    /// `WHERE` is required for classification; `GROUP BY` / `PREWHERE` / `HAVING` /
+    /// `QUALIFY` would reshape the count we're trying to read off the stats.
     auto & main_query_node = query_tree->as<QueryNode &>();
     if (!main_query_node.hasWhere())
         return false;
@@ -504,8 +499,8 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     if (!stats)
         return false;
 
-    /// Same parallel-replicas guard as the regular trivial-count path: avoid each remote
-    /// shard independently rewriting and multiplying the count.
+    /// Disable parallel replicas: otherwise each remote shard would independently
+    /// rewrite and the final result would be multiplied by the replica count.
     if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
     {
         if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
@@ -1044,11 +1039,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             }
         }
 
-        /// Apply trivial_count optimization if possible. The "with sparsity filter" variant
-        /// covers `SELECT count() FROM t WHERE col != default(col)` (and friends) by reading
-        /// per-part `num_defaults` from `serialization.json`. Only one of the two paths can
-        /// fire: the plain one rejects when there is a WHERE, the sparsity-filter one *needs*
-        /// a WHERE.
+        /// Apply trivial_count if possible. The plain variant requires no `WHERE`; the
+        /// sparsity-filter variant requires a `WHERE`, so at most one of them fires.
         bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates
             && (applyTrivialCountIfPossible(

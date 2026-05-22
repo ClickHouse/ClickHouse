@@ -757,9 +757,8 @@ public:
     size_t getTotalActiveSizeInRows() const;
     size_t getTotalUncompressedBytesInPatches() const;
 
-    /// `IStorage::getColumnDefaultnessStats` implementation for MergeTree-family storages.
-    /// All-or-nothing aggregate: returns nullopt unless every visible part has exact
-    /// stats. See `Storages/MergeTree/SparsityFilter.h` for the reliability rules.
+    /// All-or-nothing aggregate of per-part `SerializationInfo::Data` for `column_name`:
+    /// returns nullopt unless every visible part has exact stats (see `SparsityFilter.h`).
     std::optional<ColumnDefaultnessStats>
     getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const override;
 

@@ -678,10 +678,9 @@ public:
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG &, ContextPtr) const { return {}; }
 
-    /// Aggregated `(num_rows, num_defaults)` for `column_name` across all visible parts,
-    /// taken from per-part `SerializationInfo`. Returns nullopt when the storage cannot
-    /// supply an exact count -- see `Storages/MergeTree/SparsityFilter.h` for the precise
-    /// reliability rules. Default implementation returns nullopt.
+    /// Aggregated `(num_rows, num_defaults)` for `column_name` across visible parts.
+    /// Returns nullopt when the storage cannot guarantee exact counts; see
+    /// `SparsityFilter.h` for the reliability rules.
     struct ColumnDefaultnessStats
     {
         UInt64 num_rows = 0;

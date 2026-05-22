@@ -220,10 +220,9 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
-    /// Filter parts using per-column `num_defaults` / `num_rows` from `serialization.json`
-    /// when the WHERE predicate exactly partitions the column into defaults and non-defaults
-    /// (see `Storages/MergeTree/SparsityFilter.h`). Drops a part when all of its rows are
-    /// the default and the predicate matches non-defaults, or vice versa.
+    /// Drop a whole part when the predicate provably can't match any of its rows,
+    /// using per-column `num_defaults` / `num_rows` recorded in `serialization.json`.
+    /// See `SparsityFilter.h` for the recognised predicate shapes.
     static RangesInDataParts filterPartsBySparsityInfo(
         const RangesInDataParts & parts,
         const SelectQueryInfo & query_info,
@@ -232,11 +231,9 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
-    /// Phase B (eager, `Planning` mode): for sparse-encoded columns hit by a sparsity
-    /// predicate, read the offsets stream and drop individual granules from each part's
-    /// `MarkRanges` when the granule is provably empty of matches.
-    /// Works on any part that has the column sparse-encoded; does not require the
-    /// `exact_num_defaults` flag in `serialization.json` (unlike Phase A).
+    /// Drop individual granules from each part's `MarkRanges` by reading the sparse
+    /// offsets stream and classifying each granule. Works on any sparse-encoded part
+    /// (no `exact_num_defaults` flag required, unlike part-level pruning above).
     static RangesInDataParts filterMarkRangesBySparsityInfo(
         const RangesInDataParts & parts,
         const SelectQueryInfo & query_info,

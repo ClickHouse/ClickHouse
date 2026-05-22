@@ -1,7 +1,6 @@
--- Sparsity classifier walks top-level `AND` conjuncts (see
--- `collectSparsityConjuncts`). Phase A and Phase B (both planning and data_read)
--- drop a part / granule if ANY classified conjunct proves it can't match.
--- Layer C-1 trivial-count is intentionally single-predicate only.
+-- `collectSparsityConjuncts` flattens top-level `AND` and feeds every classified
+-- conjunct to the pruning step. A part / granule is dropped when any single
+-- conjunct rules it out. The trivial-count rewrite remains single-predicate only.
 
 DROP TABLE IF EXISTS t_multi_conjunct;
 
@@ -18,9 +17,8 @@ SYSTEM STOP MERGES t_multi_conjunct;
 
 -- `a != 0` at rows 200, 400, 600, 800 (granules 2, 4, 6, 8).
 -- `b != 0` at rows 300, 600, 900           (granules 3, 6, 9).
--- WHERE a != 0 AND b != 0 matches only row 600 (granule 6). Phase B should drop
--- 9 of 10 granules: granule 6 survives because both `a` and `b` are non-default
--- there; the other 9 each have at least one column all-default.
+-- WHERE a != 0 AND b != 0 matches only row 600 (granule 6). Granule pruning should
+-- drop the other 9 granules: each has at least one column that is all-default.
 INSERT INTO t_multi_conjunct
 SELECT number,
        if(number % 200 = 0 AND number > 0, number, 0),

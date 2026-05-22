@@ -824,10 +824,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
 {
     const auto & settings = context->getSettingsRef();
 
-    /// Reliability rules mirror `MergeTreeData::getColumnDefaultnessStats` (see
-    /// `Storages/MergeTree/SparsityFilter.h`).
-    /// Part-level pruning runs whenever the mode isn't `Off`; granule-level
-    /// pruning (Phase B) is layered on top in `Planning` / `DataRead` mode.
+    /// Reliability rules mirror `MergeTreeData::getColumnDefaultnessStats`. Part-level
+    /// pruning runs whenever the mode isn't `Off`; granule-level pruning runs in
+    /// `Planning` / `DataRead` mode.
     if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off
         || query_info.isFinal()
         || context->getCurrentTransaction()
@@ -846,8 +845,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
     if (conjuncts.empty())
         return parts;
 
-    /// Drop a part when ANY classified conjunct proves it has no matching rows. AND
-    /// semantics: all conjuncts must hold, so a single-conjunct contradiction is enough.
+    /// `AND` semantics: a single contradicted conjunct is enough to drop the part.
     auto conjunct_prunes_part = [](const RecognisedSparsityPredicate & pred,
                                    const SerializationInfo::Data & info_data) -> bool
     {
@@ -923,8 +921,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
 {
     const auto & settings = context->getSettingsRef();
 
-    /// Only the eager (`Planning`) mode trims `MarkRanges` here. `DataRead` mode defers
-    /// the granule analysis to scan time, when the column is being read anyway.
+    /// `DataRead` mode defers granule analysis to scan time, so it skips this path.
     if (settings[Setting::use_sparsity_info_for_pruning] != SparsityPruningMode::Planning
         || query_info.isFinal()
         || context->getCurrentTransaction()
@@ -945,9 +942,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
 
     auto storage_snapshot = std::make_shared<StorageSnapshot>(data, metadata_snapshot);
 
-    /// For each conjunct (column + predicate class), drop a granule when the analysis
-    /// proves no rows in it can match that conjunct. AND semantics across conjuncts:
-    /// a granule survives iff every conjunct allows it.
+    /// `AND` semantics: a granule is dropped if any single conjunct rules it out.
     auto granule_is_prunable_by =
         [](const RecognisedSparsityPredicate & pred, const SparseGranuleAnalysis & analysis, size_t mark) -> bool
     {
@@ -969,7 +964,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
         for (const auto & range : part.ranges)
             total_granules_before += range.end - range.begin;
 
-        /// Build a per-mark "drop this granule?" mask by OR-ing each conjunct's verdict.
         const size_t total_marks = part.data_part->index_granularity->getMarksCountWithoutFinal();
         std::vector<bool> dropped(total_marks, false);
         bool any_conjunct_used = false;
@@ -999,7 +993,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
             continue;
         }
 
-        /// Rebuild `MarkRanges` from the surviving granules.
         MarkRanges new_ranges;
         bool changed = false;
         for (const auto & range : part.ranges)
@@ -1031,7 +1024,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
                 trimmed.ranges = std::move(new_ranges);
                 res_parts.push_back(std::move(trimmed));
             }
-            /// else: every granule pruned -> drop the part entirely.
+            /// Empty `new_ranges` means every granule was pruned, so the part drops out.
         }
         else
         {

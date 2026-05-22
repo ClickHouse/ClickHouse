@@ -236,16 +236,16 @@ enum class CleanDeletedRows : uint8_t
 
 DECLARE_SETTING_ENUM(CleanDeletedRows)
 
-/// When to apply sparsity-info-based pruning (see `use_sparsity_info_for_pruning`).
 enum class SparsityPruningMode : uint8_t
 {
-    Off = 0,        /// No sparsity-based pruning.
-    Planning,       /// Part-level and granule-level pruning at plan time.
-                    /// Visible in EXPLAIN; preserves predictable mark counts for
-                    /// downstream stages (parallel replicas, FINAL exact, max_rows_to_read).
-    DataRead,       /// Part-level pruning at plan time; granule-level pruning deferred
-                    /// to scan time. Cheaper at TB-column scale; subject to the same
-                    /// restrictions as `use_skip_indexes_on_data_read`.
+    Off = 0,
+    /// Part-level and granule-level pruning at plan time. Visible in `EXPLAIN`; the
+    /// resulting mark count is known up-front, which matters for parallel replicas,
+    /// `FINAL` exact mode, and `max_rows_to_read`.
+    Planning,
+    /// Part-level pruning at plan time, granule-level pruning deferred to scan time.
+    /// Same trade-offs and restrictions as `use_skip_indexes_on_data_read`.
+    DataRead,
 };
 
 DECLARE_SETTING_ENUM(SparsityPruningMode)

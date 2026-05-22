@@ -40,11 +40,9 @@ public:
         size_t num_rows = 0;
         size_t num_defaults = 0;
 
-        /// `num_defaults` is normally produced by `ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO`
-        /// sampling at insert time, so it's an estimate. When the writer recomputes
-        /// the count exactly (for columns chosen as Sparse, see `MergeTreeDataWriter`),
-        /// it sets this flag so consumers that need a trustworthy count (e.g. trivial
-        /// count rewrite based on per-column sparsity) can opt into using it.
+        /// True when `num_defaults` was counted exactly rather than sampled. Consumers
+        /// that would produce wrong results from a sampled estimate (trivial count
+        /// rewrite, sparsity pruning) must require this flag.
         bool exact_num_defaults = false;
 
         void add(const IColumn & column);

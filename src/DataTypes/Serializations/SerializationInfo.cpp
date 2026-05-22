@@ -66,15 +66,12 @@ void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
 
 void SerializationInfo::Data::add(const IColumn & column)
 {
-    /// We use the exact count rather than `getRatioOfDefaultRows` sampling.
-    /// Cost is O(rows) -- comparable to the per-row work the writer is about
-    /// to do anyway -- and consumers (trivial count rewrite, sparse-based part
-    /// pruning) need the value to be trustworthy.
+    /// Count defaults exactly: downstream consumers (trivial count rewrite,
+    /// sparse-based part/granule pruning) cannot accept the sampling estimate.
     bool was_empty = (num_rows == 0);
     num_rows += column.size();
     num_defaults += column.getNumberOfDefaultRows();
-    /// Exactness is the AND of all contributions. A fresh Data hasn't seen any
-    /// data yet, so the first exact contribution "starts" the tracking as exact.
+    /// First exact contribution into a fresh `Data` starts exact tracking.
     if (was_empty)
         exact_num_defaults = true;
 }
@@ -83,7 +80,6 @@ void SerializationInfo::Data::add(const Data & other)
 {
     num_rows += other.num_rows;
     num_defaults += other.num_defaults;
-    /// Aggregate is exact only if both sides are exact.
     exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
 }
 
@@ -96,9 +92,9 @@ void SerializationInfo::Data::remove(const Data & other)
 
 void SerializationInfo::Data::addDefaults(size_t length)
 {
+    /// Exactness is preserved: every added row is known to be a default.
     num_rows += length;
     num_defaults += length;
-    /// Adding a known number of defaults preserves exactness.
 }
 
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
@@ -312,7 +308,7 @@ void SerializationInfo::toJSON(Poco::JSON::Object & object) const
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
-    /// Only emit when true so old readers (which would not know the key) stay compatible.
+    /// Skip emitting the key when false so pre-flag readers stay forward-compatible.
     if (data.exact_num_defaults)
         object.set(KEY_EXACT_NUM_DEFAULTS, true);
 }

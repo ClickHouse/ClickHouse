@@ -5845,15 +5845,12 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
 std::optional<IStorage::ColumnDefaultnessStats>
 MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
 {
-    /// Reliability rules are documented in `Storages/MergeTree/SparsityFilter.h`.
-
-    /// An active transaction can change which parts are visible relative to the snapshot
-    /// we want to reason about. Same restriction as `optimize_trivial_count_query`.
+    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
     if (query_context->getCurrentTransaction())
         return std::nullopt;
 
-    /// Lightweight updates / deletes apply patch parts at read time and are not folded
-    /// into base parts' `serialization.json`, so `num_defaults` would be stale.
+    /// Patch parts apply updates/deletes at read time and don't update the base part's
+    /// `serialization.json`, so the recorded `num_defaults` would be stale.
     if (!getPatchPartsVectorForInternalUsage().empty())
         return std::nullopt;
 
@@ -5865,10 +5862,7 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         if (it == infos.end())
             return std::nullopt;
 
-        /// `SerializationInfo::Data::add(IColumn)` records the exact count for every
-        /// sparse-eligible column (including those that end up Default-encoded), and
-        /// the writer persists `exact_num_defaults: true` so old parts (pre-flag) are
-        /// treated as non-trustworthy.
+        /// Pre-flag parts have a sampled `num_defaults` that can't be trusted.
         const auto & info_data = it->second->getData();
         if (!info_data.exact_num_defaults)
             return std::nullopt;

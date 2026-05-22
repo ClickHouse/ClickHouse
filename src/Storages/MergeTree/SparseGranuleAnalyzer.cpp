@@ -29,13 +29,12 @@ namespace Setting
 namespace
 {
 
-/// Synthetic condition hashes that key Phase B's per-(part, column) verdict in the
-/// `QueryConditionCache`. The bitmap stored for `Defaults` says "granule G has only
-/// default values for this column" -- usable for any `MatchesNonDefault` predicate on
-/// the column. The `NonDefaults` bitmap is the symmetric statement and feeds
-/// `MatchesDefault` predicates.
-constexpr std::string_view CACHE_DOMAIN_DEFAULTS = "__phaseB_offsets_defaults__";
-constexpr std::string_view CACHE_DOMAIN_NON_DEFAULTS = "__phaseB_offsets_non_defaults__";
+/// Cache keys: the verdict is a function of (part, column), not of the specific
+/// predicate, so the two bitmaps can be shared by every predicate of the matching
+/// class on the same column. Hashing a synthetic domain string with the column name
+/// keeps these keys disjoint from any real `WHERE` predicate hash.
+constexpr std::string_view CACHE_DOMAIN_DEFAULTS = "__sparse_offsets_defaults__";
+constexpr std::string_view CACHE_DOMAIN_NON_DEFAULTS = "__sparse_offsets_non_defaults__";
 
 UInt64 syntheticConditionHash(std::string_view domain, const String & column_name)
 {
@@ -55,9 +54,8 @@ void writeBitmapToCache(
     size_t marks_count,
     bool has_final_mark)
 {
-    /// Translate `granule_bitmap[g] == true` (this granule has no matches for the
-    /// corresponding predicate class) into the dense `MarkRanges` shape that
-    /// `QueryConditionCache::write` expects.
+    /// `QueryConditionCache::write` takes mark ranges that have NO matches; collapse
+    /// the contiguous `true` runs of `granule_bitmap` into that shape.
     MarkRanges no_match_ranges;
     size_t i = 0;
     while (i < granule_bitmap.size())
@@ -74,9 +72,8 @@ void writeBitmapToCache(
         i = j;
     }
 
-    /// Always call `write` -- even when `no_match_ranges` is empty -- so the cache
-    /// records "this (part, column, class) was analyzed; no prunable granules" and
-    /// the next query short-circuits to the cache instead of re-running the analyzer.
+    /// Always write, even when no granule is prunable: subsequent queries need to see
+    /// "analyzed, nothing to prune" so they don't re-run the analyzer.
     cache.write(
         table_uuid, part_name, condition_hash, String(condition_label),
         no_match_ranges, marks_count, has_final_mark);
@@ -94,9 +91,7 @@ analyzeSparseColumnGranules(
     const ContextPtr & query_context,
     LoggerPtr log)
 {
-    /// Phase B only applies when this column is sparse-encoded on this part. Otherwise the
-    /// data has no offsets stream and we can't compute per-granule defaults cheaply (and
-    /// Phase A or a full scan handle the dense case).
+    /// Without a sparse offsets stream there is no cheap classification to make.
     const auto & infos = part->getSerializationInfos();
     auto it = infos.find(column_name);
     if (it == infos.end()
@@ -104,21 +99,15 @@ analyzeSparseColumnGranules(
         return std::nullopt;
 
     const size_t total_marks = part->index_granularity->getMarksCountWithoutFinal();
-    /// `QueryConditionCache` follows the convention that `marks_count` *includes* the
-    /// final-mark sentinel, and `has_final_mark` then flips `matching_marks[marks_count-1]`
-    /// to `false`. Phase B never analyses the sentinel granule, so we pass the full
-    /// `getMarksCount()` here and only read/write positions in `[0, total_marks)`.
+    /// `QueryConditionCache` expects `marks_count` to *include* the final-mark sentinel,
+    /// and `has_final_mark` then flips `matching_marks[marks_count-1]` to false. We
+    /// never classify the sentinel ourselves, so always read/write only `[0, total_marks)`.
     const size_t cache_marks_count = part->index_granularity->getMarksCount();
     const bool has_final_mark = part->index_granularity->hasFinalMark();
     const UUID table_uuid = storage.getStorageID().uuid;
 
-    /// Phase B's verdict for a (part, column) is independent of the specific predicate
-    /// being asked about -- a granule is "all-default" or "all-non-default" purely as
-    /// a function of the column's data. Cache both bitmaps under synthetic keys so
-    /// repeated queries (with any classifiable predicate on the same column) hit it
-    /// without re-running the analyzer or its per-part reader setup. Gated on the
-    /// same `use_query_condition_cache` setting as the regular cache path; the setting
-    /// is per-query so it must come from `query_context`, not the storage's context.
+    /// Setting is per-query, so it must come from `query_context`, not from the storage's
+    /// startup context.
     auto cache = query_context->getSettingsRef()[Setting::use_query_condition_cache]
         ? query_context->getQueryConditionCache()
         : nullptr;
@@ -135,10 +124,11 @@ analyzeSparseColumnGranules(
             SparseGranuleAnalysis analysis;
             analysis.granule_has_only_defaults.resize(total_marks);
             analysis.granule_has_only_non_defaults.resize(total_marks);
+            /// Cache bit `false` means "no matches for the predicate", which for our
+            /// `Defaults` domain translates back to "all-default" (and symmetrically
+            /// for `NonDefaults`).
             for (size_t g = 0; g < total_marks; ++g)
             {
-                /// In `QueryConditionCache`, `false` means "no matches for this predicate".
-                /// For our `Defaults` domain that translates to "granule G is all-default".
                 analysis.granule_has_only_defaults[g] = !cached_defaults->at(g);
                 analysis.granule_has_only_non_defaults[g] = !cached_non_defaults->at(g);
             }
@@ -171,12 +161,10 @@ analyzeSparseColumnGranules(
         /*avg_value_size_hints=*/{},
         /*profile_callback=*/{});
 
-    /// Read each `MarkRange` in a single `readRows` call rather than granule-by-granule.
-    /// Each `readRows` has fixed dispatch + setup cost (mark seek, decompression block
-    /// setup, etc.); with adaptive granularity that's ~12K granules per 100M-row part,
-    /// and a per-granule read pattern is ~100x slower than reading the whole range at
-    /// once. After the read, we bucket the `ColumnSparse` offsets array into per-granule
-    /// counts with a single linear sweep.
+    /// Read each `MarkRange` in one `readRows` call. Each call has fixed per-invocation
+    /// overhead (mark seek, decompression block setup); doing it granule-by-granule was
+    /// ~100x slower on 100M-row parts. After reading, we bucket the offsets array into
+    /// per-granule non-default counts with a single linear sweep.
     SparseGranuleAnalysis analysis;
     analysis.granule_has_only_defaults.assign(total_marks, false);
     analysis.granule_has_only_non_defaults.assign(total_marks, false);
@@ -195,7 +183,7 @@ analyzeSparseColumnGranules(
                 range.begin, range.end, /*continue_reading=*/false, rows_in_range, /*rows_offset=*/0, result);
             if (rows_read != rows_in_range)
             {
-                LOG_DEBUG(log, "Short read on range [{}, {}) of part {} ({} rows instead of {}); skipping Phase B for this part",
+                LOG_DEBUG(log, "Short read on range [{}, {}) of part {} ({} rows instead of {}); skipping sparsity classification for this part",
                     range.begin, range.end, part->name, rows_read, rows_in_range);
                 return std::nullopt;
             }
@@ -203,7 +191,7 @@ analyzeSparseColumnGranules(
         catch (...)
         {
             tryLogCurrentException(log, fmt::format(
-                "Failed to read sparse offsets for column {} of part {}; skipping Phase B for this part",
+                "Failed to read sparse offsets for column {} of part {}; skipping sparsity classification for this part",
                 column_name, part->name));
             return std::nullopt;
         }
@@ -211,15 +199,16 @@ analyzeSparseColumnGranules(
         const auto * sparse = result[0] ? typeid_cast<const ColumnSparse *>(result[0].get()) : nullptr;
         if (!sparse)
         {
-            /// Reader returned a dense column (e.g. because the column was materialised
-            /// as dense during the read). Without sparse offsets we can't classify.
-            LOG_DEBUG(log, "Sparse-encoded column {} read as dense for part {}; skipping Phase B",
+            /// The reader returned a dense column (e.g. the column was materialised as dense
+            /// during this read), so the offsets stream needed for cheap classification is
+            /// not available.
+            LOG_DEBUG(log, "Sparse-encoded column {} read as dense for part {}; skipping sparsity classification",
                 column_name, part->name);
             return std::nullopt;
         }
 
-        /// Bucket the offsets array (sorted, absolute positions within this read sequence)
-        /// into per-granule non-default counts via a two-pointer walk.
+        /// Two-pointer walk: offsets are sorted absolute positions within the read
+        /// sequence; advance the offset cursor over each granule's row range.
         const auto & offsets_column = assert_cast<const ColumnUInt64 &>(sparse->getOffsetsColumn());
         const auto & offsets_data = offsets_column.getData();
 
@@ -247,9 +236,8 @@ analyzeSparseColumnGranules(
         }
     }
 
-    /// Cache the verdict so the next query on this part doesn't re-do the analyzer's
-    /// per-part reader setup. Phase B's verdict is column-keyed, not predicate-keyed,
-    /// so any classifiable predicate on the same column shares this entry.
+    /// Persist for the next query: the verdict depends only on the column's data,
+    /// so any predicate of the matching class on the same column will hit this.
     if (cache && table_uuid != UUIDHelpers::Nil)
     {
         writeBitmapToCache(*cache, table_uuid, part->name,

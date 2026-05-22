@@ -19,26 +19,19 @@ struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 struct RangesInDataPart;
 
-/// Per-granule state for a sparse-encoded column.
+/// Per-granule classification of a sparse-encoded column. The two vectors are
+/// indexed by mark number and are mutually exclusive (a granule can be all-default,
+/// all-non-default, or mixed).
 struct SparseGranuleAnalysis
 {
-    /// `true` for granules that contain only default values (offsets stream is empty for
-    /// this granule). Predicates of class `MatchesNonDefault` (e.g. `col != 0`) can drop
-    /// these granules without reading values.
     std::vector<bool> granule_has_only_defaults;
-    /// `true` for granules that contain no default values. Predicates of class
-    /// `MatchesDefault` (e.g. `col = 0`) can drop these.
     std::vector<bool> granule_has_only_non_defaults;
 };
 
-/// Reads the sparse-offsets substream of `column_name` from `part` over `ranges` and
-/// classifies every granule in those ranges. Works regardless of part format (Wide,
-/// Compact, Packed) because it goes through `createMergeTreeReader` which dispatches
-/// on the part type.
-///
-/// Returns `std::nullopt` when the column isn't sparse-encoded on this part (Phase B
-/// only applies to sparse-encoded columns; dense columns are handled by Phase A or
-/// by a full scan).
+/// Read the sparse-offsets substream of `column_name` over `ranges` and classify every
+/// granule. Returns `std::nullopt` when the column isn't sparse-encoded on this part
+/// (there is no offsets stream to inspect, and a dense scan can't be served cheaper
+/// than just running the predicate).
 std::optional<SparseGranuleAnalysis>
 analyzeSparseColumnGranules(
     const DataPartPtr & part,
@@ -50,21 +43,19 @@ analyzeSparseColumnGranules(
     LoggerPtr log);
 
 
-/// Result of Phase B granule analysis adapted to the `granules_selected` bitmap that
-/// `MergeTreeReaderIndex::canSkipMark` consumes. `granules_selected[g] == false` means
-/// "skip granule g".
+/// `granules_selected[g] == false` means the scan can skip granule g. Adapted from
+/// `SparseGranuleAnalysis` to match the bitmap that `MergeTreeReaderIndex::canSkipMark`
+/// consumes from skip-index readers.
 struct SparsityReadResult
 {
     std::vector<bool> granules_selected;
 };
 using SparsityReadResultPtr = std::shared_ptr<SparsityReadResult>;
 
-/// Lazy granule analyzer used by the `data_read` mode of `use_sparsity_info_for_pruning`.
-/// `MergeTreeIndexReadResultPool` calls `read(part)` once per part; the resulting mask
-/// is then fed into `MergeTreeReaderIndex::canSkipMark` like a skip-index result.
-/// Supports multi-conjunct WHEREs: every classified `AND` conjunct contributes its
-/// own granule-drop verdict; the granule is skipped iff any single conjunct proves
-/// no rows in it can match.
+/// Runs the per-part classification on demand from `MergeTreeIndexReadResultPool`,
+/// so the analyzer's I/O happens at scan time alongside the predicate read instead
+/// of during query planning. Drops a granule when any conjunct proves no row in it
+/// can match (`AND` semantics).
 class MergeTreeSparsityReader
 {
 public:

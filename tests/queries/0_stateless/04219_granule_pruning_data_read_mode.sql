@@ -1,7 +1,6 @@
--- Phase B granule-level pruning in `data_read` (lazy) mode. The granule analysis
--- runs at scan time via `MergeTreeSparsityReader` plugged into the existing
--- `MergeTreeReaderIndex::canSkipMark` mechanism (same path as
--- `use_skip_indexes_on_data_read`). Result must match the `off` baseline.
+-- Granule-level pruning in `data_read` (lazy) mode: the classification runs at
+-- scan time via `MergeTreeSparsityReader` and feeds `MergeTreeReaderIndex::canSkipMark`
+-- (same path as `use_skip_indexes_on_data_read`). Result must match the `off` baseline.
 
 DROP TABLE IF EXISTS t_granule_data_read;
 
@@ -32,8 +31,7 @@ SELECT 'data_read sum',   sum(x)  FROM t_granule_data_read WHERE x != 0 SETTINGS
 SELECT 'off count',       count() FROM t_granule_data_read WHERE x != 0 SETTINGS use_sparsity_info_for_pruning = 'off';
 SELECT 'planning count',  count() FROM t_granule_data_read WHERE x != 0 SETTINGS use_sparsity_info_for_pruning = 'planning';
 
--- Predicate direction that can't be pruned (no granule is all-non-default) -- the lazy
--- variant must not drop anything either.
+-- Direction that can't be pruned: no granule is all-non-default, so nothing drops.
 SELECT 'data_read x=0', count() FROM t_granule_data_read WHERE x = 0 SETTINGS use_sparsity_info_for_pruning = 'data_read';
 
 DROP TABLE t_granule_data_read;
