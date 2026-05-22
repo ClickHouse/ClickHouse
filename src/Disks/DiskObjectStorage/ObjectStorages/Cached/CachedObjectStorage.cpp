@@ -70,7 +70,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 }
 
 void CachedObjectStorage::prepareRead(
-    ObjectStoragePtr /* self */,
+    ObjectStoragePtr /* storage */,
     const StoredObjects & objects,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,

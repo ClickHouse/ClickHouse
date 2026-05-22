@@ -104,13 +104,13 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
 }
 
 void IObjectStorage::prepareRead(
-    ObjectStoragePtr self,
+    ObjectStoragePtr storage,
     const StoredObjects & objects,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    pipeline.setSource(std::move(self), objects, read_settings, read_hint);
+    pipeline.setSource(std::move(storage), objects, read_settings, read_hint);
 }
 
 }

@@ -39,7 +39,7 @@ public:
         bool restrict_seek = false) const override;
 
     void prepareRead(
-        ObjectStoragePtr self,
+        ObjectStoragePtr storage,
         const StoredObjects & objects,
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint,
