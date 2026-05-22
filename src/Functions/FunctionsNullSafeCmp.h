@@ -212,7 +212,8 @@ public:
 
         auto executable_func = comparator->build(arguments);
         auto data_type = executable_func->getResultType();
-        res = executable_func->execute(arguments, data_type, input_rows_count, /*dry_run=*/false);
+        /// Forward `dry_run` so the flag flows end-to-end (the zero-row case is already handled above).
+        res = executable_func->execute(arguments, data_type, input_rows_count, dry_run);
 
         return res;
     }
