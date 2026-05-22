@@ -14,23 +14,23 @@
 namespace DB
 {
 
-MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
+std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr & cursor)
 {
-    MergeTreeCursor cursor;
+    std::map<String, PartitionCursor> merge_tree_cursor;
 
-    if (!cursor_tree)
-        return cursor;
+    if (!cursor)
+        return merge_tree_cursor;
 
-    for (const auto & [partition_id, node] : *cursor_tree)
+    for (const auto & [partition_id, node] : *cursor)
     {
         const auto & partition_node = std::get<CursorTreeNodePtr>(node);
-        cursor[partition_id] = PartitionCursor{
+        merge_tree_cursor[partition_id] = PartitionCursor{
             .block_number = partition_node->getValue("block_number"),
             .block_offset = partition_node->getValue("block_offset", -1),
         };
     }
 
-    return cursor;
+    return merge_tree_cursor;
 }
 
 Names extendWithAuxiliaryColumns(Names columns)
