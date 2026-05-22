@@ -1723,7 +1723,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified,
-                }, getContext());
+                }, getContext(), storage->format_settings);
 
             return chunk;
         }

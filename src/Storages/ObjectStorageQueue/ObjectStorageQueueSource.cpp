@@ -1291,7 +1291,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             return chunk;
         }

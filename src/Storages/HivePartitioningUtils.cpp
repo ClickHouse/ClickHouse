@@ -65,11 +65,7 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
-/// Builds FormatSettings tailored for parsing hive partition values from a path.
-/// Hive partition values are essentially a string-to-type cast, so we honour
-/// `cast_string_to_date_time_mode` (rather than `date_time_input_format`) and
-/// allow leading zeros in numeric values.
-static FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
 {
     FormatSettings hive_format_settings = format_settings ? *format_settings : getFormatSettings(context);
     hive_format_settings.allow_number_leading_zeros = true;

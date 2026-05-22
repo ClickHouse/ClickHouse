@@ -432,7 +432,8 @@ Chunk StorageObjectStorageSource::generate()
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
                 },
-                read_context);
+                read_context,
+                format_settings);
 
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())

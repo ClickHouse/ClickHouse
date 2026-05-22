@@ -48,6 +48,26 @@ ORDER BY id
 SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
+# Virtual column case: the schema declares only `id`, so `ts` is materialized as
+# a virtual column. Hive virtual column conversion must also honour
+# `cast_string_to_date_time_mode`.
+$CLICKHOUSE_LOCAL -q "
+SELECT id, ts
+FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64')
+ORDER BY id
+SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
+"
+
+# Virtual column case with a path filter on the virtual column. This exercises
+# the path-and-file filter evaluation path (addPathAndFileToVirtualColumns).
+$CLICKHOUSE_LOCAL -q "
+SELECT id
+FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64')
+WHERE ts = toDateTime('2026-05-07 22:15:15', 'UTC')
+ORDER BY id
+SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
+"
+
 # If the user explicitly opts into the strict parser, parsing of timezone
 # suffixes must fail (so this query is expected to error).
 $CLICKHOUSE_LOCAL -q "
