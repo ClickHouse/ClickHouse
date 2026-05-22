@@ -62,6 +62,10 @@ constexpr unsigned char resource_jemalloc_html[] =
 {
 #embed "../../programs/server/jemalloc.html"
 };
+constexpr unsigned char resource_schema_html[] =
+{
+#embed "../../programs/server/schema.html"
+};
 constexpr unsigned char resource_processors_profile_html[] =
 {
 #embed "../../programs/server/processors_profile.html"
@@ -152,6 +156,11 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
 void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html)}, http_response_headers_override);
+}
+
+void SchemaWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(resource_schema_html), std::size(resource_schema_html)}, http_response_headers_override);
 }
 
 void ProcessorsProfileWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
