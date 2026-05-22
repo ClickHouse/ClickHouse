@@ -333,7 +333,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
-            {"apply_row_policy_after_final", true, true, "Single canonical compatibility entry for apply_row_policy_after_final. Compatibility values strictly below 25.10 revert to false; 25.10 and later keep the current default (true) because the post-#87303 false default was a correctness regression that #97279 reverted. Same entry is meant to be backported across all 25.10+ branches that ship the true default."},
+            {"apply_row_policy_after_final", true, true, "Setting was added as a fix for the post-#87303 regression where row policies and PREWHERE were applied before FINAL. PR #91065 introduced the setting and PR #97279 made the correctness-safe true the default. Recorded as {true, true} so compatibility never reverts to the pre-fix false behavior."},
             {"allow_special_serialization_kinds_in_output_formats", false, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
             {"enable_lazy_columns_replication", false, false, "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
