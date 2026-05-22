@@ -119,7 +119,6 @@ struct KeeperChangelogStatus
     uint64_t from_log_index;
     uint64_t to_log_index;
     std::optional<uint64_t> last_entry_index;
-    uint64_t entries;
     String path;
     DiskPtr disk;
     bool is_compressed;

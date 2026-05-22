@@ -8,6 +8,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnDefault.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -15,12 +18,11 @@ namespace DB
 
 ColumnsDescription StorageSystemKeeperChangelogs::getColumnsDescription()
 {
-    return ColumnsDescription
+    auto description = ColumnsDescription
     {
         {"from_log_index", std::make_shared<DataTypeUInt64>(), "First Raft log index in the file (inclusive)."},
         {"to_log_index", std::make_shared<DataTypeUInt64>(), "Last Raft log index covered by the filename (inclusive). For the active file this is the rotation target and may be ahead of last_entry_index."},
-        {"last_entry_index", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Highest log index actually appended to this file. NULL if the active file has not received any entries yet."},
-        {"entries", std::make_shared<DataTypeUInt64>(), "Number of entries appended to this file."},
+        {"last_entry_index", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Highest log index actually appended to this file. NULL if the active file has not received any entries yet or the file is broken."},
         {"path", std::make_shared<DataTypeString>(), "File path on the disk."},
         {"disk_name", std::make_shared<DataTypeString>(), "Name of the disk holding the file."},
         {"size_bytes", std::make_shared<DataTypeUInt64>(), "Size of the file on disk."},
@@ -29,6 +31,16 @@ ColumnsDescription StorageSystemKeeperChangelogs::getColumnsDescription()
         {"active", DataTypeFactory::instance().get("Bool"), "This file is currently being appended to."},
         {"is_broken", DataTypeFactory::instance().get("Bool"), "Trailing record was found corrupted at startup."},
     };
+
+    ColumnDescription entries_alias("entries", std::make_shared<DataTypeUInt64>());
+    entries_alias.default_desc.kind = ColumnDefaultKind::Alias;
+    const String alias_expression = "ifNull(last_entry_index - from_log_index + 1, 0)";
+    ParserExpression expression_parser;
+    entries_alias.default_desc.expression = parseQuery(
+        expression_parser, alias_expression.data(), alias_expression.data() + alias_expression.size(), "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    description.add(std::move(entries_alias));
+
+    return description;
 }
 
 void StorageSystemKeeperChangelogs::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
@@ -69,7 +81,6 @@ void StorageSystemKeeperChangelogs::fillData(MutableColumns & res_columns, Conte
             res_columns[i++]->insert(*entry.last_entry_index);
         else
             res_columns[i++]->insertDefault();
-        res_columns[i++]->insert(entry.entries);
         res_columns[i++]->insert(entry.path);
         res_columns[i++]->insert(entry.disk->getName());
         res_columns[i++]->insert(size_bytes);
