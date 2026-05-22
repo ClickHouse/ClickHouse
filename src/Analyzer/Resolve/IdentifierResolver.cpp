@@ -33,7 +33,6 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
-#include <iostream>
 #include <ranges>
 
 
@@ -1015,6 +1014,48 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
+static bool qualifierBindsToJoinSubtree(
+    const QueryTreeNodePtr & join_tree_node,
+    const std::string & qualifier,
+    const IdentifierResolveScope & scope)
+{
+    if (!join_tree_node || qualifier.empty())
+        return false;
+
+    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
+        return true;
+
+    switch (join_tree_node->getNodeType())
+    {
+        case QueryTreeNodeType::JOIN:
+        {
+            const auto & join = join_tree_node->as<JoinNode &>();
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope);
+        }
+        case QueryTreeNodeType::CROSS_JOIN:
+        {
+            const auto & cross = join_tree_node->as<CrossJoinNode &>();
+            for (const auto & expr : cross.getTableExpressions())
+                if (qualifierBindsToJoinSubtree(expr, qualifier, scope))
+                    return true;
+            return false;
+        }
+        case QueryTreeNodeType::ARRAY_JOIN:
+        {
+            const auto & arr = join_tree_node->as<ArrayJoinNode &>();
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope);
+        }
+        default:
+            break;
+    }
+
+    auto it = scope.table_expression_node_to_data.find(join_tree_node);
+    if (it == scope.table_expression_node_to_data.end())
+        return false;
+    return !it->second.table_name.empty() && it->second.table_name == qualifier;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -1048,8 +1089,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         return std::move(res.resolved_identifier);
     };
 
-    auto left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
-    auto right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
+    /// If the leading part of a compound identifier binds as a qualifier (alias / table_name)
+    /// to exactly one side, restrict resolution to that side; otherwise try both.
+    bool binds_left = true;
+    bool binds_right = true;
+    if (identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
+    {
+        const auto & path_start = identifier_lookup.identifier.front();
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope);
+    }
+
+    QueryTreeNodePtr left_resolved_identifier;
+    QueryTreeNodePtr right_resolved_identifier;
+    if (binds_left || !binds_right)
+        left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
+    if (!binds_left || binds_right)
+        right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right);
 
     if (!identifier_lookup.isExpressionLookup())
     {
@@ -1232,78 +1288,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 resolved_identifier = left_resolved_identifier;
             }
         }
+        else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
+        {
+            resolved_side = JoinTableSide::Left;
+            resolved_identifier = left_resolved_identifier;
+        }
         else
         {
-            const auto & ambiguity_path_start = identifier_lookup.identifier.front();
-            auto column_source_matches_path_start = [&](const QueryTreeNodePtr & resolved) -> bool
-            {
-                if (identifier_lookup.identifier.getPartsSize() < 2)
-                    return false;
-                const auto * column = resolved->as<ColumnNode>();
-                if (!column)
-                    return false;
-                auto it = scope.table_expression_node_to_data.find(column->getColumnSource());
-                if (it == scope.table_expression_node_to_data.end())
-                    return false;
-                const auto & data = it->second;
-                if (!data.table_expression_name.empty() && data.table_expression_name == ambiguity_path_start)
-                    return true;
-                if (!data.table_name.empty() && data.table_name == ambiguity_path_start)
-                    return true;
-                return false;
-            };
-            auto is_dotted_subquery_column_match = [&](const QueryTreeNodePtr & resolved) -> bool
-            {
-                if (identifier_lookup.identifier.getPartsSize() < 2)
-                    return false;
-                const auto * column = resolved->as<ColumnNode>();
-                if (!column)
-                    return false;
-                const auto & source = column->getColumnSource();
-                if (!source)
-                    return false;
-                auto source_type = source->getNodeType();
-                if (source_type != QueryTreeNodeType::QUERY && source_type != QueryTreeNodeType::UNION)
-                    return false;
-                return column->getColumnName() == identifier_lookup.identifier.getFullName();
-            };
-            const bool left_source_matches = column_source_matches_path_start(left_resolved_identifier);
-            const bool right_source_matches = column_source_matches_path_start(right_resolved_identifier);
-            const bool left_is_dotted_subq = is_dotted_subquery_column_match(left_resolved_identifier);
-            const bool right_is_dotted_subq = is_dotted_subquery_column_match(right_resolved_identifier);
-            if (left_source_matches && !right_source_matches)
-            {
-                resolved_side = JoinTableSide::Left;
-                resolved_identifier = left_resolved_identifier;
-            }
-            else if (right_source_matches && !left_source_matches)
-            {
-                resolved_side = JoinTableSide::Right;
-                resolved_identifier = right_resolved_identifier;
-            }
-            else if (left_is_dotted_subq && !right_is_dotted_subq)
-            {
-                resolved_side = JoinTableSide::Right;
-                resolved_identifier = right_resolved_identifier;
-            }
-            else if (right_is_dotted_subq && !left_is_dotted_subq)
-            {
-                resolved_side = JoinTableSide::Left;
-                resolved_identifier = left_resolved_identifier;
-            }
-            else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
-            {
-                resolved_side = JoinTableSide::Left;
-                resolved_identifier = left_resolved_identifier;
-            }
-            else
-            {
-                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                    "JOIN {} ambiguous identifier '{}'. In scope {}",
-                    table_expression_node->formatASTForErrorMessage(),
-                    identifier_lookup.identifier.getFullName(),
-                    scope.scope_node->formatASTForErrorMessage());
-            }
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "JOIN {} ambiguous identifier '{}'. In scope {}",
+                table_expression_node->formatASTForErrorMessage(),
+                identifier_lookup.identifier.getFullName(),
+                scope.scope_node->formatASTForErrorMessage());
         }
     }
     else if (left_resolved_identifier)
