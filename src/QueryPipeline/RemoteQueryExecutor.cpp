@@ -125,7 +125,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
 
-        std::vector<IConnectionPool::Entry> connection_entries; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        ConnectionPoolEntries connection_entries;
         if (!result.entry.isNull() && result.is_usable)
         {
             chassert(result.entry->isConnected());
@@ -205,7 +205,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::vector<IConnectionPool::Entry> && connections_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    ConnectionPoolEntries && connections_,
     const String & query_,
     SharedHeader header_,
     ContextPtr context_,
@@ -265,7 +265,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
 #endif
 
-        std::vector<IConnectionPool::Entry> connection_entries; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        ConnectionPoolEntries connection_entries;
         std::optional<bool> skip_unavailable_endpoints;
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;

@@ -90,7 +90,7 @@ public:
     /// The optional `pool` parameter keeps the connection pool alive while entries are in use,
     /// preventing use-after-free when the pool would otherwise be destroyed before the entries.
     RemoteQueryExecutor(
-        std::vector<IConnectionPool::Entry> && connections_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        ConnectionPoolEntries && connections_,
         const String & query_,
         SharedHeader header_,
         ContextPtr context_,
@@ -275,7 +275,7 @@ private:
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
-    std::vector<ExternalTablesData> external_tables_data; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    ExternalTablesDataPerReplica external_tables_data;
     std::mutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet
