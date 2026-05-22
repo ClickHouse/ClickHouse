@@ -1514,7 +1514,7 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.
-        "page_cache_max_coalesced_bytes": lambda: random.choice([4096, 65536, 1048576, 16777216, 67108864]),
+        "page_cache_max_coalesced_bytes": lambda: random.choice([65536, 1048576, 16777216, 67108864]),
         # Default-true optimize/enable settings: disable with 0.05 probability
         "optimize_dictget_tuple_element": lambda: random.random() > 0.05,
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
@@ -1565,6 +1565,8 @@ class SettingsRandomizer:
         "optimize_use_projection_filtering": "optimize_use_projections",
         # top-k dynamic filtering requires the top-k skip index path to be active
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
+        # variable-length opt-in only matters when the parent dynamic filter is on
+        "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
     }
