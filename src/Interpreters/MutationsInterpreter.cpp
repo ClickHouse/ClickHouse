@@ -103,6 +103,22 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
+namespace
+{
+
+/// Returns whether the new analyzer should be used for mutations.
+/// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
+/// The override is parsed once per config reload in `Server.cpp` and stored on the shared context,
+/// so this is a cheap atomic load.
+bool shouldUseAnalyzerForMutations(const ContextPtr & context)
+{
+    if (auto override_value = context->getMutationsUseAnalyzerOverride())
+        return *override_value;
+    return context->getSettingsRef()[Setting::allow_experimental_analyzer];
+}
+
+}
+
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
@@ -240,7 +256,7 @@ IsStorageTouched isStorageTouchedByMutations(
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (shouldUseAnalyzerForMutations(context))
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
         InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
@@ -497,7 +513,7 @@ MutationsInterpreter::MutationsInterpreter(
     , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
     auto new_context = Context::createCopy(context_);
-    use_analyzer = new_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    use_analyzer = shouldUseAnalyzerForMutations(new_context);
     if (!use_analyzer)
         LOG_TEST(logger, "Will use old analyzer to prepare mutation");
     context = std::move(new_context);
@@ -2237,7 +2253,7 @@ void MutationsInterpreter::validate()
 {
     validateNonDeterministicMutationsForStorage(source.getStorage(), commands, context);
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (shouldUseAnalyzerForMutations(context))
         prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
     else
     {
