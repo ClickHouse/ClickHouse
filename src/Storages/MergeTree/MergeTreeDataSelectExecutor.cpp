@@ -2244,7 +2244,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     /// Same `index_mark` may come from several PK ranges. Merge hints once.
                     if (merged_hints_index_marks.insert(index_mark).second)
                     {
-                        if (!nn.distances.has_value())
+                        if (nn.rows.empty())
+                        {
+                            /// Empty ANN result means no rows survived PK filter for this granule.
+                            /// Do not treat it as missing distances for the whole part.
+                        }
+                        else if (!nn.distances.has_value())
                         {
                             /// Fail-close: `_distance` path requires paired distances; if any granule lacks them,
                             /// drop accumulated hints for this part (conservative, matches legacy `read_hints = {}` intent).
