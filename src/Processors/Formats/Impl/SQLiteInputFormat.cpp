@@ -164,6 +164,11 @@ void registerSQLiteSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "SQLite", [](ReadBuffer & buf, const FormatSettings & settings) { return std::make_shared<SQLiteSchemaReader>(buf, settings); });
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("SQLite", [](const FormatSettings & settings)
+    {
+        return "input_table_name=" + settings.sqlite.input_table_name;
+    });
 }
 
 }
