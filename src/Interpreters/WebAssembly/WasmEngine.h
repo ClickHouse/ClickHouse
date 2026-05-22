@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <Common/StopToken.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB::WebAssembly
 {
@@ -36,11 +37,11 @@ public:
     /// Invoke a function expecting to return a single value of specific result type or void, if no return value expected.
     /// If function returns multiple values or different type, an exception is thrown.
     template <typename ResultType>
-    ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token);
+    ResultType invoke(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token);
 
 protected:
     /// Implementation provides generic invocation returning all result values of generic WasmVal type.
-    virtual std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) = 0;
+    virtual VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) = 0;
 };
 
 /** WasmModule represents a WebAssembly module, typically containing code, imports and exports.
@@ -70,7 +71,7 @@ public:
       */
     virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const = 0;
 
-    virtual std::vector<WasmFunctionDeclaration> getImports() const = 0;
+    virtual VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const = 0;
     virtual void linkFunction(WasmHostFunction host_function) = 0;
 
     virtual WasmFunctionDeclaration getExport(std::string_view function_name) const = 0;
