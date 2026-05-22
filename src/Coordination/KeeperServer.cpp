@@ -1459,6 +1459,32 @@ int64_t KeeperServer::getLeaderID() const
     return raft_instance->get_leader();
 }
 
+std::vector<KeeperClusterMemberInfo> KeeperServer::getClusterMembersInfo() const
+{
+    std::vector<nuraft::ptr<nuraft::srv_config>> configs;
+    raft_instance->get_srv_config_all(configs);
+
+    const int32_t leader_id = static_cast<int32_t>(raft_instance->get_leader());
+    const uint64_t self_log_idx = raft_instance->get_last_log_idx();
+
+    std::vector<KeeperClusterMemberInfo> result;
+    result.reserve(configs.size());
+    for (const auto & cfg : configs)
+    {
+        KeeperClusterMemberInfo info;
+        info.server_id = cfg->get_id();
+        info.endpoint = cfg->get_endpoint();
+        info.is_observer = cfg->is_learner();
+        info.priority = cfg->get_priority();
+        info.is_leader = (cfg->get_id() == leader_id);
+        info.is_self = (cfg->get_id() == server_id);
+        if (info.is_self)
+            info.last_log_index = self_log_idx;
+        result.push_back(std::move(info));
+    }
+    return result;
+}
+
 void KeeperServer::yieldLeadership()
 {
     if (isLeader())

@@ -288,6 +288,11 @@ public:
         return server->getKeeperLogInfo();
     }
 
+    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const
+    {
+        return server->getClusterMembersInfo();
+    }
+
     /// Request to be leader.
     bool requestLeader()
     {

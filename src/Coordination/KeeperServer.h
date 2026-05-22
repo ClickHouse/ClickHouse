@@ -155,6 +155,8 @@ public:
 
     KeeperLogInfo getKeeperLogInfo();
 
+    std::vector<KeeperClusterMemberInfo> getClusterMembersInfo() const;
+
     bool requestLeader();
 
     void yieldLeadership();
