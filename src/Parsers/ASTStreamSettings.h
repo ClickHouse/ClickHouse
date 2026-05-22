@@ -11,7 +11,7 @@ namespace DB
 
 /// Streaming query settings attached to a table expression:
 ///   FROM t STREAM [CURSOR '{...}']
-///                 [WATERMARK FOR <col> AS <expr>]
+///                 [WATERMARK FOR <col> AS <expr> [IDLE TIMEOUT INTERVAL N SECOND]]
 ///
 struct ASTStreamSettings : public IAST
 {
@@ -20,6 +20,7 @@ public:
     {
         String column;
         ASTPtr expression;
+        Int64 idle_timeout_ms = -1;
     };
 
     std::optional<Map> cursor;

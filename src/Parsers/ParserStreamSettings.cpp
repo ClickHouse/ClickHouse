@@ -1,5 +1,7 @@
 #include <Core/Field.h>
 
+#include <Common/IntervalKind.h>
+
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStreamSettings.h>
@@ -7,6 +9,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserStreamSettings.h>
+#include <Parsers/parseIntervalKind.h>
 
 namespace DB
 {
@@ -97,6 +100,25 @@ std::optional<ASTStreamSettings::WatermarkSettings> parseWatermarkClause(IParser
     ASTStreamSettings::WatermarkSettings watermark;
     watermark.column = getIdentifierName(column_ast);
     watermark.expression = std::move(expression_ast);
+
+    ParserKeyword s_idle_timeout{Keyword::IDLE_TIMEOUT};
+    if (s_idle_timeout.ignore(pos, expected))
+    {
+        if (!ParserKeyword{Keyword::INTERVAL}.ignore(pos, expected))
+            return std::nullopt;
+
+        ASTPtr num_intervals_ast;
+        if (!ParserUnsignedInteger{}.parse(pos, num_intervals_ast, expected))
+            return std::nullopt;
+
+        IntervalKind interval_kind;
+        if (!parseIntervalKind(pos, expected, interval_kind))
+            return std::nullopt;
+
+        const auto num_intervals = num_intervals_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+        watermark.idle_timeout_ms = static_cast<Int64>(num_intervals) * interval_kind.toAvgMilliseconds();
+    }
+
     return watermark;
 }
 

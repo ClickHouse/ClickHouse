@@ -15,7 +15,7 @@ namespace
 
 /// Renders a cursor tree as a SQL-compatible nested map literal:
 ///     {'partition_a': {'block_number': 10, 'block_offset': 20}}
-void formatNested(WriteBuffer & wb, CursorTreeNode * node)
+void formatCursorTree(WriteBuffer & wb, CursorTreeNode * node)
 {
     wb << '{';
 
@@ -31,10 +31,24 @@ void formatNested(WriteBuffer & wb, CursorTreeNode * node)
         if (std::holds_alternative<Int64>(v))
             wb << std::get<Int64>(v);
         else
-            formatNested(wb, std::get<CursorTreeNodePtr>(v).get());
+            formatCursorTree(wb, std::get<CursorTreeNodePtr>(v).get());
     }
 
     wb << '}';
+}
+
+void formatWatermark(
+    WriteBuffer & wb,
+    const ASTStreamSettings::WatermarkSettings & node,
+    const IAST::FormatSettings & format_settings,
+    IAST::FormatState & state,
+    IAST::FormatStateStacked frame)
+{
+    wb << "FOR " << backQuoteIfNeed(node.column) << " AS ";
+    node.expression->format(wb, format_settings, state, frame);
+
+    if (node.idle_timeout_ms >= 0)
+        wb << " IDLE TIMEOUT INTERVAL " << node.idle_timeout_ms << " MILLISECOND";
 }
 
 }
@@ -43,10 +57,8 @@ ASTPtr ASTStreamSettings::clone() const
 {
     auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
 
-    /// Copy cursor information
     cloned_stream_settings->cursor = cursor;
 
-    /// Copy watermark information
     cloned_stream_settings->watermark = watermark;
     if (watermark && watermark->expression)
         cloned_stream_settings->watermark->expression = watermark->expression->clone();
@@ -65,16 +77,16 @@ void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & fo
     {
         auto tree = buildCursorTree(cursor.value());
         ostr << "CURSOR ";
-        formatNested(ostr, tree.get());
+        formatCursorTree(ostr, tree.get());
     }
 
     if (watermark)
     {
-        if (cursor.has_value())
+        if (cursor)
             ostr << ' ';
 
-        ostr << "WATERMARK FOR " << backQuoteIfNeed(watermark->column) << " AS ";
-        watermark->expression->format(ostr, format_settings, state, frame);
+        ostr << "WATERMARK ";
+        formatWatermark(ostr, *watermark, format_settings, state, frame);
     }
 }
 
