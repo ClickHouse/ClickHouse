@@ -27,15 +27,15 @@ void ReadFromTableFunctionStep::initializePipeline(QueryPipelineBuilder &, const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implementad for ReadFromTableFunctionStep");
 }
 
-static void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
+static void serializeRational(Rational val, WriteBuffer & out)
 {
     writeIntBinary(val.numerator, out);
     writeIntBinary(val.denominator, out);
 }
 
-static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
+static Rational deserializeRational(ReadBuffer & in)
 {
-    TableExpressionModifiers::Rational val;
+    Rational val;
     readIntBinary(val.numerator, in);
     readIntBinary(val.denominator, in);
     return val;
@@ -83,8 +83,8 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     readIntBinary(flags, ctx.in);
 
     bool has_final = false;
-    std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
-    std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+    std::optional<Rational> sample_size_ratio;
+    std::optional<Rational> sample_offset_ratio;
 
     if (flags & 1)
         has_final = true;
