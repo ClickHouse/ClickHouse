@@ -15,30 +15,27 @@ static constexpr const char * manifest_list_v1_schema = R"(
         {"name": "partition_spec_id", "type": "int", "doc": "Spec ID used to write", "field-id": 502},
         {
             "name": "added_snapshot_id",
-            "type": "long",
+            "type": ["null", "long"],
             "doc": "Snapshot ID that added the manifest",
             "field-id": 503
         },
         {
-            "name": "added_files_count",
+            "name": "added_data_files_count",
             "type": ["null", "int"],
             "doc": "Added entry count",
-            "field-id": 504,
-            "default": null
+            "field-id": 504
         },
         {
-            "name": "existing_files_count",
+            "name": "existing_data_files_count",
             "type": ["null", "int"],
             "doc": "Existing entry count",
-            "field-id": 505,
-            "default": null
+            "field-id": 505
         },
         {
-            "name": "deleted_files_count",
+            "name": "deleted_data_files_count",
             "type": ["null", "int"],
             "doc": "Deleted entry count",
-            "field-id": 506,
-            "default": null
+            "field-id": 506
         },
         {
             "name": "partitions",
@@ -60,22 +57,19 @@ static constexpr const char * manifest_list_v1_schema = R"(
                                 "name": "contains_nan",
                                 "type": ["null", "boolean"],
                                 "doc": "True if any file has a nan partition value",
-                                "field-id": 518,
-                                "default": null
+                                "field-id": 518
                             },
                             {
                                 "name": "lower_bound",
                                 "type": ["null", "bytes"],
                                 "doc": "Partition lower bound for all files",
-                                "field-id": 510,
-                                "default": null
+                                "field-id": 510
                             },
                             {
                                 "name": "upper_bound",
                                 "type": ["null", "bytes"],
                                 "doc": "Partition upper bound for all files",
-                                "field-id": 511,
-                                "default": null
+                                "field-id": 511
                             }
                         ]
                     },
@@ -83,35 +77,20 @@ static constexpr const char * manifest_list_v1_schema = R"(
                 }
             ],
             "doc": "Summary for each partition",
-            "field-id": 507,
-            "default": null
+            "field-id": 507
         },
-        {   "name": "added_rows_count",
-            "type": ["null", "long"],
-            "doc": "Added rows count",
-            "field-id": 512,
-            "default": null
-        },
+        {"name": "added_rows_count", "type": ["null", "long"], "doc": "Added rows count", "field-id": 512},
         {
             "name": "existing_rows_count",
             "type": ["null", "long"],
             "doc": "Existing rows count",
-            "field-id": 513,
-            "default": null
+            "field-id": 513
         },
         {
             "name": "deleted_rows_count",
             "type": ["null", "long"],
             "doc": "Deleted rows count",
-            "field-id": 514,
-            "default": null
-        },
-        {
-            "name": "key_metadata",
-            "type": ["null", "bytes"],
-            "doc": "Implementation-specific key metadata for encryption",
-            "field-id": 519,
-            "default": null
+            "field-id": 514
         }
     ]
 }

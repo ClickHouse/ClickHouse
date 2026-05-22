@@ -164,22 +164,18 @@ def extract_protobuf_from_remote_read_response(response):
 
 
 # Executes an instant query using Prometheus HTTP API.
-def execute_query_via_http_api(host, port, path, query, timestamp=None, expect_error=False):
+def execute_query_via_http_api(host, port, path, query, timestamp=None):
     response = get_response_to_http_api_query(host, port, path, query, timestamp)
-    if expect_error:
-        return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
 # Executes a range query using Prometheus HTTP API.
 def execute_range_query_via_http_api(
-    host, port, path, query, start_timestamp, end_timestamp, step, expect_error=False
+    host, port, path, query, start_timestamp, end_timestamp, step
 ):
     response = get_response_to_http_api_range_query(
         host, port, path, query, start_timestamp, end_timestamp, step
     )
-    if expect_error:
-        return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
@@ -218,10 +214,3 @@ def extract_data_from_http_api_response(response):
         print(f"Response: {response.text}")
         raise Exception(f"Got response with unexpected status: {status}")
     return json.dumps(response_json["data"])
-
-
-def extract_error_from_http_api_response(response):
-    if response.status_code == requests.codes.ok:
-        print(f"Response: {response.text}")
-        raise Exception(f"Expected an error but succeeded with response {response.text}")
-    return response.text

@@ -1,10 +1,9 @@
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Core/Block.h>
-#include <DataTypes/TimezoneMixin.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
-#include <Common/DateLUT.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -130,7 +129,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
+        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow()).toView();
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;

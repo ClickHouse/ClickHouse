@@ -4,7 +4,6 @@ sidebar_label: 'USE'
 sidebar_position: 53
 slug: /sql-reference/statements/use
 title: 'USE Statement'
-doc_type: 'reference'
 ---
 
 # USE Statement

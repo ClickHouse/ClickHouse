@@ -2,19 +2,13 @@
 
 #if USE_NLP
 
+#include <incbin.h>
+
 /// Embedded SQL definitions
-constexpr unsigned char resource_charset_zst[] =
-{
-#embed "../../contrib/nlp-data/charset.zst"
-};
-constexpr unsigned char resource_tonality_ru_zst[] =
-{
-#embed "../../contrib/nlp-data/tonality_ru.zst"
-};
-constexpr unsigned char resource_programming_zst[] =
-{
-#embed "../../contrib/nlp-data/programming.zst"
-};
+INCBIN(resource_charset_zst, SOURCE_DIR "/contrib/nlp-data/charset.zst");
+INCBIN(resource_tonality_ru_zst, SOURCE_DIR "/contrib/nlp-data/tonality_ru.zst");
+INCBIN(resource_programming_zst, SOURCE_DIR "/contrib/nlp-data/programming.zst");
+
 
 namespace DB
 {
@@ -44,7 +38,7 @@ void FrequencyHolder::loadEncodingsFrequency()
 
     LOG_TRACE(log, "Loading embedded charset frequencies");
 
-    std::string_view resource(reinterpret_cast<const char *>(resource_charset_zst), std::size(resource_charset_zst));
+    std::string_view resource(reinterpret_cast<const char *>(gresource_charset_zstData), gresource_charset_zstSize);
     if (resource.empty())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded charset frequencies");
 
@@ -53,7 +47,7 @@ void FrequencyHolder::loadEncodingsFrequency()
     Float64 frequency;
     String charset_name;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -101,7 +95,7 @@ void FrequencyHolder::loadEmotionalDict()
     LoggerPtr log = getLogger("EmotionalDict");
     LOG_TRACE(log, "Loading embedded emotional dictionary");
 
-    std::string_view resource(reinterpret_cast<const char *>(resource_tonality_ru_zst), std::size(resource_tonality_ru_zst));
+    std::string_view resource(reinterpret_cast<const char *>(gresource_tonality_ru_zstData), gresource_tonality_ru_zstSize);
     if (resource.empty())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded emotional dictionary");
 
@@ -110,7 +104,7 @@ void FrequencyHolder::loadEmotionalDict()
     Float64 tonality;
     size_t count = 0;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -127,7 +121,7 @@ void FrequencyHolder::loadEmotionalDict()
         buf_line.ignore();
         readFloatText(tonality, buf_line);
 
-        std::string_view ref{string_pool.insert(word.data(), word.size()), word.size()};
+        StringRef ref{string_pool.insert(word.data(), word.size()), word.size()};
         emotional_dict[ref] = tonality;
         ++count;
     }
@@ -140,7 +134,7 @@ void FrequencyHolder::loadProgrammingFrequency()
 
     LOG_TRACE(log, "Loading embedded programming languages frequencies loading");
 
-    std::string_view resource(reinterpret_cast<const char *>(resource_programming_zst), std::size(resource_programming_zst));
+    std::string_view resource(reinterpret_cast<const char *>(gresource_programming_zstData), gresource_programming_zstSize);
     if (resource.empty())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded programming languages frequencies");
 
@@ -149,7 +143,7 @@ void FrequencyHolder::loadProgrammingFrequency()
     Float64 frequency;
     String programming_language;
 
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
+    auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
     ZstdInflatingReadBuffer in(std::move(buf));
 
     while (!in.eof())
@@ -179,7 +173,7 @@ void FrequencyHolder::loadProgrammingFrequency()
             buf_line.ignore();
             readFloatText(frequency, buf_line);
 
-            std::string_view ref{string_pool.insert(bigram.data(), bigram.size()), bigram.size()};
+            StringRef ref{string_pool.insert(bigram.data(), bigram.size()), bigram.size()};
             programming_freq.back().map[ref] = frequency;
         }
     }

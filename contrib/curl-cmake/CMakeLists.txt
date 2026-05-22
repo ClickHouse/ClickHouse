@@ -118,7 +118,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/socks_sspi.c"
     "${LIBRARY_DIR}/lib/splay.c"
     "${LIBRARY_DIR}/lib/strcase.c"
-    "${LIBRARY_DIR}/lib/strdup.c"
     "${LIBRARY_DIR}/lib/strequal.c"
     "${LIBRARY_DIR}/lib/strerror.c"
     "${LIBRARY_DIR}/lib/system_win32.c"
@@ -166,6 +165,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vtls/wolfssl.c"
     "${LIBRARY_DIR}/lib/vtls/x509asn1.c"
     "${LIBRARY_DIR}/lib/curlx/base64.c"
+    "${LIBRARY_DIR}/lib/curlx/basename.c"
     "${LIBRARY_DIR}/lib/curlx/dynbuf.c"
     "${LIBRARY_DIR}/lib/curlx/fopen.c"
     "${LIBRARY_DIR}/lib/curlx/inet_ntop.c"
@@ -173,6 +173,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curlx/multibyte.c"
     "${LIBRARY_DIR}/lib/curlx/nonblock.c"
     "${LIBRARY_DIR}/lib/curlx/strcopy.c"
+    "${LIBRARY_DIR}/lib/curlx/strdup.c"
     "${LIBRARY_DIR}/lib/curlx/strerr.c"
     "${LIBRARY_DIR}/lib/curlx/strparse.c"
     "${LIBRARY_DIR}/lib/curlx/timediff.c"
@@ -204,7 +205,7 @@ target_link_libraries (_curl PRIVATE OpenSSL::SSL ch_contrib::c-ares)
 
 # The library is large - avoid bloat (XXX: is it?)
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_curl PRIVATE -g1)
+    target_compile_options (_curl PRIVATE -g0)
 endif()
 
 add_library (ch_contrib::curl ALIAS _curl)

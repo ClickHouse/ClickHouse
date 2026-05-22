@@ -13,7 +13,6 @@
 #include <filesystem>
 #include <thread>
 #include <set>
-#include <vector>
 
 namespace
 {

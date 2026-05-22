@@ -118,7 +118,7 @@ bool PingPongProcessor::sendPing()
     return false;
 }
 
-bool PingPongProcessor::receivePing()
+bool PingPongProcessor::recievePing()
 {
     if (aux_in_port.hasData())
     {
@@ -147,7 +147,7 @@ IProcessor::Status PingPongProcessor::prepare()
     {
         if (!is_received)
         {
-            bool received = receivePing();
+            bool received = recievePing();
             if (!received)
             {
                 return Status::NeedData;
@@ -172,7 +172,7 @@ IProcessor::Status PingPongProcessor::prepare()
         {
             if (!is_received)
             {
-                bool received = receivePing();
+                bool received = recievePing();
                 if (!received)
                 {
                     return Status::NeedData;

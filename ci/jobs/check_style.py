@@ -6,6 +6,7 @@ import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 
@@ -66,67 +67,15 @@ def check_duplicate_includes(file_path):
     return ""
 
 
-def check_whitespaces(files) -> str:
-    """
-    Returns True if all files pass (no ugly double spaces after comma
-    outside of alignment/exception cases). Prints each offending line
-    as: "<file>:<line_number><original line>".
-    """
-    # Exceptions: lines matching any of these patterns are skipped
-    EXCEPTIONS = [
-        re.compile(r'^\s*"SELECT splitByWhitespace\(\'[^\']*\'\);",$'),
-    ]
-
-    # Detect ",  " or ",   " followed by a non-space and not a slash
-    DOUBLE_WS_AFTER_COMMA = re.compile(r",( {2,3})[^ /]")
-
-    # Exempt lines that look like number tables, e.g. "{ 10, -1,  2 }"
-    NUM_TABLE_RE = re.compile(r"(?:-?\d+\w*,\s+){3,}")
-
-    # Alignment check on neighboring lines at the same column
-    ALIGN_RE = re.compile(r"^[ -][^ ]$")
-
-    violations = []
-
-    for file in files:
-        try:
-            with open(file, "r", encoding="utf-8", errors="replace") as fh:
-                lines = fh.readlines()
-        except OSError as e:
-            print(f"{file}: could not read file: {e}")
-            violations.append(f"{file}: could not read file: {e}")
-            continue
-
-        # Need previous and next line for alignment checks, so skip first/last
-        for i in range(1, len(lines) - 1):
-            line = lines[i]
-
-            # Skip exception lines entirely
-            if any(p.search(line) for p in EXCEPTIONS):
-                continue
-
-            m = DOUBLE_WS_AFTER_COMMA.search(line)
-            if not m:
-                continue
-
-            # Column right before the end of the matched spaces (Perl $+[1] - 1)
-            pos = m.end(1) - 1
-
-            prev_slice = lines[i - 1][pos : pos + 2] if pos < len(lines[i - 1]) else ""
-            next_slice = lines[i + 1][pos : pos + 2] if pos < len(lines[i + 1]) else ""
-
-            # If either neighbor looks like alignment at that column, skip
-            if ALIGN_RE.match(prev_slice) or ALIGN_RE.match(next_slice):
-                continue
-
-            # Skip numeric table-like lines
-            if NUM_TABLE_RE.search(line):
-                continue
-            # Violation
-            print(f"{file}:{i + 1}{line}")
-            violations.append(f"{file}:{i + 1}{line}")
-
-    return "\n".join(violations)
+def check_whitespaces(file_paths):
+    for file in file_paths:
+        exit_code, out, err = Shell.get_res_stdout_stderr(
+            f'./ci/jobs/scripts/check_style/double_whitespaces.pl "{file}"',
+            verbose=False,
+        )
+        if out or err:
+            return out + " err: " + err
+    return ""
 
 
 def check_yamllint(file_paths):
@@ -374,7 +323,13 @@ if __name__ == "__main__":
             )
         )
     testname = "test_numbers_check"
-    if testpattern.lower() in testname.lower():
+    # Skip on release branches and backport PRs: backports cherry-pick a small
+    # subset of test files, which legitimately leaves large gaps in the numbering.
+    info = Info()
+    release_branch_re = re.compile(r"^\d{2}\.\d+$")
+    branch_to_check = (info.base_branch or info.git_branch or "").removeprefix("release/")
+    is_release_branch = bool(release_branch_re.match(branch_to_check))
+    if testpattern.lower() in testname.lower() and not is_release_branch:
         results.append(
             Result.from_commands_run(
                 name=testname,
@@ -443,4 +398,5 @@ if __name__ == "__main__":
     #             command=check_mypy,
     #         )
     #     )
+
     Result.create_from(results=results).complete_job()

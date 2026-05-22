@@ -47,11 +47,10 @@ ReadSettings ReadSettings::adjustBufferSize(size_t file_size) const
     return res;
 }
 
-ReadSettings ReadSettings::withNestedBuffer(bool seekable) const
+ReadSettings ReadSettings::withNestedBuffer() const
 {
     ReadSettings res = *this;
-    if (!seekable)
-        res.remote_read_buffer_restrict_seek = true;
+    res.remote_read_buffer_restrict_seek = true;
     res.remote_read_buffer_use_external_buffer = true;
     return res;
 }

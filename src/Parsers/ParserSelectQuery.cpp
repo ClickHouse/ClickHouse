@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto select_query = make_intrusive<ASTSelectQuery>();
+    auto select_query = std::make_shared<ASTSelectQuery>();
     node = select_query;
 
     ParserKeyword s_select(Keyword::SELECT);
@@ -320,7 +320,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         return false;
                 }
                 else
-                    interpolate_expression_list = make_intrusive<ASTExpressionList>();
+                    interpolate_expression_list = std::make_shared<ASTExpressionList>();
             }
         }
         else if (order_expression_list->children.size() == 1)
@@ -390,16 +390,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_length = nullptr;
             limit_offset = nullptr;
 
-            if (s_all.ignore(pos, expected))
-            {
-                select_query->limit_by_all = true;
-                limit_by_expression_list = make_intrusive<ASTExpressionList>();
-            }
-            else
-            {
-                if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                    return false;
-            }
+            if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                return false;
         }
 
         if (top_length && limit_length)
@@ -476,7 +468,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// Transform `DISTINCT ON expr` to `LIMIT 1 BY expr`
         limit_by_expression_list = distinct_on_expression_list;
-        limit_by_length = make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        limit_by_length = std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
         distinct_on_expression_list = nullptr;
     }
 

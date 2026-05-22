@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-object-storage, no-parallel, no-fasttest
+
 # no-object-storage: s3 has 20 more threads
 # no-parallel: it checks the number of threads, which can be lowered in presence of other queries
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -20,8 +22,8 @@ create materialized view testXB engine=MergeTree order by tuple() as select slee
 create materialized view testXC engine=MergeTree order by tuple() as select sleep(0.1) from testX;
 EOF
 
-for max_threads in 1 7; do
-    for max_insert_threads in 1 4; do
+for max_threads in 1 10; do
+    for max_insert_threads in 1 5; do
         echo "max_threads: $max_threads max_insert_threads: $max_insert_threads"
 
         QUERY_ID="03652_query_id_$RANDOM"
@@ -36,13 +38,13 @@ for max_threads in 1 7; do
         SETTINGS="$SETTINGS --log_queries=1 "
         SETTINGS="$SETTINGS --send_logs_level=error "
 
-        $CLICKHOUSE_CLIENT -q 'select * from numbers(200) format TSV' | $CLICKHOUSE_CLIENT $SETTINGS -q 'insert into testX FORMAT TSV'
+        $CLICKHOUSE_CLIENT -q 'select * from numbers(50) format TSV' | $CLICKHOUSE_CLIENT $SETTINGS -q 'insert into testX FORMAT TSV'
 
         $CLICKHOUSE_CLIENT -q 'system flush logs system.query_log;'
 
         cat <<EOF | $CLICKHOUSE_CLIENT
 select
-    if(peak_threads_usage >= 6, 7, peak_threads_usage),
+    if(peak_threads_usage >= 10, 10, peak_threads_usage),
 from system.query_log where
     current_database = currentDatabase() and
     type != 'QueryStart' and

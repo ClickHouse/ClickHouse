@@ -78,6 +78,7 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
@@ -149,12 +150,14 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
+    {"docker-init", mainEntryClickHouseDockerInit},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
     {"check-marks", mainEntryClickHouseCheckMarks},
     {"checksum-for-compressed-block", mainEntryClickHouseChecksumForCompressedBlock},
     {"zookeeper-dump-tree", mainEntryClickHouseZooKeeperDumpTree},
     {"zookeeper-remove-by-list", mainEntryClickHouseZooKeeperRemoveByList},
+    {"fst-dump-tree", mainEntryClickHouseFstDumpTree},
 
     // keeper
 #if ENABLE_CLICKHOUSE_KEEPER
@@ -375,26 +378,6 @@ int main(int argc_, char ** argv_)
             || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
     {
         main_func = mainEntryClickHouseLocal;
-    }
-
-    /// If the argument looks like a file path but doesn't exist, provide a helpful error
-    /// instead of the generic "Use one of the following commands" message.
-    /// The check above routes existing files to clickhouse-local, but when the file
-    /// doesn't exist, we fall through to `printHelp` which is confusing:
-    ///     $ clickhouse tests/queries/0_stateless/my_test.sql
-    ///     Use one of the following commands: ...
-    /// We detect file-like arguments by the presence of `/` (path separator)
-    /// or `.` (file extension), which distinguishes them from mistyped subcommand
-    /// names like "clickhouse sever" where the generic help is appropriate.
-    if (main_func == printHelp && argv.size() >= 2)
-    {
-        std::string_view arg(argv[1]);
-        if (arg.contains('/') || arg.contains('.'))
-        {
-            std::cerr << "Error: no such file: " << arg << std::endl;
-            std::cerr << "If you intended to run a script, please check the path." << std::endl;
-            return 1;
-        }
     }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());

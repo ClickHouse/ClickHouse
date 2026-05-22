@@ -6,7 +6,6 @@ keywords: ['Native']
 output_format: true
 slug: /interfaces/formats/Native
 title: 'Native'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -27,3 +26,7 @@ This is the format used in the native interface for interaction between servers,
 You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. 
 It might not be practical to work with this format yourself.
 :::
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}

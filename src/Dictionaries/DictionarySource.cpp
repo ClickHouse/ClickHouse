@@ -1,6 +1,5 @@
-#include <Core/NamesAndTypes.h>
-#include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
 #include <Processors/ISource.h>
 
 
@@ -35,13 +34,13 @@ private:
 
         const auto & header = coordinator->getHeader();
 
-        Columns key_columns;
-        DataTypes key_types;
+        std::vector<ColumnPtr> key_columns;
+        std::vector<DataTypePtr> key_types;
 
         key_columns.reserve(key_columns_to_read.size());
         key_types.reserve(key_columns_to_read.size());
 
-        UnorderedMapWithMemoryTracking<std::string_view, ColumnPtr> name_to_column;
+        std::unordered_map<std::string_view, ColumnPtr> name_to_column;
 
         for (const auto & key_column_to_read : key_columns_to_read)
         {
@@ -76,7 +75,7 @@ private:
             name_to_column.emplace(attribute_name, attributes_columns[i]);
         }
 
-        Columns result_columns;
+        std::vector<ColumnPtr> result_columns;
         result_columns.reserve(header->columns());
 
         for (const auto & column_with_type : *header)
