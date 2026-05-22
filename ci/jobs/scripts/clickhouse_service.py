@@ -39,10 +39,11 @@ class ClickHouseService:
         try:
             Utils.add_to_PATH(temp_dir)
 
-            # Download binary if absent
+            # Download binary if absent, otherwise just ensure it is
+            # executable: CI release artifacts extract the binary without
+            # the executable bit and `_download_binary` chmods on both paths.
             clickhouse_bin = Path(temp_dir) / "clickhouse"
-            if not clickhouse_bin.exists():
-                self._download_binary()
+            self._download_binary()
 
             # Create symlinks if absent
             for link_name in ("clickhouse-server", "clickhouse-client", "clickhouse-local"):
