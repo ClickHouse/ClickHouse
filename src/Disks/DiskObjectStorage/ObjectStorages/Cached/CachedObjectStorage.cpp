@@ -65,27 +65,31 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 {
     /// Filesystem cache is handled as a pipeline stage by DiskObjectStorage::prepareRead
     /// and StorageObjectStorageSource. This method delegates directly to the underlying storage.
-    /// Callers that need caching should use ReadPipeline with needDiskCache().
+    /// Callers that need caching should use ReadPipeline with needFilesystemCache().
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
 }
 
 void CachedObjectStorage::prepareRead(
-    ObjectStoragePtr /* self */,
+    ObjectStoragePtr /* storage */,
     const StoredObjects & objects,
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    /// Delegate to the underlying storage to set the source.
-    object_storage->prepareRead(object_storage, objects, read_settings, read_hint, pipeline);
+    /// Delegate to the underlying storage to set the source. Patch the settings
+    /// first — the inner storage's `patchSettings` may apply mandatory tweaks
+    /// (e.g. `LocalObjectStorage` forces `local_fs_method = pread` and disables
+    /// `direct_io`). On master, `readObject` always patched before delegating;
+    /// preserve that behavior here.
+    object_storage->prepareRead(object_storage, objects, patchSettings(read_settings), read_hint, pipeline);
 
-    /// Add the disk cache stage if filesystem cache is enabled.
+    /// Add the filesystem cache stage if filesystem cache is enabled.
     if (read_settings.enable_filesystem_cache)
     {
         if (cache->isInitialized())
         {
             auto global_context = Context::getGlobalContextInstance();
-            pipeline.needDiskCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
+            pipeline.needFilesystemCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
         }
         else
         {

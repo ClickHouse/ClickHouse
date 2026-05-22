@@ -42,7 +42,7 @@ using FilesystemReadPrefetchesLogPtr = std::shared_ptr<FilesystemReadPrefetchesL
 ///
 /// Stage ordering (innermost to outermost, fixed at build time):
 ///   1. Source             -- base ReadBuffer (S3, Azure, HDFS, local file)
-///   2. DiskCache          -- CachedOnDiskReadBufferFromFile
+///   2. FilesystemCache    -- CachedOnDiskReadBufferFromFile
 ///   3. Gather             -- ReadBufferFromRemoteFSGather (multi-object files)
 ///   4. DistributedCache   -- ReadBufferFromDistributedCache (with fallback to Gather)
 ///   5. MemoryCache        -- CachedInMemoryReadBufferFromFile
@@ -117,12 +117,12 @@ public:
     /// Not needed for local disk where one file = one file.
     void needGather();
 
-    /// -- Disk cache stage --
-    void needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
+    /// -- Filesystem cache stage --
+    void needFilesystemCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// Overload with a custom cache key and origin, bypassing the default `FileCacheKey::fromPath` derivation.
     /// Used by `StorageObjectStorageSource` where the cache key is `SipHash(path + etag)`.
-    void needDiskCache(
+    void needFilesystemCache(
         FileCachePtr cache,
         FileCacheKey cache_key,
         FileCacheOriginInfo origin,
@@ -172,7 +172,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> build() const;
 
     /// Returns a human-readable description of active stages,
-    /// e.g. "Source -> DiskCache -> Gather -> Async".
+    /// e.g. "Source -> FilesystemCache -> Gather -> Async".
     String describe() const;
 
     /// Creates a copy of this pipeline (all stages are preserved).
@@ -190,11 +190,11 @@ private:
         ReadSettings read_settings;
     };
 
-    struct DiskCacheStage
+    struct FilesystemCacheStage
     {
         FileCachePtr cache;
         std::shared_ptr<FilesystemCacheLog> cache_log;
-        std::optional<FilesystemCacheSettings> cache_settings;
+        FilesystemCacheSettings cache_settings;
         std::optional<FileCacheKey> custom_cache_key;       /// Override per-object cache key
         std::optional<FileCacheOriginInfo> custom_origin;   /// Override origin
     };
@@ -203,7 +203,7 @@ private:
     {
         std::shared_ptr<PageCache> cache;
         String cache_path_prefix;
-        std::optional<PageCacheSettings> page_cache_settings;
+        PageCacheSettings page_cache_settings;
         std::optional<String> custom_cache_path;        /// Override the full cache key path
         std::optional<String> custom_file_version;      /// Override the file_version in the cache key
     };
@@ -230,13 +230,22 @@ private:
 
     std::optional<SourceStage> source;
     bool gather = false;
-    std::vector<DiskCacheStage> disk_caches;
+    std::vector<FilesystemCacheStage> filesystem_caches;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     std::shared_ptr<SourceBufferLimit> buffer_limit;
     std::vector<DecryptionStage> decryption_stages;
+
+    /// build() helpers: one per logical stage group.
+    /// Each helper reads private state and returns the (partial) impl buffer.
+    /// `query_id` is captured once on the calling thread before any stage runs.
+    std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const;
+    std::unique_ptr<ReadBufferFromFileBase> wrapDecryption(std::unique_ptr<ReadBufferFromFileBase> impl) const;
 };
 
 }

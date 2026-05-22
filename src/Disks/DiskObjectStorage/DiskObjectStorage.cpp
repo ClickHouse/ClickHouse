@@ -2,7 +2,6 @@
 #include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
 #include <Common/CurrentThread.h>
 
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/Stopwatch.h>
@@ -757,23 +756,20 @@ void DiskObjectStorage::prepareRead(
     ReadPipeline & pipeline) const
 {
     const auto storage_objects = metadata_storage->getStorageObjects(path);
-    if (storage_objects.empty())
-    {
-        pipeline.setSource(
-            [](const StoredObject &, const ReadSettings &, bool, bool)
-            {
-                return std::make_unique<ReadBufferFromEmptyFile>();
-            },
-            StoredObjects{StoredObject("", "", 0)},
-            settings);
-        return;
-    }
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-    /// Distributed cache — computed early because prefer_bigger_buffer_size needs to know.
+    /// Empty objects (zero-blob file) — set an empty source so `ReadPipeline::build`
+    /// returns `ReadBufferFromEmptyFile`. No stages are needed below the source.
+    if (storage_objects.empty())
+    {
+        pipeline.setSource(std::move(storage), StoredObjects{}, settings);
+        return;
+    }
+
+    /// Distributed cache — computed early because prefer_bigger_buffer_size needs to be known.
 #if ENABLE_DISTRIBUTED_CACHE
     bool use_distributed_cache = enable_distributed_cache
         && DistributedCache::canUseDistributedCacheForRead(
@@ -782,12 +778,13 @@ void DiskObjectStorage::prepareRead(
     bool use_distributed_cache = false;
 #endif
 
+    const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;
+
     /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
     /// Must be done before setSource, which stores read_settings in the pipeline.
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
-        && storage->supportsCache()
-        && read_settings.enable_filesystem_cache;
+        && file_cache_enabled;
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_bigger_buffer_size)
         prefer_bigger_buffer_size = false;
@@ -800,14 +797,13 @@ void DiskObjectStorage::prepareRead(
     pipeline.needGather();
 
     /// Delegate to the object storage to set source and add cache stage if needed.
-    /// CachedObjectStorage::prepareRead adds needDiskCache automatically.
+    /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
     if (use_distributed_cache)
         pipeline.needDistributedCache();
 
     /// Memory cache (page cache).
-    const bool file_cache_enabled = storage->supportsCache() && read_settings.enable_filesystem_cache;
     const bool use_page_cache =
         read_settings.page_cache
         && (use_distributed_cache

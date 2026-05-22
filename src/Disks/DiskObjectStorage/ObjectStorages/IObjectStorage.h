@@ -218,12 +218,18 @@ public:
         bool use_external_buffer = false,
         bool restrict_seek = false) const = 0;
 
-    /// Populate a ReadPipeline with the source and any stages this storage needs.
-    /// `self` is the shared_ptr to this storage (needed because setSource takes ObjectStoragePtr).
-    /// Default: sets the source to `self`. CachedObjectStorage overrides
-    /// to delegate to the inner storage and add the disk cache stage.
+    /// Populate a `ReadPipeline` with the source and any stages this storage needs.
+    ///
+    /// The "source" is the bottom layer of the read-buffer chain — a descriptor
+    /// (not an actual buffer) that tells `ReadPipeline::build()` how to construct
+    /// the base `ReadBufferFromFileBase`. For object storages the descriptor is
+    /// `ObjectStorageSource { storage, read_hint }`; later stages (disk cache,
+    /// gather, async-prefetch, decryption) wrap around the buffer it produces.
+    ///
+    /// Default: sets the source to this storage. `CachedObjectStorage` overrides
+    /// to delegate to the inner storage and adds the disk cache stage.
     virtual void prepareRead(
-        ObjectStoragePtr self,
+        ObjectStoragePtr storage,
         const StoredObjects & objects,
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint,

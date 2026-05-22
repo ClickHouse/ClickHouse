@@ -154,6 +154,9 @@ void DiskBackup::prepareRead(
     auto file_size = backup->getFileSize(replaced_path);
     StoredObject obj(replaced_path, replaced_path, file_size);
 
+    /// `read_hint` is intentionally ignored — `IBackup::readFile(file_name)` does
+    /// not accept a hint. This matches the pre-existing behavior of `DiskBackup::readFile`
+    /// (which also took an unnamed `std::optional<size_t>` and discarded it).
     pipeline.setBackupSource(backup, replaced_path, StoredObjects{obj}, settings);
 }
 
