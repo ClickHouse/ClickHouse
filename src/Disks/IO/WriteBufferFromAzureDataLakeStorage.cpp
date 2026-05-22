@@ -2,6 +2,8 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <base/sleep.h>
+
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
@@ -11,7 +13,6 @@
 #include <azure/core/io/body_stream.hpp>
 #include <azure/storage/files/datalake/datalake_options.hpp>
 
-#include <thread>
 
 namespace ProfileEvents
 {
@@ -49,30 +50,22 @@ String prefixedBlobPath(const AzureBlobStorage::Endpoint & endpoint, const Strin
 
 String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path_)
 {
-    String prefixed = prefixedBlobPath(endpoint, blob_path_);
-    String url = endpoint.getContainerEndpoint();
-    auto query_pos = url.find('?');
-    if (query_pos == String::npos)
-    {
-        if (!url.empty() && url.back() != '/')
-            url += '/';
-        return url + prefixed;
-    }
-
-    String path_part = url.substr(0, query_pos);
-    String query_part = url.substr(query_pos);
-    if (!path_part.empty() && path_part.back() != '/')
-        path_part += '/';
-    return path_part + prefixed + query_part;
+    Poco::URI uri(endpoint.getContainerEndpoint());
+    String path = uri.getPath();
+    if (!path.empty() && path.back() != '/')
+        path += '/';
+    path += prefixedBlobPath(endpoint, blob_path_);
+    uri.setPath(path);
+    return uri.toString();
 }
 
 }
 
-constexpr size_t ADLFS_MAX_RETRIES = 10000;
+constexpr size_t ADLFS_MAX_RETRIES = 10;
 
-bool isAdlsGen2Endpoint(const String & storage_account_url)
+bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint)
 {
-    return storage_account_url.find("fabric.microsoft.com") != String::npos;
+    return endpoint.storage_account_url.contains("dfs.fabric.microsoft.com/iceberg");
 }
 
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
@@ -119,8 +112,6 @@ WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
-    , sdk_retry_initial_backoff_ms(settings_->sdk_retry_initial_backoff_ms)
-    , sdk_retry_max_backoff_ms(settings_->sdk_retry_max_backoff_ms)
     , container_for_logging(container_for_logging_)
     , blob_log(std::move(blob_log_))
 {
@@ -140,12 +131,14 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
 
 void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<void()> & op, const char * what)
 {
-    size_t backoff_ms = sdk_retry_initial_backoff_ms;
+    size_t backoff_ms = 100;
     for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)
     {
+        LOG_INFO(log, "ADLS Gen2 {} attempt {} for `{}`", what, attempt, blob_path);
         try
         {
             op();
+            LOG_INFO(log, "ADLS Gen2 {} attempt {} for `{}` succeeded", what, attempt, blob_path);
             return;
         }
         catch (const Azure::Core::RequestFailedException & e)
@@ -165,8 +158,8 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<voi
             LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: HTTP {}: {}. Retrying after {} ms.",
                 what, attempt, blob_path, static_cast<int>(e.StatusCode), e.Message, backoff_ms);
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
-            backoff_ms = std::min(backoff_ms * 2, sdk_retry_max_backoff_ms);
+            sleepForMilliseconds(backoff_ms);
+            backoff_ms *= 2;
         }
     }
     throw Exception(
@@ -187,9 +180,10 @@ void WriteBufferFromAzureDataLakeStorage::ensureCreated()
     if (!write_settings.object_storage_write_if_match.empty())
         create_options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
+    LOG_INFO(log, "Entering Create for ADLS Gen2 file `{}` (url={})", blob_path, file_client.GetUrl());
     runWithRetries([&]() { file_client.Create(create_options); }, "Create");
     file_created = true;
-    LOG_TRACE(log, "Created ADLS Gen2 file `{}`", blob_path);
+    LOG_INFO(log, "Created ADLS Gen2 file `{}`", blob_path);
 }
 
 void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
@@ -205,6 +199,7 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
 
     ProfileEvents::increment(ProfileEvents::AzureUpload);
 
+    LOG_INFO(log, "Entering Append for `{}`: offset={}, len={}", blob_path, offset_for_append, to_append);
     runWithRetries(
         [&]()
         {
@@ -214,6 +209,7 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
         "Append");
 
     bytes_appended += static_cast<int64_t>(to_append);
+    LOG_INFO(log, "Appended for `{}`: bytes_appended={}", blob_path, bytes_appended);
 }
 
 void WriteBufferFromAzureDataLakeStorage::nextImpl()
@@ -233,10 +229,11 @@ void WriteBufferFromAzureDataLakeStorage::preFinalize()
         return;
     is_prefinalized = true;
 
+    LOG_INFO(log, "Entering preFinalize for ADLS Gen2 file `{}`", blob_path);
     appendBufferedData();
     ensureCreated();
     runWithRetries([&]() { file_client.Flush(bytes_appended); }, "Flush");
-    LOG_TRACE(log, "Flushed ADLS Gen2 file `{}` ({} bytes)", blob_path, bytes_appended);
+    LOG_INFO(log, "Flushed ADLS Gen2 file `{}` ({} bytes)", blob_path, bytes_appended);
 }
 
 void WriteBufferFromAzureDataLakeStorage::finalizeImpl()

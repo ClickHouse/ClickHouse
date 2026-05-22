@@ -301,7 +301,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     if (write_settings.azure_allow_parallel_part_upload)
         scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
-    if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
         return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
             connection_params.endpoint,
@@ -345,7 +345,7 @@ void AzureObjectStorage::removeObjectImpl(
     bool success = false;
     try
     {
-        if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
+        if (isAdlsGen2Endpoint(connection_params.endpoint))
         {
             buildDataLakeFileClient(path)->Delete();
             success = true;
@@ -506,7 +506,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     auto client_ptr = client.get();
     auto blob_storage_log = BlobStorageLogWriter::create(name);
 
-    if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
         for (const auto & object : objects)
             removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);

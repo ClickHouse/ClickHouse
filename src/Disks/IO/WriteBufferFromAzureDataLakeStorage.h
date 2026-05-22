@@ -51,8 +51,6 @@ private:
     const std::string blob_path;
     const WriteSettings write_settings;
     const size_t max_unexpected_write_error_retries;
-    const size_t sdk_retry_initial_backoff_ms;
-    const size_t sdk_retry_max_backoff_ms;
 
     bool file_created = false;
     bool is_prefinalized = false;
@@ -68,7 +66,7 @@ Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
     const String & blob_path);
 
-bool isAdlsGen2Endpoint(const String & storage_account_url);
+bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint);
 
 }
 
