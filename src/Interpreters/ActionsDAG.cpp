@@ -293,13 +293,6 @@ ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     auto & res = nodes.emplace_back(std::move(node));
-
-    if (res.column && !isColumnConst(*res.column))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "ActionsDAG node column must be a ColumnConst, got {} for '{}'",
-            res.column->getName(), res.result_name);
-
-    auto & res = nodes.emplace_back(std::move(node));
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
