@@ -4,7 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Interpreters/Context_fwd.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 namespace Poco
 {
@@ -20,9 +20,8 @@ using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 namespace DB
 {
 class NamedCollection;
-struct StorageID;
 
-class StoragePostgreSQL final : public StorageWithCommonVirtualColumns
+class StoragePostgreSQL final : public IStorage
 {
 public:
     StoragePostgreSQL(
@@ -38,11 +37,7 @@ public:
 
     String getName() const override { return "PostgreSQL"; }
 
-    bool isExternalDatabase() const override { return true; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -69,7 +64,7 @@ public:
         String addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table = true);
 

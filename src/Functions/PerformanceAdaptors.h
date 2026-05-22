@@ -4,7 +4,6 @@
 
 #include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -135,7 +134,7 @@ namespace detail
             }
         };
 
-        VectorWithMemoryTracking<Element> data;
+        std::vector<Element> data;
         std::mutex lock;
         /// It's Ok that generator is not seeded.
         pcg64 rng;
@@ -172,8 +171,8 @@ namespace detail
  * Example of usage:
  *
  * class MyDefaulImpl : public IFunction {...};
- * DECLARE_X86_64_V3_SPECIFIC_CODE(
- * class Myv3Impl : public IFunction {...};
+ * DECLARE_AVX2_SPECIFIC_CODE(
+ * class MyAVX2Impl : public IFunction {...};
  * )
  *
  * /// All methods but execute/executeImpl are usually not bottleneck, so just use them from
@@ -185,7 +184,7 @@ namespace detail
  *         /// There could be as many implementation for every target as you want.
  *         selector.registerImplementation<TargetArch::Default, MyDefaultImpl>();
  *     #if USE_MULTITARGET_CODE
- *         selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::Myv3Impl>();
+ *         selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::MyAVX2Impl>();
  *     #endif
  *     }
  *
@@ -201,15 +200,12 @@ namespace detail
  * };
  */
 template <typename FunctionInterface>
-class ImplementationSelector
+class ImplementationSelector : WithContext
 {
 public:
     using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    explicit ImplementationSelector(ContextPtr context)
-        // TODO(dakovalkov): make this option better.
-        : function_implementation(context->getSettingsRef()[Setting::function_implementation])
-    {}
+    explicit ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
 
     /* Select the best implementation based on previous runs.
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
@@ -238,7 +234,7 @@ public:
         if (considerable)
         {
             // TODO(dakovalkov): Calculate something more informative than rows count.
-            statistics.complete(id, watch.elapsedSeconds(), static_cast<double>(input_rows_count));
+            statistics.complete(id, watch.elapsedSeconds(), input_rows_count);
         }
 
         return res;
@@ -258,7 +254,9 @@ public:
     {
         if (isArchSupported(Arch))
         {
-            if (function_implementation.empty() || function_implementation == detail::getImplementationTag<FunctionImpl>(Arch))
+            // TODO(dakovalkov): make this option better.
+            const auto & choose_impl = getContext()->getSettingsRef()[Setting::function_implementation].value;
+            if (choose_impl.empty() || choose_impl == detail::getImplementationTag<FunctionImpl>(Arch))
             {
                 implementations.emplace_back(std::make_shared<FunctionImpl>(std::forward<Args>(args)...));
                 statistics.emplace_back();
@@ -267,8 +265,7 @@ public:
     }
 
 private:
-    const std::string function_implementation;
-    VectorWithMemoryTracking<ImplementationPtr> implementations;
+    std::vector<ImplementationPtr> implementations;
     mutable detail::PerformanceStatistics statistics; /// It is protected by internal mutex.
 };
 

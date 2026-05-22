@@ -1,6 +1,3 @@
-#include <Access/AccessControl.h>
-#include <Access/Role.h>
-#include <Access/User.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -9,7 +6,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
@@ -26,7 +22,6 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 
-
 namespace DB
 {
 
@@ -40,11 +35,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -52,15 +42,8 @@ namespace ErrorCodes
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
     extern const int DNS_ERROR;
-    extern const int UNKNOWN_USER;
-    extern const int UNKNOWN_ROLE;
 }
 
-
-String HostID::readableString() const
-{
-    return host_name + ":" + DB::toString(port);
-}
 
 HostID HostID::fromString(const String & host_port_str)
 {
@@ -174,12 +157,6 @@ String DDLLogEntry::toString() const
         wb << "\n";
     }
 
-    if (version >= INITIATOR_USER_VERSION)
-    {
-        wb << "initiator_user: " << initiator_user << "\n";
-        wb << "initiator_roles: " << initiator_user_roles << "\n";
-    }
-
     return wb.str();
 }
 
@@ -252,12 +229,6 @@ void DDLLogEntry::parse(const String & data)
         rb >> "\n";
     }
 
-    if (version >= INITIATOR_USER_VERSION)
-    {
-        rb >> "initiator_user: " >> initiator_user >> "\n";
-        rb >> "initiator_roles: " >> initiator_user_roles >> "\n";
-    }
-
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -291,44 +262,9 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->setDDLOrOnClusterInternal(true);
-
-    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
-    if (preserve_user && !entry.initiator_user.empty())
-    {
-        const auto & access_control = from_context->getAccessControl();
-
-        /// Find the user by name
-        auto user_id = access_control.find<User>(entry.initiator_user);
-        if (!user_id)
-            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
-
-        /// Find all roles by name
-        std::vector<UUID> role_ids;
-        role_ids.reserve(entry.initiator_user_roles.size());
-        for (const auto & role_name : entry.initiator_user_roles)
-        {
-            auto role_id = access_control.find<Role>(role_name);
-            if (!role_id)
-                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
-            role_ids.push_back(*role_id);
-        }
-
-        query_context->setUser(*user_id, role_ids);
-    }
-
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     if (entry.settings)
-    {
-        /// Clamp settings to the constraints of the local node, similar to how
-        /// TCPHandler handles secondary queries. Without this, settings from the
-        /// initiator node could bypass stricter constraints on worker nodes.
-        /// Work on a copy to avoid mutating the entry, which may be read later
-        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
-        auto settings_changes = *entry.settings;
-        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
-        query_context->applySettingsChanges(settings_changes);
-    }
-
+        query_context->applySettingsChanges(*entry.settings);
     return query_context;
 }
 
@@ -662,7 +598,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->setDDLOrOnClusterInternal(true);
+    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
@@ -674,20 +610,6 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
-
-        /// Make sure that we did not disable replicated DDL queries
-        const auto & macros = from_context->getMacros();
-        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
-        if (should_check_stop_flag)
-        {
-            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
-            stop_flag_path = macros->expand(stop_flag_path);
-
-            zookeeper->createAncestors(stop_flag_path);
-
-            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
-            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
-        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());
