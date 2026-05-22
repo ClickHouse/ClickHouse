@@ -91,18 +91,18 @@ struct HasSubqueryMatcher
         bool has_subquery = false;
     };
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(const DB::ASTPtr &, const DB::ASTPtr &) { return true; }
 
-    static void visit(const ASTPtr & node, Data & data)
+    static void visit(const DB::ASTPtr & node, Data & data)
     {
         if (node->as<DB::ASTSubquery>())
             data.has_subquery = true;
     }
 };
 
-using HasSubqueryVisitor = ConstInDepthNodeVisitor<HasSubqueryMatcher, true>;
+using HasSubqueryVisitor = DB::ConstInDepthNodeVisitor<HasSubqueryMatcher, true>;
 
-bool astContainsSubquery(const ASTPtr & ast)
+bool astContainsSubquery(const DB::ASTPtr & ast)
 {
     if (!ast)
         return false;
