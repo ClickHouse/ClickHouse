@@ -243,11 +243,11 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     ///   in case of long block of empty arrays we may not need read dictionary at first reading.
     bool need_update_dictionary = false;
 
-    /// True if this part has a single dictionary for the entire column, detected via
-    /// `has_uniform_marks_callback` in the prefix. When true, non-continuous reads
-    /// (granule skips) do not invalidate the cached dictionary, and if the
-    /// `DictionaryKeys` stream already contains the dictionary body in the prefix
-    /// it can be read once and shared across all threads via `clone`.
+    /// True if this part has a single dictionary for the entire column. The prefix
+    /// reader first checks `has_uniform_marks_callback` as a cheap prefilter, then
+    /// verifies it by reading the first dictionary and checking that `DictionaryKeys`
+    /// reached EOF. When true, non-continuous reads (granule skips) do not invalidate
+    /// the cached dictionary, and the dictionary can be shared across all threads via `clone`.
     bool single_dictionary_for_part = false;
 
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
@@ -309,21 +309,23 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     SubstreamsDeserializeStatesCache * cache) const
 {
     settings.path.push_back(settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::DictionaryKeysPrefix : Substream::DictionaryKeys);
+    const auto dictionary_keys_path = settings.path;
+    settings.path.pop_back();
 
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, dictionary_keys_path))
     {
         state = std::move(cached_state);
         return;
     }
 
-    /// Check whether all marks for this substream have uniform positions before
-    /// obtaining the stream. The path currently ends with DictionaryKeys.
-    bool is_single_dict = settings.has_uniform_marks_callback
+    /// First use marks as a cheap prefilter: a true single-dictionary part must
+    /// have uniform positions in the `DictionaryKeys` stream. The check is not
+    /// exact because several dictionaries can be written inside one mark interval.
+    bool might_have_single_dictionary = settings.has_uniform_marks_callback
         && settings.data_part_type == MergeTreeDataPartType::Wide
-        && settings.has_uniform_marks_callback(settings.path, 2);
+        && settings.has_uniform_marks_callback(dictionary_keys_path, 2);
 
-    auto * stream = settings.getter(settings.path);
-    settings.path.pop_back();
+    auto * stream = settings.getter(dictionary_keys_path);
 
     if (!stream)
         return;
@@ -332,15 +334,15 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     readBinaryLittleEndian(keys_version, *stream);
 
     auto new_state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
-    new_state->single_dictionary_for_part = is_single_dict;
 
-    if (is_single_dict && !stream->eof())
+    if (might_have_single_dictionary && !stream->eof())
     {
-        /// For `Wide` parts with a single dictionary, the stream is now positioned
-        /// right at the dictionary data (after the version). Read it here so that
-        /// all threads sharing this prefix state via `DeserializationPrefixesCache`
-        /// get the dictionary through a shared_ptr clone instead of each reading
-        /// it independently.
+        /// For `Wide` parts that might have a single dictionary, the stream is
+        /// now positioned right at the dictionary data (after the version).
+        /// Read the first dictionary and check EOF afterwards. If this proves
+        /// that there are no more dictionaries, all threads sharing this prefix
+        /// state via `DeserializationPrefixesCache` get the dictionary through
+        /// a `shared_ptr` clone instead of each reading it independently.
         ///
         /// Some streams are allowed to contain only `keys_version` with no dictionary
         /// body afterwards, for example unused `LowCardinality` alternatives inside
@@ -353,8 +355,29 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         auto global_dict_keys = keys_type->createColumn();
         dict_inner_serialization->deserializeBinaryBulk(*global_dict_keys, *stream, 0, num_keys, 0);
 
-        new_state->global_dictionary = DataTypeLowCardinality::createColumnUnique(
+        auto global_dictionary = DataTypeLowCardinality::createColumnUnique(
             *dictionary_type, std::move(global_dict_keys));
+
+        if (stream->eof())
+        {
+            new_state->single_dictionary_for_part = true;
+            new_state->global_dictionary = std::move(global_dictionary);
+        }
+        else
+        {
+            /// The mark heuristic can be fooled by several dictionaries written
+            /// inside one mark interval. Reset the `DictionaryKeys` stream back
+            /// to the normal post-prefix position and let data deserialization
+            /// read dictionary updates from the stream.
+            stream = settings.getter(dictionary_keys_path);
+            if (!stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream while resetting LowCardinality dictionary stream");
+
+            UInt64 repeated_keys_version;
+            readBinaryLittleEndian(repeated_keys_version, *stream);
+            if (repeated_keys_version != keys_version)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Inconsistent version while resetting LowCardinality dictionary stream");
+        }
     }
 
     state = std::move(new_state);

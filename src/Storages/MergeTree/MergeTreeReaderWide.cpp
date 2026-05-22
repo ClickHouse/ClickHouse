@@ -443,6 +443,9 @@ void MergeTreeReaderWide::deserializePrefix(
             /// single-dictionary part has only one distinct position, while a part
             /// with one dictionary in the main stream and another in the suffix can
             /// still look like "2 positions".
+            /// This is only a necessary condition; `SerializationLowCardinality`
+            /// still checks the `DictionaryKeys` stream reaches EOF after the
+            /// first dictionary.
             const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
             const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
                 ? max_transitions

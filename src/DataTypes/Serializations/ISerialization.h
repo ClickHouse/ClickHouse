@@ -498,7 +498,8 @@ public:
 
         /// Returns true if all marks for the given substream have at most
         /// `max_transitions` distinct consecutive positions.
-        /// Used by SerializationLowCardinality to detect single-dictionary parts.
+        /// Used by `SerializationLowCardinality` as a cheap prefilter before
+        /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
         std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
     };
 
