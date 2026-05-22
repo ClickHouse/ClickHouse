@@ -72,11 +72,23 @@ protected:
     {
         if (initializer_func)
         {
-            if (materialized_cte && !materialized_cte->is_built)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Reading from materialized CTE '{}' before it has been materialized (materialization was planned: {})",
-                    materialized_cte->cte_name,
-                    materialized_cte->is_materialization_planned.load());
+            if (materialized_cte)
+            {
+                /// If the materialization was never planned, the planner is
+                /// wrong - fail fast with a clear LOGICAL_ERROR. Otherwise
+                /// block until `MaterializingCTETransform` fulfils the promise
+                /// (set_value on success, set_exception on cancellation or
+                /// abnormal exit). The get() rethrows the writer's exception
+                /// if materialization failed, which propagates up as the
+                /// query's terminal error - much better than silently reading
+                /// from a half-populated `StorageMemory`.
+                if (!materialized_cte->is_materialization_planned.load(std::memory_order_acquire))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Reading from materialized CTE '{}' that has not been planned",
+                        materialized_cte->cte_name);
+
+                materialized_cte->build_future.get();
+            }
 
             initializer_func(data);
             initializer_func = {};

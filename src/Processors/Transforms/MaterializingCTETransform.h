@@ -20,13 +20,20 @@ public:
 
     String getName() const override { return "MaterializingCTETransform"; }
 
+    void work() override;
     void consume(Chunk chunk) override;
     Chunk generate() override;
+    void onCancel() noexcept override;
 
 private:
+    void init();
+
     MaterializedCTEPtr materialized_cte;
     QueryPipeline table_out;
     std::unique_ptr<PushingPipelineExecutor> executor;
+
+    bool is_initialized;
+    Stopwatch watch;
 };
 
 }
