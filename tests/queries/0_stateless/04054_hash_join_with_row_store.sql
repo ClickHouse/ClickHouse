@@ -43,7 +43,10 @@ SELECT '--- Join with block splitting ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS max_joined_block_size_rows = 2, joined_block_split_single_row = 1;
 
 SELECT '--- joinGet / joinGetOrNull on Join engine storage ---';
-SELECT k, joinGet('right_storage_join', 'v2', k), joinGetOrNull('right_storage_join', 'v2', k) FROM left ORDER BY ALL;
+SELECT k,
+       joinGet({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v2', k),
+       joinGetOrNull({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v2', k)
+FROM left ORDER BY ALL;
 
 SELECT '--- Join with spilling ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS join_algorithm = 'parallel_hash,grace_hash', max_bytes_before_external_join = 1;
