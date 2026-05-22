@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"allow_experimental_vector_spann_index", false, false, "New setting to gate the experimental vector_spann MergeTree secondary index"},
+            {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
