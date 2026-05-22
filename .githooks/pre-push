@@ -22,8 +22,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         range=("$remote_sha..$local_sha")
     fi
 
-    # One git-log call per push ref, tab-separated fields per commit.
-    while IFS=$'\t' read -r sha an ae cn ce; do
+    # One git-log call per push ref. Records are NUL-separated (-z) so identities
+    # containing tabs cannot bypass the check; fields within a record are newline-
+    # separated since `\n` cannot appear in `%an` / `%ae` / `%cn` / `%ce`.
+    while IFS=$'\n' read -r -d '' sha an ae cn ce; do
         if [[ $an =~ $blocked_re ]]; then
             echo "ERROR: Commit $sha has a default/generic identity: $an <$ae>" >&2
             failed=1
@@ -32,7 +34,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
             echo "ERROR: Commit $sha has a default/generic identity: $cn <$ce>" >&2
             failed=1
         fi
-    done < <(git log --format=$'%H\t%an\t%ae\t%cn\t%ce' "${range[@]}")
+    done < <(git log -z --format='%H%n%an%n%ae%n%cn%n%ce' "${range[@]}")
 done
 
 if [ "$failed" -eq 1 ]; then
