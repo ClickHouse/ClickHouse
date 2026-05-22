@@ -122,7 +122,7 @@ bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const GranuleRowFilt
         return false;
 
     const auto key_u64 = static_cast<UInt64>(key);
-    if (key_u64 >= filter.granule_row_end - filter.granule_row_base)
+    if (key_u64 >= filter.granule_row_span)
         return false;
 
     const size_t part_row = filter.granule_row_base + static_cast<size_t>(key_u64);

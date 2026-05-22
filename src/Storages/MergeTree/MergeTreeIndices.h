@@ -176,7 +176,7 @@ public:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    /// overrides.row_filter restricts keys to pk_ranges; fewer than requested hits is allowed.
+    /// overrides.row_filter restricts keys to allowed_part_row_ranges; fewer than requested hits is allowed.
     virtual NearestNeighbours calculateApproximateNearestNeighbors(
         MergeTreeIndexGranulePtr /*granule*/,
         const ANNSearchOverrides & /*overrides*/) const

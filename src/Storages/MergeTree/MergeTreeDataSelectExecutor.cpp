@@ -2171,21 +2171,15 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         auto search_result_it = vector_search_results_by_index_mark.find(index_mark);
                         if (search_result_it == vector_search_results_by_index_mark.end())
                         {
-                            GranuleRowFilter granule_row_filter{
-                                part->index_granularity.get(),
-                                pk_ranges_by_index_mark.at(index_mark),
-                                index_mark,
-                                skip_index_granularity,
-                                0,
-                                0,
-                                {}};
+                            GranuleRowFilter granule_row_filter;
 
                             auto & allowed_part_row_ranges = granule_row_filter.allowed_part_row_ranges;
                             const size_t base_mark = index_mark * skip_index_granularity;
                             const size_t end_mark = std::min(base_mark + skip_index_granularity, part->index_granularity->getMarksCountWithoutFinal());
                             granule_row_filter.granule_row_base = part->index_granularity->getMarkStartingRow(base_mark);
                             granule_row_filter.granule_row_end = part->index_granularity->getMarkStartingRow(end_mark);
-                            for (const auto & pk_range : granule_row_filter.pk_ranges)
+                            granule_row_filter.granule_row_span = granule_row_filter.granule_row_end - granule_row_filter.granule_row_base;
+                            for (const auto & pk_range : pk_ranges_by_index_mark.at(index_mark))
                             {
                                 const size_t intersect_begin_mark = std::max(pk_range.begin, base_mark);
                                 const size_t intersect_end_mark = std::min(pk_range.end, end_mark);
