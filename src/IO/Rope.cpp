@@ -1,8 +1,10 @@
 #include <IO/Rope.h>
 #include <Common/Allocator.h>
+#include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <algorithm>
+#include <cstring>
 
 namespace DB
 {
@@ -91,6 +93,100 @@ size_t Rope::totalBytes() const
     for (const auto & node : nodes)
         total += node.size;
     return total;
+}
+
+size_t Rope::coveredBytes(ByteRange req) const
+{
+    size_t covered = 0;
+    for (const auto & node : nodes)
+    {
+        size_t node_start = node.logical_offset;
+        size_t node_end = node_start + node.size;
+        size_t lo = std::max(node_start, req.offset);
+        size_t hi = std::min(node_end, req.end());
+        if (lo < hi)
+            covered += hi - lo;
+    }
+    return covered;
+}
+
+std::vector<ByteRange> Rope::gaps(ByteRange req) const
+{
+    /// Collect the intervals of `req` that each node covers, then return the
+    /// complement. Nodes may be in any order and may overlap each other — we
+    /// merge as we go via a sorted intervals list.
+    std::vector<std::pair<size_t, size_t>> intervals;
+    intervals.reserve(nodes.size());
+    for (const auto & node : nodes)
+    {
+        size_t lo = std::max(node.logical_offset, req.offset);
+        size_t hi = std::min(node.logical_offset + node.size, req.end());
+        if (lo < hi)
+            intervals.emplace_back(lo, hi);
+    }
+    std::sort(intervals.begin(), intervals.end());
+
+    std::vector<ByteRange> result;
+    size_t cur = req.offset;
+    const size_t end = req.end();
+    for (const auto & [lo, hi] : intervals)
+    {
+        if (lo > cur)
+            result.push_back({cur, lo - cur});
+        cur = std::max(cur, hi);
+        if (cur >= end)
+            break;
+    }
+    if (cur < end)
+        result.push_back({cur, end - cur});
+    return result;
+}
+
+bool Rope::covers(ByteRange req) const
+{
+    if (req.size == 0)
+        return true;
+    return coveredBytes(req) == req.size;
+}
+
+Rope Rope::extract(ByteRange req) const
+{
+    chassert(covers(req)); /// caller's invariant
+    return slice(req);
+}
+
+void Rope::shift(ssize_t delta)
+{
+    for (auto & node : nodes)
+        node.logical_offset = static_cast<size_t>(static_cast<ssize_t>(node.logical_offset) + delta);
+}
+
+size_t Rope::copyTo(char * dst, ByteRange req) const
+{
+    chassert(covers(req));
+    /// Walk nodes in sorted order so the output is contiguous regardless of
+    /// node insertion order. (gaps() does the same.)
+    std::vector<const RopeNode *> sorted;
+    sorted.reserve(nodes.size());
+    for (const auto & node : nodes)
+        if (node.logical_offset + node.size > req.offset && node.logical_offset < req.end())
+            sorted.push_back(&node);
+    std::sort(sorted.begin(), sorted.end(),
+        [](const RopeNode * a, const RopeNode * b) { return a->logical_offset < b->logical_offset; });
+
+    size_t written = 0;
+    for (const auto * n : sorted)
+    {
+        size_t lo = std::max(n->logical_offset, req.offset);
+        size_t hi = std::min(n->logical_offset + n->size, req.end());
+        if (lo >= hi)
+            continue;
+        size_t src_off = n->buffer_offset + (lo - n->logical_offset);
+        size_t copy = hi - lo;
+        std::memcpy(dst + (lo - req.offset), n->buffer->data() + src_off, copy);
+        written += copy;
+    }
+    return written;
 }
 
 }

@@ -838,21 +838,20 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     {
         /// Two-step trim via `Rope::slice`:
         ///   1. Intersection with `physical_window` -> serve into `result`.
-        ///      Don't bump `cache_hit_bytes`: these bytes were already accounted
-        ///      as `cache_miss_bytes` in the source-read that produced them.
+        ///      Don't bump `cache_hit_bytes`: these bytes were already
+        ///      accounted as `cache_miss_bytes` in the source-read that
+        ///      produced them.
         ///   2. Anything strictly after `physical_window.end()` -> retain as
         ///      the new `over_read_buffer`. Anything before it is dropped
-        ///      (sequential reads move forward; `seek` would have cleared the
-        ///      buffer already).
+        ///      (sequential reads move forward; `seek` would have cleared
+        ///      the buffer already).
         Rope served = over_read_buffer.slice(physical_window);
         for (const auto & node : served.getNodes())
-        {
-            result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
             covered.add(ByteRange{node.logical_offset, node.size});
-            stats.over_read_served_bytes += node.size;
-            LOG_TRACE(log, "readPhysicalWindow: over-read hit [{}, {})",
-                node.logical_offset, node.logical_offset + node.size);
-        }
+        const size_t served_bytes = served.totalBytes();
+        stats.over_read_served_bytes += served_bytes;
+        LOG_TRACE(log, "readPhysicalWindow: over-read served {} bytes", served_bytes);
+        result.append(std::move(served));
 
         /// Half-open `[physical_window.end(), +∞)` — using a sufficiently
         /// large size avoids overflow (`ByteRange::end()` does `offset + size`).
@@ -913,9 +912,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 HistogramMetrics::ReaderExecutorCacheReadLatency.observe(static_cast<HistogramMetrics::Value>(get_us));
                 for (const auto & sub : useful)
                 {
-                    Rope sub_slice = hit_rope.slice(sub);
-                    for (const auto & node : sub_slice.getNodes())
-                        result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
+                    result.append(hit_rope.extract(sub));
                     covered.add(sub);
                     stats.cache_hit_bytes += sub.size;
                 }
@@ -1000,27 +997,27 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             auto uncovered = covered.subtract(pr_range);
             for (const auto & sub : uncovered)
             {
-                Rope sub_slice = source_rope.slice(sub);
-                for (const auto & node : sub_slice.getNodes())
-                    result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
+                result.append(source_rope.extract(sub));
                 covered.add(sub);
             }
 
-            /// Retain over-read blocks (those fully outside `physical_window`) only
-            /// when the source-read advanced the live connection past this pr —
-            /// otherwise the connection was closed and the over-read can't be
-            /// paired with a continuation on the next call.
+            /// Retain over-read (bytes outside `physical_window`) only when the
+            /// source-read advanced the live connection past this pr — otherwise
+            /// the connection is closed and the bytes can't pair with a
+            /// continuation on the next call. We collect the bytes that fell
+            /// before AND after `physical_window` via two `slice` calls.
             const bool live_used = live_buffer.has_value()
                 && live_buffer->object_path == pr.object.remote_path
                 && live_buffer->current_position == pr.object_offset + pr.size;
             if (live_used)
             {
-                for (const auto & node : source_rope.getNodes())
-                {
-                    const ByteRange nr{node.logical_offset, node.size};
-                    if (nr.end() <= physical_window.offset || nr.offset >= physical_window.end())
-                        over_read_buffer.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
-                }
+                /// Only the tail (bytes past `physical_window.end()`) is worth
+                /// retaining. A pre-window prefix would already be behind the
+                /// next call's `physical_window.offset` and would be dropped by
+                /// the over-read pre-check anyway (sequential reads move
+                /// forward).
+                over_read_buffer.append(source_rope.slice(
+                    ByteRange{physical_window.end(), std::numeric_limits<size_t>::max() / 2}));
             }
 
             logical_pos += pr.size;

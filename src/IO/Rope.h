@@ -71,7 +71,38 @@ public:
     ByteRange range() const;
     void append(RopeNode node);
     void append(Rope && other);
+
+    /// Extract the parts of this rope that overlap `req`. Partial coverage is
+    /// fine: nodes that don't overlap `req` are dropped, and overlapping
+    /// nodes are trimmed to `req`'s bounds. Returns an empty Rope if nothing
+    /// in this rope falls inside `req`.
     Rope slice(ByteRange req) const;
+
+    /// Same as `slice(req)` but asserts the rope fully covers `req` (no gaps).
+    /// Use when the caller knows the rope must contain `req` in full —
+    /// catches a class of off-by-one bugs at the boundary.
+    Rope extract(ByteRange req) const;
+
+    /// True when every byte in `req` is held by some node of this rope.
+    bool covers(ByteRange req) const;
+
+    /// Sub-ranges of `req` not covered by any node. Empty iff `covers(req)`.
+    std::vector<ByteRange> gaps(ByteRange req) const;
+
+    /// Number of bytes in `req` covered by this rope.
+    size_t coveredBytes(ByteRange req) const;
+
+    /// Shift every node's `logical_offset` by `delta`. Used when relocating a
+    /// rope's logical coordinates (e.g. stripping the encryption header
+    /// before exposing data to the caller).
+    void shift(ssize_t delta);
+
+    /// Flatten this rope's coverage of `req` into the contiguous buffer at
+    /// `dst`. Asserts `covers(req)` — partial-coverage callers should use
+    /// `slice(req)` and walk the nodes themselves. Returns bytes written
+    /// (== `req.size` on success).
+    size_t copyTo(char * dst, ByteRange req) const;
+
     /// Remove and return the first node.
     RopeNode popFront();
 

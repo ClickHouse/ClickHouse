@@ -247,17 +247,12 @@ bool DiskCacheHandle::put(ByteRange range, Rope data)
             continue;
         }
 
-        /// Extract bytes from the Rope for the overlap region.
-        Rope slice = data.slice(ByteRange{overlap_start, write_size});
-
-        /// Flatten the slice into a contiguous buffer for segment->write().
+        /// Flatten the relevant slice of `data` directly into a contiguous
+        /// buffer for `segment->write()`. `copyTo` asserts full coverage,
+        /// which the caller guarantees: `data` is the source-read result for
+        /// this miss range.
         std::vector<char> flat_buf(write_size);
-        size_t pos = 0;
-        for (const auto & node : slice.getNodes())
-        {
-            std::memcpy(flat_buf.data() + pos, node.data(), node.size);
-            pos += node.size;
-        }
+        data.copyTo(flat_buf.data(), ByteRange{overlap_start, write_size});
 
         segment->write(flat_buf.data(), write_size, overlap_start);
 

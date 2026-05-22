@@ -220,3 +220,143 @@ TEST(Rope, PopFrontReleasesBuffer)
     /// node destroyed, buffer freed
     EXPECT_TRUE(weak.expired());
 }
+
+namespace
+{
+    /// Build a Rope of `count` adjacent nodes, each `node_size` bytes, starting
+    /// at `start_offset`. Node i's bytes are `0x10 + i` repeated.
+    Rope makeAdjacentRope(size_t count, size_t node_size, size_t start_offset = 0)
+    {
+        Rope rope;
+        for (size_t i = 0; i < count; ++i)
+        {
+            auto buf = std::make_shared<OwnedRopeBuffer>(node_size);
+            std::memset(buf->data(), static_cast<int>(0x10 + i), node_size);
+            rope.append(RopeNode{buf, 0, node_size, start_offset + i * node_size});
+        }
+        return rope;
+    }
+}
+
+TEST(Rope, CoveredBytesMatchesActualCoverage)
+{
+    /// Three 10-byte nodes covering [0, 30). Query coverage of various sub-ranges.
+    auto rope = makeAdjacentRope(/*count=*/3, /*node_size=*/10);
+    EXPECT_EQ(rope.coveredBytes({0, 30}), 30u);
+    EXPECT_EQ(rope.coveredBytes({5, 20}), 20u);
+    EXPECT_EQ(rope.coveredBytes({0, 100}), 30u);  // over-asks; covered <= req
+    EXPECT_EQ(rope.coveredBytes({30, 10}), 0u);   // entirely outside
+    EXPECT_EQ(rope.coveredBytes({100, 50}), 0u);
+}
+
+TEST(Rope, GapsReturnsMissingRanges)
+{
+    /// Two nodes [0, 10) and [20, 30). Gap at [10, 20).
+    Rope rope;
+    auto b1 = std::make_shared<OwnedRopeBuffer>(10);
+    auto b2 = std::make_shared<OwnedRopeBuffer>(10);
+    rope.append(RopeNode{b1, 0, 10, 0});
+    rope.append(RopeNode{b2, 0, 10, 20});
+
+    auto g = rope.gaps({0, 30});
+    ASSERT_EQ(g.size(), 1u);
+    EXPECT_EQ(g[0].offset, 10u);
+    EXPECT_EQ(g[0].size, 10u);
+
+    /// Outside the rope's range entirely.
+    auto g2 = rope.gaps({40, 10});
+    ASSERT_EQ(g2.size(), 1u);
+    EXPECT_EQ(g2[0].offset, 40u);
+    EXPECT_EQ(g2[0].size, 10u);
+
+    /// No gap inside [0, 5).
+    EXPECT_TRUE(rope.gaps({0, 5}).empty());
+}
+
+TEST(Rope, GapsHandlesUnsortedAndOverlappingNodes)
+{
+    /// Nodes inserted out of order with an overlap.
+    Rope rope;
+    auto b1 = std::make_shared<OwnedRopeBuffer>(10);
+    auto b2 = std::make_shared<OwnedRopeBuffer>(10);
+    auto b3 = std::make_shared<OwnedRopeBuffer>(10);
+    rope.append(RopeNode{b2, 0, 10, 20}); // [20, 30)
+    rope.append(RopeNode{b1, 0, 10, 0});  // [0, 10)
+    rope.append(RopeNode{b3, 0, 10, 25}); // [25, 35) — overlaps [20, 30)
+
+    auto g = rope.gaps({0, 35});
+    ASSERT_EQ(g.size(), 1u);
+    EXPECT_EQ(g[0].offset, 10u);
+    EXPECT_EQ(g[0].size, 10u);
+}
+
+TEST(Rope, CoversIsCorrectInverseOfGaps)
+{
+    Rope rope;
+    auto b = std::make_shared<OwnedRopeBuffer>(20);
+    rope.append(RopeNode{b, 0, 20, 0});  // [0, 20)
+    EXPECT_TRUE(rope.covers({0, 20}));
+    EXPECT_TRUE(rope.covers({5, 10}));
+    EXPECT_FALSE(rope.covers({15, 10})); // 5 bytes past the end
+    EXPECT_FALSE(rope.covers({20, 1}));  // entirely past
+    EXPECT_TRUE(rope.covers({0, 0}));    // empty range trivially covered
+}
+
+TEST(Rope, ExtractMatchesSliceWhenCovered)
+{
+    auto rope = makeAdjacentRope(3, 10);
+    Rope ex = rope.extract({5, 20});
+    Rope sl = rope.slice({5, 20});
+    ASSERT_EQ(ex.getNodes().size(), sl.getNodes().size());
+    EXPECT_EQ(ex.totalBytes(), 20u);
+    /// `extract` and `slice` produce equivalent node ranges on full coverage.
+    for (size_t i = 0; i < ex.getNodes().size(); ++i)
+    {
+        EXPECT_EQ(ex.getNodes()[i].logical_offset, sl.getNodes()[i].logical_offset);
+        EXPECT_EQ(ex.getNodes()[i].size, sl.getNodes()[i].size);
+    }
+}
+
+TEST(Rope, ShiftAdjustsLogicalOffsets)
+{
+    auto rope = makeAdjacentRope(3, 10);
+    rope.shift(100);
+    EXPECT_EQ(rope.range().offset, 100u);
+    EXPECT_EQ(rope.range().size, 30u);
+    /// Negative shift back.
+    rope.shift(-50);
+    EXPECT_EQ(rope.range().offset, 50u);
+}
+
+TEST(Rope, CopyToFlattensCoveredRange)
+{
+    auto rope = makeAdjacentRope(3, 10);
+    std::vector<char> out(20, '\0');
+    EXPECT_EQ(rope.copyTo(out.data(), {5, 20}), 20u);
+    /// First 5 bytes come from node 0 (filled with 0x10), next 10 from
+    /// node 1 (0x11), last 5 from node 2 (0x12).
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ(static_cast<unsigned char>(out[i]), 0x10u) << "byte " << i;
+    for (size_t i = 5; i < 15; ++i)
+        EXPECT_EQ(static_cast<unsigned char>(out[i]), 0x11u) << "byte " << i;
+    for (size_t i = 15; i < 20; ++i)
+        EXPECT_EQ(static_cast<unsigned char>(out[i]), 0x12u) << "byte " << i;
+}
+
+TEST(Rope, CopyToWorksWithUnsortedNodes)
+{
+    /// Nodes appended out of order should still flatten correctly via copyTo
+    /// (it sorts internally).
+    Rope rope;
+    auto b1 = std::make_shared<OwnedRopeBuffer>(5);
+    auto b2 = std::make_shared<OwnedRopeBuffer>(5);
+    std::memset(b1->data(), 'A', 5);
+    std::memset(b2->data(), 'B', 5);
+    rope.append(RopeNode{b2, 0, 5, 5});
+    rope.append(RopeNode{b1, 0, 5, 0});
+
+    std::vector<char> out(10, '\0');
+    EXPECT_EQ(rope.copyTo(out.data(), {0, 10}), 10u);
+    EXPECT_EQ(std::string(out.begin(), out.begin() + 5), "AAAAA");
+    EXPECT_EQ(std::string(out.begin() + 5, out.end()), "BBBBB");
+}
