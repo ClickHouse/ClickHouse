@@ -76,8 +76,12 @@ void CachedObjectStorage::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    /// Delegate to the underlying storage to set the source.
-    object_storage->prepareRead(object_storage, objects, read_settings, read_hint, pipeline);
+    /// Delegate to the underlying storage to set the source. Patch the settings
+    /// first — the inner storage's `patchSettings` may apply mandatory tweaks
+    /// (e.g. `LocalObjectStorage` forces `local_fs_method = pread` and disables
+    /// `direct_io`). On master, `readObject` always patched before delegating;
+    /// preserve that behavior here.
+    object_storage->prepareRead(object_storage, objects, patchSettings(read_settings), read_hint, pipeline);
 
     /// Add the filesystem cache stage if filesystem cache is enabled.
     if (read_settings.enable_filesystem_cache)
