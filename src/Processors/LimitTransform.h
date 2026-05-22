@@ -56,8 +56,8 @@ private:
     };
 
     std::vector<PortsData> ports_data;
-    std::unordered_map<const InputPort *, size_t> input_port_to_data;
-    std::unordered_map<const OutputPort *, size_t> output_port_to_data;
+    std::unordered_map<const InputPort *, PortsData *> input_port_to_data;
+    std::unordered_map<const OutputPort *, PortsData *> output_port_to_data;
     size_t num_finished_port_pairs = 0;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;

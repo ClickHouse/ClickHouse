@@ -88,6 +88,8 @@ TotalsHavingTransform::TotalsHavingTransform(
     /// via a different code path in defaultImplementationForNulls at 0 rows.
     if (expression)
     {
+        /// Use updateHeader (dry-run evaluation) instead of expression->execute(),
+        /// because sets from subqueries may not be ready yet at this point.
         auto totals_header = expression->getActionsDAG().updateHeader(finalized_header);
         filter_column_pos = totals_header.getPositionByName(filter_column_name);
         if (remove_filter)

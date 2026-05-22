@@ -85,21 +85,23 @@ FilterTransform::FilterTransform(
     , rows_filtered(rows_filtered_)
     , condition(condition_)
 {
-    transformed_header = getInputPort().getHeader();
+    /// Use transformHeader (which calls ActionsDAG::updateHeader) to compute the header.
+    /// This correctly handles constant propagation through dry-run evaluation,
+    /// unlike expression->execute() which would fail with not-ready sets.
+    const auto * dag = expression ? &expression->getActionsDAG() : nullptr;
+    transformed_header = transformHeader(getInputPort().getHeader(), dag, filter_column_name, /*remove_filter_column=*/false);
+
     if (expression)
     {
-        expression->execute(transformed_header);
-
         /// Special check to stop queries like "WHERE ignore(...)"
-        {
-            const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
-            while (node->type == ActionsDAG::ActionType::ALIAS)
-                node = node->children[0];
+        const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+            node = node->children[0];
 
-            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
-                always_false = true;
-        }
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
+            always_false = true;
     }
+
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
@@ -112,12 +114,28 @@ FilterTransform::FilterTransform(
 
 IProcessor::Status FilterTransform::prepare()
 {
-    if (!on_totals
-        && (always_false
-            /// Optimization for `WHERE column in (empty set)`.
-            /// The result will not change after set was created, so we can skip this check.
-            /// It is implemented in prepare() stop pipeline before reading from input port.
-            || (!are_prepared_sets_initialized && expression && expression->checkColumnIsAlwaysFalse(filter_column_name))))
+    /// Re-evaluate the filter on the header to enable constant-fold early exit
+    /// for expressions like `WHERE 1 IN (subquery)` or `WHERE x IN (empty set)`
+    /// where the result becomes known only after the set is built.
+    /// Use updateHeader (dry-run) because sets may not be ready yet even when
+    /// output.isNeeded() is true (e.g. delayed set creation in mutations).
+    if (!are_prepared_sets_initialized && output.isNeeded())
+    {
+        are_prepared_sets_initialized = true;
+
+        if (!always_false && expression && !on_totals)
+        {
+            auto header = expression->getActionsDAG().updateHeader(getInputPort().getHeader());
+            auto & column = header.getByPosition(filter_column_position).column;
+            if (column)
+            {
+                ConstantFilterDescription constant_filter(*column);
+                always_false = constant_filter.always_false;
+            }
+        }
+    }
+
+    if (always_false && !on_totals)
     {
         input.close();
         output.finish();
@@ -125,10 +143,6 @@ IProcessor::Status FilterTransform::prepare()
     }
 
     auto status = ISimpleTransform::prepare();
-
-    /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
-    if (status != IProcessor::Status::PortFull)
-        are_prepared_sets_initialized = true;
 
     if (status == IProcessor::Status::Finished)
         writeIntoQueryConditionCache({});
