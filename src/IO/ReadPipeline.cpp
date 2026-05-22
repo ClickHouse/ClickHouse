@@ -578,13 +578,22 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             ? settings.distributed_cache_settings.min_bytes_for_seek
             : settings.remote_read_min_bytes_for_seek;
 
+        /// When the memory-cache stage is enabled, `AsynchronousBoundedReadBuffer`
+        /// detects its `CachedInMemoryReadBufferFromFile` inner buffer and uses
+        /// `page_cache_block_size` as the prefetch alignment. That alignment MUST
+        /// match the block size the memory-cache stage was configured with,
+        /// otherwise prefetches don't line up with cache blocks.
+        size_t async_page_cache_block_size = memory_cache
+            ? memory_cache->page_cache_settings.page_cache_block_size
+            : settings.page_cache_block_size;
+
         impl = std::make_unique<AsynchronousBoundedReadBuffer>(
             std::move(impl),
             *async_prefetch->reader,
             async_buffer_size,
             min_bytes_for_seek,
             settings.priority,
-            settings.page_cache_block_size,
+            async_page_cache_block_size,
             settings.enable_filesystem_read_prefetches_log,
             async_prefetch->async_read_counters,
             async_prefetch->prefetches_log);
