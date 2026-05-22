@@ -106,7 +106,8 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     ASTs conditions;
     for (const MutationCommand & command : commands)
     {
-        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command, storage, context))
+        auto alter = command.ast();
+        if (ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get(), storage, context))
             conditions.push_back(std::move(condition));
     }
 
@@ -272,13 +273,12 @@ IsStorageTouched isStorageTouchedByMutations(
 }
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
+    const ASTAlterCommand * alter,
     const StoragePtr & storage,
     ContextPtr context
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    auto alter = command.ast();
     if (alter && alter->partition)
     {
         String partition_id;
@@ -777,7 +777,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "Cannot apply command {} while returning mutated rows", command.type);
             }
 
-            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(command))
+            auto alter = command.ast();
+            if (auto filter = getPartitionAndPredicateExpressionForMutationCommand(alter.get()))
                 all_filters.push_back(std::move(filter));
         }
 
@@ -806,7 +807,8 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (!settings.return_mutated_rows)
             {
-                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(command);
+                auto alter = command.ast();
+                auto predicate = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
                 predicate = makeASTFunction("isZeroOrNull", predicate);
                 stages.back().filters.push_back(predicate);
             }
@@ -824,8 +826,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             auto alter = command.ast();
             auto column_to_update = alter ? getColumnToUpdateExpression(*alter) : std::unordered_map<String, ASTPtr>{};
 
-            /// Compute partition+predicate once per command; cloned per assignment below.
-            ASTPtr base_condition = getPartitionAndPredicateExpressionForMutationCommand(command);
+            /// Compute partition+predicate once per command (reusing the same parse); cloned per assignment below.
+            ASTPtr base_condition = getPartitionAndPredicateExpressionForMutationCommand(alter.get());
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -1911,9 +1913,9 @@ std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIf
     return sort_description;
 }
 
-ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const
+ASTPtr MutationsInterpreter::getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const
 {
-    return DB::getPartitionAndPredicateExpressionForMutationCommand(command, source.getStorage(), context);
+    return DB::getPartitionAndPredicateExpressionForMutationCommand(alter, source.getStorage(), context);
 }
 
 bool MutationsInterpreter::Stage::isAffectingAllColumns(const Names & storage_columns) const
