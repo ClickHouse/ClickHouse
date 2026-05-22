@@ -41,6 +41,7 @@ namespace ErrorCodes
 
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
 {
+    chassert(!source.has_value(), "ReadPipeline: source is already set");
     source = SourceStage{
         .objects = std::move(objects),
         .source = ObjectStorageSource{.storage = std::move(object_storage), .read_hint = read_hint},
@@ -49,6 +50,7 @@ void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects obje
 
 void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
 {
+    chassert(!source.has_value(), "ReadPipeline: source is already set");
     source = SourceStage{
         .objects = std::move(objects),
         .source = LocalFileSource{.path = std::move(path), .read_hint = read_hint},
@@ -57,6 +59,7 @@ void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, const 
 
 void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings)
 {
+    chassert(!source.has_value(), "ReadPipeline: source is already set");
     source = SourceStage{
         .objects = std::move(objects),
         .source = BackupSource{.backup = std::move(backup), .path = std::move(path)},
@@ -65,6 +68,7 @@ void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path,
 
 void ReadPipeline::setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings)
 {
+    chassert(!source.has_value(), "ReadPipeline: source is already set");
     source = SourceStage{
         .objects = std::move(objects),
         .source = CustomSource{.creator = std::move(creator)},
