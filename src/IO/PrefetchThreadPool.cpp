@@ -1,10 +1,17 @@
 #include <IO/PrefetchThreadPool.h>
 #include <IO/Rope.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Common/setThreadName.h>
 
 #include <stdexcept>
+
+namespace CurrentMetrics
+{
+    extern const Metric ReaderExecutorPrefetchInFlight;
+}
 
 namespace DB
 {
@@ -52,9 +59,14 @@ std::unique_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()>
 
     /// Non-blocking schedule: return nullptr immediately if the queue is full.
     /// The caller treats that as "do it synchronously on next read".
+    /// Bump `ReaderExecutorPrefetchInFlight` synchronously before schedule so
+    /// it covers the queue-wait window as well; the worker decrements
+    /// regardless of cancel/success outcome.
+    CurrentMetrics::add(CurrentMetrics::ReaderExecutorPrefetchInFlight);
     bool scheduled = pool.trySchedule(
         [shared, t = std::move(task), thread_group = std::move(submitter_thread_group)]() mutable
     {
+        SCOPE_EXIT({ CurrentMetrics::sub(CurrentMetrics::ReaderExecutorPrefetchInFlight); });
         ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFETCH_READER);
 
         auto expected = PrefetchHandle::State::Queued;
@@ -82,7 +94,12 @@ std::unique_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()>
     });
 
     if (!scheduled)
+    {
+        /// trySchedule rejected the task — undo the gauge bump; the worker
+        /// won't run and therefore won't decrement.
+        CurrentMetrics::sub(CurrentMetrics::ReaderExecutorPrefetchInFlight);
         return nullptr;
+    }
 
     return std::unique_ptr<PrefetchHandle>(new PrefetchHandle(std::move(shared), std::move(future)));
 }
