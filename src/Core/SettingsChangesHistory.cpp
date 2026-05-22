@@ -44,6 +44,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_runtime_filter_shared_fixed_hash_table", false, true, "New setting to share the hash join's FixedHashMap as the runtime filter for the probe side, replacing the Set/BloomFilter built upstream by the runtime filter framework."},
         });
 
+            {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+        });
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
