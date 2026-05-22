@@ -336,20 +336,17 @@ TEST(ReadPipeline, CloneIsIndependent)
 try
 {
     ReadPipeline original;
-    original.setSource(memoryCreator("original"), StoredObjects{testObject()}, ReadSettings{});
+    original.setSource(memoryCreator("data"), StoredObjects{testObject()}, ReadSettings{});
 
     ReadPipeline cloned = original.clone();
-    cloned.setSource(memoryCreator("cloned"), StoredObjects{testObject()}, ReadSettings{});
 
-    auto buf1 = original.build();
-    String result1;
-    readStringUntilEOF(result1, *buf1);
-    EXPECT_EQ(result1, "original");
+    /// Mutating `cloned` (adding a stage) must not affect `original`.
+    /// `setSource` cannot be called twice on the same pipeline, so we exercise
+    /// independence by adding a different stage on each side.
+    cloned.needGather();
 
-    auto buf2 = cloned.build();
-    String result2;
-    readStringUntilEOF(result2, *buf2);
-    EXPECT_EQ(result2, "cloned");
+    EXPECT_EQ(original.describe(), "Source(Custom)");
+    EXPECT_EQ(cloned.describe(), "Source(Custom) -> Gather");
 }
 catch (...)
 {
