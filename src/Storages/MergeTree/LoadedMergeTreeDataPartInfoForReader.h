@@ -85,10 +85,13 @@ public:
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 
-    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override
+    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & /*read_columns*/) override
     {
-        if (read_columns.contains("_distance"))
-            read_hints = read_hints_;
+        /// Always store vector-search read hints when they are present. The row offsets are used by
+        /// `MergeTreeRangeReader` to filter rows down to the exact neighbours returned by the index,
+        /// which is valuable for both the index-only path (`_distance` in the read list) and the
+        /// rescoring path (vector column in the read list, distance recomputed downstream).
+        read_hints = read_hints_;
     }
 
     const RangesInDataPartReadHints & getReadHints() const override { return read_hints; }

@@ -1242,10 +1242,16 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)
 {
-    /// Populate the "_distance" virtual column from the distances we got from vector index
-    auto distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
-    ColumnFloat32::Container & distance_container = distance_column->getData();
-    Float32 * distances = distance_container.data();
+    /// The "_distance" virtual column is only filled when it is part of the read list.
+    /// On the rescoring path the vector column itself is read instead and the distance
+    /// is recomputed downstream — we still build the filter so only the index-matched
+    /// rows survive into that recomputation.
+    const bool fill_distance_column = read_sample_block.has("_distance");
+
+    auto distance_column = fill_distance_column
+        ? ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99))
+        : nullptr;
+    Float32 * distances = fill_distance_column ? distance_column->getData().data() : nullptr;
 
     /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
     auto filter_data = ColumnUInt8::create(part_offsets_auto_column->size(), UInt8(0));
@@ -1260,8 +1266,9 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
     /// Stash the distance for an offset before sorting the offsets
     std::unordered_map<UInt64, Float32> offset_to_distance;
-    for (size_t i = 0; i < distances_from_index.size(); ++i)
-        offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
+    if (fill_distance_column)
+        for (size_t i = 0; i < distances_from_index.size(); ++i)
+            offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
 
     std::sort(row_offsets_from_index.begin(), row_offsets_from_index.end());
 
@@ -1278,13 +1285,17 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
         if (offsets[i] == row_offsets_from_index[j])
         {
             filter[i] = true;
-            distances[i] = offset_to_distance[offsets[i]];
+            if (fill_distance_column)
+                distances[i] = offset_to_distance[offsets[i]];
             j++;
         }
     }
 
-    auto distance_column_pos = read_sample_block.getPositionByName("_distance");
-    columns[distance_column_pos] = std::move(distance_column);
+    if (fill_distance_column)
+    {
+        auto distance_column_pos = read_sample_block.getPositionByName("_distance");
+        columns[distance_column_pos] = std::move(distance_column);
+    }
     part_offsets_filter_for_vector_search = FilterWithCachedCount(std::move(filter_data));
 }
 
