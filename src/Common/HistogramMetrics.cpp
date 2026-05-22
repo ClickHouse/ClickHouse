@@ -68,6 +68,31 @@ namespace HistogramMetrics
         "Duration of S3 read request connections, from request initiation to connection close, in microseconds.",
         {1000, 10000, 50000, 200000, 500000, 1000000, 2000000, 5000000, 10000000, 60000000});
 
+    Metric & ReaderExecutorCacheReadLatency = Factory::instance().registerMetric(
+        "reader_executor_cache_read_microseconds",
+        "Per-call latency of ICacheHandle::get inside ReaderExecutor, in microseconds.",
+        {10, 100, 1000, 5000, 20000, 100000, 500000, 2000000});
+
+    Metric & ReaderExecutorCachePopulateLatency = Factory::instance().registerMetric(
+        "reader_executor_cache_populate_microseconds",
+        "Per-call latency of ICacheHandle::put inside ReaderExecutor, in microseconds.",
+        {10, 100, 1000, 5000, 20000, 100000, 500000, 2000000});
+
+    Metric & ReaderExecutorSourceReadLatency = Factory::instance().registerMetric(
+        "reader_executor_source_read_microseconds",
+        "Per-call latency of source reads driven by ReaderExecutor, in microseconds.",
+        {100, 1000, 10000, 100000, 500000, 2000000, 5000000, 15000000});
+
+    Metric & ReaderExecutorPrefetchWaitLatency = Factory::instance().registerMetric(
+        "reader_executor_prefetch_wait_microseconds",
+        "Per-event wait time when the ReaderExecutor consumer blocked on a not-yet-ready prefetch future, in microseconds. Directly contributes to query latency.",
+        {10, 100, 1000, 10000, 100000, 500000, 2000000, 10000000});
+
+    Metric & ReaderExecutorSyncReadLatency = Factory::instance().registerMetric(
+        "reader_executor_sync_read_microseconds",
+        "Per-event latency of in-line synchronous reads when no usable prefetch was available, in microseconds. Directly contributes to query latency.",
+        {100, 1000, 10000, 100000, 500000, 2000000, 5000000, 15000000});
+
     Metric & S3ReadRequestBytes = Factory::instance().registerMetric(
         "s3_read_request_bytes",
         "Bytes read per S3 read request connection.",

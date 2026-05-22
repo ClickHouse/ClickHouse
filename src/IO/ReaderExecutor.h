@@ -176,6 +176,30 @@ private:
 #endif
     size_t data_start_offset = 0;  /// N * Header::kSize (0 when no encryption)
 
+    /// Per-executor accumulating stats. Flushed to ProfileEvents and logged at
+    /// destruction. Cumulative; the destructor emits one summary line so
+    /// triaging a slow query needs only the server log, not a separate trace.
+    struct Stats
+    {
+        size_t cache_hit_bytes = 0;
+        size_t cache_miss_bytes = 0;
+        size_t cache_populated_bytes = 0;
+        size_t allocated_bytes = 0;
+        size_t cache_get_requests = 0;
+        size_t cache_populate_requests = 0;
+        size_t source_requests = 0;
+        UInt64 cache_get_us = 0;
+        UInt64 cache_populate_us = 0;
+        UInt64 source_read_us = 0;
+        UInt64 decrypt_us = 0;
+        UInt64 prefetch_wait_us = 0;
+        UInt64 sync_read_us = 0;
+        size_t prefetch_hits = 0;
+        size_t prefetch_cancelled = 0;
+        size_t prefetch_pool_full = 0;
+    };
+    Stats stats;
+
     LoggerPtr log = getLogger("ReaderExecutor");
 };
 

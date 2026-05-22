@@ -794,6 +794,25 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     \
+    M(ReaderExecutorCacheHitBytes, "Bytes served from the ReaderExecutor cache chain (PageCache + DiskCache) without going to source.", ValueType::Bytes) \
+    M(ReaderExecutorCacheMissBytes, "Bytes that missed all ReaderExecutor caches and were fetched from source.", ValueType::Bytes) \
+    M(ReaderExecutorCachePopulatedBytes, "Bytes the ReaderExecutor wrote back into a cache layer via put.", ValueType::Bytes) \
+    M(ReaderExecutorAllocatedBytes, "Bytes allocated by ReaderExecutor for OwnedRopeBuffer instances during cache get / source read.", ValueType::Bytes) \
+    M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor.", ValueType::Number) \
+    M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor.", ValueType::Number) \
+    M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
+    M(ReaderExecutorCacheGetMicroseconds, "Time spent inside ICacheHandle::get serving cache hits in ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorCachePopulateMicroseconds, "Time spent inside ICacheHandle::put populating caches in ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorSourceReadMicroseconds, "Time spent in source reads driven by ReaderExecutor (foreground and prefetch worker combined).", ValueType::Microseconds) \
+    M(ReaderExecutorDecryptMicroseconds, "Time spent in ReaderExecutor decryption layers.", ValueType::Microseconds) \
+    M(ReaderExecutorPrefetchWaitMicroseconds, "Time the consumer thread blocked on a not-yet-ready prefetch future. Contributes directly to query latency.", ValueType::Microseconds) \
+    M(ReaderExecutorSyncReadMicroseconds, "Time the consumer thread spent in an in-line synchronous read because no usable prefetch was available. Contributes directly to query latency.", ValueType::Microseconds) \
+    M(ReaderExecutorPrefetchHits, "Number of times a ReaderExecutor read was served by an in-flight prefetch.", ValueType::Number) \
+    M(ReaderExecutorPrefetchCancelled, "Number of times a ReaderExecutor prefetch was cancelled before its worker started.", ValueType::Number) \
+    M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submit returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
+    M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a SourceBufferLimit slot for a live-buffer read.", ValueType::Number) \
+    M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a SourceBufferLimit slot.", ValueType::Number) \
+    \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
     M(FilesystemCacheCreatedKeyDirectories, "Number of created key directories", ValueType::Bytes) \
