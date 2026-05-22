@@ -7,6 +7,7 @@
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/ISimpleTransform.h>
@@ -43,9 +44,6 @@ struct ObjectInfo;
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
-
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 class IDataLakeMetadata : boost::noncopyable
 {
