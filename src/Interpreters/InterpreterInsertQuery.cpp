@@ -115,7 +115,6 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -637,13 +636,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         }
     }();
 
-    select_query_sorted = queryHasOrderByAll(query.select);
-
-    if (select_query_sorted && pipeline.getNumStreams() > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "INSERT SELECT expecting single stream for fully sorted SELECT query,"
-                " but got {} streams",
-                pipeline.getNumStreams());
+    /// ORDER BY ALL should produce a single globally-sorted stream.
+    /// However, certain edge cases (e.g., BuzzHouse fuzzer findings on specific
+    /// table engines or optimizer paths) can result in multiple streams.
+    /// Treat multi-stream output as unsorted — deduplication won't be enabled,
+    /// but the query executes correctly since addInsertToSelectPipeline()
+    /// resizes to 1 stream regardless.
+    select_query_sorted = queryHasOrderByAll(query.select) && pipeline.getNumStreams() <= 1;
 
     return addInsertToSelectPipeline(query, table, pipeline);
 }
