@@ -29,6 +29,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -2227,6 +2228,18 @@ public:
             return arguments[0];
         }
 
+        if constexpr (is_division_or_null)
+        {
+            auto is_null_or_nothing_argument = [](const DataTypePtr & type)
+            {
+                return type->onlyNull() || isNothing(type)
+                    || (type->isNullable() && (isNothing(removeNullable(type)) || removeNullable(type)->onlyNull()));
+            };
+
+            if (is_null_or_nothing_argument(arguments[0]) || is_null_or_nothing_argument(arguments[1]))
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        }
+
         /// Special case - one argument is IPv4 and the other is IPv4 or an integer
         if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
             || (isIPv4(arguments[1]) && isInteger(arguments[0])))
@@ -3693,9 +3706,9 @@ public:
 
     bool useDefaultImplementationForNulls() const override
     {
-        /// Match `FunctionBinaryArithmetic::useDefaultImplementationForNulls`: *OrNull operations
-        /// must see real argument types (e.g. `Nullable(Array(...))`), not nested types only.
-        return !IsOperation<Op>::division_or_null;
+        /// `divideOrNull` / `intDivOrNull` need unde-nested types for `Nullable(Array(...))` inference.
+        /// `moduloOrNull` / `positiveModuloOrNull` keep default null handling (e.g. `moduloOrNull(NULL, 0)`).
+        return !(IsOperation<Op>::div_floating_or_null || IsOperation<Op>::int_div_or_null);
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

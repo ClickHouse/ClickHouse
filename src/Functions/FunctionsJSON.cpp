@@ -1307,11 +1307,18 @@ void validateJSONIndexArgumentsNotNullable(
 {
     for (size_t i = first_index_argument; i < first_index_argument + num_index_arguments; ++i)
     {
-        if (arguments[i].type->isNullable())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The argument {} of function {} should be a string specifying key "
-                "or an integer specifying index, illegal type: {}",
-                std::to_string(i + 1), String(function_name), arguments[i].type->getName());
+        const auto & type = arguments[i].type;
+        if (!type->isNullable())
+            continue;
+
+        /// SQL NULL constants (`NULL`, `Nullable(Nothing)`) are handled via null-presence logic in `build`.
+        if (type->onlyNull() || isNothing(removeNullable(type)))
+            continue;
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "The argument {} of function {} should be a string specifying key "
+            "or an integer specifying index, illegal type: {}",
+            std::to_string(i + 1), String(function_name), type->getName());
     }
 }
 
