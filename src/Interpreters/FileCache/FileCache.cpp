@@ -500,7 +500,7 @@ void FileCache::initialize()
 
         if (load_metadata_asynchronously)
         {
-            load_metadata_main_thread = ThreadFromGlobalPool([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
+            load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
         }
         else
         {
@@ -2173,8 +2173,8 @@ void FileCache::deactivateBackgroundOperations()
     shutdown.store(true);
 
     stop_loading_metadata = true;
-    if (load_metadata_main_thread.joinable())
-        load_metadata_main_thread.join();
+    if (load_metadata_main_thread && load_metadata_main_thread->joinable())
+        load_metadata_main_thread->join();
 
     metadata.shutdown();
     if (keep_up_free_space_ratio_task)

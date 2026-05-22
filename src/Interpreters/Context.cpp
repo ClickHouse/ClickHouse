@@ -2233,7 +2233,7 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
     setCurrentProfilesWithLock(profiles_info, check_constraints, lock);
 }
 
-std::vector<UUID> Context::getCurrentProfiles() const
+UUIDs Context::getCurrentProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
@@ -2241,7 +2241,7 @@ std::vector<UUID> Context::getCurrentProfiles() const
     return settings_constraints_and_current_profiles->current_profiles;
 }
 
-std::vector<UUID> Context::getEnabledProfiles() const
+UUIDs Context::getEnabledProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
@@ -2487,7 +2487,7 @@ void Context::updateExternalTable(const String & table_name, std::shared_ptr<Tem
     std::lock_guard lock(mutex);
     auto it = external_tables_mapping.find(table_name);
     if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exist", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_name));
 
     it->second = std::move(temporary_table);
 }

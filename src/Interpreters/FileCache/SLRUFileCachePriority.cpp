@@ -2,6 +2,7 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
