@@ -773,7 +773,7 @@ void DiskObjectStorage::prepareRead(
     auto global_context = Context::getGlobalContextInstance();
     auto storage = object_storages->takePointingTo(cluster->getLocalLocation());
 
-    /// Distributed cache — computed early because prefer_bigger_buffer_size needs to know.
+    /// Distributed cache — computed early because prefer_bigger_buffer_size needs to be known.
 #if ENABLE_DISTRIBUTED_CACHE
     bool use_distributed_cache = enable_distributed_cache
         && DistributedCache::canUseDistributedCacheForRead(
