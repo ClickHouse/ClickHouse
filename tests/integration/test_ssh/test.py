@@ -288,16 +288,25 @@ def test_ssh_interactive_pty_with_high_fds(started_cluster):
     keepalive = _hold_server_fds(9000, DUMMY_CONNECTIONS)
     try:
         # Sanity check: the server-process fd count rose by at least most of
-        # our connections (allow some slack: a few connects may have been
-        # rejected, ephemeral handler threads may have closed listener-side
-        # fds, etc.).
-        after_files = _server_open_files()
-        delta = after_files - baseline_files
-        assert delta >= DUMMY_CONNECTIONS * 9 // 10, (
-            f"expected clickhouse-server fd count to grow by ~{DUMMY_CONNECTIONS}, "
-            f"got delta={delta} (baseline={baseline_files}, after={after_files}); "
-            "the fd-inflation step did not take effect"
-        )
+        # our connections. Poco's `TCPServer` has a single accept thread, so
+        # the kernel can complete all 1500 TCP handshakes well before
+        # userspace `accept(2)` has drained the kernel accept queue and
+        # allocated fds. Poll until the count crosses the threshold instead
+        # of reading it once.
+        threshold = DUMMY_CONNECTIONS * 9 // 10
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            after_files = _server_open_files()
+            delta = after_files - baseline_files
+            if delta >= threshold:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError(
+                f"expected clickhouse-server fd count to grow by ~{DUMMY_CONNECTIONS}, "
+                f"got delta={delta} (baseline={baseline_files}, after={after_files}); "
+                "Poco's accept thread did not drain the kernel accept queue"
+            )
 
         # Interactive PTY session via paramiko `invoke_shell`. We cannot use
         # `exec_command` here: it is non-interactive and never reaches
