@@ -37,6 +37,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
     extern const Event ReaderExecutorOverReadOverflow;
+    extern const Event ReaderExecutorOverReadBytes;
     extern const Event ReaderExecutorOverReadServedBytes;
 }
 
@@ -189,6 +190,7 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchHits, stats.prefetch_hits);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchCancelled, stats.prefetch_cancelled);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, stats.prefetch_pool_full);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadBytes, stats.over_read_bytes);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadServedBytes, stats.over_read_served_bytes);
 
     LOG_DEBUG(log,
@@ -197,7 +199,7 @@ ReaderExecutor::~ReaderExecutor()
         "get_us={} populate_us={} src_us={} decrypt_us={} "
         "prefetch_wait_us={} sync_read_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
-        "over_read_served={}",
+        "over_read={} over_read_served={}",
         stats.cache_hit_bytes, stats.cache_miss_bytes,
         stats.cache_populated_bytes, stats.allocated_bytes,
         stats.cache_get_requests, stats.cache_populate_requests, stats.source_requests,
@@ -205,7 +207,7 @@ ReaderExecutor::~ReaderExecutor()
         stats.source_read_us, stats.decrypt_us,
         stats.prefetch_wait_us, stats.sync_read_us,
         stats.prefetch_hits, stats.prefetch_cancelled, stats.prefetch_pool_full,
-        stats.over_read_served_bytes);
+        stats.over_read_bytes, stats.over_read_served_bytes);
 
     if (reader_executor_log)
     {
@@ -559,11 +561,10 @@ Rope ReaderExecutor::readNextWindow()
             ensurePreAcquiredSlot();
             size_t win_size = std::min(effectiveWindowSize(), logical_size - position);
             ByteRange physical_window{position + data_start_offset, win_size};
-            Stopwatch sync_watch;
+            StopwatchAccumulator sync_scope(stats.sync_read_us);
             rope = decryptRope(readPhysicalWindow(physical_window), position);
-            auto sync_us = sync_watch.elapsedMicroseconds();
-            stats.sync_read_us += sync_us;
-            HistogramMetrics::ReaderExecutorSyncReadLatency.observe(static_cast<HistogramMetrics::Value>(sync_us));
+            HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
+                static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
         }
         else
         {
@@ -571,12 +572,11 @@ Rope ReaderExecutor::readNextWindow()
             /// the prefetched window, trim the prefix so rope.range().offset
             /// matches `position`.
             LOG_TRACE(log, "readNextWindow: waiting on prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
-            Stopwatch wait_watch;
+            StopwatchAccumulator wait_scope(stats.prefetch_wait_us);
             rope = prefetch_handle->get();
-            auto wait_us = wait_watch.elapsedMicroseconds();
-            stats.prefetch_wait_us += wait_us;
             ++stats.prefetch_hits;
-            HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(static_cast<HistogramMetrics::Value>(wait_us));
+            HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
+                static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
             prefetch_handle.reset();
             prefetch_valid = false;
 
@@ -594,11 +594,10 @@ Rope ReaderExecutor::readNextWindow()
         ByteRange physical_window{position + data_start_offset, win_size};
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
-        Stopwatch sync_watch;
+        StopwatchAccumulator sync_scope(stats.sync_read_us);
         rope = decryptRope(readPhysicalWindow(physical_window), position);
-        auto sync_us = sync_watch.elapsedMicroseconds();
-        stats.sync_read_us += sync_us;
-        HistogramMetrics::ReaderExecutorSyncReadLatency.observe(static_cast<HistogramMetrics::Value>(sync_us));
+        HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
+            static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
     }
 
     position += rope.range().size;
@@ -903,13 +902,12 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 auto useful = covered.subtract(clamped);
                 if (useful.empty())
                     continue;
-                Stopwatch get_watch;
-                Rope hit_rope = handle->get(clamped);
-                auto get_us = get_watch.elapsedMicroseconds();
-                stats.cache_get_us += get_us;
                 ++stats.cache_get_requests;
+                StopwatchAccumulator get_scope(stats.cache_get_us);
+                Rope hit_rope = handle->get(clamped);
+                HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
+                    static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
                 stats.allocated_bytes += hit_rope.totalBytes();
-                HistogramMetrics::ReaderExecutorCacheReadLatency.observe(static_cast<HistogramMetrics::Value>(get_us));
                 for (const auto & sub : useful)
                 {
                     result.append(hit_rope.extract(sub));
@@ -973,11 +971,10 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
             auto blocks = allocateBlocks(pr.size, splits);
             stats.allocated_bytes += pr.size;
-            Stopwatch src_watch;
+            StopwatchAccumulator src_scope(stats.source_read_us);
             Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);
-            auto src_us = src_watch.elapsedMicroseconds();
-            stats.source_read_us += src_us;
-            HistogramMetrics::ReaderExecutorSourceReadLatency.observe(static_cast<HistogramMetrics::Value>(src_us));
+            HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
+                static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             size_t actual = source_rope.totalBytes();
             stats.cache_miss_bytes += actual;
             /// offset_map's pr.size is authoritative — any short read indicates the
@@ -1016,8 +1013,10 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 /// next call's `physical_window.offset` and would be dropped by
                 /// the over-read pre-check anyway (sequential reads move
                 /// forward).
-                over_read_buffer.append(source_rope.slice(
-                    ByteRange{physical_window.end(), std::numeric_limits<size_t>::max() / 2}));
+                Rope tail = source_rope.slice(
+                    ByteRange{physical_window.end(), std::numeric_limits<size_t>::max() / 2});
+                stats.over_read_bytes += tail.totalBytes();
+                over_read_buffer.append(std::move(tail));
             }
 
             logical_pos += pr.size;
@@ -1036,15 +1035,11 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             auto slice = result.slice(miss);
             if (slice.empty())
                 continue;
-            size_t slice_bytes = slice.totalBytes();
-            Stopwatch put_watch;
-            bool did_put = handle->put(miss, std::move(slice));
-            auto put_us = put_watch.elapsedMicroseconds();
-            stats.cache_populate_us += put_us;
             ++stats.cache_populate_requests;
-            HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(static_cast<HistogramMetrics::Value>(put_us));
-            if (did_put)
-                stats.cache_populated_bytes += slice_bytes;
+            StopwatchAccumulator put_scope(stats.cache_populate_us);
+            stats.cache_populated_bytes += handle->put(miss, std::move(slice));
+            HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+                static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
         }
     }
 

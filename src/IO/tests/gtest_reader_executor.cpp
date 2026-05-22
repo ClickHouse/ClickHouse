@@ -201,17 +201,18 @@ public:
         return rope.slice(range);
     }
 
-    bool put(ByteRange range, Rope data) override
+    size_t put(ByteRange range, Rope data) override
     {
         size_t block = range.offset / block_size;
         if (storage.contains(block))
-            return false;
+            return 0;
 
         String content;
         for (const auto & node : data.getNodes())
             content.append(node.data(), node.size);
+        size_t bytes = content.size();
         storage[block] = std::move(content);
-        return true;
+        return bytes;
     }
 
 private:
@@ -811,15 +812,16 @@ public:
         return rope.slice(range);
     }
 
-    bool put(ByteRange range, Rope data) override
+    size_t put(ByteRange range, Rope data) override
     {
         put_log.emplace_back(range, data.totalBytes());
 
         /// Production caches assume disjoint coverage. If totalBytes doesn't
         /// match range.size, the chain handed us duplicate coverage — refuse.
         if (data.totalBytes() != range.size)
-            return false;
+            return 0;
 
+        size_t bytes_written = 0;
         size_t start_block = range.offset / block_size;
         size_t end_block = (range.end() + block_size - 1) / block_size;
         for (size_t b = start_block; b < end_block; ++b)
@@ -836,9 +838,10 @@ public:
                 std::memcpy(content.data() + pos, node.data(), node.size);
                 pos += node.size;
             }
+            bytes_written += content.size();
             storage[b] = std::move(content);
         }
-        return true;
+        return bytes_written;
     }
 
 private:

@@ -2452,7 +2452,7 @@ namespace
             r.append(RopeNode{std::move(buf), 0, hi - lo, lo});
             return r;
         }
-        bool put(ByteRange, Rope) override { return false; }
+        size_t put(ByteRange, Rope) override { return 0; }
     };
 
     struct RecordingCacheProvider : public ICacheProvider

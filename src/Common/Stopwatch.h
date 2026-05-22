@@ -90,6 +90,43 @@ private:
 using StopwatchUniquePtr = std::unique_ptr<Stopwatch>;
 
 
+/** RAII helper that accumulates elapsed microseconds into a caller-owned
+  * counter at scope exit. Replaces the manual pattern:
+  *
+  *     Stopwatch watch;
+  *     do_work();
+  *     stats.x_us += watch.elapsedMicroseconds();
+  *
+  * with:
+  *
+  *     StopwatchAccumulator scope(stats.x_us);
+  *     do_work();
+  *
+  * When the caller also needs the value (e.g. to feed a histogram), call
+  * `elapsedMicroseconds()` before scope exit — the destructor will still
+  * add the (essentially identical) final elapsed value to the counter.
+  *
+  * Targets `UInt64` because that's the in-tree convention for cumulative
+  * microsecond counters; for `size_t`-typed counters, cast at the call site.
+  */
+class StopwatchAccumulator
+{
+public:
+    explicit StopwatchAccumulator(UInt64 & counter_) : counter(counter_) {}
+
+    ~StopwatchAccumulator() { counter += watch.elapsedMicroseconds(); }
+
+    StopwatchAccumulator(const StopwatchAccumulator &) = delete;
+    StopwatchAccumulator & operator=(const StopwatchAccumulator &) = delete;
+
+    UInt64 elapsedMicroseconds() const { return watch.elapsedMicroseconds(); }
+
+private:
+    UInt64 & counter;
+    Stopwatch watch;
+};
+
+
 /// Allows to obtain the elapsed time concurrently with restarting the stopwatch.
 /// Allows to atomically compare the elapsed time with a threshold and restart the watch if the elapsed time is not less.
 class AtomicStopwatch

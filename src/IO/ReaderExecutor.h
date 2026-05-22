@@ -234,12 +234,20 @@ private:
         size_t prefetch_hits = 0;
         size_t prefetch_cancelled = 0;
         size_t prefetch_pool_full = 0;
-        /// Bytes served to the caller from `over_read_buffer` (bytes the
-        /// previous source-read fetched past its requested window). Counted
+        /// Bytes source-read PAST the requested window and retained in
+        /// `over_read_buffer` for a potential future call. Pair this with
+        /// `over_read_served_bytes` to measure how often the speculation
+        /// pays off:
+        ///   served / bytes ≈ 1 — every speculated byte is consumed (great).
+        ///   served / bytes ≪ 1 — most speculation is wasted (e.g. random
+        ///   reads, or the overflow guard kept dropping the buffer).
+        size_t over_read_bytes = 0;
+
+        /// Bytes served to the caller from `over_read_buffer`. Counted
         /// separately from `cache_hit_bytes` — these bytes were already
         /// accounted for as `cache_miss_bytes` when source-read in the
-        /// originating call; double-counting them as cache hits would distort
-        /// hit-rate math.
+        /// originating call; double-counting them as cache hits would
+        /// distort hit-rate math.
         size_t over_read_served_bytes = 0;
     };
     Stats stats;

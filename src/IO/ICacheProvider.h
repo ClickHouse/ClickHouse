@@ -39,9 +39,11 @@ public:
 
     /// Provide data for a miss range. ByteRange must be within miss_ranges.
     /// Cache may copy (disk cache) or take ownership (page cache).
-    /// First writer wins. Returns true if this writer won.
-    /// On success, the miss range becomes a hit range.
-    virtual bool put(ByteRange range, Rope data) = 0;
+    /// First writer wins on a per-segment basis. Returns the number of bytes
+    /// that actually landed in the cache; can be less than `range.size` when
+    /// we lost the downloader race on some segments, reservation failed
+    /// (cache full), or the handle is in bypass mode (returns 0).
+    virtual size_t put(ByteRange range, Rope data) = 0;
 };
 
 /// Cache provider interface. ReadPipeline configures the chain.

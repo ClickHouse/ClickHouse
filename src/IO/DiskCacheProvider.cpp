@@ -3,6 +3,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -191,18 +192,18 @@ Rope DiskCacheHandle::get(ByteRange range)
 }
 
 
-bool DiskCacheHandle::put(ByteRange range, Rope data)
+size_t DiskCacheHandle::put(ByteRange range, Rope data)
 {
     if (!holder)
-        return false;
+        return 0;
 
     /// In bypass mode the ctor used `cache->get` so EMPTY segments don't exist
     /// here, but be explicit: never populate the cache when the caller asked
     /// us to leave it alone.
     if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
-        return false;
+        return 0;
 
-    bool any_written = false;
+    size_t bytes_written = 0;
 
     for (auto & segment : *holder)
     {
@@ -250,15 +251,17 @@ bool DiskCacheHandle::put(ByteRange range, Rope data)
         /// Flatten the relevant slice of `data` directly into a contiguous
         /// buffer for `segment->write()`. `copyTo` asserts full coverage,
         /// which the caller guarantees: `data` is the source-read result for
-        /// this miss range.
-        std::vector<char> flat_buf(write_size);
+        /// this miss range. The buffer goes through `AllocatorWithMemoryTracking`
+        /// so its bytes count against the query memory limit — for big puts
+        /// (e.g. 4 MiB segments) the transient allocation is observable.
+        std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(write_size);
         data.copyTo(flat_buf.data(), ByteRange{overlap_start, write_size});
 
         segment->write(flat_buf.data(), write_size, overlap_start);
 
         /// Release downloader role. The holder's destructor will finalize.
         segment->completePartAndResetDownloader();
-        any_written = true;
+        bytes_written += write_size;
 
         LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}]",
             write_size, seg_range.left, seg_range.right);
@@ -270,7 +273,7 @@ bool DiskCacheHandle::put(ByteRange range, Rope data)
                 source_file_path, requested_range);
     }
 
-    return any_written;
+    return bytes_written;
 }
 
 

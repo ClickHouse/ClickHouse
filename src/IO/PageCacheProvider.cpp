@@ -81,8 +81,9 @@ Rope PageCacheHandle::get(ByteRange range)
     return result;
 }
 
-bool PageCacheHandle::put(ByteRange range, Rope data)
+size_t PageCacheHandle::put(ByteRange range, Rope data)
 {
+    size_t bytes_written = 0;
     for (auto & block : blocks)
     {
         if (block.is_hit)
@@ -98,6 +99,7 @@ bool PageCacheHandle::put(ByteRange range, Rope data)
         /// First-writer-wins: if another thread cached this block concurrently,
         /// getOrSet returns the existing cell and doesn't call load.
         bool loaded = false;
+        size_t loaded_bytes = 0;
         auto cell = cache->getOrSet(
             file,
             block.byte_range,
@@ -122,6 +124,7 @@ bool PageCacheHandle::put(ByteRange range, Rope data)
                     std::memset(new_cell->data() + pos, 0, new_cell->size() - pos);
 
                 loaded = true;
+                loaded_bytes = pos;
             },
             block.key_hash);
 
@@ -129,6 +132,7 @@ bool PageCacheHandle::put(ByteRange range, Rope data)
         {
             LOG_TRACE(log, "PageCacheHandle::put: populated block [{}, {})",
                 block.byte_range.offset, block.byte_range.offset + block.byte_range.size);
+            bytes_written += loaded_bytes;
         }
 
         /// Update the block state so subsequent get() calls work.
@@ -136,7 +140,7 @@ bool PageCacheHandle::put(ByteRange range, Rope data)
         block.is_hit = true;
     }
 
-    return true;
+    return bytes_written;
 }
 
 

@@ -27,7 +27,7 @@ public:
 
     CacheLookupResult status() const override;
     Rope get(ByteRange range) override;
-    bool put(ByteRange range, Rope data) override;
+    size_t put(ByteRange range, Rope data) override;
 
 private:
     FileCachePtr cache;
