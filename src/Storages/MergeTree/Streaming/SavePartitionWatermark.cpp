@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/Streaming/SaveLastWatermark.h>
+#include <Storages/MergeTree/Streaming/SavePartitionWatermark.h>
 
 #include <Processors/IInflatingTransform.h>
 #include <Processors/Port.h>
@@ -31,16 +31,16 @@ ITransformingStep::Traits getTraits()
     };
 }
 
-class SaveLastWatermarkTransform : public IInflatingTransform
+class SavePartitionWatermarkTransform : public IInflatingTransform
 {
 public:
-    SaveLastWatermarkTransform(SharedHeader header, String partition_id_)
+    SavePartitionWatermarkTransform(SharedHeader header, String partition_id_)
         : IInflatingTransform(header, header)
         , partition_id(std::move(partition_id_))
     {
     }
 
-    String getName() const override { return "SaveLastWatermark"; }
+    String getName() const override { return "SavePartitionWatermark"; }
 
 protected:
     void consume(Chunk chunk) override
@@ -91,7 +91,7 @@ void SavePartitionWatermarkStep::transformPipeline(QueryPipelineBuilder & pipeli
 {
     pipeline.addSimpleTransform([&] (const SharedHeader & header)
     {
-        return std::make_shared<SaveLastWatermarkTransform>(header, partition_id);
+        return std::make_shared<SavePartitionWatermarkTransform>(header, partition_id);
     });
 }
 

@@ -1,7 +1,7 @@
 #include <Core/Streaming/Settings.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/StreamingChunkCursor.h>
-#include <Storages/MergeTree/Streaming/SaveLastWatermark.h>
+#include <Storages/MergeTree/Streaming/SavePartitionWatermark.h>
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -405,9 +405,12 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 
     auto chunk = input.pull(/*set_not_needed=*/true);
 
-    if (chunk.getChunkInfos().extract<IdleMarker>())
+    if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
     {
-        LOG_TEST(log, "Got idle marker - snapshot reading pipeline should be finished");
+        auto & position = last_emitted_positions[cursor->partition_id];
+        position.block_number = cursor->last_block_number;
+        position.block_offset = cursor->last_block_offset;
+        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, position.block_number, position.block_offset);
     }
 
     if (auto watermark_info = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
@@ -416,12 +419,9 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
         LOG_TEST(log, "Watermark for partition '{}' updated from chunk to {}", watermark_info->partition_id, watermark_info->watermark);
     }
 
-    if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
+    if (chunk.getChunkInfos().extract<IdleMarker>())
     {
-        auto & position = last_emitted_positions[cursor->partition_id];
-        position.block_number = cursor->last_block_number;
-        position.block_offset = cursor->last_block_offset;
-        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, position.block_number, position.block_offset);
+        LOG_TEST(log, "Got idle marker - snapshot reading pipeline should be finished");
     }
 
     if (!input.isFinished())

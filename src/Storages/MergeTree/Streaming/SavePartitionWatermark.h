@@ -28,7 +28,7 @@ class SavePartitionWatermarkStep : public ITransformingStep
 public:
     SavePartitionWatermarkStep(SharedHeader input_header_, String partition_id_);
 
-    String getName() const override { return "SaveLastWatermark"; }
+    String getName() const override { return "SavePartitionWatermark"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
