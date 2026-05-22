@@ -16,8 +16,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/Arena.h>
-#include <Common/assert_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/assert_cast.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -42,7 +42,7 @@ namespace ErrorCodes
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
   */
-class FunctionArrayReduce final : public IFunction
+class FunctionArrayReduce : public IFunction
 {
 public:
     static constexpr auto name = "arrayReduce";
@@ -147,7 +147,7 @@ ColumnPtr wrapNullableArrayReduceResult(ColumnPtr result, const ColumnPtr & arra
 ColumnPtr unwrapNullableArrayColumn(
     const ColumnPtr & column,
     const DataTypePtr & type,
-    std::vector<ColumnPtr> & materialized_columns,
+    VectorWithMemoryTracking<ColumnPtr> & materialized_columns,
     ColumnPtr & out_null_map,
     size_t num_rows)
 {
@@ -293,7 +293,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 namespace
 {
 
-class FunctionArrayReduceOverloadResolver final : public IFunctionOverloadResolver, private WithContext
+class FunctionArrayReduceOverloadResolver : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduce";

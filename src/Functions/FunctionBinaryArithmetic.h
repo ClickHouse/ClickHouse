@@ -53,6 +53,7 @@
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
 #include <Common/Arena.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/AccurateComparison.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
@@ -813,6 +814,133 @@ private:
 
 using namespace traits_;
 using namespace impl_;
+
+namespace detail
+{
+
+inline bool isArrayOrNullableArray(const IDataType & type)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return checkAndGetDataType<DataTypeArray>(nullable->getNestedType().get()) != nullptr;
+    return checkAndGetDataType<DataTypeArray>(&type) != nullptr;
+}
+
+struct UnwrappedNullableArrayColumn
+{
+    ColumnPtr column;
+    ColumnPtr null_map;
+    const DataTypeArray * array_type = nullptr;
+};
+
+inline ColumnPtr materializeNullMapToRowCount(const ColumnPtr & null_map_column, size_t num_rows)
+{
+    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column);
+    if (null_map.size() == num_rows)
+        return null_map_column;
+
+    if (null_map.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Null map size {} does not match row count {} and is not a single constant value",
+            null_map.size(), num_rows);
+
+    auto result = ColumnUInt8::create();
+    result->getData().resize_fill(num_rows, null_map.getData()[0]);
+    return result;
+}
+
+inline void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_map, size_t num_rows)
+{
+    if (!new_null_map)
+        return;
+
+    ColumnPtr materialized_new = materializeNullMapToRowCount(new_null_map, num_rows);
+
+    if (!accumulated)
+    {
+        accumulated = std::move(materialized_new);
+        return;
+    }
+
+    accumulated = materializeNullMapToRowCount(accumulated, num_rows);
+    auto mutable_accumulated = IColumn::mutate(accumulated);
+    auto & acc_data = assert_cast<ColumnUInt8 &>(*mutable_accumulated).getData();
+    const auto & new_data = assert_cast<const ColumnUInt8 &>(*materialized_new).getData();
+
+    for (size_t i = 0; i < num_rows; ++i)
+        acc_data[i] |= new_data[i];
+
+    accumulated = std::move(mutable_accumulated);
+}
+
+inline UnwrappedNullableArrayColumn unwrapNullableArrayColumnForArithmetic(
+    const ColumnPtr & column,
+    const DataTypePtr & type,
+    VectorWithMemoryTracking<ColumnPtr> & materialized_columns)
+{
+    UnwrappedNullableArrayColumn result;
+    result.array_type = checkAndGetDataType<DataTypeArray>(removeNullable(type).get());
+    if (!result.array_type)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array or Nullable(Array) column, got {}", type->getName());
+
+    ColumnPtr unwrapped_column = column;
+    auto col_no_lowcardinality = recursiveRemoveLowCardinality(unwrapped_column);
+    if (col_no_lowcardinality.get() != unwrapped_column.get())
+    {
+        materialized_columns.emplace_back(col_no_lowcardinality);
+        unwrapped_column = col_no_lowcardinality;
+    }
+
+    const ColumnConst * col_const = checkAndGetColumnConst<ColumnConst>(unwrapped_column.get());
+    const IColumn * data_column = col_const ? &col_const->getDataColumn() : unwrapped_column.get();
+
+    if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(data_column))
+    {
+        result.null_map = nullable_array_column->getNullMapColumnPtr();
+
+        auto nested_array_ptr = nullable_array_column->getNestedColumnPtr();
+        if (checkAndGetColumn<ColumnArray>(nested_array_ptr.get())
+            || checkAndGetColumnConst<ColumnArray>(nested_array_ptr.get()))
+        {
+            result.column = col_const
+                ? ColumnConst::create(std::move(nested_array_ptr), col_const->size())
+                : nested_array_ptr;
+        }
+        else
+            result.column = unwrapped_column;
+    }
+    else
+        result.column = unwrapped_column;
+
+    return result;
+}
+
+inline ColumnPtr wrapNullableArrayArithmeticResult(
+    ColumnPtr result, const ColumnPtr & array_null_map, const DataTypePtr & result_type, size_t input_rows_count)
+{
+    if (!result_type->isNullable())
+        return result;
+
+    ColumnPtr null_map = array_null_map;
+    if (!null_map)
+    {
+        auto null_map_mut = ColumnUInt8::create();
+        null_map_mut->getData().resize_fill(result->size(), 0);
+        null_map = std::move(null_map_mut);
+    }
+    else
+        null_map = materializeNullMapToRowCount(null_map, input_rows_count);
+
+    ColumnPtr nested_result = result;
+    if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(result.get()))
+    {
+        mergeRowNullMap(null_map, nullable_result->getNullMapColumnPtr(), input_rows_count);
+        nested_result = nullable_result->getNestedColumnPtr();
+    }
+
+    return ColumnNullable::create(nested_result, null_map);
+}
+
+}
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
 class FunctionBinaryArithmetic : public IFunction
@@ -1733,13 +1861,12 @@ class FunctionBinaryArithmetic : public IFunction
 
     ColumnPtr executeArraysImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
+        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(removeNullable(result_type).get());
 
         if (!return_type_array)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array", getName());
 
         auto num_args = arguments.size();
-        DataTypes data_types;
 
         ColumnsWithTypeAndName new_arguments {num_args};
         DataTypePtr result_array_type;
@@ -1764,18 +1891,46 @@ class FunctionBinaryArithmetic : public IFunction
             return executeImpl(new_arguments, result_type, input_rows_count);
         }
 
-        const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
-        const auto * right_array_col = typeid_cast<const ColumnArray *>(arguments[1].column.get());
+        VectorWithMemoryTracking<ColumnPtr> materialized_columns;
+        ColumnPtr merged_null_map;
+
+        auto unwrapped_left = detail::unwrapNullableArrayColumnForArithmetic(
+            arguments[0].column, arguments[0].type, materialized_columns);
+        detail::mergeRowNullMap(merged_null_map, unwrapped_left.null_map, input_rows_count);
+
+        auto unwrapped_right = detail::unwrapNullableArrayColumnForArithmetic(
+            arguments[1].column, arguments[1].type, materialized_columns);
+        detail::mergeRowNullMap(merged_null_map, unwrapped_right.null_map, input_rows_count);
+
+        ColumnPtr left_array_column_ptr = unwrapped_left.column;
+        const auto * left_array_col = checkAndGetColumn<ColumnArray>(left_array_column_ptr.get());
+        if (!left_array_col)
+        {
+            const auto * left_const_array = checkAndGetColumnConst<ColumnArray>(left_array_column_ptr.get());
+            if (!left_const_array)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", left_array_column_ptr->getName());
+            left_array_column_ptr = left_const_array->convertToFullColumn();
+            left_array_col = assert_cast<const ColumnArray *>(left_array_column_ptr.get());
+        }
+
+        ColumnPtr right_array_column_ptr = unwrapped_right.column;
+        const auto * right_array_col = checkAndGetColumn<ColumnArray>(right_array_column_ptr.get());
+        if (!right_array_col)
+        {
+            const auto * right_const_array = checkAndGetColumnConst<ColumnArray>(right_array_column_ptr.get());
+            if (!right_const_array)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", right_array_column_ptr->getName());
+            right_array_column_ptr = right_const_array->convertToFullColumn();
+            right_array_col = assert_cast<const ColumnArray *>(right_array_column_ptr.get());
+        }
+
         if (!left_array_col->hasEqualOffsets(*right_array_col))
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments for function {} must have equal sizes", getName());
 
-        const auto & left_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
-        new_arguments[0] = {left_array_col->getDataPtr(), left_array_type, arguments[0].name};
+        new_arguments[0] = {left_array_col->getDataPtr(), unwrapped_left.array_type->getNestedType(), arguments[0].name};
+        new_arguments[1] = {right_array_col->getDataPtr(), unwrapped_right.array_type->getNestedType(), arguments[1].name};
 
-        const auto & right_array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get())->getNestedType();
-        new_arguments[1] = {right_array_col->getDataPtr(), right_array_type, arguments[1].name};
-
-        result_array_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
+        result_array_type = return_type_array->getNestedType();
 
         size_t rows_count = 0;
         const auto & left_offsets = left_array_col->getOffsets();
@@ -1783,7 +1938,8 @@ class FunctionBinaryArithmetic : public IFunction
             rows_count = left_offsets.back();
         auto res = executeImpl(new_arguments, result_array_type, rows_count);
 
-        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        auto array_result = ColumnArray::create(res, left_array_col->getOffsetsPtr());
+        return detail::wrapNullableArrayArithmeticResult(std::move(array_result), merged_null_map, result_type, input_rows_count);
     }
 
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -1791,12 +1947,11 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnsWithTypeAndName arguments = args;
         bool is_swapped = isNumber(args[0].type); /// Defines the order of arguments (If array is first argument - is_swapped = false)
 
-        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
+        const auto * return_type_array = checkAndGetDataType<DataTypeArray>(removeNullable(result_type).get());
         if (!return_type_array)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array", getName());
 
         auto num_args = arguments.size();
-        DataTypes data_types;
 
         ColumnsWithTypeAndName new_arguments {num_args};
         DataTypePtr result_array_type;
@@ -1828,8 +1983,22 @@ class FunctionBinaryArithmetic : public IFunction
         if (is_swapped)
             std::swap(arguments[1], arguments[0]);
 
-        const auto * left_array_col = typeid_cast<const ColumnArray *>(arguments[0].column.get());
-        const auto & left_array_elements_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get())->getNestedType();
+        VectorWithMemoryTracking<ColumnPtr> materialized_columns;
+        auto unwrapped_array = detail::unwrapNullableArrayColumnForArithmetic(
+            arguments[0].column, arguments[0].type, materialized_columns);
+
+        ColumnPtr array_column_ptr = unwrapped_array.column;
+        const auto * left_array_col = checkAndGetColumn<ColumnArray>(array_column_ptr.get());
+        if (!left_array_col)
+        {
+            const auto * array_const = checkAndGetColumnConst<ColumnArray>(array_column_ptr.get());
+            if (!array_const)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", array_column_ptr->getName());
+            array_column_ptr = array_const->convertToFullColumn();
+            left_array_col = assert_cast<const ColumnArray *>(array_column_ptr.get());
+        }
+
+        const auto & left_array_elements_type = unwrapped_array.array_type->getNestedType();
         const auto & right_col = arguments[1].column.get()->cloneResized(left_array_col->size());
 
         size_t rows_count = 0;
@@ -1849,7 +2018,9 @@ class FunctionBinaryArithmetic : public IFunction
             std::swap(new_arguments[1], new_arguments[0]);
         auto res = executeImpl(new_arguments, result_array_type, rows_count);
 
-        return ColumnArray::create(res, left_array_col->getOffsetsPtr());
+        auto array_result = ColumnArray::create(res, left_array_col->getOffsetsPtr());
+        return detail::wrapNullableArrayArithmeticResult(
+            std::move(array_result), unwrapped_array.null_map, result_type, input_rows_count);
     }
 
     ColumnPtr executeTupleNumberOperator(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
@@ -2083,13 +2254,18 @@ public:
 
         if constexpr (is_plus || is_minus)
         {
-            if (isArray(arguments[0]) && isArray(arguments[1]))
+            if (detail::isArrayOrNullableArray(*arguments[0]) && detail::isArrayOrNullableArray(*arguments[1]))
             {
+                const auto & left_array = static_cast<const DataTypeArray &>(*removeNullable(arguments[0]));
+                const auto & right_array = static_cast<const DataTypeArray &>(*removeNullable(arguments[1]));
                 DataTypes new_arguments {
-                        static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
-                        static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
+                        left_array.getNestedType(),
+                        right_array.getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                if (arguments[0]->isNullable() || arguments[1]->isNullable())
+                    return makeNullable(array_result);
+                return array_result;
             }
         }
 
@@ -2163,23 +2339,36 @@ public:
             }
         }
 
-        if constexpr (is_multiply || is_division)
+        /// *OrNull variants use division_or_null / modulo_or_null flags, not division/modulo — include them here.
+        if constexpr (is_multiply || is_division || is_division_or_null)
         {
-            if (isArray(arguments[0]) && isNumber(arguments[1]))
+            if (detail::isArrayOrNullableArray(*arguments[0]) && isNumber(arguments[1]))
             {
+                const auto & array_type = static_cast<const DataTypeArray &>(*removeNullable(arguments[0]));
                 DataTypes new_arguments {
-                        static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
+                        array_type.getNestedType(),
                         arguments[1],
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                if constexpr (is_division_or_null)
+                    return makeNullableSafe(array_result);
+                if (arguments[0]->isNullable())
+                    return makeNullable(array_result);
+                return array_result;
             }
-            if (isNumber(arguments[0]) && isArray(arguments[1]))
+            if (isNumber(arguments[0]) && detail::isArrayOrNullableArray(*arguments[1]))
             {
+                const auto & array_type = static_cast<const DataTypeArray &>(*removeNullable(arguments[1]));
                 DataTypes new_arguments {
                         arguments[0],
-                        static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
+                        array_type.getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                if constexpr (is_division_or_null)
+                    return makeNullableSafe(array_result);
+                if (arguments[1]->isNullable())
+                    return makeNullable(array_result);
+                return array_result;
             }
         }
 
@@ -3058,9 +3247,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         const auto nested_result_type = removeNullable(result_type);
         if (isArray(nested_result_type))
         {
-            if (!isArray(arguments[0].type) || !isArray(arguments[1].type))
-                return executeArrayWithNumericImpl(arguments, nested_result_type, input_rows_count);
-            return executeArraysImpl(arguments, nested_result_type, input_rows_count);
+            const bool left_is_array = detail::isArrayOrNullableArray(*arguments[0].type);
+            const bool right_is_array = detail::isArrayOrNullableArray(*arguments[1].type);
+            if (!left_is_array || !right_is_array)
+                return executeArrayWithNumericImpl(arguments, result_type, input_rows_count);
+            return executeArraysImpl(arguments, result_type, input_rows_count);
         }
 
         if (!valid)

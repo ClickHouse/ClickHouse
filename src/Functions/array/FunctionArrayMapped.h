@@ -11,6 +11,7 @@
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -106,7 +107,7 @@ inline void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_
 }
 
 inline NullableArrayArgument unwrapNullableArrayArgumentColumn(
-    const ColumnPtr & column, const DataTypePtr & type, std::vector<ColumnPtr> & materialized_columns)
+    const ColumnPtr & column, const DataTypePtr & type, VectorWithMemoryTracking<ColumnPtr> & materialized_columns)
 {
     NullableArrayArgument result{.column = column, .null_map = nullptr};
 
@@ -227,7 +228,7 @@ inline ColumnPtr wrapNullableArrayResultIfNeeded(
   * See the example of Impl template parameter in arrayMap.cpp
   */
 template <typename Impl, typename Name, bool IsDeterministic = true>
-class FunctionArrayMapped final : public IFunction
+class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -428,7 +429,7 @@ public:
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        std::vector<ColumnPtr> materialized_columns;
+        VectorWithMemoryTracking<ColumnPtr> materialized_columns;
 
         if (arguments.size() == 1 + num_fixed_params)
         {
