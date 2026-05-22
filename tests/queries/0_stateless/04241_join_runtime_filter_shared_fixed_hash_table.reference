@@ -28,3 +28,11 @@ cross_int8_int64	100
 cross_int8_int64	100
 cross_int32_int128	100
 cross_int32_int128	100
+key64_signed	10000
+key64_signed	10000
+key64_unsigned	10000
+key64_unsigned	10000
+or_clause	1000
+or_clause	1000
+date_key	1000
+date_key	1000

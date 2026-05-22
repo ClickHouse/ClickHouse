@@ -2224,9 +2224,9 @@ void HashJoin::reinitUsedFlags()
 namespace
 {
 
-/// Whether probe column type T can losslessly hold every value of BuildKey.
-/// If false, the bounds [BuildKey::min, BuildKey::max] cannot be expressed in T's value
-/// domain and the bounds check below would misfire — publish-time guard must reject this.
+/// Defensive check that T (= common_type) can hold every value of BuildKey.
+/// `getLeastSupertype` guarantees this in normal flow; this catches contract violations
+/// from future code changes and falls through to pass-all instead of misfiring bounds checks.
 template <typename BuildKey, typename T>
 constexpr bool canLosslesslyHold()
 {
@@ -2330,12 +2330,9 @@ ColumnPtr probeFixedHashMap(
     return result_col;
 }
 
-/// Build a SharedFixedHashTableRuntimeFilter::ProbeFn that captures `shared_ptr<FixedHashMap>` and range.
-/// The captured `shared_ptr<FixedHashMap>` keeps the map alive as long as the closure (and therefore
-/// the filter) is alive.
+/// Wrap a FixedHashMap as a ProbeFn for the runtime filter to invoke on the probe side.
 template <typename BuildKey, typename HashMapT>
-SharedFixedHashTableRuntimeFilter::ProbeFn
-buildSharedFilterProbeFn(
+SharedFixedHashTableRuntimeFilter::ProbeFn buildSharedFilterProbeFn(
     std::shared_ptr<HashMapT> range_map_arg,
     std::make_unsigned_t<BuildKey> min_key,
     size_t range_size)
@@ -2403,13 +2400,10 @@ void HashJoin::publishSharedRuntimeFilters()
                 using MapType = std::decay_t<decltype(map)>;
                 if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll>)
                 {
-                    /// Dispatch over both BuildKey and HashMap variant. BuildKey signedness picks the
-                    /// logical integer interpretation of the build column (e.g. Int32 vs UInt32),
-                    /// which `probeFixedHashMapLoop` uses to bound-check probe values before
-                    /// narrowing.
-                    auto dispatch = [&]<typename BuildKey>(auto & range_ptr,
-                                                          std::make_unsigned_t<BuildKey> min_key,
-                                                          size_t range_size)
+                    auto dispatch = [&]<typename BuildKey>(
+                        auto & range_ptr,
+                        std::make_unsigned_t<BuildKey> min_key,
+                        size_t range_size)
                     {
                         if (!range_ptr)
                             return;
@@ -2468,34 +2462,34 @@ void HashJoin::publishSharedRuntimeFilters()
                         case Type::range8_key64:
                             if (build_signed)
                                 dispatch.template operator()<Int64>(map.range8_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             else
                                 dispatch.template operator()<UInt64>(map.range8_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             break;
                         case Type::range16_key64:
                             if (build_signed)
                                 dispatch.template operator()<Int64>(map.range16_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             else
                                 dispatch.template operator()<UInt64>(map.range16_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             break;
                         case Type::range17_key64:
                             if (build_signed)
                                 dispatch.template operator()<Int64>(map.range17_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             else
                                 dispatch.template operator()<UInt64>(map.range17_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             break;
                         case Type::range18_key64:
                             if (build_signed)
                                 dispatch.template operator()<Int64>(map.range18_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             else
                                 dispatch.template operator()<UInt64>(map.range18_key64,
-                                    static_cast<UInt64>(data->key_range.min_key), data->key_range.size);
+                                    data->key_range.min_key, data->key_range.size);
                             break;
                         default: break;
                     }

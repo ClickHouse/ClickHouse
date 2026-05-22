@@ -131,5 +131,45 @@ INSERT INTO phjf_probe SELECT toInt128(number - 100) FROM numbers(2000);
 SELECT 'cross_int32_int128', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 0;
 SELECT 'cross_int32_int128', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 1;
 
+-- Int64 build -> range_*_key64 dispatch.
+DROP TABLE phjf_build;
+DROP TABLE phjf_probe;
+CREATE TABLE phjf_build (k Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE phjf_probe (k Int64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO phjf_build SELECT toInt64(number - 50) FROM numbers(100);
+INSERT INTO phjf_probe SELECT toInt64(number % 200 - 100) FROM numbers(20000);
+SELECT 'key64_signed', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 0;
+SELECT 'key64_signed', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 1;
+
+-- UInt64 build -> range_*_key64 dispatch (unsigned).
+DROP TABLE phjf_build;
+DROP TABLE phjf_probe;
+CREATE TABLE phjf_build (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE phjf_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO phjf_build SELECT toUInt64(number) FROM numbers(100);
+INSERT INTO phjf_probe SELECT toUInt64(number % 200) FROM numbers(20000);
+SELECT 'key64_unsigned', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 0;
+SELECT 'key64_unsigned', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 1;
+
+-- OR clause -> maps.size() > 1 guard skips publish.
+DROP TABLE phjf_build;
+DROP TABLE phjf_probe;
+CREATE TABLE phjf_build (k1 Int32, k2 Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE phjf_probe (k1 Int32, k2 Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO phjf_build SELECT toInt32(number), toInt32(number + 1000) FROM numbers(100);
+INSERT INTO phjf_probe SELECT toInt32(number % 200), toInt32(number % 200 + 1000) FROM numbers(2000);
+SELECT 'or_clause', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k1 = b.k1 OR p.k2 = b.k2 SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 0;
+SELECT 'or_clause', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k1 = b.k1 OR p.k2 = b.k2 SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 1;
+
+-- Date build -> key16 path via isValueRepresentedByInteger generalization.
+DROP TABLE phjf_build;
+DROP TABLE phjf_probe;
+CREATE TABLE phjf_build (k Date) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE phjf_probe (k Date) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO phjf_build SELECT toDate('2024-01-01') + number FROM numbers(50);
+INSERT INTO phjf_probe SELECT toDate('2024-01-01') + (number % 100) FROM numbers(2000);
+SELECT 'date_key', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 0;
+SELECT 'date_key', count() FROM phjf_probe p INNER JOIN phjf_build b ON p.k = b.k SETTINGS enable_join_runtime_filter_shared_fixed_hash_table = 1;
+
 DROP TABLE phjf_build;
 DROP TABLE phjf_probe;
