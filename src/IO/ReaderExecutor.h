@@ -88,6 +88,13 @@ public:
 
     size_t getPosition() const { return position; }
 
+    /// Test-only accessors for `over_read_buffer` introspection. Production
+    /// callers should never need these — the buffer is self-managing.
+    size_t getOverReadBytes() const { return over_read_buffer.totalBytes(); }
+    const Rope & getOverReadBuffer() const { return over_read_buffer; }
+    size_t getSourceRequestsCount() const { return stats.source_requests; }
+    size_t getOverReadServedBytes() const { return stats.over_read_served_bytes; }
+
     /// Logical file size (physical size minus encryption headers).
     /// Saturates to 0 if the underlying objects sum to fewer bytes than the
     /// declared encryption headers — that file is corrupt/truncated; the
@@ -119,8 +126,12 @@ private:
         std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
 
     /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ ROPE_BLOCK_SIZE.
-    /// The last block may be smaller than ROPE_BLOCK_SIZE; intermediate blocks are exactly ROPE_BLOCK_SIZE.
-    static std::vector<std::shared_ptr<OwnedRopeBuffer>> allocateBlocks(size_t size);
+    /// `splits` (sorted, relative offsets within `[0, size)`) forces a block boundary at each
+    /// listed offset so the resulting `OwnedRopeBuffer` allocations don't straddle those points.
+    /// Used to keep user-window bytes and over-read bytes in separate buffers so each can be
+    /// released independently.
+    static std::vector<std::shared_ptr<OwnedRopeBuffer>> allocateBlocks(
+        size_t size, const std::vector<size_t> & splits = {});
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
@@ -223,8 +234,26 @@ private:
         size_t prefetch_hits = 0;
         size_t prefetch_cancelled = 0;
         size_t prefetch_pool_full = 0;
+        /// Bytes served to the caller from `over_read_buffer` (bytes the
+        /// previous source-read fetched past its requested window). Counted
+        /// separately from `cache_hit_bytes` — these bytes were already
+        /// accounted for as `cache_miss_bytes` when source-read in the
+        /// originating call; double-counting them as cache hits would distort
+        /// hit-rate math.
+        size_t over_read_served_bytes = 0;
     };
     Stats stats;
+
+    /// Bytes that were source-read into a separate `OwnedRopeBuffer` but landed
+    /// outside the caller's `physical_window` — only retained when the
+    /// source-read advanced `live_buffer`. On the next `readPhysicalWindow`
+    /// they're checked before the cache chain, so a subsequent request that
+    /// covers these bytes can serve them without touching the cache or source,
+    /// and the live connection stays at its position for the next pr.
+    /// Self-bounding: each call removes the served slices and the overflow
+    /// guard at the end of `readPhysicalWindow` drops the buffer (and
+    /// `live_buffer`) if total bytes exceed `window_size`.
+    Rope over_read_buffer;
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };
