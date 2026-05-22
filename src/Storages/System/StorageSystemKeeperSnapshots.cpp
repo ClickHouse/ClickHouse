@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemKeeperSnapshots.h>
 
+#if USE_NURAFT
+
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -68,3 +70,5 @@ void StorageSystemKeeperSnapshots::fillData(MutableColumns & res_columns, Contex
 }
 
 }
+
+#endif
