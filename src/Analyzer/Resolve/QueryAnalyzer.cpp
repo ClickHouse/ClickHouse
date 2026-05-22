@@ -53,6 +53,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -793,7 +794,6 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
 static void validateWatermarkSettings(
     const WatermarkSettings & watermark,
     const StorageSnapshotPtr & storage_snapshot,
-    const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
 {
     /// Watermark target column must exist in table.
@@ -805,9 +805,10 @@ static void validateWatermarkSettings(
         throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' must be of Date, Date32, DateTime or DateTime64 type, got {}", watermark.column, column->type->getName());
 
     /// Watermark expression's result type must match the column type.
+    auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, storage_snapshot->metadata->getColumns());
+    auto dummy_table_node = std::make_shared<TableNode>(std::move(dummy_storage), scope.context);
     auto expression_clone = watermark.expression->clone();
-    QueryAnalyzer expression_analyzer(/*only_analyze=*/true);
-    expression_analyzer.resolve(expression_clone, table_expression_node, scope.context);
+    QueryAnalyzer(/*only_analyze=*/true).resolve(expression_clone, dummy_table_node, scope.context);
 
     auto expression_type = expression_clone->getResultType();
     if (!expression_type->equals(*column->type))
@@ -862,7 +863,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
                 if (stream_settings->watermark)
-                    validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, table_expression_node, scope);
+                    validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
             }
         }
     }
