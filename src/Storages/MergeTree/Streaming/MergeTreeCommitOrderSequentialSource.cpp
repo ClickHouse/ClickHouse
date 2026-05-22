@@ -398,16 +398,23 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
     }
 
     auto chunk = input.pull(/*set_not_needed=*/true);
-    chassert(!chunk.hasRows() || chunk.getChunkInfos().has<StreamingChunkCursorInfo>());
 
-    if (auto watermark_info = chunk.getChunkInfos().get<PartitionWatermarkInfo>())
+    if (auto idle_marker = chunk.getChunkInfos().extract<IdleMarker>())
     {
-        last_watermark[watermark_info->partition_id] = watermark_info->watermark;
-        LOG_TEST(log, "Watermark for partition '{}' updated from chunk to {}", watermark_info->partition_id, watermark_info->watermark);
+        LOG_TEST(log, "Got idle marker from - likely snapshot reading pipeline should be finished");
+        input.setNeeded();
         return Status::NeedData;
     }
 
-    if (auto cursor = chunk.getChunkInfos().get<StreamingChunkCursorInfo>())
+    if (auto watermark_info = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
+    {
+        last_watermark[watermark_info->partition_id] = watermark_info->watermark;
+        LOG_TEST(log, "Watermark for partition '{}' updated from chunk to {}", watermark_info->partition_id, watermark_info->watermark);
+        input.setNeeded();
+        return Status::NeedData;
+    }
+
+    if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
     {
         auto & position = last_emitted_positions[cursor->partition_id];
         position.block_number = cursor->last_block_number;
