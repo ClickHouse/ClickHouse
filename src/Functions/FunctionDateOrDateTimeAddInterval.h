@@ -795,13 +795,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    /// Can throw on String (parseDateTime64BestEffort) or Float/UInt64 delta (checkOverflow).
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override
-    {
-        return isString(arguments[0].type) || (arguments.size() > 1
-            && (isFloat(arguments[1].type) || WhichDataType(arguments[1].type).isUInt64()));
-    }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

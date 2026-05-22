@@ -3224,7 +3224,7 @@ public:
         /// Check for the case of division by a constant 0.
         if constexpr (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo)
         {
-            if (right.column)
+            if (right.column && isInteger(arguments[0].type) && isInteger(arguments[1].type))
                 if (const auto * col_const = checkAndGetColumn<ColumnConst>(right.column.get()))
                     return col_const->isDefaultAt(0);
         }
