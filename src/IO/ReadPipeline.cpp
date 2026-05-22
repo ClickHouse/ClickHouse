@@ -167,6 +167,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
     const auto & settings = source->read_settings;
 
+    /// Capture the query id once here (on the calling thread, which has the
+    /// query context). Subsequent cached-buffer creations happen lazily inside
+    /// gather/impl creators that may run on threadpool workers without query
+    /// context, so calling `CurrentThread::getQueryId()` there would return "".
+    const std::string query_id(CurrentThread::getQueryId());
+
     std::unique_ptr<ReadBufferFromFileBase> impl;
 
     if (gather)
@@ -220,7 +226,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                  cache = dc.cache,
                  cache_log = dc.cache_log,
                  custom_key = dc.custom_cache_key,
-                 custom_origin = dc.custom_origin](
+                 custom_origin = dc.custom_origin,
+                 query_id](
                     bool restricted_seek, const StoredObject & object) mutable
                     -> std::unique_ptr<ReadBufferFromFileBase>
             {
@@ -243,7 +250,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                     fs_cache_settings,
                     captured_settings.remote_fs_buffer_size,
                     captured_settings.local_fs_buffer_size,
-                    std::string(CurrentThread::getQueryId()),
+                    query_id,
                     object.bytes_size,
                     /* allow_seeks_after_first_read */ !restricted_seek,
                     /* use_external_buffer */ true,
@@ -388,7 +395,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                         local_buf_size = settings.local_fs_buffer_size,
                         object_size = object.bytes_size,
                         cache_log = dc.cache_log,
-                        throttler = settings.local_throttler
+                        throttler = settings.local_throttler,
+                        query_id
                     ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
                     {
                         /// Copy, not move: impl_creator may be called multiple times
@@ -399,7 +407,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                             std::move(prev_copy),
                             fs_cache_settings,
                             remote_buf_size, local_buf_size,
-                            std::string(CurrentThread::getQueryId()),
+                            query_id,
                             object_size,
                             /* allow_seeks_after_first_read */ true,
                             /* use_external_buffer */ true,
@@ -424,7 +432,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                     fs_cache_settings,
                     settings.remote_fs_buffer_size,
                     settings.local_fs_buffer_size,
-                    std::string(CurrentThread::getQueryId()),
+                    query_id,
                     object.bytes_size,
                     /* allow_seeks_after_first_read */ true,
                     use_ext_buf,
