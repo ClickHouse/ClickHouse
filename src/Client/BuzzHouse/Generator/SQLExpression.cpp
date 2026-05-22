@@ -934,7 +934,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                 min_args = func.min_args;
                 const uint32_t max_possible_args = std::min(func.max_args, UINT32_C(5));
                 max_args = std::min(avail_width, max_possible_args);
-                if (has_lambda && min_args > 0)
+                if (has_lambda && func.lambda_kind == LambdaKind::Required && min_args > 0)
                     min_args--;
                 if (has_lambda && max_args > 0)
                     max_args--;
