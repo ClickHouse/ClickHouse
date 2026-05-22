@@ -2,6 +2,7 @@
 
 #include <math.h>
 
+#include <base/defines.h>
 #include <base/types.h>
 
 #include <IO/ReadHelpers.h>
@@ -463,18 +464,11 @@ public:
         if (m_size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
 
-        /// `buf` may be null when the surrounding aggregate state was not
-        /// properly constructed (e.g., zero-initialised arena memory) or
-        /// destroyed prematurely. This shows up with `uniq*State*OrNull` /
-        /// `uniq*State*OrDefault` against `ROLLUP` / `CUBE` / `TOTALS`, where the
-        /// synthesised "all-grouped-up" row's nested state can end up in this
-        /// shape. Emit an empty state representation instead of crashing.
-        if (!buf)
-        {
-            DB::writeBinaryLittleEndian(UInt8(0), wb);
-            DB::writeVarUInt(UInt64(0), wb);
-            return;
-        }
+        /// A null `buf` here means upstream state-management corruption (e.g. a
+        /// caller serialising a `UniquesHashSet` that was double-destroyed via
+        /// the `-OrNull` / `-OrDefault` + `State` combinator path fixed in
+        /// `AggregateFunctionOrFill::insertResultIntoImpl`).
+        chassert(buf);
 
         DB::writeBinaryLittleEndian(skip_degree, wb);
         DB::writeVarUInt(m_size, wb);
