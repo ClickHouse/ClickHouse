@@ -1331,7 +1331,9 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/clickbench.py",
                 "./ci/jobs/scripts/clickbench/",
+                "./ci/jobs/scripts/clickhouse_service.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/praktika/result.py",
             ],
         ),
         run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
