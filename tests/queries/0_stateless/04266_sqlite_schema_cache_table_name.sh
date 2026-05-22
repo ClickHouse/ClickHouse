@@ -14,6 +14,10 @@ sqlite3 "$DB" "CREATE TABLE second_table (value REAL NOT NULL, payload TEXT);"
 ${CLICKHOUSE_LOCAL} --multiquery --query "
     SET schema_inference_use_cache_for_file = 1;
 
+    -- Empty `input_format_sqlite_table_name` means infer schema from the first SQLite table.
+    SELECT 'Default table schema';
+    DESC file('$DB', 'SQLite');
+
     SELECT 'First table schema';
     DESC file('$DB', 'SQLite')
     SETTINGS input_format_sqlite_table_name = 'first_table';

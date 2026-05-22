@@ -1,3 +1,6 @@
+Default table schema
+id	Int64
+name	Nullable(String)
 First table schema
 id	Int64
 name	Nullable(String)
