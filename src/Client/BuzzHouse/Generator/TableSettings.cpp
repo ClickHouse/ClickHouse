@@ -1070,7 +1070,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 const auto enc_it = std::find_if(
                     fc.disks.begin(),
                     fc.disks.end(),
-                    [&](const DiskInfo & d) { return !d.is_encrypted && d.type == "Local" && d.name != di.name; });
+                    [&](const DiskInfo & d) { return !d.is_encrypted && d.type == "Local" && d.name != di.name && d.name != "default"; });
                 if (!di.is_encrypted && !di.is_cached && enc_it != fc.disks.end() && rg.nextSmallNumber() < 3)
                 {
                     struct
@@ -1089,7 +1089,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 const auto cache_it = std::find_if(
                     fc.disks.begin(),
                     fc.disks.end(),
-                    [&](const DiskInfo & d) { return !d.is_cached && d.type == "Local" && d.name != di.name; });
+                    [&](const DiskInfo & d) { return !d.is_cached && d.type == "Local" && d.name != di.name && d.name != "default"; });
                 if (!di.is_cached && cache_it != fc.disks.end() && rg.nextSmallNumber() < 3)
                 {
                     String res = "disk(type = cache, disk = '" + cache_it->name + "', path = '/var/lib/clickhouse/disks/inline_cache_"
