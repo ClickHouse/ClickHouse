@@ -134,7 +134,7 @@ void verifyTableId(const StorageID & table_id)
 
 }
 
-class StorageKeeperMapSink : public SinkToStorage
+class StorageKeeperMapSink final : public SinkToStorage
 {
     StorageKeeperMap & storage;
     std::unordered_map<std::string, std::string> new_values;
@@ -283,7 +283,7 @@ public:
 };
 
 template <typename KeyContainer>
-class StorageKeeperMapSource : public ISource, WithContext
+class StorageKeeperMapSource final : public ISource, WithContext
 {
     const StorageKeeperMap & storage;
     size_t max_block_size;

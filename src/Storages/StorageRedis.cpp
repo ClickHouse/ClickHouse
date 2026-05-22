@@ -45,7 +45,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource : public ISource
+class RedisDataSource final : public ISource
 {
 public:
     RedisDataSource(
@@ -154,7 +154,7 @@ private:
 };
 
 
-class RedisSink : public SinkToStorage
+class RedisSink final : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);

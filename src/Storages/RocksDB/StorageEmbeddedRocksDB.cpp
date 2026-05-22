@@ -104,7 +104,7 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
     return options;
 }
 
-class EmbeddedRocksDBSource : public ISource
+class EmbeddedRocksDBSource final : public ISource
 {
 public:
     EmbeddedRocksDBSource(
