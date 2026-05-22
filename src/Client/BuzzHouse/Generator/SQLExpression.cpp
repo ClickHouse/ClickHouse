@@ -943,23 +943,35 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         }
 
         const uint32_t nfunc_args
-            = (max_args > 0 && max_args >= min_args) ? std::uniform_int_distribution<uint32_t>(min_args, max_args)(rg.generator)
-                                                     : min_args;
+            = (max_args > 0 && max_args >= min_args) ? std::uniform_int_distribution<uint32_t>(min_args, max_args)(rg.generator) : min_args;
 
         if (has_lambda)
         {
+            const uint32_t lambda_arity = std::max(nfunc_args, UINT32_C(1));
+            const auto arity_filter = [lambda_arity](const CHFunction & f)
+            { return f.lambda_kind == LambdaKind::None && f.min_args <= lambda_arity && lambda_arity <= f.max_args; };
+
             if (rg.nextBool())
             {
-                const CHFunction & func = rg.pickRandomly(
-                    this->allow_not_deterministic && !nondet_funcs.empty() && rg.nextSmallNumber() < 4
-                        ? this->nondet_funcs
-                        : (rg.nextMediumNumber() < 10 && !common_funcs.empty() ? this->common_funcs : this->det_funcs));
+                const auto & source = this->allow_not_deterministic && !nondet_funcs.empty() && rg.nextSmallNumber() < 4
+                    ? this->nondet_funcs
+                    : (rg.nextMediumNumber() < 10 && !common_funcs.empty() ? this->common_funcs : this->det_funcs);
+                const auto it = std::find_if(source.begin(), source.end(), arity_filter);
 
-                func_call->add_args()->set_func_name(func.fname);
+                if (it != source.end())
+                {
+                    std::vector<std::reference_wrapper<const CHFunction>> candidates;
+                    std::copy_if(source.begin(), source.end(), std::back_inserter(candidates), arity_filter);
+                    func_call->add_args()->set_func_name(rg.pickRandomly(candidates).get().fname);
+                }
+                else
+                {
+                    generateLambdaCall(rg, lambda_arity, func_call->add_args()->mutable_lambda());
+                }
             }
             else
             {
-                generateLambdaCall(rg, std::max(nfunc_args, UINT32_C(1)), func_call->add_args()->mutable_lambda());
+                generateLambdaCall(rg, lambda_arity, func_call->add_args()->mutable_lambda());
             }
             this->width++;
             generated_params++;
