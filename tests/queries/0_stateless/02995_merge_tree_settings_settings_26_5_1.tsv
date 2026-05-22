@@ -16,6 +16,7 @@ allow_reduce_blocking_parts_task	1
 allow_remote_fs_zero_copy_replication	0
 allow_summing_columns_in_partition_or_order_key	0
 allow_suspicious_indices	0
+allow_tuple_element_aggregation	1
 allow_vertical_merges_from_compact_to_wide_parts	1
 alter_column_secondary_index_mode	rebuild
 always_fetch_merged_part	0
