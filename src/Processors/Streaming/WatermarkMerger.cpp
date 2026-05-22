@@ -15,6 +15,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool isMarkerChunk(const Chunk & chunk)
+{
+    return chunk.getNumRows() == 0
+        && (chunk.getChunkInfos().has<WatermarkMarker>() || chunk.getChunkInfos().has<IdleMarker>());
+}
+
+void enqueueMarker(std::deque<Chunk> & queue, Chunk marker)
+{
+    if (!queue.empty() && isMarkerChunk(queue.back()))
+        queue.back() = std::move(marker);
+    else
+        queue.push_back(std::move(marker));
+}
+
+}
+
 WatermarkMerger::WatermarkMerger(SharedHeader header, size_t num_inputs, size_t num_outputs)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
 {
@@ -89,7 +108,9 @@ void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_st
                 picked_output_state = &output_state;
         }
 
-        chassert(picked_output_state);
+        if (!picked_output_state)
+            return;
+
         picked_output_state->queue.push_back(std::move(chunk));
     }
 }
@@ -103,7 +124,7 @@ void WatermarkMerger::broadcastAlignedMarker()
         if (input_state.idle)
             num_idle += 1;
 
-        else if (!min_watermark || min_watermark.value() > input_state.pending_watermark)
+        else if (!min_watermark || *min_watermark > *input_state.pending_watermark)
             min_watermark = input_state.pending_watermark;
     }
 
@@ -112,26 +133,39 @@ void WatermarkMerger::broadcastAlignedMarker()
         /// Broadcast idle state to upstream.
         for (auto & [output, output_state] : outputs_state)
             if (!output->isFinished())
-                output_state.queue.push_back(makeIdleMarkerChunk(output->getHeader()));
+                enqueueMarker(output_state.queue, makeIdleMarkerChunk(output->getHeader()));
+
+        /// Drop watermark markers for used streams.
+        for (auto & [input, input_state] : inputs_state)
+        {
+            if (!input_state.idle)
+                continue;
+
+            input_state.idle = false;
+
+            if (!input_state.pending_watermark)
+                marked_inputs.erase(input);
+        }
     }
     else
     {
         /// Broadcast min watermark to upstream.
         for (auto & [output, output_state] : outputs_state)
             if (!output->isFinished())
-                output_state.queue.push_back(makeWatermarkMarkerChunk(output->getHeader(), min_watermark.value()));
+                enqueueMarker(output_state.queue, makeWatermarkMarkerChunk(output->getHeader(), *min_watermark));
 
         /// Drop watermark markers for used streams.
-        for (auto & [input, intput_state] : inputs_state)
+        for (auto & [input, input_state] : inputs_state)
         {
-            if (!intput_state.pending_watermark)
+            if (!input_state.pending_watermark)
                 continue;
 
-            if (intput_state.pending_watermark.value() > min_watermark.value())
+            if (*input_state.pending_watermark > *min_watermark)
                 continue;
 
-            intput_state.pending_watermark.reset();
-            if (!intput_state.idle)
+            input_state.pending_watermark.reset();
+
+            if (!input_state.idle)
                 marked_inputs.erase(input);
         }
     }
