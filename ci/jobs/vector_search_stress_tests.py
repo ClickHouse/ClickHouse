@@ -149,6 +149,7 @@ test_params_laion_5b_full_run = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_laion_5b_quick_test = {
@@ -169,6 +170,7 @@ test_params_laion_5b_quick_test = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_laion_5b_1m = {
@@ -187,6 +189,7 @@ test_params_laion_5b_1m = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_hackernews_10m = {
@@ -207,6 +210,7 @@ test_params_hackernews_10m = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_cohere_wiki_20m = {
@@ -658,7 +662,8 @@ class RunTest:
                 time.sleep(30)
 
         for truth_record in self._truth_set:
-            if self._test_params.get(USE_RAW_BYTES_FOR_QUERY_VECTOR, False):
+            # Use reinterpret technique to demonstrate CPU savings, ref : https://github.com/ClickHouse/ClickHouse/pull/105504
+            if self._test_params.get(USE_RAW_BYTES_FOR_QUERY_VECTOR):
                 query_vector = truth_record["query_vector"]
                 if query_vector is None:
                     raise ValueError(
