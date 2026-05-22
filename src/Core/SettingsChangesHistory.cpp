@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"use_reader_executor", false, false, "New experimental setting to use ReaderExecutor-based read pipeline instead of the matryoshka ReadBuffer assembly."},
+            {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
