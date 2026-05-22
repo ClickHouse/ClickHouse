@@ -10,12 +10,12 @@ DROP TABLE IF EXISTS polygon_src_nan SYNC;
 
 CREATE TABLE polygon_src_nan
 (
-    polygon Array(Array(Array(Tuple(Float64, Float64)))),
-    city_id UInt32
-) ENGINE = Memory;
+    city_id UInt32,
+    polygon Array(Array(Array(Tuple(Float64, Float64))))
+) ENGINE = MergeTree ORDER BY city_id;
 
-INSERT INTO polygon_src_nan VALUES ([[[(0.0, 0.0), (1.0, 0.0), (nan, 1.0), (0.0, 1.0), (0.0, 0.0)]]], 1);
-INSERT INTO polygon_src_nan VALUES ([[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]]], 2);
+INSERT INTO polygon_src_nan VALUES (1, [[[(0.0, 0.0), (1.0, 0.0), (nan, 1.0), (0.0, 1.0), (0.0, 0.0)]]]);
+INSERT INTO polygon_src_nan VALUES (2, [[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]]]);
 
 CREATE DICTIONARY polygon_dict_nan_each
 (polygon Array(Array(Array(Tuple(Float64, Float64)))), city_id UInt32)
@@ -28,8 +28,8 @@ LAYOUT(POLYGON_INDEX_EACH());
 SYSTEM RELOAD DICTIONARY polygon_dict_nan_each; -- { serverError BAD_ARGUMENTS }
 
 TRUNCATE TABLE polygon_src_nan;
-INSERT INTO polygon_src_nan VALUES ([[[(0.0, 0.0), (1.0, 0.0), (inf, 1.0), (0.0, 1.0), (0.0, 0.0)]]], 1);
-INSERT INTO polygon_src_nan VALUES ([[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]]], 2);
+INSERT INTO polygon_src_nan VALUES (1, [[[(0.0, 0.0), (1.0, 0.0), (inf, 1.0), (0.0, 1.0), (0.0, 0.0)]]]);
+INSERT INTO polygon_src_nan VALUES (2, [[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]]]);
 
 CREATE DICTIONARY polygon_dict_inf_cell
 (polygon Array(Array(Array(Tuple(Float64, Float64)))), city_id UInt32)
@@ -42,7 +42,7 @@ SYSTEM RELOAD DICTIONARY polygon_dict_inf_cell; -- { serverError BAD_ARGUMENTS }
 
 -- Final sanity: a clean source still loads.
 TRUNCATE TABLE polygon_src_nan;
-INSERT INTO polygon_src_nan VALUES ([[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]]], 1);
+INSERT INTO polygon_src_nan VALUES (1, [[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]]]);
 SYSTEM RELOAD DICTIONARY polygon_dict_nan_each;
 SELECT status = 'LOADED' FROM system.dictionaries WHERE database = currentDatabase() AND name = 'polygon_dict_nan_each';
 
