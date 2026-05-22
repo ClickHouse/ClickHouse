@@ -287,9 +287,9 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     return res;
 }
 
-std::vector<UUID> SettingsProfileElements::toProfileIDs() const
+UUIDs SettingsProfileElements::toProfileIDs() const
 {
-    std::vector<UUID> res;
+    UUIDs res;
     for (const auto & elem : *this)
     {
         if (elem.parent_profile)

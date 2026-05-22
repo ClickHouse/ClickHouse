@@ -11,7 +11,7 @@ namespace
 {
 
 /// Dump the structure of type and column.
-class FunctionDumpColumnStructure : public IFunction
+class FunctionDumpColumnStructure final : public IFunction
 {
 public:
     static constexpr auto name = "dumpColumnStructure";
