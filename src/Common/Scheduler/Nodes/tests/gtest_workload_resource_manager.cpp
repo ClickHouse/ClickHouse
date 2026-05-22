@@ -2820,6 +2820,52 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationChangeWorkloadWeight)
     }
 }
 
+// Reparent a workload that still has an active reservation through a FairAllocation level.
+// FairAllocation is created internally only when 2+ siblings exist at the same priority, so
+// `parent_a` must have multiple children for its internal scheduler to instantiate one.
+// The detach path inside `FairAllocation::removeChild` must unlink the moving child from
+// all intrusive sets regardless of `allocations > 0`; otherwise `setUsageKey(-1, 0)` would
+// chassert on a still-linked node.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationReparentFairWithActiveAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200");
+    t.query("CREATE WORKLOAD parent_a IN all");
+    t.query("CREATE WORKLOAD parent_b IN all");
+    t.query("CREATE WORKLOAD leaf1 IN parent_a");
+    t.query("CREATE WORKLOAD leaf2 IN parent_a"); // forces FairAllocation inside parent_a
+
+    for (int i = 0; i < 3; i++)
+    {
+        ClassifierPtr c1 = t.manager->acquire("leaf1");
+        ClassifierPtr c2 = t.manager->acquire("leaf2");
+        ResourceLink link1 = c1->get("memory");
+        ResourceLink link2 = c2->get("memory");
+
+        TestAllocation a1(link1, "leaf1-active", 50);
+        TestAllocation a2(link2, "leaf2-active", 30);
+        a1.waitSync();
+        a2.waitSync();
+
+        // Move leaf1 to a different parent while it still holds 50 bytes — this calls
+        // FairAllocation::removeChild on parent_a's internal FairAllocation node.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b");
+
+        // The reservation should still be functional under the new parent.
+        a1.setSize(20);
+        a1.waitSync();
+
+        // Move it back.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_a");
+        a1.setSize(0);
+        a1.waitSync();
+        a2.setSize(0);
+        a2.waitSync();
+    }
+}
+
 // ---------- PrecedenceAllocation ---------- //
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePrecedenceBetweenWorkloadsForPendingAllocations)
@@ -2951,3 +2997,86 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillRunningDueToW
         a4.waitSync();
     }
 }
+
+// Reparent a workload through a PrecedenceAllocation level (siblings have different
+// precedences in parent_a, forcing a PrecedenceAllocation node) while it still holds an
+// active reservation. Without the fix, detach with `allocations > 0` would leave the moving
+// child linked in the old parent's `running_children`, blocking the new parent's insertion.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationReparentPrecedenceWithActiveAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200");
+    t.query("CREATE WORKLOAD parent_a IN all");
+    t.query("CREATE WORKLOAD parent_b IN all");
+    t.query("CREATE WORKLOAD leaf1 IN parent_a SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD leaf2 IN parent_a SETTINGS precedence = 2"); // forces PrecedenceAllocation inside parent_a
+
+    for (int i = 0; i < 3; i++)
+    {
+        ClassifierPtr c1 = t.manager->acquire("leaf1");
+        ClassifierPtr c2 = t.manager->acquire("leaf2");
+        ResourceLink link1 = c1->get("memory");
+        ResourceLink link2 = c2->get("memory");
+
+        TestAllocation a1(link1, "leaf1-active", 50);
+        TestAllocation a2(link2, "leaf2-active", 30);
+        a1.waitSync();
+        a2.waitSync();
+
+        // Move leaf1 to a different parent while it still holds 50 bytes of memory.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 1");
+
+        a1.setSize(20);
+        a1.waitSync();
+
+        // Move back.
+        t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_a SETTINGS precedence = 1");
+        a1.setSize(0);
+        a1.waitSync();
+        a2.setSize(0);
+        a2.waitSync();
+    }
+}
+
+// Change precedence (without changing parent) of a workload with an active reservation.
+// For space-shared resources `updateRequiresDetach` returns true on precedence change, so
+// this exercises the detach/reattach path through PrecedenceAllocation within the same
+// parent node.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationChangePrecedenceWithActiveAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD A IN all SETTINGS precedence = 1");
+    t.query("CREATE WORKLOAD B IN all SETTINGS precedence = 2");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ClassifierPtr cA = t.manager->acquire("A");
+        ClassifierPtr cB = t.manager->acquire("B");
+        ResourceLink linkA = cA->get("memory");
+        ResourceLink linkB = cB->get("memory");
+
+        TestAllocation a(linkA, "A-active", 50);
+        TestAllocation b(linkB, "B-active", 30);
+        a.waitSync();
+        b.waitSync();
+
+        // Change A's precedence — detach + reattach inside `all`'s PrecedenceAllocation.
+        t.query("CREATE OR REPLACE WORKLOAD A IN all SETTINGS precedence = 3");
+
+        a.setSize(20);
+        a.waitSync();
+
+        // Restore precedence for the next iteration.
+        t.query("CREATE OR REPLACE WORKLOAD A IN all SETTINGS precedence = 1");
+        a.setSize(0);
+        a.waitSync();
+        b.setSize(0);
+        b.waitSync();
+    }
+}
+

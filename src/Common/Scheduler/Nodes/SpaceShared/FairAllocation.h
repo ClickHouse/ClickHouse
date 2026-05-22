@@ -26,9 +26,9 @@ public:
     void updateMinMaxAllocated(ResourceCost new_value) override;
 
 private:
-    bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase);
-    bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease);
-    void updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase);
+    bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
+    bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child);
+    void updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
 
     RunningSetByUsage running_children; /// Children with currently running allocations
     PendingSetByUsage pending_children; /// Children with pending allocation increase request

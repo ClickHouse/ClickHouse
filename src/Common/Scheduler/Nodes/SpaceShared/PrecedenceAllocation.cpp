@@ -91,7 +91,7 @@ void PrecedenceAllocation::approveIncrease()
     increase = nullptr;
     increase_child->approveIncrease();
 
-    setIncrease(*increase_child, increase_child->increase);
+    setIncrease(*increase_child, increase_child->increase, false);
 }
 
 void PrecedenceAllocation::approveDecrease()
@@ -106,7 +106,7 @@ void PrecedenceAllocation::approveDecrease()
         running_children.erase(running_children.iterator_to(*decrease_child));
     decrease = nullptr;
     decrease_child->approveDecrease();
-    setDecrease(*decrease_child, decrease_child->decrease);
+    setDecrease(*decrease_child, decrease_child->decrease, false);
 }
 
 void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
@@ -120,19 +120,19 @@ void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update
     }
     if (update.detached)
     {
-        if (from_child.isRunning() && from_child.allocations == 0)
+        if (from_child.isRunning() && (update.detached == &from_child || from_child.allocations == 0))
             running_children.erase(running_children.iterator_to(from_child));
     }
     if (update.increase)
     {
-        if (setIncrease(from_child, update.increase ? *update.increase : from_child.increase))
+        if (setIncrease(from_child, update.increase ? *update.increase : from_child.increase, update.detached == &from_child))
             update.setIncrease(increase);
         else
             update.resetIncrease();
     }
     if (update.decrease)
     {
-        if (setDecrease(from_child, *update.decrease))
+        if (setDecrease(from_child, *update.decrease, update.detached == &from_child))
             update.setDecrease(decrease);
         else
             update.resetDecrease();
@@ -141,15 +141,15 @@ void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update
         propagate(std::move(update));
 }
 
-bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
+bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child)
 {
     // Update intrusive sets of increasing children
     if (from_child.isIncreasing())
     {
-        if (!new_increase)
+        if (!new_increase || detach_child)
             increasing_children.erase(increasing_children.iterator_to(from_child));
     }
-    else if (new_increase)
+    else if (new_increase && !detach_child)
         increasing_children.insert(from_child);
 
     // Update current increase request
@@ -159,15 +159,15 @@ bool PrecedenceAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRe
     return old_increase != increase;
 }
 
-bool PrecedenceAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease)
+bool PrecedenceAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child)
 {
     // Update intrusive list of decreasing children
     if (from_child.isDecreasing())
     {
-        if (!new_decrease)
+        if (!new_decrease || detach_child)
             decreasing_children.erase(decreasing_children.iterator_to(from_child));
     }
-    else if (new_decrease)
+    else if (new_decrease && !detach_child)
         decreasing_children.push_back(from_child);
 
     // Update current decrease request

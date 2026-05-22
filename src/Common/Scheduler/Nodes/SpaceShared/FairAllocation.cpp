@@ -105,7 +105,7 @@ void FairAllocation::approveIncrease()
     apply(*increase);
     increase = nullptr;
     increase_child->approveIncrease();
-    setIncrease(*increase_child, increase_child->increase);
+    setIncrease(*increase_child, increase_child->increase, false);
 }
 
 void FairAllocation::approveDecrease()
@@ -116,26 +116,23 @@ void FairAllocation::approveDecrease()
     apply(*decrease);
     decrease = nullptr;
     decrease_child->approveDecrease();
-    setDecrease(*decrease_child, decrease_child->decrease);
+    setDecrease(*decrease_child, decrease_child->decrease, false);
 }
 
 void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
-    bool reset_increase = false;
     apply(update);
-    if (update.attached || update.detached)
-        reset_increase = true; // child's allocation changed, we need change the key
-    if (reset_increase || update.increase)
+    if (update.attached || update.detached || update.increase)
     {
-        if (setIncrease(from_child, update.increase ? *update.increase : from_child.increase))
+        if (setIncrease(from_child, update.increase ? *update.increase : from_child.increase, update.detached == &from_child))
             update.setIncrease(increase);
         else
             update.resetIncrease();
     }
     if (update.decrease)
     {
-        if (setDecrease(from_child, *update.decrease))
+        if (setDecrease(from_child, *update.decrease, update.detached == &from_child))
             update.setDecrease(decrease);
         else
             update.resetDecrease();
@@ -144,9 +141,9 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
         propagate(std::move(update));
 }
 
-bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
+bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child)
 {
-    updateKey(from_child, new_increase);
+    updateKey(from_child, new_increase, detach_child);
 
     // Update current increase request
     // To avoid thrashing we first server running allocation increase requests, then pending ones
@@ -158,9 +155,9 @@ bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest 
     return old_increase != increase;
 }
 
-bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease)
+bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child)
 {
-    updateKey(from_child, from_child.increase);
+    updateKey(from_child, from_child.increase, detach_child);
 
     // Update intrusive list of decreasing children
     if (from_child.isDecreasing())
@@ -178,8 +175,20 @@ bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest 
     return old_decrease != decrease;
 }
 
-void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
+void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child)
 {
+    if (detach_child)
+    {
+        SCHED_DBG("{} -- updateKey(detach_child={}): child is detached, reset key", getPath(), from_child.basename);
+        // Remove from intrusive sets
+        if (from_child.isIncreasing())
+            increasing_children.erase(increasing_children.iterator_to(from_child));
+        if (from_child.isPending())
+            pending_children.erase(pending_children.iterator_to(from_child));
+        if (from_child.isRunning())
+            running_children.erase(running_children.iterator_to(from_child));
+        return;
+    }
     // Key calculation follows several principles.
     // - Isolation: We take into account increase request size to make sure huge increase request will kill itself, not allocations from other workloads.
     // - Weights: We normalize by weight to achieve fair division according to weights.
