@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"use_reader_executor", false, false, "New experimental setting to use ReaderExecutor-based read pipeline instead of the matryoshka ReadBuffer assembly."},
             {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
+            {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {

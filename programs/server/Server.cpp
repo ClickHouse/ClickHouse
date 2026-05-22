@@ -1582,10 +1582,10 @@ try
         /// otherwise they keep running indefinitely and block shutdown.
         global_context->signalKeeperDispatcherShutdown();
 
+        size_t current_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
             {
                 std::lock_guard lock(servers_lock);
                 for (auto & server : servers_to_start_before_tables)
@@ -1609,7 +1609,7 @@ try
                 LOG_INFO(log, "Closed connections to servers for tables.");
         }
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

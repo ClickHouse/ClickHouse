@@ -1368,7 +1368,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher() const;
+    void shutdownKeeperDispatcher(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.

@@ -774,7 +774,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                keeper_dispatcher->shutdown();
+                keeper_dispatcher->shutdown(false);
             }
             catch (...)
             {
@@ -5325,12 +5325,12 @@ void Context::signalKeeperDispatcherShutdown() const
 #endif
 }
 
-void Context::shutdownKeeperDispatcher() const
+void Context::shutdownKeeperDispatcher([[maybe_unused]] bool closed_all_connections) const
 {
 #if USE_NURAFT
     if (auto dispatcher = tryGetKeeperDispatcher())
     {
-        dispatcher->shutdown();
+        dispatcher->shutdown(closed_all_connections);
         setKeeperDispatcher(nullptr);
     }
 #endif
