@@ -1,6 +1,7 @@
 import dataclasses
 import re
 import runpy
+import signal
 import traceback
 from pathlib import Path
 from typing import List, Optional
@@ -19,6 +20,28 @@ DATABASE_SIGN = "Database: "
 # the contract has a single source of truth.
 _clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-test"
 STOP_TESTING_EXIT_CODE = runpy.run_path(str(_clickhouse_test))["STOP_TESTING_EXIT_CODE"]
+
+# Exit codes that mean the run was aborted mid-flight, so per-test results
+# (if any) are incomplete and we cannot trust which test "caused" the
+# failure. `STOP_TESTING_EXIT_CODE` is the in-band signal — the parent
+# raised `StopTesting` and reached the outer handler. `128 + SIGTERM/SIGKILL`
+# cover the out-of-band variants where the parent was killed before it
+# could exit through that handler (currently reachable via the
+# worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
+# parent terminates re-broadcasts SIGTERM to the whole process group via
+# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`).
+#
+# Exit code 1 is deliberately NOT in this set: it is set by end-of-run
+# checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
+# that run AFTER all tests have finished. Per-test results in that case are
+# complete and authoritative and must not be demoted.
+ABORTED_RUN_EXIT_CODES = frozenset(
+    {
+        STOP_TESTING_EXIT_CODE,
+        128 + signal.SIGTERM,  # 143
+        128 + signal.SIGKILL,  # 137
+    }
+)
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
@@ -188,7 +211,7 @@ class FTResultsProcessor:
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
-        elif runner_exit_code == STOP_TESTING_EXIT_CODE:
+        elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
