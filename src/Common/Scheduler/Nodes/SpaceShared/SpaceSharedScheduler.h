@@ -97,7 +97,7 @@ public:
 
     ISchedulerNode * getChild(const String & child_name) override
     {
-        if (child->basename == child_name)
+        if (child && child->basename == child_name)
             return child.get();
         return nullptr;
     }
