@@ -492,7 +492,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             /// no Gather, so the underlying object reader must support seeks directly.
             auto fallback_creator = [storage = dc_obj_source->storage,
                                      read_hint = dc_obj_source->read_hint,
-                                     captured_object = source->objects.at(0),
+                                     captured_object = object,
                                      captured_settings = settings]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
@@ -504,7 +504,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             /// async prefetch) wraps it — matches the gather path and master behavior.
             bool use_ext_buf_for_dc = memory_cache.has_value() || async_prefetch.has_value();
             impl = DistributedCache::readWithDistributedCache(
-                source->objects.at(0).local_path,
+                object.local_path,
                 source->objects,
                 settings,
                 *dc_obj_source->storage,
