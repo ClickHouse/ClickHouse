@@ -87,6 +87,7 @@ rm -rf "$DEST_SERVER_PATH"/config.d
 mkdir -p $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/core_dump.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_num_to_warn.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
