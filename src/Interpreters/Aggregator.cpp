@@ -23,11 +23,13 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -82,6 +84,34 @@ namespace ErrorCodes
 
 namespace
 {
+struct HasSubqueryMatcher
+{
+    struct Data
+    {
+        bool has_subquery = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (node->as<DB::ASTSubquery>())
+            data.has_subquery = true;
+    }
+};
+
+using HasSubqueryVisitor = ConstInDepthNodeVisitor<HasSubqueryMatcher, true>;
+
+bool astContainsSubquery(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    HasSubqueryMatcher::Data data;
+    HasSubqueryVisitor(data).visit(ast);
+    return data.has_subquery;
+}
+
 bool worthConvertToTwoLevel(
     size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
 {
@@ -4048,6 +4078,12 @@ UInt64 partialAggregateCacheSemanticKey(
     bool has_additional_table_filters)
 {
     if (has_row_level_filter || has_additional_table_filters)
+        return 0;
+
+    const auto & select = select_query->as<DB::ASTSelectQuery &>();
+    /// Predicate subqueries may depend on mutable external sources (`WHERE ... IN (SELECT ...)`).
+    /// Their freshness is not represented in the partial aggregate cache key, so disable cache fail-close.
+    if (astContainsSubquery(select.prewhere()) || astContainsSubquery(select.where()))
         return 0;
 
     const UInt64 base = calculateCacheKey(select_query);

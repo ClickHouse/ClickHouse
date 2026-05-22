@@ -717,7 +717,8 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 /// when `StorageID::uuid` is nil (e.g. Ordinary) and unqualified table names resolve per database.
 /// `apply_deleted_mask` affects which rows are visible for MergeTree reads; `has_row_level_filter` disables
 /// caching because row policies are not represented in the AST hash. Non-empty `additional_table_filters`
-/// is applied outside that AST and also disables the semantic key.
+/// is applied outside that AST and also disables the semantic key. Predicate subqueries in `PREWHERE`/`WHERE`
+/// also disable the key because external source freshness is not tracked.
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
     const String & current_database,
