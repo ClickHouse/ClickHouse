@@ -251,9 +251,9 @@ TEST(ReadPipeline, DescribeMultipleStages)
 {
     ReadPipeline pipeline;
     pipeline.setSource(memoryCreator(""), StoredObjects{testObject()}, ReadSettings{});
-    pipeline.needDiskCache(nullptr, FilesystemCacheSettings{});
+    pipeline.needFilesystemCache(nullptr, FilesystemCacheSettings{});
     pipeline.needGather();
-    EXPECT_EQ(pipeline.describe(), "Source(Custom) -> DiskCache -> Gather");
+    EXPECT_EQ(pipeline.describe(), "Source(Custom) -> FilesystemCache -> Gather");
 }
 
 

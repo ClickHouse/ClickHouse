@@ -76,9 +76,9 @@ void ReadPipeline::needGather()
     gather = true;
 }
 
-void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
+void ReadPipeline::needFilesystemCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_caches.push_back(DiskCacheStage{
+    filesystem_caches.push_back(FilesystemCacheStage{
         .cache = std::move(cache),
         .cache_log = std::move(cache_log),
         .cache_settings = std::move(cache_settings),
@@ -86,14 +86,14 @@ void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cac
         .custom_origin = std::nullopt});
 }
 
-void ReadPipeline::needDiskCache(
+void ReadPipeline::needFilesystemCache(
     FileCachePtr cache,
     FileCacheKey cache_key,
     FileCacheOriginInfo origin,
     FilesystemCacheSettings cache_settings,
     std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_caches.push_back(DiskCacheStage{
+    filesystem_caches.push_back(FilesystemCacheStage{
         .cache = std::move(cache),
         .cache_log = std::move(cache_log),
         .cache_settings = std::move(cache_settings),
@@ -163,8 +163,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
     if (gather)
     {
-        /// -- Stages 1+2+3: Source + DiskCache + Gather --
-        /// Object storage path: wrap per-object buffers with optional disk cache,
+        /// -- Stages 1+2+3: Source + FilesystemCache + Gather --
+        /// Object storage path: wrap per-object buffers with optional filesystem cache,
         /// then join all objects via ReadBufferFromRemoteFSGather.
 
         const auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
@@ -198,11 +198,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             };
         }
 
-        /// Step 2: Wrap each disk cache layer around the source (innermost first).
-        /// With stacked CachedObjectStorage (cache-on-cache), each layer calls needDiskCache
+        /// Step 2: Wrap each filesystem cache layer around the source (innermost first).
+        /// With stacked CachedObjectStorage (cache-on-cache), each layer calls needFilesystemCache
         /// in inner-to-outer order. The resulting per-object chain is:
         ///   OuterCache(InnerCache(Source))
-        for (const auto & dc : disk_caches)
+        for (const auto & dc : filesystem_caches)
         {
             auto fs_cache_settings = dc.cache_settings.value_or(settings.getFilesystemCacheSettings());
             gather_creator =
@@ -321,13 +321,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         const auto & object = source->objects[0];
 
         {
-            /// -- Stages 1+2: Source + DiskCache(s) (single-object, no gather) --
+            /// -- Stages 1+2: Source + FilesystemCache(s) (single-object, no gather) --
             /// use_external_buffer for the outermost buffer: true when a downstream
             /// stage (memory cache, async prefetch) manages the working buffer.
             /// Inner cache layers always use external buffer (the outer cache calls set()).
             bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
 
-            if (!disk_caches.empty())
+            if (!filesystem_caches.empty())
             {
                 /// The impl buffer (source reader inside the cache) must always use external buffer mode.
                 /// CachedOnDiskReadBufferFromFile couples with its impl via set() — passing the working
@@ -358,15 +358,15 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 else
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "ReadPipeline: disk cache without gather requires ObjectStorageSource or CustomSource");
+                        "ReadPipeline: filesystem cache without gather requires ObjectStorageSource or CustomSource");
                 }
 
                 /// Wrap inner cache layers (all except the outermost). Each layer's
                 /// impl_creator produces the previous layer's CachedOnDiskReadBufferFromFile.
                 /// Inner layers always use use_external_buffer=true.
-                for (size_t i = 0; i + 1 < disk_caches.size(); ++i)
+                for (size_t i = 0; i + 1 < filesystem_caches.size(); ++i)
                 {
-                    const auto & dc = disk_caches[i];
+                    const auto & dc = filesystem_caches[i];
                     auto fs_cache_settings = dc.cache_settings.value_or(settings.getFilesystemCacheSettings());
                     auto cache_key = dc.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
                     auto origin = dc.custom_origin.value_or(dc.cache->getCommonOriginWithSegmentKeyType(object.local_path));
@@ -402,7 +402,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 
                 /// Build the outermost CachedOnDiskReadBufferFromFile.
                 /// The impl_creator now produces the full inner cache chain.
-                const auto & outermost = disk_caches.back();
+                const auto & outermost = filesystem_caches.back();
                 auto fs_cache_settings = outermost.cache_settings.value_or(settings.getFilesystemCacheSettings());
                 auto cache_key = outermost.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
                 auto origin = outermost.custom_origin.value_or(outermost.cache->getCommonOriginWithSegmentKeyType(object.local_path));
@@ -458,17 +458,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ReadPipeline: distributed cache requires ObjectStorageSource");
 
-            /// Disk cache + DC without gather is rejected: in the single-object path DC
-            /// builds its own buffer and assigns it to `impl` outright, so any disk cache
+            /// Filesystem cache + DC without gather is rejected: in the single-object path DC
+            /// builds its own buffer and assigns it to `impl` outright, so any filesystem cache
             /// layer built earlier would be unreachable (the assignment replaces the chain).
             ///
-            /// The gather path composes both naturally: disk cache wraps each per-object
+            /// The gather path composes both naturally: filesystem cache wraps each per-object
             /// reader inside the gather lambda, Gather assembles them into a single buffer,
             /// then DC wraps that Gather as the outermost layer with Gather itself as the
             /// fallback. Callers that need both stages must call needGather().
-            if (!disk_caches.empty())
+            if (!filesystem_caches.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "ReadPipeline: disk cache + distributed cache without gather is not supported. "
+                    "ReadPipeline: filesystem cache + distributed cache without gather is not supported. "
                     "Use needGather() to enable the gather path which handles both stages");
 
             /// Fallback: read directly from object storage (same as non-DC path).
@@ -619,8 +619,8 @@ String ReadPipeline::describe() const
             [&](const CustomSource &) { append("Source(Custom)"); }
         }, source->source);
     }
-    for (size_t i = 0; i < disk_caches.size(); ++i)
-        append("DiskCache");
+    for (size_t i = 0; i < filesystem_caches.size(); ++i)
+        append("FilesystemCache");
     if (gather)
         append("Gather");
     if (distributed_cache)

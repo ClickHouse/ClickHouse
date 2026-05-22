@@ -65,7 +65,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 {
     /// Filesystem cache is handled as a pipeline stage by DiskObjectStorage::prepareRead
     /// and StorageObjectStorageSource. This method delegates directly to the underlying storage.
-    /// Callers that need caching should use ReadPipeline with needDiskCache().
+    /// Callers that need caching should use ReadPipeline with needFilesystemCache().
     return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
 }
 
@@ -79,13 +79,13 @@ void CachedObjectStorage::prepareRead(
     /// Delegate to the underlying storage to set the source.
     object_storage->prepareRead(object_storage, objects, read_settings, read_hint, pipeline);
 
-    /// Add the disk cache stage if filesystem cache is enabled.
+    /// Add the filesystem cache stage if filesystem cache is enabled.
     if (read_settings.enable_filesystem_cache)
     {
         if (cache->isInitialized())
         {
             auto global_context = Context::getGlobalContextInstance();
-            pipeline.needDiskCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
+            pipeline.needFilesystemCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
         }
         else
         {

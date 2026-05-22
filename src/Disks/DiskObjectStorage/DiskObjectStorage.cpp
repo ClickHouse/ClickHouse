@@ -801,7 +801,7 @@ void DiskObjectStorage::prepareRead(
     pipeline.needGather();
 
     /// Delegate to the object storage to set source and add cache stage if needed.
-    /// CachedObjectStorage::prepareRead adds needDiskCache automatically.
+    /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
     if (use_distributed_cache)

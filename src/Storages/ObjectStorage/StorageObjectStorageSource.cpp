@@ -1043,7 +1043,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
 
-            pipeline.needDiskCache(
+            pipeline.needFilesystemCache(
                 cache,
                 cache_key,
                 FileCache::getCommonOrigin(),
