@@ -591,7 +591,6 @@ void DatabaseWithOwnTablesBase::shutdown()
     /// databases like `system` or `information_schema` have neither and skip the check.
     if (!tables_snapshot.empty() && tables_snapshot.begin()->second->getStorageID().hasUUID())
         chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-    const bool should_slow_shutdown_for_tests = !DatabaseCatalog::isPredefinedDatabase(db_name);
 
     /// If a table throws while shutting down (e.g. a ZooKeeper timeout), we must still release the
     /// references this catalog holds on every table: the UUID -> storage mapping keeps the storage
@@ -644,13 +643,18 @@ void DatabaseWithOwnTablesBase::shutdown()
         ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::SHUTDOWN_TABLES);
         for (const auto & kv : tables_snapshot)
         {
-            runner.enqueueAndKeepTrack([this, table = kv.second, should_slow_shutdown_for_tests, &record_error]
+            runner.enqueueAndKeepTrack([this, table = kv.second, &record_error]
             {
                 auto table_id = table->getStorageID();
                 try
                 {
-                    if (should_slow_shutdown_for_tests)
-                        fiu_do_on(FailPoints::database_catalog_shutdown_sleep_per_table, { sleepForSeconds(1); });
+                    fiu_do_on(FailPoints::database_catalog_shutdown_sleep_per_table,
+                    {
+                        /// Skip predefined databases (system / information_schema) so the test's
+                        /// shutdown-time budget is consumed only by the user database under test.
+                        if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                            sleepForSeconds(1);
+                    });
 
                     fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
                     {
@@ -665,10 +669,7 @@ void DatabaseWithOwnTablesBase::shutdown()
                     tryLogCurrentException(log, fmt::format("Failed to shut down table {}", table_id.getNameForLogs()));
                 }
                 if (table_id.hasUUID())
-                {
-                    chassert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
                     DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
-                }
             });
         }
         runner.waitForAllToFinish();
