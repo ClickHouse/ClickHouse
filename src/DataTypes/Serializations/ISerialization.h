@@ -472,6 +472,9 @@ public:
         /// Callback to seek specific stream to a current mark that we read from.
         /// Used only in MergeTree and Compact part for Object shared data deserialization.
         std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
+        /// Callback to seek specific stream to the start.
+        /// Used in MergeTree for prefix deserialization.
+        std::function<void(const SubstreamPath &)> seek_to_start_callback;
 
         /// Callback used to get avg_value_size_hint for each substream.
         std::function<double(const SubstreamPath &)> get_avg_value_size_hint_callback;

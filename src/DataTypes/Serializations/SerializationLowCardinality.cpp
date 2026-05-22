@@ -358,6 +358,12 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         auto global_dictionary = DataTypeLowCardinality::createColumnUnique(
             *dictionary_type, std::move(global_dict_keys));
 
+        /// `Wide` part readers mark `DictionaryKeys` streams as LowCardinality
+        /// dictionary streams. When all relevant marks have the same position,
+        /// `MergeTreeReaderStreamSingleColumn::getRightOffset` extends the read
+        /// bound to the next different mark or to the file end. So this `eof`
+        /// check is not limited by the current task range in the only case where
+        /// `might_have_single_dictionary` can prove useful.
         if (stream->eof())
         {
             new_state->single_dictionary_for_part = true;
@@ -369,9 +375,10 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
             /// inside one mark interval. Reset the `DictionaryKeys` stream back
             /// to the normal post-prefix position and let data deserialization
             /// read dictionary updates from the stream.
-            stream = settings.getter(dictionary_keys_path);
-            if (!stream)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream while resetting LowCardinality dictionary stream");
+            if (!settings.seek_to_start_callback)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset LowCardinality dictionary stream without seek_to_start_callback");
+
+            settings.seek_to_start_callback(dictionary_keys_path);
 
             UInt64 repeated_keys_version;
             readBinaryLittleEndian(repeated_keys_version, *stream);
