@@ -102,7 +102,7 @@ public:
     /// If in_out_null_map is not passed, not found rows are excluded from result chunk.
     Block getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const;
 
-    bool supportsDelete() const override { return true; }
+    bool supportsDelete(ContextPtr) const override { return true; }
 
     /// To turn on the optimization optimize_trivial_approximate_count_query=1 should be set for a query.
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }

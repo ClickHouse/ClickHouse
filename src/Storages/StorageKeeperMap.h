@@ -71,7 +71,7 @@ public:
     void mutate(const MutationCommands & commands, ContextPtr context) override;
 
     bool supportsParallelInsert() const override { return true; }
-    bool supportsDelete() const override { return true; }
+    bool supportsDelete(ContextPtr) const override { return true; }
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;

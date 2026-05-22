@@ -116,6 +116,7 @@ public:
         const MutationCommands & commands,
         StorageObjectStorageConfigurationPtr configuration,
         ContextPtr context,
+        StoragePtr storage_ptr,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
         std::shared_ptr<DataLake::ICatalog> catalog,

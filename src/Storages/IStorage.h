@@ -252,7 +252,7 @@ public:
 
     /// Return true if storage can execute 'DELETE FROM' mutations. This is different from lightweight delete
     /// because those are internally translated into 'ALTER UDPATE' mutations.
-    virtual bool supportsDelete() const { return false; }
+    virtual bool supportsDelete(ContextPtr /*context*/) const { return false; }
 
     /// Returns true if storage can store columns in sparse serialization.
     virtual bool supportsSparseSerialization() const { return false; }

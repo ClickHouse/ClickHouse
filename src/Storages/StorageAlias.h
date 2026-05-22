@@ -165,7 +165,7 @@ public:
     {
         return getTargetTable()->supportsLightweightUpdate();
     }
-    bool supportsDelete() const override { return getTargetTable()->supportsDelete(); }
+    bool supportsDelete(ContextPtr local_context) const override { return getTargetTable()->supportsDelete(local_context); }
     bool hasProjection() const override { return getTargetTable()->hasProjection(); }
     bool supportsSparseSerialization() const override
     {

@@ -135,7 +135,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
-    StorageID storage_id,
+    StoragePtr storage_ptr,
     ObjectStoragePtr object_storage,
     String write_format,
     FileNamesGenerator & generator,
@@ -146,7 +146,6 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 {
     chassert(commands.size() == 1);
 
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
     DataFileWriteResultByPartitionKey delete_data_result;
     DataFileStatisticsByPartitionKey delete_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
@@ -563,6 +562,7 @@ void mutate(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr storage_metadata,
+    StoragePtr storage_ptr,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
@@ -647,7 +647,7 @@ void mutate(
             commands,
             context,
             fresh_storage_metadata,
-            storage_id,
+            storage_ptr,
             object_storage,
             write_format,
             filename_generator,

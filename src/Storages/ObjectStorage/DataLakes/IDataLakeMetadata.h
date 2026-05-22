@@ -13,6 +13,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Disks/DiskType.h>
@@ -144,6 +145,7 @@ public:
         const MutationCommands & /*commands*/,
         StorageObjectStorageConfigurationPtr /*configuration*/,
         ContextPtr /*context*/,
+        StoragePtr /*storage_ptr*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,

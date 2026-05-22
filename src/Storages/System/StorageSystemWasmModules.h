@@ -28,7 +28,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, ContextPtr context) override;
-    bool supportsDelete() const override { return true; }
+    bool supportsDelete(ContextPtr) const override { return true; }
 
 private:
     WasmModuleManager & wasm_module_manager;

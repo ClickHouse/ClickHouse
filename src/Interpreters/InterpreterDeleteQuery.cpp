@@ -90,7 +90,7 @@ BlockIO InterpreterDeleteQuery::execute()
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
-    if (table->supportsDelete())
+    if (table->supportsDelete(getContext()))
     {
         /// Convert to MutationCommand
         MutationCommands mutation_commands;

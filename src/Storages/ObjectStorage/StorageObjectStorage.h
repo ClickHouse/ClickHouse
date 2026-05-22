@@ -155,7 +155,11 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool supportsDelete() const override { return configuration->supportsDelete(); }
+    bool supportsDelete(ContextPtr context) const override
+    {
+        configuration->lazyInitializeIfNeeded(object_storage, context);
+        return configuration->supportsDelete();
+    }
 
     bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
 

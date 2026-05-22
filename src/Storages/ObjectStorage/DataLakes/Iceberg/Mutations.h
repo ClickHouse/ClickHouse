@@ -11,6 +11,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/StorageID.h>
+#include <Storages/IStorage_fwd.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -24,6 +25,7 @@ void mutate(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr storage_metadata,
+    StoragePtr storage_ptr,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
