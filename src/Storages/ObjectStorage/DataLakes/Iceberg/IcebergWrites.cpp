@@ -1034,7 +1034,7 @@ bool IcebergStorageSink::initializeMetadata()
 
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
             auto hint_path = filename_generator.generateVersionHint();
-            if (!writeMetadataFileAndVersionHint(
+            if (!catalog && !writeMetadataFileAndVersionHint(
                     persistent_table_components.path_resolver,
                     metadata_info,
                     json_representation,

@@ -35,6 +35,7 @@
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 #include <limits>
 #include <unordered_set>
 
@@ -526,7 +527,7 @@ static bool writeMetadataFiles(
             });
 
             auto hint_path = filename_generator.generateVersionHint();
-            if (!writeMetadataFileAndVersionHint(
+            if (!catalog && !writeMetadataFileAndVersionHint(
                     path_resolver,
                     metadata_info,
                     json_representation,
