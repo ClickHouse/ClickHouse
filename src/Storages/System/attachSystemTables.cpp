@@ -149,7 +149,7 @@
 namespace DB
 {
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, bool has_keeper_server)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
