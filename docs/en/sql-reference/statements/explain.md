@@ -603,6 +603,12 @@ Settings:
 - `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
 - `compact_repeated_processor_chains` — Compacts adjacent repeated processor chains in text output by showing one copy of the chain with a repetition count. This can make parallel pipelines easier to read when the same chain appears many times, for example in joins. It does not affect graph output. Default: 0.
 
+```text
+Resize 16 → 1
+  FillingRightJoinSide          │
+    SimpleSquashingTransform    │ × 16
+      Resize 1 → 16
+
 When `compact=0` and `graph=1` processor names will contain an additional suffix with unique processor identifier.
 
 Example:
