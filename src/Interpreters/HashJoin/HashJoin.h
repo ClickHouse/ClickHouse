@@ -606,10 +606,8 @@ private:
 
     bool canConvertToFixedHashMap() const;
 
-    /// If `enable_join_runtime_filter_shared_fixed_hash_table` is on and the build side has been
-    /// converted to a FixedHashMap, publish a SharedFixedHashTableRuntimeFilter into the query's
-    /// RuntimeFilterLookup, replacing any Set/BloomFilter previously installed by
-    /// BuildRuntimeFilterStep for the same filter name.
+    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
+    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
     void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 

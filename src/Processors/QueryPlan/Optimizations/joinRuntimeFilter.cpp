@@ -363,11 +363,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 build_filter_node = new_build_filter_node;
             }
 
-            /// If shared-perfect-hash mode is on, record the descriptor on the JoinStepLogical's
-            /// JoinOperator. HashJoin will pick it up via TableJoin and, if FixedHashMap conversion
-            /// succeeds, publish a SharedFixedHashTableRuntimeFilter that supersedes the Set/BloomFilter
-            /// built above. The BuildRuntimeFilterStep above stays in place as a fallback for the
-            /// case where conversion does not happen (e.g. range too wide, multi-condition join).
+            /// Record a descriptor so HashJoin can replace the Set/BloomFilter above with a
+            /// SharedFixedHashTableRuntimeFilter when its build side ends up as a FixedHashMap;
+            /// otherwise the Set/BloomFilter stays as fallback.
             if (join_step->getJoinSettings().enable_join_runtime_filter_shared_fixed_hash_table
                 && !check_left_does_not_contain)
             {

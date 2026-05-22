@@ -29,10 +29,8 @@ struct JoinOperator
     /// For INNER JOINs, residual filter is the same as expression
     std::vector<JoinActionRef> residual_filter = {};
 
-    /// Per-key runtime filter descriptors (filter_name, build-side key column name) that
-    /// the join should publish from its FixedHashMap when
-    /// `enable_join_runtime_filter_shared_fixed_hash_table` is on. Set by the joinRuntimeFilter
-    /// optimizer pass and copied into TableJoin at chooseJoinAlgorithm time.
+    /// (filter_name, build-side key column name) pairs that HashJoin should publish as
+    /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
     std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
 
     explicit JoinOperator(
