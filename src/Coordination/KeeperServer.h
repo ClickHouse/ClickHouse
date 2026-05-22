@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Stopwatch.h>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
