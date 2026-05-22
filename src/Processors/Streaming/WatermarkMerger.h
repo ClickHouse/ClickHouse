@@ -25,9 +25,8 @@ class WatermarkMerger final : public IProcessor
 {
     struct InputState
     {
-        std::optional<Field> pending_watermark;
         bool idle = false;
-        bool finished = false;
+        std::optional<Field> pending_watermark;
     };
 
     struct OutputState
@@ -47,12 +46,17 @@ public:
     Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & updated_output_ports) override;
 
 private:
+    const LoggerPtr log;
+
     std::unordered_map<OutputPort *, OutputState> outputs_state;
     std::unordered_map<InputPort *, InputState> inputs_state;
 
     std::unordered_set<OutputPort *> finished_outputs;
     std::unordered_set<InputPort *> finished_inputs;
     std::unordered_set<InputPort *> marked_inputs;
+
+    bool initialized = false;
+    bool marked_state_reported = false;
 };
 
 }

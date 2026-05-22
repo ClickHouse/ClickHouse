@@ -4,8 +4,15 @@
 #include <Processors/Streaming/MarkerIdle.h>
 
 #include <Columns/IColumn.h>
-#include <Core/Block.h>
+
 #include <Processors/Port.h>
+
+#include <Common/logger_useful.h>
+
+#include <Core/Block.h>
+
+#include <cstdint>
+#include <utility>
 
 namespace DB
 {
@@ -45,15 +52,13 @@ void drainQueue(OutputPort * output, std::deque<Chunk> & queue)
 
 WatermarkMerger::WatermarkMerger(SharedHeader header, size_t num_inputs, size_t num_outputs)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+    , log(getLogger("WatermarkMerger"))
 {
     if (num_inputs == 0 || num_outputs == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "WatermarkMerger requires at least one input and one output");
 
     for (auto & port : inputs)
-    {
         inputs_state[&port] = InputState{};
-        port.setNeeded();
-    }
 
     for (auto & port : outputs)
         outputs_state[&port] = OutputState{};
@@ -73,13 +78,12 @@ void WatermarkMerger::handleOutputUpdate(OutputPort * output, OutputState & stat
 
 void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_state)
 {
-    if (input->isFinished() && !input_state.finished)
+    if (input->isFinished())
     {
-        input_state.finished = true;
         input_state.idle = true;
-        input_state.pending_watermark.reset();
         finished_inputs.insert(input);
         marked_inputs.insert(input);
+        marked_state_reported = false;
     }
 
     if (!input->hasData())
@@ -90,21 +94,18 @@ void WatermarkMerger::handleInputUpdate(InputPort * input, InputState & input_st
 
     if (chunk.getChunkInfos().has<IdleMarker>())
     {
-        if (input_state.finished)
-            return;
-
         input_state.idle = true;
-        input_state.pending_watermark = std::nullopt;
         marked_inputs.insert(input);
+        marked_state_reported = false;
     }
     else if (chunk.getChunkInfos().has<WatermarkMarker>())
     {
-        if (input_state.finished)
-            return;
+        if (!input->isFinished())
+            input_state.idle = false;
 
-        input_state.idle = false;
         input_state.pending_watermark = chunk.getChunkInfos().get<WatermarkMarker>()->watermark;
         marked_inputs.insert(input);
+        marked_state_reported = false;
     }
     else
     {
@@ -136,16 +137,19 @@ void WatermarkMerger::broadcastAlignedMarker()
     std::optional<Field> min_watermark;
     for (const auto & [input, input_state] : inputs_state)
     {
-        if (input_state.idle)
-            num_idle += 1;
+        if (input_state.pending_watermark)
+        {
+            if (!min_watermark || *min_watermark > *input_state.pending_watermark)
+                min_watermark = input_state.pending_watermark;
+        }
 
-        else if (!min_watermark || *min_watermark > *input_state.pending_watermark)
-            min_watermark = input_state.pending_watermark;
+        else if (input_state.idle)
+            num_idle += 1;
     }
 
     if (num_idle == inputs.size())
     {
-        /// Broadcast idle state to upstream.
+        LOG_TEST(log, "Broadcasting idle marker");
         for (auto & [output, output_state] : outputs_state)
         {
             if (output->isFinished())
@@ -154,25 +158,9 @@ void WatermarkMerger::broadcastAlignedMarker()
             enqueueMarker(output_state.queue, makeIdleMarkerChunk(output->getHeader()));
             drainQueue(output, output_state.queue);
         }
-
-        /// Drop watermark markers for used streams. Finished inputs stay marked permanently.
-        for (auto & [input, input_state] : inputs_state)
-        {
-            if (input_state.finished)
-                continue;
-
-            if (!input_state.idle)
-                continue;
-
-            input_state.idle = false;
-
-            if (!input_state.pending_watermark)
-                marked_inputs.erase(input);
-        }
     }
     else
     {
-        /// Broadcast min watermark to upstream.
         for (auto & [output, output_state] : outputs_state)
         {
             if (output->isFinished())
@@ -182,12 +170,9 @@ void WatermarkMerger::broadcastAlignedMarker()
             drainQueue(output, output_state.queue);
         }
 
-        /// Drop watermark markers for used streams. Finished inputs stay marked permanently.
+        LOG_TEST(log, "Broadcasting watermark: {}", min_watermark.value());
         for (auto & [input, input_state] : inputs_state)
         {
-            if (input_state.finished)
-                continue;
-
             if (!input_state.pending_watermark)
                 continue;
 
@@ -200,6 +185,8 @@ void WatermarkMerger::broadcastAlignedMarker()
                 marked_inputs.erase(input);
         }
     }
+
+    marked_state_reported = true;
 }
 
 size_t WatermarkMerger::getPendingQueuesCount() const
@@ -215,12 +202,17 @@ size_t WatermarkMerger::getPendingQueuesCount() const
 
 IProcessor::Status WatermarkMerger::prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & updated_output_ports)
 {
+    if (std::exchange(initialized, true) == false)
+        for (auto & port : inputs)
+            port.setNeeded();
+
     for (auto * input : updated_input_ports)
         handleInputUpdate(input, inputs_state.at(input));
 
-    /// Special case - if all input ports marked with watermark - broadcast watermark or idle markers.
+    /// Special case - if all input ports marked - broadcast markers.
     if (marked_inputs.size() == inputs.size())
-        broadcastAlignedMarker();
+        if (!marked_state_reported)
+            broadcastAlignedMarker();
 
     for (auto * output : updated_output_ports)
         handleOutputUpdate(output, outputs_state.at(output));
