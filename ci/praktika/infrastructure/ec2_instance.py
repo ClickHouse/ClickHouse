@@ -376,20 +376,31 @@ class EC2Instance:
                             )
                             from botocore.exceptions import ClientError
 
-                            ec2.start_instances(InstanceIds=stopped_ids)
-
-                            # Re-reconcile IAM profile on the newly-started instances:
-                            # _sync_iam_instance_profile skips stopped instances, so
-                            # any profile change is only applied after start.
-                            started = ec2.describe_instances(
-                                InstanceIds=stopped_ids
-                            )
-                            started_instances = [
-                                inst
-                                for r in started.get("Reservations", [])
-                                for inst in r.get("Instances", [])
-                            ]
-                            self._sync_iam_instance_profile(ec2, started_instances)
+                            try:
+                                ec2.start_instances(InstanceIds=stopped_ids)
+                            except ClientError as e:
+                                error_code = e.response.get("Error", {}).get("Code", "")
+                                if error_code == "InsufficientHostCapacity":
+                                    # No dedicated host available — external capacity
+                                    # constraint, nothing to fix programmatically.
+                                    print(
+                                        f"EC2Instance '{self.name}': WARNING no host capacity to start {stopped_ids}: {e}"
+                                    )
+                                else:
+                                    raise
+                            else:
+                                # Re-reconcile IAM profile on the newly-started instances:
+                                # _sync_iam_instance_profile skips stopped instances, so
+                                # any profile change is only applied after start.
+                                started = ec2.describe_instances(
+                                    InstanceIds=stopped_ids
+                                )
+                                started_instances = [
+                                    inst
+                                    for r in started.get("Reservations", [])
+                                    for inst in r.get("Instances", [])
+                                ]
+                                self._sync_iam_instance_profile(ec2, started_instances)
 
                     return self
 
