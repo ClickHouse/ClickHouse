@@ -6,7 +6,7 @@ The `ALTER TABLE EXPORT PARTITION` command exports entire partitions from Replic
 
 The set of parts that are exported is based on the list of parts the replica that received the export command sees. The other replicas will assist in the export process if they have those parts locally. Otherwise they will ignore it.
 
-The partition export tasks can be observed through `system.replicated_partition_exports`. Querying this table results in a query to ZooKeeper, so it must be used with care. Individual part export progress can be observed as usual through `system.exports`.
+The partition export tasks can be observed through `system.replicated_partition_exports`. The table is served from each replica's in-memory mirror, so queries do not contact ZooKeeper and are cheap to run. The mirror is refreshed on the manifest-updater poll cycle and on every status change, so a freshly written exception or terminal state may take up to one poll interval to appear. Individual part export progress can be observed as usual through `system.exports`.
 
 The same partition can not be exported to the same destination more than once. There are two ways to override this behavior: either by setting the `export_merge_tree_partition_force_export` setting or waiting for the task to expire.
 
@@ -105,7 +105,7 @@ TO TABLE [destination_database.]destination_table
 - **Type**: `UInt64`
 - **Default**: `3600`
 - **Description**: The timeout is measured from the manifest's create_time. Set to 0 to disable the timeout.
-When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and `last_exception` is populated with a timeout reason.
+When the timeout is exceeded the task transitions to KILLED (same terminal state as `KILL QUERY ... EXPORT PARTITION`), and a `last_exception_per_replica` entry on the replica that fires the timeout is populated with a timeout reason.
 
 Notes:
 - Enforcement is best-effort: actual kill latency is bounded by one manifest-updater poll cycle (~30s) plus ZooKeeper watch propagation.
@@ -170,9 +170,7 @@ parts:                ['2022_0_0_0','2022_1_1_0','2022_2_2_0']
 parts_count:          3
 parts_to_do:          0
 status:               COMPLETED
-exception_replica:    
-last_exception:       
-exception_part:       
+last_exception_per_replica: []
 exception_count:      0
 
 Row 2:
@@ -189,9 +187,7 @@ parts:                ['2021_0_0_0']
 parts_count:          1
 parts_to_do:          0
 status:               COMPLETED
-exception_replica:    
-last_exception:       
-exception_part:       
+last_exception_per_replica: []
 exception_count:      0
 
 2 rows in set. Elapsed: 0.019 sec. 
@@ -204,6 +200,20 @@ Status values include:
 - `COMPLETED` - Export finished successfully
 - `FAILED` - Export failed
 - `KILLED` - Export was cancelled
+
+### Exception columns
+
+- `last_exception_per_replica` is an `Array(Tuple(replica String, message String, part String, time DateTime, count UInt64))`. Each tuple is the most recent exception observed by a single replica plus a best-effort within-replica `count`. Replicas that have never reported an exception are omitted.
+- `exception_count` is the sum of every `count` in `last_exception_per_replica`. Each replica owns its own counter, so cross-replica updates do not race; the sum is exact w.r.t. the snapshot returned. Within a single replica concurrent failing writers may under-count by one.
+
+To pick the latest exception across replicas:
+
+```sql
+SELECT
+    arraySort(x -> -x.time, last_exception_per_replica)[1] AS latest_exception
+FROM system.replicated_partition_exports
+WHERE source_table = 'rmt_table' AND destination_table = 's3_table';
+```
 
 ## Related Features
 

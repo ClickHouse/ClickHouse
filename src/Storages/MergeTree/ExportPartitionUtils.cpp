@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
+#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include "Storages/ExportReplicatedMergeTreePartitionManifest.h"
 #include "Storages/ExportReplicatedMergeTreePartitionTaskEntry.h"
@@ -22,7 +23,6 @@ namespace ProfileEvents
     extern const Event ExportPartitionZooKeeperGetChildren;
     extern const Event ExportPartitionZooKeeperSet;
     extern const Event ExportPartitionZooKeeperMulti;
-    extern const Event ExportPartitionZooKeeperExists;
 }
 
 namespace DB
@@ -217,6 +217,8 @@ namespace ExportPartitionUtils
         const zkutil::ZooKeeperPtr & zk,
         const std::string & entry_path,
         size_t max_attempts,
+        const std::string & replica_name,
+        const std::string & exception_message,
         const LoggerPtr & log)
     {
         const std::string status_path = fs::path(entry_path) / "status";
@@ -257,11 +259,15 @@ namespace ExportPartitionUtils
 
         Coordination::Requests ops;
 
+        /// Record the exception in the same multi as the commit-attempts bump and the
+        /// (possible) FAILED transition, so the user-visible last_exception znode is
+        /// updated atomically with the state change that exposes it.
+        appendExceptionOps(ops, zk, fs::path(entry_path), replica_name, /*part_name=*/"", exception_message, log);
+
         /// Bump the global commit_attempts counter (shared across replicas).
-        /// Non-atomic get+set(-1), matching exceptions_per_replica/count semantics.
-        /// Under a race, two replicas may see the same value and write the same +1,
-        /// under-counting by one. FAILED then fires one retry later than the threshold,
-        /// which is acceptable (we always converge to FAILED, never "never").
+        /// Non-atomic get+set(-1). Under a race, two replicas may see the same value
+        /// and write the same +1, under-counting by one. FAILED then fires one retry
+        /// later than the threshold, which is acceptable.
         const std::string commit_attempts_path = fs::path(entry_path) / "commit_attempts";
 
         size_t attempts = 0;
@@ -336,42 +342,42 @@ namespace ExportPartitionUtils
         const std::string & exception_message,
         const LoggerPtr & log)
     {
-        const auto exceptions_per_replica_path = entry_path / "exceptions_per_replica" / replica_name;
-        const auto count_path = exceptions_per_replica_path / "count";
-        const auto last_exception_path = exceptions_per_replica_path / "last_exception";
+        /// Per-replica leaf under the `last_exception/` container created at task setup.
+        /// Each replica only ever writes its own leaf, so cross-replica updates never
+        /// race on the count. Concurrent writers within the same replica still race
+        /// on read+1+write (best-effort), matching the documented column semantics.
+        const auto last_exception_path
+            = entry_path / "last_exception" / escapeForFileName(replica_name);
+
+        LastExceptionEntry entry;
+        std::string current_data;
 
         ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperExists);
-        if (zk->exists(exceptions_per_replica_path))
+        ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperGet);
+        const bool leaf_exists = zk->tryGet(last_exception_path, current_data);
+        if (leaf_exists)
         {
-            LOG_INFO(log, "ExportPartition: Exceptions per replica path exists, no need to create it");
-            std::string num_exceptions_string;
-
-            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperGet);
-            if (zk->tryGet(count_path, num_exceptions_string))
+            try
             {
-                const auto num_exceptions = parse<size_t>(num_exceptions_string) + 1;
-                ops.emplace_back(zkutil::makeSetRequest(count_path, std::to_string(num_exceptions), -1));
+                entry = LastExceptionEntry::fromJsonString(current_data);
             }
-            else
+            catch (...)
             {
-                /// TODO maybe we should find a better way to handle this case, not urgent
-                LOG_INFO(log, "ExportPartition: Failed to get number of exceptions, will not increment it");
+                LOG_WARNING(log, "ExportPartition: last_exception JSON at {} is malformed, resetting", last_exception_path.string());
+                entry = LastExceptionEntry{};
             }
-
-            ops.emplace_back(zkutil::makeSetRequest(last_exception_path / "part", part_name, -1));
-            ops.emplace_back(zkutil::makeSetRequest(last_exception_path / "exception", exception_message, -1));
         }
+
+        entry.message = exception_message;
+        entry.part = part_name;
+        entry.replica = replica_name;
+        entry.time = ::time(nullptr);
+        entry.count += 1;
+
+        if (leaf_exists)
+            ops.emplace_back(zkutil::makeSetRequest(last_exception_path, entry.toJsonString(), -1));
         else
-        {
-            LOG_INFO(log, "ExportPartition: Exceptions per replica path does not exist, will create it");
-            ops.emplace_back(zkutil::makeCreateRequest(exceptions_per_replica_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(count_path, "1", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(last_exception_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(last_exception_path / "part", part_name, zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(last_exception_path / "exception", exception_message, zkutil::CreateMode::Persistent));
-        }
+            ops.emplace_back(zkutil::makeCreateRequest(last_exception_path, entry.toJsonString(), zkutil::CreateMode::Persistent));
     }
 
 #if USE_AVRO

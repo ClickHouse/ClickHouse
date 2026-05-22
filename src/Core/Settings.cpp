@@ -8076,10 +8076,6 @@ Throw an error if there are pending mutations when exporting a merge tree part.
     DECLARE(Bool, export_merge_tree_part_throw_on_pending_patch_parts, true, R"(
 Throw an error if there are pending patch parts when exporting a merge tree part.
 )", 0) \
-    DECLARE(Bool, export_merge_tree_partition_system_table_prefer_remote_information, false, R"(
-Controls whether the system.replicated_partition_exports will prefer to query ZooKeeper to get the most up to date information or use the local information.
-Querying ZooKeeper is expensive, and only available if the ZooKeeper feature flag MULTI_READ is enabled.
-)", 0) \
     DECLARE(ExportPartitionAllOnError, export_merge_tree_partition_all_on_error, ExportPartitionAllOnError::throw_first, R"(
 Failure handling for `ALTER TABLE ... EXPORT PARTITION ALL ...`.
 Possible values:

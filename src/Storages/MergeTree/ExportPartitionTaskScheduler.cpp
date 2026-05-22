@@ -306,10 +306,14 @@ void ExportPartitionTaskScheduler::handlePartExportSuccess(
         /// Bump commit-attempts counter; transition to FAILED once the budget is exhausted.
         /// Prevents the task from remaining stuck in PENDING if commit() fails persistently
         /// (e.g. schema/spec mismatch, prolonged destination outage).
+        /// The exception is recorded in <export_path>/last_exception via appendExceptionOps
+        /// inside the same multi as the commit_attempts bump and the (possible) FAILED set.
         const bool became_failed = ExportPartitionUtils::handleCommitFailure(
             zk,
             export_path,
             manifest.max_retries,
+            storage.replica_name,
+            e.message(),
             storage.log.load());
 
         if (became_failed)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ExportReplicatedMergeTreePartitionManifest.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -20,9 +21,13 @@ struct ReplicatedPartitionExportInfo
     size_t parts_to_do;
     std::vector<String> parts;
     String status;
-    std::string exception_replica;
-    std::string last_exception;
-    std::string exception_part;
+    /// One entry per replica that has recorded at least one exception for this task.
+    /// Sourced verbatim from the in-memory mirror; no ZooKeeper traffic.
+    std::vector<LastExceptionEntry> last_exception_per_replica;
+    /// Sum of per-replica counts. Each replica owns its own count, so cross-replica
+    /// updates do not race; the sum is exact w.r.t. the in-memory snapshot. Within a
+    /// single replica the count is best-effort (concurrent failing writers may under-
+    /// count by one), matching the documented column semantics.
     size_t exception_count = 0;
 };
 

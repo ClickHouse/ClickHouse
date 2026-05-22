@@ -47,31 +47,33 @@ namespace ExportPartitionUtils
     );
 
     /// Handles a commit-phase failure for a replicated partition export:
+    ///  - records the exception via appendExceptionOps in the same multi
     ///  - increments <entry_path>/commit_attempts (lazy-created)
     ///  - sets <entry_path>/status to FAILED once attempts >= max_attempts
     ///
-    /// The counter is a best-effort, non-atomic get+set(-1), matching
-    /// exceptions_per_replica/count. Concurrent failing commits may under-count by one
-    /// (FAILED may fire one retry later than the threshold), which is acceptable.
-    ///
-    /// `replica_name` and `exception` are currently unused and reserved for future
-    /// integration with per-replica diagnostics.
+    /// The counter is a best-effort, non-atomic get+set(-1). Concurrent failing
+    /// commits may under-count by one (FAILED may fire one retry later than the
+    /// threshold), which is acceptable.
     ///
     /// Returns true if this call transitioned the task to FAILED.
     bool handleCommitFailure(
         const zkutil::ZooKeeperPtr & zk,
         const std::string & entry_path,
         size_t max_attempts,
+        const std::string & replica_name,
+        const std::string & exception_message,
         const LoggerPtr & log);
 
-    /// Appends ZK ops to `ops` that record a per-replica exception under
-    ///   <entry_path>/exceptions_per_replica/<replica_name>/last_exception/{exception,part}
-    /// and increment <entry_path>/exceptions_per_replica/<replica_name>/count,
-    /// creating the subtree if absent.
+    /// Appends a single ZK op to `ops` that writes the per-replica leaf
+    ///   <entry_path>/last_exception/<escaped replica_name>
+    /// with a JSON-encoded LastExceptionEntry containing the message, part,
+    /// replica, time, and an incremented count. If the leaf does not yet exist
+    /// the op is a Create; otherwise it is a Set with version -1.
     ///
-    /// The count increment is non-atomic (synchronous tryGet + set with version -1).
-    /// Concurrent failing writers may under-count by one, which is accepted in this
-    /// subsystem and matches the pre-existing behaviour.
+    /// Cross-replica updates do not race: each replica only writes its own
+    /// leaf. Within a single replica the count increment is best-effort and
+    /// non-atomic (synchronous tryGet + Set with version -1); concurrent
+    /// failing writers may under-count by one, which is accepted.
     ///
     /// Intended to be combined with additional ops (for example a version-guarded
     /// status set) and executed as a single `tryMulti` so the exception record and

@@ -23,9 +23,9 @@ public:
 
     void addStatusChange(const std::string & key);
 
+    /// Returns a snapshot of every replicated partition export task tracked by this
+    /// replica's in-memory mirror. No ZooKeeper traffic; safe to call from query threads.
     std::vector<ReplicatedPartitionExportInfo> getPartitionExportsInfo() const;
-
-    std::vector<ReplicatedPartitionExportInfo> getPartitionExportsInfoLocal() const;
 
 private:
     StorageReplicatedMergeTree & storage;
@@ -33,6 +33,7 @@ private:
     void addTask(
         const ExportReplicatedMergeTreePartitionManifest & metadata,
         ExportReplicatedMergeTreePartitionTaskEntry::Status status,
+        std::map<String, LastExceptionEntry> last_exception_per_replica,
         const std::string & key,
         auto & entries_by_key
     );

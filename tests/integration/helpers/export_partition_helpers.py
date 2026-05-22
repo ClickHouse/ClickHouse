@@ -86,10 +86,20 @@ def wait_for_exception_count(
     dest_table,
     partition_id,
     min_exception_count=1,
-    timeout=30,
+    timeout=60,
     poll_interval=0.5,
 ):
-    """Wait for exception_count to reach at least *min_exception_count*."""
+    """Wait for exception_count to reach at least *min_exception_count*.
+
+    The default timeout is intentionally larger than one manifest-updater poll
+    cycle (~30s, see StorageReplicatedMergeTree::exportMergeTreePartitionUpdatingTask).
+    system.replicated_partition_exports is served from the in-memory mirror, which
+    is refreshed on (a) the periodic poll tick and (b) status changes. While the
+    task is still PENDING (e.g. transient part-export failures with a generous
+    max_retries), no status watch fires, so newly written per-replica exception
+    leaves only become visible on the next poll. Allow at least one full cycle
+    plus headroom so the test is not racing the cadence.
+    """
     start_time = time.time()
     last_exception_count = None
     while time.time() - start_time < timeout:
@@ -98,7 +108,6 @@ def wait_for_exception_count(
             f" WHERE source_table = '{source_table}'"
             f"   AND destination_table = '{dest_table}'"
             f"   AND partition_id = '{partition_id}'"
-            f" SETTINGS export_merge_tree_partition_system_table_prefer_remote_information = 1"
         ).strip()
 
         if exception_count_str:

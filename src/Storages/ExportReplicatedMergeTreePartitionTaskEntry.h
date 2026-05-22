@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <Storages/ExportReplicatedMergeTreePartitionManifest.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include "Core/QualifiedTableName.h"
@@ -31,6 +32,13 @@ struct ExportReplicatedMergeTreePartitionTaskEntry
     /// It does not mean this replica will export all the parts
     /// There is also a chance this replica does not contain a given part and it is totally ok.
     mutable std::vector<DataPartPtr> part_references;
+
+    /// In-memory mirror of <export-entry>/last_exception/<replica> leaves in ZK,
+    /// keyed by replica name (verbatim, not escaped). Refreshed on every poll() cycle
+    /// and on every status-change handler invocation; served verbatim to
+    /// system.replicated_partition_exports without any extra ZK read.
+    /// An empty map means no replica has recorded an exception yet for this task.
+    mutable std::map<String, LastExceptionEntry> last_exception_per_replica;
 
     std::string getCompositeKey() const
     {

@@ -268,7 +268,6 @@ def test_failure_is_logged_in_system_table(cluster):
         WHERE source_table = '{mt_table}'
           AND destination_table = '{iceberg_table}'
           AND partition_id = '2020'
-          SETTINGS export_merge_tree_partition_system_table_prefer_remote_information = 1
         """
     ).strip()
     assert status == "FAILED", f"Expected FAILED status, got: {status!r}"
@@ -279,7 +278,6 @@ def test_failure_is_logged_in_system_table(cluster):
         WHERE source_table = '{mt_table}'
           AND destination_table = '{iceberg_table}'
           AND partition_id = '2020'
-          SETTINGS export_merge_tree_partition_system_table_prefer_remote_information = 1
         """
     ).strip())
     assert exception_count > 0, "Expected non-zero exception_count in system.replicated_partition_exports"
@@ -347,7 +345,6 @@ def test_inject_short_living_failures(cluster):
         WHERE source_table = '{mt_table}'
           AND destination_table = '{iceberg_table}'
           AND partition_id = '2020'
-          SETTINGS export_merge_tree_partition_system_table_prefer_remote_information = 1
         """
     ).strip())
     assert exception_count >= 1, "Expected at least one transient exception to be recorded"
@@ -883,23 +880,31 @@ def test_export_task_timeout_kills_stuck_pending_task(cluster):
             timeout=90,
         )
 
-        # TODO: system.replicated_partition_exports does not currently surface
-        # last_exception / exception_count reliably (the engine's aggregation
-        # from exceptions_per_replica is incomplete). Read the raw znode via
-        # system.zookeeper until that is fixed.
-        export_key = f"2020_default.{iceberg_table}"
-        last_exception_path = (
-            f"/clickhouse/tables/{mt_table}/exports/{export_key}"
-            f"/exceptions_per_replica/replica1/last_exception"
-        )
-        last_exception = node.query(
-            f"""
-            SELECT value FROM system.zookeeper
-            WHERE path = '{last_exception_path}' AND name = 'exception'
-            """
-        ).strip()
+        # The KILL transition writes a per-replica last_exception leaf in the same
+        # ZK multi as the status flip; handleStatusChanges then mirrors it into
+        # memory together with the status. Poll briefly to allow that watch ->
+        # mirror hop. We use arrayJoin to flatten the per-replica array column;
+        # any replica reporting the timeout reason is sufficient.
+        deadline = time.time() + 30
+        last_exception = ""
+        while time.time() < deadline:
+            last_exception = node.query(
+                f"""
+                SELECT arrayStringConcat(
+                    arrayMap(x -> x.message, last_exception_per_replica),
+                    '\\n'
+                )
+                FROM system.replicated_partition_exports
+                WHERE source_table = '{mt_table}'
+                  AND destination_table = '{iceberg_table}'
+                  AND partition_id = '2020'
+                """
+            ).strip()
+            if "timed out" in last_exception:
+                break
+            time.sleep(0.5)
         assert "timed out" in last_exception, (
-            f"Expected last_exception znode to mention the timeout reason, got: {last_exception!r}"
+            f"Expected last_exception_per_replica column to mention the timeout reason, got: {last_exception!r}"
         )
     finally:
         node.query("SYSTEM DISABLE FAILPOINT export_partition_commit_always_throw")

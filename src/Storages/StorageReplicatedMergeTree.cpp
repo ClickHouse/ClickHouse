@@ -4784,17 +4784,9 @@ void StorageReplicatedMergeTree::exportMergeTreePartitionStatusHandlingTask()
     }
 }
 
-std::vector<ReplicatedPartitionExportInfo> StorageReplicatedMergeTree::getPartitionExportsInfo(bool prefer_remote_information) const
+std::vector<ReplicatedPartitionExportInfo> StorageReplicatedMergeTree::getPartitionExportsInfo() const
 {
-    /// Called from a query thread (system.replicated_partition_exports), which does not have a component set.
-    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::getPartitionExportsInfo");
-
-    if (prefer_remote_information && getZooKeeper()->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ))
-    {
-        return export_merge_tree_partition_manifest_updater->getPartitionExportsInfo();
-    }
-
-    return export_merge_tree_partition_manifest_updater->getPartitionExportsInfoLocal();
+    return export_merge_tree_partition_manifest_updater->getPartitionExportsInfo();
 }
 
 StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::createLogEntryToMergeParts(
@@ -8808,9 +8800,11 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
         manifest.toJsonString(), 
         zkutil::CreateMode::Persistent));
 
+    /// Container for per-replica last_exception leaves; children are created lazily by the
+    /// first writer per replica (see ExportPartitionUtils::appendExceptionOps).
     ops.emplace_back(zkutil::makeCreateRequest(
-        fs::path(partition_exports_path) / "exceptions_per_replica", 
-        "", 
+        fs::path(partition_exports_path) / "last_exception",
+        "",
         zkutil::CreateMode::Persistent));
 
     ops.emplace_back(zkutil::makeCreateRequest(
