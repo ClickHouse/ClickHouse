@@ -51,16 +51,10 @@ std::pair<Chunk, std::optional<Field>> executeWatermarkFilter(
     for (const auto & col : columns)
         output_columns.emplace_back(col->filter(mask, 0));
 
-    Chunk data_chunk(std::move(output_columns), output_columns.empty() ? 0 : output_columns.front()->size());
+    const size_t num_output_rows = output_columns.empty() ? 0 : output_columns.front()->size();
+    Chunk data_chunk(std::move(output_columns), num_output_rows);
     data_chunk.setChunkInfos(std::move(chunk_infos));
     return std::make_pair(std::move(data_chunk), std::move(emitted_watermark));
-}
-
-Chunk makeWatermarkMarkerChunk(const Block & header, Field watermark)
-{
-    Chunk chunk(header.cloneEmptyColumns(), 0);
-    chunk.getChunkInfos().add(std::make_shared<WatermarkMarker>(watermark));
-    return chunk;
 }
 
 }
