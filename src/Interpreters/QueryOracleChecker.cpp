@@ -231,6 +231,26 @@ bool hasArrayJoin(const ASTSelectQuery & select)
     return false;
 }
 
+/// Recursively walks `ast` looking for any call to `arrayJoin(...)`
+/// — the function form, distinct from the ARRAY JOIN clause caught by
+/// `hasArrayJoin` above. Both forms multiply rows, so any of them in a
+/// SELECT list breaks oracle invariants like NoREC's
+/// `count(SELECT ... arrayJoin ...) == countIf(WHERE)`.
+bool hasArrayJoinFunction(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (func->name == "arrayJoin")
+            return true;
+    }
+    for (const auto & child : ast->children)
+        if (hasArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
 /// PASTE JOIN pairs rows by position — WHERE filtering changes positions, breaking the invariant.
 bool hasPasteJoin(const ASTSelectQuery & select)
 {
@@ -385,8 +405,15 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
 {
     /// Regular JOINs (INNER, LEFT, RIGHT, FULL, CROSS) are safe — the FROM clause
     /// stays identical across all TLP partitions, only WHERE changes.
-    /// ARRAY JOIN and PASTE JOIN are NOT safe.
+    /// ARRAY JOIN clause and PASTE JOIN are NOT safe. Neither is the `arrayJoin()`
+    /// *function* appearing anywhere in the query: it multiplies rows, breaking
+    /// `count(Q) == countIf(WHERE)` (NoREC) and the partitioned-vs-whole-table
+    /// row-count equality the TLP oracles depend on.
     if (hasArrayJoin(select) || hasPasteJoin(select))
+        return false;
+    if (select.select() && hasArrayJoinFunction(select.select()))
+        return false;
+    if (select.where() && hasArrayJoinFunction(select.where()))
         return false;
     /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
     if (referencesNonDeterministicDatabase(select))
