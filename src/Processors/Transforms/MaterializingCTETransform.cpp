@@ -143,11 +143,26 @@ void MaterializingCTETransform::onCancel() noexcept
 {
     /// Reached from `ExecutingGraph::cancel` (via `PipelineExecutor::cancel`
     /// -> `graph->cancel` -> `processor->cancel` -> `IProcessor::cancel` ->
-    /// `onCancel`). This fires while the executor is still running - before
-    /// destructors, before worker teardown - so a reader blocked in
-    /// `MemorySource::generate`'s `build_future.get()` will see the exception
-    /// promptly and unwind cleanly, preventing the executor-teardown deadlock
-    /// that a non-cancellation-aware wait would have.
+    /// `onCancel`). When real cancellation fires while the writer hasn't yet
+    /// fulfilled `build_promise`, this gives any reader blocked in
+    /// `MemorySource::generate`'s `build_future.get()` a chance to unwind -
+    /// without it, single-threaded inner pipelines (e.g. those constructed
+    /// for `FutureSetFromSubquery::buildOrderedSetInplace`) could deadlock
+    /// with the reader holding the only worker thread.
+    ///
+    /// Skip if the writer has already finished. `CompletedPipelineExecutor`'s
+    /// destructor (`src/Processors/Executors/PipelineExecutor.h:67`) calls
+    /// `cancel` defensively after every successful `execute()`, so this
+    /// codepath runs on every successful inplace materialization. Without
+    /// this early return we'd hit `set_exception` on an already-fulfilled
+    /// promise and log a benign `future_error` as `<Error>` - the kind of
+    /// noise that fails Fast Test's "stderr must be empty" assertion. The
+    /// genuine cancel-before-completion case still proceeds below: there
+    /// `isBuilt()` returns false, `set_exception` succeeds, and waiters
+    /// unblock with `QUERY_WAS_CANCELLED`.
+    if (materialized_cte->isBuilt())
+        return;
+
     try
     {
         materialized_cte->build_promise.set_exception(std::make_exception_ptr(
@@ -157,9 +172,11 @@ void MaterializingCTETransform::onCancel() noexcept
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// Already fulfilled (e.g. `generate` finished just before cancellation
-        /// arrived); the reader has already observed the success or the prior
-        /// failure - suppress the `future_error` to keep `onCancel` noexcept.
+        /// Promise was fulfilled between the `isBuilt()` check and this
+        /// `set_exception` - genuine race with `generate` or another
+        /// concurrent `onCancel`. Readers have already observed an outcome;
+        /// the log line here is actually diagnostic (rare race), not the
+        /// spurious teardown noise.
         tryLogCurrentException(getLogger("MaterializingCTETransform"), "Failed to set_exception for promise");
     }
 }
