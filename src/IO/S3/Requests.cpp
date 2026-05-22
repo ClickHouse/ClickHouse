@@ -168,7 +168,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+void ComposeObjectRequest::SetComponentNames(Strings component_names_)
 {
     component_names = std::move(component_names_);
 }

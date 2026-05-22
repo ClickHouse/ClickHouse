@@ -224,13 +224,13 @@ public:
     void SetKey(Aws::String && value);
     void SetKey(const char * value);
 
-    void SetComponentNames(std::vector<Aws::String> component_names_); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    void SetComponentNames(Strings component_names_);
 
     void SetContentType(Aws::String value);
 private:
     Aws::String bucket;
     Aws::String key;
-    std::vector<Aws::String> component_names; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    Strings component_names;
     Aws::String content_type;
 };
 
