@@ -47,7 +47,6 @@ struct TimeSeriesColumnNames
     static constexpr const char * MaskedValues = "masked_values";
     static constexpr const char * OriginalGroup = "original_group";
     static constexpr const char * JoinGroup = "join_group";
-    static constexpr const char * JoinCount = "join_count";
     static constexpr const char * Values = "values";
     static constexpr const char * SamplingKeys = "sampling_keys";
 };
