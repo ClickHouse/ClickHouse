@@ -30,15 +30,33 @@ DiskCacheHandle::DiskCacheHandle(
     , file_size(file_size_)
     , cache_settings(cache_settings_)
 {
-    holder = cache->getOrSet(
-        cache_key,
-        requested.offset,
-        requested.size,
-        file_size,
-        CreateFileSegmentSettings{},
-        cache_settings.filesystem_cache_segments_batch_size,
-        FileCache::getCommonOrigin(),
-        cache_settings.filesystem_cache_boundary_alignment);
+    /// When `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` is set
+    /// (used for background merges/mutations via `MergeTreeSequentialSource`),
+    /// only return already-cached segments — never create new empty segments.
+    /// Mirrors `CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`. Without
+    /// this, every merge that reads a not-yet-cached object pollutes the cache,
+    /// which `02241_filesystem_cache_on_write_operations` detects.
+    if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    {
+        holder = cache->get(
+            cache_key,
+            requested.offset,
+            requested.size,
+            cache_settings.filesystem_cache_segments_batch_size,
+            FileCache::getCommonOrigin().user_id);
+    }
+    else
+    {
+        holder = cache->getOrSet(
+            cache_key,
+            requested.offset,
+            requested.size,
+            file_size,
+            CreateFileSegmentSettings{},
+            cache_settings.filesystem_cache_segments_batch_size,
+            FileCache::getCommonOrigin(),
+            cache_settings.filesystem_cache_boundary_alignment);
+    }
 
     LOG_TRACE(log, "DiskCacheHandle: requested [{}, {}), got {} segments",
         requested.offset, requested.end(),
@@ -118,6 +136,12 @@ Rope DiskCacheHandle::get(ByteRange range)
                 path, bytes_read, overlap_size, offset_in_file);
 
         result.append(RopeNode{std::move(buf), 0, overlap_size, overlap_start});
+
+        /// Bump per-segment LRU position + hits_count. Mirrors what the legacy
+        /// `CachedOnDiskReadBufferFromFile` does on every cache hit; without it,
+        /// `system.filesystem_cache.cache_hits` stays at zero and segments
+        /// don't move to the protected queue under SLRU.
+        segment->increasePriority();
     }
     return result;
 }
@@ -125,6 +149,12 @@ Rope DiskCacheHandle::get(ByteRange range)
 bool DiskCacheHandle::put(ByteRange range, Rope data)
 {
     if (!holder)
+        return false;
+
+    /// In bypass mode the ctor used `cache->get` so EMPTY segments don't exist
+    /// here, but be explicit: never populate the cache when the caller asked
+    /// us to leave it alone.
+    if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         return false;
 
     bool any_written = false;
