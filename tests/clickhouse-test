@@ -76,13 +76,6 @@ def write_text_atomic(path: Path, text: str) -> None:
     except Exception as e:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
-# Exit code returned by `clickhouse-test` when the run was aborted early via
-# `stop_testing` (typically: server died / health check failed). Distinct from
-# the generic failure code 1 so the job side can populate the synthetic
-# "Server died" leaf without fragile log-line matching. Kept in sync with
-# `STOP_TESTING_EXIT_CODE` in `ci/jobs/scripts/functional_tests_results.py`.
-STOP_TESTING_EXIT_CODE = 2
-
 USE_JINJA = True
 try:
     import jinja2
@@ -2075,13 +2068,10 @@ class TestCase:
         if self.effective_merge_tree_settings:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
 
-        # Put randomized settings BEFORE base_client_options / client_options so
-        # that user-supplied --client-option values win over them: with
-        # --allow_repeated_settings, the last occurrence is what takes effect.
         if new_options != "":
             new_options += " --allow_repeated_settings"
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                new_options + " " + self.base_client_options + " "
+                self.base_client_options + new_options + " "
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
@@ -2092,7 +2082,7 @@ class TestCase:
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
 
-        return new_options + " " + client_options
+        return client_options + new_options
 
     def remove_settings_from_env(self):
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
@@ -4120,16 +4110,13 @@ class TestSuite:
         return TestSuite(args, suite_path, suite_tmp_path, suite)
 
 
-class StopTesting(Exception):
-    """Raised to abort the whole test run (server crash, hung-check
-    timeout, --max-failures limit, global time limit, etc.). Mirrors
-    `StopIteration` in role: a control-flow exception unwound to a
-    known outer handler.
+class TestRunAbort(Exception):
+    """Raised to abort the whole test run.
 
-    The reason is in the message — the catch handler prefixes it with
-    "Test run aborted:" so it stands out in the log, and exits with
-    `STOP_TESTING_EXIT_CODE` so the job side treats the run as
-    catastrophically interrupted.
+    The actual reason (server crash, hung-check timeout, --max-failures
+    limit, global time limit, etc.) is in the exception message — the
+    catch handler prefixes it with "Test run aborted:" so it stands out
+    in the log.
     """
     pass
 
@@ -4361,13 +4348,13 @@ def run_tests_array(
 
         if stop_testing.is_set():
             stop_tests()
-            raise StopTesting(
+            raise TestRunAbort(
                 "another component requested stop (see earlier output for the cause)"
             )
 
         if args.stop_time and time() > args.stop_time:
             stop_tests()
-            raise StopTesting("global time limit exceeded (--stop-time)")
+            raise TestRunAbort("global time limit exceeded (--stop-time)")
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
@@ -4458,7 +4445,7 @@ def run_tests_array(
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
-                    raise StopTesting(
+                    raise TestRunAbort(
                         f"ClickHouse server died during test '{test_case.name}'"
                     )
                 if args.max_failures > 0:
@@ -4467,7 +4454,7 @@ def run_tests_array(
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
                             stop_testing.set()
-                            raise StopTesting(
+                            raise TestRunAbort(
                                 f"reached --max-failures limit ({args.max_failures})"
                             )
             elif test_result.status == TestStatus.SKIPPED:
@@ -4481,7 +4468,7 @@ def run_tests_array(
         if failures_chain >= args.max_failures_chain:
             stop_tests()
             stop_testing.set()
-            raise StopTesting(
+            raise TestRunAbort(
                 f"reached --max-failures-chain limit ({args.max_failures_chain})"
             )
 
@@ -4939,9 +4926,7 @@ def do_run_tests(
                         p.kill()
                 for p in processes:
                     p.join(timeout=5)
-                raise StopTesting(
-                    "test run was stopped (see earlier output for the cause)"
-                )
+                break
 
             for p in processes[:]:
                 if not p.is_alive():
@@ -5361,7 +5346,7 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         stop_testing.set()
-        raise StopTesting(f"Failed to create databases for tests: {e}") from e
+        raise
 
     if (
         args.collect_per_test_coverage
@@ -5559,6 +5544,9 @@ ORDER BY (test_name, callee_offset)
                 stop_testing,
                 runner_process_killed,
             )
+
+    if stop_testing.is_set():
+        exit_code.value = 1
 
     if runner_process_killed.is_set():
         exit_code.value = 1
@@ -6598,10 +6586,10 @@ if __name__ == "__main__":
 
     try:
         main(args)
-    except StopTesting as e:
+    except TestRunAbort as e:
         print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
-        sys.exit(STOP_TESTING_EXIT_CODE)
+        sys.exit(1)
     except Terminated as e:
         print(f"Terminated with {e.signal} signal", file=sys.stderr)
         sys.exit(128 + e.signal)

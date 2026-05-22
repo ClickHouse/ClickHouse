@@ -2,7 +2,6 @@
 #include <base/sleep.h>
 
 #include <filesystem>
-#include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
