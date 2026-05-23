@@ -18,3 +18,7 @@ local_prefix
 42_suffix	42
 distributed_prefix
 42_suffix	42
+local_deep
+11	13
+distributed_deep
+11	13

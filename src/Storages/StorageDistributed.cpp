@@ -1151,6 +1151,48 @@ void StorageDistributed::read(
                 }
                 std::sort(identifier_to_expanded.begin(), identifier_to_expanded.end(),
                     [](const auto & a, const auto & b) { return a.first.size() > b.first.size(); });
+
+                /// For nested aliases (e.g. a2 ALIAS a1 + 1, a1 ALIAS x + 1), the expanded names
+                /// may reference other alias identifiers. Expand until fixpoint so that every value
+                /// is fully resolved to base-column expressions.
+                bool changed = true;
+                while (changed)
+                {
+                    changed = false;
+                    for (auto & [id, expanded] : identifier_to_expanded)
+                    {
+                        for (const auto & [other_id, other_expanded] : identifier_to_expanded)
+                        {
+                            if (&id == &other_id)
+                                continue;
+                            size_t pos = 0;
+                            while ((pos = expanded.find(other_id, pos)) != std::string::npos)
+                            {
+                                expanded.replace(pos, other_id.size(), other_expanded);
+                                pos += other_expanded.size();
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+
+                /// Update alias_column_expanded_names with the fully-resolved values so that
+                /// the direct alias lookup (strategy 2 below) also uses fully-expanded names.
+                for (const auto & [col_name, _] : alias_column_expanded_names)
+                {
+                    const auto * identifier = table_data->getColumnIdentifierOrNull(col_name);
+                    if (identifier)
+                    {
+                        for (const auto & [id, expanded] : identifier_to_expanded)
+                        {
+                            if (id == *identifier)
+                            {
+                                alias_column_expanded_names[col_name] = expanded;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             std::vector<size_t> permutation(expected_header->columns());

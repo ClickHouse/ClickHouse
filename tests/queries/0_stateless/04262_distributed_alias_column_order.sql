@@ -180,3 +180,43 @@ SELECT flag, flag1 FROM dist_prefix ORDER BY flag || flag1 LIMIT 1;
 
 DROP TABLE dist_prefix;
 DROP TABLE local_prefix;
+
+-- Test case with nested aliases referenced in ORDER BY expression.
+-- aa, ac, ab all have the same identifier length, so sorting by length alone
+-- does not resolve the replacement order. The fixpoint expansion ensures that
+-- partially-expanded values (e.g. ac -> plus(__table1.aa, 1)) are fully resolved
+-- before string replacement.
+DROP TABLE IF EXISTS local_deep;
+DROP TABLE IF EXISTS dist_deep;
+
+CREATE TABLE local_deep
+(
+    `dt` DateTime,
+    `x` UInt64,
+    `aa` UInt64 ALIAS x + 1,
+    `ac` UInt64 ALIAS aa + 1,
+    `ab` UInt64 ALIAS ac + 1
+)
+ENGINE = MergeTree()
+ORDER BY dt;
+
+CREATE TABLE dist_deep
+(
+    `dt` DateTime,
+    `x` UInt64,
+    `aa` UInt64 ALIAS x + 1,
+    `ac` UInt64 ALIAS aa + 1,
+    `ab` UInt64 ALIAS ac + 1
+)
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_deep, rand());
+
+INSERT INTO local_deep VALUES ('2024-01-01 00:00:00', 10);
+
+SELECT 'local_deep';
+SELECT aa, ab FROM local_deep ORDER BY ab + ac LIMIT 1;
+
+SELECT 'distributed_deep';
+SELECT aa, ab FROM dist_deep ORDER BY ab + ac LIMIT 1;
+
+DROP TABLE dist_deep;
+DROP TABLE local_deep;
