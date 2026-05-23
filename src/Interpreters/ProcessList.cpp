@@ -14,6 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -821,6 +822,12 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
     return user_process_list->user_throttler;
 }
 
+MemoryTracker * QueryStatus::getMemoryTracker() const
+{
+    if (!thread_group)
+        return nullptr;
+    return &thread_group->memory_tracker;
+}
 
 QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {
