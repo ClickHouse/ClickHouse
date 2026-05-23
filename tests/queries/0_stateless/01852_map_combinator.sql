@@ -38,11 +38,19 @@ select sumMap(map(1,2), map(1,3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_M
 
 -- array and tuple arguments
 select avgMap([1,1,1], [2,2,2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap((1,1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap(([1,1,1],1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap([1,1,1],1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap([1,1,1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select minMap(([1,1,1])); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select minMap((1,1)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select minMap(([1,1,1],1)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select minMap([1,1,1]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select minMap(([1,1,1])); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- plain key argument
+SELECT maxMap(number, number % 2), medianMap(number, 1), arrayReduce('argMinMap', groupArray(number), groupArray(number - 1), groupArray(number % 3)), countMap(1, toString(number % 4)) FROM numbers(10);
+SELECT argMaxMapMerge(state) FROM (SELECT argMaxMapState(number, number, number % 3) AS state FROM numbers(10));
+SELECT avgMapMerge(state) FROM (SELECT avgMapState(number, number % 4) as state FROM numbers(100) GROUP BY number % 33);
+SELECT groupArrayResampleMap(0,3,1)(number, number, number % 3) FROM numbers(10);
+SELECT mapApply((k,v) -> (k, finalizeAggregation(v)), anyMapArgMax(state, partition, version)) FROM (SELECT number % 10 as partition, max(number) AS version, maxMapState(10 - number, number % 3) as state FROM numbers(100) GROUP BY partition);
+SELECT uniqExactMap(number, reinterpretAsUUID(number)) FROM numbers(3);
+SELECT argMinMapMerge(state) FROM (SELECT argMaxMapState(number, number, number % 3) AS state FROM numbers(10)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS sum_map_decimal;
 
