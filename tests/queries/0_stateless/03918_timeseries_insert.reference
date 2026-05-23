@@ -1,0 +1,14 @@
+data_count_1	3
+metrics	cpu_usage
+metrics	cpu_usage
+metrics	mem_usage
+data_count_2	6
+unique_series	5
+values	42.5
+values	73.1
+values	100
+values	150
+values	200
+values	8192
+data_count_3	7
+unique_series_final	5
