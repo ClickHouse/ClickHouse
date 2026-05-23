@@ -53,6 +53,7 @@ FROM
 ) AS t
 SELECT *
 FROM numbers(3)
+SETTINGS allow_experimental_analyzer = 1
 SELECT *
 FROM `04105_modifiers_pv`(n = 1)
 FINAL

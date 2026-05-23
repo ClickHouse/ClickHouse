@@ -42,8 +42,10 @@ EXPLAIN SYNTAX SELECT t.number FROM 04105_pv(n = 10) AS t;
 -- A parameterized view must not shadow a registered table function. With a view
 -- named `numbers`, `numbers(3)` still has to resolve to the built-in table
 -- function (which is what regular execution does), not be expanded as a view.
+-- The old analyzer cannot resolve this precedence even at execution time
+-- (pre-existing limitation), so pin this case to the new analyzer.
 CREATE VIEW numbers AS SELECT {n:UInt64} AS x;
-EXPLAIN SYNTAX SELECT * FROM numbers(3);
+EXPLAIN SYNTAX SELECT * FROM numbers(3) SETTINGS allow_experimental_analyzer = 1;
 DROP VIEW numbers;
 
 -- FINAL / SAMPLE modifiers are valid on a parameterized view at execution time.
