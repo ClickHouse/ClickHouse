@@ -13,7 +13,7 @@ set optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimiz
 
 drop table if exists t;
 
-create table t (i int, j int, projection p (select * order by j)) engine MergeTree order by tuple()
+create table t (i int, j int, projection p (select * order by j) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)) engine MergeTree order by tuple()
 settings index_granularity = 1, add_minmax_index_for_numeric_columns=0, max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge
 
 -- The following data is constructed in a way to verifies that query condition
