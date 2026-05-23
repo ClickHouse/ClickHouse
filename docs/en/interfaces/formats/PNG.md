@@ -7,87 +7,80 @@ output_format: true
 title: 'PNG'
 ---
 
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✗     | ✔      |   ✗   |
 
-	
-## Description 
+## Description {#description}
 
-Export query results directly as PNG images for visualization purposes. This format converts numeric data into pixel values, supporting `RGBA`, `RGB`, `Grayscale`, and `Binary` pixel formats with `8` or `16-bit` color depth and compression level control. You can control pixel coordinates explicitly or map each row to a pixel automatically (implicit).
+Renders the result of a query as a PNG image. This is useful as a built-in visualization tool.
 
-**Important:** Input tables must have columns named according to the selected format:
+The size of the output image is fixed by the settings
+[`output_format_image_width`](/operations/settings/formats#output_format_image_width) and
+[`output_format_image_height`](/operations/settings/formats#output_format_image_height)
+(both default to 1024). Pixels that are not covered by the result are filled with black
+(in `RGB` and grayscale modes) or with transparent black (in `RGBA` mode).
 
+The color mode is determined automatically from the column names and types of the result:
 
-| Pixels | Required Columns          | 
-|--------------|---------------------------|
-| RGBA         | `r`, `g`, `b`, `a`        | 
-| RGB          | `r`, `g`, `b`             |                              
-| Grayscale    | `v`                       | 
-| Binary       | `v`                       |
+| Columns                | Mode                                              |
+|------------------------|---------------------------------------------------|
+| `r`, `g`, `b`          | 8-bit RGB                                         |
+| `r`, `g`, `b`, `a`     | 8-bit RGBA                                        |
+| `v` of integer type    | 8-bit grayscale                                   |
+| `v` of `Float*` type   | 8-bit grayscale (values in `[0, 1]` → `[0, 255]`) |
+| `v` of `Bool` type     | Binary (rendered as 8-bit grayscale: `0` or `255`)|
 
+Column names are matched case-insensitively. If the color mode cannot be unambiguously
+determined (e.g. unknown column names, mixed `v` with `r`/`g`/`b`/`a`, or one of `r`/`g`/`b` missing),
+the query throws an exception.
 
-| Coordinates | Required Columns          |
-|-------------|---------------------------| 
-|Explicit     | `x`, `y` plus above       | 
+For pixel channels, integer values are clamped to `[0, 255]` and floating-point values
+are clamped to `[0, 1]` and then scaled to `[0, 255]`.
 
+The position of each record in the image is determined by one of two modes:
 
+- **Implicit** (the default — when neither `x` nor `y` is present). Each record corresponds
+  to a single pixel; pixels are filled in scanline order: left to right, top to bottom.
+- **Explicit** (when `x` and `y` columns are present, both of integer types).
+  The `x` and `y` columns give the pixel coordinates. Records with coordinates outside
+  the image are silently ignored. In case of multiple records with the same coordinates,
+  the last one wins (painter's algorithm).
 
-## Example Usage 
-- `Implicit (row-per-pixel) coordinates` (default):
+## Example usage {#example-usage}
+
+### Implicit coordinates (row-per-pixel), RGB {#implicit-rgb}
+
 ```sql
-SELECT 
-    toUInt8(col1) as r, 
-    toUInt8(col2) as g,
-    toUInt8(col3) as b, 
-    toUInt8(col3) as a 
-FROM table
-INTO OUTFILE 'output.png'
+SELECT
+    toUInt8(x * 25) AS r,
+    toUInt8(y * 25) AS g,
+    toUInt8((x + y) * 12) AS b
+FROM
+(
+    SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100)
+)
+INTO OUTFILE 'gradient.png'
 FORMAT PNG
-SETTINGS 
-    output_format_png_pixel_output_format='RGBA',
-    output_format_png_coordinates_format='IMPLICIT',
-    output_format_png_max_width=1512,
-    output_format_png_max_height=1512,
-    output_format_png_bit_depth=8
+SETTINGS output_format_image_width = 10, output_format_image_height = 10;
 ```
 
-- `Explicit coordinates`:
+### Explicit coordinates, grayscale {#explicit-grayscale}
+
 ```sql
-SELECT 
-    toInt32(col1) as x,
-    toInt32(col2) as y,
-    toUInt8(col3) as v
-FROM table
-INTO OUTFILE 'output.png'
+SELECT
+    toInt32(x) AS x,
+    toInt32(y) AS y,
+    toUInt8(intensity) AS v
+FROM points
+INTO OUTFILE 'points.png'
 FORMAT PNG
-SETTINGS 
-    output_format_png_pixel_output_format='Grayscale',
-    output_format_png_coordinates_format='EXPLICIT',
-    output_format_png_max_width=14014,
-    output_format_png_max_height=6659
+SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 ```
 
-## Format Settings 
-When working with `PNG` format you can control settings:
+## Format settings {#format-settings}
 
-- `output_format_png_pixel_output_format`: Color channel: `RGBA`, `RGB` (default), `Grayscale` or `Binary`
-
-- `output_format_png_max_width`: Maximum image width in pixels (default: `4096`). The resulting image will have a width up to this value
-
-- `output_format_png_max_height`: Maximum image height in pixels (default: `4096`). The resulting image will have a height up to this value
-
-- `output_format_png_bit_depth`: Bit depth per channel (requires matching input data range) (default: `8`)
-
-- `output_format_png_compression_level`: Image compression level. Possible range: `[-1, 9]`, where `0` is `no compression` (fastest) and `9` is the `best compression` (slowest). Default: `-1` (approximately level `6`)
-
-- `output_format_png_coordinates_format`: Coordinates format. Possible values: `IMPLICIT` (default) - Row-per-pixel approach where only columns with pixel data as row-per-pixel order (left to right, top to bottom) and `EXPLICIT` — Each pixel in your query is specified with explicit coordinates (x, y)
-
-### Requirements
-
-* Input values must align with bit depth range (would be clamped if not)
-
-* Supports only numeric types (`UInt*`, `Int*`, `Float*` and `Bool`) for pixels and only integers for coordinates
-
-* Supports `LowCardinality`, `Nullable` and `Const` columns
+| Setting                       | Description                                       | Default |
+|-------------------------------|---------------------------------------------------|---------|
+| `output_format_image_width`   | Width of the output image in pixels.              | `1024`  |
+| `output_format_image_height`  | Height of the output image in pixels.             | `1024`  |

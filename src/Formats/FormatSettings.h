@@ -559,29 +559,11 @@ struct FormatSettings
         bool map_column_names = true;
     } mysql_dump{};
 
-    enum class PNGPixelOutputFormat : uint8_t
-    {
-        BINARY,
-        GRAYSCALE,
-        RGB,
-        RGBA
-    };
-
-    enum class PNGCoordinatesFormat : uint8_t
-    {
-        IMPLICIT,
-        EXPLICIT
-    };
-
     struct
     {
-        UInt64 max_height;
-        UInt64 max_width;
-        Int32 bit_depth;
-        String pixel_output_format;
-        String coordinates_format;
-        Int64 compression_level;
-    } png_image{};
+        UInt64 width = 1024;
+        UInt64 height = 1024;
+    } image{};
 
     struct
     {

@@ -1,14 +1,9 @@
-#include "PNGOutputFormat.h"
+#include <Processors/Formats/Impl/PNGOutputFormat.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/PNGSerializer.h>
 #include <Formats/PNGWriter.h>
-
-#include <Interpreters/ProcessList.h>
-#include <Common/Exception.h>
-
 
 namespace DB
 {
@@ -20,67 +15,26 @@ constexpr auto FORMAT_NAME = "PNG";
 
 PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
+    , writer(std::make_unique<PNGWriter>(out_))
+    , serializer(std::make_unique<PNGSerializer>(*header_, settings_, *writer))
 {
-    writer = std::make_unique<PNGWriter>(out_, settings_);
-    serializer = std::make_unique<PNGSerializer>(*header_, settings_, *writer);
-
-    log = getLogger("PNGOutputFormat");
-}
-
-void PNGOutputFormat::writePrefix()
-{
-    if (serializer)
-        serializer->reset();
 }
 
 void PNGOutputFormat::consume(Chunk chunk)
 {
     const auto & cols = chunk.getColumns();
     const auto num_rows = chunk.getNumRows();
-
     if (cols.empty() || num_rows == 0)
         return;
 
-    std::vector<ColumnPtr> column_ptrs;
-    column_ptrs.reserve(cols.size());
-    for (const auto & c : cols)
-        column_ptrs.push_back(c);
-
-    try
-    {
-        serializer->setColumns(column_ptrs.data(), column_ptrs.size());
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_ERROR(log, "Failed to set columns for png image: {}", e.what());
-        return ;
-    }
-
+    serializer->setColumns(cols.data(), cols.size());
     for (size_t i = 0; i < num_rows; ++i)
-    {
-        try
-        {
-            serializer->writeRow(i);
-        }
-        catch (const Poco::Exception & e)
-        {
-            LOG_ERROR(log, "Failed to write png image: {}", e.what());
-            return ;
-        }
-    }
+        serializer->writeRow(i);
 }
 
-void PNGOutputFormat::writeSuffix()
+void PNGOutputFormat::finalizeImpl()
 {
-    try
-    {
-        serializer->finalizeWrite();
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_ERROR(log, "Failed to write png image: {}", e.what());
-        return ;
-    }
+    serializer->finalizeWrite();
 }
 
 void registerOutputFormatPNG(FormatFactory & factory)
@@ -88,7 +42,9 @@ void registerOutputFormatPNG(FormatFactory & factory)
     factory.registerOutputFormat(
         FORMAT_NAME,
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings, FormatFilterInfoPtr)
-        { return std::make_shared<PNGOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
+        {
+            return std::make_shared<PNGOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        });
 }
 
 }

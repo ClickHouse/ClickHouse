@@ -1521,57 +1521,15 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
-    DECLARE(String, output_format_png_pixel_output_format, "RGB", R"(
-Set the pixel format for output PNG image
+    DECLARE(UInt64, output_format_image_width, 1024, R"(
+The width of the output image in pixels for image output formats such as `PNG`.
 
-Possible values:
-
-- `RGBA` — four channels per pixel (`r`, `g`, `b`, `a`)
-- `RGB` — three channels per pixel (`r`, `g`, `b`)
-- `Grayscale` — single intensity channel per pixel (`v`)
-- `Binary` — single intensity channel per pixel (`v`), interpreted as binary
-
-Default value: `RGB`
+Default value: 1024.
 )", 0) \
-    DECLARE(String, output_format_png_coordinates_format, "IMPLICIT", R"(
-Defines the input format for pixel coordinates when generating PNG images
+    DECLARE(UInt64, output_format_image_height, 1024, R"(
+The height of the output image in pixels for image output formats such as `PNG`.
 
-Possible values:
-
-- 'IMPLICIT' — Row-per-pixel approach where only pixel data is provided in scanline order (left to right, top to bottom)
-- 'EXPLICIT' — Each pixel is specified with explicit coordinates (x, y)
-
-Default value: `IMPLICIT`
-)", 0) \
-    DECLARE(UInt64, output_format_png_max_height, 4096, R"(
-Defines maximum height (in pixels) for generated PNG images
-
-Default value: 4096
-)", 0) \
-    DECLARE(UInt64, output_format_png_max_width, 4096, R"(
-Defines maximum width (in pixels) for generated PNG images
-
-Default value: 4096
-)", 0) \
-    DECLARE(UInt64, output_format_png_bit_depth, 8, R"(
-Defines the color depth (in bits) for generated PNG images
-
-Possible values:
-- 8: 8 bit
-- 16: 16 bit
-
-Default value: 8
-)", 0) \
-    DECLARE(Int64, output_format_png_compression_level, -1, R"(
-Controls the compression level for generated PNG images
-
-Possible values:
-- -1: default compression (usually equivalent to level 6)
-- 0: no compression (fastest)
-- 1: fastest compression (least effective)
-- 9: best compression (slowest)
-
-Default value: -1.
+Default value: 1024.
 )", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.

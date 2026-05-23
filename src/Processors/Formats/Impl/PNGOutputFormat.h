@@ -1,22 +1,17 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/PNGSerializer.h>
 #include <Processors/Chunk.h>
-#include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Port.h>
-
-#include "base/types.h"
+#include <Processors/Formats/IOutputFormat.h>
 
 namespace DB
 {
 
+class PNGSerializer;
 class PNGWriter;
 
-/** A stream for outputting data as PNG image.
-  */
+/// Output format that renders the result set as a PNG image.
 class PNGOutputFormat final : public IOutputFormat
 {
 public:
@@ -25,11 +20,8 @@ public:
     String getName() const override { return "PNGOutputFormat"; }
 
 private:
-    void writePrefix() override;
-    void writeSuffix() override;
-    void consume(Chunk) override;
-
-    LoggerPtr log = nullptr;
+    void consume(Chunk chunk) override;
+    void finalizeImpl() override;
 
     std::unique_ptr<PNGWriter> writer;
     std::unique_ptr<PNGSerializer> serializer;

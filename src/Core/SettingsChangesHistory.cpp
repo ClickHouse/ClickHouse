@@ -41,12 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
-            {"output_format_png_pixel_output_format", "RGB",  "RGB", "A new setting used to control the resulting pixel output format for PNG"},
-            {"output_format_png_coordinates_format", "IMPLICIT", "IMPLICIT", "A new setting used to control incoming coordinate format for PNG"},
-            {"output_format_png_max_height", 4096, 4096, "A new setting used to control maximum height of resulting PNG"},
-            {"output_format_png_max_width", 4096, 4096, "A new setting used to control maximum width of resulting PNG"},
-            {"output_format_png_bit_depth", 8, 8, "A new setting used to control bit depth of resulting PNG"},
-            {"output_format_png_compression_level", -1, -1, "A new setting used to control compression level of resulting PNG"},
+            {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
+            {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
             {"optimize_trivial_group_by_limit_query", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."},
             {"date_time_input_format", "basic", "best_effort", "Better usability"},
