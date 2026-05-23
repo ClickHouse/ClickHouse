@@ -1,15 +1,12 @@
 #include <Common/ThreadPool.h>
 
-#include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
-#include <base/scope_guard.h>
 
 #include <type_traits>
 
@@ -106,7 +103,7 @@ public:
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
     /// Call stacks of all jobs' schedulings leading to this one
-    std::vector<FramePointers> frame_pointers;
+    std::vector<StackTrace::FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
     Stopwatch job_create_time;
 
@@ -144,6 +141,7 @@ public:
     }
 };
 
+static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
@@ -307,7 +305,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 // Failed to create the thread, restore capacity
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 std::lock_guard lock(mutex); // needed to change first_exception.
-                return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
+                return on_error("failed to start the thread");
             }
         }
         // capacity gets reloaded by (unsuccessful) compare_exchange_weak
@@ -375,7 +373,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             {
                 // If thread creation fails, restore the pool capacity and return an error.
                 remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                return on_error(fmt::format("failed to start the thread: {}", DB::getCurrentExceptionMessage(true)));
+                return on_error("failed to start the thread");
             }
             adding_new_thread = true;
         }
@@ -387,8 +385,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 threads.emplace_front(std::move(new_thread));
                 thread_slot = threads.begin();
             }
-            catch (const std::exception &)
+            catch (...)
             {
+                /// Most likely this is a std::bad_alloc exception
                 return on_error("cannot emplace the thread in the pool");
             }
         }
@@ -414,7 +413,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                 (*thread_slot)->start(thread_slot);
 
         }
-        catch (const std::exception &)
+        catch (...)
         {
             if (adding_new_thread)
                 threads.pop_front();
@@ -453,8 +452,9 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
                     // Successfully decremented, attempt to create a new thread
                     new_thread = std::make_unique<ThreadFromThreadPool>(*this);
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
+                    // Failed to create the thread, restore capacity
                     remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 }
                 break;  // Exit loop whether thread creation succeeded or not
@@ -471,7 +471,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
             threads.emplace_front(std::move(new_thread));
             thread_slot = threads.begin();
         }
-        catch (const std::exception &)
+        catch (...)
         {
             break;
         }
@@ -480,7 +480,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         {
             (*thread_slot)->start(thread_slot);
         }
-        catch (const std::exception &)
+        catch (...)
         {
             threads.pop_front();
             break;
@@ -699,7 +699,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     while (true)
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
-        setThreadName(DB::ThreadName::DEFAULT_THREAD_POOL);
+        setThreadName(DEFAULT_THREAD_NAME);
 
         /// Get a job from the queue.
         std::optional<JobWithPriority> job_data;
@@ -823,10 +823,10 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 /// Use the thread name as operation name so that the tracing log will be more clear.
                 /// The thread name is usually set in jobs, we can only get the name after the job finishes
-                auto thread_name = DB::getThreadName();
-                if (thread_name != DB::ThreadName::UNKNOWN && thread_name != DB::ThreadName::DEFAULT_THREAD_POOL)
+                std::string thread_name = getThreadName();
+                if (!thread_name.empty() && thread_name != DEFAULT_THREAD_NAME)
                 {
-                    thread_trace_context.root_span.operation_name = DB::toString(thread_name);
+                    thread_trace_context.root_span.operation_name = thread_name;
                 }
                 else
                 {
@@ -921,48 +921,6 @@ void GlobalThreadPool::shutdown()
     {
         the_instance->finalize();
     }
-}
-
-void startThreadFromGlobalPool(
-    std::shared_ptr<ThreadFromGlobalPoolState> state,
-    std::function<void()> func,
-    UInt64 global_profiler_real_time_period_ns,
-    UInt64 global_profiler_cpu_time_period_ns,
-    bool global_trace_collector_allowed,
-    bool propagate_opentelemetry_context)
-{
-    /// NOTE:
-    /// - If scheduleOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
-    /// - `this` cannot be passed in the lambda since after detach() it is no longer valid.
-    GlobalThreadPool::instance().scheduleOrThrow(
-        [my_state = std::move(state),
-         my_func = std::move(func),
-         global_profiler_real_time_period_ns,
-         global_profiler_cpu_time_period_ns,
-         global_trace_collector_allowed]() mutable
-        {
-            SCOPE_EXIT(
-                my_state->thread_id = std::thread::id();
-                my_state->event.set();
-            );
-
-            my_state->thread_id = std::this_thread::get_id();
-
-            /// Move out so captured callable is destroyed before join() is signalled.
-            auto function = std::move(my_func);
-
-            /// ThreadStatus holds a raw pointer to the query context, so it must be
-            /// destroyed before the signal that allows join() to return.
-            DB::ThreadStatus thread_status;
-            if (global_trace_collector_allowed
-                && unlikely(global_profiler_real_time_period_ns != 0 || global_profiler_cpu_time_period_ns != 0))
-                thread_status.initGlobalProfiler(global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns);
-
-            function();
-        },
-        {},
-        0,
-        propagate_opentelemetry_context);
 }
 
 CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()

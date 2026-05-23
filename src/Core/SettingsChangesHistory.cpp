@@ -423,7 +423,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_connect_max_tries", 20, 5, "Changed setting value"},
             {"opentelemetry_trace_cpu_scheduling", false, false, "New setting to trace `cpu_slot_preemption` feature."},
             {"output_format_parquet_max_dictionary_size", 1024 * 1024, 1024 * 1024, "New setting"},
-            {"input_format_parquet_use_native_reader_v3", false, false, "New setting"},
+            {"input_format_parquet_use_native_reader_v3", false, true, "New setting"},
             {"input_format_parquet_memory_low_watermark", 2ul << 20, 2ul << 20, "New setting"},
             {"input_format_parquet_memory_high_watermark", 4ul << 30, 4ul << 30, "New setting"},
             {"input_format_parquet_page_filter_push_down", true, true, "New setting (no effect when input_format_parquet_use_native_reader_v3 is disabled)"},
@@ -457,6 +457,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"per_part_index_stats", false, false, "New setting."},
             {"allow_experimental_iceberg_compaction", 0, 0, "New setting"},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
+            {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
+            {"delta_lake_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
@@ -464,10 +466,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"promql_table", "", "", "New experimental setting"},
             {"evaluation_time", 0, 0, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
+            {"allow_experimental_delta_lake_writes", false, false, "New setting."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
+            {"iceberg_metadata_log_level", "none", "none", "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -488,7 +492,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"output_format_parquet_enum_as_byte_array", false, false, "Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM"},
             {"distributed_plan_force_shuffle_aggregation", 0, 0, "New experimental setting"},
-            {"allow_insert_into_iceberg", false, false, "New setting."},
+            {"allow_experimental_insert_into_iceberg", false, false, "New setting."},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.6",
@@ -518,7 +522,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_scopes_for_with_statement", true, true, "New setting for backward compatibility with the old analyzer."},
             {"backup_slow_all_threads_after_retryable_s3_error", false, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
-            {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(settings_changes_history, "25.5",
@@ -714,7 +717,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
-            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with the analyzer."},
+            {"query_plan_merge_filters", false, true, "Allow to merge filters in the query plan. This is required to properly support filter-push-down with a new analyzer."},
             {"parallel_replicas_local_plan", false, true, "Use local plan for local replica in a query with parallel replicas"},
             {"merge_tree_use_v1_object_and_dynamic_serialization", true, false, "Add new serialization V2 version for JSON and Dynamic types"},
             {"min_joined_block_size_bytes", 524288, 524288, "New setting."},
@@ -856,7 +859,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"hdfs_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
             {"azure_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"},
             {"s3_validate_request_settings", true, true, "Allow to disable S3 request settings validation"},
-            {"allow_experimental_full_text_index", true, false, "Enable experimental text index"},
+            {"allow_experimental_full_text_index", false, false, "Enable experimental text index"},
             {"azure_skip_empty_files", false, false, "Allow to skip empty files in azure table engine"},
             {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
             {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
@@ -906,7 +909,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_json_ignore_unnecessary_fields", false, true, "Ignore unnecessary fields and not parse them. Enabling this may not throw exceptions on json strings of invalid format or with duplicated fields"},
             {"input_format_hive_text_allow_variable_number_of_columns", false, true, "Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values."},
             {"allow_experimental_database_replicated", false, true, "Database engine Replicated is now in Beta stage"},
-            {"temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", (10 * 60 * 1000), (10 * 60 * 1000), "Wait time to lock cache for space reservation in temporary data in filesystem cache"},
+            {"temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds", (10 * 60 * 1000), (10 * 60 * 1000), "Wait time to lock cache for sapce reservation in temporary data in filesystem cache"},
             {"optimize_rewrite_sum_if_to_count_if", false, true, "Only available for the analyzer, where it works correctly"},
             {"azure_allow_parallel_part_upload", "true", "true", "Use multiple threads for azure multipart upload."},
             {"max_recursive_cte_evaluation_depth", DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, "Maximum limit on recursive CTE evaluation depth"},
@@ -927,7 +930,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"log_processors_profiles", false, true, "Enable by default"},
             {"function_locate_has_mysql_compatible_argument_order", false, true, "Increase compatibility with MySQL's locate function."},
             {"allow_suspicious_primary_key", true, false, "Forbid suspicious PRIMARY KEY/ORDER BY for MergeTree (i.e. SimpleAggregateFunction)"},
-            {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for space reservation in filesystem cache"},
+            {"filesystem_cache_reserve_space_wait_lock_timeout_milliseconds", 1000, 1000, "Wait time to lock cache for sapce reservation in filesystem cache"},
             {"max_parser_backtracks", 0, 1000000, "Limiting the complexity of parsing"},
             {"analyzer_compatibility_join_using_top_level_identifier", false, false, "Force to resolve identifier in JOIN USING from projection"},
             {"distributed_insert_skip_read_only_replicas", false, false, "If true, INSERT into Distributed will skip read-only replicas"},
@@ -1211,99 +1214,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
-        {
-            {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
-            {"add_minmax_index_for_block_number_column", false, false, "New setting."},
-            {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
-            {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
-        {
-            {"share_nested_offsets", true, true, "When set to false, Array columns with dotted names that share a common prefix are treated as independent columns instead of sharing offset files as part of legacy Nested semantics"},
-            {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, "auto", "Make setting auto: max merge tasks per replica * number of active replicas"},
-            {"allow_commit_order_projection", false, false, "New setting"},
-            {"replicated_fetches_min_part_level", 0, 0, "New setting"},
-            {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
-            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
-            {"compress_per_column_in_compact_parts", true, true, "New setting"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.3",
-        {
-            {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
-            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
-            {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
-            {"map_serialization_version", "basic", "basic", "Add a setting to control Map serialization version"},
-            {"map_serialization_version_for_zero_level_parts", "basic", "basic", "Add a setting to control Map serialization version for zero-level parts"},
-            {"max_buckets_in_map", 32, 32, "Add a setting to control the maximum number of buckets for 'with_buckets' Map serialization"},
-            {"map_buckets_strategy", "sqrt", "sqrt", "Add a setting to control the strategy for choosing the number of buckets for 'with_buckets' Map serialization"},
-            {"map_buckets_coefficient", 1.0, 1.0, "Add a setting to control the coefficient used in `sqrt` and `linear` strategy for calculating the number of buckets for 'with_buckets' Map serialization"},
-            {"map_buckets_min_avg_size", 32, 32, "Add a setting to control the minimum average map size (number of keys per row) required to apply `with_buckets` serialization"},
-            {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.2",
-        {
-            {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
-            {"add_minmax_index_for_temporal_columns", false, false, "New setting"},
-            {"distributed_index_analysis_min_parts_to_activate", 10, 10, "New setting"},
-            {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
-            {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
-            {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.1",
-        {
-            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
-            {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
-            {"materialize_statistics_on_merge", true, true, "New setting"},
-            {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.12",
-        {
-            {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
-            {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
-            {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
-            {"nullable_serialization_version", "basic", "basic", "New setting"},
-            {"object_serialization_version", "v2", "v3", "Enable v3 serialization version for JSON by default to use advanced shared data serialization"},
-            {"dynamic_serialization_version", "v2", "v3", "Enable v3 serialization version for Dynamic by default for better serialization/deserialization"},
-            {"object_shared_data_serialization_version", "map", "advanced", "Enable advanced shared data serialization version by default"},
-            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map_with_buckets", "Enable map_with_buckets shared data serialization version for zero level parts by default"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.11",
-        {
-            {"merge_max_dynamic_subcolumns_in_wide_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Wide part after merge regardless the parameters specified in the data type"},
-            {"refresh_statistics_interval", 0, 0, "New setting"},
-            {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
-            {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
-            {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
-            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.10",
-        {
-            {"auto_statistics_types", "", "", "New setting"},
-            {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
-            {"serialization_info_version", "basic", "basic", "New setting"},
-            {"string_serialization_version", "single_stream", "single_stream", "New setting"},
-            {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
-            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
-            {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
-            {"min_level_for_wide_part", 0, 0, "New setting"},
-            {"min_level_for_full_part_storage", 0, 0, "New setting"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "25.9",
-        {
-            {"vertical_merge_optimize_lightweight_delete", false, true, "New setting"},
-            {"replicated_deduplication_window", 1000, 10000, "increase default value"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, false, "New setting"},
-            {"shared_merge_tree_empty_partition_lifetime", 86400, 86400, "New setting"},
-            {"shared_merge_tree_outdated_parts_group_size", 2, 2, "New setting"},
-            {"shared_merge_tree_use_outdated_parts_compact_format", false, true, "Enable outdated parts v3 by default"},
-            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.8",
         {
+            {"merge_max_dynamic_subcolumns_in_wide_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Wide part after merge regardless the parameters specified in the data type"},
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
             {"object_shared_data_serialization_version", "map", "map", "Add a setting to control JSON serialization versions"},
             {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions  for zero level parts"},
@@ -1317,12 +1230,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"write_marks_for_substreams_in_compact_parts", false, true, "Enable writing marks for substreams in compact parts by default"},
             {"allow_part_offset_column_in_projections", false, true, "Now projections can use _part_offset column."},
             {"max_uncompressed_bytes_in_patches", 0, 30ULL * 1024 * 1024 * 1024, "New setting"},
-            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.7",
         {
-            /// RELEASE CLOSED
-            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.6",
@@ -1330,7 +1240,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             /// RELEASE CLOSED
             {"cache_populated_by_fetch_filename_regexp", "", "", "New setting"},
             {"allow_coalescing_columns_in_partition_or_order_key", false, false, "New setting to allow coalescing of partition or sorting key columns."},
-            {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             /// RELEASE CLOSED
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.5",
@@ -1343,7 +1252,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_election_check_period_ms", 30000, 30000, "New setting"},
             {"shared_merge_tree_merge_coordinator_min_period_ms", 1, 1, "New setting"},
             {"shared_merge_tree_merge_coordinator_max_period_ms", 10000, 10000, "New setting"},
-            {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "New setting"},
+            {"shared_merge_tree_merge_coordinator_factor", 2, 2, "New setting"},
             {"shared_merge_tree_merge_worker_fast_timeout_ms", 100, 100, "New setting"},
             {"shared_merge_tree_merge_worker_regular_timeout_ms", 10000, 10000, "New setting"},
             {"apply_patches_on_merge", true, true, "New setting"},

@@ -1,11 +1,10 @@
 #pragma once
 
+#include <string>
+
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
-
-#include <map>
-#include <string>
 
 
 namespace DB
@@ -13,7 +12,7 @@ namespace DB
 
 class WriteBuffer;
 
-class PrometheusTextOutputFormat final : public IRowOutputFormat
+class PrometheusTextOutputFormat : public IRowOutputFormat
 {
 public:
     PrometheusTextOutputFormat(
