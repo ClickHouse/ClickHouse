@@ -20,6 +20,7 @@ namespace DB::WebAssembly
 
 namespace
 {
+/// API exported to guest WebAssembly code.
 
 std::string_view getWasmString(WasmCompartment * compartment, WasmPtr ptr, WasmSizeT size)
 {
@@ -64,59 +65,6 @@ void wasmExportRandom(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT
     std::uniform_int_distribution<> dist(std::numeric_limits<ValueType>::min(), std::numeric_limits<ValueType>::max());
     for (WasmSizeT i = 0; i < size; ++i)
         data[i] = static_cast<ValueType>(dist(thread_local_rng));
-}
-
-/// Decode an AssemblyScript string (UTF-16, length stored in the runtime header at -4
-/// from the payload pointer) into a UTF-8 std::string suitable for inclusion in error messages.
-/// Returns "<null>" for null pointers and tolerates broken / out-of-bounds pointers without throwing.
-std::string decodeAssemblyScriptString(WasmCompartment * compartment, WasmPtr ptr)
-{
-    if (ptr == 0)
-        return "";
-
-    constexpr WasmSizeT header_size = 4; // rtSize is u32 at -4
-    if (ptr < header_size)
-        throw Exception(ErrorCodes::WASM_ERROR, "Illegal AssemblyScript string pointer {}", ptr);
-
-    auto header = compartment->getMemory(ptr - header_size, header_size);
-    uint32_t rt_size = loadFromWasmMemory<uint32_t>(header.data());
-
-    /// rtSize is the byte length; AS strings are UTF-16, so length is rt_size / 2.
-    if (rt_size == 0 || rt_size % 2 != 0 || rt_size > (1u << 24))
-        return "";
-
-    std::span<uint8_t> data = compartment->getMemory(ptr, rt_size);
-
-    std::string out;
-    out.reserve(rt_size);
-    for (WasmSizeT i = 0; i + 1 < data.size(); i += 2)
-    {
-        uint32_t code_unit = static_cast<uint32_t>(data[i]) | (static_cast<uint32_t>(data[i + 1]) << 8);
-        /// Naive transcoding: emit ASCII as-is, replace anything else with '?'.
-        /// Good enough for human-readable error messages from AS abort() calls.
-        if (code_unit < 0x80)
-            out.push_back(static_cast<char>(code_unit));
-        else
-            out.push_back('?');
-    }
-    return out;
-}
-
-/// AssemblyScript runtime calls `env.abort(message, fileName, lineNumber, columnNumber)`
-/// from generated trap code (e.g. on out-of-memory, bounds checks, runtime errors).
-/// The two pointers refer to AS String objects (UTF-16, length in object header).
-[[noreturn]] void wasmExportAssemblyScriptAbort(
-    WasmCompartment * compartment,
-    WasmPtr message_ptr,
-    WasmPtr file_name_ptr,
-    UInt32 line_number,
-    UInt32 column_number)
-{
-    auto message = decodeAssemblyScriptString(compartment, message_ptr);
-    auto file_name = decodeAssemblyScriptString(compartment, file_name_ptr);
-    throw Exception(ErrorCodes::WASM_ERROR,
-        "AssemblyScript module aborted: {} (at {}:{}:{})",
-        message, file_name, line_number, column_number);
 }
 
 }
@@ -187,7 +135,6 @@ WasmHostFunction makeHostFunction(std::string_view function_name, ReturnType (*h
     return WasmHostFunction(std::move(func_decl), reinterpret_cast<void *>(host_function), &invokeImpl<FuncPtr>);
 }
 
-/// API exported to guest WebAssembly code.
 WasmHostFunction getHostFunction(std::string_view function_name)
 {
     static const std::array exported_functions{
@@ -195,10 +142,6 @@ WasmHostFunction getHostFunction(std::string_view function_name)
         makeHostFunction("clickhouse_throw", wasmExportThrow),
         makeHostFunction("clickhouse_log", wasmExportLog),
         makeHostFunction("clickhouse_random", wasmExportRandom),
-        /// Mandatory import for any AssemblyScript module that uses runtime checks
-        /// (memory allocation, bounds checks, etc). Linked only when the module
-        /// declares `(import "env" "abort" (func ...))`, so non-AS modules are unaffected.
-        makeHostFunction("abort", wasmExportAssemblyScriptAbort),
     };
 
     for (const auto & function : exported_functions)
