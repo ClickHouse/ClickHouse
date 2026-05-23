@@ -79,7 +79,7 @@ constexpr std::string makeFirstLetterUppercase(const std::string & str)
 }
 
 template <class FuncName>
-class FunctionTupleOperator : public ITupleFunction
+class FunctionTupleOperator final : public ITupleFunction
 {
 public:
     /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
@@ -174,7 +174,7 @@ using FunctionTupleModulo = FunctionTupleOperator<ModuloName>;
 using FunctionTupleIntDiv = FunctionTupleOperator<IntDivName>;
 using FunctionTupleIntDivOrZero = FunctionTupleOperator<IntDivOrZeroName>;
 
-class FunctionTupleNegate : public ITupleFunction
+class FunctionTupleNegate final : public ITupleFunction
 {
 public:
     static constexpr auto name = "tupleNegate";
@@ -247,7 +247,7 @@ public:
 };
 
 template <class FuncName>
-class FunctionTupleOperatorByNumber : public ITupleFunction
+class FunctionTupleOperatorByNumber final : public ITupleFunction
 {
 public:
     /// constexpr cannot be used because std::string allocations cannot persist past constant evaluation
@@ -329,7 +329,7 @@ using FunctionTuplePositiveModuloByNumber = FunctionTupleOperatorByNumber<Positi
 using FunctionTupleIntDivByNumber = FunctionTupleOperatorByNumber<IntDivName>;
 using FunctionTupleIntDivOrZeroByNumber = FunctionTupleOperatorByNumber<IntDivOrZeroName>;
 
-class FunctionDotProduct : public ITupleFunction
+class FunctionDotProduct final : public ITupleFunction
 {
 public:
     static constexpr auto name = "dotProduct";
@@ -448,7 +448,7 @@ public:
 };
 
 template <typename Impl>
-class FunctionDateOrDateTimeOperationTupleOfIntervals : public ITupleFunction
+class FunctionDateOrDateTimeOperationTupleOfIntervals final : public ITupleFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -545,7 +545,7 @@ using FunctionAddTupleOfIntervals = FunctionDateOrDateTimeOperationTupleOfInterv
 using FunctionSubtractTupleOfIntervals = FunctionDateOrDateTimeOperationTupleOfIntervals<SubtractTupleOfIntervalsImpl>;
 
 template <bool is_minus>
-struct FunctionTupleOperationInterval : public ITupleFunction
+struct FunctionTupleOperationInterval final : public ITupleFunction
 {
 public:
     static constexpr auto name = is_minus ? "subtractInterval" : "addInterval";
@@ -1208,7 +1208,7 @@ public:
 using FunctionLpNorm = FunctionLNorm<LpLabel>;
 
 template <class FuncLabel>
-class FunctionLDistance : public ITupleFunction
+class FunctionLDistance final : public ITupleFunction
 {
 public:
     static constexpr inline auto name = std::string("L") + FuncLabel::name + "Distance";
@@ -1267,7 +1267,7 @@ using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
 using FunctionLpDistance = FunctionLDistance<LpLabel>;
 
 template <class FuncLabel>
-class FunctionLNormalize : public ITupleFunction
+class FunctionLNormalize final : public ITupleFunction
 {
 public:
     static constexpr inline auto name = std::string("L") + FuncLabel::name + "Normalize";
@@ -1322,7 +1322,7 @@ using FunctionL2Normalize = FunctionLNormalize<L2Label>;
 using FunctionLinfNormalize = FunctionLNormalize<LinfLabel>;
 using FunctionLpNormalize = FunctionLNormalize<LpLabel>;
 
-class FunctionCosineDistance : public ITupleFunction
+class FunctionCosineDistance final : public ITupleFunction
 {
 public:
     static constexpr auto name = "cosineDistance";
@@ -1421,7 +1421,7 @@ struct IsTransposedTrait<T, std::void_t<decltype(T::is_transposed)>> : std::bool
 
 /// An adaptor to call Norm/Distance function for tuple or array depending on the 1st argument type
 template <class Traits>
-class TupleOrArrayFunction : public IFunction
+class TupleOrArrayFunction final : public IFunction
 {
 public:
     static constexpr auto name = Traits::name;
