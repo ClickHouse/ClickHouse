@@ -11,9 +11,7 @@ namespace Setting
 
 FunctionPtr FunctionTuple::create(DB::ContextPtr context)
 {
-    return std::make_shared<FunctionTuple>(
-        FunctionTuple::name,
-        context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]);
+    return std::make_shared<FunctionTuple>(context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]);
 }
 
 REGISTER_FUNCTION(Tuple)

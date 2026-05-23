@@ -1295,8 +1295,11 @@ void detectRecursiveDefaultCycles(
     const ColumnsDescription & columns,
     ContextPtr context)
 {
+    if (!expression_list)
+        return;
+
     const NameSet default_column_names = getDefaultColumnNames(expression_list, columns);
-    if (!expression_list || default_column_names.empty())
+    if (default_column_names.empty())
         return;
 
     const auto * list_node = expression_list->as<ASTExpressionList>();

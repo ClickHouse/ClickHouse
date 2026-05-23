@@ -16,7 +16,6 @@ namespace DB
   */
 class FunctionTuple final : public IFunction
 {
-    String function_name;
     bool enable_named_columns;
 
 public:
@@ -24,13 +23,12 @@ public:
 
     static FunctionPtr create(ContextPtr context);
 
-    explicit FunctionTuple(String function_name_ = name, bool enable_named_columns_ = false)
-        : function_name(std::move(function_name_))
-        , enable_named_columns(enable_named_columns_)
+    explicit FunctionTuple(bool enable_named_columns_ = false)
+        : enable_named_columns(enable_named_columns_)
     {
     }
 
-    String getName() const override { return function_name; }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
 
