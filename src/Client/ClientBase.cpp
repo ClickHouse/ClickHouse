@@ -460,7 +460,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
         output_stream << std::endl;
 #if USE_REPLXX
-        output_stream << highlighted(res_buf.str(), *client_context);
+        output_stream << highlighted(res_buf.str(), *client_context, rainbow_parentheses);
 #else
         output_stream << res_buf.str();
 #endif
@@ -1668,6 +1668,9 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].memory_usage = value;
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
                 thread_times[host_name].peak_memory_usage = value;
+            /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
+            else if (event_name == "TemporaryDataOnDiskUsage")
+                thread_times[host_name].temp_data_on_disk_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);
@@ -2747,9 +2750,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
                 TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.hasServerErrors())
+                if (hint.hasServerErrors() && !hint.hasClientErrors())
                 {
-                    // Syntax errors are considered as client errors
+                    // Syntax errors are considered as client errors.
+                    // Reject hints that expect only server errors (serverError hint),
+                    // but fall through when both are set (error hint) so the
+                    // client error check below can handle it.
                     current_exception->addMessage("\nExpected server error: {}.", hint.serverErrors());
                     current_exception->rethrow();
                 }
@@ -3004,6 +3010,17 @@ bool ClientBase::processQueryText(const String & text)
 
     if (exit_strings.contains(trimmed_input))
         return false;
+
+    /// Clear the terminal (POSIX `clear`-style), not SQL. Same entry point as `ls` / `\i` meta-commands.
+    /// Only in interactive mode, or in clickhouse-local (including `-q`), so `clickhouse-client` batch
+    /// mode still parses `clear` as SQL and errors on mistakes (UNKNOWN_IDENTIFIER).
+    if ((boost::iequals(trimmed_input, "clear") || boost::iequals(trimmed_input, "/clear"))
+        && (is_interactive || supportsLocalMetaCommands()))
+    {
+        if (stdout_is_a_tty)
+            output_stream << "\033[2J\033[H" << std::flush;
+        return true;
+    }
 
     if (trimmed_input.starts_with("\\i"))
     {
@@ -3633,7 +3650,7 @@ void ClientBase::runInteractive()
     {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
-            highlight(query, colors, *client_context, pos);
+            highlight(query, colors, *client_context, pos, rainbow_parentheses);
         };
     }
 
@@ -3842,6 +3859,12 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
     ReadBufferFromFile in(file_name);
     readStringUntilEOF(queries_from_file, in);
 
+    /// For `clickhouse-local` only: same entry point as `-q` / stdin so meta-commands (`clear`, `ls`,
+    /// `\i`, …) work for whole-file input. Remote `clickhouse-client` keeps `executeMultiQuery` so
+    /// `--queries-file` does not apply `exit_strings` and other text-level metas (avoids silent
+    /// behavior changes for batch automation).
+    if (supportsLocalMetaCommands())
+        return processQueryText(queries_from_file);
     return executeMultiQuery(queries_from_file);
 }
 

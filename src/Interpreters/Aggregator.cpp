@@ -28,6 +28,7 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
@@ -603,11 +604,11 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
         .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
-    , thread_pool{
+    , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::AggregatorThreads,
           CurrentMetrics::AggregatorThreadsActive,
           CurrentMetrics::AggregatorThreadsScheduled,
-          params.max_threads}
+          params.max_threads))
 {
     memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
 
@@ -680,12 +681,16 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
+    cache_settings.enable_prefetch = params.enable_prefetch;
+    cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
 #endif
 }
+
+Aggregator::~Aggregator() = default;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -946,7 +951,9 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
+        /// handles variable hash computation cost by measuring actual iteration latency.
+        const bool prefetch = params.enable_prefetch
             && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
@@ -2622,7 +2629,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+    ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -2836,7 +2843,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         {
             if (!is_aggregate_function_compiled[i])
                 aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
+                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
         }
 
         return;
@@ -2846,7 +2853,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
+            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
     }
 }
 
@@ -2975,7 +2982,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
         {
             auto data_vec = collect_data_vec(i);
-            aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+            aggregate_functions[i]->parallelizeMergePrepare(data_vec, *thread_pool, is_cancelled);
         }
     }
 
@@ -2987,7 +2994,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         if (aggregate_functions[i]->isAbleToParallelizeMerge())
         {
             auto data_vec = collect_data_vec(i);
-            aggregate_functions[i]->parallelizeMergeMulti(data_vec, thread_pool, is_cancelled, res->aggregates_pool);
+            aggregate_functions[i]->parallelizeMergeMulti(data_vec, *thread_pool, is_cancelled, res->aggregates_pool);
         }
         else
         {
@@ -3017,7 +3024,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
-    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
+    /// handles variable hash computation cost by measuring actual iteration latency.
+    const bool prefetch = params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
@@ -3102,7 +3111,9 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
 
-    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
+    /// handles variable hash computation cost by measuring actual iteration latency.
+    const bool prefetch = params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
@@ -3256,7 +3267,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             places.get(),
             offsets_of_aggregate_states[j],
             aggregate_columns_data[j]->data(),
-            thread_pool,
+            *thread_pool,
             is_cancelled,
             aggregates_pool);
     }
@@ -3441,12 +3452,12 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
             if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
             {
                 AggregateDataPtrs data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
-                aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+                aggregate_functions[i]->parallelizeMergePrepare(data_vec, *thread_pool, is_cancelled);
             }
 
             if (aggregate_functions[i]->isAbleToParallelizeMerge())
                 aggregate_functions[i]->merge(
-                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], thread_pool, is_cancelled, result.aggregates_pool);
+                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], *thread_pool, is_cancelled, result.aggregates_pool);
             else
                 aggregate_functions[i]->merge(
                     res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
@@ -3618,7 +3629,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)
@@ -3682,7 +3693,9 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 }
 
 
-Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled)
+Aggregator::AggregatedChunk Aggregator::mergeBlocks(
+    AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled,
+    const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater)
 {
     if (chunks.empty())
         return {};
@@ -3759,6 +3772,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, b
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
     }
 
+    if (dataflow_cache_updater)
+        dataflow_cache_updater->recordAggregationStateSizes(result, bucket_num);
+
     AggregatedChunk agg_chunk;
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
     {
@@ -3770,6 +3786,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, b
         constexpr bool return_single_block = true;
         agg_chunk = prepareChunkAndFillSingleLevel<return_single_block>(result, final);
     }
+
+    if (dataflow_cache_updater && agg_chunk.chunk.getNumRows())
+        dataflow_cache_updater->recordAggregationKeySizes(agg_chunk.chunk, getKeysPositions(), getKeyTypes());
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
     agg_chunk.bucket_num = bucket_num;
