@@ -57,8 +57,7 @@ EOF
 mkdir -p "$WORK_DIR/user_defined" "$WORK_DIR/user_scripts" "$WORK_DIR/dyn" "$WORK_DIR/data"
 
 run() {
-    "$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config.xml" --query "$1" 2>&1 \
-        | grep -v -E '^/bin/bash|Segmentation fault' || true
+    "$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config.xml" --query "$1" 2>&1
 }
 
 # Confirm that the exception message contains both the exit code and the stderr lines.

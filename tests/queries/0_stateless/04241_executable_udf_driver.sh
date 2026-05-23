@@ -75,10 +75,7 @@ EOF
 mkdir -p "$WORK_DIR/user_defined" "$WORK_DIR/user_scripts" "$WORK_DIR/dyn" "$WORK_DIR/data"
 
 run() {
-    # Filter out shutdown-related noise (e.g. shell-printed "Segmentation fault" lines from
-    # the bash that invoked clickhouse-local) so we test what the queries actually produced.
-    "$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config.xml" --query "$1" 2>&1 \
-        | grep -v -E '^/bin/bash|Segmentation fault' || true
+    "$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config.xml" --query "$1" 2>&1
 }
 
 echo "-- driver runtime commands"
