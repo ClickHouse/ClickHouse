@@ -1,3 +1,4 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
 -- Regression test for emitCsg bug: complement neighborhood enumeration on tree topologies.
 --
 -- Bug: emitCsg called enumerateCmpRec once with the entire neighborhood as the complement
@@ -21,6 +22,7 @@ SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
+SET query_plan_optimize_join_order_randomize = 0;
 
 CREATE TABLE tree_hub (id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE tree_la  (id UInt32, hub_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
