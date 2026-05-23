@@ -1,0 +1,62 @@
+<test>
+    <create_query>
+        CREATE TABLE bitmap_perf_test
+        (
+            id UInt32,
+            bm AggregateFunction(groupBitmap, UInt32)
+        )
+        ENGINE = MergeTree() ORDER BY id
+    </create_query>
+
+    <fill_query>INSERT INTO bitmap_perf_test SELECT 1 AS id, groupBitmapState(number) AS bm FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO bitmap_perf_test SELECT 2 AS id, groupBitmapState(number + 500000) AS bm FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO bitmap_perf_test SELECT 3 AS id, groupBitmapState(number * 3) AS bm FROM numbers(1000000)</fill_query>
+
+    <!-- Pairwise AND -->
+    <query>
+        SELECT bitmapCardinality(bitmapAnd(
+            (SELECT bm FROM bitmap_perf_test WHERE id = 1),
+            (SELECT bm FROM bitmap_perf_test WHERE id = 2)
+        ))
+    </query>
+
+    <!-- Pairwise OR -->
+    <query>
+        SELECT bitmapCardinality(bitmapOr(
+            (SELECT bm FROM bitmap_perf_test WHERE id = 1),
+            (SELECT bm FROM bitmap_perf_test WHERE id = 2)
+        ))
+    </query>
+
+    <!-- Chained OR then AND (benefits most from COW) -->
+    <query>
+        SELECT bitmapCardinality(bitmapAnd(
+            bitmapOr(
+                (SELECT bm FROM bitmap_perf_test WHERE id = 1),
+                (SELECT bm FROM bitmap_perf_test WHERE id = 2)
+            ),
+            (SELECT bm FROM bitmap_perf_test WHERE id = 3)
+        ))
+    </query>
+
+    <!-- Chained XOR then AND -->
+    <query>
+        SELECT bitmapCardinality(bitmapAnd(
+            bitmapXor(
+                (SELECT bm FROM bitmap_perf_test WHERE id = 1),
+                (SELECT bm FROM bitmap_perf_test WHERE id = 2)
+            ),
+            (SELECT bm FROM bitmap_perf_test WHERE id = 3)
+        ))
+    </query>
+
+    <!-- Serialization round-trip (write path benefits from COW shallow copy before runOptimize) -->
+    <query>
+        SELECT length(bitmapToArray(bitmapOr(
+            (SELECT bm FROM bitmap_perf_test WHERE id = 1),
+            (SELECT bm FROM bitmap_perf_test WHERE id = 2)
+        )))
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS bitmap_perf_test</drop_query>
+</test>

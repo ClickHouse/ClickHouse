@@ -54,6 +54,7 @@ private:
     void toLarge()
     {
         roaring_bitmap = std::make_shared<RoaringBitmap>();
+        roaring_bitmap->setCopyOnWrite(true);
         for (const auto & x : small)
             roaring_bitmap->add(static_cast<Value>(x.getValue()));
         small.clear();
@@ -135,6 +136,7 @@ public:
             in.readStrict(buf.get(), size);
 
             roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.get(), size));
+            roaring_bitmap->setCopyOnWrite(true);
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
@@ -167,6 +169,7 @@ public:
     std::shared_ptr<RoaringBitmap> getNewRoaringBitmapFromSmall() const
     {
         std::shared_ptr<RoaringBitmap> ret = std::make_shared<RoaringBitmap>();
+        ret->setCopyOnWrite(true);
         for (const auto & x : small)
             ret->add(static_cast<Value>(x.getValue()));
         return ret;
