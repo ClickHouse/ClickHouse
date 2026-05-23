@@ -196,9 +196,9 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
     if (!(info->header & PostingsSerialization::Flags::HasBlockIndex))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Lazy posting list cursor requires the per-segment block index (HasBlockIndex flag); "
-            "the reader must have disabled lazy mode for indexes without it");
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: per-segment block index is missing "
+            "(HasBlockIndex flag not set in posting list header)");
     }
 
     /// Index Section follows immediately after the payload in the .pst stream.
