@@ -54,8 +54,8 @@ def partition_table_simple(started_cluster):
 
 
 def test_partition_simple(partition_table_simple):
-    q("ALTER TABLE test.partition_simple DETACH PARTITION '1970-01-01'")
-    q("ALTER TABLE test.partition_simple ATTACH PARTITION '1970-01-01'")
+    q("ALTER TABLE test.partition_simple DETACH PARTITION 197001")
+    q("ALTER TABLE test.partition_simple ATTACH PARTITION 197001")
     q("OPTIMIZE TABLE test.partition_simple")
 
 
@@ -178,8 +178,8 @@ def test_partition_complex(partition_table_complex):
 
     partition_complex_assert_checksums(True)
 
-    q("ALTER TABLE test.partition_complex DETACH PARTITION '1970-01-01'")
-    q("ALTER TABLE test.partition_complex ATTACH PARTITION '1970-01-01'")
+    q("ALTER TABLE test.partition_complex DETACH PARTITION 197001")
+    q("ALTER TABLE test.partition_complex ATTACH PARTITION 197001")
 
     partition_complex_assert_columns_txt()
 

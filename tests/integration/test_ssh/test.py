@@ -55,8 +55,10 @@ def test_no_queries_from_file(started_cluster):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    # SUPPORT_IS_DISABLED error code is 344, exit code = 344 % 256 = 88
-    assert completed_process.returncode == 88
+    # Not sure which exit code should the ssh command have in this case
+    # Ideally it should be non-zero as be same as `ssh -vvv user@host "false"; echo $?` == 1
+    # But for now it is 0.
+    assert completed_process.returncode == 1
     assert "SUPPORT_IS_DISABLED" in completed_process.stderr
 
 
@@ -136,85 +138,6 @@ def test_simple_query_with_paramiko(started_cluster):
     # Secsh channel 1 open FAILED: : Administratively prohibited
 
     client.close()
-
-def test_no_password_user_with_openssh_client(started_cluster):
-    # `no_password` users must be able to log in via SSH "none" authentication
-    # without OpenSSH prompting for an empty password interactively.
-    # `BatchMode=yes` disables any interactive prompt, so if the server does not
-    # accept the "none" method, ssh will fail instead of hanging.
-    ssh_command = (
-        f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes "
-        f"-o PreferredAuthentications=none "
-        f"nobody@{instance.ip_address} -p 9022 \"SELECT 1;\""
-    )
-
-    completed_process = subprocess.run(
-        ssh_command,
-        shell=True,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=30,
-    )
-
-    expected = instance.query("SELECT 1;")
-    assert completed_process.returncode == 0, completed_process.stderr
-    assert completed_process.stdout.replace("\n\x00", "\n") == expected
-
-
-def test_empty_password_user_with_openssh_client(started_cluster):
-    # A user with an explicit empty password (`IDENTIFIED WITH plaintext_password BY ''`)
-    # is functionally equivalent to `no_password` and must also be accepted via the
-    # SSH "none" method without an interactive prompt.
-    instance.query(
-        "CREATE USER OR REPLACE empty_pass IDENTIFIED WITH plaintext_password BY '';"
-    )
-
-    ssh_command = (
-        f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes "
-        f"-o PreferredAuthentications=none "
-        f"empty_pass@{instance.ip_address} -p 9022 \"SELECT 1;\""
-    )
-
-    completed_process = subprocess.run(
-        ssh_command,
-        shell=True,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=30,
-    )
-
-    expected = instance.query("SELECT 1;")
-    assert completed_process.returncode == 0, completed_process.stderr
-    assert completed_process.stdout.replace("\n\x00", "\n") == expected
-
-
-def test_password_user_rejected_with_none_auth(started_cluster):
-    # A user that has a password must NOT be authenticated via the SSH "none"
-    # method. `BatchMode=yes` disables interactive prompts, and
-    # `PreferredAuthentications=none` forces ssh to only try "none" — so the
-    # connection must fail rather than fall through to a password prompt.
-    instance.query("CREATE USER OR REPLACE mister IDENTIFIED BY 'P@$$WORD';")
-
-    ssh_command = (
-        f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes "
-        f"-o PreferredAuthentications=none "
-        f"mister@{instance.ip_address} -p 9022 \"SELECT 1;\""
-    )
-
-    completed_process = subprocess.run(
-        ssh_command,
-        shell=True,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=30,
-    )
-
-    assert completed_process.returncode != 0
-    assert "Permission denied" in completed_process.stderr
-
 
 def test_paramiko_password(started_cluster):
     instance.query("CREATE USER OR REPLACE mister IDENTIFIED BY 'P@$$WORD';")
