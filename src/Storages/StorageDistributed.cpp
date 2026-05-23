@@ -63,6 +63,9 @@
 #include <Analyzer/Utils.h>
 
 #include <Planner/Planner.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/TableExpressionData.h>
 #include <Planner/Utils.h>
 
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -777,10 +780,29 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
     }
 
 public:
+    /// When set, the visitor records the expanded action name for each replaced
+    /// alias column (needed to match remote headers in distributed queries).
+    PlannerContext * planner_context = nullptr;
+
+    /// Map from alias column name to expanded action name produced by the remote
+    /// planner when the alias expression is inlined.
+    std::unordered_map<std::string, std::string> alias_column_expanded_names;
+
     void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto column_expression = getColumnNodeAliasExpression(node))
+        {
+            if (planner_context)
+            {
+                const auto & column_name = node->as<ColumnNode &>().getColumnName();
+                if (!alias_column_expanded_names.contains(column_name))
+                {
+                    auto expanded_name = calculateActionNodeName(column_expression, *planner_context, true);
+                    alias_column_expanded_names.emplace(column_name, std::move(expanded_name));
+                }
+            }
             node = column_expression;
+        }
     }
 };
 
@@ -862,7 +884,15 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     return rewrite;
 }
 
-QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
+struct DistributedQueryTree
+{
+    QueryTreeNodePtr query_tree;
+    /// Map from alias column name to expanded action name produced by the remote
+    /// planner when the alias expression is inlined (see #81631).
+    std::unordered_map<std::string, std::string> alias_column_expanded_names;
+};
+
+DistributedQueryTree buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
     const ASTPtr & remote_table_function)
@@ -932,8 +962,27 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
+    /// Register the replacement table expression in the planner context with the same
+    /// column identifiers (e.g. __table1.col_name) as the original table expression.
+    /// This is needed so that calculateActionNodeName can resolve column identifiers
+    /// in the cloned tree where column sources point to the replacement (StorageDummy).
+    if (auto * original_data = planner_context->getTableExpressionDataOrNull(query_info.table_expression))
+    {
+        auto & new_data = planner_context->getOrCreateTableExpressionData(replacement_table_expression);
+        const auto & column_name_to_column = original_data->getColumnNameToColumn();
+        for (const auto & column_name : original_data->getColumnNames())
+        {
+            auto col_it = column_name_to_column.find(column_name);
+            const auto * identifier = original_data->getColumnIdentifierOrNull(column_name);
+            if (col_it != column_name_to_column.end() && identifier && !new_data.hasColumn(column_name))
+                new_data.addColumn(col_it->second, *identifier, false /*is_selected_column*/);
+        }
+    }
+
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
+
     ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
+    replace_alias_columns_visitor.planner_context = planner_context.get();
     replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
@@ -950,7 +999,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
     }
 
-    return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
+    auto result_query_tree = buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
+    return {std::move(result_query_tree), std::move(replace_alias_columns_visitor.alias_column_expanded_names)};
 }
 
 }
@@ -971,15 +1021,21 @@ void StorageDistributed::read(
 
     const auto & settings = local_context->getSettingsRef();
 
+    /// Alias column expanded names for reordering the remote header (see #81631).
+    std::unordered_map<std::string, std::string> alias_column_expanded_names;
+
     if (settings[Setting::allow_experimental_analyzer])
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
 
-        auto query_tree_distributed = buildQueryTreeDistributed(modified_query_info,
+        auto distributed_result = buildQueryTreeDistributed(modified_query_info,
             query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
-        Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree_distributed, local_context, SelectQueryOptions(processed_stage).analyze());
+
+        alias_column_expanded_names = std::move(distributed_result.alias_column_expanded_names);
+
+        Block block = *InterpreterSelectQueryAnalyzer::getSampleBlock(distributed_result.query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
         /** For distributed tables we do not need constants in header, since we don't send them to remote servers.
           * Moreover, constants can break some functions like `hostName` that are constants only for local queries.
           */
@@ -992,11 +1048,11 @@ void StorageDistributed::read(
         /// that can be re-resolved by the shard's analyzer.  The original query tree must keep
         /// the specialized functions because it is reused later for getSampleBlock / plan building
         /// (the unresolved FunctionGrouping throws on execution, even with 0 rows).
-        auto query_tree_for_ast = query_tree_distributed->clone();
+        auto query_tree_for_ast = distributed_result.query_tree->clone();
         removeGroupingFunctionSpecializations(query_tree_for_ast);
         modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_for_ast);
 
-        modified_query_info.query_tree = std::move(query_tree_distributed);
+        modified_query_info.query_tree = std::move(distributed_result.query_tree);
 
         /// Return directly (with correct header) if no shard to query.
         if (modified_query_info.getCluster()->getShardsInfo().empty())
@@ -1050,6 +1106,81 @@ void StorageDistributed::read(
     /// (e.g., every shard had a missing table with no remote replicas).
     if (!query_plan.isInitialized())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
+
+    /// When ALIAS columns are inlined into the distributed query tree, CSE in the action
+    /// DAG can reorder output columns compared to what the initiator's planner expects.
+    /// Compute the expected header and, if column order differs, add a reorder step so that
+    /// downstream positional rename in PlannerJoinTree maps columns correctly (see #81631).
+    if (!alias_column_expanded_names.empty() && query_plan.isInitialized())
+    {
+        auto expected_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+            query_info.query_tree, local_context, SelectQueryOptions(processed_stage).analyze());
+
+        auto current_header = query_plan.getCurrentHeader();
+
+        if (current_header->columns() == expected_header->columns()
+            && !blocksHaveEqualStructure(*current_header, *expected_header))
+        {
+            /// Build a mapping from remote column name to its position in the current header.
+            std::unordered_map<std::string, size_t> remote_name_to_pos;
+            for (size_t i = 0; i < current_header->columns(); ++i)
+                remote_name_to_pos[current_header->getByPosition(i).name] = i;
+
+            /// Get the table expression data to resolve column identifiers to column names.
+            const auto * table_data = query_info.planner_context->getTableExpressionDataOrNull(query_info.table_expression);
+
+            std::vector<size_t> permutation(expected_header->columns());
+            bool need_reorder = false;
+            bool can_match = true;
+
+            for (size_t i = 0; i < expected_header->columns(); ++i)
+            {
+                const auto & expected_name = expected_header->getByPosition(i).name;
+
+                /// Try direct name match (works for non-alias columns).
+                auto it = remote_name_to_pos.find(expected_name);
+
+                /// For alias columns, the expected name is the column identifier (e.g. __table1.flag_a).
+                /// Look up the original column name, then find the expanded action name.
+                if (it == remote_name_to_pos.end() && table_data)
+                {
+                    const auto * column_name = table_data->getColumnNameOrNull(expected_name);
+                    if (column_name)
+                    {
+                        auto alias_it = alias_column_expanded_names.find(*column_name);
+                        if (alias_it != alias_column_expanded_names.end())
+                            it = remote_name_to_pos.find(alias_it->second);
+                    }
+                }
+
+                if (it == remote_name_to_pos.end())
+                {
+                    can_match = false;
+                    break;
+                }
+
+                if (it->second != i)
+                    need_reorder = true;
+                permutation[i] = it->second;
+            }
+
+            if (can_match && need_reorder)
+            {
+                /// Build an ActionsDAG that reorders columns from remote order to expected order.
+                ActionsDAG reorder_dag(current_header->getColumnsWithTypeAndName());
+                auto outputs = reorder_dag.getOutputs();
+                auto & dag_outputs = reorder_dag.getOutputs();
+                dag_outputs.clear();
+                for (size_t i = 0; i < permutation.size(); ++i)
+                    dag_outputs.push_back(outputs[permutation[i]]);
+
+                auto reorder_step = std::make_unique<ExpressionStep>(
+                    query_plan.getCurrentHeader(), std::move(reorder_dag));
+                reorder_step->setStepDescription("Reorder columns after distributed alias expansion");
+                query_plan.addStep(std::move(reorder_step));
+            }
+        }
+    }
 }
 
 

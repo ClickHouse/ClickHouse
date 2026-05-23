@@ -1,0 +1,12 @@
+local
+true	false	1
+distributed
+true	false	1
+local_sub
+42_suffix	42
+distributed_sub
+42_suffix	42
+local_nested
+11	12
+distributed_nested
+11	12
