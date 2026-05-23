@@ -39,6 +39,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.6",
+        {
+            {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+        });
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"page", 0, 0, "New setting for paginated HTTP responses, equivalent to offset = limit * (page - 1). Float so it can hold negative or fractional values (passed through to SQL `LIMIT`/`OFFSET`)."},
