@@ -70,6 +70,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <limits>
 
 #include <fmt/ranges.h>
 
@@ -158,8 +159,8 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
 
     return added;
 }
-
 }
+
 
 namespace ProfileEvents
 {
@@ -2810,12 +2811,52 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
     size_t sum_rows = 0;
+    UInt128 sum_data_compressed_bytes = 0;
+    UInt128 sum_data_uncompressed_bytes = 0;
+    std::unordered_set<String> columns_for_estimation(result.column_names_to_read.begin(), result.column_names_to_read.end());
 
     for (const auto & part : result.parts_with_ranges)
     {
         sum_ranges += part.ranges.size();
         sum_marks += part.getMarksCount();
-        sum_rows += part.getRowsCount();
+        const auto rows_in_part = part.getRowsCount();
+        sum_rows += rows_in_part;
+
+        const auto & data_part = part.data_part;
+        const auto total_rows_in_data_part = data_part->rows_count;
+        if (!total_rows_in_data_part)
+            continue;
+
+        UInt128 part_columns_compressed = 0;
+        UInt128 part_columns_uncompressed = 0;
+        for (const auto & column_name : columns_for_estimation)
+        {
+            const auto column_size = data_part->getColumnSize(column_name);
+            part_columns_compressed += static_cast<UInt128>(column_size.data_compressed);
+            part_columns_uncompressed += static_cast<UInt128>(column_size.data_uncompressed);
+        }
+
+        if (!part_columns_compressed && !part_columns_uncompressed)
+        {
+            const auto total_size = data_part->getTotalColumnsSize();
+            part_columns_compressed = static_cast<UInt128>(total_size.data_compressed);
+            part_columns_uncompressed = static_cast<UInt128>(total_size.data_uncompressed);
+            if (!part_columns_compressed && !part_columns_uncompressed)
+                continue;
+        }
+
+        const auto total_rows_128 = static_cast<UInt128>(total_rows_in_data_part);
+        auto estimate_for_part = [&](UInt128 columns_bytes)
+        {
+            if (!columns_bytes)
+                return UInt128(0);
+            const UInt128 numerator = columns_bytes * static_cast<UInt128>(rows_in_part)
+                + (total_rows_128 - 1);
+            return numerator / total_rows_128;
+        };
+
+        sum_data_compressed_bytes += estimate_for_part(part_columns_compressed);
+        sum_data_uncompressed_bytes += estimate_for_part(part_columns_uncompressed);
     }
 
     if (add_index_stat_row_for_pk_expand)
@@ -2834,6 +2875,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     result.selected_marks = sum_marks;
     result.selected_marks_pk = sum_marks_pk;
     result.total_marks_pk = total_marks_pk;
+    const UInt128 max_bytes_value = static_cast<UInt128>(std::numeric_limits<UInt64>::max());
+    result.selected_data_compressed_bytes
+        = sum_data_compressed_bytes > max_bytes_value ? std::numeric_limits<UInt64>::max() : static_cast<UInt64>(sum_data_compressed_bytes);
+    result.selected_data_uncompressed_bytes
+        = sum_data_uncompressed_bytes > max_bytes_value ? std::numeric_limits<UInt64>::max() : static_cast<UInt64>(sum_data_uncompressed_bytes);
     result.selected_rows = sum_rows;
     result.has_exact_ranges = result.selected_parts == 0 || find_exact_ranges;
 
@@ -3591,6 +3637,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     selected_marks = result.selected_marks;
     selected_rows = result.selected_rows;
     selected_parts = result.selected_parts;
+    selected_data_compressed_bytes = result.selected_data_compressed_bytes;
+    selected_data_uncompressed_bytes = result.selected_data_uncompressed_bytes;
     /// Projection, that needed to drop columns, which have appeared by execution
     /// of some extra expressions, and to allow execute the same expressions later.
     /// NOTE: It may lead to double computation of expressions.

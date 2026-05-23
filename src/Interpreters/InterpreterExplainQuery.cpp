@@ -155,6 +155,8 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
             {"parts", std::make_shared<DataTypeUInt64>()},
             {"rows", std::make_shared<DataTypeUInt64>()},
             {"marks", std::make_shared<DataTypeUInt64>()},
+            {"data_compressed_bytes", std::make_shared<DataTypeUInt64>()},
+            {"data_uncompressed_bytes", std::make_shared<DataTypeUInt64>()},
         };
         return Block({
             {cols[0].type->createColumn(), cols[0].type, cols[0].name},
@@ -162,6 +164,8 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
             {cols[2].type->createColumn(), cols[2].type, cols[2].name},
             {cols[3].type->createColumn(), cols[3].type, cols[3].name},
             {cols[4].type->createColumn(), cols[4].type, cols[4].name},
+            {cols[5].type->createColumn(), cols[5].type, cols[5].name},
+            {cols[6].type->createColumn(), cols[6].type, cols[6].name},
         });
     }
 

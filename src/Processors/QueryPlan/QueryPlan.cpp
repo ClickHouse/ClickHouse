@@ -738,6 +738,8 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
         UInt64 parts = 0;
         UInt64 rows = 0;
         UInt64 marks = 0;
+        UInt64 data_compressed_bytes = 0;
+        UInt64 data_uncompressed_bytes = 0;
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;
@@ -759,6 +761,8 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
             it->second->parts += step->getSelectedParts();
             it->second->rows += step->getSelectedRows();
             it->second->marks += step->getSelectedMarks();
+            it->second->data_compressed_bytes += step->getSelectedDataCompressedBytes();
+            it->second->data_uncompressed_bytes += step->getSelectedDataUncompressedBytes();
         }
         for (const auto * child : node->children)
             process_node(child);
@@ -775,6 +779,8 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
         columns[index++]->insert(counter.second->parts);
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
+        columns[index++]->insert(counter.second->data_compressed_bytes);
+        columns[index++]->insert(counter.second->data_uncompressed_bytes);
     }
 }
 
