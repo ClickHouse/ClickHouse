@@ -57,6 +57,31 @@ std::optional<Field> tryGetConstantField(const ActionsDAG::Node * node)
     return (*node->column)[0];
 }
 
+bool containsType(const IDataType & type, bool (WhichDataType::* predicate)() const)
+{
+    if ((WhichDataType(type).*predicate)())
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (!result && (WhichDataType(child).*predicate)())
+            result = true;
+    });
+
+    return result;
+}
+
+bool containsFloat(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isFloat);
+}
+
+bool containsDecimal(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isDecimal);
+}
+
 std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
@@ -90,12 +115,9 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
         return {};
 
     const auto & result_column = transformed_header.getByPosition(*position);
-    const auto result_type_without_wrappers = removeLowCardinalityAndNullable(result_column.type);
-    const auto constant_type_without_wrappers = removeLowCardinalityAndNullable(constant_node->result_type);
-
-    if (isFloat(result_type_without_wrappers))
+    if (containsFloat(result_column.type))
         return {};
-    if (isDecimal(result_type_without_wrappers) && isFloat(constant_type_without_wrappers))
+    if (containsDecimal(result_column.type) && containsFloat(constant_node->result_type))
         return {};
 
     try

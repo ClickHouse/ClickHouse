@@ -125,6 +125,14 @@ FROM
 WHERE f = 0.0
 ORDER BY reinterpretAsUInt64(f);
 
+SELECT reinterpretAsUInt64(tupleElement(t, 1))
+FROM
+(
+    SELECT tuple(arrayJoin([reinterpretAsFloat64(toUInt64(0)), reinterpretAsFloat64(toUInt64(9223372036854775808))])) AS t
+)
+WHERE t = tuple(0.0)
+ORDER BY reinterpretAsUInt64(tupleElement(t, 1));
+
 DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_decimal;
 
 CREATE TABLE 04259_filter_constant_column_after_where_decimal
@@ -141,6 +149,18 @@ INSERT INTO 04259_filter_constant_column_after_where_decimal VALUES
 SELECT d, count()
 FROM 04259_filter_constant_column_after_where_decimal
 WHERE d = 1.0
+GROUP BY ALL
+ORDER BY ALL;
+
+SELECT tupleElement(t, 1), count()
+FROM
+(
+    SELECT tuple(arrayJoin([
+        toDecimal128('1.000000000000000000', 18),
+        toDecimal128('1.000000000000000001', 18),
+        toDecimal128('2.000000000000000000', 18)])) AS t
+)
+WHERE t = tuple(1.0)
 GROUP BY ALL
 ORDER BY ALL;
 
