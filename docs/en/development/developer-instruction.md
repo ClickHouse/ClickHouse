@@ -165,15 +165,11 @@ A description of implementation details if relevant.
 
 **Example**
 
-Query:
-
-\```sql
+\```sql title="Query"
 SELECT 'write your example query here';
 \```
 
-Response:
-
-\```response
+\```response title="Response"
 ┌───────────────────────────────────┐
 │ the result of the query           │
 └───────────────────────────────────┘

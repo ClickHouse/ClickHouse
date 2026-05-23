@@ -301,18 +301,16 @@ public:
 
     std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override;
 
-    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override;
+    VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override;
 
-    void loadModuleFromCode(std::string_view wasm_code);
-    void loadModuleFromFile(const std::filesystem::path & file_path);
-    void loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module);
+    void loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module, StopToken stop_token);
 
     WasmEdge_ModuleInstanceContext * getHostFunctionContext() { return import_module_ctx.get(); }
 
     void setLastException(Exception e) { last_exception = std::move(e); }
 
 private:
-    void loadModuleImpl();
+    void loadModuleImpl(StopToken stop_token);
 
     /// Host functions are registered in this context
     WasmEdgeResourcePtr<WasmEdge_ModuleInstanceContext> import_module_ctx;
@@ -346,7 +344,7 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
     try
     {
         const auto & argument_types = func_decl.getArgumentTypes();
-        std::vector<WasmVal> args(argument_types.size());
+        VectorWithMemoryTracking<WasmVal> args(argument_types.size());
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
             args[i] = fromWasmEdgeValue(in[i]);
@@ -373,28 +371,26 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
     return WasmEdge_Result_Success;
 }
 
-void WasmEdgeCompartment::loadModuleFromFile(const std::filesystem::path & file_path)
-{
-    wasmedgeCheckResult(WasmEdge_VMLoadWasmFromFile(vm_cxt.get(), file_path.c_str()), "cannot load module");
-    loadModuleImpl();
-}
-
-void WasmEdgeCompartment::loadModuleFromCode(std::string_view wasm_code)
-{
-    wasmedgeCheckResult(WasmEdge_VMLoadWasmFromBytes(vm_cxt.get(), wasmedgeBytesWrap(wasm_code)), "cannot load module");
-    loadModuleImpl();
-}
-
-void WasmEdgeCompartment::loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module)
+void WasmEdgeCompartment::loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module, StopToken stop_token)
 {
     wasmedgeCheckResult(WasmEdge_VMLoadWasmFromASTModule(vm_cxt.get(), ast_module), "cannot load module");
-    loadModuleImpl();
+    loadModuleImpl(std::move(stop_token));
 }
 
-void WasmEdgeCompartment::loadModuleImpl()
+void WasmEdgeCompartment::loadModuleImpl(StopToken stop_token)
 {
     wasmedgeCheckResult(WasmEdge_VMValidate(vm_cxt.get()), "cannot validate module");
     wasmedgeCheckResult(WasmEdge_VMRegisterModuleFromImport(vm_cxt.get(), import_module_ctx.get()), "cannot register host module");
+
+    /// WasmEdge runs the wasm `(start)` section synchronously inside `VMInstantiate`
+    /// To bound a hanging start function we set up epoch interruption before instantiation
+    StopCallback stop_callback(stop_token, [this]
+    {
+        LOG_DEBUG(log, "Stop requested for function in start section");
+        auto * stat_ctx = WasmEdge_VMGetStatisticsContext(vm_cxt.get());
+        WasmEdge_StatisticsSetCostLimit(stat_ctx, 1);
+    });
+
     wasmedgeCheckResult(WasmEdge_VMInstantiate(vm_cxt.get()), "cannot instantiate module");
     vm_instance_cxt = WasmEdge_VMGetActiveModule(vm_cxt.get());
     if (!vm_instance_cxt)
@@ -430,7 +426,7 @@ std::span<uint8_t> WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
     return {data, static_cast<size_t>(size)};
 }
 
-std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token)
+VectorWithMemoryTracking<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token)
 {
     auto func_it = imported_functions.find(function_name);
     if (func_it == imported_functions.end())
@@ -477,7 +473,7 @@ std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_n
         wasmedgeCheckResult(result, fmt::format("error while executing function '{}'", function_name));
     }
 
-    return std::ranges::to<std::vector>(returns_values | std::views::transform(fromWasmEdgeValue));
+    return std::ranges::to<VectorWithMemoryTracking<WasmVal>>(returns_values | std::views::transform(fromWasmEdgeValue));
 }
 
 
@@ -505,22 +501,22 @@ public:
         }
     }
 
-    std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
+    std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const override
     {
         auto compartment = std::make_unique<WasmEdgeCompartment>(cfg);
         for (const auto & host_function : host_functions)
             compartment->addHostFunction(&host_function);
-        compartment->loadModuleFromAst(ast_module.get());
+        compartment->loadModuleFromAst(ast_module.get(), std::move(stop_token));
         return compartment;
     }
 
-    std::vector<WasmFunctionDeclaration> getImports() const override
+    VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const override
     {
         auto imports_length = WasmEdge_ASTModuleListImportsLength(ast_module.get());
         std::vector<const WasmEdge_ImportTypeContext *> imports(imports_length);
         WasmEdge_ASTModuleListImports(ast_module.get(), imports.data(), imports_length);
 
-        std::vector<WasmFunctionDeclaration> result;
+        VectorWithMemoryTracking<WasmFunctionDeclaration> result;
 
         for (const auto * import_ctx : imports)
         {
