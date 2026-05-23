@@ -104,7 +104,24 @@ RopeNode Rope::popFront()
 {
     RopeNode node = std::move(nodes.front());
     nodes.pop_front();
-    /// Intentionally do NOT update `intervals` — see class doc.
+
+    /// Rebuild `intervals` from the remaining nodes so that coverage queries
+    /// (`range`, `covers`, `gaps`, `coveredBytes`) reflect what is actually
+    /// still available. `PipelineReadBuffer::seek` reads `current_rope.range`
+    /// to decide whether `new_pos` is reachable in the unconsumed nodes —
+    /// leaving `intervals` stale here was a silent data-corruption bug
+    /// (callers saw a "found in remaining rope" path even when the popped
+    /// nodes contained the requested offset, and `nextImpl` then served
+    /// bytes from a different region of the file as if they were the
+    /// requested ones).
+    ///
+    /// Rebuild is O(n^2) worst case but n is small (~window_size /
+    /// source_read_block_size, typically <10 nodes) and `popFront` is only
+    /// called by streaming consumers.
+    intervals.clear();
+    for (const auto & n : nodes)
+        mergeInterval(n.range());
+
     return node;
 }
 

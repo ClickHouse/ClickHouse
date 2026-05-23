@@ -221,6 +221,51 @@ TEST(Rope, PopFrontReleasesBuffer)
     EXPECT_TRUE(weak.expired());
 }
 
+TEST(Rope, PopFrontUpdatesCoverageAndRange)
+{
+    /// Regression for the stale-intervals bug: after `popFront`, coverage
+    /// queries (`range`, `covers`, `coveredBytes`) must reflect the bytes
+    /// still in the rope — NOT the bytes that were appended originally.
+    ///
+    /// `PipelineReadBuffer::seek` reads `current_rope.range()` to decide
+    /// whether `new_pos` is still reachable; if `popFront` left `intervals`
+    /// stale, a backwards seek into already-consumed territory would
+    /// "succeed" and the next `nextImpl` would serve bytes from the wrong
+    /// region of the file. Manifested in fast-test as
+    /// `UNKNOWN_CODEC: codec family 0` (the wrong byte interpreted as a
+    /// compression header).
+    auto buf = std::make_shared<OwnedRopeBuffer>(300);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.append(RopeNode{buf, 100, 100, 100});
+    rope.append(RopeNode{buf, 200, 100, 200});
+
+    EXPECT_EQ(rope.range().offset, 0u);
+    EXPECT_EQ(rope.range().size, 300u);
+    EXPECT_TRUE(rope.covers({50, 50}));
+
+    /// Pop the first node — coverage should shrink to [100, 300).
+    rope.popFront();
+    EXPECT_EQ(rope.range().offset, 100u);
+    EXPECT_EQ(rope.range().size, 200u);
+    EXPECT_FALSE(rope.covers({50, 50}));   /// no longer covered
+    EXPECT_TRUE(rope.covers({150, 50}));
+    EXPECT_EQ(rope.coveredBytes({0, 300}), 200u);
+
+    /// Pop the second node — coverage shrinks to [200, 300).
+    rope.popFront();
+    EXPECT_EQ(rope.range().offset, 200u);
+    EXPECT_EQ(rope.range().size, 100u);
+    EXPECT_FALSE(rope.covers({150, 50}));
+    EXPECT_TRUE(rope.covers({250, 50}));
+
+    /// Pop the last node — empty rope.
+    rope.popFront();
+    EXPECT_TRUE(rope.empty());
+    EXPECT_EQ(rope.range().offset, 0u);
+    EXPECT_EQ(rope.range().size, 0u);
+}
+
 namespace
 {
     /// Build a Rope of `count` adjacent nodes, each `node_size` bytes, starting

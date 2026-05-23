@@ -80,9 +80,10 @@ struct RopeNode
 ///      kept (in case different callers want different physical sources for
 ///      the overlap), but coverage stays correct regardless of duplication.
 ///
-/// `popFront` is the one exception: it removes a node without adjusting
-/// `intervals` (the consumer that uses `popFront` — `PipelineReadBuffer` —
-/// only streams; it doesn't query coverage after consumption).
+/// `popFront` rebuilds `intervals` from the remaining nodes so that
+/// coverage queries stay consistent after consumption (`PipelineReadBuffer`
+/// uses `range()` in its seek path to decide whether `new_pos` is still
+/// reachable in the unconsumed nodes).
 class Rope
 {
 public:
