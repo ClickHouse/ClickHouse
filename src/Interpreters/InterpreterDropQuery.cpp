@@ -24,6 +24,7 @@
 #include <Common/FailPoint.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 

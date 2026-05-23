@@ -611,7 +611,7 @@ void applyPostingsAny(
     IColumn & column,
     PostingsMap & postings_map,
     PaddedPODArray<UInt32> & indices,
-    const std::vector<String> & search_tokens,
+    const VectorWithMemoryTracking<String> & search_tokens,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows)
@@ -650,7 +650,7 @@ void applyPostingsAll(
     IColumn & column,
     PostingsMap & postings_map,
     PaddedPODArray<UInt32> & indices,
-    const std::vector<String> & search_tokens,
+    const VectorWithMemoryTracking<String> & search_tokens,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows)
@@ -708,7 +708,7 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
     if (!search_query->patterns.empty())
     {
-        std::vector<String> matched_tokens;
+        VectorWithMemoryTracking<String> matched_tokens;
         for (const auto & token : granule->getPatternTokensForTextQuery(*search_query))
             if (postings.contains(token))
                 matched_tokens.push_back(String(token));
