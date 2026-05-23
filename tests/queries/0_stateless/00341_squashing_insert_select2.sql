@@ -1,4 +1,7 @@
--- Tags: log-engine
+-- Tags: log-engine, no-random-settings
+-- Asserts exact `blockSize()` distribution of squashed inserts whose source is
+-- `UNION ALL`; randomized `max_streams_for_union_step` reshapes the pipeline
+-- and changes block boundaries.
 
 DROP TABLE IF EXISTS numbers_squashed;
 CREATE TABLE numbers_squashed (number UInt8) ENGINE = StripeLog;

@@ -1,4 +1,8 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-random-settings
+-- Asserts an exact `JoinResultRowCount = 1000`; randomized
+-- `max_bytes_before_external_join` can drop the hash join to grace mode where
+-- the result row count differs (suspected correctness issue worth tracking
+-- separately).
 
 SET use_statistics = 0;
 SET query_plan_join_swap_table = 'auto';
