@@ -36,6 +36,9 @@ class ClickHouseBinary:
             f"mkdir -p {self.config_path}/users.d",
             f"cp ./programs/server/config.xml ./programs/server/users.xml {self.config_path}",
             f"cp -r --dereference ./programs/server/config.d {self.config_path}",
+            # Drop in SQLLogic-specific server overrides on top of the default
+            # config.d. See tests/sqllogic/server-config-overrides for context.
+            f"cp ./tests/sqllogic/server-config-overrides/*.xml {self.config_path}/config.d/",
             f"chmod +x {self.path}/clickhouse",
             f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-server",
             f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-client",

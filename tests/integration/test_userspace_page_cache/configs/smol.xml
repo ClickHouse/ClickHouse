@@ -5,5 +5,12 @@
     <page_cache_free_memory_ratio>0.1</page_cache_free_memory_ratio>
     <page_cache_shards>4</page_cache_shards>
     <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
+    <!-- The test exercises page-cache shrinkage at a deliberately tight 4 GiB
+         limit. The default `memory_worker_rss_speculative_reserve_ratio = 1.0`
+         doubles the observed `resident - tracked` gap on top of RSS, which
+         under this limit pushes the biased value past `max_server_memory_usage`
+         and makes the read query that the test relies on fail with
+         `MEMORY_LIMIT_EXCEEDED`. The PR's mechanism is not under test here. -->
+    <memory_worker_rss_speculative_reserve_ratio>0</memory_worker_rss_speculative_reserve_ratio>
     <asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s>
 </clickhouse>

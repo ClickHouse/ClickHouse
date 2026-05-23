@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- The SQLLogic suite drives a single server with the production default
+         `max_server_memory_usage_to_ram_ratio = 0.9`. On busy runners the
+         observed `resident - tracked` gap (jemalloc retained pages, page
+         caches, etc.) is large in absolute terms, so the default
+         `memory_worker_rss_speculative_reserve_ratio = 1.0` inflates the
+         biased RSS past the auto-derived `max_server_memory_usage` and makes
+         otherwise-passing queries throw `MEMORY_LIMIT_EXCEEDED`. The PR's
+         mechanism is not under test here, so pin it to `0` for SQLLogic. -->
+    <memory_worker_rss_speculative_reserve_ratio>0</memory_worker_rss_speculative_reserve_ratio>
+</clickhouse>
