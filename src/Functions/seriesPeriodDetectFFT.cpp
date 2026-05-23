@@ -20,6 +20,7 @@
 #    include <Functions/FunctionFactory.h>
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
+#    include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -122,11 +123,11 @@ public:
             return true;
         }
 
-        std::vector<Float64> src;
+        VectorWithMemoryTracking<Float64> src;
         src.reserve(len);
         for (size_t i = start; i < end; ++i)
             src.push_back(static_cast<Float64>(src_vec[i]));
-        std::vector<std::complex<double>> out((len / 2) + 1);
+        VectorWithMemoryTracking<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
 
