@@ -487,6 +487,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     }
     catch (...)
     {
+        /// Ok: see comment above; the per-granule scalar path is the safe fallback.
         minmax_actions = nullptr;
         minmax_input_names.clear();
     }
