@@ -346,7 +346,7 @@ TEST(Rope, CopyToFlattensCoveredRange)
 TEST(Rope, CopyToWorksWithUnsortedNodes)
 {
     /// Nodes appended out of order should still flatten correctly via copyTo
-    /// (it sorts internally).
+    /// (Rope::append keeps `nodes` sorted by logical_offset on the way in).
     Rope rope;
     auto b1 = std::make_shared<OwnedRopeBuffer>(5);
     auto b2 = std::make_shared<OwnedRopeBuffer>(5);
@@ -359,4 +359,164 @@ TEST(Rope, CopyToWorksWithUnsortedNodes)
     EXPECT_EQ(rope.copyTo(out.data(), {0, 10}), 10u);
     EXPECT_EQ(std::string(out.begin(), out.begin() + 5), "AAAAA");
     EXPECT_EQ(std::string(out.begin() + 5, out.end()), "BBBBB");
+}
+
+TEST(Rope, AppendKeepsNodesSortedByLogicalOffset)
+{
+    /// `append` inserts into `nodes` sorted by `logical_offset`, so consumers
+    /// (PipelineReadBuffer::popFront, copyTo) can rely on monotonic iteration
+    /// regardless of insertion order.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 10, 50});
+    rope.append(RopeNode{buf, 0, 10, 0});
+    rope.append(RopeNode{buf, 0, 10, 30});
+    rope.append(RopeNode{buf, 0, 10, 70});
+
+    const auto & ns = rope.getNodes();
+    ASSERT_EQ(ns.size(), 4u);
+    EXPECT_EQ(ns[0].logical_offset, 0u);
+    EXPECT_EQ(ns[1].logical_offset, 30u);
+    EXPECT_EQ(ns[2].logical_offset, 50u);
+    EXPECT_EQ(ns[3].logical_offset, 70u);
+}
+
+TEST(Rope, AppendEqualOffsetIsStable)
+{
+    /// Equal-offset nodes keep insertion order (matters when a duplicate
+    /// node is appended for the same logical bytes — e.g. cache hit + later
+    /// source read for the same offset).
+    auto b1 = std::make_shared<OwnedRopeBuffer>(1);
+    auto b2 = std::make_shared<OwnedRopeBuffer>(1);
+    *b1->data() = 'F';
+    *b2->data() = 'S';
+    Rope rope;
+    rope.append(RopeNode{b1, 0, 1, 42});
+    rope.append(RopeNode{b2, 0, 1, 42});
+
+    const auto & ns = rope.getNodes();
+    ASSERT_EQ(ns.size(), 2u);
+    EXPECT_EQ(*ns[0].data(), 'F');
+    EXPECT_EQ(*ns[1].data(), 'S');
+}
+
+TEST(Rope, AppendOverlappingNodeKeepsCoverageIntact)
+{
+    /// The scenario that motivated the coverage-tracking redesign:
+    /// after `{0,100}` is in, a later `{50,10}` is redundant — coverage
+    /// stays exactly `[0,100)` and a single interval represents it.
+    auto buf = std::make_shared<OwnedRopeBuffer>(200);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.append(RopeNode{buf, 50, 10, 50});
+
+    EXPECT_TRUE(rope.covers({0, 100}));
+    EXPECT_EQ(rope.coveredBytes({0, 100}), 100u);
+    EXPECT_EQ(rope.range().offset, 0u);
+    EXPECT_EQ(rope.range().size, 100u);
+
+    const auto & ivs = rope.getIntervals();
+    ASSERT_EQ(ivs.size(), 1u);
+    EXPECT_EQ(ivs[0].offset, 0u);
+    EXPECT_EQ(ivs[0].size, 100u);
+}
+
+TEST(Rope, AppendDisjointNodesProducesMultipleIntervals)
+{
+    /// Two non-touching ranges produce two intervals, and `gaps` reports the
+    /// hole between them.
+    auto buf = std::make_shared<OwnedRopeBuffer>(200);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 30, 0});
+    rope.append(RopeNode{buf, 50, 30, 50});
+
+    const auto & ivs = rope.getIntervals();
+    ASSERT_EQ(ivs.size(), 2u);
+    EXPECT_EQ(ivs[0].offset, 0u);
+    EXPECT_EQ(ivs[0].size, 30u);
+    EXPECT_EQ(ivs[1].offset, 50u);
+    EXPECT_EQ(ivs[1].size, 30u);
+
+    EXPECT_FALSE(rope.covers({0, 80}));
+    auto g = rope.gaps({0, 80});
+    ASSERT_EQ(g.size(), 1u);
+    EXPECT_EQ(g[0].offset, 30u);
+    EXPECT_EQ(g[0].size, 20u);
+}
+
+TEST(Rope, AppendTouchingNodesCoalesceIntoOneInterval)
+{
+    /// `[0,50)` then `[50,50)` — strictly adjacent (no overlap) but touching
+    /// — should collapse into a single interval `[0,100)`.
+    auto buf = std::make_shared<OwnedRopeBuffer>(200);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 50, 0});
+    rope.append(RopeNode{buf, 50, 50, 50});
+
+    const auto & ivs = rope.getIntervals();
+    ASSERT_EQ(ivs.size(), 1u);
+    EXPECT_EQ(ivs[0].offset, 0u);
+    EXPECT_EQ(ivs[0].size, 100u);
+}
+
+TEST(Rope, AppendBridgingNodeMergesMultipleIntervals)
+{
+    /// `[0,20)` and `[50,20)` start as two intervals; then `[15,40)` bridges
+    /// them into one. Exercises the "merge multiple existing intervals into
+    /// one" branch of `mergeInterval`.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 20, 0});
+    rope.append(RopeNode{buf, 0, 20, 50});
+    ASSERT_EQ(rope.getIntervals().size(), 2u);
+
+    rope.append(RopeNode{buf, 0, 40, 15});
+    const auto & ivs = rope.getIntervals();
+    ASSERT_EQ(ivs.size(), 1u);
+    EXPECT_EQ(ivs[0].offset, 0u);
+    EXPECT_EQ(ivs[0].size, 70u);
+}
+
+TEST(Rope, AppendRopeMergesNodesAndIntervals)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope a;
+    a.append(RopeNode{buf, 0, 10, 0});
+    a.append(RopeNode{buf, 0, 10, 40});
+
+    Rope b;
+    b.append(RopeNode{buf, 0, 10, 20});
+    b.append(RopeNode{buf, 0, 10, 60});
+
+    a.append(std::move(b));
+
+    const auto & ns = a.getNodes();
+    ASSERT_EQ(ns.size(), 4u);
+    EXPECT_EQ(ns[0].logical_offset, 0u);
+    EXPECT_EQ(ns[1].logical_offset, 20u);
+    EXPECT_EQ(ns[2].logical_offset, 40u);
+    EXPECT_EQ(ns[3].logical_offset, 60u);
+
+    const auto & ivs = a.getIntervals();
+    ASSERT_EQ(ivs.size(), 4u);
+    EXPECT_EQ(ivs[0].offset, 0u);
+    EXPECT_EQ(ivs[1].offset, 20u);
+    EXPECT_EQ(ivs[2].offset, 40u);
+    EXPECT_EQ(ivs[3].offset, 60u);
+}
+
+TEST(Rope, ShiftMovesNodesAndIntervals)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 10, 100});
+    rope.append(RopeNode{buf, 0, 10, 200});
+
+    rope.shift(-50);
+    EXPECT_EQ(rope.getNodes()[0].logical_offset, 50u);
+    EXPECT_EQ(rope.getNodes()[1].logical_offset, 150u);
+    EXPECT_EQ(rope.getIntervals()[0].offset, 50u);
+    EXPECT_EQ(rope.getIntervals()[1].offset, 150u);
+    EXPECT_EQ(rope.range().offset, 50u);
+    EXPECT_EQ(rope.range().size, 110u);
 }

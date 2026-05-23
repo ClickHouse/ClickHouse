@@ -32,45 +32,95 @@ void OwnedRopeBuffer::transferTo(MemoryTracker * /* new_tracker */)
 
 ByteRange Rope::range() const
 {
-    if (nodes.empty())
+    if (intervals.empty())
         return {0, 0};
-    size_t start = nodes.front().logical_offset;
-    const auto & last = nodes.back();
-    size_t end = last.logical_offset + last.size;
+    size_t start = intervals.front().offset;
+    size_t end = intervals.back().end();
     return {start, end - start};
+}
+
+void Rope::mergeInterval(ByteRange iv)
+{
+    if (iv.size == 0)
+        return;
+
+    /// Find the first existing interval that touches or overlaps `iv` — i.e.
+    /// the first one whose `end() >= iv.offset`. Anything strictly before
+    /// (end() < iv.offset) is left alone.
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), iv.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() < v; });
+
+    size_t merged_start = iv.offset;
+    size_t merged_end = iv.end();
+    auto erase_begin = it;
+    while (it != intervals.end() && it->offset <= merged_end)
+    {
+        merged_start = std::min(merged_start, it->offset);
+        merged_end = std::max(merged_end, it->end());
+        ++it;
+    }
+    auto erase_end = it;
+    auto pos = intervals.erase(erase_begin, erase_end);
+    intervals.insert(pos, ByteRange{merged_start, merged_end - merged_start});
 }
 
 void Rope::append(RopeNode node)
 {
-    nodes.push_back(std::move(node));
+    /// Insert into `nodes` keeping the sort by logical_offset (stable on tie:
+    /// equal-offset nodes keep insertion order).
+    ByteRange node_range = node.range();
+    auto it = std::upper_bound(nodes.begin(), nodes.end(), node.logical_offset,
+        [](size_t v, const RopeNode & n) { return v < n.logical_offset; });
+    nodes.insert(it, std::move(node));
+    mergeInterval(node_range);
 }
 
 void Rope::append(Rope && other)
 {
+    if (other.nodes.empty())
+        return;
+
+    /// Splice nodes then in-place merge — both halves are individually sorted
+    /// by `logical_offset` by invariant.
+    size_t split_idx = nodes.size();
     nodes.insert(
         nodes.end(),
         std::make_move_iterator(other.nodes.begin()),
         std::make_move_iterator(other.nodes.end()));
+    std::inplace_merge(
+        nodes.begin(),
+        nodes.begin() + static_cast<std::ptrdiff_t>(split_idx),
+        nodes.end(),
+        [](const RopeNode & a, const RopeNode & b) { return a.logical_offset < b.logical_offset; });
+
+    for (const auto & iv : other.intervals)
+        mergeInterval(iv);
+
     other.nodes.clear();
+    other.intervals.clear();
 }
 
 RopeNode Rope::popFront()
 {
     RopeNode node = std::move(nodes.front());
     nodes.pop_front();
+    /// Intentionally do NOT update `intervals` — see class doc.
     return node;
 }
 
 Rope Rope::slice(ByteRange req) const
 {
     Rope result;
+    /// Nodes are sorted by `logical_offset`, so we can stop early.
     for (const auto & node : nodes)
     {
         size_t node_start = node.logical_offset;
         size_t node_end = node_start + node.size;
         size_t req_end = req.end();
 
-        if (node_end <= req.offset || node_start >= req_end)
+        if (node_start >= req_end)
+            break;
+        if (node_end <= req.offset)
             continue;
 
         size_t overlap_start = std::max(node_start, req.offset);
@@ -82,7 +132,8 @@ Rope Rope::slice(ByteRange req) const
         sliced.buffer_offset = node.buffer_offset + trim_front;
         sliced.size = overlap_end - overlap_start;
         sliced.logical_offset = overlap_start;
-        result.nodes.push_back(std::move(sliced));
+        /// Go through `append` so intervals on the result are maintained.
+        result.append(std::move(sliced));
     }
     return result;
 }
@@ -97,48 +148,40 @@ size_t Rope::totalBytes() const
 
 size_t Rope::coveredBytes(ByteRange req) const
 {
-    size_t covered = 0;
-    for (const auto & node : nodes)
+    if (req.size == 0)
+        return 0;
+    size_t total = 0;
+    /// First interval whose `end > req.offset` — the first one that could
+    /// contribute coverage.
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
+    for (; it != intervals.end() && it->offset < req.end(); ++it)
     {
-        size_t node_start = node.logical_offset;
-        size_t node_end = node_start + node.size;
-        size_t lo = std::max(node_start, req.offset);
-        size_t hi = std::min(node_end, req.end());
+        size_t lo = std::max(it->offset, req.offset);
+        size_t hi = std::min(it->end(), req.end());
         if (lo < hi)
-            covered += hi - lo;
+            total += hi - lo;
     }
-    return covered;
+    return total;
 }
 
 std::vector<ByteRange> Rope::gaps(ByteRange req) const
 {
-    /// Collect the intervals of `req` that each node covers, then return the
-    /// complement. Nodes may be in any order and may overlap each other — we
-    /// merge as we go via a sorted intervals list.
-    std::vector<std::pair<size_t, size_t>> intervals;
-    intervals.reserve(nodes.size());
-    for (const auto & node : nodes)
-    {
-        size_t lo = std::max(node.logical_offset, req.offset);
-        size_t hi = std::min(node.logical_offset + node.size, req.end());
-        if (lo < hi)
-            intervals.emplace_back(lo, hi);
-    }
-    std::sort(intervals.begin(), intervals.end());
-
     std::vector<ByteRange> result;
+    if (req.size == 0)
+        return result;
+
     size_t cur = req.offset;
-    const size_t end = req.end();
-    for (const auto & [lo, hi] : intervals)
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
+    for (; it != intervals.end() && it->offset < req.end(); ++it)
     {
-        if (lo > cur)
-            result.push_back({cur, lo - cur});
-        cur = std::max(cur, hi);
-        if (cur >= end)
-            break;
+        if (it->offset > cur)
+            result.push_back({cur, it->offset - cur});
+        cur = std::max(cur, it->end());
     }
-    if (cur < end)
-        result.push_back({cur, end - cur});
+    if (cur < req.end())
+        result.push_back({cur, req.end() - cur});
     return result;
 }
 
@@ -146,7 +189,12 @@ bool Rope::covers(ByteRange req) const
 {
     if (req.size == 0)
         return true;
-    return coveredBytes(req) == req.size;
+    /// Find the first interval whose end is past req.offset. By the disjoint
+    /// invariant, `req` is fully covered iff that interval starts at or
+    /// before `req.offset` AND ends at or after `req.end()`.
+    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
+        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
+    return it != intervals.end() && it->offset <= req.offset && it->end() >= req.end();
 }
 
 Rope Rope::extract(ByteRange req) const
@@ -159,31 +207,28 @@ void Rope::shift(ssize_t delta)
 {
     for (auto & node : nodes)
         node.logical_offset = static_cast<size_t>(static_cast<ssize_t>(node.logical_offset) + delta);
+    for (auto & iv : intervals)
+        iv.offset = static_cast<size_t>(static_cast<ssize_t>(iv.offset) + delta);
 }
 
 size_t Rope::copyTo(char * dst, ByteRange req) const
 {
     chassert(covers(req));
-    /// Walk nodes in sorted order so the output is contiguous regardless of
-    /// node insertion order. (gaps() does the same.)
-    std::vector<const RopeNode *> sorted;
-    sorted.reserve(nodes.size());
-    for (const auto & node : nodes)
-        if (node.logical_offset + node.size > req.offset && node.logical_offset < req.end())
-            sorted.push_back(&node);
-    std::sort(sorted.begin(), sorted.end(),
-        [](const RopeNode * a, const RopeNode * b) { return a->logical_offset < b->logical_offset; });
-
+    /// Nodes are sorted by logical_offset (invariant) and overlap, if any, is
+    /// resolved by "later-inserted wins for the overlap bytes" — which falls
+    /// out of the memcpy order naturally below.
     size_t written = 0;
-    for (const auto * n : sorted)
+    for (const auto & n : nodes)
     {
-        size_t lo = std::max(n->logical_offset, req.offset);
-        size_t hi = std::min(n->logical_offset + n->size, req.end());
+        if (n.logical_offset >= req.end())
+            break;
+        size_t lo = std::max(n.logical_offset, req.offset);
+        size_t hi = std::min(n.logical_offset + n.size, req.end());
         if (lo >= hi)
             continue;
-        size_t src_off = n->buffer_offset + (lo - n->logical_offset);
+        size_t src_off = n.buffer_offset + (lo - n.logical_offset);
         size_t copy = hi - lo;
-        std::memcpy(dst + (lo - req.offset), n->buffer->data() + src_off, copy);
+        std::memcpy(dst + (lo - req.offset), n.buffer->data() + src_off, copy);
         written += copy;
     }
     return written;

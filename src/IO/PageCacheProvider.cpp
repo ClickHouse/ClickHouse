@@ -107,16 +107,23 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
             inject_eviction,
             [&](const PageCache::MappedPtr & new_cell)
             {
-                /// Copy data from the Rope into the cache cell.
+                /// Copy the rope's coverage of this block into the cache
+                /// cell in logical-offset order. `Rope::copyTo` walks the
+                /// rope's nodes (which `Rope::append` keeps sorted) and
+                /// writes each byte at `node.logical_offset - block.offset`
+                /// inside `new_cell` — so the cell is filled correctly even
+                /// when the rope's nodes came from a mix of cache hits and
+                /// source reads at arbitrary positions inside the block.
+                ///
+                /// Previously this loop walked nodes in iteration order and
+                /// memcpy'd sequentially, which corrupted the cell whenever a
+                /// partial PageCache hit and a source-read fill arrived as
+                /// non-monotonic nodes.
                 Rope slice = data.slice(block_range);
-
-                size_t pos = 0;
-                for (const auto & node : slice.getNodes())
-                {
-                    size_t copy_size = std::min(node.size, new_cell->size() - pos);
-                    std::memcpy(new_cell->data() + pos, node.data(), copy_size);
-                    pos += copy_size;
-                }
+                ByteRange covered = slice.range();
+                size_t pos = covered.size;
+                if (pos > 0)
+                    slice.copyTo(new_cell->data(), covered);
 
                 /// If data didn't fully cover the block (e.g. end of file),
                 /// zero the remaining bytes.

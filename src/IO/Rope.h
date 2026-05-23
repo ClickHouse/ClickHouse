@@ -65,6 +65,24 @@ struct RopeNode
 /// Sequence of RopeNodes covering a logical range.
 /// Nodes are refcounted via shared_ptr — slicing is metadata-only,
 /// the backing buffers stay alive as long as any Rope references them.
+///
+/// Two invariants maintained on every `append`:
+///   1. `nodes` are sorted by `logical_offset` (stable on tie — equal-offset
+///      nodes keep insertion order). So `popFront` always returns the
+///      lowest-offset node, and `copyTo` can write contiguous output without
+///      sorting.
+///   2. `intervals` is a sorted, disjoint, merged coverage set —
+///      `intervals[i].end() < intervals[i+1].offset` (strictly disjoint, no
+///      touching). Coverage queries (`covers` / `gaps` / `coveredBytes` /
+///      `range`) consult this set, so they are O(log intervals) for hits and
+///      O(intervals∩req) overall — they do NOT scan `nodes`. Overlapping
+///      appends collapse into the same interval; their data nodes are still
+///      kept (in case different callers want different physical sources for
+///      the overlap), but coverage stays correct regardless of duplication.
+///
+/// `popFront` is the one exception: it removes a node without adjusting
+/// `intervals` (the consumer that uses `popFront` — `PipelineReadBuffer` —
+/// only streams; it doesn't query coverage after consumption).
 class Rope
 {
 public:
@@ -92,9 +110,9 @@ public:
     /// Number of bytes in `req` covered by this rope.
     size_t coveredBytes(ByteRange req) const;
 
-    /// Shift every node's `logical_offset` by `delta`. Used when relocating a
-    /// rope's logical coordinates (e.g. stripping the encryption header
-    /// before exposing data to the caller).
+    /// Shift every node's `logical_offset` (and every interval's `offset`)
+    /// by `delta`. Used when relocating a rope's logical coordinates (e.g.
+    /// stripping the encryption header before exposing data to the caller).
     void shift(ssize_t delta);
 
     /// Flatten this rope's coverage of `req` into the contiguous buffer at
@@ -103,16 +121,34 @@ public:
     /// (== `req.size` on success).
     size_t copyTo(char * dst, ByteRange req) const;
 
-    /// Remove and return the first node.
+    /// Remove and return the lowest-offset node (the front of `nodes`).
+    /// Does NOT update `intervals` — coverage queries after popFront return
+    /// the appended (pre-pop) coverage. Intended for streaming consumers that
+    /// don't query coverage after consumption.
     RopeNode popFront();
 
-    std::deque<RopeNode> & getNodes() { return nodes; }
+    /// Read-only view of the nodes deque. Sorted by `logical_offset`.
+    /// No non-`const` overload: mutating the deque would silently break the
+    /// sort invariant and the coverage tracking.
     const std::deque<RopeNode> & getNodes() const { return nodes; }
     bool empty() const { return nodes.empty(); }
+
+    /// Sum of `node.size` over all nodes — counts overlap twice.
+    /// `coveredBytes(range())` is the unique-byte equivalent.
     size_t totalBytes() const;
 
+    /// Read-only view of the disjoint coverage intervals. Mostly for tests
+    /// and diagnostics; production callers should use `covers` / `gaps` /
+    /// `range`.
+    const std::vector<ByteRange> & getIntervals() const { return intervals; }
+
 private:
+    /// Merge `iv` into `intervals`, coalescing with any overlapping or
+    /// touching existing intervals.
+    void mergeInterval(ByteRange iv);
+
     std::deque<RopeNode> nodes;
+    std::vector<ByteRange> intervals;
 };
 
 }

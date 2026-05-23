@@ -1061,11 +1061,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         }
     }
 
-    /// Sort nodes by logical offset for predictable iteration.
-    auto & nodes = result.getNodes();
-    std::sort(nodes.begin(), nodes.end(),
-        [](const RopeNode & a, const RopeNode & b)
-        { return a.logical_offset < b.logical_offset; });
+    /// `Rope` maintains sorted node order on every `append`, so no explicit
+    /// sort is needed here.
 
     /// Overflow guard: if the retained over-read exceeds `window_size`, the
     /// access pattern isn't matching what we speculated (callers aren't
