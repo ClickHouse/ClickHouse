@@ -89,34 +89,26 @@ SET optimize_trivial_view_pushdown_to_distributed = 1;
 DROP VIEW 04092_view_expr;
 
 -- -----------------------------------------------------------------------
--- Test 4: Non-deterministic expressions suppress the optimization.
+-- Test 4: Non-deterministic / server-local functions in the OUTER query
+-- suppress the optimization. The view body is read through
+-- StorageDistributed::read either way, so body non-determinism would not
+-- change semantics; the hazard is outer expressions, which the pushdown
+-- would otherwise ship to shards and evaluate per-shard (`hostName`,
+-- `serverUUID`, `nowInBlock`, `blockNumber`, `rand`, `now`, ...).
 -- -----------------------------------------------------------------------
 SET prefer_localhost_replica = 0;
 
-CREATE VIEW 04092_view_hostname AS
-    SELECT hostName() AS h, id FROM 04092_dist_replacing;
-
+-- hostName() in outer projection.
 SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
-FROM (EXPLAIN SELECT * FROM 04092_view_hostname);
+FROM (EXPLAIN SELECT hostName() FROM 04092_view_replacing);
 
-DROP VIEW 04092_view_hostname;
-
-CREATE VIEW 04092_view_rand AS
-    SELECT rand() AS r, id FROM 04092_dist_replacing;
-
+-- rand() in outer projection.
 SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
-FROM (EXPLAIN SELECT * FROM 04092_view_rand);
+FROM (EXPLAIN SELECT rand() FROM 04092_view_replacing);
 
-DROP VIEW 04092_view_rand;
-
--- Non-deterministic function in WHERE also suppresses the optimization.
-CREATE VIEW 04092_view_rand_where AS
-    SELECT id FROM 04092_dist_replacing WHERE rand() < 1;
-
+-- rand() in outer WHERE.
 SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
-FROM (EXPLAIN SELECT * FROM 04092_view_rand_where);
-
-DROP VIEW 04092_view_rand_where;
+FROM (EXPLAIN SELECT id FROM 04092_view_replacing WHERE rand() < 1);
 
 -- -----------------------------------------------------------------------
 -- Test 5: Column transformers on asterisks suppress the optimization.

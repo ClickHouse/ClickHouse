@@ -183,6 +183,44 @@ QueryTreeNodePtr findTableNodeByStorage(const QueryTreeNodePtr & node, const Sto
     return nullptr;
 }
 
+/// Returns true if `node` contains any function whose IFunctionBase::isDeterministic() is false.
+/// Used by the view-pushdown gate: the optimization rewrites the outer query so its expressions
+/// run on shards instead of the coordinator, which changes results for functions like hostName,
+/// serverUUID, nowInBlock, blockNumber, rand, now etc. Aggregate and window functions are not
+/// flagged here — FunctionNode::getFunction() only returns the resolved IFunctionBase for
+/// ordinary functions, returning nullptr otherwise.
+///
+/// ConstantNode is also inspected because the analyzer constant-folds suitable function calls
+/// (server-local constants such as hostName, serverUUID, version) into ConstantNodes that carry
+/// is_deterministic = false (see resolveFunction.cpp:1766). Without this branch the visitor
+/// would miss folded calls — only functions that vary per row (rand, now, ...) stay as
+/// FunctionNodes after analysis. Plain literals (SELECT 1) use the default-deterministic
+/// ConstantNode constructor and are not flagged.
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+            return true;
+    }
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (!constant_node->isDeterministic())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (containsNonDeterministicFunction(child))
+            return true;
+    }
+    return false;
+}
+
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
@@ -1240,6 +1278,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (view)
                 {
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
+                    /// Suppress the pushdown if the outer query references any non-deterministic
+                    /// or server-local function (hostName, serverUUID, nowInBlock, blockNumber,
+                    /// rand, now, ...). Without the optimization those are evaluated on the
+                    /// coordinator; with it they would be shipped to shards and evaluated per-shard,
+                    /// changing query semantics (`SELECT DISTINCT hostName() FROM v` is the canonical
+                    /// example). The view body needs no symmetric check: it is read through
+                    /// StorageDistributed::read in both the pushdown and non-pushdown paths, so any
+                    /// expressions inside the body are already evaluated on the shards either way.
+                    if (underlying_dist && containsNonDeterministicFunction(table_expression_query_info.query_tree))
+                        underlying_dist = nullptr;
                     if (underlying_dist)
                     {
                         const auto & view_sql_security = storage_snapshot->metadata->sql_security_type;
