@@ -19,7 +19,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers])
+url(URL [,format] [,structure] [,headers] [,body])
 ```
 
 ## Parameters {#parameters}
@@ -30,6 +30,7 @@ url(URL [,format] [,structure] [,headers])
 | `format`    | [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
+| `body`      | Request body in `body(content [, format])` form. `content` is either a constant string or a `SELECT` subquery. When a subquery is used, its output rows are streamed into the request body using the given output `format` (defaults to `JSONLines`). Specifying a body promotes the request from `GET` to `POST`.                                              |
 
 ## Returned value {#returned_value}
 
@@ -49,6 +50,43 @@ Inserting data from a `URL` into a table:
 CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
 INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
 SELECT * FROM test_table;
+```
+
+## Sending an HTTP request body {#sending-a-body}
+
+When the remote endpoint expects a `POST` payload, pass the body via the `body(...)` argument. The body can be a constant string or the result of a `SELECT` subquery. Specifying a body promotes the request from `GET` to `POST`; the body is streamed to the server as the subquery produces rows, so no intermediate buffering is required.
+
+Constant string body:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/echo',
+    JSONEachRow,
+    headers('Content-Type'='application/json'),
+    body('{"user":"alice"}')
+);
+```
+
+Subquery body (default output format is `JSONLines`):
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    headers('Content-Type'='application/json'),
+    body((SELECT id, name FROM local_table WHERE active))
+);
+```
+
+Subquery body with an explicit output format:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    headers('Content-Type'='text/csv'),
+    body((SELECT id, name FROM local_table WHERE active), CSVWithNames)
+);
 ```
 
 ## Globs in URL {#globs-in-url}

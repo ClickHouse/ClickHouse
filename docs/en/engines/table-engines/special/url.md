@@ -48,6 +48,8 @@ respectively. For processing `POST` requests, the remote server must support
 
 You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
 
+When used with the `url` table function, the request can carry an HTTP request body produced by a constant string or a `SELECT` subquery. See the [body argument](/sql-reference/table-functions/url#sending-a-body) of the `url` table function for details.
+
 ## Example {#example}
 
 **1.** Create a `url_engine_table` table on the server :
