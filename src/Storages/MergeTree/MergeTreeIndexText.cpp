@@ -1199,6 +1199,13 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
             readVarUInt(rows_range.begin, istr);
             readVarUInt(rows_range.end, istr);
 
+            if (rows_range.begin > std::numeric_limits<UInt32>::max() || rows_range.end > std::numeric_limits<UInt32>::max())
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted data in text index: posting list row range [{}, {}] exceeds UInt32 max",
+                    rows_range.begin, rows_range.end);
+            }
+
             info.offsets.emplace_back(offset_in_file);
             info.ranges.emplace_back(std::move(rows_range));
         }

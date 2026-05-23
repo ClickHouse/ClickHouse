@@ -123,7 +123,7 @@ private:
     /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
-    float lazy_density_threshold = 0.5f;
+    float lazy_density_threshold = 0.2f;
 
     /// Cached lazy cursors keyed by `(virtual column name, token)`. Cursors are forward-only and
     /// hold mutable segment/block position, so they must not be shared across columns.

@@ -891,6 +891,9 @@ void MergeTreeReaderTextIndex::fillColumnFallback(
 
 void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & granules)
 {
+    if (is_initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Precomputed text index granule must be set before the reader is initialized");
+
     auto it = granules.find(index.index->index.name);
 
     if (it != granules.end() && it->second)
