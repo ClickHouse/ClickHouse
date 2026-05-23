@@ -194,6 +194,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// context, so calling `CurrentThread::getQueryId()` there would return "".
     const std::string query_id(CurrentThread::getQueryId());
 
+    /// Experimental ReaderExecutor path owns prefetch / memory-cache / decryption
+    /// internally, so it must NOT be wrapped by `wrapAsyncPrefetch` /
+    /// `wrapMemoryCache` / `wrapDecryption`. In particular, when an
+    /// `AsynchronousBoundedReadBuffer` wraps us, `ThreadPoolRemoteFSReader::execute`
+    /// asserts `reader.buffer().begin() == request.buf` after `set()+next()` — but
+    /// `PipelineReadBuffer::nextImpl` exposes refcounted rope-node memory, not the
+    /// caller's external buffer, so that invariant cannot hold. Returning early
+    /// here bypasses the legacy wraps entirely.
+    if (auto pipeline_buf = tryBuildReaderExecutor(query_id))
+        return pipeline_buf;
+
     auto impl = gather
         ? buildGatherStage(query_id)        // Stages 1+2+3 (+3.5 DC)
         : buildSingleObjectStage(query_id); // Stages 1+2 (+2.5 DC)
@@ -203,6 +214,116 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     impl = wrapDecryption(std::move(impl));    // Stage 6 (encryption)
 
     return impl;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(const std::string & /*query_id*/) const
+{
+    const auto & settings = source->read_settings;
+    if (!settings.use_reader_executor)
+        return nullptr;
+
+    /// Build a source reader appropriate for the source variant. Falls back to
+    /// nullptr (and the caller picks the legacy path) for source types we do not
+    /// support yet.
+    std::shared_ptr<ISourceReader> source_reader;
+    size_t min_bytes_for_seek = ReaderExecutor::DEFAULT_MIN_BYTES_FOR_SEEK;
+
+    if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
+    {
+        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
+            source->objects.size(), local_src->path);
+        source_reader = std::make_shared<LocalSourceReader>(settings);
+        min_bytes_for_seek = 0; /// Local seeks are free.
+    }
+    else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
+    {
+        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for object storage, {} objects, gather={}",
+            source->objects.size(), gather);
+        source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
+    }
+    else if (const auto * backup_src = std::get_if<BackupSource>(&source->source))
+    {
+        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for backup, path={}", backup_src->path);
+        auto backup = backup_src->backup;
+        auto backup_path = backup_src->path;
+        source_reader = std::make_shared<BufferSourceReader>(
+            [backup, backup_path](const StoredObject &) { return backup->readFile(backup_path); },
+            "BackupSource");
+    }
+    else if (const auto * custom_src = std::get_if<CustomSource>(&source->source))
+    {
+        LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for custom source");
+        auto creator = custom_src->creator;
+        auto captured_settings = settings;
+        source_reader = std::make_shared<BufferSourceReader>(
+            [creator, captured_settings](const StoredObject & object)
+            {
+                /// External-buffer mode: ReaderExecutor drives reads via set()+next().
+                return creator(object, captured_settings, /*use_external_buffer=*/true, /*restrict_seek=*/false);
+            },
+            "CustomSource");
+    }
+
+    if (!source_reader)
+        return nullptr;
+
+    size_t total_file_size = 0;
+    for (const auto & obj : source->objects)
+        total_file_size += obj.bytes_size;
+
+    std::vector<std::shared_ptr<ICacheProvider>> executor_caches;
+    CacheKey executor_cache_key;
+
+    /// PageCache (memory) — goes first in chain (fastest).
+    if (memory_cache && memory_cache->cache)
+    {
+        const auto & pcs = memory_cache->page_cache_settings;
+        executor_caches.push_back(std::make_shared<PageCacheProvider>(
+            memory_cache->cache, pcs.page_cache_block_size, pcs.page_cache_inject_eviction));
+        executor_cache_key.path = memory_cache->custom_cache_path.value_or(
+            memory_cache->cache_path_prefix + source->objects.front().remote_path);
+        executor_cache_key.version = memory_cache->custom_file_version.value_or("");
+    }
+
+    /// FileCache (disk) — goes second in chain.
+    for (const auto & dc : filesystem_caches)
+    {
+        if (dc.cache)
+        {
+            executor_caches.push_back(std::make_shared<DiskCacheProvider>(
+                dc.cache, total_file_size, dc.cache_settings, dc.cache_log));
+
+            if (executor_cache_key.path.empty())
+                executor_cache_key.path = source->objects.front().remote_path;
+        }
+    }
+
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader,
+        source->objects,
+        std::move(executor_caches),
+        ReaderExecutor::DEFAULT_WINDOW_SIZE,
+        min_bytes_for_seek,
+        std::move(executor_cache_key));
+
+    if (prefetch_pool)
+        executor->setPrefetchPool(prefetch_pool);
+
+    if (buffer_limit)
+        executor->setBufferLimit(buffer_limit);
+
+    if (settings.enable_reader_executor_log)
+    {
+        if (auto global = Context::getGlobalContextInstance())
+            executor->setReaderExecutorLog(global->getReaderExecutorLog());
+    }
+
+    for (const auto & dec : decryption_stages)
+        executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);
+
+    executor->initDecryption();
+
+    return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
@@ -218,111 +339,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     if (!obj_source && !custom_source)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ReadPipeline: gather requires ObjectStorageSource or CustomSource");
-
-    /// Experimental: ReaderExecutor-based path.
-    /// Handles all source types with a unified cache chain.
-    if (settings.use_reader_executor)
-    {
-        std::shared_ptr<ISourceReader> source_reader;
-        size_t min_bytes_for_seek = ReaderExecutor::DEFAULT_MIN_BYTES_FOR_SEEK;
-
-        if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
-        {
-            LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
-                source->objects.size(), local_src->path);
-            source_reader = std::make_shared<LocalSourceReader>(settings);
-            min_bytes_for_seek = 0; /// Local seeks are free.
-        }
-        else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
-        {
-            LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for object storage, {} objects, gather={}",
-                source->objects.size(), gather);
-            source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
-        }
-        else if (const auto * backup_src = std::get_if<BackupSource>(&source->source))
-        {
-            LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for backup, path={}", backup_src->path);
-            auto backup = backup_src->backup;
-            auto backup_path = backup_src->path;
-            source_reader = std::make_shared<BufferSourceReader>(
-                [backup, backup_path](const StoredObject &) { return backup->readFile(backup_path); },
-                "BackupSource");
-        }
-        else if (const auto * custom_src = std::get_if<CustomSource>(&source->source))
-        {
-            LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for custom source");
-            auto creator = custom_src->creator;
-            auto captured_settings = settings;
-            source_reader = std::make_shared<BufferSourceReader>(
-                [creator, captured_settings](const StoredObject & object)
-                {
-                    /// External-buffer mode: ReaderExecutor drives reads via set()+next().
-                    return creator(object, captured_settings, /*use_external_buffer=*/true, /*restrict_seek=*/false);
-                },
-                "CustomSource");
-        }
-
-        if (source_reader)
-        {
-            size_t total_file_size = 0;
-            for (const auto & obj : source->objects)
-                total_file_size += obj.bytes_size;
-
-            std::vector<std::shared_ptr<ICacheProvider>> executor_caches;
-            CacheKey executor_cache_key;
-
-            /// PageCache (memory) — goes first in chain (fastest).
-            if (memory_cache && memory_cache->cache)
-            {
-                const auto & pcs = memory_cache->page_cache_settings;
-                executor_caches.push_back(std::make_shared<PageCacheProvider>(
-                    memory_cache->cache, pcs.page_cache_block_size, pcs.page_cache_inject_eviction));
-                executor_cache_key.path = memory_cache->custom_cache_path.value_or(
-                    memory_cache->cache_path_prefix + source->objects.front().remote_path);
-                executor_cache_key.version = memory_cache->custom_file_version.value_or("");
-            }
-
-            /// FileCache (disk) — goes second in chain.
-            for (const auto & dc : filesystem_caches)
-            {
-                if (dc.cache)
-                {
-                    executor_caches.push_back(std::make_shared<DiskCacheProvider>(
-                        dc.cache, total_file_size, dc.cache_settings, dc.cache_log));
-
-                    if (executor_cache_key.path.empty())
-                        executor_cache_key.path = source->objects.front().remote_path;
-                }
-            }
-
-            auto executor = std::make_unique<ReaderExecutor>(
-                source_reader,
-                source->objects,
-                std::move(executor_caches),
-                ReaderExecutor::DEFAULT_WINDOW_SIZE,
-                min_bytes_for_seek,
-                std::move(executor_cache_key));
-
-            if (prefetch_pool)
-                executor->setPrefetchPool(prefetch_pool);
-
-            if (buffer_limit)
-                executor->setBufferLimit(buffer_limit);
-
-            if (settings.enable_reader_executor_log)
-            {
-                if (auto global = Context::getGlobalContextInstance())
-                    executor->setReaderExecutorLog(global->getReaderExecutorLog());
-            }
-
-            for (const auto & dec : decryption_stages)
-                executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);
-
-            executor->initDecryption();
-
-            return std::make_unique<PipelineReadBuffer>(std::move(executor));
-        }
-    }
 
     /// Step 1: Build base gather_creator that reads from the source.
     ReadBufferFromRemoteFSGather::ReadBufferCreator gather_creator;

@@ -241,6 +241,12 @@ private:
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.
     /// `query_id` is captured once on the calling thread before any stage runs.
+    /// Experimental `ReaderExecutor` path. Returns nullptr when the setting is off
+    /// or the source variant is not supported, so the caller falls back to the
+    /// legacy matryoshka pipeline. When it returns a buffer, `build` must NOT
+    /// apply `wrapMemoryCache` / `wrapAsyncPrefetch` / `wrapDecryption` — the
+    /// executor handles those stages internally.
+    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor(const std::string & query_id) const;
     std::unique_ptr<ReadBufferFromFileBase> buildGatherStage(const std::string & query_id) const;
     std::unique_ptr<ReadBufferFromFileBase> buildSingleObjectStage(const std::string & query_id) const;
     std::unique_ptr<ReadBufferFromFileBase> wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const;
