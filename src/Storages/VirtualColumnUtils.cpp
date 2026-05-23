@@ -398,6 +398,12 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
 
+    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
+    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
+    const auto hive_format_settings = hive_map.empty()
+        ? FormatSettings{}
+        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+
     for (const auto & virtual_column : requested_virtual_columns)
     {
         if (virtual_column.name == "_path")
@@ -503,7 +509,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
-            const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
