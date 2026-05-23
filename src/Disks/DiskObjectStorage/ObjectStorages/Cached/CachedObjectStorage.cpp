@@ -79,8 +79,8 @@ void CachedObjectStorage::prepareRead(
     /// Delegate to the underlying storage to set the source. Patch the settings
     /// first — the inner storage's `patchSettings` may apply mandatory tweaks
     /// (e.g. `LocalObjectStorage` forces `local_fs_method = pread` and disables
-    /// `direct_io`). On master, `readObject` always patched before delegating;
-    /// preserve that behavior here.
+    /// `direct_io`). Those tweaks must be in effect when the inner storage builds
+    /// the source, so we patch before delegating.
     object_storage->prepareRead(object_storage, objects, patchSettings(read_settings), read_hint, pipeline);
 
     /// Add the filesystem cache stage if filesystem cache is enabled.

@@ -1005,10 +1005,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     bool use_async_buffer = use_prefetch || use_distributed_cache;
 
     /// Prefer bigger buffer size when filesystem cache is active.
-    /// Note: master checked `impl->isCached()` at runtime (after building the buffer)
-    /// to gate this, but the pipeline approach configures buffer sizes before building.
+    /// The pipeline configures buffer sizes BEFORE the cache stage is constructed,
+    /// so we gate on `use_filesystem_cache` rather than a runtime `isCached()` check.
     /// This means the bigger buffer may be used even when the cache stage is later
-    /// skipped (e.g. missing etag). This is slightly wasteful but not incorrect.
+    /// skipped (e.g. missing etag) — slightly wasteful but not incorrect.
     if (modified_read_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
         modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
             modified_read_settings.remote_fs_buffer_size,
@@ -1025,8 +1025,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// `local_path` is the logical name used by `ReadPipeline::build` when passing the
     /// filename to `readWithDistributedCache` (it ends up in `getFileName()` and in
-    /// `system.distributed_cache_log.filename`). Set it to the object path so the DC
-    /// log shows a useful name (master also passed `object_info.getPath()`).
+    /// `system.distributed_cache_log.filename`). Use the object path so the DC log
+    /// shows a useful name rather than an empty string.
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), object_size);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 

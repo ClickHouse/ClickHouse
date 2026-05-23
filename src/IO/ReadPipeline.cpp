@@ -161,9 +161,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (!source)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set, call setSource first");
 
-    /// Empty objects = zero-blob file. Master's `DiskObjectStorage::readFile` handled
-    /// this by returning `ReadBufferFromEmptyFile` directly; do the same here so that
-    /// callers don't need workarounds (e.g. injecting a dummy `StoredObject`).
+    /// Empty objects = zero-blob file. Return `ReadBufferFromEmptyFile` so callers
+    /// don't need workarounds (e.g. injecting a dummy `StoredObject`).
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
 
@@ -272,9 +271,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     }
 
     /// use_external_buffer is true only when a downstream stage (memory cache, async prefetch)
-    /// manages the working buffer. Distributed cache does NOT require it — on master, DC
-    /// always implied async prefetch (use_async_buffer = use_prefetch || use_distributed_cache),
-    /// but in ReadPipeline these are independent stages. DC reads from TCP and manages its own buffer.
+    /// manages the working buffer. Distributed cache does NOT require it — it reads from TCP
+    /// and manages its own buffer, so memory_cache/async_prefetch are the only stages that
+    /// hand external memory to the inner reader via `set()`.
     bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value();
 
     size_t total_objects_size = getTotalSize(source->objects);
@@ -522,7 +521,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         };
 
         /// DC uses external buffer mode when a downstream stage (memory cache or
-        /// async prefetch) wraps it — matches the gather path and master behavior.
+        /// async prefetch) wraps it — consistent with the gather path above.
         bool use_ext_buf_for_dc = memory_cache.has_value() || async_prefetch.has_value();
         impl = DistributedCache::readWithDistributedCache(
             object.local_path,
