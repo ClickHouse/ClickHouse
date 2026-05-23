@@ -944,25 +944,30 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
 {
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
 
-    /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
-    if (!pager.empty() || !stdout_is_a_tty)
+    /// Do not limit pretty format output when pager is active or stdout is not a tty.
+    /// When the pager is cleared at runtime (e.g. `nopager`) and stdout is a tty,
+    /// restore the defaults so values are truncated again — otherwise the limits
+    /// stay at UInt64::max for the rest of the session.
+    const bool raise = !pager.empty() || !stdout_is_a_tty;
+
+    Settings settings = context->getSettingsCopy();
+    const Settings defaults;
+
+    if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
     {
-        Settings settings = context->getSettingsCopy();
-
-        if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
-        {
-            settings[Setting::output_format_pretty_max_rows] = std::numeric_limits<UInt64>::max();
-            settings[Setting::output_format_pretty_max_rows].changed = false;
-        }
-
-        if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
-        {
-            settings[Setting::output_format_pretty_max_value_width] = std::numeric_limits<UInt64>::max();
-            settings[Setting::output_format_pretty_max_value_width].changed = false;
-        }
-
-        context->setSettings(settings);
+        const UInt64 default_value = defaults[Setting::output_format_pretty_max_rows];
+        settings[Setting::output_format_pretty_max_rows] = raise ? std::numeric_limits<UInt64>::max() : default_value;
+        settings[Setting::output_format_pretty_max_rows].changed = false;
     }
+
+    if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
+    {
+        const UInt64 default_value = defaults[Setting::output_format_pretty_max_value_width];
+        settings[Setting::output_format_pretty_max_value_width] = raise ? std::numeric_limits<UInt64>::max() : default_value;
+        settings[Setting::output_format_pretty_max_value_width].changed = false;
+    }
+
+    context->setSettings(settings);
 }
 
 void ClientBase::initClientContext(ContextMutablePtr context)
@@ -3203,6 +3208,48 @@ bool ClientBase::processQueryText(const String & text)
             [](char c) { return isWhitespaceASCII(c); });
 
         return processMultiQueryFromFile(file_name);
+    }
+
+    /// mysql-style client-only pager control. Mutates `pager`; the per-query launcher
+    /// in onData() picks up the new value on the next query.
+    if (is_interactive)
+    {
+        auto set_pager_to = [&](const String & cmd)
+        {
+            pager = trim(cmd, [](char c) { return isWhitespaceASCII(c); });
+            /// Re-apply pretty-format width/row limits — they need to be raised when the
+            /// pager is enabled and restored to defaults when it is cleared. Otherwise a
+            /// runtime `pager ...` without `--pager` on the command line would keep the
+            /// truncated defaults, and a `pager ... -> nopager` sequence would leave the
+            /// limits at UInt64::max for the rest of the session.
+            adjustSettings(client_context);
+            if (pager.empty())
+                output_stream << "PAGER set to stdout" << std::endl;
+            else
+                output_stream << "PAGER set to '" << pager << "'" << std::endl;
+        };
+
+        if (trimmed_input == "nopager" || trimmed_input == "\\n")
+        {
+            set_pager_to({});
+            return true;
+        }
+
+        for (const String prefix : {"pager", "\\P"})
+        {
+            if (trimmed_input == prefix)
+            {
+                set_pager_to({});
+                return true;
+            }
+            if (trimmed_input.starts_with(prefix)
+                && trimmed_input.size() > prefix.size()
+                && isWhitespaceASCII(trimmed_input[prefix.size()]))
+            {
+                set_pager_to(trimmed_input.substr(prefix.size()));
+                return true;
+            }
+        }
     }
 
     // Handle `ls` metacommand

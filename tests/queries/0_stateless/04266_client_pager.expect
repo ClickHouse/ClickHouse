@@ -1,0 +1,202 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+set pager_out $CLICKHOUSE_TMP/$basename.pager_out
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# `tee FILE >/dev/null` is used as the side-channel pager: it captures query
+# bytes in FILE but does NOT echo them to the tty. Echoing through the tty
+# would flood expect's buffer (and the pty's column wrap) on large queries
+# and time out before we ever see the next `:) ` prompt.
+set tee_pager "tee $pager_out >/dev/null"
+
+# Make sure the side-channel file is empty/absent before we begin.
+catch {file delete $pager_out}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+# ------------------------------------------------------------------
+# 1. Setting the pager at runtime must actually route output through it.
+# ------------------------------------------------------------------
+send -- "pager $tee_pager\r"
+expect "PAGER set to '$tee_pager'"
+expect ":) "
+
+send -- "SELECT 'PAGER_PROOF' FORMAT TSV\r"
+expect ":) "
+
+set fp [open $pager_out r]
+set captured [read $fp]
+close $fp
+if {[string first "PAGER_PROOF" $captured] == -1} {
+    send_user "FAIL: pager did not capture query output. file=<$captured>\n"
+    exit 1
+}
+
+# ------------------------------------------------------------------
+# 2. Disabling the pager at runtime must stop routing through it.
+# ------------------------------------------------------------------
+set fp [open $pager_out w]
+close $fp
+
+send -- "nopager\r"
+expect "PAGER set to stdout"
+expect ":) "
+
+send -- "SELECT 'AFTER_NOPAGER' FORMAT TSV\r"
+expect "AFTER_NOPAGER"
+expect ":) "
+
+set fp [open $pager_out r]
+set captured [read $fp]
+close $fp
+if {[string length $captured] != 0} {
+    send_user "FAIL: pager still capturing after nopager. file=<$captured>\n"
+    exit 1
+}
+
+# ------------------------------------------------------------------
+# 3. Re-enable via the `\P` alias and prove with `md5sum` that the
+#    pager really receives the query bytes. md5sum writes its hash to
+#    its own stdout (the tty), so we can match it directly. The hash
+#    of "PAGER_HASH_PROBE\n" is unique enough to not collide with
+#    query ids, elapsed times, or other client chatter.
+# ------------------------------------------------------------------
+send -- "\\P md5sum\r"
+expect "PAGER set to 'md5sum'"
+expect ":) "
+
+send -- "SELECT 'PAGER_HASH_PROBE' FORMAT TSV\r"
+expect "db1fbed951a80c208d961466aa97e619"
+expect ":) "
+
+# ------------------------------------------------------------------
+# 4. `\n` alias must also disable, and subsequent output goes
+#    directly to the tty (not through md5sum).
+# ------------------------------------------------------------------
+send -- "\\n\r"
+expect "PAGER set to stdout"
+expect ":) "
+
+send -- "SELECT 'DIRECT_OUTPUT' FORMAT TSV\r"
+expect "DIRECT_OUTPUT"
+expect ":) "
+
+# ------------------------------------------------------------------
+# 5a. Trailing `;` on `pager <cmd>` is accepted and the pager is
+#     actually wired up.
+# ------------------------------------------------------------------
+set fp [open $pager_out w]
+close $fp
+
+send -- "pager $tee_pager;\r"
+expect "PAGER set to '$tee_pager'"
+expect ":) "
+
+send -- "SELECT 'SEMI_SET_PROOF' FORMAT TSV\r"
+expect ":) "
+
+set fp [open $pager_out r]
+set captured [read $fp]
+close $fp
+if {[string first "SEMI_SET_PROOF" $captured] == -1} {
+    send_user "FAIL: pager set with trailing ';' did not engage. file=<$captured>\n"
+    exit 1
+}
+
+# 5b. Bare `pager` disables (mysql semantics); subsequent query must
+#     NOT land in the file.
+set fp [open $pager_out w]
+close $fp
+
+send -- "pager\r"
+expect "PAGER set to stdout"
+expect ":) "
+
+send -- "SELECT 'AFTER_BARE_PAGER' FORMAT TSV\r"
+expect "AFTER_BARE_PAGER"
+expect ":) "
+
+set fp [open $pager_out r]
+set captured [read $fp]
+close $fp
+if {[string length $captured] != 0} {
+    send_user "FAIL: bare `pager` did not disable. file=<$captured>\n"
+    exit 1
+}
+
+# ------------------------------------------------------------------
+# 6. SETTINGS must be RAISED on runtime pager change.
+#    Pretty formats default to truncating values wider than 10000
+#    characters with the U+22EF (⋯) ellipsis. With the pager set at
+#    runtime, the limit must be raised so the value survives intact
+#    through the pager pipe. Two columns are used so the single-cell
+#    "don't cut" exception does not apply.
+# ------------------------------------------------------------------
+set fp [open $pager_out w]
+close $fp
+
+send -- "pager $tee_pager\r"
+expect "PAGER set to '$tee_pager'"
+expect ":) "
+
+send -- "SELECT repeat('A', 11000) AS v, 1 AS x FORMAT PrettyCompact\r"
+expect ":) "
+
+set fp [open $pager_out r]
+set captured [read $fp]
+close $fp
+set a_count [regexp -all {A} $captured]
+if {$a_count < 11000} {
+    send_user "FAIL: SETTINGS not raised; only $a_count A's captured (default would truncate at 10000)\n"
+    exit 1
+}
+if {[string first "⋯" $captured] != -1} {
+    send_user "FAIL: ellipsis present, value was truncated despite runtime pager set\n"
+    exit 1
+}
+
+# ------------------------------------------------------------------
+# 7. SETTINGS must be RESTORED on `nopager`.
+#    Counterpart to step 6: after `nopager` the limit must drop back
+#    to its default (10000), so a value wider than the default is
+#    again cut with `⋯` when output goes directly to the tty. If the
+#    limit stays at its raised value, `⋯` never appears and the
+#    `expect "⋯"` below times out (which the global expect_after
+#    handler turns into a test failure).
+# ------------------------------------------------------------------
+send -- "nopager\r"
+expect "PAGER set to stdout"
+expect ":) "
+
+send -- "SELECT repeat('A', 10001) AS v, 1 AS x FORMAT PrettyCompact\r"
+expect "⋯"
+expect ":) "
+
+# ------------------------------------------------------------------
+# 8. Identifier `pager` mid-statement must NOT be intercepted.
+# ------------------------------------------------------------------
+send -- "SELECT 'pager' AS x FORMAT TSV\r"
+expect "pager"
+expect ":) "
+
+send -- "exit\r"
+expect eof
+
+catch {file delete $pager_out}
