@@ -37,7 +37,8 @@ class ReadBuffer;
 struct ColumnsInfo;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
-using IColumnFilter = PaddedPODArray<UInt8>;
+/// `IColumnFilter` is declared in `IColumn_fwd.h` so it can be used in headers
+/// that only forward-declare `IColumn`.
 class WriteBufferFromOwnString;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With

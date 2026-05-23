@@ -41,6 +41,15 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const final;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const final;
+
+    void deserializeBinaryBulkWithFilter(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        const IColumnFilter & filter,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const final;
 };
 
 }

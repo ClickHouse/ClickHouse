@@ -286,6 +286,26 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+void ISerialization::deserializeBinaryBulkWithFilter(
+    ColumnPtr & column,
+    size_t rows_offset,
+    size_t limit,
+    const IColumnFilter & filter,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    /// Correct but wasteful default: do the bulk read into a scratch column, then keep only
+    /// the rows where `filter[i] != 0`. Types that can skip the destination-side write for
+    /// excluded rows should override this method.
+    chassert(filter.size() == limit);
+
+    ColumnPtr scratch = column->cloneEmpty();
+    deserializeBinaryBulkWithMultipleStreams(scratch, rows_offset, limit, settings, state, cache);
+    auto filtered = scratch->filter(filter, /*result_size_hint=*/ -1);
+    column->assumeMutable()->insertRangeFrom(*filtered, 0, filtered->size());
+}
+
 namespace
 {
 

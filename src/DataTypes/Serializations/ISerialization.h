@@ -545,6 +545,21 @@ public:
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
 
+    /// Like `deserializeBinaryBulkWithMultipleStreams` but only materialize rows where
+    /// `filter[i] != 0`. The source-side bytes are still advanced past (`ReadBuffer::ignore`
+    /// is a pointer bump on the decompressed buffer, no memcpy); the destination column
+    /// grows only by the number of set bits. Default impl performs the bulk read into a
+    /// scratch column and then filters — correct but no allocation savings. Override for
+    /// types where the destination-side write can be skipped.
+    virtual void deserializeBinaryBulkWithFilter(
+        ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        const IColumnFilter & filter,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+
     /** Override these methods for data types that require just single stream (most of data types).
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;

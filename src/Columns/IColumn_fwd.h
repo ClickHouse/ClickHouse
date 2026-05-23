@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Common/COW.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Types.h>
 
 #include <memory>
 #include <vector>
@@ -17,6 +19,10 @@ using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
 using ColumnCheckpoints = VectorWithMemoryTracking<ColumnCheckpointPtr>;
 
 class IColumn;
+
+/// Forward-declared alias of `IColumn::Filter` for use in headers that only
+/// forward-declare `IColumn`. Must stay in sync with the definition in `IColumn.h`.
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 void intrusive_ptr_add_ref(const IColumn * c);
 void intrusive_ptr_release(const IColumn * c);

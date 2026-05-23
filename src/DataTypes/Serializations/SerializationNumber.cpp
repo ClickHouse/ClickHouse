@@ -235,6 +235,70 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
 }
 
 template <typename T>
+void SerializationNumber<T>::deserializeBinaryBulkWithFilter(
+    ColumnPtr & column,
+    size_t rows_offset,
+    size_t limit,
+    const IColumnFilter & filter,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & /*state*/,
+    SubstreamsCache * /*cache*/) const
+{
+    chassert(filter.size() == limit);
+
+    settings.path.push_back(Substream::Regular);
+    ReadBuffer * istr = settings.getter(settings.path);
+    settings.path.pop_back();
+
+    if (!istr)
+        return;
+
+    if (rows_offset)
+        istr->ignore(sizeof(typename ColumnVector<T>::ValueType) * rows_offset);
+
+    auto mutable_column = column->assumeMutable();
+    auto & data = typeid_cast<ColumnVector<T> &>(*mutable_column).getData();
+    const size_t initial_size = data.size();
+
+    /// Count survivors. PaddedPODArray<UInt8> is dense so a memchr-style count works.
+    size_t kept = 0;
+    for (size_t i = 0; i < limit; ++i)
+        kept += filter[i] != 0;
+
+    data.resize(initial_size + kept);
+    auto * write = data.data() + initial_size;
+
+    /// Walk the filter in runs and either bulk-read into the destination column or
+    /// pointer-bump past the excluded rows on the source buffer. `istr->ignore` advances
+    /// the buffer's position without copying.
+    size_t i = 0;
+    while (i < limit)
+    {
+        if (filter[i])
+        {
+            size_t run = 1;
+            while (i + run < limit && filter[i + run]) ++run;
+            istr->readStrict(reinterpret_cast<char *>(write), sizeof(typename ColumnVector<T>::ValueType) * run);
+            write += run;
+            i += run;
+        }
+        else
+        {
+            size_t run = 1;
+            while (i + run < limit && !filter[i + run]) ++run;
+            istr->ignore(sizeof(typename ColumnVector<T>::ValueType) * run);
+            i += run;
+        }
+    }
+
+    if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
+        for (size_t k = initial_size; k < data.size(); ++k)
+            transformEndianness<std::endian::big, std::endian::little>(data[k]);
+
+    column = std::move(mutable_column);
+}
+
+template <typename T>
 UInt128 SerializationNumber<T>::getHash()
 {
     SipHash hash;

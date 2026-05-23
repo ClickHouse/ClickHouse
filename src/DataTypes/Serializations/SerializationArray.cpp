@@ -497,6 +497,73 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     return {skipped_nested_rows, nested_limit};
 }
 
+void SerializationArray::deserializeBinaryBulkWithFilter(
+    ColumnPtr & column,
+    size_t rows_offset,
+    size_t limit,
+    const IColumnFilter & filter,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    chassert(filter.size() == limit);
+
+    auto mutable_column = column->assumeMutable();
+    ColumnArray & column_array = typeid_cast<ColumnArray &>(*mutable_column);
+
+    settings.path.push_back(Substream::ArraySizes);
+    const size_t prev_offset_size = column_array.getOffsets().size();
+    auto [skipped_nested_rows, nested_limit] = deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
+        column_array.getOffsetsPtr(), rows_offset, limit, settings, cache);
+    settings.path.back() = Substream::ArrayElements;
+
+    /// The freshly-read offsets live at positions [prev_offset_size, prev_offset_size + limit).
+    /// Each value is the cumulative element count up to and including that row, measured from
+    /// the start of the read for this column (so the very first value corresponds to the row
+    /// after `skipped_nested_rows` nested elements were dropped).
+    auto & offsets = column_array.getOffsets();
+    const UInt64 base = (prev_offset_size == 0) ? 0 : offsets[prev_offset_size - 1];
+
+    /// Build the inner filter and rewrite the surviving offsets in place so they encode the
+    /// kept rows only. Nested filter is indexed in absolute-nested-element coordinates of
+    /// this batch (i.e. range `[base, base + nested_limit)` maps to filter slots
+    /// `[0, nested_limit)`).
+    IColumnFilter nested_filter(nested_limit, 0);
+    UInt64 running = base;
+    UInt64 prev = base;
+    size_t out_w = 0;
+    for (size_t i = 0; i < limit; ++i)
+    {
+        const UInt64 cur = offsets[prev_offset_size + i];
+        if (filter[i])
+        {
+            for (UInt64 k = prev; k < cur; ++k)
+                nested_filter[k - base] = 1;
+            running += (cur - prev);
+            offsets[prev_offset_size + out_w++] = running;
+        }
+        prev = cur;
+    }
+    offsets.resize(prev_offset_size + out_w);
+
+    /// Deserialize nested with the translated filter. Falls through to the default
+    /// (bulk + filter) for types that don't override the filtered entry point; the array
+    /// path still benefits because the outer offsets and the surviving-row count have
+    /// already been computed.
+    ColumnPtr & nested_column = column_array.getDataPtr();
+    nested->deserializeBinaryBulkWithFilter(
+        nested_column, skipped_nested_rows, nested_limit, nested_filter, settings, state, cache);
+
+    settings.path.pop_back();
+
+    if (!nested_column->empty() && nested_column->size() != offsets.back())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all array values (filtered): read {} of {}",
+            toString(nested_column->size()), toString(offsets.back()));
+
+    column = std::move(mutable_column);
+}
+
 void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
     size_t rows_offset,
