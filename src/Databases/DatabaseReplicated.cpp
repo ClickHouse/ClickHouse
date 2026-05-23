@@ -1399,7 +1399,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
         host_fqdn_id = ddl_worker->getCommonHostID();
     }
 
-    if (!flags.internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
+    if (!flags.internal && query_context->isDDLOrOnClusterInternal())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
     checkQueryValid(query, query_context);
@@ -1554,7 +1554,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setDDLOrOnClusterInternal(true);
         query_context->setQueryKindReplicatedDatabaseInternal();
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
@@ -2490,7 +2490,16 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     assert(!ddl_worker->isCurrentlyActive() || txn);
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
-    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
+
+    /// For CREATE OR REPLACE, the metadata node for the temporary table is intentionally omitted
+    /// from the transaction because renameTable will create it under the final name atomically.
+    /// However, inner tables (`.inner_id.*`) are NOT renamed during the exchange — they keep
+    /// their UUID-based name — so their metadata nodes must still be created here, as part of
+    /// the rename transaction that commits everything. Without this, an explicit DROP TABLE
+    /// after CREATE OR REPLACE would fail with a ZooKeeper "No node" error when trying to
+    /// remove the inner table's metadata node.
+    const bool is_inner_table = query.getTable().starts_with(".inner_id.");
+    if (txn && txn->isInitialQuery() && (!txn->isCreateOrReplaceQuery() || is_inner_table))
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
@@ -2847,7 +2856,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         info.expand_for_database = true;
         info.table_id.database_name = args.database_name;
 
-        const bool is_on_cluster = args.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        const bool is_on_cluster = args.context->isDDLOrOnClusterInternal();
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         /// and if UUID was explicitly passed in CREATE DATABASE (like for ATTACH)
         bool allow_uuid_macro = is_on_cluster || args.create_query.attach || args.create_query.has_uuid;
