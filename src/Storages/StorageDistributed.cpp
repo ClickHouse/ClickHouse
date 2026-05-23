@@ -1135,6 +1135,19 @@ void StorageDistributed::read(
             /// Get the table expression data to resolve column identifiers to column names.
             const auto * table_data = query_info.planner_context->getTableExpressionDataOrNull(query_info.table_expression);
 
+            /// Build a mapping from column identifier (e.g. __table1.flag_a) to expanded action name.
+            /// Used below to transform expression-based expected names that contain alias identifiers.
+            std::vector<std::pair<std::string, std::string>> identifier_to_expanded;
+            if (table_data)
+            {
+                for (const auto & [col_name, expanded_name] : alias_column_expanded_names)
+                {
+                    const auto * identifier = table_data->getColumnIdentifierOrNull(col_name);
+                    if (identifier)
+                        identifier_to_expanded.emplace_back(*identifier, expanded_name);
+                }
+            }
+
             std::vector<size_t> permutation(expected_header->columns());
             bool need_reorder = false;
             bool can_match = true;
@@ -1157,6 +1170,25 @@ void StorageDistributed::read(
                         if (alias_it != alias_column_expanded_names.end())
                             it = remote_name_to_pos.find(alias_it->second);
                     }
+                }
+
+                /// For expressions containing alias identifiers (e.g. ORDER BY flag_a || '_extra'),
+                /// the expected name embeds the alias identifier in a larger expression string.
+                /// Replace all alias identifiers with their expanded names to find the remote column.
+                if (it == remote_name_to_pos.end() && !identifier_to_expanded.empty())
+                {
+                    auto transformed = expected_name;
+                    for (const auto & [id, expanded] : identifier_to_expanded)
+                    {
+                        size_t pos = 0;
+                        while ((pos = transformed.find(id, pos)) != std::string::npos)
+                        {
+                            transformed.replace(pos, id.size(), expanded);
+                            pos += expanded.size();
+                        }
+                    }
+                    if (transformed != expected_name)
+                        it = remote_name_to_pos.find(transformed);
                 }
 
                 if (it == remote_name_to_pos.end())

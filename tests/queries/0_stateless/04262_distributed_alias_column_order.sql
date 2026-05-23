@@ -109,3 +109,39 @@ SELECT a1, a2 FROM dist_nested ORDER BY dt DESC LIMIT 1;
 
 DROP TABLE dist_nested;
 DROP TABLE local_nested;
+
+-- Test case with ORDER BY expression over alias column.
+-- The expected column name embeds the alias identifier in a larger expression,
+-- so the reorder logic must replace alias identifiers within expression names.
+DROP TABLE IF EXISTS local_expr;
+DROP TABLE IF EXISTS dist_expr;
+
+CREATE TABLE local_expr
+(
+    `dt` DateTime,
+    `x` UInt8,
+    `flag_a` String ALIAS concat(toString(x), '_suffix'),
+    `flag_b` String ALIAS toString(x)
+)
+ENGINE = MergeTree()
+ORDER BY dt;
+
+CREATE TABLE dist_expr
+(
+    `dt` DateTime,
+    `x` UInt8,
+    `flag_a` String ALIAS concat(toString(x), '_suffix'),
+    `flag_b` String ALIAS toString(x)
+)
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_expr, rand());
+
+INSERT INTO local_expr VALUES ('2024-01-01 00:00:00', 42);
+
+SELECT 'local_expr';
+SELECT flag_a, flag_b FROM local_expr ORDER BY flag_a || '_extra' LIMIT 1;
+
+SELECT 'distributed_expr';
+SELECT flag_a, flag_b FROM dist_expr ORDER BY flag_a || '_extra' LIMIT 1;
+
+DROP TABLE dist_expr;
+DROP TABLE local_expr;

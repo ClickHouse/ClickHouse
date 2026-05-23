@@ -10,3 +10,7 @@ local_nested
 11	12
 distributed_nested
 11	12
+local_expr
+42_suffix	42
+distributed_expr
+42_suffix	42
