@@ -28,6 +28,7 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
@@ -603,11 +604,11 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
         .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
-    , thread_pool{
+    , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::AggregatorThreads,
           CurrentMetrics::AggregatorThreadsActive,
           CurrentMetrics::AggregatorThreadsScheduled,
-          params.max_threads}
+          params.max_threads))
 {
     memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
 
@@ -688,6 +689,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     compileAggregateFunctionsIfNeeded();
 #endif
 }
+
+Aggregator::~Aggregator() = default;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -2626,7 +2629,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+    ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -2840,7 +2843,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         {
             if (!is_aggregate_function_compiled[i])
                 aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
+                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
         }
 
         return;
@@ -2850,7 +2853,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
+            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
     }
 }
 
@@ -2979,7 +2982,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
         {
             auto data_vec = collect_data_vec(i);
-            aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+            aggregate_functions[i]->parallelizeMergePrepare(data_vec, *thread_pool, is_cancelled);
         }
     }
 
@@ -2991,7 +2994,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         if (aggregate_functions[i]->isAbleToParallelizeMerge())
         {
             auto data_vec = collect_data_vec(i);
-            aggregate_functions[i]->parallelizeMergeMulti(data_vec, thread_pool, is_cancelled, res->aggregates_pool);
+            aggregate_functions[i]->parallelizeMergeMulti(data_vec, *thread_pool, is_cancelled, res->aggregates_pool);
         }
         else
         {
@@ -3264,7 +3267,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             places.get(),
             offsets_of_aggregate_states[j],
             aggregate_columns_data[j]->data(),
-            thread_pool,
+            *thread_pool,
             is_cancelled,
             aggregates_pool);
     }
@@ -3449,12 +3452,12 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
             if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
             {
                 AggregateDataPtrs data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
-                aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+                aggregate_functions[i]->parallelizeMergePrepare(data_vec, *thread_pool, is_cancelled);
             }
 
             if (aggregate_functions[i]->isAbleToParallelizeMerge())
                 aggregate_functions[i]->merge(
-                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], thread_pool, is_cancelled, result.aggregates_pool);
+                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], *thread_pool, is_cancelled, result.aggregates_pool);
             else
                 aggregate_functions[i]->merge(
                     res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
@@ -3626,7 +3629,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)

@@ -1,9 +1,10 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
 
 #if USE_PARQUET
 
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
