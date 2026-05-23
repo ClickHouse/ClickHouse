@@ -608,6 +608,7 @@ Resize 16 → 1
   FillingRightJoinSide          │
     SimpleSquashingTransform    │ × 16
       Resize 1 → 16
+```
 
 When `compact=0` and `graph=1` processor names will contain an additional suffix with unique processor identifier.
 
