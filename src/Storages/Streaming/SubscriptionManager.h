@@ -44,9 +44,6 @@ private:
 
     /// List of all subscriptions
     std::list<StreamSubscriptionWeakPtr> subscriptions;
-
-    /// Monitors currently alive subscriptions count, to have fast empty check
-    std::atomic<uint64_t> subscriptions_count = 0;
 };
 
 }

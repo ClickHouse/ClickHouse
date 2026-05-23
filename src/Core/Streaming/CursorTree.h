@@ -14,13 +14,13 @@ namespace DB
 /// Example: partition/shard etc.
 class CursorTreeNode
 {
-    using Data = std::map<String, std::variant<Int64, CursorTreeNodePtr>>;
+    using Data = std::unordered_map<String, std::variant<Int64, CursorTreeNodePtr>>;
 
 public:
     bool hasSubtree(const String & key) const;
     const CursorTreeNodePtr & getSubtree(const String & key) const;
     CursorTreeNodePtr & setSubtree(const String & key, CursorTreeNodePtr tree);
-    CursorTreeNodePtr & next(const String & key);
+    CursorTreeNodePtr & getSubtreeOrCreate(const String & key);
 
     bool hasValue(const String & key) const;
     Int64 getValue(const String & key) const;

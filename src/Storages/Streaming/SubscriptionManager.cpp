@@ -17,7 +17,6 @@ void StreamSubscriptionManager::registerSubscription(StreamSubscriptionPtr subsc
 {
     auto lock = lockExclusive();
     subscriptions.push_back(subscription);
-    subscriptions_count.fetch_add(1);
 }
 
 void StreamSubscriptionManager::executeOnEachSubscription(const std::function<void(StreamSubscriptionPtr & subscription)> & func)
@@ -47,7 +46,8 @@ void StreamSubscriptionManager::executeOnEachSubscription(const std::function<vo
 
 bool StreamSubscriptionManager::isEmpty() const
 {
-    return subscriptions_count.load() == 0;
+    auto lock = lockShared();
+    return subscriptions.empty();
 }
 
 bool StreamSubscriptionManager::hasSome() const
@@ -63,14 +63,9 @@ void StreamSubscriptionManager::clean()
     while (it != subscriptions.end())
     {
         if (it->lock() == nullptr)
-        {
             it = subscriptions.erase(it);
-            subscriptions_count.fetch_sub(1);
-        }
         else
-        {
             ++it;
-        }
     }
 }
 

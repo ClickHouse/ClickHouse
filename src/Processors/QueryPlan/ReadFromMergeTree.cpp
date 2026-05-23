@@ -3171,7 +3171,7 @@ Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto subscription = std::make_shared<MergeTreeBoundsSubscription>(num_streams, i);
-        data.getStreamSubscriptionManager().registerSubscription(subscription);
+        data.subscription_manager.registerSubscription(subscription);
         pipes.emplace_back(std::make_shared<MergeTreeCommitOrderSequentialSource>(
             header,
             data,

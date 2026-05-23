@@ -171,3 +171,26 @@ TEST(ParserStreamSettings, StreamBareKeywordIsComplete)
     /// STREAM followed by neither CURSOR nor another clause must still produce a valid AST.
     ASSERT_NO_THROW((void)parse("SELECT count() FROM t STREAM"));
 }
+
+TEST(ParserStreamSettings, CursorRejectsMalformedInput)
+{
+    /// Malformed cursor bodies must surface a parse exception instead of being silently
+    /// accepted or producing a partial AST.
+    const std::vector<std::string> bad_queries = {
+        "SELECT * FROM t STREAM CURSOR",                            /// missing body
+        "SELECT * FROM t STREAM CURSOR {",                          /// unclosed brace
+        "SELECT * FROM t STREAM CURSOR {'a': 1",                    /// unclosed brace with content
+        "SELECT * FROM t STREAM CURSOR {'a': }",                    /// missing value
+        "SELECT * FROM t STREAM CURSOR {'a' 1}",                    /// missing colon
+        "SELECT * FROM t STREAM CURSOR {'a': 1 'b': 2}",            /// missing comma between entries
+        "SELECT * FROM t STREAM CURSOR {'a': 1,}",                  /// trailing comma
+        "SELECT * FROM t STREAM CURSOR {'a': 'b'}",                 /// non-integer leaf
+        "SELECT * FROM t STREAM CURSOR {'a': 1.5}",                 /// float leaf
+        "SELECT * FROM t STREAM CURSOR {'a': -1}",                  /// signed integer
+        "SELECT * FROM t STREAM CURSOR {123: 1}",                   /// non-string key
+        "SELECT * FROM t STREAM CURSOR {'a': {'b' 1}}",             /// malformed nested object
+    };
+
+    for (const auto & query : bad_queries)
+        EXPECT_THROW(parse(query), Exception) << "Expected parse failure for: " << query;
+}

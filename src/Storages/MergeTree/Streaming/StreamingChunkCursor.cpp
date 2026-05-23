@@ -34,7 +34,7 @@ class BuildStreamingChunkCursorTransform : public ISimpleTransform
 public:
     explicit BuildStreamingChunkCursorTransform(SharedHeader header_)
         : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/false)
-        , pos_partition_id(header_->getPositionByName("_partition_id"))
+        , pos_partition_id(header_->getPositionByName(PartitionIdColumn::name))
         , pos_block_number(header_->getPositionByName(BlockNumberColumn::name))
         , pos_block_offset(header_->getPositionByName(BlockOffsetColumn::name))
     {

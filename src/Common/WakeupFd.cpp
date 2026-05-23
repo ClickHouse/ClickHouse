@@ -40,7 +40,7 @@ void WakeupFd::notify() const
 
 void WakeupFd::drain() const
 {
-    char buf[64];
+    char buf[PIPE_BUF];
     while (true)
     {
         ssize_t r = ::read(pipe.fds_rw[0], buf, sizeof(buf));
