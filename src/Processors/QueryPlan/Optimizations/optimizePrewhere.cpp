@@ -22,6 +22,7 @@ namespace Setting
 {
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool vector_search_with_rescoring;
 }
 
@@ -151,11 +152,12 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!storage.canMoveConditionsToPrewhere())
         return;
 
-    if (source_step_with_filter->getPrewhereInfo())
-        return;
-
     const auto & context = source_step_with_filter->getContext();
     const auto & settings = context->getSettingsRef();
+
+    PrewhereInfoPtr existing_prewhere_info = source_step_with_filter->getPrewhereInfo();
+    if (existing_prewhere_info && !settings[Setting::optimize_prewhere_after_pushdown])
+        return;
 
     bool is_final = source_step_with_filter->isQueryWithFinal();
     bool optimize = settings[Setting::optimize_move_to_prewhere] && (!is_final || settings[Setting::optimize_move_to_prewhere_if_final]);
@@ -211,6 +213,50 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         filter_step->getFilterColumnName(),
         optimize_result.prewhere_nodes,
         optimize_result.prewhere_nodes_list);
+
+    if (existing_prewhere_info)
+    {
+        const bool existing_removable = existing_prewhere_info->remove_prewhere_column;
+        const bool new_removable = prewhere_info->remove_prewhere_column;
+
+        ActionsDAG combined = std::move(existing_prewhere_info->prewhere_actions);
+        const auto * existing_filter_node = &combined.findInOutputs(existing_prewhere_info->prewhere_column_name);
+
+        ActionsDAG::NodeRawConstPtrs new_outputs_in_combined;
+        combined.mergeNodes(std::move(prewhere_info->prewhere_actions), &new_outputs_in_combined);
+
+        const ActionsDAG::Node * new_filter_node = nullptr;
+        for (const auto * node : new_outputs_in_combined)
+        {
+            if (node->result_name == prewhere_info->prewhere_column_name)
+            {
+                new_filter_node = node;
+                break;
+            }
+        }
+
+        FunctionOverloadResolverPtr func_builder_and
+            = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        const auto * and_node = &combined.addFunction(func_builder_and, {existing_filter_node, new_filter_node}, {});
+
+        auto & outputs = combined.getOutputs();
+        for (const auto * node : new_outputs_in_combined)
+            if (std::ranges::find(outputs, node) == outputs.end())
+                outputs.push_back(node);
+
+        const bool same_filter = existing_filter_node == new_filter_node;
+        if (existing_removable && (!same_filter || new_removable))
+            std::erase(outputs, existing_filter_node);
+        if (new_removable && !same_filter)
+            std::erase(outputs, new_filter_node);
+
+        outputs.push_back(and_node);
+
+        prewhere_info->prewhere_actions = std::move(combined);
+        prewhere_info->prewhere_column_name = and_node->result_name;
+        prewhere_info->remove_prewhere_column = true;
+        prewhere_info->need_filter = existing_prewhere_info->need_filter || prewhere_info->need_filter;
+    }
 
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
 
