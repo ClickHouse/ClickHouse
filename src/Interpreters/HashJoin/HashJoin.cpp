@@ -2520,7 +2520,11 @@ void HashJoin::publishSharedRuntimeFilters()
 
         /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
         /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
-        if (!WhichDataType(removeNullable(existing->getFilterColumnTargetType())).isNativeInteger())
+        const auto target_type = removeNullable(existing->getFilterColumnTargetType());
+        WhichDataType target_which(target_type);
+        if (!target_type->isValueRepresentedByInteger()
+            || target_which.isInt128() || target_which.isUInt128()
+            || target_which.isInt256() || target_which.isUInt256())
             continue;
 
         auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
