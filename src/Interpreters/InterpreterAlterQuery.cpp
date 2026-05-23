@@ -32,6 +32,8 @@
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -43,12 +45,18 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
 }
 
@@ -140,7 +148,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             {
                 const auto & source_ast = *mutation_command->ast->as<ASTAlterCommand>();
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    source_ast, table->getInMemoryMetadata().columns, session_tz);
+                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
@@ -286,9 +294,14 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             alter_commands->validate(table, context);
-            alter_commands->prepare(*metadata_snapshot);
+
+            bool share_nested = true;
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+            alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
             table->alter(*alter_commands, context, alter_lock);
         }
@@ -296,16 +309,25 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
-                MutationsInterpreter::Settings mutation_settings(false);
-                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                /// Replicated-storage non-determinism check must always run, even when
+                /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
+                /// diverge replicas.  The heavier query-shape validation that constructs a full
+                /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
+                /// reference not-yet-existing objects when the user opts out of validation.
+                MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
+                if (settings[Setting::validate_mutation_query])
+                {
+                    MutationsInterpreter::Settings mutation_settings(false);
+                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                }
                 table->mutate(*mutation_commands, context);
             }
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())

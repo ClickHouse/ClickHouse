@@ -14,7 +14,6 @@
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <base/defines.h>
 

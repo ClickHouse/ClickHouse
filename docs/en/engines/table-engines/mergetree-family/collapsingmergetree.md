@@ -13,8 +13,6 @@ doc_type: 'guide'
 >>>>>>> origin/master
 ---
 
-# CollapsingMergeTree table engine
-
 ## Description {#description}
 
 The `CollapsingMergeTree` engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)

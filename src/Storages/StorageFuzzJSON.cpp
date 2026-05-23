@@ -2,6 +2,8 @@
 
 #if USE_SIMDJSON || USE_RAPIDJSON
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <optional>
 #include <random>
 #include <string_view>
@@ -463,7 +465,7 @@ void fuzzJSONObject(std::shared_ptr<JSONNode> n, WriteBuffer & out, const Storag
     fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
 }
 
-class FuzzJSONSource : public ISource
+class FuzzJSONSource final : public ISource
 {
 public:
     FuzzJSONSource(
@@ -537,12 +539,21 @@ ColumnPtr FuzzJSONSource::createColumn()
 
 StorageFuzzJSON::StorageFuzzJSON(
     const StorageID & table_id_, const ColumnsDescription & columns_, const String & comment_, const Configuration & config_)
-    : IStorage(table_id_), config(config_)
+    : StorageWithCommonVirtualColumns(table_id_), config(config_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageFuzzJSON::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageFuzzJSON::read(

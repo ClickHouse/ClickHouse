@@ -375,7 +375,7 @@ DataTypePtr ColumnFunction::getResultType() const
     return function->getResultType();
 }
 
-ColumnWithTypeAndName ColumnFunction::reduce() const
+ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
 {
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
@@ -398,7 +398,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
             for (size_t i : settings.arguments_with_disabled_lazy_execution)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce();
+                    columns[i] = arg->reduce(dry_run);
             }
         }
         else
@@ -406,7 +406,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
             for (auto & col : columns)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                    col = arg->reduce();
+                    col = arg->reduce(dry_run);
             }
         }
     }
@@ -417,7 +417,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-    res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
+    res.column = function->execute(columns, res.type, elements_size, dry_run);
     if (!columnMatchesType(*res.column, *res.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

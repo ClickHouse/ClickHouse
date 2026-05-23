@@ -67,9 +67,68 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+[REFRESH ...]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
+```
+
+```sql
+CREATE OR REPLACE MATERIALIZED VIEW [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+[REFRESH ...]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+`OR REPLACE` and `IF NOT EXISTS` are mutually exclusive: combining them is a syntax error.
+
+### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
+
+`CREATE OR REPLACE MATERIALIZED VIEW` atomically replaces an existing materialized view and its inner storage table (if any). The operation requires an `Atomic` or `Replicated` database engine.
+
+```sql
+CREATE OR REPLACE MATERIALIZED VIEW [db.]name [ON CLUSTER cluster]
+[TO [db.]target_table]
+[ENGINE = engine]
+[POPULATE]
+[REFRESH ...]
+AS SELECT ...
+```
+
+Key behaviors:
+
+- **Without `TO` clause**: the old inner table is dropped and a new one is created. Existing data in the inner table is lost unless `POPULATE` is specified.
+- **With `TO` clause**: only the view definition is replaced; the target table and its data are unaffected.
+- Compatible with `REFRESH`, `ON CLUSTER`, and all engine options. `POPULATE` is supported on `Atomic` databases only — it is rejected on `Replicated` databases (see the `POPULATE` note below).
+- Requires `CREATE VIEW` and `DROP VIEW` privileges.
+
+:::note
+`CREATE OR REPLACE MATERIALIZED VIEW` is only supported with `Atomic` or `Replicated` database engines. It is not supported with the `Ordinary` database engine.
+:::
+
+**Examples:**
+
+```sql
+-- Create a materialized view with an inner table
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    AS SELECT x, sum(y) AS total FROM src GROUP BY x;
+
+-- Replace with a new definition (old inner table data is lost)
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    AS SELECT x, count() AS cnt FROM src GROUP BY x;
+
+-- Replace with POPULATE to backfill from existing source data
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    POPULATE
+    AS SELECT x FROM src;
+
+-- Replace an inner-table MV with a TO-table MV (target data is preserved)
+CREATE OR REPLACE MATERIALIZED VIEW mv TO target
+    AS SELECT x FROM src;
 ```
 
 :::tip
@@ -275,20 +334,55 @@ A few more examples:
 ### Refresh Settings {#refresh-settings}
 
 Available refresh settings:
-* `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
+* `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 2.
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
+* `all_replicas` - In a [Replicated database](../../../engines/database-engines/replicated.md) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
+* `prefer_dependency_replica` - When the view has `DEPENDS ON`, the replica that ran the parent refresh gets priority for running the dependent refresh; other replicas delay their attempt by `prefer_dependency_replica_delay_ms`. Useful with `SharedMergeTree` to avoid replication lag causing missing data in dependent refresh chains. Default: `false`.
+* `prefer_dependency_replica_delay_ms` - How long non-preferred replicas wait before attempting to run a dependent refresh when `prefer_dependency_replica` is enabled. Default: 2000 ms.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
-To change refresh parameters:
+Refresh parameters of an existing refreshable materialized view are changed with [`ALTER TABLE ... MODIFY REFRESH`](../alter/view.md#alter-table--modify-refresh-statement):
+
 ```sql
 ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
 ```
 
+The schedule (`EVERY` or `AFTER`) is mandatory: the statement always replaces *all* refresh parameters — schedule, `RANDOMIZE FOR`, `DEPENDS ON`, and refresh settings — with what is specified. Anything omitted is reset to its default (settings) or removed (dependencies, randomization).
+
 :::note
-This replaces *all* refresh parameters at once: schedule, dependencies, settings, and APPEND-ness. E.g. if the table had a `DEPENDS ON`, doing a `MODIFY REFRESH` without `DEPENDS ON` will remove the dependencies.
+- To change only refresh settings (e.g. `refresh_retries`), repeat the existing schedule:
+
+  ```sql
+  ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR SETTINGS refresh_retries = 5;
+  ```
+
+- `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` is not supported on materialized views; you must go through `MODIFY REFRESH`.
+
+- Adding or removing `APPEND` is not supported.
+
+- The `all_replicas` setting cannot be changed after creation.
 :::
+
+Examples:
+
+```sql
+-- Change the schedule, drop existing settings and dependencies.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
+
+-- Change the schedule and tune retry behavior.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
+SETTINGS refresh_retries = 5,
+         refresh_retry_initial_backoff_ms = 500,
+         refresh_retry_max_backoff_ms = 60000;
+
+-- Keep the dependency while changing the period.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
+
+-- Drop the dependency by omitting `DEPENDS ON`.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
+```
 
 ### Other operations {#other-operations}
 

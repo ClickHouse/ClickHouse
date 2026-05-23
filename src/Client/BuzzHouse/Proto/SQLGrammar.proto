@@ -3614,6 +3614,7 @@ message JSONColumn {
     oneof jcol_oneof {
         bool jcol = 2;
         uint32 jarray = 3;
+        bool jcombined = 4;
     }
 }
 
@@ -4136,23 +4137,23 @@ enum InFormat {
     IN_CustomSeparatedWithNamesAndTypes = 16;
     IN_DWARF = 17;
     IN_Form = 18;
-    IN_JSON = 19;
-    IN_JSONAsObject = 20;
-    IN_JSONAsString = 21;
-    IN_JSONColumns = 22;
-    IN_JSONColumnsWithMetadata = 23;
-    IN_JSONCompact = 24;
-    IN_JSONCompactColumns = 25;
-    IN_JSONCompactEachRow = 26;
-    IN_JSONCompactEachRowWithNames = 27;
-    IN_JSONCompactEachRowWithNamesAndTypes = 28;
-    IN_JSONCompactStringsEachRow = 29;
-    IN_JSONCompactStringsEachRowWithNames = 30;
-    IN_JSONCompactStringsEachRowWithNamesAndTypes = 31;
-    IN_JSONEachRow = 32;
-    IN_JSONLines = 33;
-    IN_JSONObjectEachRow = 34;
-    IN_JSONStrings = 35;
+    IN_HiveText = 19;
+    IN_JSON = 20;
+    IN_JSONAsObject = 21;
+    IN_JSONAsString = 22;
+    IN_JSONColumns = 23;
+    IN_JSONColumnsWithMetadata = 24;
+    IN_JSONCompact = 25;
+    IN_JSONCompactColumns = 26;
+    IN_JSONCompactEachRow = 27;
+    IN_JSONCompactEachRowWithNames = 28;
+    IN_JSONCompactEachRowWithNamesAndTypes = 29;
+    IN_JSONCompactStringsEachRow = 30;
+    IN_JSONCompactStringsEachRowWithNames = 31;
+    IN_JSONCompactStringsEachRowWithNamesAndTypes = 32;
+    IN_JSONEachRow = 33;
+    IN_JSONLines = 34;
+    IN_JSONObjectEachRow = 35;
     IN_JSONStringsEachRow = 36;
     IN_LineAsString = 37;
     IN_MsgPack = 38;
@@ -4209,61 +4210,62 @@ enum OutFormat {
     OUT_JSONCompactEachRow = 19;
     OUT_JSONCompactEachRowWithNames = 20;
     OUT_JSONCompactEachRowWithNamesAndTypes = 21;
-    OUT_JSONCompactStrings = 22;
-    OUT_JSONCompactStringsEachRow = 23;
-    OUT_JSONCompactStringsEachRowWithNames = 24;
-    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 25;
-    OUT_JSONEachRow = 26;
-    OUT_JSONEachRowWithProgress = 27;
-    OUT_JSONLines = 28;
-    OUT_JSONObjectEachRow = 29;
-    OUT_JSONStrings = 30;
-    OUT_JSONStringsEachRow = 31;
-    OUT_JSONStringsEachRowWithProgress = 32;
-    OUT_LineAsString = 33;
-    OUT_LineAsStringWithNames = 34;
-    OUT_LineAsStringWithNamesAndTypes = 35;
-    OUT_Markdown = 36;
-    OUT_MsgPack = 37;
+    OUT_JSONCompactEachRowWithProgress = 22;
+    OUT_JSONCompactStrings = 23;
+    OUT_JSONCompactStringsEachRow = 24;
+    OUT_JSONCompactStringsEachRowWithNames = 25;
+    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 26;
+    OUT_JSONCompactStringsEachRowWithProgress = 27;
+    OUT_JSONEachRow = 28;
+    OUT_JSONEachRowWithProgress = 29;
+    OUT_JSONLines = 30;
+    OUT_JSONObjectEachRow = 31;
+    OUT_JSONStrings = 32;
+    OUT_JSONStringsEachRow = 33;
+    OUT_JSONStringsEachRowWithProgress = 34;
+    OUT_Markdown = 35;
+    OUT_MsgPack = 36;
+    OUT_MySQLWire = 37;
     OUT_Native = 38;
     OUT_Npy = 39;
     OUT_Null = 40;
     OUT_ODBCDriver2 = 41;
     OUT_ORC = 42;
     OUT_Parquet = 43;
-    OUT_Pretty = 44;
-    OUT_PrettyCompact = 45;
-    OUT_PrettyCompactMonoBlock = 46;
-    OUT_PrettyCompactNoEscapes = 47;
-    OUT_PrettyCompactNoEscapesMonoBlock = 48;
-    OUT_PrettyJSONEachRow = 49;
-    OUT_PrettyMonoBlock = 50;
-    OUT_PrettyNoEscapes = 51;
-    OUT_PrettyNoEscapesMonoBlock = 52;
-    OUT_PrettySpace = 53;
-    OUT_PrettySpaceMonoBlock = 54;
-    OUT_PrettySpaceNoEscapes = 55;
-    OUT_PrettySpaceNoEscapesMonoBlock = 56;
-    OUT_Prometheus = 57;
-    OUT_Protobuf = 58;
-    OUT_ProtobufList = 59;
-    OUT_ProtobufSingle = 60;
-    OUT_RawBLOB = 61;
-    OUT_RowBinary = 62;
-    OUT_RowBinaryWithNames = 63;
-    OUT_RowBinaryWithNamesAndTypes = 64;
-    OUT_SQLInsert = 65;
-    OUT_TabSeparated = 66;
-    OUT_TabSeparatedRaw = 67;
-    OUT_TabSeparatedRawWithNames = 68;
-    OUT_TabSeparatedRawWithNamesAndTypes = 69;
-    OUT_TabSeparatedWithNames = 70;
-    OUT_TabSeparatedWithNamesAndTypes = 71;
-    OUT_Template = 72;
-    OUT_TSKV = 73;
-    OUT_Values = 74;
-    OUT_Vertical = 75;
-    OUT_XML = 76;
+    OUT_PostgreSQLWire = 44;
+    OUT_Pretty = 45;
+    OUT_PrettyCompact = 46;
+    OUT_PrettyCompactMonoBlock = 47;
+    OUT_PrettyCompactNoEscapes = 48;
+    OUT_PrettyCompactNoEscapesMonoBlock = 49;
+    OUT_PrettyJSONEachRow = 50;
+    OUT_PrettyMonoBlock = 51;
+    OUT_PrettyNoEscapes = 52;
+    OUT_PrettyNoEscapesMonoBlock = 53;
+    OUT_PrettySpace = 54;
+    OUT_PrettySpaceMonoBlock = 55;
+    OUT_PrettySpaceNoEscapes = 56;
+    OUT_PrettySpaceNoEscapesMonoBlock = 57;
+    OUT_Prometheus = 58;
+    OUT_Protobuf = 59;
+    OUT_ProtobufList = 60;
+    OUT_ProtobufSingle = 61;
+    OUT_RawBLOB = 62;
+    OUT_RowBinary = 63;
+    OUT_RowBinaryWithNames = 64;
+    OUT_RowBinaryWithNamesAndTypes = 65;
+    OUT_SQLInsert = 66;
+    OUT_TabSeparated = 67;
+    OUT_TabSeparatedRaw = 68;
+    OUT_TabSeparatedRawWithNames = 69;
+    OUT_TabSeparatedRawWithNamesAndTypes = 70;
+    OUT_TabSeparatedWithNames = 71;
+    OUT_TabSeparatedWithNamesAndTypes = 72;
+    OUT_Template = 73;
+    OUT_TSKV = 74;
+    OUT_Values = 75;
+    OUT_Vertical = 76;
+    OUT_XML = 77;
 }
 
 enum InOutFormat {
@@ -4311,28 +4313,28 @@ enum InOutFormat {
     INOUT_Values = 41;
 =======
     INOUT_Buffers = 5;
-    INOUT_CSV = 6;
-    INOUT_CSVWithNames = 7;
-    INOUT_CSVWithNamesAndTypes = 8;
-    INOUT_CustomSeparated = 9;
-    INOUT_CustomSeparatedWithNames = 10;
-    INOUT_CustomSeparatedWithNamesAndTypes = 11;
-    INOUT_JSON = 12;
-    INOUT_JSONColumns = 13;
-    INOUT_JSONColumnsWithMetadata = 14;
-    INOUT_JSONCompact = 15;
-    INOUT_JSONCompactColumns = 16;
-    INOUT_JSONCompactEachRow = 17;
-    INOUT_JSONCompactEachRowWithNames = 18;
-    INOUT_JSONCompactEachRowWithNamesAndTypes = 19;
-    INOUT_JSONCompactStringsEachRow = 20;
-    INOUT_JSONCompactStringsEachRowWithNames = 21;
-    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 22;
-    INOUT_JSONEachRow = 23;
-    INOUT_JSONLines = 24;
-    INOUT_JSONObjectEachRow = 25;
-    INOUT_JSONStringsEachRow = 26;
-    INOUT_LineAsString = 27;
+    INOUT_CapnProto = 6;
+    INOUT_CSV = 7;
+    INOUT_CSVWithNames = 8;
+    INOUT_CSVWithNamesAndTypes = 9;
+    INOUT_CustomSeparated = 10;
+    INOUT_CustomSeparatedWithNames = 11;
+    INOUT_CustomSeparatedWithNamesAndTypes = 12;
+    INOUT_JSON = 13;
+    INOUT_JSONColumns = 14;
+    INOUT_JSONColumnsWithMetadata = 15;
+    INOUT_JSONCompact = 16;
+    INOUT_JSONCompactColumns = 17;
+    INOUT_JSONCompactEachRow = 18;
+    INOUT_JSONCompactEachRowWithNames = 19;
+    INOUT_JSONCompactEachRowWithNamesAndTypes = 20;
+    INOUT_JSONCompactStringsEachRow = 21;
+    INOUT_JSONCompactStringsEachRowWithNames = 22;
+    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
+    INOUT_JSONEachRow = 24;
+    INOUT_JSONLines = 25;
+    INOUT_JSONObjectEachRow = 26;
+    INOUT_JSONStringsEachRow = 27;
     INOUT_MsgPack = 28;
     INOUT_Native = 29;
     INOUT_Npy = 30;
@@ -4501,28 +4503,31 @@ message RemoteFunc {
         remoteSecure = 2;
     }
     required RName rname = 1;
-    required string address = 2;
-    required TableOrFunction tof = 3;
-    optional string user = 4;
-    optional string password = 5;
-    optional Expr sharding_key = 6;
+    optional string named_collection = 2;
+    optional string address = 3;
+    required TableOrFunction tof = 4;
+    optional string user = 5;
+    optional string password = 6;
+    optional Expr sharding_key = 7;
 }
 
 message MySQLFunc {
-    required string address = 1;
-    required string rdatabase = 2;
-    required string rtable = 3;
-    required string user = 4;
-    required string password = 5;
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rtable = 3;
+    optional string address = 4;
+    optional string user = 5;
+    optional string password = 6;
 }
 
 message PostgreSQLFunc {
-    required string address = 1;
-    required string rdatabase = 2;
-    required string rtable = 3;
-    required string user = 4;
-    required string password = 5;
-    optional string rschema = 6;
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rschema = 3;
+    optional string rtable = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
 }
 
 message SQLiteFunc {
@@ -4549,12 +4554,13 @@ message RedisFunc {
 }
 
 message MongoDBFunc {
-    required string address = 1;
-    required string database = 2;
-    required string collection = 3;
-    required string user = 4;
-    required string password = 5;
-    optional Expr structure = 6;
+    optional string named_collection = 1;
+    optional string database = 2;
+    optional string collection = 3;
+    optional Expr structure = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
 }
 
 message ObjectStoreFunc {
@@ -5179,6 +5185,7 @@ enum ColumnStat {
     STAT_TDigest = 2;
     STAT_Uniq = 3;
     STAT_CountMin = 4;
+    STAT_NullCount = 5;
 }
 
 message ColumnStatistics {
@@ -5496,9 +5503,10 @@ message TableEngine {
     optional TableKey order = 4;
     optional TableKey partition_by = 5;
     optional TableKey primary_key = 6;
-    optional TableKey sample_by = 7;
-    optional TTLExpr ttl_expr = 8;
-    optional SettingValues setting_values = 9;
+    optional TableKey unique_key = 7;
+    optional TableKey sample_by = 8;
+    optional TTLExpr ttl_expr = 9;
+    optional SettingValues setting_values = 10;
 }
 
 message CreateTableAs {
@@ -5932,21 +5940,28 @@ message DictionarySourceDetails {
         POSTGRESQL = 3;
         MONGODB = 4;
         REDIS = 5;
+        HTTP = 6;
+        FILE = 7;
+        YAMLRegExpTree = 8;
     }
     enum RedisStorageType {
         simple = 1;
         hash_map = 2;
     }
     required DictionarySourceType source = 1;
-    optional ExprSchemaTable est = 2;
-    optional string host = 3;
-    optional string port = 4;
-    optional string user = 5;
-    optional string password = 6;
-    optional RedisStorageType redis_storage = 7;
-    optional string invalidate_query = 8;
-    optional ColumnPath update_field = 9;
-    optional uint32 update_lag = 10;
+    optional string named_collection = 2;
+    optional ExprSchemaTable est = 3;
+    optional string host = 4;
+    optional string port = 5;
+    optional string user = 6;
+    optional string password = 7;
+    optional RedisStorageType redis_storage = 8;
+    optional string invalidate_query = 9;
+    optional ColumnPath update_field = 10;
+    optional uint32 update_lag = 11;
+    optional string url = 12;
+    optional string path = 13;
+    optional string format = 14;
 }
 
 message DictionarySource {
@@ -5973,6 +5988,7 @@ enum DictionaryLayouts {
     RANGE_HASHED = 14;
     SPARSE_HASHED = 15;
     SSD_CACHE = 16;
+    REGEXP_TREE = 17;
 }
 
 message DictionaryLayout {
@@ -6108,9 +6124,16 @@ message ExpireSnapshots {
     optional bool dry_run = 6;
 }
 
+message RemoveOrphanFiles {
+    optional string older_than = 1;
+    optional string location = 2;
+    optional bool dry_run = 3;
+}
+
 message ExecuteCommand {
     oneof command {
         ExpireSnapshots expire_snapshots = 1;
+        RemoveOrphanFiles remove_orphan_files = 2;
     }
 }
 
@@ -6426,7 +6449,20 @@ message SystemCommand {
         bool stop_thread_fuzzer = 97;
         bool drop_distributed_cache = 98;
         UnlockSnapshot unlock_snapshot = 99;
+        FlushObjectStorageQueue flush_object_storage_queue = 100;
+        ExprSchemaTable stop_virtual_parts_update = 101;
+        ExprSchemaTable start_virtual_parts_update = 102;
+        ExprSchemaTable stop_reduce_blocking_parts = 103;
+        ExprSchemaTable start_reduce_blocking_parts = 104;
+        string wait_blobs_cleanup = 105;
+        ExprSchemaTable pause_view = 106;
+        bool pause_views = 107;
     }
+}
+
+message FlushObjectStorageQueue {
+    required ExprSchemaTable table = 1;
+    required string path = 2;
 }
 
 message BackupRestoreObject {

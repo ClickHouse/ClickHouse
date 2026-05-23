@@ -6,6 +6,7 @@
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 
 #include <aws/core/Aws.h>
@@ -19,6 +20,7 @@
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
+#include <aws/core/utils/logging/LogLevel.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
@@ -339,7 +341,6 @@ Client::~Client()
     catch (...)
     {
         tryLogCurrentException(log);
-        throw;
     }
 }
 
@@ -1152,6 +1153,9 @@ ClientFactory::ClientFactory()
     aws_options.httpOptions.httpClientFactory_create_fn = []() { return std::make_shared<PocoHTTPClientFactory>(); };
 
     aws_options.loggingOptions = Aws::LoggingOptions{};
+    /// Log level is set to Off by default, skipping calling logger_create_fn entirely.
+    /// https://github.com/ClickHouse/aws-sdk-cpp/blob/22f694afbdc7e9766894998c3745e23f004f8b86/src/aws-cpp-sdk-core/include/aws/core/Aws.h#L31
+    aws_options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
     aws_options.loggingOptions.logger_create_fn = []() { return std::make_shared<AWSLogger>(false); };
 
     aws_options.ioOptions = Aws::IoOptions{};
@@ -1163,7 +1167,6 @@ ClientFactory::ClientFactory()
 
 ClientFactory::~ClientFactory()
 {
-    Aws::Utils::Logging::ShutdownAWSLogging();
     Aws::ShutdownAPI(aws_options);
 }
 

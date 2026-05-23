@@ -1,21 +1,21 @@
 -- Tags: no-fasttest
 
-SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197);
-SELECT h3GetDestinationIndexFromUnidirectionalEdge(599686042433355773);
-SELECT h3GetDestinationIndexFromUnidirectionalEdge(stringToH3('85283473ffffff'));
+SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197); -- { serverError INCORRECT_DATA }
+SELECT h3GetDestinationIndexFromUnidirectionalEdge(599686042433355773); -- { serverError INCORRECT_DATA }
+SELECT h3GetDestinationIndexFromUnidirectionalEdge(stringToH3('85283473ffffff')); -- { serverError INCORRECT_DATA }
 
 SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199);
-SELECT h3GetIndexesFromUnidirectionalEdge(599686042433355775);
-SELECT h3GetIndexesFromUnidirectionalEdge(stringToH3('85283473ffffff'));
+SELECT h3GetIndexesFromUnidirectionalEdge(599686042433355775); -- { serverError INCORRECT_DATA }
+SELECT h3GetIndexesFromUnidirectionalEdge(stringToH3('85283473ffffff')); -- { serverError INCORRECT_DATA }
 
 SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199);
-SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197);
-SELECT h3GetOriginIndexFromUnidirectionalEdge(599686042433355775);
-SELECT h3GetOriginIndexFromUnidirectionalEdge(stringToH3('85283473ffffff'));
+SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197); -- { serverError INCORRECT_DATA }
+SELECT h3GetOriginIndexFromUnidirectionalEdge(599686042433355775); -- { serverError INCORRECT_DATA }
+SELECT h3GetOriginIndexFromUnidirectionalEdge(stringToH3('85283473ffffff')); -- { serverError INCORRECT_DATA }
 
 SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199);
-SELECT h3GetUnidirectionalEdgeBoundary(599686042433355773);
-SELECT h3GetUnidirectionalEdgeBoundary(stringToH3('85283473ffffff'));
+SELECT h3GetUnidirectionalEdgeBoundary(599686042433355773); -- { serverError INCORRECT_DATA }
+SELECT h3GetUnidirectionalEdgeBoundary(stringToH3('85283473ffffff')); -- { serverError INCORRECT_DATA }
 
 SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199); -- { serverError INCORRECT_DATA }
 SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355773); -- { serverError INCORRECT_DATA }

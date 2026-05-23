@@ -67,6 +67,7 @@ struct QueryPlanOptimizationSettings
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
+    bool top_k_through_join;
     bool remove_unused_columns;
 
     /// If we can swap probe/build tables in join
@@ -83,6 +84,7 @@ struct QueryPlanOptimizationSettings
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
+    bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
     bool optimize_sorting_by_input_stream_properties;
@@ -106,6 +108,7 @@ struct QueryPlanOptimizationSettings
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
+    bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
 
     /// ------------------------------------------------------
 
@@ -139,6 +142,7 @@ struct QueryPlanOptimizationSettings
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
+    bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 >>>>>>> origin/master

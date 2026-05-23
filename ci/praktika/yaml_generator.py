@@ -396,7 +396,6 @@ class PullRequestPushYamlGen:
                 JOB_ADDONS="".join(job_addons),
                 DOWNLOADS_GITHUB="\n".join(downloads_github),
                 UPLOADS_GITHUB="\n".join(uploads_github),
-                RUN_LOG=Settings.RUN_LOG,
                 PYTHON=Settings.PYTHON_INTERPRETER,
                 WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,

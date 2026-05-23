@@ -436,6 +436,18 @@ void MergeTreeReaderWide::deserializePrefix(
             [&](const ISerialization::SubstreamPath & substream_path,
                 size_t max_transitions) -> bool
         {
+            /// Wide parts with a final mark have a trailing position after the
+            /// suffix, so a single per-part dictionary shows up as <= 2 distinct
+            /// positions in the dictionary stream (data mark + final mark).
+            /// Without a final mark, the same check must be stricter: a true
+            /// single-dictionary part has only one distinct position, while a part
+            /// with one dictionary in the main stream and another in the suffix can
+            /// still look like "2 positions".
+            const bool has_final_mark = data_part_info_for_read->getIndexGranularity().hasFinalMark();
+            const size_t allowed_distinct_marks = has_final_mark || max_transitions == 0
+                ? max_transitions
+                : max_transitions - 1;
+
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
                 name_and_type, substream_path, ".bin",
                 data_part_info_for_read->getChecksums(), storage_settings);
@@ -446,7 +458,7 @@ void MergeTreeReaderWide::deserializePrefix(
             if (it == streams.end())
                 return false;
 
-            return it->second->hasAtMostNDistinctMarks(max_transitions);
+            return it->second->hasAtMostNDistinctMarks(allowed_distinct_marks);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }

@@ -119,7 +119,7 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
     DB::SnapshotableHashTable<IntNode> map_snp;
     EXPECT_TRUE(map_snp.insert("/hello", 7).second);
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
-    map_snp.enableSnapshotMode(100000);
+    map_snp.enableSnapshotMode(map_snp.snapshotSizeWithVersion().second);
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
     map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
@@ -166,6 +166,7 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
         EXPECT_EQ(itr->isActiveInMap(), i != 3 && i != 2);
         itr = std::next(itr);
     }
+    map_snp.disableSnapshotMode();
     map_snp.clearOutdatedNodes();
 
     EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 4);
@@ -188,14 +189,12 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr->isActiveInMap(), true);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
-    map_snp.disableSnapshotMode();
 }
 
 TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
 {
     /// int
     DB::SnapshotableHashTable<IntNode> hello;
-    hello.disableSnapshotMode();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     hello.insert("hello", 1);
@@ -211,20 +210,28 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     hello.clear();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
-    hello.enableSnapshotMode(10000);
+    /// Insert a node, then enable snapshot mode so the node is captured by the snapshot.
     hello.insert("hello", 1);
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.enableSnapshotMode(hello.snapshotSizeWithVersion().second);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateDataSize(), 18);
+    /// The node was already updated (version > snapshot_up_to_version),
+    /// so insertOrReplace does not create another snapshot copy.
     hello.insertOrReplace("hello", 1);
-    EXPECT_EQ(hello.getApproximateDataSize(), 27);
+    EXPECT_EQ(hello.getApproximateDataSize(), 18);
 
+    /// Must disable snapshot mode before clearing outdated nodes (matches production flow).
+    hello.disableSnapshotMode();
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
+    /// Enable a new snapshot to test erase keeping outdated nodes.
+    hello.enableSnapshotMode(hello.snapshotSizeWithVersion().second);
     hello.erase("hello");
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
+    hello.disableSnapshotMode();
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
@@ -243,7 +250,6 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     ///       approximate for nodes with 2+ children). The approximate size is only used for
     ///       statistics accounting, so this should be okay.
 
-    world.disableSnapshotMode();
     world.insert("world", n1);
     EXPECT_GT(world.getApproximateDataSize(), 0);
     world.updateValue("world", [&](Node & value) { value = n2; });
@@ -252,19 +258,18 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
-    world.enableSnapshotMode(100000);
     world.insert("world", n1);
     EXPECT_GT(world.getApproximateDataSize(), 0);
+    world.enableSnapshotMode(world.snapshotSizeWithVersion().second);
     world.updateValue("world", [&](Node & value) { value = n2; });
     EXPECT_GT(world.getApproximateDataSize(), 0);
 
-    world.clearOutdatedNodes();
-    EXPECT_GT(world.getApproximateDataSize(), 0);
-
+    /// Erase while in snapshot mode — outdated nodes stay in list.
     world.erase("world");
     EXPECT_GT(world.getApproximateDataSize(), 0);
 
-    world.clear();
+    world.disableSnapshotMode();
+    world.clearOutdatedNodes();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 }
 
@@ -702,9 +707,8 @@ static std::string runFollower(int idx, DB::IKeeperStateMachine & leader, nuraft
     });
 
     auto ctx = makeFollowerContext<Storage>(idx);
-    DB::ResponsesQueue queue(std::numeric_limits<size_t>::max());
     DB::SnapshotsQueue snapshots_queue{1};
-    auto follower = std::make_shared<DB::KeeperStateMachine<Storage>>(queue, snapshots_queue, ctx, nullptr);
+    auto follower = std::make_shared<DB::KeeperStateMachine<Storage>>(nullptr, snapshots_queue, ctx, nullptr);
     follower->init();
 
     void * user_snp_ctx = nullptr;
@@ -761,10 +765,9 @@ TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     auto snap_buf = manager.serializeSnapshotToBuffer(snap);
     manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
 
-    DB::ResponsesQueue leader_queue(std::numeric_limits<size_t>::max());
     DB::SnapshotsQueue leader_snapshots_queue{1};
     auto leader = std::make_shared<DB::KeeperStateMachine<Storage>>(
-        leader_queue, leader_snapshots_queue, leader_ctx, nullptr);
+        nullptr, leader_snapshots_queue, leader_ctx, nullptr);
     leader->init();
 
     nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
