@@ -1,5 +1,3 @@
--- Tags: long
-
 DROP DICTIONARY IF EXISTS TestTblDict;
 DROP VIEW IF EXISTS TestTbl_view;
 DROP TABLE IF EXISTS TestTbl;
@@ -36,14 +34,18 @@ select 'dict' src,* FROM TestTblDict ;
 
 insert into TestTbl values(1, '2022-10-20', 'first');
 
-SELECT sleep(3) from numbers(4) settings max_block_size= 1 format Null;
+-- Force the dictionary to reload deterministically rather than sleeping and
+-- relying on the background updater (5-second granularity, can be delayed
+-- under CI load). `SYSTEM RELOAD DICTIONARY` exercises the same source-query
+-- re-evaluation path that the original issue (#42610) was about.
+SYSTEM RELOAD DICTIONARY TestTblDict;
 
 select 'view' src,* FROM TestTbl_view;
 select 'dict' src,* FROM TestTblDict ;
 
 insert into TestTbl values(1, '2022-10-21', 'second');
 
-SELECT sleep(3) from numbers(4) settings max_block_size= 1 format Null;
+SYSTEM RELOAD DICTIONARY TestTblDict;
 
 select 'view' src,* FROM TestTbl_view;
 select 'dict' src,* FROM TestTblDict ;
@@ -51,4 +53,3 @@ select 'dict' src,* FROM TestTblDict ;
 DROP DICTIONARY IF EXISTS TestTblDict;
 DROP VIEW IF EXISTS TestTbl_view;
 DROP TABLE IF EXISTS TestTbl;
-
