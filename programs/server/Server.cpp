@@ -2007,6 +2007,13 @@ try
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
+    if (config().has("replica_host"))
+    {
+        String replica_host = config().getString("replica_host");
+        global_context->setReplicaHost(replica_host);
+        LOG_DEBUG(log, "Configuration parameter 'replica_host' is set to '{}'.", replica_host);
+    }
+
     /// Set up caches.
 
     JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);

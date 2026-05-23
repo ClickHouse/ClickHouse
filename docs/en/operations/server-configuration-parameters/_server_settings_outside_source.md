@@ -1706,6 +1706,22 @@ For example:
 </remote_url_allow_hosts>
 ```
 
+## replica_host {#replica_host}
+
+The hostname that [DatabaseReplicated](../../engines/database-engines/replicated.md) uses to identify this server when registering with ZooKeeper. Useful when the server is behind a load balancer or NAT and the hostname visible to other replicas differs from `interserver_http_host`.
+
+If not set, ClickHouse falls back to `interserver_http_host`.
+
+**Example**
+
+```xml
+<replica_host>public.node1.example.com</replica_host>
+```
+
+**See also**
+
+- [Replicated database engine](../../engines/database-engines/replicated.md)
+
 ## timezone {#timezone}
 
 The server's time zone.
