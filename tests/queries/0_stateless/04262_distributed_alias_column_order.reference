@@ -14,3 +14,7 @@ local_expr
 42_suffix	42
 distributed_expr
 42_suffix	42
+local_prefix
+42_suffix	42
+distributed_prefix
+42_suffix	42

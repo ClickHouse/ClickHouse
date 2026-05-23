@@ -1137,6 +1137,9 @@ void StorageDistributed::read(
 
             /// Build a mapping from column identifier (e.g. __table1.flag_a) to expanded action name.
             /// Used below to transform expression-based expected names that contain alias identifiers.
+            /// Sorted by identifier length descending so that longer identifiers are replaced first,
+            /// preventing a shorter identifier from corrupting a longer one that shares a prefix
+            /// (e.g. __table1.a vs __table1.a1).
             std::vector<std::pair<std::string, std::string>> identifier_to_expanded;
             if (table_data)
             {
@@ -1146,6 +1149,8 @@ void StorageDistributed::read(
                     if (identifier)
                         identifier_to_expanded.emplace_back(*identifier, expanded_name);
                 }
+                std::sort(identifier_to_expanded.begin(), identifier_to_expanded.end(),
+                    [](const auto & a, const auto & b) { return a.first.size() > b.first.size(); });
             }
 
             std::vector<size_t> permutation(expected_header->columns());

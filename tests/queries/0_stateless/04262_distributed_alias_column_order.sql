@@ -145,3 +145,38 @@ SELECT flag_a, flag_b FROM dist_expr ORDER BY flag_a || '_extra' LIMIT 1;
 
 DROP TABLE dist_expr;
 DROP TABLE local_expr;
+
+-- Test case with alias names that are prefixes of each other (e.g. flag, flag1).
+-- Naive string replacement of 'flag' would corrupt 'flag1' → must replace longest first.
+DROP TABLE IF EXISTS local_prefix;
+DROP TABLE IF EXISTS dist_prefix;
+
+CREATE TABLE local_prefix
+(
+    `dt` DateTime,
+    `x` UInt8,
+    `flag` String ALIAS concat(toString(x), '_suffix'),
+    `flag1` String ALIAS toString(x)
+)
+ENGINE = MergeTree()
+ORDER BY dt;
+
+CREATE TABLE dist_prefix
+(
+    `dt` DateTime,
+    `x` UInt8,
+    `flag` String ALIAS concat(toString(x), '_suffix'),
+    `flag1` String ALIAS toString(x)
+)
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_prefix, rand());
+
+INSERT INTO local_prefix VALUES ('2024-01-01 00:00:00', 42);
+
+SELECT 'local_prefix';
+SELECT flag, flag1 FROM local_prefix ORDER BY flag || flag1 LIMIT 1;
+
+SELECT 'distributed_prefix';
+SELECT flag, flag1 FROM dist_prefix ORDER BY flag || flag1 LIMIT 1;
+
+DROP TABLE dist_prefix;
+DROP TABLE local_prefix;
