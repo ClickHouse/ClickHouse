@@ -3,6 +3,7 @@ import sys
 
 REDIRECT_HOST = ""
 REDIRECT_PORT = 0
+REDIRECT_STATUS = 302
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -35,8 +36,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.rfile.read(size)
                 self.rfile.readline()
 
-        global REDIRECT_HOST, REDIRECT_PORT
-        self.send_response(302)
+        global REDIRECT_HOST, REDIRECT_PORT, REDIRECT_STATUS
+        self.send_response(REDIRECT_STATUS)
         target = f"http://{REDIRECT_HOST}:{REDIRECT_PORT}{self.path}"
         self.send_header("Location", target)
         self.end_headers()
@@ -53,6 +54,8 @@ if __name__ == "__main__":
     port = int(sys.argv[2])
     REDIRECT_HOST = sys.argv[3]
     REDIRECT_PORT = int(sys.argv[4])
+    if len(sys.argv) > 5:
+        REDIRECT_STATUS = int(sys.argv[5])
     httpd = http.server.ThreadingHTTPServer((host, port), RequestHandler)
     try:
         httpd.serve_forever()

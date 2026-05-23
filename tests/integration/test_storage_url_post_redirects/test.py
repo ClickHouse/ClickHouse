@@ -11,6 +11,7 @@ server = cluster.add_instance("node")
 
 REDIRECT_PORT = 8081
 TARGET_PORT = 8001
+REDIRECT_307_PORT = 8082
 
 
 def _start_server(container_id, file_name, args):
@@ -61,6 +62,12 @@ def started_cluster():
             "post_redirect_server.py",
             ["localhost", REDIRECT_PORT, "localhost", TARGET_PORT],
         )
+        # Redirect server which responds with a method-preserving 307.
+        _start_server(
+            container_id,
+            "post_redirect_server.py",
+            ["localhost", REDIRECT_307_PORT, "localhost", TARGET_PORT, 307],
+        )
         yield cluster
     finally:
         cluster.shutdown()
@@ -84,3 +91,19 @@ def test_post_redirect_accepted_with_setting(started_cluster):
         f"SELECT 1 SETTINGS http_allow_redirects_on_post = 1"
     )
     server.query(query)
+
+
+def test_method_preserving_redirect_rejected_with_setting(started_cluster):
+    # 307 (and 308) are method-preserving redirects: they ask the client to
+    # replay the request body at the new URL. Since the body was streamed and
+    # cannot be replayed, ClickHouse must surface this as an error rather than
+    # silently report success, even when http_allow_redirects_on_post = 1.
+    query = (
+        f"INSERT INTO TABLE FUNCTION "
+        f"url('http://localhost:{REDIRECT_307_PORT}/insert', JSONEachRow, 'a UInt64') "
+        f"SELECT 1 SETTINGS http_allow_redirects_on_post = 1"
+    )
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        server.query(query)
+    assert "307" in str(exc_info.value)
+    assert "method-preserving redirect" in str(exc_info.value)

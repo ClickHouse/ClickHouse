@@ -14,6 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+}
+
 WriteBufferFromHTTP::WriteBufferFromHTTP(
     const HTTPConnectionGroupType & connection_group_,
     const Poco::URI & uri,
@@ -66,23 +71,46 @@ void WriteBufferFromHTTP::finalizeImpl()
     // Make sure the content in the buffer has been flushed
     this->next();
 
-    /// When allow_redirects is true, accept HTTP 3xx redirect responses as success.
+    /// When allow_redirects is true, accept HTTP 301/302/303 redirect responses as success.
     /// The request body has already been fully sent to the original server via
     /// the chunked transfer stream. Since we cannot re-send the body to the
     /// redirect target (it was streamed, not buffered), we treat the redirect
     /// as an acknowledgment that the server received the data.
     /// This covers the common case of servers/proxies that accept POST data
     /// and respond with a redirect to a result or canonical URL.
+    /// The method-preserving statuses 307/308 are rejected even with allow_redirects,
+    /// because they explicitly require the client to replay the request body.
     receiveResponse(*session, request, response, allow_redirects);
 
-    if (isRedirect(response.getStatus()) && allow_redirects)
+    const auto status = response.getStatus();
+    if (allow_redirects && isRedirect(status))
     {
+        /// Method-preserving redirects (307/308) explicitly ask the client to
+        /// retry the same request at a new URL. Because the body was streamed
+        /// to the original server and cannot be replayed, treating these as
+        /// success would silently lose data. Reject them so the caller sees a
+        /// real error instead of a false acknowledgment.
+        if (status == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT
+            || status == Poco::Net::HTTPResponse::HTTP_PERMANENT_REDIRECT)
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "POST/PUT to {} returned HTTP {} ({}). This is a method-preserving redirect: "
+                "the server is asking to repeat the request at the URL in the Location header, "
+                "but the request body was already streamed and cannot be replayed, so the write "
+                "may not have been committed. Configure the endpoint to respond with 301, 302, or 303 "
+                "to acknowledge the write, or point the client at the final URL directly.",
+                initial_uri.toString(),
+                static_cast<int>(status),
+                response.getReason());
+        }
+
         LOG_TRACE(
             getLogger("WriteBufferToHTTP"),
             "POST/PUT to {} returned redirect (HTTP {}); "
             "data was already sent to the original URL, treating redirect as success.",
             initial_uri.getHost(),
-            static_cast<int>(response.getStatus()));
+            static_cast<int>(status));
     }
 
     WriteBufferFromOStream::finalizeImpl();
