@@ -1,3 +1,9 @@
+-- Use the new analyzer: matcher `REPLACE (expr AS name)` expands to `expr AS name`,
+-- which the old analyzer's `TreeRewriter` treats as a self-alias and rejects when the
+-- expression references the same column. Tuple field naming via `REPLACE` aliases also
+-- depends on analyzer-side handling, and only the new analyzer produces the named-tuple
+-- output expected by this test.
+SET enable_analyzer = 1;
 SET enable_named_columns_in_function_tuple = 1;
 
 DROP TABLE IF EXISTS default_expr_matchers_alias;
