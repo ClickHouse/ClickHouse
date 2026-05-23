@@ -22,6 +22,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
@@ -1095,7 +1096,7 @@ public:
             : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
-        std::vector<Instruction<T>> instructions;
+        VectorWithMemoryTracking<Instruction<T>> instructions;
         String out_template;
         size_t out_template_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
@@ -1186,7 +1187,7 @@ public:
     }
 
     template <typename T>
-    size_t parseFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         static_assert(format_syntax == FormatSyntax::MySQL || format_syntax == FormatSyntax::Joda);
 
@@ -1197,7 +1198,7 @@ public:
     }
 
     template <typename T>
-    size_t parseMySQLFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseMySQLFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         auto add_extra_shift = [&](size_t amount)
         {
@@ -1731,7 +1732,7 @@ public:
     }
 
     template <typename T>
-    size_t parseJodaFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32, bool, String &) const
+    size_t parseJodaFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32, bool, String &) const
     {
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
