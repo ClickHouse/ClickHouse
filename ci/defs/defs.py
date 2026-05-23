@@ -388,6 +388,7 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
+    COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
     CI_TESTS = "CI Tests"
 
 
@@ -465,6 +466,11 @@ class ArtifactNames:
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
+
+    CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
+    CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
+    CLICKHOUSE_BOLT_PROFILE_AMD = "CLICKHOUSE_BOLT_PROFILE_AMD"
+    CLICKHOUSE_BOLT_PROFILE_ARM = "CLICKHOUSE_BOLT_PROFILE_ARM"
 
 
 LLVM_FT_NUM_BATCHES = 3
@@ -637,4 +643,24 @@ class ArtifactConfigs:
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_ARM,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/clang-pgo-bolt.tar.zst",
+    )
+    clickhouse_pgo_profile_amd = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
+    )
+    clickhouse_pgo_profile_arm = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-pgo.profdata.zst",
+    )
+    clickhouse_bolt_profile_amd = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
+    )
+    clickhouse_bolt_profile_arm = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-bolt.fdata.zst",
     )
