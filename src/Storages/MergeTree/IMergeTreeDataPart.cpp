@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
+#include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
@@ -727,7 +728,9 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
     columns_description = columns_descriptions.original;
-    columns_description_with_collected_nested = columns_descriptions.with_collected_nested;
+    columns_description_with_collected_nested = columns_descriptions.with_collected_nested
+        ? columns_descriptions.with_collected_nested
+        : columns_descriptions.original;
 }
 
 String IMergeTreeDataPart::getProjectionName() const
