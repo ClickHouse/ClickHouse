@@ -18,6 +18,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -540,6 +541,8 @@ Chunk StorageURLSource::generate()
     }
     return {};
 }
+
+void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
 
 std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
