@@ -6,6 +6,8 @@
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
+#include <Common/threadPoolCallbackRunner.h>
+
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
