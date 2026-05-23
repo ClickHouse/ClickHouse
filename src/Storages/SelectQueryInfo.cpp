@@ -37,7 +37,7 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
             if (table_expression_data.hasAliasColumn(column_name))
                 continue;
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
-            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
+            node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(nullptr, column.type, column_name));
         }
     }
     return node_name_to_input_node_column;
