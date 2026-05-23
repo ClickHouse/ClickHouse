@@ -407,9 +407,32 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
         part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
     }
 
-    /// If state is already initialized - just register availabitily info and leave
+    /// Reject same-named parts whose row count differs from the snapshot built by the first
+    /// announcement. Otherwise the coordinator later hands snapshot ranges to a replica whose
+    /// local part is smaller and reading hits a non-existing mark.
     if (state_initialized)
+    {
+        for (const auto & part : announcement.description)
+        {
+            auto known_it = std::find_if(
+                all_parts_to_read.begin(),
+                all_parts_to_read.end(),
+                [&part](const Part & other) { return other.description.info == part.info; });
+
+            if (known_it != all_parts_to_read.end() && known_it->description.rows != part.rows)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Replica {} announced part {} with {} rows, but an earlier replica announced "
+                    "a same-named part with {} rows. Parallel replicas requires consistent data "
+                    "across cluster members. Use ReplicatedMergeTree or disable "
+                    "parallel_replicas_for_non_replicated_merge_tree.",
+                    announcement.replica_num,
+                    part.info.getPartNameV1(),
+                    part.rows,
+                    known_it->description.rows);
+        }
         return;
+    }
 
     {
         /// To speedup search for adjacent parts
@@ -974,6 +997,20 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
         {
+            /// Same part name but different row count means replicas have divergent local data;
+            /// merging here would later hand out non-existing marks to the smaller replica.
+            if (the_same_it->description.rows != part.rows)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Replica {} announced part {} with {} rows, but an earlier replica announced "
+                    "a same-named part with {} rows. Parallel replicas requires consistent data "
+                    "across cluster members. Use ReplicatedMergeTree or disable "
+                    "parallel_replicas_for_non_replicated_merge_tree.",
+                    announcement.replica_num,
+                    part.info.getPartNameV1(),
+                    part.rows,
+                    the_same_it->description.rows);
+
             the_same_it->replicas.insert(announcement.replica_num);
             continue;
         }
