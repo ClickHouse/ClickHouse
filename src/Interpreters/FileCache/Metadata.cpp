@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/ThreadPool.h>
 #include <filesystem>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 
@@ -215,6 +216,8 @@ CacheMetadata::CacheMetadata(
 
 }
 
+CacheMetadata::~CacheMetadata() = default;
+
 size_t CacheMetadata::alignFileSize(size_t file_size) const
 {
     const size_t block_size = fs_block_size.load(std::memory_order_acquire);
@@ -233,7 +236,6 @@ void CacheMetadata::fillStatVFS()
     const auto stat = getStatVFS(path);
     fs_block_size.store(stat.f_bsize, std::memory_order_release);
 }
-
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
