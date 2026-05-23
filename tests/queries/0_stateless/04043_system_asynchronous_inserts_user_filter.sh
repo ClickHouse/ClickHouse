@@ -20,10 +20,15 @@ ${CLICKHOUSE_CLIENT} -q "
     GRANT SELECT ON system.asynchronous_inserts TO restricted_user_${CLICKHOUSE_DATABASE};
 "
 
-# secret_user inserts with async_insert enabled and a very long flush timeout so the entry stays in the queue.
+# `secret_user` inserts with `async_insert` enabled and a very long flush timeout
+# so the entry stays in the queue. `async_insert_use_adaptive_busy_timeout = 0`
+# disables the adaptive shortcut in `AsynchronousInsertQueue::pushImpl`
+# (`max_busy_timeout_exceeded`) that would otherwise flush the entry immediately when
+# the target queue shard happens to have been idle for longer than our 10-minute max.
 ${CLICKHOUSE_CLIENT} \
     --user "secret_user_${CLICKHOUSE_DATABASE}" \
     --async_insert 1 \
+    --async_insert_use_adaptive_busy_timeout 0 \
     --async_insert_busy_timeout_max_ms 600000 \
     --async_insert_busy_timeout_min_ms 600000 \
     --wait_for_async_insert 0 \
