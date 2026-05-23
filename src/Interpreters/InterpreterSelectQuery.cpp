@@ -2929,7 +2929,7 @@ static Aggregator::Params getAggregatorParams(
         has_additional_table_filters);
 
     const auto stats_collecting_params = StatsCollectingParams(
-        partial_aggregate_semantic_key,
+        calculateCacheKey(query_ptr),
         settings[Setting::collect_hash_table_stats_during_aggregation],
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);

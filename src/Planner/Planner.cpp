@@ -627,7 +627,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         has_additional_table_filters);
 
     const auto stats_collecting_params = StatsCollectingParams(
-        partial_aggregate_semantic_key,
+        calculateCacheKey(select_query_info.query),
         settings[Setting::collect_hash_table_stats_during_aggregation],
         query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
