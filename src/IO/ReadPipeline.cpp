@@ -335,9 +335,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(const std::string & query_id) const
 {
-    /// -- Stages 1+2 without gather --
+    /// -- Stages 1+2 (+2.5 DC) without gather --
     /// Single-object path (e.g. StorageObjectStorageSource, local disk).
     /// No gather wrapping — preserves readBigAt support for the parquet prefetcher.
+    ///
+    /// Three mutually exclusive sub-paths, each returns its own final impl:
+    ///   1. distributed_cache  → DC owns the chain, source impl is never built.
+    ///   2. filesystem_caches  → stacked CachedOnDiskReadBufferFromFile wrapping source.
+    ///   3. neither            → source impl directly.
 
     if (source->objects.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -347,14 +352,66 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     const auto & settings = source->read_settings;
     const auto & object = source->objects[0];
 
-    /// -- Stages 1+2: Source + FilesystemCache(s) (single-object, no gather) --
     /// use_external_buffer for the outermost buffer: true when a downstream
     /// stage (memory cache, async prefetch) manages the working buffer.
     /// Inner cache layers always use external buffer (the outer cache calls set()).
     bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
 
-    std::unique_ptr<ReadBufferFromFileBase> impl;
+    /// -- Stage 2.5 (non-gather): Distributed cache --
+    /// When DC is active it owns the whole chain and assigns `impl` outright.
+    /// Filesystem cache + DC without gather is rejected: a filesystem-cache layer
+    /// built above would be unreachable (DC would replace it). The gather path
+    /// composes both naturally; callers that need both must call needGather().
+#if ENABLE_DISTRIBUTED_CACHE
+    if (distributed_cache)
+    {
+        const auto * dc_obj_source = std::get_if<ObjectStorageSource>(&source->source);
+        if (!dc_obj_source)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ReadPipeline: distributed cache requires ObjectStorageSource");
 
+        if (!filesystem_caches.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ReadPipeline: filesystem cache + distributed cache without gather is not supported. "
+                "Use needGather() to enable the gather path which handles both stages");
+
+        /// Fallback: read directly from object storage (same as non-DC path).
+        ///
+        /// use_external_buffer=true: `ReadBufferFromDistributedCache::readFromFallbackBuffer`
+        /// calls `buffer->set(internal_buffer.begin(), internal_buffer.size())` on the
+        /// fallback to hand over DC's working buffer. The fallback must accept external
+        /// memory.
+        ///
+        /// restrict_seek=false: DC calls `buffer->seek(file_offset_of_buffer_end, SEEK_SET)`
+        /// on the fallback before reading. In the gather path the enclosing Gather handles
+        /// seeks internally (per-object readers can have restricted seek). Here there is
+        /// no Gather, so the underlying object reader must support seeks directly.
+        auto fallback_creator = [storage = dc_obj_source->storage,
+                                 read_hint = dc_obj_source->read_hint,
+                                 captured_object = object,
+                                 captured_settings = settings]()
+            -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return storage->readObject(captured_object, captured_settings, read_hint,
+                /* use_external_buffer */ true, /* restrict_seek */ false);
+        };
+
+        /// DC uses external buffer mode when a downstream stage (memory cache or
+        /// async prefetch) wraps it — consistent with the gather path above.
+        auto impl = DistributedCache::readWithDistributedCache(
+            object.local_path,
+            source->objects,
+            settings,
+            *dc_obj_source->storage,
+            use_ext_buf,
+            std::move(fallback_creator),
+            distributed_cache->include_credentials_in_cache_key);
+        chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
+        return impl;
+    }
+#endif
+
+    /// -- Stages 1+2: Source + FilesystemCache(s) (single-object, no DC, no gather) --
     if (!filesystem_caches.empty())
     {
         /// The impl buffer (source reader inside the cache) must always use external buffer mode.
@@ -436,7 +493,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         auto cache_key = outermost.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
         auto origin = outermost.custom_origin.value_or(outermost.cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
-        impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
+        return std::make_unique<CachedOnDiskReadBufferFromFile>(
             object.remote_path,
             cache_key,
             outermost.cache,
@@ -453,89 +510,27 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             outermost.cache_log,
             settings.local_throttler);
     }
-    else
-    {
-        /// -- Stage 1 only: Source (no cache, no gather) --
-        impl = std::visit(Overloaded{
-            [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-            {
-                return s.storage->readObject(object, settings, s.read_hint, use_ext_buf, /* restrict_seek */ false);
-            },
-            [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-            {
-                return createReadBufferFromFileBase(
-                    s.path, settings, s.read_hint);
-            },
-            [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-            {
-                return s.backup->readFile(s.path);
-            },
-            [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
-            {
-                return s.creator(object, settings, use_ext_buf, /* restrict_seek */ false);
-            }
-        }, source->source);
-    }
 
-    /// -- Stage 2.5 (non-gather): Distributed cache --
-#if ENABLE_DISTRIBUTED_CACHE
-    if (distributed_cache)
-    {
-        const auto * dc_obj_source = std::get_if<ObjectStorageSource>(&source->source);
-        if (!dc_obj_source)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ReadPipeline: distributed cache requires ObjectStorageSource");
-
-        /// Filesystem cache + DC without gather is rejected: in the single-object path DC
-        /// builds its own buffer and assigns it to `impl` outright, so any filesystem cache
-        /// layer built earlier would be unreachable (the assignment replaces the chain).
-        ///
-        /// The gather path composes both naturally: filesystem cache wraps each per-object
-        /// reader inside the gather lambda, Gather assembles them into a single buffer,
-        /// then DC wraps that Gather as the outermost layer with Gather itself as the
-        /// fallback. Callers that need both stages must call needGather().
-        if (!filesystem_caches.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ReadPipeline: filesystem cache + distributed cache without gather is not supported. "
-                "Use needGather() to enable the gather path which handles both stages");
-
-        /// Fallback: read directly from object storage (same as non-DC path).
-        ///
-        /// use_external_buffer=true: `ReadBufferFromDistributedCache::readFromFallbackBuffer`
-        /// calls `buffer->set(internal_buffer.begin(), internal_buffer.size())` on the
-        /// fallback to hand over DC's working buffer. The fallback must accept external
-        /// memory.
-        ///
-        /// restrict_seek=false: DC calls `buffer->seek(file_offset_of_buffer_end, SEEK_SET)`
-        /// on the fallback before reading. In the gather path the enclosing Gather handles
-        /// seeks internally (per-object readers can have restricted seek). Here there is
-        /// no Gather, so the underlying object reader must support seeks directly.
-        auto fallback_creator = [storage = dc_obj_source->storage,
-                                 read_hint = dc_obj_source->read_hint,
-                                 captured_object = object,
-                                 captured_settings = settings]()
-            -> std::unique_ptr<ReadBufferFromFileBase>
+    /// -- Stage 1 only: Source (no cache, no DC, no gather) --
+    return std::visit(Overloaded{
+        [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
-            return storage->readObject(captured_object, captured_settings, read_hint,
-                /* use_external_buffer */ true, /* restrict_seek */ false);
-        };
-
-        /// DC uses external buffer mode when a downstream stage (memory cache or
-        /// async prefetch) wraps it — consistent with the gather path above.
-        bool use_ext_buf_for_dc = memory_cache.has_value() || async_prefetch.has_value();
-        impl = DistributedCache::readWithDistributedCache(
-            object.local_path,
-            source->objects,
-            settings,
-            *dc_obj_source->storage,
-            use_ext_buf_for_dc,
-            std::move(fallback_creator),
-            distributed_cache->include_credentials_in_cache_key);
-        chassert(impl, "readWithDistributedCache must return a valid buffer or throw");
-    }
-#endif
-
-    return impl;
+            return s.storage->readObject(object, settings, s.read_hint, use_ext_buf, /* restrict_seek */ false);
+        },
+        [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return createReadBufferFromFileBase(
+                s.path, settings, s.read_hint);
+        },
+        [&](const BackupSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return s.backup->readFile(s.path);
+        },
+        [&](const CustomSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return s.creator(object, settings, use_ext_buf, /* restrict_seek */ false);
+        }
+    }, source->source);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const
