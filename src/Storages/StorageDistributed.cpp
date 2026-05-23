@@ -962,27 +962,33 @@ DistributedQueryTree buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
-    /// Register the replacement table expression in the planner context with the same
-    /// column identifiers (e.g. __table1.col_name) as the original table expression.
-    /// This is needed so that calculateActionNodeName can resolve column identifiers
-    /// in the cloned tree where column sources point to the replacement (StorageDummy).
-    if (auto * original_data = planner_context->getTableExpressionDataOrNull(query_info.table_expression))
+    /// Only register the replacement table expression in the planner context when the table
+    /// has ALIAS columns. This is needed so that calculateActionNodeName can resolve column
+    /// identifiers in the cloned tree (where column sources point to the replacement StorageDummy),
+    /// but must be skipped for tables without ALIAS columns to avoid polluting the shared
+    /// planner context and affecting downstream pipeline construction.
+    bool has_alias_columns = !distributed_storage_snapshot->metadata->getColumns().getAliases().empty();
+    if (has_alias_columns)
     {
-        auto & new_data = planner_context->getOrCreateTableExpressionData(replacement_table_expression);
-        const auto & column_name_to_column = original_data->getColumnNameToColumn();
-        for (const auto & column_name : original_data->getColumnNames())
+        if (auto * original_data = planner_context->getTableExpressionDataOrNull(query_info.table_expression))
         {
-            auto col_it = column_name_to_column.find(column_name);
-            const auto * identifier = original_data->getColumnIdentifierOrNull(column_name);
-            if (col_it != column_name_to_column.end() && identifier && !new_data.hasColumn(column_name))
-                new_data.addColumn(col_it->second, *identifier, false /*is_selected_column*/);
+            auto & new_data = planner_context->getOrCreateTableExpressionData(replacement_table_expression);
+            const auto & column_name_to_column = original_data->getColumnNameToColumn();
+            for (const auto & column_name : original_data->getColumnNames())
+            {
+                auto col_it = column_name_to_column.find(column_name);
+                const auto * identifier = original_data->getColumnIdentifierOrNull(column_name);
+                if (col_it != column_name_to_column.end() && identifier && !new_data.hasColumn(column_name))
+                    new_data.addColumn(col_it->second, *identifier, false /*is_selected_column*/);
+            }
         }
     }
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
 
     ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
-    replace_alias_columns_visitor.planner_context = planner_context.get();
+    if (has_alias_columns)
+        replace_alias_columns_visitor.planner_context = planner_context.get();
     replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
