@@ -49,7 +49,7 @@ namespace ErrorCodes
   * IPv6NumToString (num) - See below.
   * IPv6StringToNum(string) - Convert, for example, '::1' to 1 and vice versa.
   */
-class FunctionIPv6NumToString : public IFunction
+class FunctionIPv6NumToString final : public IFunction
 {
 public:
     static constexpr auto name = "IPv6NumToString";
@@ -136,7 +136,7 @@ public:
 };
 
 
-class FunctionCutIPv6 : public IFunction
+class FunctionCutIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "cutIPv6";
@@ -270,7 +270,7 @@ private:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv6StringToNum : public IFunction
+class FunctionIPv6StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -342,7 +342,7 @@ private:
 /** If mask_tail_octets > 0, the last specified number of octets will be filled with "xxx".
   */
 template <size_t mask_tail_octets, typename Name>
-class FunctionIPv4NumToString : public IFunction
+class FunctionIPv4NumToString final : public IFunction
 {
 private:
     template <typename ArgType>
@@ -425,7 +425,7 @@ public:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv4StringToNum : public IFunction
+class FunctionIPv4StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -494,7 +494,7 @@ private:
 };
 
 
-class FunctionIPv4ToIPv6 : public IFunction
+class FunctionIPv4ToIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "IPv4ToIPv6";
@@ -569,7 +569,7 @@ private:
     }
 };
 
-class FunctionMACNumToString : public IFunction
+class FunctionMACNumToString final : public IFunction
 {
 public:
     static constexpr auto name = "MACNumToString";
@@ -698,7 +698,7 @@ struct ParseOUIImpl
 
 
 template <typename Impl>
-class FunctionMACStringTo : public IFunction
+class FunctionMACStringTo final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -760,7 +760,7 @@ public:
     }
 };
 
-class FunctionIPv6CIDRToRange : public IFunction
+class FunctionIPv6CIDRToRange final : public IFunction
 {
 private:
 
@@ -893,7 +893,7 @@ public:
 };
 
 
-class FunctionIPv4CIDRToRange : public IFunction
+class FunctionIPv4CIDRToRange final : public IFunction
 {
 private:
     static std::pair<UInt32, UInt32> applyCIDRMask(UInt32 src, UInt8 bits_to_keep)
@@ -992,7 +992,7 @@ public:
     }
 };
 
-class FunctionIsIPv4String : public IFunction
+class FunctionIsIPv4String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv4String";
@@ -1046,7 +1046,7 @@ public:
     }
 };
 
-class FunctionIsIPv6String : public IFunction
+class FunctionIsIPv6String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv6String";

@@ -19,6 +19,7 @@
 #    include <Functions/FunctionFactory.h>
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
+#    include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -36,7 +37,7 @@ extern const int ILLEGAL_COLUMN;
  * 4. Inverse of the dominant frequency component is the period.
 */
 
-class FunctionSeriesPeriodDetectFFT : public IFunction
+class FunctionSeriesPeriodDetectFFT final : public IFunction
 {
 public:
     static constexpr auto name = "seriesPeriodDetectFFT";
@@ -119,8 +120,8 @@ public:
             return true;
         }
 
-        std::vector<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
-        std::vector<std::complex<double>> out((len / 2) + 1);
+        VectorWithMemoryTracking<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
+        VectorWithMemoryTracking<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
 

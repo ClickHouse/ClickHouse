@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3UnidirectionalEdgeIsValid : public IFunction
+class FunctionH3UnidirectionalEdgeIsValid final : public IFunction
 {
 public:
     static constexpr auto name = "h3UnidirectionalEdgeIsValid";

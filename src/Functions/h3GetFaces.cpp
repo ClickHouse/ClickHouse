@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 
 
@@ -22,7 +23,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3GetFaces : public IFunction
+class FunctionH3GetFaces final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetFaces";
@@ -69,7 +70,7 @@ public:
         result_offsets.resize(input_rows_count);
 
         auto current_offset = 0;
-        std::vector<int> faces;
+        VectorWithMemoryTracking<int> faces;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {

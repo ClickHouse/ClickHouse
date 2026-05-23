@@ -30,7 +30,7 @@ namespace
 {
 
 /// Joins an array of type serializable to string into one string via a separator.
-class FunctionArrayStringConcat : public IFunction
+class FunctionArrayStringConcat final : public IFunction
 {
 private:
     static void executeInternal(
@@ -206,6 +206,8 @@ Concatenates string representations of values listed in the array with the provi
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayStringConcat>(documentation);
+    /// Synonym for compatibility with PostgreSQL/Snowflake.
+    factory.registerAlias("array_to_string", "arrayStringConcat", FunctionFactory::Case::Insensitive);
 }
 
 }

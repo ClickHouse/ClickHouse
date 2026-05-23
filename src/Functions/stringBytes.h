@@ -17,7 +17,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 template <typename Impl, typename Name>
-class FunctionStringBytes : public IFunction
+class FunctionStringBytes final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

@@ -28,7 +28,7 @@ namespace
  * Each cell in s2 library is a quadrilateral bounded by four geodesics.
  * So, each cell has 4 neighbors
  */
-class FunctionS2GetNeighbors : public IFunction
+class FunctionS2GetNeighbors final : public IFunction
 {
 public:
     static constexpr auto name = "s2GetNeighbors";

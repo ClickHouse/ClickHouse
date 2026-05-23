@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3IsValid : public IFunction
+class FunctionH3IsValid final : public IFunction
 {
 public:
     static constexpr auto name = "h3IsValid";

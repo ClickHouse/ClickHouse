@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionMapPopulateSeries : public IFunction
+class FunctionMapPopulateSeries final : public IFunction
 {
 public:
     static constexpr auto name = "mapPopulateSeries";

@@ -25,7 +25,7 @@ extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionConv : public IFunction
+class FunctionConv final : public IFunction
 {
 public:
     static constexpr auto name = "conv";

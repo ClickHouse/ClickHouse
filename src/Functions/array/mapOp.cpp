@@ -12,6 +12,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/arithmeticOverflow.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cassert>
 
@@ -35,7 +37,7 @@ struct TupArg
     const IColumn::Offsets & val_offsets;
     bool is_const;
 };
-using TupleMaps = std::vector<TupArg>;
+using TupleMaps = VectorWithMemoryTracking<TupArg>;
 
 enum class OpTypes : uint8_t
 {
@@ -43,7 +45,7 @@ enum class OpTypes : uint8_t
     SUBTRACT = 1
 };
 
-class FunctionMapOp : public IFunction
+class FunctionMapOp final : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr, OpTypes op_type_) { return std::make_shared<FunctionMapOp>(op_type_); }
@@ -221,7 +223,7 @@ private:
             to_vals_data = &to_map_tuple.getColumn(1);
         }
 
-        std::map<KeyType, ValType> summing_map;
+        MapWithMemoryTracking<KeyType, ValType> summing_map;
 
         for (size_t i = 0; i < row_count; ++i)
         {

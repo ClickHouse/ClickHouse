@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesTagsToGroup([('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...)
 /// returns a group assigned to the specified set of tags.
-class FunctionTimeSeriesTagsToGroup : public IFunction, public WithContext
+class FunctionTimeSeriesTagsToGroup final : public IFunction, public WithContext
 {
 public:
     static constexpr auto name = "timeSeriesTagsToGroup";
@@ -33,12 +33,18 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Function timeSeriesRemoveTag uses information stored in the query context, it's deterministic in the scope of the current query.
+    /// Function timeSeriesTagsToGroup uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
     /// This function allows NULLs as a way to specify that some tags don't have values.
     bool useDefaultImplementationForNulls() const override { return false; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

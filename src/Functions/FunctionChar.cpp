@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionChar : public IFunction
+class FunctionChar final : public IFunction
 {
 public:
     static constexpr auto name = "char";

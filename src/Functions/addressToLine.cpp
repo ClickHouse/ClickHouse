@@ -18,7 +18,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLine : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
+class FunctionAddressToLine final : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
 {
 public:
     static constexpr auto name = "addressToLine";
@@ -45,7 +45,7 @@ protected:
         return result_column;
     }
 
-    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &) const override
+    void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> &) const override
     {
         const char * arena_begin = nullptr;
         WriteBufferFromArena out(cache.arena, arena_begin);

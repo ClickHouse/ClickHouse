@@ -27,7 +27,7 @@ namespace ErrorCodes
 /// - filter_name: Internal name of runtime filter. It is built by BuildRuntimeFilterStep. String
 /// - key: Value of any type that is checked to be present in the filter.
 /// Returns false if the key should be filtered
-class FunctionApplyFilter : public IFunction
+class FunctionApplyFilter final : public IFunction
 {
 public:
     static constexpr auto name = "__applyFilter";

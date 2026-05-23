@@ -125,7 +125,7 @@ namespace DB
 constexpr size_t uuid_bytes_length = 16;
 constexpr size_t uuid_text_length = 36;
 
-class FunctionUUIDNumToString : public IFunction
+class FunctionUUIDNumToString final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDNumToString";
@@ -210,7 +210,7 @@ public:
 };
 
 
-class FunctionUUIDStringToNum : public IFunction
+class FunctionUUIDStringToNum final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDStringToNum";
@@ -316,7 +316,7 @@ public:
 };
 
 
-class FunctionUUIDToNum : public IFunction
+class FunctionUUIDToNum final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDToNum";
@@ -378,7 +378,7 @@ public:
     }
 };
 
-class FunctionUUIDv7ToDateTime : public IFunction
+class FunctionUUIDv7ToDateTime final : public IFunction
 {
 public:
     static constexpr auto name = "UUIDv7ToDateTime";

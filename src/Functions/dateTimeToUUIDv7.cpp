@@ -89,7 +89,7 @@ public:
 ) // DECLARE_SEVERAL_IMPLEMENTATIONS
 #undef DECLARE_SEVERAL_IMPLEMENTATIONS
 
-class FunctionDateTimeToUUIDv7 : public TargetSpecific::Default::FunctionDateTimeToUUIDv7Base
+class FunctionDateTimeToUUIDv7 final : public TargetSpecific::Default::FunctionDateTimeToUUIDv7Base
 {
 public:
     using Self = FunctionDateTimeToUUIDv7;

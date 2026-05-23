@@ -13,6 +13,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -78,7 +79,7 @@ struct JSONSharedDataPathsWithTypesImpl
 /// Implements functions that extracts paths and types from JSON object column.
 /// Used for introspection of the content of the JSON object column.
 template <typename Impl>
-class FunctionJSONPaths : public IFunction
+class FunctionJSONPaths final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -133,7 +134,7 @@ private:
         {
             /// Collect all dynamic paths.
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
-            std::vector<std::string_view> dynamic_paths;
+            VectorWithMemoryTracking<std::string_view> dynamic_paths;
             dynamic_paths.reserve(dynamic_path_columns.size());
             for (const auto & [path, _] : dynamic_path_columns)
                 dynamic_paths.push_back(path);
@@ -156,7 +157,7 @@ private:
         }
 
         /// Collect all paths: typed, dynamic and paths from shared data.
-        std::vector<std::string_view> sorted_dynamic_and_typed_paths;
+        VectorWithMemoryTracking<std::string_view> sorted_dynamic_and_typed_paths;
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         sorted_dynamic_and_typed_paths.reserve(typed_path_columns.size() + dynamic_path_columns.size());
@@ -214,7 +215,7 @@ private:
         if constexpr (Impl::paths_mode == PathsMode::DYNAMIC_PATHS)
         {
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
-            std::vector<std::string_view> sorted_dynamic_paths;
+            VectorWithMemoryTracking<std::string_view> sorted_dynamic_paths;
             sorted_dynamic_paths.reserve(dynamic_path_columns.size());
             for (const auto & [path, _] : dynamic_path_columns)
                 sorted_dynamic_paths.push_back(path);
@@ -266,7 +267,7 @@ private:
         }
 
         /// Iterate over all rows and extract types from dynamic columns from dynamic paths and from values in shared data.
-        std::vector<std::pair<std::string_view, String>> sorted_typed_and_dynamic_paths_with_types;
+        VectorWithMemoryTracking<std::pair<std::string_view, String>> sorted_typed_and_dynamic_paths_with_types;
         const auto & typed_path_types = type_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         sorted_typed_and_dynamic_paths_with_types.reserve(typed_path_types.size() + dynamic_path_columns.size());

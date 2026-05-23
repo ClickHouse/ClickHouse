@@ -27,7 +27,7 @@ namespace
 /**
  * Each cell in s2 library is a quadrilateral bounded by four geodesics.
  */
-class FunctionS2CellsIntersect : public IFunction
+class FunctionS2CellsIntersect final : public IFunction
 {
 public:
     static constexpr auto name = "s2CellsIntersect";

@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -16,7 +17,7 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::unordered_map<std::string_view, Float64> time_unit_to_float =
+    const UnorderedMapWithMemoryTracking<std::string_view, Float64> time_unit_to_float =
     {
         {"years", 365 * 24 * 3600},
         {"year", 365 * 24 * 3600},
@@ -98,7 +99,7 @@ namespace
      * The length of years and months (and even days in presence of time adjustments) are rough:
      * year is just 365 days, month is 30.5 days, day is 86400 seconds, similarly to what formatReadableTimeDelta is doing.
      */
-    class FunctionParseTimeDelta : public IFunction
+    class FunctionParseTimeDelta final : public IFunction
     {
     public:
         static constexpr auto name = "parseTimeDelta";

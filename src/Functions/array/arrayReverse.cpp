@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionArrayReverse : public IFunction
+class FunctionArrayReverse final : public IFunction
 {
 public:
     static constexpr auto name = "arrayReverse";

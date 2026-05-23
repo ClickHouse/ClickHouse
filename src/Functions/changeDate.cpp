@@ -43,7 +43,7 @@ enum class Component
 
 }
 
-class FunctionChangeDate : public IFunction
+class FunctionChangeDate final : public IFunction
 {
 public:
     FunctionChangeDate(const char * name_, Component component_) : function_name(name_), component(component_) {}

@@ -89,7 +89,7 @@ namespace ErrorCodes
   */
 
 template <typename Name>
-class FunctionBitmapBuildImpl : public IFunction
+class FunctionBitmapBuildImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -176,7 +176,7 @@ private:
 };
 
 template <typename Name>
-class FunctionBitmapToArrayImpl : public IFunction
+class FunctionBitmapToArrayImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -260,7 +260,7 @@ private:
 };
 
 template <typename Impl>
-class FunctionBitmapSubset : public IFunction
+class FunctionBitmapSubset final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -419,7 +419,7 @@ using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl
 using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
 using FunctionBitmapSubsetOffsetLimit = FunctionBitmapSubset<BitmapSubsetOffsetLimitImpl>;
 
-class FunctionBitmapTransform : public IFunction
+class FunctionBitmapTransform final : public IFunction
 {
 public:
     static constexpr auto name = "bitmapTransform";
@@ -568,7 +568,7 @@ private:
 };
 
 template <typename Impl>
-class FunctionBitmapSelfCardinalityImpl : public IFunction
+class FunctionBitmapSelfCardinalityImpl final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -737,7 +737,7 @@ struct BitmapHasAnyImpl
     }
 };
 
-class FunctionBitmapContains : public IFunction
+class FunctionBitmapContains final : public IFunction
 {
 public:
     static constexpr auto name = "bitmapContains";
@@ -831,7 +831,7 @@ private:
 };
 
 template <template <typename> class Impl, typename Name, typename ToType>
-class FunctionBitmapCardinality : public IFunction
+class FunctionBitmapCardinality final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -964,7 +964,7 @@ struct NameBitmapAnd
 };
 
 template <template <typename> class Impl, typename Name>
-class FunctionBitmap : public IFunction
+class FunctionBitmap final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

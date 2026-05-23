@@ -14,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionClamp : public IFunction
+class FunctionClamp final : public IFunction
 {
 
 public:

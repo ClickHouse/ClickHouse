@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3HexAreaM2 : public IFunction
+class FunctionH3HexAreaM2 final : public IFunction
 {
 public:
     static constexpr auto name = "h3HexAreaM2";

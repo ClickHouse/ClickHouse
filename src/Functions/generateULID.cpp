@@ -16,7 +16,7 @@ namespace DB
 {
 
 
-class FunctionGenerateULID : public IFunction
+class FunctionGenerateULID final : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;

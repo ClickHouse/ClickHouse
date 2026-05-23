@@ -44,7 +44,7 @@ enum class ToStartOfIntervalOverload
     Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
 };
 
-class FunctionToStartOfInterval : public IFunction
+class FunctionToStartOfInterval final : public IFunction
 {
 private:
     ToStartOfIntervalOverload overload;
@@ -298,7 +298,7 @@ private:
 };
 
 
-class FunctionToStartOfIntervalOverloadResolver : public IFunctionOverloadResolver
+class FunctionToStartOfIntervalOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toStartOfInterval";

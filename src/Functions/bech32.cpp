@@ -29,7 +29,7 @@ constexpr size_t max_address_len = 90;
 constexpr size_t max_data_len = 55;
 constexpr size_t max_human_readable_part_len = 83; // Note: if we only support segwit addresses, this can be changed to 2
 
-using bech32_data = std::vector<uint8_t>;
+using bech32_data = std::vector<uint8_t>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// -------------------------------------------------------------------------------------------------------
 /// Function copied from contrib/bech32/ref/c++/segwit_addr.cpp
@@ -101,7 +101,7 @@ namespace ErrorCodes
 }
 
 /// Encode string to Bech32 or Bech32m address
-class EncodeToBech32Representation : public IFunction
+class EncodeToBech32Representation final : public IFunction
 {
 public:
     static constexpr auto name = "bech32Encode";
@@ -387,7 +387,7 @@ private:
 };
 
 /// Decode original address from string containing Bech32 or Bech32m address
-class DecodeFromBech32Representation : public IFunction
+class DecodeFromBech32Representation final : public IFunction
 {
 public:
     static constexpr auto name = "bech32Decode";

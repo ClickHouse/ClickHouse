@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class FunctionMonthName : public IFunction
+class FunctionMonthName final : public IFunction
 {
 public:
     static constexpr auto name = "monthName";

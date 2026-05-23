@@ -14,7 +14,7 @@ namespace DB
 namespace
 {
 
-class FunctionTransactionID : public FunctionConstantBase<FunctionTransactionID, Tuple, DataTypeNothing>
+class FunctionTransactionID final : public FunctionConstantBase<FunctionTransactionID, Tuple, DataTypeNothing>
 {
 public:
     static constexpr auto name = "transactionID";

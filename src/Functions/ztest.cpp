@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionTwoSampleProportionsZTest : public IFunction
+class FunctionTwoSampleProportionsZTest final : public IFunction
 {
 public:
     static constexpr auto POOLED = "pooled";

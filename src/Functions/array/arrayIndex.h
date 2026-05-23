@@ -18,6 +18,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -495,7 +496,7 @@ public:
 }
 
 template <typename ConcreteAction, typename Name>
-class FunctionArrayIndex : public IFunction
+class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1070,7 +1071,7 @@ private:
 
             /// Collect columns from dynamic paths that match exact path or prefix.
             /// These columns need to be checked for non-null values per row.
-            std::vector<const IColumn *> relevant_dynamic_columns;
+            VectorWithMemoryTracking<const IColumn *> relevant_dynamic_columns;
             const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
 
             if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())

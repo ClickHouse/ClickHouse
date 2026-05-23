@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionULIDStringToDateTime : public IFunction
+class FunctionULIDStringToDateTime final : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;

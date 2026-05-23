@@ -1,6 +1,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -22,7 +23,7 @@ namespace ErrorCodes
 /**
  * arrayFold( acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial)
  */
-class FunctionArrayFold : public IFunction
+class FunctionArrayFold final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
@@ -199,7 +200,7 @@ public:
         ///   --> create two slices based on selector [0, 0, 1, 0]
         ///       - slice0: 'elem1', 'elem2', 'elem4''
         ///       - slice1: 'elem3'
-        std::vector<VectorWithMemoryTracking<MutableColumnPtr>> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
+        VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
         vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
             for (size_t i = 0; i < num_array_cols; ++i)

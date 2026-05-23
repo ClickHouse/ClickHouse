@@ -17,7 +17,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3IsResClassIII : public IFunction
+class FunctionH3IsResClassIII final : public IFunction
 {
 public:
     static constexpr auto name = "h3IsResClassIII";

@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -13,6 +14,7 @@
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -101,10 +103,12 @@ namespace
             res_columns[13]->insertDefault();
         }
 
-        /// Declarative signature (see IFunction::getSignatureString). Only regular functions
-        /// in the system FunctionFactory carry one; for everything else (aliases, aggregates,
-        /// user-defined, WASM) leave the cell empty.
+        /// Declarative signature (see IFunction::getSignatureString) and the
+        /// deterministic / higher-order flags. Only regular functions in the
+        /// system FunctionFactory carry these; for everything else (aliases,
+        /// aggregates, user-defined, WASM) leave the cells empty.
         String signature;
+        bool inserted_function_flags = false;
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
             if (!factory.isAlias(name))
@@ -114,17 +118,34 @@ namespace
                     /// Use the non-tracking lookup so that querying `system.functions`
                     /// does not register every function name in `query_log.used_functions`.
                     if (auto resolver = factory.tryGetWithoutTracking(name, context))
+                    {
                         signature = resolver->getSignatureString();
+                        res_columns[15]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
+                        res_columns[16]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
+                        inserted_function_flags = true;
+                    }
                 }
-                catch (...) // NOLINT(bugprone-empty-catch)
+                catch (...)
                 {
                     /// Some functions throw on construction unless certain settings are set
-                    /// (e.g. deprecated/error-prone functions). Treat them as having no signature.
+                    /// (e.g. deprecated/error-prone functions). Treat them as having no
+                    /// signature and unknown determinism / higher-order flags.
+                    LOG_DEBUG(
+                        getLogger("system.functions"),
+                        "Cannot resolve function {} for introspection: {}",
+                        name,
+                        getCurrentExceptionMessage(/* with_stacktrace */ false));
                 }
             }
         }
         res_columns[14]->insert(signature);
+        if (!inserted_function_flags)
+        {
+            res_columns[15]->insertDefault();
+            res_columns[16]->insertDefault();
+        }
     }
+
 }
 
 
@@ -156,12 +177,22 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
         {"categories", std::make_shared<DataTypeString>(), "The category of the function."},
-        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."}
+        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."},
+        {"deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
+        {"higher_order", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
     };
 }
 
 void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    /// Resolving every function (and the helpers their constructors create internally —
+    /// e.g. coalesce constructs isNotNull/assumeNotNull/if; map constructs array/mapFromArrays;
+    /// monthName constructs dateName) would otherwise pollute query_log.used_functions for
+    /// the user's query. Suppress factory accounting for the duration of the read.
+    Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
+
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
@@ -257,6 +288,8 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[12]->insertDefault(); // introduced_in
         res_columns[13]->insertDefault(); // categories
         res_columns[14]->insertDefault(); // signature
+        res_columns[15]->insertDefault(); // is_deterministic
+        res_columns[16]->insert(UInt8{0}); // higher_order
     }
 }
 

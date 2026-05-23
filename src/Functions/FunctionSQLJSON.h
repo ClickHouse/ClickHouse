@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/JSONPath/Generator/GeneratorJSONPath.h>
@@ -253,7 +254,7 @@ public:
             to->reserve(input_rows_count);
 
             /// Build the execution plan: parse the structure once, collect generators and column pointers.
-            std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generators;
+            VectorWithMemoryTracking<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generators;
             PlanNode plan = buildPlan(*to, const_data, path_column.type, 0, parse_depth, parse_backtracks, generators);
 
             JSONParser json_parser;
@@ -280,7 +281,7 @@ public:
             IColumn * dest = nullptr;           /// destination column for this node
             size_t array_size = 0;              /// for Array nodes: constant number of elements
             IColumn::Offsets * array_offsets = nullptr; /// for Array nodes: offsets column
-            std::vector<PlanNode> children;     /// for Tuple: one child per element; for Array: single child (the element plan)
+            VectorWithMemoryTracking<PlanNode> children;     /// for Tuple: one child per element; for Array: single child (the element plan)
         };
 
         static std::shared_ptr<GeneratorJSONPath<JSONParser>> parseJSONPath(
@@ -305,7 +306,7 @@ public:
             size_t index,
             uint32_t parse_depth,
             uint32_t parse_backtracks,
-            std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators)
+            VectorWithMemoryTracking<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators)
         {
             if (isString(path_type))
             {
@@ -366,7 +367,7 @@ public:
         static void executePlan(
             const PlanNode & node,
             const Element & document,
-            const std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators,
+            const VectorWithMemoryTracking<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generators,
             size_t & gen_idx,
             bool document_ok,
             Impl & impl,
@@ -462,7 +463,7 @@ public:
 };
 
 template <typename Name, template <typename, typename> typename Impl>
-class FunctionSQLJSON : public IFunction
+class FunctionSQLJSON final : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }

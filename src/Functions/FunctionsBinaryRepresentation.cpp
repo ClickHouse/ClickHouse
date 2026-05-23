@@ -208,7 +208,7 @@ struct UnbinImpl
 
 /// Encode number or string to string with binary or hexadecimal representation
 template <typename Impl>
-class EncodeToBinaryRepresentation : public IFunction
+class EncodeToBinaryRepresentation final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -579,7 +579,7 @@ public:
 
 /// Decode number or string from string with binary or hexadecimal representation
 template <typename Impl>
-class DecodeFromBinaryRepresentation : public IFunction
+class DecodeFromBinaryRepresentation final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

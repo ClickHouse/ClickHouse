@@ -16,7 +16,7 @@ namespace ErrorCodes
 namespace
 {
 
-class ExecutableFunctionGetServerPort : public IExecutableFunction
+class ExecutableFunctionGetServerPort final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionGetServerPort(UInt16 port_) : port(port_) {}
@@ -34,7 +34,7 @@ private:
     UInt16 port;
 };
 
-class FunctionBaseGetServerPort : public IFunctionBase
+class FunctionBaseGetServerPort final : public IFunctionBase
 {
 public:
     explicit FunctionBaseGetServerPort(bool is_distributed_, UInt16 port_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -70,7 +70,7 @@ private:
     DataTypePtr return_type;
 };
 
-class GetServerPortOverloadResolver : public IFunctionOverloadResolver
+class GetServerPortOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "getServerPort";

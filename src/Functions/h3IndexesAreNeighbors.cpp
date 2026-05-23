@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3IndexesAreNeighbors : public IFunction
+class FunctionH3IndexesAreNeighbors final : public IFunction
 {
 public:
     static constexpr auto name = "h3IndexesAreNeighbors";

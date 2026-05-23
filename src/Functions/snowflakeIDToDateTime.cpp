@@ -30,7 +30,7 @@ constexpr size_t time_shift = 22;
 
 }
 
-class FunctionSnowflakeIDToDateTime : public IFunction
+class FunctionSnowflakeIDToDateTime final : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;
@@ -98,7 +98,7 @@ public:
 };
 
 
-class FunctionSnowflakeIDToDateTime64 : public IFunction
+class FunctionSnowflakeIDToDateTime64 final : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;

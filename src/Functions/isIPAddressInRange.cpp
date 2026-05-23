@@ -157,7 +157,7 @@ inline bool isAddressInRange(const IPAddressVariant & address, const IPAddressCI
 
 namespace DB
 {
-    class FunctionIsIPAddressContainedIn : public IFunction
+    class FunctionIsIPAddressContainedIn final : public IFunction
     {
     public:
         static constexpr auto name = "isIPAddressInRange";

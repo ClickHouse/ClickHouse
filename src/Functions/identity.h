@@ -66,7 +66,7 @@ private:
 
 
 /// Default-constructible identity function, used as a template argument in FunctionMapToArrayAdapter
-class FunctionIdentity : public FunctionIdentityBase
+class FunctionIdentity final : public FunctionIdentityBase
 {
 public:
     FunctionIdentity() : FunctionIdentityBase("identity", true) {}
@@ -74,7 +74,7 @@ public:
 };
 
 
-class FunctionActionName : public FunctionIdentityBase
+class FunctionActionName final : public FunctionIdentityBase
 {
 public:
     FunctionActionName() : FunctionIdentityBase("__actionName", false) {}

@@ -320,7 +320,9 @@ CREATE TABLE system.functions
     `examples` String,
     `introduced_in` String,
     `categories` String,
-    `signature` String
+    `signature` String,
+    `deterministic` Nullable(UInt8),
+    `higher_order` Nullable(UInt8)
 )
 ENGINE = SystemFunctions
 COMMENT 'Contains a list of all available ordinary and aggregate functions with their descriptions.'
@@ -610,7 +612,6 @@ CREATE TABLE system.parts_columns
     `estimates.min` Nullable(String),
     `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
-    `estimates.null_count` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -1181,6 +1182,8 @@ CREATE TABLE system.tables
     `loading_dependencies_table` Array(String),
     `loading_dependent_database` Array(String),
     `loading_dependent_table` Array(String),
+    `target_database` String,
+    `target_table` String,
     `definer` String,
     `table` String ALIAS name
 )

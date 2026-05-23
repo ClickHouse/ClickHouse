@@ -13,7 +13,7 @@ namespace DB
 namespace
 {
 
-class FunctionLowCardinalityIndices: public IFunction
+class FunctionLowCardinalityIndices final : public IFunction
 {
 public:
     static constexpr auto name = "lowCardinalityIndices";

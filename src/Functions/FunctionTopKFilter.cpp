@@ -18,7 +18,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-class FunctionTopKFilter : public IFunction
+class FunctionTopKFilter final : public IFunction
 {
 public:
     static constexpr auto name = "__topKFilter";

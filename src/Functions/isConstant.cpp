@@ -11,7 +11,7 @@ namespace
 
 /// Returns 1 if and only if the argument is constant expression.
 /// This function exists for development, debugging and demonstration purposes.
-class FunctionIsConstant : public IFunction
+class FunctionIsConstant final : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";

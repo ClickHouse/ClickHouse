@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class FunctionFQDN : public IFunction
+class FunctionFQDN final : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";

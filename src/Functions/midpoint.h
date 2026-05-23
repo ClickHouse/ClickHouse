@@ -6,6 +6,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Types.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -34,7 +35,7 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionMidpoint : public IFunction
+class FunctionMidpoint final : public IFunction
 {
 public:
     static constexpr auto name = "midpoint";
@@ -108,7 +109,7 @@ private:
     static void calculateForNumericType(
         auto & result_data,
         const Columns & input_columns,
-        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
+        const VectorWithMemoryTracking<const ColumnUInt8::Container *> & input_null_maps,
         ColumnUInt8::Container & result_null_map_data,
         size_t input_rows_count)
     {
@@ -180,7 +181,7 @@ private:
     static void calculateForDecimalType(
         auto & result_data,
         const Columns & input_columns,
-        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
+        const VectorWithMemoryTracking<const ColumnUInt8::Container *> & input_null_maps,
         ColumnUInt8::Container & result_null_map_data,
         size_t input_rows_count)
     {
@@ -249,7 +250,7 @@ private:
         Columns columns;
         columns.reserve(converted_columns.size());
 
-        std::vector<const ColumnUInt8::Container *> input_null_maps;
+        VectorWithMemoryTracking<const ColumnUInt8::Container *> input_null_maps;
         ColumnUInt8::MutablePtr result_null_map;
         ColumnUInt8::Container * result_null_map_data = nullptr;
 

@@ -39,7 +39,7 @@ namespace
 {
 
 // map(x, y, ...) is a function that allows you to make key-value pair
-class FunctionMap : public IFunction
+class FunctionMap final : public IFunction
 {
 public:
     static constexpr auto name = "map";
@@ -163,7 +163,7 @@ private:
 };
 
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps
-class FunctionMapFromArrays : public IFunction
+class FunctionMapFromArrays final : public IFunction
 {
 public:
     static constexpr auto name = "mapFromArrays";
@@ -291,7 +291,7 @@ public:
     }
 };
 
-class FunctionMapUpdate : public IFunction
+class FunctionMapUpdate final : public IFunction
 {
 public:
     static constexpr auto name = "mapUpdate";

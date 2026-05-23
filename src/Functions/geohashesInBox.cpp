@@ -24,7 +24,7 @@ extern const int TOO_LARGE_ARRAY_SIZE;
 namespace
 {
 
-class FunctionGeohashesInBox : public IFunction
+class FunctionGeohashesInBox final : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";

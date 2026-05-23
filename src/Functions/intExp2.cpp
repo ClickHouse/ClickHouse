@@ -12,9 +12,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
 template <typename A>
 struct IntExp2Impl
 {
@@ -30,30 +27,68 @@ struct IntExp2Impl
         }
         else
         {
-            if constexpr (std::is_floating_point_v<A>)
+            if constexpr (is_floating_point<A>)
             {
-                if (std::isnan(a))
+                /// Self-inequality is the canonical NaN check — works for `Float32`/`Float64`
+                /// and for `BFloat16` (which has no `std::isnan` overload).
+                if (a != a)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "intExp2 must not be called with nan");
-                if (a < 0)
-                    return 0;
-                if (a >= 64)
-                    return std::numeric_limits<UInt64>::max();
             }
+
+            /// Range-check before the narrowing `static_cast<int>` below. Without this, integer
+            /// inputs whose magnitude exceeds `INT_MAX` (e.g. `UInt32` near `2^32`, `Int64`
+            /// near `INT64_MAX`) get implementation-defined truncation and return nonsense.
+            if constexpr (is_signed_v<A>)
+                if (a < A{0})
+                    return 0;
+            if (a >= A{64})
+                return std::numeric_limits<UInt64>::max();
+
             return intExp2(static_cast<int>(a));
         }
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// JIT only handles native integer inputs. Floats fall through to `apply` so NaN throws
+    /// (we can't throw from JIT-compiled code), and big ints fall through to `apply` so the
+    /// `NOT_IMPLEMENTED` exception is preserved.
+    static constexpr bool compilable = is_integer<A> && !is_big_int_v<A>;
 
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool is_signed)
     {
         if (!arg->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IntExp2Impl expected an integral type");
-        return b.CreateShl(llvm::ConstantInt::get(arg->getType(), 1), arg);
+
+        /// Widen the input to `i64`. For signed inputs, sign-extension preserves the sign bit
+        /// so that originally-negative values can be detected with `ICmpSLT(.., 0)`.
+        auto * result_type = b.getInt64Ty();
+        auto * arg_i64 = b.CreateIntCast(arg, result_type, is_signed);
+
+        auto * one = llvm::ConstantInt::get(result_type, 1);
+        auto * sixty_three = llvm::ConstantInt::get(result_type, 63);
+        auto * zero64 = llvm::ConstantInt::get(result_type, 0);
+        auto * uint_max = llvm::ConstantInt::getAllOnesValue(result_type);
+
+        /// Negative inputs return 0 (matches `intExp2(int x)` for `x < 0`).
+        /// For unsigned inputs the branch folds away because `is_negative` is a constant `false`.
+        llvm::Value * is_negative = is_signed
+            ? static_cast<llvm::Value *>(b.CreateICmpSLT(arg_i64, zero64))
+            : static_cast<llvm::Value *>(b.getFalse());
+
+        /// Inputs `> 63` saturate to `UINT64_MAX`. The mask makes the `shl` defined when
+        /// `is_too_large` is true (the result of `shl` is then discarded by the outer select).
+        auto * is_too_large = b.CreateICmpUGT(arg_i64, sixty_three);
+        auto * masked = b.CreateAnd(arg_i64, sixty_three);
+        auto * shifted = b.CreateShl(one, masked);
+        auto * with_overflow = b.CreateSelect(is_too_large, uint_max, shifted);
+
+        return b.CreateSelect(is_negative, zero64, with_overflow);
     }
 #endif
 };
+
+namespace
+{
 
 struct NameIntExp2 { static constexpr auto name = "intExp2"; };
 using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, false>;

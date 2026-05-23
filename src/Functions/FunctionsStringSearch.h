@@ -82,7 +82,7 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
 template <typename Impl,
          ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
          HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No>
-class FunctionsStringSearch : public IFunction
+class FunctionsStringSearch final : public IFunction
 {
 private:
     enum class ArgumentOrder : uint8_t

@@ -30,7 +30,7 @@ namespace ErrorCodes
 /// Function timeSeriesFromGrid(start_timestamp, end_timestamp, step, [value1, value2, value3, ..., valueN]) converts array of values [value1, value2, value3, ...]
 /// to array of tuples [(start_timestamp, value1), (start_timestamp + step, value2), (start_timestamp + 2 * step, value3), ..., (end_timestamp, valueN)].
 template <bool with_values>
-class FunctionTimeSeriesRange : public IFunction
+class FunctionTimeSeriesRange final : public IFunction
 {
 public:
     static constexpr auto name = with_values ? "timeSeriesFromGrid" : "timeSeriesRange";

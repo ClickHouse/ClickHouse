@@ -18,7 +18,7 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionFlipCoordinates : public IFunction
+class FunctionFlipCoordinates final : public IFunction
 {
 public:
     static constexpr auto name = "flipCoordinates";

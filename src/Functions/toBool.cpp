@@ -11,7 +11,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionToBool : public IFunction
+    class FunctionToBool final : public IFunction
     {
     public:
         static constexpr auto name = "toBool";

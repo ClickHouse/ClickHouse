@@ -13,7 +13,7 @@ namespace DB
 namespace
 {
 
-class FunctionSvg : public IFunction
+class FunctionSvg final : public IFunction
 {
 public:
     static inline const char * name = "svg";

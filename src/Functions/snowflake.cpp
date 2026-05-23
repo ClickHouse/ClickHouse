@@ -43,7 +43,7 @@ namespace
 constexpr size_t snowflake_epoch = 1288834974657L;
 constexpr int time_shift = 22;
 
-class FunctionDateTimeToSnowflake : public IFunction
+class FunctionDateTimeToSnowflake final : public IFunction
 {
 private:
     const bool allow_deprecated_snowflake_conversion_functions;
@@ -91,7 +91,7 @@ public:
     }
 };
 
-class FunctionSnowflakeToDateTime : public IFunction
+class FunctionSnowflakeToDateTime final : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;
@@ -163,7 +163,7 @@ public:
 };
 
 
-class FunctionDateTime64ToSnowflake : public IFunction
+class FunctionDateTime64ToSnowflake final : public IFunction
 {
 private:
     const bool allow_deprecated_snowflake_conversion_functions;
@@ -228,7 +228,7 @@ public:
 };
 
 
-class FunctionSnowflakeToDateTime64 : public IFunction
+class FunctionSnowflakeToDateTime64 final : public IFunction
 {
 private:
     const bool allow_nonconst_timezone_arguments;

@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionNormalizedQueryHash : public IFunction
+class FunctionNormalizedQueryHash final : public IFunction
 {
 private:
     bool keep_names;

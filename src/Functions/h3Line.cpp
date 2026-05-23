@@ -23,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Line : public IFunction
+class FunctionH3Line final : public IFunction
 {
 public:
     static constexpr auto name = "h3Line";

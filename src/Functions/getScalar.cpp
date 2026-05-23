@@ -23,7 +23,7 @@ namespace
 
 /** Get scalar value of sub queries from query context via IASTHash.
   */
-class FunctionGetScalar : public IFunction
+class FunctionGetScalar final : public IFunction
 {
 public:
     static constexpr auto name = "__getScalar";
@@ -64,7 +64,7 @@ private:
 };
 
 
-class FunctionGetScalarOverloadResolver : public IFunctionOverloadResolver, private WithContext
+class FunctionGetScalarOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "__getScalar";
@@ -120,7 +120,7 @@ public:
 
 /** Get special scalar values
   */
-class FunctionGetSpecialScalar : public IFunction
+class FunctionGetSpecialScalar final : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr context_, const char * function_name_, const char * scalar_name_)

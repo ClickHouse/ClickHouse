@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
@@ -26,7 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToChildren : public IFunction
+class FunctionH3ToChildren final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToChildren";
@@ -109,7 +110,7 @@ public:
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), vec_size, toString(child_resolution));
 
-            std::vector<H3Index> hindex_vec;
+            VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
 

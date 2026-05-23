@@ -248,7 +248,7 @@ struct PoissonDistribution
   * This query will return two different columns
   */
 template <typename Distribution>
-class FunctionRandomDistribution : public IFunction
+class FunctionRandomDistribution final : public IFunction
 {
 private:
     DistributionLimits limits;

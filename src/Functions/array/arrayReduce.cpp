@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/Arena.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -35,7 +36,7 @@ namespace ErrorCodes
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
   */
-class FunctionArrayReduce : public IFunction
+class FunctionArrayReduce final : public IFunction
 {
 public:
     static constexpr auto name = "arrayReduce";
@@ -84,11 +85,11 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 
     /// Aggregate functions do not support constant or lowcardinality columns. Therefore, we materialize them and
     /// keep a reference so they are alive until we finish using their nested columns (array data/offset)
-    std::vector<ColumnPtr> materialized_columns;
+    VectorWithMemoryTracking<ColumnPtr> materialized_columns;
 
     const size_t num_arguments_columns = arguments.size() - 1;
 
-    std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+    VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
@@ -178,7 +179,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 namespace
 {
 
-class FunctionArrayReduceOverloadResolver : public IFunctionOverloadResolver, private WithContext
+class FunctionArrayReduceOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduce";

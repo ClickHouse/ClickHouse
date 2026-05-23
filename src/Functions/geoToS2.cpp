@@ -28,7 +28,7 @@ namespace
  * Accepts points of the form (longitude, latitude)
  * Returns s2 identifier
  */
-class FunctionGeoToS2 : public IFunction
+class FunctionGeoToS2 final : public IFunction
 {
 public:
     static constexpr auto name = "geoToS2";
