@@ -70,8 +70,10 @@ SELECT 'WITH TIES result count:', count() FROM (
 
 -- ORDER BY ... WITH FILL: pushdown must be disabled (WITH FILL synthesizes
 -- rows; per-shard fills would produce a wrong final set after merging).
+-- The query has an outer `LIMIT` so the early `hasLimit()` guard does not
+-- short-circuit — this exercises the `WITH FILL` rejection branch directly.
 SELECT 'WITH FILL disables pushdown:',
-    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY id WITH FILL FROM 0 TO 5)
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY id WITH FILL FROM 0 TO 5 LIMIT 10)
      WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
 
 -- ORDER BY without outer LIMIT: pushdown must be disabled (the outer planner
@@ -137,6 +139,42 @@ SELECT 'WHERE disables pushdown:',
 SELECT 'WHERE result count:', count() FROM (
     SELECT id FROM test_view_04241 WHERE id > 50 ORDER BY ts DESC LIMIT 10
 );
+
+-- `additional_table_filters` setting: pushdown must be disabled. The filter is
+-- applied as a separate planner filter above the view subquery (because
+-- `StorageView` does not support prewhere), so pushing `LIMIT` would truncate
+-- before the filter runs and could return fewer rows than expected. The
+-- correctness check uses `id > 50` with `ORDER BY ts DESC` (where `ts` is
+-- monotonically decreasing in `id`) so that with buggy pushdown the inner
+-- top-10 by `ts` would all have `id <= 9` and be dropped, returning 0 rows —
+-- the correct behavior must return 10 rows.
+SELECT 'additional_table_filters disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10
+                              SETTINGS additional_table_filters = {'test_view_04241':'id > 50'})
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'additional_table_filters result count:', count() FROM (
+    SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10
+    SETTINGS additional_table_filters = {'test_view_04241':'id > 50'}
+);
+
+-- Row policy on the view: pushdown must be disabled. Row policies on the view
+-- are applied as a planner `where_filters` step above the view subquery (since
+-- `StorageView` does not support prewhere), so pushing `LIMIT` would truncate
+-- before the policy filter runs. Same correctness check pattern as above —
+-- buggy pushdown would return 0 rows instead of the correct 10.
+DROP ROW POLICY IF EXISTS test_policy_04241 ON test_view_04241;
+CREATE ROW POLICY test_policy_04241 ON test_view_04241 USING id > 50 TO ALL;
+
+SELECT 'row policy disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'row policy result count:', count() FROM (
+    SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10
+);
+
+DROP ROW POLICY test_policy_04241 ON test_view_04241;
 
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;

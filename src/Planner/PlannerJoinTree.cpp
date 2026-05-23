@@ -794,6 +794,7 @@ void pushOrderByIntoView(
     const SelectQueryInfo & select_query_info,
     const QueryTreeNodePtr & table_expression,
     bool is_single_table_expression,
+    const ContextPtr & query_context,
     SelectQueryInfo & table_expression_query_info)
 {
     /// Basic checks: must be a view with ORDER BY in a single-table outer query.
@@ -825,6 +826,20 @@ void pushOrderByIntoView(
     /// inside the view. Pushing `LIMIT` into the view would then truncate rows
     /// before the outer filter, potentially returning fewer rows than expected.
     if (outer->hasWhere() || outer->hasPrewhere() || outer->hasQualify())
+        return;
+
+    /// Skip when a row policy applies to the view itself: row policies are
+    /// applied as planner `where_filters` above the view subquery (since
+    /// `StorageView` does not support prewhere), so pushing `LIMIT` would
+    /// truncate before the row-policy filter runs and could return fewer rows
+    /// than expected.
+    if (getEffectiveRowPolicyFilter(storage, query_context))
+        return;
+
+    /// Skip when `additional_table_filters` matches this view: the additional
+    /// filter is applied above the view subquery for the same reason as row
+    /// policies, so pushing `LIMIT` would truncate before the filter runs.
+    if (table_expression_query_info.additional_filter_ast)
         return;
 
     /// Outer query must be a transparent SELECT — pushing ORDER BY through
@@ -961,16 +976,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
 
-        pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, table_expression_query_info);
-
         /// Parse additional_table_filters early so that later decisions (trivial-count,
-        /// trivial-limit) can see `additional_filter_ast` before the actual filter DAG
-        /// is built further down
+        /// trivial-limit, ORDER BY pushdown into VIEW) can see `additional_filter_ast`
+        /// before the actual filter DAG is built further down
         ///
         /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
         if (!select_query_options.only_analyze)
             parseAdditionalFilterAstIfNeeded(
                 storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
+
+        pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, query_context, table_expression_query_info);
 
         const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);

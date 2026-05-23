@@ -17,3 +17,7 @@ JOIN disables pushdown:	1
 JOIN result count:	10
 WHERE disables pushdown:	1
 WHERE result count:	10
+additional_table_filters disables pushdown:	1
+additional_table_filters result count:	10
+row policy disables pushdown:	1
+row policy result count:	10
