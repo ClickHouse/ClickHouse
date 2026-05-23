@@ -30,9 +30,11 @@ SESSION_ID="${CLICKHOUSE_DATABASE}_test_01903"
 # Override the HTTP parsing limits inside the session. We use `SET` in the request body so the
 # changes go through `InterpreterSetQuery::execute` and actually land in `session_context`,
 # rather than being interpreted as URL parameter settings applied to the per-query context.
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -d "SET http_max_field_name_size = $((DEFAULT_MAX_NAME_SIZE+10))"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -d "SET http_max_field_value_size = $((DEFAULT_MAX_VALUE_SIZE+10))"
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -d 'SELECT 1'
+# Pass `-f` so a server-side failure of `SET` becomes a non-zero curl exit and visible error
+# output, ensuring we are actually exercising a successful session-scoped override below.
+${CLICKHOUSE_CURL} -sSf "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -d "SET http_max_field_name_size = $((DEFAULT_MAX_NAME_SIZE+10))"
+${CLICKHOUSE_CURL} -sSf "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -d "SET http_max_field_value_size = $((DEFAULT_MAX_VALUE_SIZE+10))"
+${CLICKHOUSE_CURL} -sSf "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -d 'SELECT 1'
 
 # Test that the session context doesn't bypass the server's global limits for subsequent requests in the session.
 ${CLICKHOUSE_CURL} -sSv "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -H @$CLICKHOUSE_TMP/long_name.txt -d 'SELECT 1' 2>&1 | grep -Fc '400 Bad Request'
