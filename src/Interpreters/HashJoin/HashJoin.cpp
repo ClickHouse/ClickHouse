@@ -2528,7 +2528,7 @@ void HashJoin::publishSharedRuntimeFilters()
             continue;
 
         auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
-            filter_column_type,
+            existing->getFilterColumnTargetType(),
             existing->getPassRatioThresholdForDisabling(),
             existing->getBlocksToSkipBeforeReenabling(),
             probe_fn);
