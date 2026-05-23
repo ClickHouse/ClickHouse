@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -41,12 +42,12 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> patterns_ = {});
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_ = {});
 
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
 
     SipHash getHash() const;
@@ -146,9 +147,9 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
-    std::vector<String> stringToTokens(const Field & field) const;
-    std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
-    std::vector<String> stringLikeToTokens(const Field & field) const;
+    VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
+    VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
+    VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
     std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
