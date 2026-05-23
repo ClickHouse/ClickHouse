@@ -506,6 +506,7 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
     {
         uint64_t effective_limit = std::numeric_limits<uint64_t>::max();
         bool any_finite = false;
+        bool any_read_failure = false;
         for (auto & buf : cgroup_memory_max_bufs)
         {
             try
@@ -537,6 +538,7 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
             }
             catch (...)
             {
+                any_read_failure = true;
                 if (!std::exchange(cgroup_memory_max_warnings_printed, true))
                     tryLogCurrentException(log, "Cannot read cgroup memory limit");
             }
@@ -551,6 +553,16 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
             uint64_t used = cgroups_reader->readMemoryUsage();
             return (effective_limit > used) ? (effective_limit - used) : 0;
         }
+        /// Fail-close: if *every* `memory.max` read failed and none parsed as either
+        /// "no limit" or a finite value, we have no idea whether the cgroup has a
+        /// binding limit. Falling through to host-wide `/proc/meminfo` here would
+        /// be fail-open — on a containerized deployment the host's free memory can
+        /// be far above the cgroup budget, and using it as the headroom estimate
+        /// can let `total_memory_tracker` grow past the cgroup limit and trigger
+        /// a cgroup OOM kill. Skip the adjustment this tick instead; the worker
+        /// will retry on the next tick.
+        if (any_read_failure)
+            return std::nullopt;
     }
 #endif
     return readSystemAvailableMemory();
