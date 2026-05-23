@@ -1302,7 +1302,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (context->getSettingsRef()[Setting::group_by_use_nulls] && analysis_result.use_grouping_set_key)
         {
             for (const auto & key : query_analyzer->aggregationKeys())
-                res.insert({nullptr, makeNullableSafe(header.getByName(key.name).type), key.name});
+                res.insert({nullptr, makeNullableOrLowCardinalityNullableSafe(header.getByName(key.name).type), key.name});
         }
         else
         {
