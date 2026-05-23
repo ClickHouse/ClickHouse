@@ -59,6 +59,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
+            {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+            {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
