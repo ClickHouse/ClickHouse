@@ -1,3 +1,4 @@
+#include <thread>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/MaterializedView/RefreshTask.h>
