@@ -205,6 +205,7 @@ void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, siz
     if (max_serialized_bytes < posting_count_header_bytes)
         throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann posting list serialized length is too small");
 
+    /// Use cumulative byte counter instead of pointer arithmetic: compressed buffer refills may move `position()`.
     const size_t start_count = in.count();
 
     UInt32 count = 0;
@@ -212,6 +213,7 @@ void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, siz
 
     const UInt64 payload_bytes = max_serialized_bytes - posting_count_header_bytes;
     const UInt64 entry_bytes = sizeof(UInt64) + dimensions * sizeof(Float32);
+    /// Validate on-disk `count` before allocation; corrupted streams must not force huge `resize`.
     if (entry_bytes == 0 || static_cast<UInt64>(count) > payload_bytes / entry_bytes)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
