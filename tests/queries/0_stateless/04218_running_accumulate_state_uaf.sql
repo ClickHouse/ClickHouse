@@ -1,16 +1,18 @@
 -- Regression test: when `runningAccumulate` is called on a column whose
 -- aggregate function returns its own state (i.e. is wrapped in `-State`,
--- possibly through `-OrDefault`/`-OrNull`/`-If`/`-ForEach`/etc.), the
--- function would historically push raw pointers to its stack-local
+-- possibly through `-OrDefault`/`-OrNull`/`-If`/`-ForEach`/`-Merge`/etc.),
+-- the function would historically push raw pointers to its stack-local
 -- accumulator into the result `ColumnAggregateFunction`. That produced a
 -- use-after-free at the result column's destruction time (caught by ASan)
 -- and a use-of-uninitialized-value (MSan) in the AST fuzzer.
 --
 -- The fix in `src/Functions/runningAccumulate.cpp` detects the
--- state-returning case, allocates per-row state slots in an `Arena`,
--- deep-copies the running accumulator into them, and attaches the arena
--- to the result column via `ColumnAggregateFunction::addArena` so the
--- slots outlive the function call.
+-- state-returning case and uses `insertMergeResultInto` instead, which
+-- delegates through the combinator chain to
+-- `AggregateFunctionState::insertMergeResultInto` —
+-- `ColumnAggregateFunction::insertFrom` allocates a fresh state in the
+-- column's own arena and merges the accumulator into it, so each row
+-- owns its own state independent of the stack-local accumulator.
 
 SET allow_deprecated_error_prone_window_functions = 1;
 SET group_by_two_level_threshold = 0;
@@ -78,10 +80,31 @@ GROUP BY 1
 ORDER BY number;
 
 -- `-ForEach` over a state-returning nested function: the result column is a
--- `ColumnArray` whose inner column is a `ColumnAggregateFunction`. The arena
--- attachment walks the column tree (via `forEachMutableSubcolumnRecursively`)
--- so the inner column also retains the per-row state slots.
+-- `ColumnArray` whose inner column is a `ColumnAggregateFunction`.
+-- `AggregateFunctionForEach::insertMergeResultInto` materializes each
+-- per-element state into the inner column via the nested
+-- `insertMergeResultInto`, which keeps the per-row states independent of
+-- the stack-local accumulator.
 SELECT number, finalizeAggregation(finalizeAggregation(arrayJoin(runningAccumulate(sumStateOrDefaultStateForEachState([number, number + 1])))))
 FROM numbers(5)
 GROUP BY 1
+ORDER BY number;
+
+-- A column with type `AggregateFunction(sumStateMerge, ...)` keeps the
+-- `Merge` wrapper visible through `ColumnAggregateFunction::getAggregateFunction`,
+-- so `runningAccumulate` sees `AggregateFunctionMerge(AggregateFunctionState(...))`
+-- with `isState` propagated to true. Without an
+-- `AggregateFunctionMerge::insertMergeResultInto` override this used to
+-- throw `NOT_IMPLEMENTED`; with the override it delegates to the nested
+-- `AggregateFunctionState::insertMergeResultInto`.
+SELECT number, finalizeAggregation(runningAccumulate(s))
+FROM
+(
+    SELECT
+        number,
+        cast(sumState(number), 'AggregateFunction(sumStateMerge, AggregateFunction(sumState, UInt64))') AS s
+    FROM numbers(5)
+    GROUP BY number
+    ORDER BY number
+)
 ORDER BY number;
