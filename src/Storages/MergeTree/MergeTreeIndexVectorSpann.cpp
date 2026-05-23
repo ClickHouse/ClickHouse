@@ -199,10 +199,33 @@ void writePostingList(WriteBuffer & out, const std::vector<SpannPostingEntry> & 
     }
 }
 
-void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, size_t dimensions)
+void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, size_t dimensions, UInt32 max_serialized_bytes)
 {
+    static constexpr UInt32 posting_count_header_bytes = sizeof(UInt32);
+    if (max_serialized_bytes < posting_count_header_bytes)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann posting list serialized length is too small");
+
+    const char * const start = in.position();
+
     UInt32 count = 0;
     readBinaryLittleEndian(count, in);
+
+    const UInt64 payload_bytes = max_serialized_bytes - posting_count_header_bytes;
+    const UInt64 entry_bytes = sizeof(UInt64) + dimensions * sizeof(Float32);
+    if (entry_bytes == 0 || static_cast<UInt64>(count) > payload_bytes / entry_bytes)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "vector_spann posting list count {} exceeds serialized size bound {} bytes",
+            count,
+            max_serialized_bytes);
+
+    if (postingListSerializedBytes(count, dimensions) != max_serialized_bytes)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "vector_spann posting list count {} is inconsistent with serialized length {} bytes",
+            count,
+            max_serialized_bytes);
+
     list.resize(count);
     for (UInt32 i = 0; i < count; ++i)
     {
@@ -211,6 +234,13 @@ void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, siz
         for (size_t d = 0; d < dimensions; ++d)
             readBinaryLittleEndian(list[i].vector[d], in);
     }
+
+    if (static_cast<UInt64>(in.position() - start) != max_serialized_bytes)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "vector_spann posting list consumed {} bytes, expected {}",
+            static_cast<UInt64>(in.position() - start),
+            max_serialized_bytes);
 }
 
 }
@@ -342,7 +372,7 @@ void MergeTreeIndexGranuleVectorSpann::deserializeBinaryWithMultipleStreams(
 
     postings_by_centroid.assign(centroid_count, {});
     for (UInt64 i = 0; i < centroid_count; ++i)
-        readPostingList(posting_buf, postings_by_centroid[i], static_cast<size_t>(params.dimensions));
+        readPostingList(posting_buf, postings_by_centroid[i], static_cast<size_t>(params.dimensions), centroid_offsets[i].length);
 
     LOG_TRACE(logger, "Loaded vector_spann index granule (format version {})", state.version);
 }
