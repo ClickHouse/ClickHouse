@@ -189,6 +189,21 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
             "Cannot INSERT into view {} because its query contains a JOIN",
             view_id.getFullTableName());
 
+    if (select.arrayJoinExpressionList().first)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains an ARRAY JOIN",
+            view_id.getFullTableName());
+
+    if (select.qualify())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains QUALIFY",
+            view_id.getFullTableName());
+
+    if (const auto & window_expr = select.window(); window_expr && !window_expr->children.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a WINDOW clause",
+            view_id.getFullTableName());
+
     /// A `WITH` clause can introduce aliases that look like simple column references in the SELECT list
     /// (e.g. `WITH a + 1 AS x SELECT x FROM t`) but do not correspond to columns of the underlying table.
     /// Rejecting `WITH` keeps the "simple projection" contract honest.
@@ -565,8 +580,12 @@ private:
                 materialized.type = o.view_type;
             }
             materialized.name = o.view_name;
-            block.erase(o.view_name);
-            block.insert(std::move(materialized));
+            /// Replace the column at its original position. The inner `INSERT` pipeline
+            /// forwards columns by position; erase+append would route values into the
+            /// wrong target columns when an omitted view column is not at the tail.
+            const size_t pos = block.getPositionByName(o.view_name);
+            block.erase(pos);
+            block.insert(pos, std::move(materialized));
         }
     }
 
