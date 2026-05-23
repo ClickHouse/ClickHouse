@@ -31,7 +31,7 @@ CREATE TABLE tab_lazy_pe(
         posting_list_codec = 'bitpacking',
         posting_list_block_size = 256))
 ENGINE = MergeTree() ORDER BY k
-SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10M';
 
 -- Tokens are named so their alphabetical order ('a' < 'b' < 'c' < 'd' < 'e') matches
 -- the desired position in `TextSearchQuery::tokens` after the constructor's sort —
