@@ -6,6 +6,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/FailPoint.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
@@ -23,9 +24,9 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
@@ -827,8 +828,10 @@ void SystemLog<LogElement>::prepareTable()
             auto query_context = Context::createCopy(context);
             query_context->makeQueryContext();
             addSettingsForQuery(query_context, IAST::QueryKind::Rename);
+            query_context->setCurrentQueryId("");
+            auto rename_query_scope = CurrentThread::QueryScope::create(query_context);
 
-            InterpreterRenameQuery(rename, query_context).execute();
+            executeQuery(rename->formatWithSecretsOneLine(), query_context, QueryFlags{.internal = true});
 
             /// The required table will be created.
             table = nullptr;
@@ -847,9 +850,9 @@ void SystemLog<LogElement>::prepareTable()
         addSettingsForQuery(query_context, IAST::QueryKind::Create);
 
         auto create_query_ast = getCreateTableQuery();
-        InterpreterCreateQuery interpreter(create_query_ast, query_context);
-        interpreter.setInternal(true);
-        interpreter.execute();
+        query_context->setCurrentQueryId("");
+        auto query_scope = CurrentThread::QueryScope::create(query_context);
+        executeQuery(create_query_ast->formatWithSecretsOneLine(), query_context, QueryFlags{.internal = true});
 
         table = DatabaseCatalog::instance().getTable(table_id, getContext());
 

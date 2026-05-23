@@ -13,6 +13,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ProcessList.h>
@@ -501,10 +502,9 @@ void StorageWindowView::alter(
 
     /// create inner table
     auto create_context = Context::createCopy(local_context);
+    create_context->setCurrentQueryId("");
     auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
-    InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
-    create_interpreter.setInternal(true);
-    create_interpreter.execute();
+    executeQuery(inner_create_query->formatWithSecretsOneLine(), create_context, QueryFlags{.internal = true});
 
     shutdown_called = false;
 
@@ -1308,13 +1308,13 @@ StorageWindowView::StorageWindowView(
     {
         auto inner_create_query = getInnerTableCreateQuery(inner_query, inner_table_id);
         auto create_context = Context::createCopy(context_);
-        InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
-        create_interpreter.setInternal(true);
-        create_interpreter.execute();
+        create_context->setCurrentQueryId("");
+        executeQuery(inner_create_query->formatWithSecretsOneLine(), create_context, QueryFlags{.internal = true});
         if (has_inner_target_table)
         {
             /// create inner target table
-            auto create_context_ = Context::createCopy(context_);
+            auto target_create_context = Context::createCopy(context_);
+            target_create_context->setCurrentQueryId("");
             auto target_create_query = make_intrusive<ASTCreateQuery>();
             target_create_query->setDatabase(table_id_.database_name);
             target_create_query->setTable(generateTargetTableName(table_id_));
@@ -1325,9 +1325,7 @@ StorageWindowView::StorageWindowView(
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, to_table_engine);
 
-            InterpreterCreateQuery create_interpreter_(target_create_query, create_context_);
-            create_interpreter_.setInternal(true);
-            create_interpreter_.execute();
+            executeQuery(target_create_query->formatWithSecretsOneLine(), target_create_context, QueryFlags{.internal = true});
         }
     }
 

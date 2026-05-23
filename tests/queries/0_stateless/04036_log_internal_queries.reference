@@ -1,0 +1,16 @@
+--- Regular MV inner table CREATE ---
+1
+--- MV inner table RENAME ---
+1
+--- RMV temp table CREATE ---
+1
+--- RMV EXCHANGE/RENAME ---
+1
+--- RMV temp table DROP ---
+1
+--- TimeSeries inner table CREATE ---
+1
+--- WindowView inner table CREATE ---
+1
+--- SystemLog table CREATE ---
+1

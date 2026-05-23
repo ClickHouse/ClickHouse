@@ -9,16 +9,14 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTRefreshStrategy.h>
-#include <Parsers/queryNormalization.h>
+#include <Parsers/ASTRenameQuery.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -324,9 +322,8 @@ StorageMaterializedView::StorageMaterializedView(
         if (to_table_engine)
             manual_create_query->set(manual_create_query->storage, to_table_engine);
 
-        InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
-        create_interpreter.setInternal(true);
-        create_interpreter.execute();
+        create_context->setCurrentQueryId("");
+        executeQuery(manual_create_query->formatWithSecretsOneLine(), create_context, QueryFlags{.internal = true});
 
         if (fixed_uuid)
             target_table_id = DatabaseCatalog::instance().getTable({db_name, inner_name}, getContext())->getStorageID();
@@ -617,11 +614,9 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         if (create_query->targets)
             create_query->targets->resetInnerUUIDs();
 
-        InterpreterCreateQuery create_interpreter(create_query, refresh_context);
-        create_interpreter.setInternal(true);
-        /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
-        /// for other replicas to execute the query, only the current replica. Same in exchangeTargetTable() and dropTempTable().
-        create_interpreter.execute();
+        /// Notice that we discard the BlockIO that executeQuery returns. This means that in case of DatabaseReplicated we don't wait
+        /// for other replicas to execute the query, only the current replica. Same in exchangeTargetTable and dropTempTable.
+        executeQuery(create_query->formatWithSecretsOneLine(), refresh_context, QueryFlags{.internal = true});
 
         target_table = StorageID(db_name, new_table_name, create_query->uuid);
         out_temp_table_id = target_table;
@@ -668,7 +663,8 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     rename_query->exchange = exchange;
     rename_query->addElement(fresh_table.database_name, fresh_table.table_name, stale_table_id.database_name, stale_table_id.table_name);
 
-    InterpreterRenameQuery(rename_query, refresh_context).execute();
+    auto mutable_context = Context::createCopy(refresh_context);
+    executeQuery(rename_query->formatWithSecretsOneLine(), mutable_context, QueryFlags{.internal = true});
 
     return exchange ? std::make_optional(fresh_table) : std::nullopt;
 }
@@ -684,16 +680,12 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     drop_query->if_exists = true;
     drop_query->sync = false;
 
-    Stopwatch stopwatch;
     try
     {
-        InterpreterDropQuery(drop_query, refresh_context).execute();
+        executeQuery(drop_query->formatWithSecretsOneLine(), refresh_context, QueryFlags{.internal = true});
     }
     catch (...)
     {
-        auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
-        UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
@@ -820,7 +812,9 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
 
-        InterpreterRenameQuery(rename, getContext()).execute();
+        auto rename_context = Context::createCopy(getContext());
+        rename_context->setCurrentQueryId("");
+        executeQuery(rename->formatWithSecretsOneLine(), rename_context, QueryFlags{.internal = true});
         updateTargetTableId(new_table_id.database_name, new_target_table_name);
     }
 

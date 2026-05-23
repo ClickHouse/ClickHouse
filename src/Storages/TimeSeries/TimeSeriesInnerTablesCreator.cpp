@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -189,9 +190,8 @@ StorageID TimeSeriesInnerTablesCreator::createInnerTable(
     auto manual_create_query = getInnerTableCreateQuery(inner_table_kind, inner_table_uuid, inner_storage_def);
 
     /// Create the inner target table.
-    InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
-    create_interpreter.setInternal(true);
-    create_interpreter.execute();
+    create_context->setCurrentQueryId("");
+    executeQuery(manual_create_query->formatWithSecretsOneLine(), create_context, QueryFlags{.internal = true});
 
     return DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
 }
