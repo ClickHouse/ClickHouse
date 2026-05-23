@@ -7,7 +7,6 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
