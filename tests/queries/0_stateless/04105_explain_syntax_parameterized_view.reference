@@ -53,3 +53,9 @@ FROM
 ) AS t
 SELECT *
 FROM numbers(3)
+SELECT *
+FROM `04105_modifiers_pv`(n = 1)
+FINAL
+SELECT count()
+FROM `04105_modifiers_pv`(n = 1)
+SAMPLE 5 / 10

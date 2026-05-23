@@ -46,6 +46,19 @@ CREATE VIEW numbers AS SELECT {n:UInt64} AS x;
 EXPLAIN SYNTAX SELECT * FROM numbers(3);
 DROP VIEW numbers;
 
+-- FINAL / SAMPLE modifiers are valid on a parameterized view at execution time.
+-- The rewrite must skip expansion in this case, otherwise the modifiers would be
+-- attached to the synthesized subquery and rejected with UNSUPPORTED_METHOD.
+DROP TABLE IF EXISTS 04105_modifiers_t;
+DROP VIEW IF EXISTS 04105_modifiers_pv;
+CREATE TABLE 04105_modifiers_t (x UInt64) ENGINE = MergeTree ORDER BY x SAMPLE BY x;
+INSERT INTO 04105_modifiers_t SELECT number FROM numbers(100);
+CREATE VIEW 04105_modifiers_pv AS SELECT x FROM 04105_modifiers_t WHERE x > {n:UInt64};
+EXPLAIN SYNTAX SELECT * FROM 04105_modifiers_pv(n = 1) FINAL;
+EXPLAIN SYNTAX SELECT count() FROM 04105_modifiers_pv(n = 1) SAMPLE 0.5;
+DROP VIEW 04105_modifiers_pv;
+DROP TABLE 04105_modifiers_t;
+
 DROP TABLE 04105_join_target;
 DROP VIEW 04105_pv;
 DROP VIEW 04105_pv_multi;

@@ -119,6 +119,13 @@ namespace
             if (!func)
                 return;
 
+            /// FINAL and SAMPLE are valid on a parameterized view at execution time, but
+            /// rewriting the view call into a subquery here would attach them to the
+            /// subquery, where they are rejected with `UNSUPPORTED_METHOD`. Leave the
+            /// original call intact so `EXPLAIN SYNTAX` matches what execution accepts.
+            if (table_expr.final || table_expr.sample_size || table_expr.sample_offset)
+                return;
+
             auto query_context = data.getContext()->getQueryContext();
 
             /// A registered table function (e.g. `numbers`) takes precedence over a view with
