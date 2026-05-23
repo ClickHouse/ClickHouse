@@ -101,7 +101,7 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_apply_to_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_apply_to_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
 
-    for (const auto & id : access_control.findAll<Quota>())
+    for (const auto & id : ids)
     {
         auto quota = access_control.tryRead<Quota>(id);
         if (!quota)
