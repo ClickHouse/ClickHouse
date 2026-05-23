@@ -4061,6 +4061,11 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+    {
+        hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
+        hash.update(static_cast<UInt8>(is_array_join_left));
+    }
     if (const auto prewhere = select.prewhere())
         hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
     if (const auto where = select.where())
