@@ -39,12 +39,14 @@ SELECT 'opt-out count', count() FROM repro_104263 FINAL
 WHERE event_time >= '2026-03-01' AND event_time <= '2026-03-31'
 SETTINGS defer_partition_pruning_after_final = 0;
 
--- The behavioral difference shows up in the `Partition Min-Max` index step of EXPLAIN.
+-- The behavioral difference shows up in the partition-key MinMax index step of EXPLAIN.
 -- Default reads all 5 parts (pruning disabled). Opt-out prunes to 1.
+-- In release/26.3 the step is named `MinMax`; on master / 26.4+ it was renamed to
+-- `Partition Min-Max` by #94140. `%MinMax%` matches both.
 SELECT 'default-defer partition pruning',
-       countIf(explain LIKE '%Partition Min-Max%') AS has_partition_step,
-       countIf(explain LIKE '%Parts: 5/5%')        AS no_pruning,
-       countIf(explain LIKE '%Parts: 1/5%')        AS pruned
+       countIf(explain LIKE '%MinMax%')     AS has_partition_step,
+       countIf(explain LIKE '%Parts: 5/5%') AS no_pruning,
+       countIf(explain LIKE '%Parts: 1/5%') AS pruned
 FROM
 (
     EXPLAIN indexes = 1
@@ -53,9 +55,9 @@ FROM
 );
 
 SELECT 'opt-out partition pruning',
-       countIf(explain LIKE '%Partition Min-Max%') AS has_partition_step,
-       countIf(explain LIKE '%Parts: 5/5%')        AS no_pruning,
-       countIf(explain LIKE '%Parts: 1/5%')        AS pruned
+       countIf(explain LIKE '%MinMax%')     AS has_partition_step,
+       countIf(explain LIKE '%Parts: 5/5%') AS no_pruning,
+       countIf(explain LIKE '%Parts: 1/5%') AS pruned
 FROM
 (
     EXPLAIN indexes = 1
