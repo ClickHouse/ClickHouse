@@ -1177,8 +1177,8 @@ void StorageDistributed::read(
                 auto outputs = reorder_dag.getOutputs();
                 auto & dag_outputs = reorder_dag.getOutputs();
                 dag_outputs.clear();
-                for (size_t i = 0; i < permutation.size(); ++i)
-                    dag_outputs.push_back(outputs[permutation[i]]);
+                for (auto idx : permutation)
+                    dag_outputs.push_back(outputs[idx]);
 
                 auto reorder_step = std::make_unique<ExpressionStep>(
                     query_plan.getCurrentHeader(), std::move(reorder_dag));
