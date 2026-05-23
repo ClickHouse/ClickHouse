@@ -72,6 +72,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -2912,7 +2913,7 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 #endif
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert : public IFunction
+class FunctionConvert final : public IFunction
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -3426,7 +3427,7 @@ private:
 template <typename ToDataType, typename Name,
     ConvertFromStringExceptionMode exception_mode,
     ConvertFromStringParsingMode parsing_mode = ConvertFromStringParsingMode::Basic>
-class FunctionConvertFromString : public IFunction
+class FunctionConvertFromString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -4400,7 +4401,7 @@ using FunctionParseDateTime64BestEffortUSOrNull = FunctionConvertFromString<
     DataTypeDateTime64, NameParseDateTime64BestEffortUSOrNull, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>;
 
 
-class ExecutableFunctionCast : public IExecutableFunction
+class ExecutableFunctionCast final : public IExecutableFunction
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
@@ -4555,7 +4556,7 @@ private:
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
-    using ElementWrappers = std::vector<WrapperType>;
+    using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
