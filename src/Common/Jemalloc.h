@@ -25,6 +25,7 @@ constexpr auto config_profiler_sampling_rate = "jemalloc_profiler_sampling_rate"
 #if USE_JEMALLOC
 
 #include <string_view>
+#include <base/defines.h>
 #include <Common/logger_useful.h>
 #include <jemalloc/jemalloc.h>
 
@@ -55,11 +56,18 @@ void setValue(const char * name, T value)
 }
 
 template <typename T>
+bool tryGetValue(const char * name, T & out)
+{
+    size_t value_size = sizeof(out);
+    return je_mallctl(name, &out, &value_size, nullptr, 0) == 0;
+}
+
+template <typename T>
 T getValue(const char * name)
 {
-    T value;
-    size_t value_size = sizeof(T);
-    je_mallctl(name, &value, &value_size, nullptr, 0);
+    T value{};
+    [[maybe_unused]] auto success = tryGetValue(name, value);
+    chassert(success, fmt::format("Failed to get jemalloc value for '{}'", name));
     return value;
 }
 
@@ -82,30 +90,53 @@ void verifySetup(
 
 /// Each mallctl call consists of string name lookup which can be expensive.
 /// This can be avoided by translating name to "Management Information Base" (MIB)
-/// and using it in mallctlbymib calls
+/// and using it in mallctlbymib calls.
+///
+/// The name-to-MIB translation can fail when the mallctl is not compiled into the
+/// running jemalloc (e.g. `prof.*` on builds without `JEMALLOC_PROF`). When that
+/// happens, `getValue` asserts; callers that must tolerate the absence (HTTP
+/// status handlers, optional metrics) use `tryGetValue` instead.
 template <typename T>
 struct MibCache
 {
     explicit MibCache(const char * name)
     {
-        je_mallctlnametomib(name, mib, &mib_length);
+        valid = (je_mallctlnametomib(name, mib, &mib_length) == 0);
     }
+
+    bool isValid() const { return valid; }
 
     void setValue(T value) const
     {
+        if (!valid)
+            return;
         je_mallctlbymib(mib, mib_length, nullptr, nullptr, reinterpret_cast<void*>(&value), sizeof(T));
     }
 
+    /// Read the value via the cached MIB. Returns false if either the name translation failed
+    /// at construction or the read itself failed; in both cases `out` is left untouched.
+    bool tryGetValue(T & out) const
+    {
+        if (!valid)
+            return false;
+        size_t value_size = sizeof(T);
+        return je_mallctlbymib(mib, mib_length, &out, &value_size, nullptr, 0) == 0;
+    }
+
+    /// Strict variant: asserts that the read succeeded. Mirrors `Jemalloc::getValue`.
+    /// Use `tryGetValue` when the mallctl may be absent.
     T getValue() const
     {
-        T value;
-        size_t value_size = sizeof(T);
-        je_mallctlbymib(mib, mib_length, &value, &value_size, nullptr, 0);
+        T value{};
+        [[maybe_unused]] const bool ok = tryGetValue(value);
+        chassert(ok, "Failed to read jemalloc value via MIB");
         return value;
     }
 
     void run() const
     {
+        if (!valid)
+            return;
         je_mallctlbymib(mib, mib_length, nullptr, nullptr, nullptr, 0);
     }
 
@@ -113,6 +144,7 @@ private:
     static constexpr size_t max_mib_length = 4;
     size_t mib[max_mib_length];
     size_t mib_length = max_mib_length;
+    bool valid = false;
 };
 
 const MibCache<bool> & getThreadProfileActiveMib();
@@ -126,6 +158,47 @@ std::string_view getLastFlushProfileForThread();
 std::string getStats();
 
 }
+
+/// RAII guard that switches the calling thread's preferred jemalloc arena.
+///
+/// Allocations made by the calling thread inside the scope (including those that go through
+/// global `operator new`/`malloc`, e.g. from third-party libraries or unrelated container code)
+/// land in `arena_idx`. Frees automatically return memory to whichever arena originally owned the
+/// pointer (jemalloc looks this up from per-extent metadata), so only allocation paths need scoping.
+///
+/// On construction, the thread's previous preferred arena is captured and restored on destruction.
+/// Use this around tightly-bounded blocks of allocations whose lifetime differs from typical
+/// query-processing work; do not hold across calls that allocate ClickHouse data structures
+/// unrelated to the target subsystem.
+///
+/// No-op when `arena_idx == 0` or when jemalloc is not compiled in.
+class ScopedJemallocThreadArena
+{
+public:
+    explicit ScopedJemallocThreadArena(unsigned arena_idx);
+    ~ScopedJemallocThreadArena();
+
+    ScopedJemallocThreadArena(const ScopedJemallocThreadArena &) = delete;
+    ScopedJemallocThreadArena & operator=(const ScopedJemallocThreadArena &) = delete;
+
+private:
+    unsigned previous_arena = 0;
+    bool active = false;
+};
+
+}
+
+#else
+
+namespace DB
+{
+
+/// No-op fallback when jemalloc is not compiled in.
+class ScopedJemallocThreadArena
+{
+public:
+    explicit ScopedJemallocThreadArena(unsigned /*arena_idx*/) {}
+};
 
 }
 

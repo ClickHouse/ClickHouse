@@ -63,6 +63,7 @@ struct QueryPlanOptimizationSettings
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
+    bool top_k_through_join;
     bool remove_unused_columns;
 
     /// If we can swap probe/build tables in join
@@ -79,6 +80,7 @@ struct QueryPlanOptimizationSettings
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
+    bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
     bool optimize_sorting_by_input_stream_properties;
@@ -122,6 +124,12 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
+    /// If lazy FINAL optimization for ReplacingMergeTree is enabled
+    bool optimize_lazy_final = false;
+    size_t max_rows_for_lazy_final = 0;
+    size_t max_bytes_for_lazy_final = 0;
+    float min_filtered_ratio_for_lazy_final = 0;
+
     /// Vector-search-related settings
     size_t max_limit_for_vector_search_queries;
     bool vector_search_with_rescoring;
@@ -133,6 +141,7 @@ struct QueryPlanOptimizationSettings
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
+    bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 
