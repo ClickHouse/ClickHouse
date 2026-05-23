@@ -630,6 +630,13 @@ void ReaderExecutor::seek(size_t new_position)
     /// with the live connection and we can't reuse them productively.
     over_read_buffer = {};
     position = new_position;
+
+    /// Start prefetching the new window right away so the next `readNextWindow`
+    /// can hit a warm prefetch instead of paying full source-read latency
+    /// synchronously. `maybeTriggerPrefetch` is a no-op when there is no
+    /// `prefetch_pool` (transient `readBigAt` executor) or when we are already
+    /// at EOF, so this is safe to call unconditionally.
+    maybeTriggerPrefetch();
 }
 
 std::vector<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::allocateBlocks(

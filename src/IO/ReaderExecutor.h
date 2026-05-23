@@ -94,6 +94,8 @@ public:
     const Rope & getOverReadBuffer() const { return over_read_buffer; }
     size_t getSourceRequestsCount() const { return stats.source_requests; }
     size_t getOverReadServedBytes() const { return stats.over_read_served_bytes; }
+    /// Test-only: is there a prefetch currently scheduled for the next window?
+    bool hasInflightPrefetch() const { return prefetch_valid; }
 
     /// Logical file size (physical size minus encryption headers).
     /// Saturates to 0 if the underlying objects sum to fewer bytes than the

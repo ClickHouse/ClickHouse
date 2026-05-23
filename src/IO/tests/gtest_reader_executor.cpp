@@ -394,6 +394,60 @@ TEST(ReaderExecutor, SeekDiscardsPrefetch)
     EXPECT_EQ(rope2.getNodes()[0].data()[0], 'Z');
 }
 
+TEST(ReaderExecutor, SeekTriggersPrefetch)
+{
+    /// After `seek` lands outside the previously-prefetched range, the old
+    /// prefetch is discarded AND a new one for the new position must be
+    /// queued — without that, the next `readNextWindow` would pay full
+    /// source-read latency synchronously.
+    String content(4000, 'S');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 4000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
+    executor.setPrefetchPool(pool);
+
+    /// Before the first readNextWindow nothing has been prefetched yet.
+    EXPECT_FALSE(executor.hasInflightPrefetch());
+
+    /// Seek to a position outside any existing prefetch range. Must queue
+    /// a fresh prefetch for the new position right away.
+    executor.seek(2500);
+    EXPECT_TRUE(executor.hasInflightPrefetch())
+        << "seek must trigger a new prefetch when prefetch_pool is set";
+
+    /// And the prefetched data is the one we actually consume next.
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().offset, 2500u);
+    EXPECT_EQ(rope.range().size, 500u);
+}
+
+TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
+{
+    /// Transient `readBigAt` executors have no `prefetch_pool` — the
+    /// post-seek `maybeTriggerPrefetch` call must be a clean no-op there.
+    String content(1000, 'T');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 1000);
+
+    ReaderExecutor executor(source, objects, {}, 200);
+    /// No setPrefetchPool — leave prefetch_pool null.
+
+    executor.seek(400);
+    EXPECT_FALSE(executor.hasInflightPrefetch());
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().offset, 400u);
+}
+
 TEST(ReaderExecutor, MergeRangesNoGap)
 {
     /// Adjacent ranges — should merge into one
