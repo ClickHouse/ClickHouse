@@ -31,7 +31,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, leadership_expiry_ms, 0, "Duration after which a leader will expire if it fails to receive responses from peers. Set it lower or equal to election_timeout_lower_bound_ms to avoid multiple leaders.", 0) \
     DECLARE(UInt64, reserved_log_items, 100000, "How many log items to store (don't remove during compaction)", 0) \
     DECLARE(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
-    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
+    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader. Has no effect if use_new_dispatcher = true as the new dispatcher has its own forwarding that's always enabled.", 0) \
     DECLARE(Milliseconds, shutdown_timeout, 5000, "How much time we will wait until RAFT shutdown", 0) \
     DECLARE(Milliseconds, session_shutdown_timeout, 10000, "How much time we will wait until sessions are closed during shutdown", 0) \
     DECLARE(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
@@ -83,8 +83,17 @@ namespace ErrorCodes
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
     DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
-    DECLARE(Bool, nuraft_streaming_mode, false, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Reduces RTT bottleneck under heavy write loads. Beneficial in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
-    DECLARE(UInt64, nuraft_max_log_gap_in_stream, 64, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
+    DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
+    DECLARE(UInt64, max_request_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes in the request queue before blocking new requests", 0) \
+    DECLARE(UInt64, max_response_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes across all response queues; the dispatch thread throttles at half this limit", 0) \
+    DECLARE(Bool, optimize_read_order, true, "Reorder read requests within a batch to group them together for parallel execution, without changing ordering guarantees within each session", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Sleep duration in microseconds for busy-wait loops in the dispatch and response threads", 0) \
+    DECLARE(Milliseconds, stream_suspect_retry_delay_ms, 1000, "Delay before reconnecting to the leader after a stream breaks while the new stream is suspected to be unhealthy", 0) \
+    DECLARE(Milliseconds, stream_in_flight_drain_timeout_ms, 5000, "Maximum time to wait for in-flight requests to drain after a stream break (e.g. leader change) before dropping them", 0) \
+    DECLARE(Bool, nuraft_streaming_mode, true, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Increases write throughput, especially in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
+    DECLARE(UInt64, nuraft_max_log_gap_in_stream, 0, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(UInt64, commit_profiler_real_time_period_ns, 0, "Period for real clock timer of the query profiler on the Keeper commit thread (in nanoseconds). The profiling results appear in system.trace_log with query_id = 'KeeperCommit'. 0 means disabled.", 0) \
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
