@@ -485,6 +485,14 @@ private:
 
     FilterWithCachedCount part_offsets_filter_for_vector_search;
 
+    /// Populated by `startReadingChain` when the vector-search filtered-read path is active.
+    /// Holds the absolute part-row offsets of the rows that were materialized by the filtered
+    /// deserialization (one entry per row in the resulting columns, in read order). Used by
+    /// `createPartOffsetColumn` to populate `_part_offset` with the real row positions instead
+    /// of an `iota`-generated sequence. Cleared at the start of each chain.
+    std::vector<UInt64> kept_part_offsets_from_filtered_read;
+    bool used_filtered_read_in_last_chain = false;
+
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules

@@ -1140,6 +1140,23 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     ReadResult result(log);
     result.columns.resize(merge_tree_reader->getResultColumnCount());
 
+    /// Vector-search filtered read: when the vector similarity index has supplied a sorted
+    /// list of matching row offsets, deserialize only those rows from each granule we touch.
+    /// Limited to the no-`PREWHERE` case (single-reader chain, this reader reads the vector
+    /// column). The condition uses `main_reader` to gate the path off for any prewhere
+    /// reader in a chain — if PREWHERE is present, the chain code does not exercise
+    /// `startReadingChain` for the main reader, but the gate makes the intent explicit.
+    const auto & read_hints_for_filter = merge_tree_reader->data_part_info_for_read->getReadHints();
+    /// Filtered read is only implemented for Wide parts. Vector-search data parts in real
+    /// workloads are large enough to land in wide format, but small tests / inserts produce
+    /// Compact parts — fall back to the unfiltered path there to keep behavior identical.
+    const bool use_filtered_read = main_reader
+        && read_hints_for_filter.vector_search_results.has_value()
+        && read_hints_for_filter.vector_search_results->distances.has_value()
+        && merge_tree_reader->data_part_info_for_read->isWidePart();
+    kept_part_offsets_from_filtered_read.clear();
+    used_filtered_read_in_last_chain = use_filtered_read;
+
     size_t current_task_last_mark = getLastMark(ranges);
 
     /// The stream could be unfinished by the previous read request because of max_rows limit.
@@ -1200,10 +1217,38 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             bool last = rows_to_read == space_left;
             UInt64 starting_offset = stream.currentPartOffset();
             UInt64 granule_offset = stream.current_mark;
-            size_t read_rows = stream.read(result.columns, rows_to_read, !last);
+
+            size_t read_rows;
+            size_t granule_row_count = rows_to_read;
+
+            if (use_filtered_read)
+            {
+                const auto & search_rows = read_hints_for_filter.vector_search_results->rows;
+                IColumnFilter granule_filter(rows_to_read, 0);
+                size_t kept = 0;
+                /// `search_rows` is sorted ascending (see `sortNearestNeighboursByRow` in
+                /// `MergeTreeDataSelectExecutor`). Walk the sub-range that falls in this
+                /// granule and mark the filter; capture absolute offsets for `_part_offset`.
+                auto it = std::lower_bound(search_rows.begin(), search_rows.end(), starting_offset);
+                const UInt64 granule_end = starting_offset + rows_to_read;
+                for (; it != search_rows.end() && *it < granule_end; ++it)
+                {
+                    granule_filter[*it - starting_offset] = 1;
+                    kept_part_offsets_from_filtered_read.push_back(*it);
+                    ++kept;
+                }
+
+                read_rows = stream.readFiltered(result.columns, rows_to_read, granule_filter, !last);
+                granule_row_count = kept;
+            }
+            else
+            {
+                read_rows = stream.read(result.columns, rows_to_read, !last);
+            }
+
             result.debug_rows_from_read_in_loop += read_rows;
             result.addRows(read_rows);
-            result.addGranule(rows_to_read, {starting_offset, granule_offset});
+            result.addGranule(granule_row_count, {starting_offset, granule_offset});
             space_left = (rows_to_read > space_left ? 0 : space_left - rows_to_read);
         }
     }
@@ -1395,6 +1440,38 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
 ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result)
 {
+    /// Filtered-read path: each granule materialized only the rows matched by the index,
+    /// so `_part_offset` must use those exact row positions rather than an `iota` sequence
+    /// from the granule's starting offset. `kept_part_offsets_from_filtered_read` was filled
+    /// in `startReadingChain` in the same order as rows landed in `result.columns`.
+    if (used_filtered_read_in_last_chain)
+    {
+        chassert(kept_part_offsets_from_filtered_read.size() == result.total_rows_per_granule);
+
+        auto column = ColumnUInt64::create(result.total_rows_per_granule);
+        ColumnUInt64::Container & vec = column->getData();
+        std::copy(kept_part_offsets_from_filtered_read.begin(),
+                  kept_part_offsets_from_filtered_read.end(),
+                  vec.begin());
+
+        if (vec.empty())
+        {
+            result.min_part_offset = 0;
+            result.max_part_offset = 0;
+        }
+        else
+        {
+            /// The kept offsets are in granule order; within a granule they come from
+            /// `vector_search_results.rows` which is sorted ascending, and granules are
+            /// visited in mark order — so the whole vector is sorted and we can read the
+            /// extremes directly.
+            result.min_part_offset = vec.front();
+            result.max_part_offset = vec.back();
+        }
+
+        return column;
+    }
+
     auto column = ColumnUInt64::create(result.total_rows_per_granule);
     ColumnUInt64::Container & vec = column->getData();
 
