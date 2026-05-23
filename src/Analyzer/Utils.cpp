@@ -197,15 +197,25 @@ void makeUniqueColumnNamesInBlock(Block & block)
 
     for (auto & column_with_type : block)
     {
-        if (!block_column_names.contains(column_with_type.name))
-        {
-            block_column_names.insert(column_with_type.name);
+        if (block_column_names.insert(column_with_type.name).second)
             continue;
-        }
 
-        column_with_type.name += '_';
-        column_with_type.name += std::to_string(unique_column_name_counter);
-        ++unique_column_name_counter;
+        /// The base name collides with a name we have already kept or produced.
+        /// Loop until we find a suffix that is unused anywhere in the block,
+        /// including by names we are about to keep and by names we have already
+        /// renamed. Register the renamed name to prevent further collisions.
+        ///
+        /// Example: for input `a, a, a_1`, the second `a` is renamed to `a_1`
+        /// and the third column (`a_1`) is renamed to `a_2`, instead of leaving
+        /// the block with two `a_1` columns.
+        String new_name;
+        do
+        {
+            new_name = column_with_type.name + '_' + std::to_string(unique_column_name_counter);
+            ++unique_column_name_counter;
+        } while (!block_column_names.insert(new_name).second);
+
+        column_with_type.name = std::move(new_name);
     }
 }
 

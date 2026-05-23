@@ -137,7 +137,7 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLParenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// TODO: This code is idiotic, see https://github.com/ClickHouse/ClickHouse/issues/61742
 
