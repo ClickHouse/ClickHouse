@@ -162,7 +162,7 @@ public:
 
         /// Collect the indices of rows that actually need an HTTP call: non-null and non-empty.
         /// Both null and empty-string rows map to `[]` in the output
-        std::vector<size_t> live_rows;
+        VectorWithMemoryTracking<size_t> live_rows;
         live_rows.reserve(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
         {

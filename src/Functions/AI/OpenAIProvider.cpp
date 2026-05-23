@@ -219,7 +219,7 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     /// Track which input slots have been filled, so a misbehaving provider that returns duplicate
     /// `index` values can't silently leave other slots empty or stack multiple embeddings into one.
     /// Combined with the cardinality check above, "no duplicates" implies every slot is filled exactly once.
-    std::vector<bool> seen(ai_embedding_request.inputs.size(), false);
+    VectorWithMemoryTracking<bool> seen(ai_embedding_request.inputs.size(), false);
 
     for (unsigned i = 0; i < data_arr->size(); ++i)
     {

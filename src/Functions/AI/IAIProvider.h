@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/JSON/Object.h>
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -68,7 +68,7 @@ struct AIResponse
 struct AIEmbeddingRequest
 {
     /// Texts to embed. Providers send these in a single batched HTTP request.
-    std::vector<String> inputs;
+    VectorWithMemoryTracking<String> inputs;
 
     /// Model identifier as specified in the named collection (e.g. "text-embedding-3-small").
     String model;
@@ -82,7 +82,7 @@ struct AIEmbeddingRequest
 struct AIEmbeddingResponse
 {
     /// One vector per input, in the same order as `AIEmbeddingRequest::inputs`.
-    std::vector<std::vector<Float32>> embeddings;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;
 
     /// Number of tokens in the input, as reported by the provider. Used for quota tracking.
     UInt64 input_tokens = 0;
