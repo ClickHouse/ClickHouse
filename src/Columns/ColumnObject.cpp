@@ -546,6 +546,7 @@ bool ColumnObject::tryInsert(const Field & x)
         for (const auto & path : new_dynamic_paths)
         {
             dynamic_paths_ptrs.erase(path);
+            sorted_dynamic_paths.erase(path);
             dynamic_paths.erase(path);
         }
 
@@ -581,6 +582,7 @@ bool ColumnObject::tryInsert(const Field & x)
         }
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
         {
+            new_dynamic_paths.insert(String(path));
             if (!dynamic_path_column->tryInsert(value_field))
             {
                 restore_sizes();
@@ -2327,7 +2329,38 @@ void ColumnObject::validateDynamicPathsSizes() const
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
+}
 
+bool ColumnObject::isEmptyAt(size_t n) const
+{
+    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
+    if (!typed_paths.empty())
+        return false;
+
+    /// Check if all dynamic paths have NULL at this row
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+    {
+        if (!column->isNullAt(n))
+            return false;
+    }
+
+    /// Check if there is no paths in shared data.
+    return shared_data->isDefaultAt(n);
+}
+
+bool ColumnObject::hasNonEmptyRows() const
+{
+    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
+    if (!typed_paths.empty())
+        return true;
+
+    for (size_t i = 0; i != size(); ++i)
+    {
+        if (!isEmptyAt(i))
+            return true;
+    }
+
+    return false;
 }
 
 }
