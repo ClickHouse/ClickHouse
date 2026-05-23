@@ -251,7 +251,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         }
 
         res_columns[0]->insert(registered.sql_name);
-        res_columns[1]->insert(UInt64(0)); // is_aggregate
+        res_columns[1]->insert(UInt64(registered.is_aggregate ? 1 : 0)); // is_aggregate
         res_columns[2]->insert(false); // case_insensitive
         res_columns[3]->insertDefault(); // alias_to
         res_columns[4]->insert(create_query);

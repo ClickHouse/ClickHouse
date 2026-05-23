@@ -331,7 +331,7 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
     switch (object_type)
     {
         case UserDefinedSQLObjectType::Function: {
-            auto context = global_context;
+            auto context = getContext();
             ParserCreateFunctionQuery parser;
             ASTPtr ast = parseQuery(
                 parser,
