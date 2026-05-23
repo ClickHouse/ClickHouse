@@ -2524,7 +2524,8 @@ void HashJoin::publishSharedRuntimeFilters()
         WhichDataType target_which(target_type);
         if (!target_type->isValueRepresentedByInteger()
             || target_which.isInt128() || target_which.isUInt128()
-            || target_which.isInt256() || target_which.isUInt256())
+            || target_which.isInt256() || target_which.isUInt256()
+            || target_which.isIPv4())
             continue;
 
         auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
