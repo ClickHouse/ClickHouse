@@ -1314,7 +1314,9 @@ Possible values:
 - `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
 - `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
-Setting `enable_parallel_replicas = 1` is needed when using this setting.
+Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas. To enable it:
+- `parallel_distributed_insert_select = 2`
+- `enable_parallel_replicas = 1`
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
@@ -5427,6 +5429,15 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
     DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0) \
+    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
+Threshold for compaction data files in iceberg.
+)", 0) \
+    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
+Threshold for compaction data files in iceberg.
+)", 0) \
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
+Threshold for compaction data files in iceberg.
+)", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 
@@ -5445,6 +5456,12 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
+)", 0) \
+    DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
+Minimum time of delay between 2 background compaction operations.
+)", 0) \
+    DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
+The time after which the data will be deleted.
 )", 0) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
@@ -5465,6 +5482,14 @@ Possible values:
 )", 0) \
     DECLARE(Bool, enable_reads_from_query_cache, true, R"(
 If turned on, results of `SELECT` queries are retrieved from the [query cache](../query-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, query_cache_for_subqueries, false, R"(
+If turned on, subquery results may be written to and read from the [query cache](../query-cache.md). This enables propagation of `use_query_cache` into all subqueries.
 
 Possible values:
 
@@ -6040,6 +6065,12 @@ Allow to convert `JOIN` to subquery with `IN` if output columns tied to only lef
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
 )", 0) \
+    DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
+Run a second `PREWHERE` promotion pass after later query plan optimizations may have
+deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
+`JOIN`, projection rewrites). When an existing `PREWHERE` is already present, the new
+filter is `AND`-merged into it instead of staying as a separate filter step.
+)", 0) \
     DECLARE(Bool, query_plan_execute_functions_after_sorting, true, R"(
 Toggles a query-plan-level optimization which moves expressions after sorting steps.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -6168,10 +6199,9 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
-Use logical join step in query plan.
-Note: setting `query_plan_use_new_logical_join_step` is deprecated, use `query_plan_use_logical_join_step` instead.
-)", 0, query_plan_use_logical_join_step) \
+    DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
+Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
+)", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
@@ -6550,6 +6580,19 @@ If is not zero, limit the number of reading streams for MergeTree table.
     \
     DECLARE(Bool, force_grouping_standard_compatibility, true, R"(
 Make GROUPING function to return 1 when argument is not used as an aggregation key
+)", 0) \
+    \
+    DECLARE(Bool, allow_rank_dense_rank_arguments, false, R"(
+Allow passing arguments to the `RANK` and `DENSE_RANK` window functions for backward compatibility.
+
+Per SQL standard, `RANK` and `DENSE_RANK` take zero arguments — they rank rows based on the
+`OVER (ORDER BY ...)` window only. In ClickHouse versions before 26.5, queries such as
+`RANK(x) OVER (...)` silently accepted and ignored the argument, which led to user confusion
+(the visible argument suggested it influenced the ranking, but it did not).
+
+When this setting is `false` (the default), `RANK` and `DENSE_RANK` reject any arguments and
+throw `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`. When set to `true`, the legacy lenient behavior is
+restored — arguments are silently ignored, matching the pre-26.5 behavior.
 )", 0) \
     \
     DECLARE(Bool, schema_inference_use_cache_for_file, true, R"(
@@ -7956,6 +7999,9 @@ Allow experimental delta-kernel-rs implementation.
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
+    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+Allow to clean up old data files during Iceberg compaction.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
@@ -8057,9 +8103,6 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", EXPERIMENTAL, evaluation_time) \
-    DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
-Allow to create table with the Alias engine.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL) \
@@ -8158,6 +8201,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, false) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -8246,7 +8290,9 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
-    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false)
+    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
+    MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
+    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
