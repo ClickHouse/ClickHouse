@@ -649,8 +649,9 @@ bool MergeTreeIndexConditionVectorSpann::alwaysUnknownOrTrue() const
     if (parameters->column != index_column)
         return true;
 
+    /// Unlike vector_similarity, vector_spann rejects `b1` quantization, so `hamming_k` is never a valid metric here.
     if ((parameters->distance_function == "L2Distance" && metric_kind != unum::usearch::metric_kind_t::l2sq_k)
-        || (parameters->distance_function == "cosineDistance" && metric_kind != unum::usearch::metric_kind_t::cos_k && metric_kind != unum::usearch::metric_kind_t::hamming_k)
+        || (parameters->distance_function == "cosineDistance" && metric_kind != unum::usearch::metric_kind_t::cos_k)
         || (parameters->distance_function == "dotProduct" && metric_kind != unum::usearch::metric_kind_t::ip_k))
         return true;
 
