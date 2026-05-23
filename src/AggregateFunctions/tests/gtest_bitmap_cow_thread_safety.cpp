@@ -19,7 +19,7 @@ template <typename State, typename Value>
 void fillBitmapState(State & state, Value start, Value count)
 {
     for (Value i = start; i < start + count; ++i)
-        state.add(static_cast<Value>(i));
+        state.add(i);
 }
 }
 
