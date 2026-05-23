@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-detach
+-- Tags: no-random-detach
 -- no-random-detach: test checks deduplication
 
 DROP TABLE IF EXISTS 03717_table;

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-random-detach
+# Tags: no-random-detach
 
-# no-parallel because of the `FLUSH ASYNC INSERT QUEUE` command
 # no-random-detach: parallel async inserts can race with random DETACH/ATTACH and lose the `Keep-Alive` response header
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -60,5 +59,5 @@ do
     echo "good async insert"
     cat $file_3
 
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE;"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_inserts;"
 done
