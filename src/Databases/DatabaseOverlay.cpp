@@ -441,14 +441,13 @@ void DatabaseOverlay::shutdown()
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
-    // `skip_not_loaded = true` is used only in asynchronous metrics.
-    // We don't need to report metrics twice—once for the underlying
-    // database and again for its overlay. It is used here to detect
-    // A DROP table operation and return an empty iterator.
-    if (readonly && skip_not_loaded)
-        return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
+    /// Note: the `Overlay` exposes the *union* of tables from its underlying
+    /// databases. The same physical table may also be reachable directly via
+    /// its owner database registered in `DatabaseCatalog`. Callers that
+    /// aggregate across all databases (e.g. `ServerAsynchronousMetrics`) must
+    /// deduplicate by `IStorage *` to avoid double-counting.
     Tables tables;
     for (const auto & db : resolveDatabases())
     {
