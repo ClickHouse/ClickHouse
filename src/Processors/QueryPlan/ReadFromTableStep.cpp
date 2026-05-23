@@ -1,8 +1,12 @@
 #include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
+
+#include <Core/Streaming/CursorTree_fwd.h>
 
 namespace DB
 {
@@ -43,6 +47,51 @@ static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
     return val;
 }
 
+static void serializeStreamSettings(const TableExpressionModifiers::StreamSettings & stream_settings, WriteBuffer & out)
+{
+    UInt8 has_cursor = stream_settings.cursor_tree ? 1 : 0;
+    writeIntBinary(has_cursor, out);
+
+    if (!has_cursor)
+        return;
+
+    const auto cursor_map = cursorTreeToMap(stream_settings.cursor_tree);
+    writeVarUInt(cursor_map.size(), out);
+    for (const auto & entry : cursor_map)
+    {
+        const auto & tuple = entry.safeGet<Tuple>();
+        writeStringBinary(tuple.at(0).safeGet<String>(), out);
+        writeIntBinary(tuple.at(1).safeGet<Int64>(), out);
+    }
+}
+
+static TableExpressionModifiers::StreamSettings deserializeStreamSettings(ReadBuffer & in)
+{
+    TableExpressionModifiers::StreamSettings stream_settings;
+
+    UInt8 has_cursor = 0;
+    readIntBinary(has_cursor, in);
+
+    if (!has_cursor)
+        return stream_settings;
+
+    UInt64 size = 0;
+    readVarUInt(size, in);
+
+    Map cursor_map;
+    cursor_map.reserve(size);
+    for (UInt64 i = 0; i < size; ++i)
+    {
+        String path;
+        Int64 value = 0;
+        readStringBinary(path, in);
+        readIntBinary(value, in);
+        cursor_map.push_back(Tuple{path, value});
+    }
+    stream_settings.cursor_tree = buildCursorTree(cursor_map);
+    return stream_settings;
+}
+
 void ReadFromTableStep::serialize(Serialization & ctx) const
 {
     writeStringBinary(table_name, ctx.out);
@@ -56,6 +105,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (use_parallel_replicas)
         flags |= 8;
+    if (table_expression_modifiers.hasStream())
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -66,6 +117,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (table_expression_modifiers.hasStream())
+        serializeStreamSettings(*table_expression_modifiers.getStreamSettings(), ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -79,6 +133,7 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     bool has_final = false;
     std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
     std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+    std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
 
     if (flags & 1)
         has_final = true;
@@ -93,7 +148,10 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
-    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
+    if (flags & 16)
+        stream_settings = deserializeStreamSettings(ctx.in);
+
+    TableExpressionModifiers table_expression_modifiers(has_final, std::move(sample_size_ratio), std::move(sample_offset_ratio), std::move(stream_settings));
     return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
 }
 

@@ -14,7 +14,7 @@ namespace DB
 /// Example: partition/shard etc.
 class CursorTreeNode
 {
-    using Data = std::unordered_map<String, std::variant<Int64, CursorTreeNodePtr>>;
+    using Data = std::map<String, std::variant<Int64, CursorTreeNodePtr>>;
 
 public:
     bool hasSubtree(const String & key) const;
@@ -36,8 +36,5 @@ public:
 private:
     Data data;
 };
-
-Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
-CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
 
 }

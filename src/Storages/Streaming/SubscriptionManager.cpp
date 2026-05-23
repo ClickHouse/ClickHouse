@@ -47,7 +47,12 @@ void StreamSubscriptionManager::executeOnEachSubscription(const std::function<vo
 bool StreamSubscriptionManager::isEmpty() const
 {
     auto lock = lockShared();
-    return subscriptions.empty();
+
+    for (const auto & subscription : subscriptions)
+        if (!subscription.expired())
+            return false;
+
+    return true;
 }
 
 bool StreamSubscriptionManager::hasSome() const

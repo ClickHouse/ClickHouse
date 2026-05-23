@@ -83,6 +83,9 @@ CursorTreeNodePtr & CursorTreeNode::getSubtreeOrCreate(const String & key)
     if (it == data.end())
         return setSubtree(key, std::make_shared<CursorTreeNode>());
 
+    if (std::holds_alternative<Int64>(it->second))
+        throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Trying to extract value by key: '{}'", key);
+
     return std::get<CursorTreeNodePtr>(it->second);
 }
 
@@ -152,6 +155,7 @@ CursorTreeNode::Data::const_iterator CursorTreeNode::end() const
 
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
 {
+    chassert(ptr != nullptr);
     std::map<String, Int64> collapsed_tree = collapseTree(ptr.get());
     Map result;
 

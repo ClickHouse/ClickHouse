@@ -99,7 +99,13 @@ private:
 
 inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
 {
-    return lhs.cursor_tree == rhs.cursor_tree;
+    if ((lhs.cursor_tree == nullptr) != (rhs.cursor_tree == nullptr))
+        return false;
+
+    if (lhs.cursor_tree == nullptr)
+        return true;
+
+    return cursorTreeToMap(lhs.cursor_tree) == cursorTreeToMap(rhs.cursor_tree);
 }
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
