@@ -294,6 +294,12 @@ static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     /// Forward to libfuzzer's original SIGALRM handler. If this is a real
     /// timeout it will print the main-thread stack and `_Exit`; otherwise it
     /// returns and the wrapper stays installed for the next periodic alarm.
+    ///
+    /// `glibc` defines `sa_sigaction`/`sa_handler` as recursive macros expanding
+    /// to `__sigaction_handler.sa_sigaction`/`__sigaction_handler.sa_handler`,
+    /// which trips `-Wdisabled-macro-expansion` on aarch64.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     if (original_sigalrm_action.sa_flags & SA_SIGINFO)
     {
         if (original_sigalrm_action.sa_sigaction)
@@ -304,6 +310,7 @@ static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     {
         original_sigalrm_action.sa_handler(sig);
     }
+#pragma clang diagnostic pop
 }
 
 extern "C"
