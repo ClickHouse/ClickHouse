@@ -238,7 +238,21 @@ bool BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & 
     /// running_tasks, delayed_tasks). This prevents getTasks() from missing the task
     /// during the transition.
     if (!executing)
-        pool_ptr->scheduleTask(*this);
+    {
+        try
+        {
+            pool_ptr->scheduleTask(*this);
+        }
+        catch (...)
+        {
+            /// scheduleTask rolls back its own enqueue state on the failure path; reset `scheduled`
+            /// so the caller can retry once the underlying issue is resolved. Otherwise a follow-up
+            /// schedule call would short-circuit on the early `if (scheduled) return true;` above
+            /// and never re-enqueue the task.
+            scheduled = false;
+            throw;
+        }
+    }
 
     if (delayed)
         pool_ptr->cancelDelayedTask(*this, schedule_mutex_lock);
@@ -439,11 +453,21 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
                 /// empty (`background_schedule_pool_initial_size = 0` and the very first spawn
                 /// just failed), there is nobody to notify and the queued task would be orphaned.
                 /// Fail closed in that case so the caller learns about the failure rather than
-                /// silently dropping the work. The stale `weak_ptr` left in `task_groups` is
-                /// harmless: workers skip entries whose `weak_ptr::lock` returns null, and the
-                /// task can be re-scheduled by the caller after the exception is handled.
+                /// silently dropping the work. Roll back the enqueue we did above so the caller's
+                /// retry — after `scheduleImpl` resets `scheduled` to false — actually re-enqueues
+                /// the task instead of finding a stale entry already in `task_groups`.
                 if (threads.empty())
+                {
+                    chassert(!group.tasks.empty() && group.tasks.back() == task_ptr);
+                    group.tasks.pop_back();
+                    if (group.tasks.empty() && group.runnable_list_pos)
+                    {
+                        chassert(*group.runnable_list_pos == runnable_task_types.size() - 1);
+                        runnable_task_types.pop_back();
+                        group.runnable_list_pos.reset();
+                    }
                     throw;
+                }
                 tryLogCurrentException(logger, "Failed to spawn an additional schedule pool worker");
                 /// Fall through to notify_one — an existing worker will eventually take the task.
             }
