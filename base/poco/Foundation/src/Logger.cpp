@@ -13,10 +13,8 @@
 
 
 #include "Poco/Logger.h"
-#include "Poco/Formatter.h"
 #include "Poco/LoggingRegistry.h"
 #include "Poco/Exception.h"
-#include "Poco/NumberFormatter.h"
 #include "Poco/NumberParser.h"
 #include "Poco/String.h"
 
@@ -126,17 +124,6 @@ void Logger::log(const Exception& exc, const char* file, int line)
 }
 
 
-void Logger::dump(const std::string& msg, const void* buffer, std::size_t length, Message::Priority prio)
-{
-	if (_level >= prio && _pChannel)
-	{
-		std::string text(msg);
-		formatDump(text, buffer, length);
-		_pChannel->log(Message(_name, text, prio));
-	}
-}
-
-
 void Logger::setLevel(const std::string& name, int level)
 {
 	std::lock_guard<std::mutex> lock(getLoggerMutex());
@@ -190,119 +177,6 @@ void Logger::setProperty(const std::string& loggerName, const std::string& prope
 				it.second.logger->setProperty(propertyName, value);
 			}
 		}
-	}
-}
-
-
-std::string Logger::format(const std::string& fmt, const std::string& arg)
-{
-	std::string args[] =
-	{
-		arg
-	};
-	return format(fmt, 1, args);
-}
-
-
-std::string Logger::format(const std::string& fmt, const std::string& arg0, const std::string& arg1)
-{
-	std::string args[] =
-	{
-		arg0,
-		arg1
-	};
-	return format(fmt, 2, args);
-}
-
-
-std::string Logger::format(const std::string& fmt, const std::string& arg0, const std::string& arg1, const std::string& arg2)
-{
-	std::string args[] =
-	{
-		arg0,
-		arg1,
-		arg2
-	};
-	return format(fmt, 3, args);
-}
-
-
-std::string Logger::format(const std::string& fmt, const std::string& arg0, const std::string& arg1, const std::string& arg2, const std::string& arg3)
-{
-	std::string args[] =
-	{
-		arg0,
-		arg1,
-		arg2,
-		arg3
-	};
-	return format(fmt, 4, args);
-}
-
-
-std::string Logger::format(const std::string& fmt, int argc, std::string argv[])
-{
-	std::string result;
-	std::string::const_iterator it = fmt.begin();
-	while (it != fmt.end())
-	{
-		if (*it == '$')
-		{
-			++it;
-			if (*it == '$')
-			{
-				result += '$';
-			}
-			else if (*it >= '0' && *it <= '9')
-			{
-				int i = *it - '0';
-				if (i < argc)
-					result += argv[i];
-			}
-			else
-			{
-				result += '$';
-				result += *it;
-			}
-		}
-		else result += *it;
-		++it;
-	}
-	return result;
-}
-
-
-void Logger::formatDump(std::string& message, const void* buffer, std::size_t length)
-{
-	const int BYTES_PER_LINE = 16;
-
-	message.reserve(message.size() + length*6);
-	if (!message.empty()) message.append("\n");
-	unsigned char* base = (unsigned char*) buffer;
-	int addr = 0;
-	while (addr < length)
-	{
-		if (addr > 0) message.append("\n");
-		message.append(NumberFormatter::formatHex(addr, 4));
-		message.append("  ");
-		int offset = 0;
-		while (addr + offset < length && offset < BYTES_PER_LINE)
-		{
-			message.append(NumberFormatter::formatHex(base[addr + offset], 2));
-			message.append(offset == 7 ? "  " : " ");
-			++offset;
-		}
-		if (offset < 7) message.append(" ");
-		while (offset < BYTES_PER_LINE) { message.append("   "); ++offset; }
-		message.append(" ");
-		offset = 0;
-		while (addr + offset < length && offset < BYTES_PER_LINE)
-		{
-			unsigned char c = base[addr + offset];
-			message += (c >= 32 && c < 127) ? (char) c : '.';
-			++offset;
-		}
-		addr += BYTES_PER_LINE;
 	}
 }
 
