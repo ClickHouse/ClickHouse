@@ -205,7 +205,7 @@ void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, siz
     if (max_serialized_bytes < posting_count_header_bytes)
         throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann posting list serialized length is too small");
 
-    const char * const start = in.position();
+    const size_t start_count = in.count();
 
     UInt32 count = 0;
     readBinaryLittleEndian(count, in);
@@ -235,11 +235,12 @@ void readPostingList(ReadBuffer & in, std::vector<SpannPostingEntry> & list, siz
             readBinaryLittleEndian(list[i].vector[d], in);
     }
 
-    if (static_cast<UInt64>(in.position() - start) != max_serialized_bytes)
+    const UInt64 consumed = static_cast<UInt64>(in.count() - start_count);
+    if (consumed != max_serialized_bytes)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "vector_spann posting list consumed {} bytes, expected {}",
-            static_cast<UInt64>(in.position() - start),
+            consumed,
             max_serialized_bytes);
 }
 
