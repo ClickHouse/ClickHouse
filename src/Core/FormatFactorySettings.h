@@ -1238,6 +1238,10 @@ Disabled by default.
     DECLARE(UInt64, output_format_float_precision, 0, R"(
 When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
 When 0 (the default), use the shortest round-trip representation.
+
+Values whose shortest representation is in scientific notation (very large or very small magnitudes) are emitted as-is to avoid silently rounding away significant digits. In such cases, the mantissa may carry more than the requested number of fractional digits.
+
+Valid range: 0 to 100.
 )", 0) \
     DECLARE(Bool, output_format_trim_fixed_string, false, R"(
 Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
