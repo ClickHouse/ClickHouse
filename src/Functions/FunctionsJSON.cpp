@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
 
@@ -128,7 +129,7 @@ public:
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
             size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -258,6 +259,15 @@ public:
             constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
                         || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
 
+            /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
+            /// cast the extracted value to UInt8 and silently return the value itself.
+            constexpr bool is_has = std::string_view(TName::name) == std::string_view("JSONHas");
+
+            /// JSONExtractBool must return UInt8 {0,1} with boolean semantics. Cast to `Bool` instead
+            /// of `UInt8` so that `convertToBool` normalizes any non-zero numeric value to 1.
+            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
+
             /// For case-insensitive functions, collect every stored path that matches the
             /// user-provided one ignoring case. With one match we read its `@` subcolumn directly;
             /// with several (e.g. rows storing `Name` and `name` for query key `name`) we resolve
@@ -382,11 +392,17 @@ public:
                     }
                     else
                     {
+                        /// JSONExtractBoolCaseInsensitive must cast to `Bool` so non-zero values normalize to 1.
+                        /// JSONHas has no case-insensitive variant, so it never reaches this branch.
+                        DataTypePtr cast_target = is_extract_bool
+                            ? DataTypeFactory::instance().get("Bool")
+                            : result_type;
+
                         std::vector<ColumnPtr> per_path_casted(num_paths);
                         for (size_t k = 0; k < num_paths; ++k)
                         {
-                            auto casted = castColumnAccurateOrNull({per_path_merged[k], per_path_merged_type[k], ""}, result_type);
-                            per_path_casted[k] = result_type->isNullable() ? casted : removeNullable(casted);
+                            auto casted = castColumnAccurateOrNull({per_path_merged[k], per_path_merged_type[k], ""}, cast_target);
+                            per_path_casted[k] = cast_target->isNullable() ? casted : removeNullable(casted);
                         }
 
                         auto result_column = result_type->createColumn();
@@ -417,7 +433,20 @@ public:
             /// column: literal if present, sub-object as JSON if not, NULL otherwise.
             auto [merged, merged_type] = read_merged_for_path(path);
 
-            if constexpr (is_extract_raw)
+            if constexpr (is_has)
+            {
+                auto result = ColumnVector<UInt8>::create(input_rows_count);
+                auto & data = result->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    data[i] = merged->isDefaultAt(i) ? 0 : 1;
+                return result;
+            }
+            else if constexpr (is_extract_bool)
+            {
+                auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, DataTypeFactory::instance().get("Bool"));
+                return removeNullable(casted);
+            }
+            else if constexpr (is_extract_raw)
             {
                 auto raw_col = ColumnString::create();
                 auto serialization = merged_type->getDefaultSerialization();
@@ -455,13 +484,13 @@ private:
         String key;
     };
 
-    static std::vector<FunctionJSONHelpers::Move> prepareMoves(
+    static VectorWithMemoryTracking<FunctionJSONHelpers::Move> prepareMoves(
         const char * function_name,
         const ColumnsWithTypeAndName & columns,
         size_t first_index_argument,
         size_t num_index_arguments)
     {
-        std::vector<Move> moves;
+        VectorWithMemoryTracking<Move> moves;
         moves.reserve(num_index_arguments);
         for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
         {
@@ -495,7 +524,7 @@ private:
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser, bool case_insensitive = false>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
-                             const typename JSONParser::Element & document, const std::vector<Move> & moves,
+                             const typename JSONParser::Element & document, const VectorWithMemoryTracking<Move> & moves,
                              typename JSONParser::Element & element, std::string_view & last_key)
     {
         typename JSONParser::Element res_element = document;
@@ -651,7 +680,7 @@ constexpr bool functionForcesTheReturnType()
 }
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class ExecutableFunctionJSON : public IExecutableFunction
+class ExecutableFunctionJSON final : public IExecutableFunction
 {
 
 public:
@@ -739,7 +768,7 @@ private:
 
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class FunctionBaseFunctionJSON : public IFunctionBase
+class FunctionBaseFunctionJSON final : public IFunctionBase
 {
 public:
     explicit FunctionBaseFunctionJSON(
@@ -789,7 +818,7 @@ private:
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver : public IFunctionOverloadResolver
+class JSONOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
@@ -987,7 +1016,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        static const std::vector<std::pair<String, Int8>> values = {
+        static const DataTypeEnum<Int8>::Values values = {
             {"Array", '['},
             {"Object", '{'},
             {"String", '"'},
