@@ -9,10 +9,19 @@
 -- The remote replica's analyzer then saw the same alias attached to two
 -- different bodies and threw `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
 --
--- This test exercises the three patterns reported in the issue:
+-- This test exercises the patterns reported in the issue plus the explicit
+-- multi-occurrence projection cases highlighted by review:
 --   1. Alias reused inside `PREWHERE` (`cond` references projection alias).
 --   2. `SELECT *` over joined subqueries with overlapping column names.
 --   3. Subcolumn rewriting under `optimize_functions_to_subcolumns`.
+--   4. Explicit `r.name, l.name, l.name` over a 2-way join: the alias body
+--      sequence here is `A, B, B`. The analyzer disambiguates the second and
+--      third columns to a distinct alias (`l.name`) at AST conversion time,
+--      so the dedup never collapses the body-B occurrences against body A.
+--   5. `SELECT *` over a 3-way self-join with `USING`: the projection produces
+--      the same bare alias (`name`, `value`) three times with bodies from
+--      three different sources, exercising the dedup beyond the 2-occurrence
+--      case from (2).
 
 DROP TABLE IF EXISTS t_74324_prewhere;
 DROP TABLE IF EXISTS t_74324_join;
@@ -68,6 +77,35 @@ INSERT INTO t_74324_subcolumns VALUES (1, 'a'), (2, NULL);
 SET optimize_functions_to_subcolumns = 1;
 
 SELECT id, isNull(n) FROM t_74324_subcolumns ORDER BY id;
+
+-- 4. Explicit `r.name, l.name, l.name` over a 2-way join.
+--
+-- The projection bodies are `[__table1.name, __table2.name, __table2.name]`
+-- (the `A, B, B` pattern). The analyzer disambiguates the AST aliases to
+-- `name, l.name, l.name`, so the dedup sees two independent alias groups
+-- (`name` once, `l.name` twice with the same body) and leaves both `l.name`
+-- aliases intact via the body-hash equality branch.
+
+SET optimize_functions_to_subcolumns = 0;
+
+SELECT r.name, l.name, l.name
+FROM t_74324_join r ANY LEFT JOIN t_74324_join l ON r.id = l.id
+WHERE r.id = 1
+ORDER BY r.id;
+
+-- 5. `SELECT *` over a 3-way self-join with `USING`.
+--
+-- The projection produces `[id, name, value, name, value, name, value]`.
+-- The `name` alias appears at three positions with bodies from three
+-- different sources (`A, B, C`); the dedup keeps the first occurrence and
+-- strips the later two. `value` follows the same shape. Receiver-side
+-- column lookup remains valid because positions 2-7 carry their body
+-- expressions instead of a stale alias.
+
+SELECT *
+FROM (SELECT * FROM t_74324_join) ANY LEFT JOIN (SELECT * FROM t_74324_join) USING id ANY LEFT JOIN (SELECT * FROM t_74324_join) USING id
+WHERE id = 1
+ORDER BY id;
 
 DROP TABLE t_74324_prewhere;
 DROP TABLE t_74324_join;
