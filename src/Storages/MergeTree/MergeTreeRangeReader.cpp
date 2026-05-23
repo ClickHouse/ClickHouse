@@ -207,6 +207,66 @@ size_t MergeTreeRangeReader::DelayedStream::read(Columns & columns, size_t from_
     return read_rows;
 }
 
+size_t MergeTreeRangeReader::DelayedStream::readFiltered(
+    Columns & columns, size_t from_mark, size_t offset, size_t num_rows,
+    const IColumnFilter & filter)
+{
+    chassert(filter.size() == num_rows);
+
+    /// Flush any pending delayed rows first, otherwise we'd mix unfiltered delayed rows with
+    /// filtered immediate rows in the same `columns` block.
+    size_t flushed = finalize(columns);
+
+    /// Now position the stream at the granule we want to read.
+    continue_reading = false;
+    current_mark = from_mark;
+    current_offset = offset;
+
+    /// Skip rows before the filtered window. Same logic as `finalize`'s prelude — we only
+    /// need a non-trivial skip if the offset is non-zero and we aren't continuing from the
+    /// previous physical position.
+    if (current_offset)
+    {
+        for (size_t mark_num : collections::range(current_mark, index_granularity->getMarksCount()))
+        {
+            size_t mark_index_granularity = index_granularity->getMarkRows(mark_num);
+            if (current_offset >= mark_index_granularity)
+            {
+                current_offset -= mark_index_granularity;
+                current_mark++;
+            }
+            else
+                break;
+        }
+
+        if (current_offset)
+        {
+            Columns tmp_columns;
+            tmp_columns.resize(columns.size());
+            size_t skipped = merge_tree_reader->readRows(
+                current_mark, current_task_last_mark, continue_reading, current_offset, 0, tmp_columns);
+            continue_reading = true;
+            (void)skipped;
+        }
+    }
+
+    size_t kept = merge_tree_reader->readRowsWithFilter(
+        current_mark, current_task_last_mark, continue_reading, num_rows, 0, filter, columns);
+    continue_reading = true;
+
+    /// Advance our notion of physical position past the rows we just read.
+    current_offset += num_rows;
+
+    if (0 < kept && kept < num_rows)
+    {
+        /// Don't flip `is_finished` here just because the filter dropped rows — kept count
+        /// reflects the filter, not the underlying read. The reader knows whether the
+        /// physical read fell short; if so, callers will hit it via subsequent operations.
+    }
+
+    return flushed + kept;
+}
+
 size_t MergeTreeRangeReader::DelayedStream::finalize(Columns & columns)
 {
     /// We need to skip some rows before reading
@@ -330,6 +390,40 @@ size_t MergeTreeRangeReader::Stream::read(Columns & columns, size_t num_rows, bo
     if (skip_remaining_rows_in_current_granule)
     {
         /// Skip the rest of the rows in granule and start new one.
+        checkNotFinished();
+        toNextMark();
+    }
+
+    return 0;
+}
+
+size_t MergeTreeRangeReader::Stream::readFiltered(
+    Columns & columns, size_t num_rows, const IColumnFilter & filter, bool skip_remaining_rows_in_current_granule)
+{
+    chassert(filter.size() == num_rows);
+    checkEnoughSpaceInCurrentGranule(num_rows);
+
+    size_t rows_kept = 0;
+
+    if (num_rows)
+    {
+        checkNotFinished();
+
+        rows_kept = stream.readFiltered(columns, current_mark, offset_after_current_mark, num_rows, filter);
+
+        if (stream.isFinished())
+            finish();
+
+        offset_after_current_mark += num_rows;
+
+        if (offset_after_current_mark == current_mark_index_granularity || skip_remaining_rows_in_current_granule)
+            toNextMark();
+
+        return rows_kept;
+    }
+
+    if (skip_remaining_rows_in_current_granule)
+    {
         checkNotFinished();
         toNextMark();
     }

@@ -39,6 +39,15 @@ public:
         size_t offset,
         Columns & res_columns) override;
 
+    size_t readRowsWithFilter(
+        size_t from_mark,
+        size_t current_task_last_mark,
+        bool continue_reading,
+        size_t max_rows_to_read,
+        size_t rows_offset,
+        const IColumnFilter & filter,
+        Columns & res_columns) override;
+
     bool canReadIncompleteGranules() const override { return true; }
 
     void prefetchBeginOfRange(Priority priority) override;
@@ -85,7 +94,8 @@ private:
         size_t max_rows_to_read,
         size_t rows_offset,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+        const IColumnFilter * filter = nullptr);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(

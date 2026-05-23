@@ -198,6 +198,17 @@ private:
         ///       some columns may have different size (for example, default columns may be zero size).
         size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
+        /// Filtered immediate read for the vector-search rescoring path.
+        /// Flushes any pending delayed rows first, then reads `num_rows` from disk with the
+        /// given filter; only `filter.count()` rows end up in `columns`. Returns the rows
+        /// actually kept (filter survivors) plus any rows that were flushed from delayed.
+        size_t readFiltered(
+            Columns & columns,
+            size_t from_mark,
+            size_t offset,
+            size_t num_rows,
+            const IColumnFilter & filter);
+
         size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
@@ -237,6 +248,16 @@ private:
 
         /// Returns the number of rows added to block.
         size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+
+        /// Filtered read for the vector-search rescoring path. Reads `num_rows` worth of
+        /// physical rows from the current position but only materializes the ones where
+        /// `filter[i] != 0`. Returns the number of rows added to `columns` (= `filter.count()`).
+        size_t readFiltered(
+            Columns & columns,
+            size_t num_rows,
+            const IColumnFilter & filter,
+            bool skip_remaining_rows_in_current_granule);
+
         size_t finalize(Columns & columns);
         void skip(size_t num_rows);
 

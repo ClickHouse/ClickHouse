@@ -84,6 +84,13 @@ IMergeTreeReader::IMergeTreeReader(
     }
 }
 
+size_t IMergeTreeReader::readRowsWithFilter(
+    size_t, size_t, bool, size_t, size_t, const IColumnFilter &, Columns &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "readRowsWithFilter is not implemented for this reader; only `MergeTreeReaderWide` supports the filtered read path.");
+}
+
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
 {
     return avg_value_size_hints;

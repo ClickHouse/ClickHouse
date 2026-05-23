@@ -252,6 +252,84 @@ size_t MergeTreeReaderWide::readRows(
     return read_rows;
 }
 
+size_t MergeTreeReaderWide::readRowsWithFilter(
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading,
+    size_t max_rows_to_read, size_t rows_offset,
+    const IColumnFilter & filter,
+    Columns & res_columns)
+{
+    chassert(filter.size() == max_rows_to_read);
+    if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
+    {
+        prefetched_streams.clear();
+        prefetched_from_mark = -1;
+    }
+
+    try
+    {
+        size_t num_columns = res_columns.size();
+        checkNumberOfColumns(num_columns);
+
+        if (num_columns == 0)
+            return 0;
+
+        prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
+        deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
+
+        for (size_t pos = 0; pos < num_columns; ++pos)
+        {
+            if (isColumnDroppedByPendingMutation(pos))
+            {
+                res_columns[pos] = nullptr;
+                continue;
+            }
+
+            const auto & column_to_read = columns_to_read[pos];
+            bool append = res_columns[pos] != nullptr;
+            if (!append)
+                res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
+
+            auto & column = res_columns[pos];
+            try
+            {
+                auto & cache = caches[column_to_read.getNameInStorage()];
+                auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+
+                readData(
+                    column_to_read, serializations[pos], column,
+                    from_mark, continue_reading, current_task_last_mark,
+                    max_rows_to_read, rows_offset, cache, deserialize_states_cache,
+                    &filter);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("(while reading column " + column_to_read.name + " with filter)");
+                throw;
+            }
+
+            if (column->empty() && max_rows_to_read > 0)
+                res_columns[pos] = nullptr;
+        }
+
+        prefetched_streams.clear();
+        caches.clear();
+    }
+    catch (...)
+    {
+        if (!isRetryableException(std::current_exception()))
+            data_part_info_for_read->reportBroken();
+        try { rethrow_exception(std::current_exception()); }
+        catch (Exception & e) { e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset)); }
+        throw;
+    }
+
+    /// Reader callers expect the return value to mean "rows now in res_columns".
+    size_t kept = 0;
+    for (size_t i = 0; i < filter.size(); ++i)
+        kept += filter[i] != 0;
+    return kept;
+}
+
 void MergeTreeReaderWide::addStreams(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization)
@@ -588,7 +666,8 @@ void MergeTreeReaderWide::readData(
     size_t max_rows_to_read,
     size_t rows_offset,
     ISerialization::SubstreamsCache & cache,
-    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
+    ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+    const IColumnFilter * filter)
 {
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
@@ -639,8 +718,21 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(
-        column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    if (filter)
+    {
+        chassert(filter->size() == max_rows_to_read);
+        /// Bypass the substreams cache on the filtered path: cached columns hold all rows of
+        /// the original granule, which would not match the filtered row count expected by
+        /// downstream callers. We don't share columns with the other reader chains today
+        /// (vector search has no PREWHERE on the vector column), so the cache miss is fine.
+        serialization->deserializeBinaryBulkWithFilter(
+            column, rows_offset, max_rows_to_read, *filter, deserialize_settings, deserialize_state, /*cache=*/ nullptr);
+    }
+    else
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(
+            column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    }
 }
 
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()

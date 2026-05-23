@@ -40,6 +40,16 @@ public:
                             bool continue_reading, size_t max_rows_to_read,
                             size_t rows_offset, Columns & res_columns) = 0;
 
+    /// Same contract as `readRows` but only materializes rows where `filter[i] != 0`.
+    /// Returns the number of rows kept (`filter.count()`), not `max_rows_to_read`.
+    /// Default implementation throws — used as an opt-in path for vector-search rescoring
+    /// in `MergeTreeReaderWide` to skip the destination-side memcpy for filtered-out rows.
+    virtual size_t readRowsWithFilter(size_t /*from_mark*/, size_t /*current_task_last_mark*/,
+                                      bool /*continue_reading*/, size_t /*max_rows_to_read*/,
+                                      size_t /*rows_offset*/,
+                                      const IColumnFilter & /*filter*/,
+                                      Columns & /*res_columns*/);
+
     virtual bool canReadIncompleteGranules() const = 0;
 
     /// This is a special case for the filter-only reader, when no other filtration is potentially applied.
