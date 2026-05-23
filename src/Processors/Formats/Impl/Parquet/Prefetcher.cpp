@@ -5,6 +5,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Common/ProfileEvents.h>
 
 #include <shared_mutex>
 
