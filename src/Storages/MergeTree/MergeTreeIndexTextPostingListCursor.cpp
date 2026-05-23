@@ -159,13 +159,22 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     last_decoded_doc_id = requireUInt32(first_row_id, "first_row_id");
     segment_first_row_id = last_decoded_doc_id;
 
-    const UInt64 range_span = static_cast<UInt64>(info->ranges[segment_idx].end) - static_cast<UInt64>(info->ranges[segment_idx].begin) + 1;
+    const auto & segment_range = info->ranges[segment_idx];
+
+    if (segment_range.begin > segment_range.end)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: segment row range has begin {} > end {} for segment {}",
+            segment_range.begin, segment_range.end, segment_idx);
+    }
+
+    const UInt64 range_span = static_cast<UInt64>(segment_range.end) - static_cast<UInt64>(segment_range.begin) + 1;
 
     if (segment_doc_count > range_span)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy posting list cursor: segment cardinality {} exceeds segment row range span {} for segment [{}, {}]",
-            segment_doc_count, range_span, info->ranges[segment_idx].begin, info->ranges[segment_idx].end);
+            segment_doc_count, range_span, segment_range.begin, segment_range.end);
     }
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation. Per-block

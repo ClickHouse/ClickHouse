@@ -375,7 +375,7 @@ private:
     /// Unique identifier for text index in the current data part.
     String index_id_for_caches;
     /// Codec type used to serialize postings in this granule.
-    IPostingListCodec::Type postings_codec_type;
+    IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
     MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
 };
