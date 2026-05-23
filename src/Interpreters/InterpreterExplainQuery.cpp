@@ -30,6 +30,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -119,6 +120,13 @@ namespace
                 return;
 
             auto query_context = data.getContext()->getQueryContext();
+
+            /// A registered table function (e.g. `numbers`) takes precedence over a view with
+            /// the same name, matching `QueryAnalyzer::resolveTableFunction`. Without this check
+            /// a user view shadowing a built-in table function would be expanded here while
+            /// regular execution would still resolve the built-in.
+            if (TableFunctionFactory::instance().isTableFunctionName(func->name))
+                return;
 
             String database_name = query_context->getCurrentDatabase();
             String table_name = func->name;

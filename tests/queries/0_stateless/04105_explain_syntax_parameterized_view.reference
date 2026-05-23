@@ -51,3 +51,5 @@ FROM
     FROM numbers(_CAST(10, \'UInt64\'))
     WHERE number > 10
 ) AS t
+SELECT *
+FROM numbers(3)

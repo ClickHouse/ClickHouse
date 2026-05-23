@@ -8,6 +8,7 @@ DROP VIEW IF EXISTS 04105_pv_multi;
 DROP VIEW IF EXISTS 04105_pv_nested_inner;
 DROP VIEW IF EXISTS 04105_pv_nested_outer;
 DROP VIEW IF EXISTS 04105_plain_view;
+DROP VIEW IF EXISTS numbers;
 
 CREATE TABLE 04105_join_target (number UInt64) ENGINE = Memory;
 CREATE VIEW 04105_pv AS SELECT number FROM numbers({n:UInt64}) WHERE number > 10;
@@ -37,6 +38,13 @@ EXPLAIN SYNTAX SELECT * FROM 04105_join_target JOIN 04105_pv(n = 10) USING numbe
 -- Explicit alias on the parameterized view must be preserved so the outer query
 -- can reference columns through the alias (e.g. `t.number`).
 EXPLAIN SYNTAX SELECT t.number FROM 04105_pv(n = 10) AS t;
+
+-- A parameterized view must not shadow a registered table function. With a view
+-- named `numbers`, `numbers(3)` still has to resolve to the built-in table
+-- function (which is what regular execution does), not be expanded as a view.
+CREATE VIEW numbers AS SELECT {n:UInt64} AS x;
+EXPLAIN SYNTAX SELECT * FROM numbers(3);
+DROP VIEW numbers;
 
 DROP TABLE 04105_join_target;
 DROP VIEW 04105_pv;
