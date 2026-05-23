@@ -655,6 +655,11 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
+    /// Optional server-wide override for the new analyzer in mutations.
+    /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
+    /// Refreshed on config reload.
+    std::atomic<int8_t> mutations_use_analyzer_override = -1;
+
     double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
     double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
 
@@ -761,7 +766,7 @@ struct ContextSharedPart : boost::noncopyable
         {
             try
             {
-                keeper_dispatcher->shutdown();
+                keeper_dispatcher->shutdown(false);
             }
             catch (...)
             {
@@ -1221,6 +1226,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
@@ -1246,7 +1252,9 @@ ContextData::ContextData(const ContextData &o) :
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
     view_source(o.view_source),
-    table_function_results(o.table_function_results),
+    /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
+    /// to avoid a data race with `Context::executeTableFunction` and other writers
+    /// that mutate the source object's map. See issue #104807.
     query_context(o.query_context),
     session_context(o.session_context),
     global_context(o.global_context),
@@ -1254,6 +1262,7 @@ ContextData::ContextData(const ContextData &o) :
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
+    is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     temp_data_on_disk(o.temp_data_on_disk),
@@ -1275,6 +1284,8 @@ ContextData::ContextData(const ContextData &o) :
     local_write_query_throttler(o.local_write_query_throttler),
     backups_query_throttler(o.backups_query_throttler)
 {
+    std::lock_guard lock(o.table_function_results_mutex);
+    table_function_results = o.table_function_results;
 }
 
 void ContextData::resetSharedContext()
@@ -2227,7 +2238,7 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
     setCurrentProfilesWithLock(profiles_info, check_constraints, lock);
 }
 
-std::vector<UUID> Context::getCurrentProfiles() const
+UUIDs Context::getCurrentProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
@@ -2235,7 +2246,7 @@ std::vector<UUID> Context::getCurrentProfiles() const
     return settings_constraints_and_current_profiles->current_profiles;
 }
 
-std::vector<UUID> Context::getEnabledProfiles() const
+UUIDs Context::getEnabledProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
@@ -2481,7 +2492,7 @@ void Context::updateExternalTable(const String & table_name, std::shared_ptr<Tem
     std::lock_guard lock(mutex);
     auto it = external_tables_mapping.find(table_name);
     if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exist", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_name));
 
     it->second = std::move(temporary_table);
 }
@@ -2648,8 +2659,30 @@ Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
     return query_factories_info;
 }
 
+namespace
+{
+    /// Set on threads that are reading factory metadata for introspection (e.g. system.functions
+    /// fillData), so that resolving every function — and the helper functions they construct
+    /// internally — does not record entries in query_log.used_functions for the user's query.
+    thread_local bool suppress_query_factories_info = false;
+}
+
+Context::SuppressQueryFactoriesInfoScope::SuppressQueryFactoriesInfoScope()
+    : prev(suppress_query_factories_info)
+{
+    suppress_query_factories_info = true;
+}
+
+Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
+{
+    suppress_query_factories_info = prev;
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
+    if (suppress_query_factories_info)
+        return;
+
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
 
@@ -4470,6 +4503,12 @@ std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
     return shared->parquet_metadata_cache;
 }
 
+std::shared_ptr<ParquetMetadataCache> Context::tryGetParquetMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->parquet_metadata_cache;
+}
+
 void Context::clearParquetMetadataCache() const
 {
     auto cache = getParquetMetadataCache();
@@ -4614,6 +4653,16 @@ void Context::clearCaches() const
     shared->query_condition_cache->clear();
 
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
+}
+
+void Context::setCanUseQueryResultCache(bool can_use_query_result_cache_)
+{
+    can_use_query_result_cache = can_use_query_result_cache_;
+}
+
+bool Context::getCanUseQueryResultCache() const
+{
+    return can_use_query_result_cache;
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
@@ -5268,12 +5317,12 @@ void Context::signalKeeperDispatcherShutdown() const
 #endif
 }
 
-void Context::shutdownKeeperDispatcher() const
+void Context::shutdownKeeperDispatcher([[maybe_unused]] bool closed_all_connections) const
 {
 #if USE_NURAFT
     if (auto dispatcher = tryGetKeeperDispatcher())
     {
-        dispatcher->shutdown();
+        dispatcher->shutdown(closed_all_connections);
         setKeeperDispatcher(nullptr);
     }
 #endif
@@ -5782,7 +5831,12 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         }
 
         /// Do not update clusters if this part of config wasn't changed.
-        if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
+        /// Note: clusters_config must be checked for null separately from clusters, because
+        /// reloadClusterConfig() (called e.g. from DNSCacheUpdater on startup) can populate
+        /// shared->clusters using the fallback getConfigRef() without setting shared->clusters_config.
+        /// If setClustersConfig() then runs before the config reloader stores its ConfigurationPtr,
+        /// dereferencing shared->clusters_config would throw Poco::NullPointerException.
+        if (shared->clusters && shared->clusters_config && isSameConfiguration(*config, *shared->clusters_config, config_name))
             return;
 
         auto old_clusters_config = shared->clusters_config;
@@ -5980,16 +6034,6 @@ std::shared_ptr<TransposedMetricLog> Context::getTransposedMetricLog() const
         return {};
 
     return shared->system_logs->transposed_metric_log;
-}
-
-std::shared_ptr<HistogramMetricLog> Context::getHistogramMetricLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->histogram_metric_log;
 }
 
 std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
@@ -6606,6 +6650,20 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
+}
+
+void Context::setMutationsUseAnalyzerOverride(std::optional<bool> value)
+{
+    int8_t encoded = !value.has_value() ? int8_t{-1} : (*value ? int8_t{1} : int8_t{0});
+    shared->mutations_use_analyzer_override.store(encoded, std::memory_order_relaxed);
+}
+
+std::optional<bool> Context::getMutationsUseAnalyzerOverride() const
+{
+    int8_t encoded = shared->mutations_use_analyzer_override.load(std::memory_order_relaxed);
+    if (encoded < 0)
+        return std::nullopt;
+    return encoded != 0;
 }
 
 void Context::setConfigReloaderInterval(size_t value_ms)
