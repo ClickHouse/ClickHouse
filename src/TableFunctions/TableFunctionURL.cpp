@@ -30,6 +30,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsString url_base;
 }
 
 std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -72,8 +73,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         compression_method = configuration.compression_method;
 
         format = configuration.format;
-        if (format == "auto")
-            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
 
         StorageURL::evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, context);
     }
@@ -95,6 +94,26 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
         for (auto it = extras.rbegin(); it != extras.rend(); ++it)
             args.push_back(std::move(*it));
+    }
+
+    /// Resolve relative URLs against the url_base setting.
+    const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
+    filename = StorageURL::resolveURLBase(filename, url_base);
+    configuration.url = filename;
+
+    /// Re-derive format from the resolved URL if still auto, because the original
+    /// filename may have been a relative reference (e.g. "?x=1") with no extension.
+    /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL
+    /// may contain characters that `Poco::URI` rejects. Fall back to "auto" instead of throwing.
+    if (format == "auto")
+    {
+        try
+        {
+            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
     }
 }
 

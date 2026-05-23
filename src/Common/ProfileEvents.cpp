@@ -348,9 +348,9 @@
     \
     M(ExecuteShellCommand, "Number of shell command executions.", ValueType::Number) \
     \
-    M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggragating/joining)", ValueType::Bytes) \
-    M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggragating/joining)", ValueType::Bytes) \
-    M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggragating/joining)", ValueType::Number) \
+    M(ExternalProcessingCompressedBytesTotal, "Number of compressed bytes written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
+    M(ExternalProcessingUncompressedBytesTotal, "Amount of data (uncompressed, before compression) written by external processing (sorting/aggregating/joining)", ValueType::Bytes) \
+    M(ExternalProcessingFilesTotal, "Number of files used by external processing (sorting/aggregating/joining)", ValueType::Number) \
     M(ExternalSortWritePart, "Number of times a temporary file was written to disk for sorting in external memory.", ValueType::Number) \
     M(ExternalSortMerge, "Number of times temporary files were merged for sorting in external memory.", ValueType::Number) \
     M(ExternalSortCompressedBytes, "Number of compressed bytes written for sorting in external memory.", ValueType::Bytes) \
@@ -971,10 +971,14 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadRequestQueueLockWaitMicroseconds, "Time spent waiting for acquiring Keeper read request queue lock", ValueType::Microseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds, "Time spent waiting for acquiring Keeper process and responses lock", ValueType::Microseconds) \
     M(KeeperCommitWaitElapsedMicroseconds, "Time spent waiting for certain log to be committed", ValueType::Microseconds) \
-    M(KeeperBatchMaxCount, "Number of times the size of batch was limited by the amount", ValueType::Number) \
-    M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
+    M(KeeperBatchMaxCount, "Number of batches that hit max_requests_batch_size limit", ValueType::Number) \
+    M(KeeperBatchMaxTotalSize, "Number of batches that hit max_requests_batch_bytes_size limit", ValueType::Number) \
+    M(KeeperBatchMaxReadCount, "Number of batches that hit max_read_batch_size limit", ValueType::Number) \
+    M(KeeperBatchMaxReadTotalSize, "Number of batches that hit max_read_batch_bytes_size limit", ValueType::Number) \
     M(KeeperReadBatchCount, "Number of read request batches processed by Keeper", ValueType::Number) \
     M(KeeperReadBatchTotalRequests, "Total number of read requests processed in batches by Keeper", ValueType::Number) \
+    M(KeeperWriteBatchCount, "Number of write request batches processed by Keeper", ValueType::Number) \
+    M(KeeperWriteBatchTotalRequests, "Total number of write requests processed in batches by Keeper", ValueType::Number) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \
@@ -984,6 +988,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadSnapshot, "Number of completed snapshot reads", ValueType::Number) \
     M(KeeperReadSnapshotObject, "Number of snapshot objects sent to followers", ValueType::Number) \
     M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
+    M(KeeperReadSnapshotDeferred, "Number of snapshot reads deferred because the requested snapshot is no longer available locally; NuRaft will retry the latest snapshot.", ValueType::Number) \
     M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
     M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
     M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
@@ -1203,14 +1208,14 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeMergeMutationAssignmentFailedWithNothingToDo, "How many times we tried to assign merge or mutation and failed because nothing to merge", ValueType::Number) \
     M(SharedMergeTreeMergeMutationAssignmentFailedWithConflict, "How many times we tried to assign merge or mutation and failed because of conflict in Keeper", ValueType::Number) \
     M(SharedMergeTreeMergeMutationAssignmentSuccessful, "How many times we tried to assign merge or mutation", ValueType::Number) \
-    M(SharedMergeTreeMergePartsMovedToOudated, "How many parts moved to oudated directory", ValueType::Number) \
+    M(SharedMergeTreeMergePartsMovedToOudated, "How many parts moved to outdated directory", ValueType::Number) \
     M(SharedMergeTreeMergePartsMovedToCondemned, "How many parts moved to condemned directory", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsConfirmationRequest, "How many ZooKeeper requests were used to config outdated parts", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsConfirmationInvocations, "How many invocations were made to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsHTTPRequest, "How many HTTP requests were send to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeOutdatedPartsHTTPResponse, "How many HTTP responses were send to confirm outdated parts", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsKillRequest, "How many ZooKeeper requests were used to remove condemned parts", ValueType::Number) \
-    M(SharedMergeTreeCondemnedPartsLockConflict, "How many times we failed to acquite lock because of conflict", ValueType::Number) \
+    M(SharedMergeTreeCondemnedPartsLockConflict, "How many times we failed to acquire lock because of conflict", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsRemoved, "How many condemned parts were removed", ValueType::Number) \
     M(SharedMergeTreePartsKillerRuns, "How many times parts killer has been running", ValueType::Number) \
     M(SharedMergeTreePartsKillerMicroseconds, "How much time does parts killer main thread takes", ValueType::Microseconds) \
@@ -1347,6 +1352,14 @@ The server successfully detected this situation and will download merged part fr
     M(WasmModuleInstatiate, "Number of WebAssembly compartments created", ValueType::Number) \
     M(WasmMemoryAllocated, "Total memory allocated for WebAssembly compartments", ValueType::Bytes) \
     \
+    M(ExecutableUserDefinedFunctionInvocations, "Number of executable and executable pool user-defined function invocations.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable and executable pool user-defined functions, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable and executable pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
+    \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
@@ -1472,6 +1485,8 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
+    , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
+    , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
@@ -1539,6 +1554,26 @@ Event getByName(std::string_view name)
     };
 
     return map.at(name);
+}
+
+void Counters::setTraceProfileEvent(Event event)
+{
+    auto * trace_array = should_trace_array.load(std::memory_order_relaxed);
+    if (!trace_array)
+    {
+        /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
+        auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
+        auto * fresh_raw = fresh.get();
+        std::atomic_bool * expected = nullptr;
+        if (should_trace_array.compare_exchange_strong(expected, fresh_raw, std::memory_order_release, std::memory_order_relaxed))
+        {
+            should_trace_holder = std::move(fresh);
+            trace_array = fresh_raw;
+        }
+        else
+            trace_array = expected;
+    }
+    trace_array[event].store(true, std::memory_order_relaxed);
 }
 
 void Counters::setTraceProfileEvents(const String & events_list)
@@ -1646,7 +1681,8 @@ void Counters::increment(Event event, Count amount)
     do
     {
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
-        send_to_trace_log |= current->counters[event].should_trace;
+        if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
+            send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
         current = current->parent;

@@ -336,7 +336,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"Simple", MergeSelectorAlgorithm::SIMPLE},
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
-     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL},
+     {"Manual", MergeSelectorAlgorithm::MANUAL}})
 
 IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
@@ -432,6 +433,12 @@ IMPLEMENT_SETTING_ENUM(
     {{"any", SearchOrphanedPartsDisks::ANY},
      {"local", SearchOrphanedPartsDisks::LOCAL},
      {"none", SearchOrphanedPartsDisks::NONE}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreePartMinMaxIndexColumns,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"partition_key_only", MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY},
+     {"with_block_number_offset", MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET}})
 
 IMPLEMENT_SETTING_ENUM(
     DecorrelationJoinKind,
