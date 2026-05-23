@@ -49,6 +49,13 @@ PERF_SERVER_DIR = f"{PERF_WD}/server"
 BOLT_PROFILE_TIMEOUT = 1800  # 30 minutes
 BOLT_PERF_RUNS = 3  # fewer runs, just need hot paths
 
+# Maximum time to wait for a freshly-spawned `clickhouse-server` to start
+# accepting connections. PGO-instrumented binaries are noticeably slower at
+# startup (every instrumented site updates a counter), so the window has to be
+# generous; for a normal binary readiness is reached within a few seconds.
+SERVER_READINESS_TIMEOUT_S = 600
+SERVER_READINESS_POLL_S = 2
+
 LLVM_VERSION = "21"
 
 
@@ -138,6 +145,58 @@ def download_datasets():
     return res
 
 
+def dump_log_tail(log_path, lines=200):
+    """Print the tail of a server log to stdout for CI diagnostics."""
+    print(f"--- tail of {log_path} (last {lines} lines) ---")
+    if not os.path.exists(log_path):
+        print(f"(log file does not exist: {log_path})")
+        print("--- end ---")
+        return
+    Shell.check(f"tail -n {lines} {log_path}", verbose=True)
+    print("--- end ---")
+
+
+def wait_for_server_ready(proc, server_dir, port, log_file):
+    """Poll `select 1` until the server responds or the timeout elapses.
+
+    Returns True on success. On failure prints the tail of `log_file` so the
+    underlying reason (startup crash, slow init, port conflict, …) is visible
+    in the job log instead of just a wall of failed `select 1` retries.
+    """
+    print(
+        f"Waiting up to {SERVER_READINESS_TIMEOUT_S}s for server on port {port}"
+    )
+    start = time.monotonic()
+    deadline = start + SERVER_READINESS_TIMEOUT_S
+    next_progress = start + 30
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            print(f"Server process exited prematurely with code {proc.returncode}")
+            dump_log_tail(log_file)
+            return False
+        # Polling is intentionally quiet — at one attempt every 2s a 10-minute
+        # window would otherwise produce hundreds of identical `Run command`
+        # lines; emit a progress heartbeat every 30s instead.
+        res, out, _ = Shell.get_res_stdout_stderr(
+            f'{server_dir}/clickhouse-client --port {port} --query "select 1"'
+        )
+        if out.strip() == "1":
+            elapsed = time.monotonic() - start
+            print(f"Server ready after {elapsed:.0f}s")
+            return True
+        now = time.monotonic()
+        if now >= next_progress:
+            print(f"  still waiting, {now - start:.0f}s elapsed")
+            next_progress = now + 30
+        time.sleep(SERVER_READINESS_POLL_S)
+
+    print(
+        f"Server did not become ready within {SERVER_READINESS_TIMEOUT_S}s"
+    )
+    dump_log_tail(log_file)
+    return False
+
+
 def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
     """Start a ClickHouse server and wait for it to be ready."""
     config_file = f"{server_dir}/config/config.xml"
@@ -161,23 +220,10 @@ def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
     proc = subprocess.Popen(
         cmd, stderr=subprocess.STDOUT, stdout=log_fd, shell=True, start_new_session=True
     )
-    time.sleep(2)
-    if proc.poll() is not None:
-        log_fd.close()
-        print(f"Server failed to start, check {log_file}")
-        return None, None
 
-    # Wait for readiness
-    for attempt in range(30):
-        res, out, _ = Shell.get_res_stdout_stderr(
-            f'{server_dir}/clickhouse-client --port {port} --query "select 1"', verbose=True
-        )
-        if out.strip() == "1":
-            print("Server ready")
-            return proc, log_fd
-        time.sleep(2)
+    if wait_for_server_ready(proc, server_dir, port, log_file):
+        return proc, log_fd
 
-    print("Server did not become ready")
     # `shell=True` means `proc` is the wrapper shell, not `clickhouse-server`.
     # Tear down the whole process group via `stop_server` so the server itself
     # doesn't survive and clash with later stages on the same ports.
@@ -197,6 +243,20 @@ def stop_server(proc, log_fd):
             proc.wait()
     if log_fd:
         log_fd.close()
+
+
+def install_perf_python_deps():
+    """Install Python packages required by `tests/performance/scripts/perf.py`.
+
+    The `clickhouse/binary-builder` Docker image used by this job inherits
+    `scipy` from `clickhouse/fasttest` but does not bundle `clickhouse-driver`
+    (it is only needed for running perf tests, not for builds). Install it on
+    demand so `perf.py` can `import clickhouse_driver`.
+    """
+    Shell.check(
+        "pip3 install --no-cache-dir 'clickhouse-driver==0.2.7'",
+        verbose=True,
+    )
 
 
 def run_performance_tests(server_dir, port=9000, runs=7, max_queries=10):
@@ -237,6 +297,7 @@ def configure_datasets(server_dir, port=9000):
 
     # Start a temporary server to set up the datasets
     config_file = f"{server_dir}/config/config.xml"
+    log_file = f"{server_dir}/preconfig.log"
     cmd = (
         f"{server_dir}/clickhouse-server --config-file={config_file} "
         f"-- --path {PERF_DB_PATH} --user_files_path {PERF_DB_PATH}/user_files "
@@ -244,21 +305,13 @@ def configure_datasets(server_dir, port=9000):
         f"--keeper_server.storage_path {PERF_WD}/coordination0 "
         f"--tcp_port {port}"
     )
-    log_fd = open(f"{server_dir}/preconfig.log", "w")
+    log_fd = open(log_file, "w")
     # See note in `start_server`: dedicated session keeps `terminate_process_group`
     # scoped to the server tree.
     proc = subprocess.Popen(
         cmd, stderr=subprocess.STDOUT, stdout=log_fd, shell=True, start_new_session=True
     )
-    time.sleep(2)
-    for attempt in range(30):
-        res, out, _ = Shell.get_res_stdout_stderr(
-            f'{server_dir}/clickhouse-client --port {port} --query "select 1"', verbose=True
-        )
-        if out.strip() == "1":
-            break
-        time.sleep(2)
-    else:
+    if not wait_for_server_ready(proc, server_dir, port, log_file):
         stop_server(proc, log_fd)
         return False
 
@@ -398,6 +451,7 @@ def main():
 
         def collect_pgo():
             install_clickhouse(pgo_binary, pgo_server_dir)
+            install_perf_python_deps()
             if not download_datasets():
                 return False
             if not configure_datasets(pgo_server_dir, port=9000):
