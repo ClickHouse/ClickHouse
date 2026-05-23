@@ -464,10 +464,7 @@ public:
         if (m_size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
 
-        /// A null `buf` here means upstream state-management corruption (e.g. a
-        /// caller serialising a `UniquesHashSet` that was double-destroyed via
-        /// the `-OrNull` / `-OrDefault` + `State` combinator path fixed in
-        /// `AggregateFunctionOrFill::insertResultIntoImpl`).
+        /// A null `buf` here would indicate upstream state corruption (e.g. a double-destroyed state).
         chassert(buf);
 
         DB::writeBinaryLittleEndian(skip_degree, wb);
