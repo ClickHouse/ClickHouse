@@ -7,11 +7,8 @@ namespace mysqlxx
 
 struct PoolFactory::Impl
 {
-    // Cache of already affected pools identified by their config name
-    std::map<std::string, std::shared_ptr<PoolWithFailover>> pools;
-
     // Cache of Pool ID (host + port + user +...) cibling already established shareable pool
-    std::map<std::string, std::string> pools_by_ids;
+    std::map<std::string, std::shared_ptr<PoolWithFailover>> shared_pools_by_id;
 
     /// Protect pools and pools_by_ids caches
     std::mutex mutex;
@@ -68,39 +65,26 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
 PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config,
         const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries)
 {
-
     std::lock_guard lock(impl->mutex);
-    auto entry = impl->pools.find(config_name);
-    if (entry != impl->pools.end())
-    {
-        return *(entry->second);
-    }
 
-    std::string entry_name = getPoolEntryName(config, config_name);
-    if (auto id = impl->pools_by_ids.find(entry_name); id != impl->pools_by_ids.end())
-    {
-        entry = impl->pools.find(id->second);
-        std::shared_ptr<PoolWithFailover> pool = entry->second;
-        impl->pools.insert_or_assign(config_name, pool);
-        return *pool;
-    }
+    const std::string entry_name = getPoolEntryName(config, config_name);
+
+    if (entry_name.empty())
+        return PoolWithFailover(config, config_name, default_connections, max_connections, max_tries);
+
+    if (auto it = impl->shared_pools_by_id.find(entry_name); it != impl->shared_pools_by_id.end())
+        return *(it->second);
 
     auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
-    // Check the pool will be shared
-    if (!entry_name.empty())
-    {
-        // Store shared pool
-        impl->pools.insert_or_assign(config_name, pool);
-        impl->pools_by_ids.insert_or_assign(entry_name, config_name);
-    }
+    impl->shared_pools_by_id.emplace(entry_name, pool);
+
     return *pool;
 }
 
 void PoolFactory::reset()
 {
     std::lock_guard lock(impl->mutex);
-    impl->pools.clear();
-    impl->pools_by_ids.clear();
+    impl->shared_pools_by_id.clear();
 }
 
 PoolFactory::PoolFactory() : impl(std::make_unique<PoolFactory::Impl>()) {}

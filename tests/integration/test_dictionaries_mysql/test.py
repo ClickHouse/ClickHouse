@@ -445,6 +445,65 @@ def test_predefined_connection_configuration(started_cluster):
     assert int(result) == 200
 
 
+def test_mysql_share_connection_dictionaries(started_cluster):
+    try:
+        instance.query("DROP DICTIONARY IF EXISTS mysql_shared_dict")
+        instance.query("DROP DICTIONARY IF EXISTS mysql_non_shared_dict")
+
+        instance.query(
+            f"""
+        CREATE DICTIONARY mysql_shared_dict
+        (
+            id UInt64,
+            value UInt32
+        )
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            HOST '123.456.78.9'
+            PORT 3306
+            USER 'user_1'
+            PASSWORD 'xxx'
+            DB 'db_1'
+            TABLE 'tbl_1'
+            SHARE_CONNECTION 1))
+        LAYOUT(DIRECT())
+        """
+        )
+
+        instance.query(
+            f"""
+        CREATE DICTIONARY mysql_non_shared_dict
+        (
+            id UInt64,
+            value UInt32
+        )
+        PRIMARY KEY id
+        SOURCE(MYSQL(
+            HOST '456.78.9.123'
+            PORT 3306
+            USER 'user_2'
+            PASSWORD 'xxx'
+            DB 'db_2'
+            TABLE 'tbl_2'))
+        LAYOUT(DIRECT())
+        """
+        )
+
+        result = instance.query_and_get_error(
+            "SELECT count() from mysql_shared_dict"
+        )
+        assert ("db_1@123.456.78.9:3306" in result)
+
+        result = instance.query_and_get_error(
+            "SELECT count() from mysql_non_shared_dict"
+        )
+        assert ("db_2@456.78.9.123:3306" in result)
+
+    finally:
+        instance.query("DROP DICTIONARY IF EXISTS mysql_non_shared_dict")
+        instance.query("DROP DICTIONARY IF EXISTS mysql_shared_dict")
+
+
 def create_mysql_db(mysql_connection, name):
     with mysql_connection.cursor() as cursor:
         cursor.execute("DROP DATABASE IF EXISTS {}".format(name))
