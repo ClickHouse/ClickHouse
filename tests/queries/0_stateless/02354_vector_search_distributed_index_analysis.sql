@@ -34,7 +34,7 @@ SETTINGS use_skip_indexes=0;
 SELECT 'ANN results';
 SELECT *
 FROM tab
-ORDER BY L2Distance(vec, [0.3, 0.3]) ASC
+ORDER BY L2Distance(vec, [0.3, 0.3]) ASC, id ASC
 LIMIT 4;
 
 SELECT 'ANN results - distributed';
