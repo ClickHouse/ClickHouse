@@ -18,6 +18,11 @@ DROP TABLE IF EXISTS tab_lazy_pe;
 -- flag and preloaded as rare-token postings (embedded path); tokens with cardinality
 -- > 256 take the lazy cursor's multi-segment / multi-block path. The data below
 -- mixes both so we exercise all eleven profile events.
+-- `index_granularity_bytes = 0` disables adaptive granularity so the 2000 rows stay in a
+-- single granule regardless of the CI's randomized `index_granularity_bytes`. With multiple
+-- granules, queries whose tokens occupy disjoint row ranges (Q6: csubset & eright) short-
+-- circuit per-granule before `lazyIntersectPostingLists` runs, leaving `AndSegmentsSkippedZero`
+-- unfired.
 CREATE TABLE tab_lazy_pe(
     k UInt64,
     s String,
@@ -26,7 +31,7 @@ CREATE TABLE tab_lazy_pe(
         posting_list_codec = 'bitpacking',
         posting_list_block_size = 256))
 ENGINE = MergeTree() ORDER BY k
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
 
 -- Tokens are named so their alphabetical order ('a' < 'b' < 'c' < 'd' < 'e') matches
 -- the desired position in `TextSearchQuery::tokens` after the constructor's sort —
