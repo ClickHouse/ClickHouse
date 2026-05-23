@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+            {"show_remote_databases_in_system_tables", false, false, "Renamed from `show_data_lake_catalogs_in_system_tables` and broadened to also hide `MySQL` and `PostgreSQL` databases from `system.tables`, `system.columns` and `system.completions` by default, since enumerating their tables requires expensive remote calls. Users who relied on the previous behavior must set this setting to `true`. The old name is kept as an alias."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -82,7 +83,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_threads_min_free_memory_per_thread", 0, 1073741824, "New setting to limit the number of threads based on available free memory"},
             {"max_insert_threads_min_free_memory_per_thread", 0, 4294967296, "New setting to limit the number of insert threads based on available free memory"},
             {"enable_blob_storage_log_for_read_operations", false, false, "New setting to log blob storage read operations to system.blob_storage_log"},
-            {"show_remote_databases_in_system_tables", false, false, "Renamed from `show_data_lake_catalogs_in_system_tables` and broadened to also hide `MySQL` and `PostgreSQL` databases from `system.tables`, `system.columns` and `system.completions` by default, since enumerating their tables requires expensive remote calls. Users who relied on the previous behavior must set this setting to `true`. The old name is kept as an alias."},
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
