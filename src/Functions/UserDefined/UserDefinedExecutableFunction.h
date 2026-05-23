@@ -29,8 +29,8 @@ struct UserDefinedExecutableFunctionConfiguration
     std::string command;
     VectorWithMemoryTracking<std::string> command_arguments;
     String command_working_directory;
-    std::vector<UserDefinedExecutableFunctionArgument> arguments;
-    std::vector<UserDefinedExecutableFunctionParameter> parameters;
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionArgument> arguments;
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters;
     DataTypePtr result_type;
     String result_name;
     bool is_deterministic;

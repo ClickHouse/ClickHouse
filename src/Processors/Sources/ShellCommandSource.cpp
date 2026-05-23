@@ -7,6 +7,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrnoException.h>
 
 #include <IO/WriteHelpers.h>
@@ -22,6 +23,7 @@
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
 
+#include <csignal>
 #include <ranges>
 
 
