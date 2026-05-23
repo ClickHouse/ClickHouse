@@ -398,10 +398,20 @@ void DiskLocal::prepareRead(
     /// Page cache is incompatible with async local read methods (io_uring,
     /// pread_fake_async, pread_threadpool) and with O_DIRECT when the page
     /// cache block size is not aligned to the direct IO sector size.
+    ///
+    /// `mmap` is also incompatible: `createReadBufferFromFileBase` returns
+    /// `MMapReadBufferFromFileWithCache` whose `set`/`seek` protocol expects
+    /// the working buffer to be the whole mapped file. `CachedInMemoryReadBufferFromFile`
+    /// drives its inner reader by calling `set(piece, piece_size)` then `seek(offset)`;
+    /// after the first call, mmap's bounds check (`new_pos > working_buffer.size()`)
+    /// rejects seeks past the piece, throwing `CANNOT_SEEK_THROUGH_FILE`.
+    /// On `master`, the mmap path of `createReadBufferFromFileBase` returns directly
+    /// without page-cache wrapping; preserve that behavior here.
     bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache
         && settings.local_fs_method != LocalFSReadMethod::io_uring
         && settings.local_fs_method != LocalFSReadMethod::pread_fake_async
-        && settings.local_fs_method != LocalFSReadMethod::pread_threadpool;
+        && settings.local_fs_method != LocalFSReadMethod::pread_threadpool
+        && settings.local_fs_method != LocalFSReadMethod::mmap;
 
     {
         /// Use the same estimated size basis as createReadBufferFromFileBase:
