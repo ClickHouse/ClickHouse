@@ -48,6 +48,17 @@ ORDER BY id
 SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
+# The PR description mentions that `date_time_input_format = 'best_effort'` had no effect prior to the fix.
+# This test exercises that setting explicitly. Hive partition value parsing is conceptually a cast,
+# so `cast_string_to_date_time_mode` is the authoritative setting; here we set both consistently
+# to make the intent explicit.
+$CLICKHOUSE_LOCAL -q "
+SELECT id, ts
+FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64, ts DateTime64(0, ''UTC'')')
+ORDER BY id
+SETTINGS use_hive_partitioning = 1, date_time_input_format = 'best_effort', session_timezone = 'UTC';
+"
+
 # Virtual column case: the schema declares only `id`, so `ts` is materialized as
 # a virtual column. Hive virtual column conversion must also honour
 # `cast_string_to_date_time_mode`.
