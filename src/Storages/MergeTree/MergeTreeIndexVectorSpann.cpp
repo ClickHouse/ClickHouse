@@ -129,7 +129,8 @@ Float32 distanceToQuery(unum::usearch::metric_kind_t metric_kind, const Float32 
         Float64 dot = 0;
         for (size_t i = 0; i < dimensions; ++i)
             dot += static_cast<Float64>(query[i]) * static_cast<Float64>(vec[i]);
-        return static_cast<Float32>(dot);
+        /// Keep `_distance` semantics aligned with vector_similarity/USearch for `ip_k`.
+        return static_cast<Float32>(1.0 - dot);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported metric kind for vector_spann index search");
 }
@@ -694,11 +695,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
     if (parameters->additional_filters_present || is_rescoring)
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
 
-    const bool higher_is_better = (metric_kind == unum::usearch::metric_kind_t::ip_k);
-    auto compare = [higher_is_better](const Candidate & a, const Candidate & b)
-    {
-        return higher_is_better ? (a.distance > b.distance) : (a.distance < b.distance);
-    };
+    auto compare = [](const Candidate & a, const Candidate & b) { return a.distance < b.distance; };
     if (candidates.size() <= limit)
     {
         std::ranges::sort(candidates, compare);
