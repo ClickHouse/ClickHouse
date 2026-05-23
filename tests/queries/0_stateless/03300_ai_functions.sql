@@ -74,14 +74,17 @@ SELECT aiGenerate('ai_no_model', 'hi'); -- { serverError BAD_ARGUMENTS }
 
 DROP NAMED COLLECTION ai_no_model;
 
+-- `api_key` is optional: it can be omitted for OpenAI-compatible servers that don't
+-- require authentication (e.g. a local Ollama instance). When absent, the provider
+-- omits the auth header rather than sending a dummy token.
 DROP NAMED COLLECTION IF EXISTS ai_no_api_key;
 CREATE NAMED COLLECTION ai_no_api_key AS
     provider = 'openai',
     endpoint = 'http://localhost:1/v1/chat/completions',
     model = 'test-model';
 
-SELECT '-- Named collection missing api_key';
-SELECT aiGenerate('ai_no_api_key', 'hi'); -- { serverError BAD_ARGUMENTS }
+SELECT '-- Named collection without api_key resolves';
+SELECT count() FROM (SELECT aiGenerate('ai_no_api_key', x) AS result FROM tab);
 
 DROP NAMED COLLECTION ai_no_api_key;
 
