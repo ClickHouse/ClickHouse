@@ -19,6 +19,14 @@ bool SelectQueryInfo::isFinal() const
     return select.final();
 }
 
+ASTPtr SelectQueryInfo::finalBy() const
+{
+    if (table_expression_modifiers)
+        return table_expression_modifiers->getFinalBy();
+
+    return {};
+}
+
 std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNodeNameToInputNodeColumn() const
 {
     std::unordered_map<std::string, ColumnWithTypeAndName> node_name_to_input_node_column;
