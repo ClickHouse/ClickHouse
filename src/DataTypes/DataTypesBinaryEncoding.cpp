@@ -54,6 +54,8 @@ namespace Setting
 extern const SettingsUInt64 input_format_binary_max_type_complexity;
 }
 
+DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity);
+
 namespace
 {
 /// Max array size that is allowed for any nested elements during data type decoding.
@@ -281,7 +283,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
 }
 
-std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf)
+std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity)
 {
     String function_name;
     readStringBinary(function_name, buf);
@@ -297,12 +299,12 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     size_t num_arguments = 0;
     readVarUInt(num_arguments, buf);
     if (num_arguments > MAX_ARRAY_SIZE)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_arguments, MAX_ARRAY_SIZE);
 
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
     for (size_t i = 0; i != num_arguments; ++i)
-        arguments_types.push_back(decodeDataType(buf));
+        arguments_types.push_back(decodeDataType(buf, complexity));
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
     auto function = AggregateFunctionFactory::instance().get(function_name, action, arguments_types, parameters, properties);
@@ -741,12 +743,12 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
         {
             size_t version = 0;
             readVarUInt(version, buf);
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity);
             return std::make_shared<DataTypeAggregateFunction>(function, arguments_types, parameters, version);
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity);
             return createSimpleAggregateFunctionType(function, arguments_types, parameters);
         }
         case BinaryTypeIndex::Nested:
@@ -820,7 +822,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             size_t path_regexps_to_skip_size = 0;
             readVarUInt(path_regexps_to_skip_size, buf);
             if (path_regexps_to_skip_size > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", path_regexps_to_skip_size, MAX_ARRAY_SIZE);
 
             std::vector<String> path_regexps_to_skip;
             path_regexps_to_skip.reserve(path_regexps_to_skip_size);

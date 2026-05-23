@@ -167,7 +167,7 @@ public:
         };
 
         MutableColumnPtr result_column = result_type->createColumn();
-        auto invoke_and_set_column = [&]<typename T>(const std::vector<WasmVal> & args)
+        auto invoke_and_set_column = [&]<typename T>(const VectorWithMemoryTracking<WasmVal> & args)
         {
             if (auto * column_typed = typeid_cast<ColumnVector<T> *>(result_column.get()))
             {
@@ -179,7 +179,7 @@ public:
         };
 
         size_t num_columns = block.columns();
-        std::vector<WasmVal> wasm_args(num_columns);
+        VectorWithMemoryTracking<WasmVal> wasm_args(num_columns);
         for (size_t row_idx = 0; row_idx < num_rows; ++row_idx)
         {
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
@@ -711,10 +711,10 @@ bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function
     return registry.erase(function_name) > 0;
 }
 
-std::vector<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> UserDefinedWebAssemblyFunctionFactory::getAllFunctions() const
+VectorWithMemoryTracking<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> UserDefinedWebAssemblyFunctionFactory::getAllFunctions() const
 {
     std::shared_lock lock(registry_mutex);
-    std::vector<RegisteredFunction> result;
+    VectorWithMemoryTracking<RegisteredFunction> result;
     result.reserve(registry.size());
     for (const auto & [sql_name, entry] : registry)
         result.push_back(RegisteredFunction{sql_name, entry.function, entry.create_query});
@@ -760,17 +760,17 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
                 },
                 Field(default_value));
         }
-        std::unordered_set<String> values;
+        UnorderedSetWithMemoryTracking<String> values;
     };
 
-    const std::unordered_map<String, SettingDefinition> settings_def = {
+    const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
     };
 
-    std::vector<String> getAllRegisteredNames() const override
+    Strings getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        Strings result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

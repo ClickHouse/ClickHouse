@@ -9,6 +9,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -34,14 +35,14 @@ struct DecimalOpHelpers
      *
      * Here and below we use UInt8 for storing digits (0-9 range with maximum carry of 9 will definitely fit this)
      */
-    static std::vector<UInt8> multiply(const std::vector<UInt8> & num1, const std::vector<UInt8> & num2)
+    static VectorWithMemoryTracking<UInt8> multiply(const VectorWithMemoryTracking<UInt8> & num1, const VectorWithMemoryTracking<UInt8> & num2)
     {
         const auto len1 = static_cast<UInt16>(num1.size());
         const auto len2 = static_cast<UInt16>(num2.size());
         if (len1 == 0 || len2 == 0)
             return {0};
 
-        std::vector<UInt8> result(len1 + len2, 0);
+        VectorWithMemoryTracking<UInt8> result(len1 + len2, 0);
         UInt16 i_n1 = 0;
         UInt16 i_n2 = 0;
 
@@ -84,9 +85,9 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static std::vector<UInt8> divide(const std::vector<UInt8> & number, const Int256 & divisor)
+    static VectorWithMemoryTracking<UInt8> divide(const VectorWithMemoryTracking<UInt8> & number, const Int256 & divisor)
     {
-        std::vector<UInt8> result;
+        VectorWithMemoryTracking<UInt8> result;
         const auto max_index = number.size() - 1;
 
         UInt16 idx = 0;
@@ -112,9 +113,9 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static std::vector<UInt8> toDigits(Int256 x)
+    static VectorWithMemoryTracking<UInt8> toDigits(Int256 x)
     {
-        std::vector<UInt8> result;
+        VectorWithMemoryTracking<UInt8> result;
         if (x >= 10)
             result = toDigits(x / 10);
 
@@ -122,7 +123,7 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static UInt256 fromDigits(const std::vector<UInt8> & digits)
+    static UInt256 fromDigits(const VectorWithMemoryTracking<UInt8> & digits)
     {
         Int256 result = 0;
         UInt32 scale = 0;

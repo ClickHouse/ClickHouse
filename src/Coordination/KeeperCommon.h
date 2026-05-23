@@ -77,4 +77,13 @@ void moveFileBetweenDisks(
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context);
 
+/// Callback invoked by KeeperDispatcher to deliver responses to clients.
+/// Must be safe for concurrent invocation: setResponse (from responseThread) and
+/// finishSession (from dead session cleaner) may invoke copies of the same callback
+/// concurrently for the same session.
+/// Returns true if the response was retained in some kind of queue and KeeperDispatcher::onResponseDeallocated will be called for it later.
+/// It is valid to always return false - that just makes the queue bloat prevention less effective;
+/// if you do return true, you *must* call KeeperDispatcher::onResponseDeallocated later.
+using ZooKeeperResponseCallback = std::function<bool(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
+
 }

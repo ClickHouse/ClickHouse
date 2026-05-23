@@ -3,8 +3,9 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Core/Settings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
