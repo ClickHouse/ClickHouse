@@ -175,7 +175,9 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
     /// To understand if the first row is a header with column names, we check
     /// that all values from this row is a subset of column names from provided header
     /// or column names from provided header is a subset of values from this row
-    auto column_names = getPort().getHeader().getNames();
+    const auto column_names = column_mapping->is_set && !column_mapping->names_of_columns.empty()
+        ? column_mapping->names_of_columns
+        : getPort().getHeader().getNames();
     std::unordered_set<std::string_view> column_names_set(column_names.begin(), column_names.end());
     std::unordered_set<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
     if (!isSubsetOf(first_row_values_set, column_names_set) && !isSubsetOf(column_names_set, first_row_values_set))

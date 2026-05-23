@@ -237,6 +237,7 @@ private:
     bool need_headers_virtual_column;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
+    ColumnMappingPtr column_mapping_for_input_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;

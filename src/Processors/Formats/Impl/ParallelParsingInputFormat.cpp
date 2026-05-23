@@ -84,9 +84,9 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
         unit.chunk_ext.chunk.clear();
         unit.chunk_ext.block_missing_values.clear();
 
-        /// Propagate column_mapping to other parsers.
-        /// Note: column_mapping is used only for *WithNames types
-        if (current_ticket_number != 0)
+        /// Propagate column_mapping to parsers that don't initialize it themselves.
+        /// It is also used by position-based text formats to skip unrequested input fields.
+        if (current_ticket_number != 0 || column_mapping->is_set)
             input_format->setColumnMapping(column_mapping);
 
         // We don't know how many blocks will be. So we have to read them all

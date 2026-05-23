@@ -849,6 +849,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
+        if (read_from_format_info.column_mapping_for_input_format)
+            input_format->setColumnMapping(read_from_format_info.column_mapping_for_input_format);
 
         if (need_only_count)
             input_format->needOnlyCount();

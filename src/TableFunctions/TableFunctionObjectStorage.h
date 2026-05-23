@@ -45,7 +45,9 @@ public:
 
     bool supportsReadingSubsetOfColumns(const ContextPtr & context) override
     {
-        return configuration->format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
+        return configuration->format != "auto"
+            && (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context)
+                || FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(configuration->format, context));
     }
 
     std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override

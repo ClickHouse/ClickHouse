@@ -324,6 +324,7 @@ private:
     NamesAndTypesList requested_columns;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
+    ColumnMappingPtr column_mapping_for_input_format;
     SerializationInfoByName serialization_hints;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 

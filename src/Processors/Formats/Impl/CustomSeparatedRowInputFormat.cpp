@@ -463,6 +463,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
             });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
+        factory.markFormatSupportsSubsetOfColumnsByPosition(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated");
         markFormatWithNamesAndTypesSupportsSamplingColumns(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", factory);
     }
 }

@@ -3,6 +3,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/Block_fwd.h>
 #include <Core/BlockNameMap.h>
+#include <memory>
 
 namespace DB
 {
@@ -31,6 +32,7 @@ struct ColumnMapping
     std::vector<String> names_of_columns;
 
     void setupByHeader(const Block & header);
+    void setupByHeaderWithInputFields(const Names & input_column_names, const Block & header);
 
     void addColumns(
         const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);
@@ -40,5 +42,7 @@ struct ColumnMapping
 
     void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::vector<UInt8> & read_columns);
 };
+
+using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
 
 }

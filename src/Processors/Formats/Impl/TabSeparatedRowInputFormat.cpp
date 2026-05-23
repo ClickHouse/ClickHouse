@@ -421,8 +421,13 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
+        factory.markFormatSupportsSubsetOfColumnsByPosition(is_raw ? "TabSeparatedRaw" : "TabSeparated");
+        factory.markFormatSupportsSubsetOfColumnsByPosition(is_raw ? "TSVRaw" : "TSV");
         if (is_raw)
+        {
             registerWithNamesAndTypes("Raw", register_func);
+            factory.markFormatSupportsSubsetOfColumnsByPosition("Raw");
+        }
     }
 }
 

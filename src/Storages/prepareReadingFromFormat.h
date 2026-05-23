@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Block.h>
+#include <Formats/ColumnMapping.h>
 #include <Storages/StorageSnapshot.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Interpreters/Context_fwd.h>
@@ -36,6 +37,7 @@ namespace DB
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
         SerializationInfoByName serialization_hints{{}};
+        ColumnMappingPtr column_mapping_for_input_format;
 
         void serialize(IQueryPlanStep::Serialization & ctx) const;
         static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);
@@ -76,6 +78,10 @@ namespace DB
 
     /// Returns columns_to_read from file.
     Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
+
+    /// Create mapping from input fields to requested columns for position-based text formats.
+    /// It lets parsers skip input fields which are present in the file but not requested by the query.
+    void setupColumnMappingForInputFields(ReadFromFormatInfo & info, const NamesAndTypesList & input_columns);
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 

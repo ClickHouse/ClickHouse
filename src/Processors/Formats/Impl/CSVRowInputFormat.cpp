@@ -529,6 +529,7 @@ void registerInputFormatCSV(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("CSV", register_func);
+    factory.markFormatSupportsSubsetOfColumnsByPosition("CSV");
 }
 
 std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, const FormatSettings & settings)

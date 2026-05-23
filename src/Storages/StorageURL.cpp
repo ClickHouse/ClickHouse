@@ -349,6 +349,7 @@ StorageURLSource::StorageURLSource(
     , need_headers_virtual_column(info.requested_virtual_columns.contains("_headers"))
     , requested_virtual_columns(info.requested_virtual_columns.eraseNames({"_headers"}))
     , block_for_format(info.format_header)
+    , column_mapping_for_input_format(info.column_mapping_for_input_format)
     , uri_iterator(uri_iterator_)
     , format(format_)
     , format_settings(format_settings_)
@@ -428,6 +429,8 @@ StorageURLSource::StorageURLSource(
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
+            if (column_mapping_for_input_format)
+                input_format->setColumnMapping(column_mapping_for_input_format);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1089,7 +1092,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings)
+        || FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(format_name, context, format_settings);
 }
 
 bool IStorageURLBase::supportsPrewhere() const
@@ -1216,6 +1220,14 @@ void IStorageURLBase::read(
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+
+    if (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(format_name, local_context, format_settings))
+    {
+        const auto & columns_in_data_file = file_columns.empty()
+            ? storage_snapshot->metadata->getColumns().getAllPhysical()
+            : file_columns;
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file);
+    }
 
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
@@ -1398,6 +1410,14 @@ void StorageURLWithFailover::read(
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+
+    if (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(format_name, local_context, format_settings))
+    {
+        const auto & columns_in_data_file = file_columns.empty()
+            ? storage_snapshot->metadata->getColumns().getAllPhysical()
+            : file_columns;
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file);
+    }
 
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
