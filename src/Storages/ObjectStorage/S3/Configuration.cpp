@@ -353,8 +353,8 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
 void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(args);
-    std::string tmp_body;
-    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, tmp_body, context);
+    StorageURL::Body tmp_body;
+    size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, headers_from_ast, tmp_body, context);
 
     ASTs key_value_asts;
     if (auto first_key_value_arg_it = getFirstKeyValueArgument(args);
@@ -731,8 +731,8 @@ static void addStructureAndFormatToArgsIfNeededS3(
 
         HTTPHeaderEntries tmp_headers;
 
-        std::string tmp_body;
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, tmp_body, context);
+        StorageURL::Body tmp_body;
+        size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, tmp_headers, tmp_body, context);
 
         ASTs key_value_asts;
         auto first_key_value_arg_it = getFirstKeyValueArgument(args);

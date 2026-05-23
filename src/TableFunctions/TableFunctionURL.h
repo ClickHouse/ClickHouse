@@ -58,22 +58,24 @@ public:
         }
         else
         {
-            /// If arguments contain headers, just remove it and add to the end of arguments later.
+            /// If arguments contain `headers(...)` or `body(...)`, set them aside and reattach after structure/format injection.
             HTTPHeaderEntries tmp_headers;
-            std::string tmp_body;
-            size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, tmp_body, context);
-            ASTPtr headers_ast;
-            if (count != args.size())
+            StorageURL::Body tmp_body;
+            size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, tmp_headers, tmp_body, context);
+            const size_t extra = args.size() - count;
+            chassert(extra <= 2);
+            ASTs extras;
+            extras.reserve(extra);
+            for (size_t i = 0; i < extra; ++i)
             {
-                chassert(count + 1 == args.size());
-                headers_ast = args.back();
+                extras.push_back(std::move(args.back()));
                 args.pop_back();
             }
 
             ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context, with_structure);
 
-            if (headers_ast)
-                args.push_back(headers_ast);
+            for (auto it = extras.rbegin(); it != extras.rend(); ++it)
+                args.push_back(std::move(*it));
         }
     }
 

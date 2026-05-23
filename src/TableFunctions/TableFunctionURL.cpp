@@ -75,42 +75,26 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (format == "auto")
             format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
 
-        StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, configuration.body, context);
+        StorageURL::evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, context);
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, configuration.body, context);
-        /// ITableFunctionFileLike cannot parse _headers_ and _body_ argument, so remove it.
-        ASTPtr body_ast;
-        /// ITableFunctionFileLike cannot parse headers argument, so remove it.
-        ASTPtr headers_ast;
-        if (count != args.size())
+        size_t count = StorageURL::evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, context);
+        /// ITableFunctionFileLike cannot parse `headers(...)` or `body(...)`, so set them aside.
+        const size_t extra = args.size() - count;
+        chassert(extra <= 2);
+        ASTs extras;
+        extras.reserve(extra);
+        for (size_t i = 0; i < extra; ++i)
         {
-            if (count + 1 == args.size())
-            {
-                headers_ast = args.back();
-                args.pop_back();
-            }
-            else if (count + 2 == args.size())
-            {
-                headers_ast = args.back();
-                args.pop_back();
-                body_ast = args.back();
-                args.pop_back();
-            }
-            else
-            {
-                chassert(false);
-            }
+            extras.push_back(std::move(args.back()));
+            args.pop_back();
         }
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
 
-        if (body_ast)
-            args.push_back(body_ast);
-
-        if (headers_ast)
-            args.push_back(headers_ast);
+        for (auto it = extras.rbegin(); it != extras.rend(); ++it)
+            args.push_back(std::move(*it));
     }
 }
 
