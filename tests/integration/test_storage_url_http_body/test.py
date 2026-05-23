@@ -110,7 +110,7 @@ def test_subquery_result_json_in_http_body(started_cluster):
     run_test(query, json_each_row_dump)
 
 
-def test_subquery_result_csv_in_http_body(started_cluster):
+def test_subquery_result_tsv_in_http_body(started_cluster):
     tab_separate_each_row_dump = '''1	Vasya	123\n2	Kolya	456\n3	Dima	789'''
     query = f"SELECT * FROM url('http://localhost:8000/', headers('type'='string'), body(({generator_subquery}), TabSeparated))"
     run_test(query, tab_separate_each_row_dump)
