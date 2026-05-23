@@ -144,8 +144,12 @@ StorageObjectStorage::StorageObjectStorage(
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
-    const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->partition_strategy
+    /// Always resolve the sample path so that hive partition columns can be registered as
+    /// virtual columns regardless of whether `use_hive_partitioning` was enabled at CREATE
+    /// TABLE time. The set of virtual columns must be stable across queries, so detection
+    /// happens once here; the setting still controls whether hive columns are *populated* at
+    /// read time and whether they participate in inferred-schema enrichment.
+    const bool need_resolve_sample_path = !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 

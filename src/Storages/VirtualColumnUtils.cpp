@@ -266,9 +266,13 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
         if (!partition_strategy.has_value())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition strategy to be specified");
 
-        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
-        if (context->getSettingsRef()[Setting::use_hive_partitioning]
-            && partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
+        /// If `partition_strategy == none`, we expose hive-style partition columns (`key=value`
+        /// segments in the file path) as virtual columns whenever we can detect them. The set of
+        /// virtual columns has to be fixed at CREATE TABLE / DESCRIBE time, so we do *not* gate
+        /// this on the `use_hive_partitioning` session setting — that setting still controls
+        /// whether hive columns participate in physical schema inference and whether they get
+        /// populated at read time, but the column *existence* must be stable across queries.
+        if (partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
         {
             auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
             for (const auto & column : hive_columns)
@@ -386,11 +390,17 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context)
+    ContextPtr /*context*/)
 {
-    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+    /// Parse the hive `key=value` segments from the path regardless of the `use_hive_partitioning`
+    /// session setting. The virtual-column set is fixed at CREATE TABLE (see
+    /// `getVirtualsForFileLikeStorage`), so a user who disables the setting at *query* time can
+    /// still reference a hive virtual that was registered at CREATE; the chunk must contain a
+    /// column for it. Otherwise the `else if (hive_map.find(...))` branch below silently drops
+    /// the column and downstream code sees a Block-structure mismatch. Parsing is a single linear
+    /// scan over the path, cheap enough to not justify gating.
+    HivePartitioningUtils::HivePartitioningKeysAndValues hive_map
+        = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
