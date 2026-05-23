@@ -1,4 +1,3 @@
-#include <thread>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -21,7 +20,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/QueryScope.h>
 #include <Common/FailPoint.h>

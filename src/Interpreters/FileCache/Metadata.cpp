@@ -6,7 +6,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
-#include <Common/ThreadPool.h>
 #include <filesystem>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 
@@ -196,8 +195,6 @@ CacheMetadata::CacheMetadata(
     , download_threads_num(background_download_threads_)
 {
 }
-
-CacheMetadata::~CacheMetadata() = default;
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
 {

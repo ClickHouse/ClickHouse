@@ -959,7 +959,7 @@ def test_mysql_dotnet_client(started_cluster):
         [
             "bash",
             "-c",
-            f"cd /testapp && dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
+            f"dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
         ],
     )
     # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
