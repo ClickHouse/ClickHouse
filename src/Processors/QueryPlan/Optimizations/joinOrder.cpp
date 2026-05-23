@@ -598,6 +598,11 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 {
+    /// Discard any partial state left by an earlier algorithm in the fallback chain
+    /// (e.g. `dphyp,greedy`) so cost-model lookups via `getColumnStats` only see
+    /// entries built by this run.
+    dp_table.clear();
+
     std::deque<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
