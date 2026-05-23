@@ -82,6 +82,7 @@ void registerStorageRedis(StorageFactory & factory);
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);
 #endif
+void registerStorageElasticsearchQueue(StorageFactory & factory);
 
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
@@ -188,6 +189,7 @@ void registerStorages()
 #if USE_RDKAFKA
     registerStorageKafka(factory);
 #endif
+    registerStorageElasticsearchQueue(factory);
 
 #if USE_FILELOG
     registerStorageFileLog(factory);

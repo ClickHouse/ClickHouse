@@ -134,6 +134,8 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+add_headers_and_sources(dbms Storages/Elasticsearch)
+
 if (TARGET ch_contrib::nats_io)
     add_headers_and_sources(dbms Storages/NATS)
 endif()

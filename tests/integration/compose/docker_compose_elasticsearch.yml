@@ -1,0 +1,12 @@
+services:
+    elasticsearch1:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+        restart: always
+        environment:
+            - discovery.type=single-node
+            - xpack.security.enabled=false
+            - ES_JAVA_OPTS=-Xms512m -Xmx512m
+        ports:
+            - ${ELASTICSEARCH_EXTERNAL_PORT:-9200}:${ELASTICSEARCH_INTERNAL_PORT:-9200}
+        stop_grace_period: 5s
+        cpus: 3

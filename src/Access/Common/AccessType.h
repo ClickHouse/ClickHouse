@@ -40,6 +40,7 @@ enum class Source : uint8_t
     M(HIVE, "Hive") \
     M(AZURE, "AzureBlobStorage") \
     M(KAFKA, "Kafka") \
+    M(ELASTICSEARCH, "ElasticsearchQueue,Elasticsearch") \
     M(NATS, "") \
     M(RABBITMQ, "RabbitMQ") \
     M(YTSAURUS, "YTsaurus") \
@@ -420,6 +421,7 @@ enum class AccessType : uint8_t
     M(HIVE, "", GLOBAL, ALL) \
     M(AZURE, "", GLOBAL, ALL) \
     M(KAFKA, "", GLOBAL, ALL) \
+    M(ELASTICSEARCH, "", GLOBAL, ALL) \
     M(NATS, "", GLOBAL, ALL) \
     M(RABBITMQ, "", GLOBAL, ALL) \
     M(YTSAURUS, "", GLOBAL, ALL) \

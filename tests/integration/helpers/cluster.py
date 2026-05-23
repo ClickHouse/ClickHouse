@@ -642,6 +642,7 @@ class ClickHouseCluster:
         self.base_postgres_cmd = []
         self.base_mongo_cmd = []
         self.base_redis_cmd = []
+        self.base_elasticsearch_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
         self.base_prometheus_cmd = []
@@ -673,6 +674,7 @@ class ClickHouseCluster:
         self.with_mongo = False
         self.with_net_trics = False
         self.with_redis = False
+        self.with_elasticsearch = False
         self.with_cassandra = False
         self.with_ldap = False
         self.with_jdbc_bridge = False
@@ -803,6 +805,10 @@ class ClickHouseCluster:
         # available when with_redis == True
         self.redis_host = "redis1"
         self._redis_port = 0
+
+        # available when with_elasticsearch == True
+        self.elasticsearch_host = "elasticsearch1"
+        self._elasticsearch_port = 0
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -1054,6 +1060,13 @@ class ClickHouseCluster:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def elasticsearch_port(self):
+        if self._elasticsearch_port:
+            return self._elasticsearch_port
+        self._elasticsearch_port = self.port_pool.get_port()
+        return self._elasticsearch_port
 
     @property
     def ldap_external_port(self):
@@ -1689,6 +1702,23 @@ class ClickHouseCluster:
         )
         return self.base_redis_cmd
 
+    def setup_elasticsearch_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_elasticsearch = True
+        env_variables["ELASTICSEARCH_HOST"] = self.elasticsearch_host
+        env_variables["ELASTICSEARCH_EXTERNAL_PORT"] = str(self.elasticsearch_port)
+        env_variables["ELASTICSEARCH_INTERNAL_PORT"] = "9200"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml")]
+        )
+        self.base_elasticsearch_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_elasticsearch.yml"),
+        )
+        return self.base_elasticsearch_cmd
+
     def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_rabbitmq = True
         env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
@@ -2067,6 +2097,7 @@ class ClickHouseCluster:
         with_mongo=False,
         with_nginx=False,
         with_redis=False,
+        with_elasticsearch=False,
         with_minio=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
@@ -2209,6 +2240,7 @@ class ClickHouseCluster:
             or with_kafka_sasl,
             with_mongo=with_mongo,
             with_redis=with_redis,
+            with_elasticsearch=with_elasticsearch,
             with_minio=with_minio,
             with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
@@ -2427,6 +2459,13 @@ class ClickHouseCluster:
         if with_redis and not self.with_redis:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_elasticsearch and not self.with_elasticsearch:
+            cmds.append(
+                self.setup_elasticsearch_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
             )
 
         # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
@@ -3509,6 +3548,14 @@ class ClickHouseCluster:
             self.prometheus_ip[prometheus_server] = ip
             self.wait_for_url(f"http://{ip}:{self.prometheus_port[prometheus_server]}/api/v1/status/runtimeinfo")
 
+    def wait_elasticsearch_to_start(self):
+        self.wait_for_url(
+            f"http://localhost:{self.elasticsearch_port}/_cluster/health",
+            conn_timeout=5,
+            interval=2,
+            timeout=180,
+        )
+
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
@@ -3966,6 +4013,12 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_redis_cmd + common_opts)
                 self.up_called = True
                 time.sleep(10)
+
+            if self.with_elasticsearch and self.base_elasticsearch_cmd:
+                logging.debug("Setup Elasticsearch")
+                subprocess_check_call(self.base_elasticsearch_cmd + common_opts)
+                self.up_called = True
+                self.wait_elasticsearch_to_start()
 
             if self.with_hive and self.base_hive_cmd:
                 logging.debug("Setup hive")
@@ -4746,6 +4799,7 @@ class ClickHouseInstance:
         with_secrets,
         with_mongo,
         with_redis,
+        with_elasticsearch,
         with_minio,
         with_remote_database_disk,
         with_azurite,
@@ -4874,6 +4928,7 @@ class ClickHouseInstance:
         )
         self.with_arrowflight = with_arrowflight
         self.with_redis = with_redis
+        self.with_elasticsearch = with_elasticsearch
         self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
