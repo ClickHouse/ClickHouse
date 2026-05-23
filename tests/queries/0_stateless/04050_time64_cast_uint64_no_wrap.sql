@@ -46,3 +46,29 @@ SELECT CAST(9999999::UInt64, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTING
 -- Small types (Int16) must not overflow during clamping
 SELECT toTime64(-3600::Int16, 0);
 SELECT toTime64(3600::Int16, 0);
+
+-- Wide integer sources must also honor `date_time_overflow_behavior`.
+SELECT CAST(99999999999::Int128, 'DateTime64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999::Int256, 'DateTime64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999::UInt128, 'DateTime64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999::UInt256, 'DateTime64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
+SELECT CAST(9999999::Int128, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(9999999::Int256, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(9999999::UInt128, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(9999999::UInt256, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-9999999::Int128, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-9999999::Int256, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
+-- Saturate clamp also works for wide ints, matching the narrow counterpart at the boundary.
+SELECT CAST(9999999::Int128, 'Time64') = CAST(3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(9999999::UInt128, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(9999999::Int256, 'Time64') = CAST(3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(9999999::UInt256, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(-9999999::Int128, 'Time64') = CAST(-3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
+
+-- In-range wide-int values agree with the narrow counterpart.
+SELECT CAST(60000::Int128, 'Time64') = CAST(60000::Int64, 'Time64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(60000::UInt128, 'Time64') = CAST(60000::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(1234567890::Int128, 'DateTime64') = CAST(1234567890::Int64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(1234567890::UInt256, 'DateTime64') = CAST(1234567890::UInt64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw';

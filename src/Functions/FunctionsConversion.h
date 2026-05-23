@@ -2,6 +2,7 @@
 
 #include <type_traits>
 
+#include <base/wide_integer_to_string.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
@@ -525,18 +526,19 @@ struct ToDateTime64TransformUnsigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// Small unsigned types (UInt8, UInt16, UInt32) cannot exceed MAX_DATETIME64_TIMESTAMP.
-        if constexpr (static_cast<UInt64>(std::numeric_limits<FromType>::max()) > static_cast<UInt64>(MAX_DATETIME64_TIMESTAMP))
+        /// All values of small unsigned types (UInt8, UInt16, UInt32) lie within [0, MAX_DATETIME64_TIMESTAMP],
+        /// so no bounds check is needed for them.
+        if constexpr (sizeof(FromType) > sizeof(UInt32))
         {
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+                if (from > FromType(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
-                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
             }
 
-            /// clamp in unsigned domain to avoid wrong when casting UInt64 above INT64_MAX to time_t
-            auto clamped = static_cast<time_t>(std::min<UInt64>(from, static_cast<UInt64>(MAX_DATETIME64_TIMESTAMP)));
+            /// Compare in FromType domain to avoid truncating wide ints (UInt128, UInt256) before clamping.
+            time_t clamped = from > FromType(MAX_DATETIME64_TIMESTAMP) ? MAX_DATETIME64_TIMESTAMP : static_cast<time_t>(from);
             return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
         }
 
@@ -557,15 +559,29 @@ struct ToDateTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        /// All values of small signed types (Int8, Int16, Int32) lie within
+        /// [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP], so no bounds check is needed for them.
+        if constexpr (sizeof(FromType) > sizeof(Int32))
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
-        }
-        from = static_cast<FromType>(std::max<time_t>(from, MIN_DATETIME64_TIMESTAMP));
-        from = static_cast<FromType>(std::min<time_t>(from, MAX_DATETIME64_TIMESTAMP));
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
+                if (from < FromType(MIN_DATETIME64_TIMESTAMP) || from > FromType(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
+            }
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+            /// Compare in FromType domain to avoid truncating wide ints (Int128, Int256) before clamping.
+            time_t clamped;
+            if (from < FromType(MIN_DATETIME64_TIMESTAMP))
+                clamped = MIN_DATETIME64_TIMESTAMP;
+            else if (from > FromType(MAX_DATETIME64_TIMESTAMP))
+                clamped = MAX_DATETIME64_TIMESTAMP;
+            else
+                clamped = static_cast<time_t>(from);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+        }
+
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -647,17 +663,19 @@ struct ToTime64TransformUnsigned
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
     {
-        /// Small unsigned types (UInt8, UInt16) cannot exceed MAX_TIME_TIMESTAMP.
-        if constexpr (static_cast<UInt64>(std::numeric_limits<FromType>::max()) > static_cast<UInt64>(MAX_TIME_TIMESTAMP))
+        /// All values of small unsigned types (UInt8, UInt16) lie within [0, MAX_TIME_TIMESTAMP],
+        /// so no bounds check is needed for them.
+        if constexpr (sizeof(FromType) > sizeof(UInt16))
         {
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (from > MAX_TIME_TIMESTAMP) [[unlikely]]
+                if (from > FromType(MAX_TIME_TIMESTAMP)) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
             }
 
-            /// clamp in unsigned domain to avoid wrong when casting UInt64 above INT64_MAX to time_t
-            auto clamped = static_cast<time_t>(std::min<UInt64>(from, static_cast<UInt64>(MAX_TIME_TIMESTAMP)));
+            /// Compare in FromType domain to avoid truncating wide ints (UInt128, UInt256) before clamping.
+            time_t clamped = from > FromType(MAX_TIME_TIMESTAMP) ? MAX_TIME_TIMESTAMP : static_cast<time_t>(from);
             return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
         }
 
@@ -678,19 +696,29 @@ struct ToTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
     {
-        /// For small types (Int8, Int16) every representable value fits within [-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]
-        if constexpr (static_cast<Int64>(std::numeric_limits<FromType>::max()) > MAX_TIME_TIMESTAMP)
+        /// All values of small signed types (Int8, Int16) lie within
+        /// [-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP], so no bounds check is needed for them.
+        if constexpr (sizeof(FromType) > sizeof(Int16))
         {
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (from < static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP) || from > static_cast<FromType>(MAX_TIME_TIMESTAMP)) [[unlikely]]
+                if (from < FromType(-1 * MAX_TIME_TIMESTAMP) || from > FromType(MAX_TIME_TIMESTAMP)) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
             }
 
-            from = std::clamp<FromType>(from, static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP), static_cast<FromType>(MAX_TIME_TIMESTAMP));
+            /// Compare in FromType domain to avoid truncating wide ints (Int128, Int256) before clamping.
+            time_t clamped;
+            if (from < FromType(-1 * MAX_TIME_TIMESTAMP))
+                clamped = -1 * MAX_TIME_TIMESTAMP;
+            else if (from > FromType(MAX_TIME_TIMESTAMP))
+                clamped = MAX_TIME_TIMESTAMP;
+            else
+                clamped = static_cast<time_t>(from);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
         }
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -2035,7 +2063,9 @@ struct ConvertImpl
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>
-                || std::is_same_v<FromDataType, DataTypeInt64>)
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeInt128>
+                || std::is_same_v<FromDataType, DataTypeInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
@@ -2049,7 +2079,9 @@ struct ConvertImpl
                 std::is_same_v<FromDataType, DataTypeUInt8>
                 || std::is_same_v<FromDataType, DataTypeUInt16>
                 || std::is_same_v<FromDataType, DataTypeUInt32>
-                || std::is_same_v<FromDataType, DataTypeUInt64>)
+                || std::is_same_v<FromDataType, DataTypeUInt64>
+                || std::is_same_v<FromDataType, DataTypeUInt128>
+                || std::is_same_v<FromDataType, DataTypeUInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
