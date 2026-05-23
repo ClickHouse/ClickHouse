@@ -331,7 +331,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
+        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -406,7 +406,7 @@ void StackTrace::forEachFrame(
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
+        DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         current_frame.physical_addr = frame_pointers[i];
 
