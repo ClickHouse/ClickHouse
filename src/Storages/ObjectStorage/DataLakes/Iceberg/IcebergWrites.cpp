@@ -688,7 +688,11 @@ IcebergStorageSink::IcebergStorageSink(
                 sortBlockByKeyDescription(extended_block_for_sorting, sort_description, context);
 
             if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
-                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context_, std::make_shared<const Block>(extended_block_for_sorting));
+                partitioner = ChunkPartitioner(
+                    current_partition_spec->getArray(Iceberg::f_fields),
+                    current_schema->getArray(Iceberg::f_fields),
+                    context_,
+                    std::make_shared<const Block>(extended_block_for_sorting));
             break;
         }
     }

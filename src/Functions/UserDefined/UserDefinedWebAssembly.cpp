@@ -399,14 +399,13 @@ public:
 //     type:u32, null_offset:u32, offsets_offset:u32, data_offset:u32, data_size:u32
 //   Data blocks at the described offsets.
 //
-//   type bits: ColType (0-7) | IS_CONST (0x80) if ColumnConst
+//   type bits: ColType (0-6) | COL_IS_NULLABLE (0x20) | COL_IS_CONST (0x80)
 //
-//   COL_BYTES     (0): start-based u32 offsets[rows+1] + chars data (with null terms)
-//   COL_NULL_BYTES(1): null_map[rows] + same as COL_BYTES
-//   COL_FIXED8    (2): u8[rows]
-//   COL_NULL_FIXED8(3): null_map[rows] + u8[rows]
-//   COL_FIXED64   (6): u64/f64[rows]
-//   COL_NULL_FIXED64(7): null_map[rows] + u64/f64[rows]
+//   COL_BYTES  (0): start-based u32 offsets[rows+1] + chars data (with null terms)
+//   COL_FIXED8 (1): u8[rows]
+//   COL_FIXED16(2): u16[rows]
+//   COL_FIXED64(4): u64/f64[rows]
+//   Any type | COL_IS_NULLABLE: null_map[rows] at null_offset, then column data
 //
 // The WASM export is <function_name>_col(i32 buf_handle, i32 num_rows) -> i32.
 // The caller (CH) allocates the input buffer with clickhouse_create_buffer,
@@ -768,7 +767,7 @@ public:
 
     /// Don't let the framework wrap the result in Nullable when inputs are nullable —
     /// Array/Tuple return types cannot be inside Nullable.  WASM UDFs handle null
-    /// propagation themselves via the COL_NULL_* column types.
+    /// propagation themselves via COL_IS_NULLABLE on output columns.
     bool useDefaultImplementationForNulls() const override
     {
         return user_defined_function->getResultType()->canBeInsideNullable();
