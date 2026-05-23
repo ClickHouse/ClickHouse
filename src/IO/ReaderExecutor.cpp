@@ -318,7 +318,7 @@ size_t ReaderExecutor::effectiveWindowSize() const
 
 void ReaderExecutor::maybeTriggerPrefetch()
 {
-    if (!prefetch_pool || prefetch_valid)
+    if (!prefetch_pool || prefetch_handle)
         return;
 
     size_t logical_size = totalSize();
@@ -350,26 +350,32 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// Track prefetch_range in logical coordinates — same space as `position`
     /// and as the decrypted rope returned by the handle.
     prefetch_range = ByteRange{next_logical_offset, next_size};
-    prefetch_valid = true;
 }
 
 void ReaderExecutor::discardPrefetch()
 {
-    if (!prefetch_valid)
+    /// Take ownership of the handle BEFORE we touch it. If a previous
+    /// `readNextWindow` already consumed the future (e.g. by throwing the
+    /// worker's exception up the stack without resetting `prefetch_handle`),
+    /// the future's internal `__state_` pointer is already null and a second
+    /// `get()` would segfault inside `pthread_mutex_lock`. Moving out first
+    /// guarantees we never call `get()` on a half-consumed handle from the
+    /// destructor.
+    auto local_handle = std::move(prefetch_handle);
+    if (!local_handle)
         return;
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
 
-    if (prefetch_handle)
     {
         /// If the task hadn't started, cancel it — no need to wait. Otherwise
         /// we must wait for the worker to finish so its capture of `this` is
         /// safe to drop.
-        if (!prefetch_handle->tryCancel())
+        if (!local_handle->tryCancel())
         {
             try
             {
-                std::ignore = prefetch_handle->get();
+                std::ignore = local_handle->get();
             }
             catch (...)
             {
@@ -381,9 +387,7 @@ void ReaderExecutor::discardPrefetch()
                 tryLogCurrentException(log, "Discarded prefetch task threw");
             }
         }
-        prefetch_handle.reset();
     }
-    prefetch_valid = false;
 }
 
 void ReaderExecutor::addDecryptionLayer(
@@ -544,9 +548,20 @@ Rope ReaderExecutor::readNextWindow()
 
     Rope rope;
 
-    if (prefetch_valid && prefetch_handle)
+    if (prefetch_handle)
     {
-        if (prefetch_handle->tryCancel())
+        /// Take ownership of the handle BEFORE calling `tryCancel` / `get`.
+        /// `std::future::get` detaches the future's associated state as its
+        /// very first step (even if the worker stored an exception), so a
+        /// thrown `get` would leave `prefetch_handle` non-null but pointing
+        /// at an already-consumed future. A later
+        /// `~ReaderExecutor → discardPrefetch → get` would then segfault
+        /// dereferencing the detached null state pointer (the crash we saw
+        /// in stress test as a SIGSEGV at offset 0x28, the
+        /// `__assoc_state::__mut_` slot).
+        auto local_handle = std::move(prefetch_handle);
+
+        if (local_handle->tryCancel())
         {
             /// Worker hadn't picked up the task — cancel and read from the
             /// current position with a full window. If a seek landed inside
@@ -554,8 +569,6 @@ Rope ReaderExecutor::readNextWindow()
             /// only to discard them; starting at `position` instead lets us
             /// return a full window of useful data.
             LOG_TRACE(log, "readNextWindow: prefetch was queued, cancelling and reading from position {}", position);
-            prefetch_handle.reset();
-            prefetch_valid = false;
             ++stats.prefetch_cancelled;
 
             ensurePreAcquiredSlot();
@@ -573,12 +586,10 @@ Rope ReaderExecutor::readNextWindow()
             /// matches `position`.
             LOG_TRACE(log, "readNextWindow: waiting on prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
             StopwatchAccumulator wait_scope(stats.prefetch_wait_us);
-            rope = prefetch_handle->get();
+            rope = local_handle->get();
             ++stats.prefetch_hits;
             HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
                 static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
-            prefetch_handle.reset();
-            prefetch_valid = false;
 
             if (!rope.empty() && position > rope.range().offset)
             {
@@ -613,7 +624,7 @@ void ReaderExecutor::seek(size_t new_position)
 {
     LOG_DEBUG(log, "seek to {}, current position={}", new_position, position);
 
-    if (prefetch_valid
+    if (prefetch_handle
         && new_position >= prefetch_range.offset
         && new_position < prefetch_range.end())
     {
@@ -1087,8 +1098,8 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     ///
     /// Private to the transient (so concurrent `readBigAt` calls don't race
     /// with each other or with the parent's `next()`/`seek()`):
-    ///   - `position`, `live_buffer`, `prefetch_handle`, `prefetch_valid`,
-    ///     `prefetch_range`, `pre_acquired_slot`, `pre_acquired_slot_path`,
+    ///   - `position`, `live_buffer`, `prefetch_handle`, `prefetch_range`,
+    ///     `pre_acquired_slot`, `pre_acquired_slot_path`,
     ///     `first_object_path`, `stats`, `creator_query_id`,
     ///     `reader_executor_log` ptr.
     ///

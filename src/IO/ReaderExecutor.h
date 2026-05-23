@@ -95,7 +95,7 @@ public:
     size_t getSourceRequestsCount() const { return stats.source_requests; }
     size_t getOverReadServedBytes() const { return stats.over_read_served_bytes; }
     /// Test-only: is there a prefetch currently scheduled for the next window?
-    bool hasInflightPrefetch() const { return prefetch_valid; }
+    bool hasInflightPrefetch() const { return prefetch_handle != nullptr; }
 
     /// Logical file size (physical size minus encryption headers).
     /// Saturates to 0 if the underlying objects sum to fewer bytes than the
@@ -167,9 +167,11 @@ private:
     size_t position = 0;
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
+    /// Single source of truth for "is there a prefetch scheduled":
+    /// `prefetch_handle != nullptr`. `prefetch_range` is only meaningful when
+    /// the handle is non-null.
     std::unique_ptr<PrefetchHandle> prefetch_handle;
-    ByteRange prefetch_range;      /// range the in-flight prefetch covers
-    bool prefetch_valid = false;
+    ByteRange prefetch_range;
 
     /// Live buffer: keeps a connection open for sequential reads.
     struct LiveBuffer

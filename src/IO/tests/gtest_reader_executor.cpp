@@ -709,6 +709,51 @@ TEST(ReaderExecutor, DestructorTolerantOfThrowingPrefetch)
     SUCCEED();
 }
 
+TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
+{
+    /// Reproduces the production segfault observed in stress tests:
+    ///   1. First `readNextWindow` succeeds and queues a prefetch.
+    ///   2. Second `readNextWindow` waits on the prefetch via `future.get()`,
+    ///      which re-throws the worker's exception. `future.get()` detaches
+    ///      the future's `__state_` as its very first step, so afterwards the
+    ///      future is unusable.
+    ///   3. Pre-fix: the throw skipped `prefetch_handle.reset()`, leaving the
+    ///      executor with a non-null `prefetch_handle` whose future has already
+    ///      been consumed. `~ReaderExecutor → discardPrefetch → get()` then
+    ///      segfaulted dereferencing a null `__assoc_state*` at offset 0x28
+    ///      (the `__mut_` slot) inside `pthread_mutex_lock`.
+    ///   4. Post-fix: `readNextWindow` takes local ownership of the handle and
+    ///      clears `prefetch_handle` BEFORE calling `get`,
+    ///      so the destructor never re-touches a half-consumed future.
+
+    auto source = std::make_shared<ThrowOnSecondOpenSourceReader>(String(2000, 'B'));
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 2000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+
+    {
+        ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
+        executor.setPrefetchPool(pool);
+
+        /// 1st readNextWindow: synchronous open (success) + queues a prefetch
+        /// whose worker will call `open()` again and throw.
+        auto rope1 = executor.readNextWindow();
+        ASSERT_FALSE(rope1.empty());
+
+        /// 2nd readNextWindow: waits on the prefetch, which re-throws the
+        /// worker's exception. This is the path that previously left the
+        /// executor in a poisoned state.
+        EXPECT_ANY_THROW(executor.readNextWindow());
+
+        /// Now let the executor go out of scope. Pre-fix this segfaulted in
+        /// `discardPrefetch`. Post-fix the destructor finishes cleanly because
+        /// `prefetch_handle` was already cleared inside `readNextWindow` before
+        /// the throw.
+    }
+    SUCCEED();
+}
+
 TEST(ReaderExecutor, LiveBufferReusesConnection)
 {
     TestThreadGroup tg;
