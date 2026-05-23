@@ -134,13 +134,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
-        /// During header-time partial evaluation (`ActionsDAG::updateHeader` -> `evaluatePartialResult`)
-        /// the input columns are placeholders produced by `cloneResized(0)` and may not contain
-        /// valid data. The inner comparator does not implement a dry-run path, so touching the
-        /// placeholder columns can trip column-internal invariants (issue #105650). Return an
-        /// empty column of the declared return type; the consumer only needs the column structure.
-        /// For non-zero `input_rows_count` (e.g. constant folding through `dry_run`), the arguments
-        /// are real values and must be evaluated normally below.
+        /// Header-time partial evaluation passes zero-row placeholder columns; we only need
+        /// the result column structure, not its data.  Non-zero dry-run inputs (constant
+        /// folding) have real values and fall through to normal evaluation.
         if (dry_run && input_rows_count == 0)
             return result_type->createColumn();
 

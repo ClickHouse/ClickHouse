@@ -1,15 +1,6 @@
--- Regression test for https://github.com/ClickHouse/ClickHouse/issues/105650
--- An `isNotDistinctFrom` (the `<=>` operator) over a String GROUP BY key,
--- combined with a ROLLUP and a nested HAVING expression, used to fire a
--- `PODArray::operator[]` debug assertion inside `ColumnString::getDataAt` at
--- plan-optimization time (under `tryMergeExpressions` -> `ExpressionStep`
--- ctor -> `updateHeader` -> `evaluatePartialResult` ->
--- `FunctionsNullSafeCmp` -> inner `FunctionComparison::executeString`).
---
--- The fix forwards the outer `dry_run` flag into the inner comparator inside
--- `FunctionsNullSafeCmp::executeImpl`, so the zero-row partial-result
--- evaluation used by `updateHeader` no longer materialises the String
--- operand on placeholder columns.
+-- Smoke test for #105650: `<=>` over a String GROUP BY key with WITH ROLLUP
+-- must not touch zero-row placeholder columns during header-time partial
+-- evaluation.  See PR description for the full plan path.
 
 DROP TABLE IF EXISTS _s1_105650;
 CREATE TABLE _s1_105650 (
