@@ -1,0 +1,60 @@
+splitByNonAlpha
+-- no limits
+a
+bb
+ccc
+dddd
+eeeee
+-- min_token_chars = 3
+ccc
+dddd
+eeeee
+-- max_token_chars = 3
+a
+bb
+ccc
+-- min_token_chars = 2, max_token_chars = 4
+bb
+ccc
+dddd
+splitByNonAlpha UTF-8
+-- no limits
+до
+кот
+медведь
+слон
+я
+-- min_token_chars = 3
+кот
+медведь
+слон
+-- max_token_chars = 3
+до
+кот
+я
+asciiCJK
+-- no limits
+hello
+world
+世
+和
+平
+界
+-- min_token_chars = 2 (filters single CJK chars)
+hello
+world
+splitByString
+-- no limits
+a
+bb
+ccc
+dddd
+-- min_token_chars = 3
+ccc
+dddd
+Validation
+-- min > max
+-- ngrams with min_token_chars
+-- ngrams with max_token_chars
+-- sparseGrams with min_token_chars
+-- sparseGrams with max_token_chars
