@@ -95,14 +95,28 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
 {
     const auto type = field.getType();
 
-    /// Tuple(Float64, Float64) — a single point.
+    /// Tuple with at least two numeric elements — a single point.
+    /// SQL integer literals produce Int64/UInt64 fields, so we coerce all numeric
+    /// field types to double rather than accepting only Float64.
     if (type == Field::Types::Tuple)
     {
         const auto & tuple = field.safeGet<Tuple>();
         if (tuple.size() >= 2)
         {
-            if (tuple[0].getType() == Field::Types::Float64 && tuple[1].getType() == Field::Types::Float64)
-                acc.add(tuple[0].safeGet<Float64>(), tuple[1].safeGet<Float64>());
+            auto fieldToDouble = [](const Field & f) -> std::optional<double>
+            {
+                switch (f.getType())
+                {
+                    case Field::Types::Float64: return f.safeGet<Float64>();
+                    case Field::Types::Int64:   return static_cast<double>(f.safeGet<Int64>());
+                    case Field::Types::UInt64:  return static_cast<double>(f.safeGet<UInt64>());
+                    default: return std::nullopt;
+                }
+            };
+            auto x = fieldToDouble(tuple[0]);
+            auto y = fieldToDouble(tuple[1]);
+            if (x.has_value() && y.has_value())
+                acc.add(*x, *y);
         }
         return acc.found;
     }

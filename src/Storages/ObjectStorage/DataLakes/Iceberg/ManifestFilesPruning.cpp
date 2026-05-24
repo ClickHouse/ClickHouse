@@ -60,6 +60,7 @@ tryExtractSpatialPredicateFromNode(const ActionsDAG::Node & node)
     double xmax = -std::numeric_limits<double>::infinity();
     double ymax = -std::numeric_limits<double>::infinity();
     bool found_const = false;
+    bool any_extraction_failed = false;
 
     for (const auto * child : node.children)
     {
@@ -71,14 +72,21 @@ tryExtractSpatialPredicateFromNode(const ActionsDAG::Node & node)
         double cxmax = 0;
         double cymax = 0;
         if (!tryExtractBboxFromColumn(*child->column, cxmin, cymin, cxmax, cymax))
+        {
+            any_extraction_failed = true;
             continue;
+        }
         xmin = std::min(xmin, cxmin);
         ymin = std::min(ymin, cymin);
         xmax = std::max(xmax, cxmax);
         ymax = std::max(ymax, cymax);
         found_const = true;
     }
-    if (!found_const)
+    /// Fail-closed: if any constant arg could not be converted to a bbox, the union
+    /// bbox is incomplete. Pruning on the partial bbox would incorrectly exclude files
+    /// that match only the geometry that was skipped (unsafe for variadic predicates
+    /// like `pointInPolygon` where polygon args are OR-ed).
+    if (!found_const || any_extraction_failed)
         return std::nullopt;
 
     return std::make_pair(col_node->result_name, std::array<double, 4>{xmin, ymin, xmax, ymax});
