@@ -27,3 +27,7 @@ $CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SELECT nonexistent_column FROM sy
 # When `implicit_table_at_top_level` is set, the analyzer substitutes that
 # table for a missing FROM, so the hint should NOT appear.
 $CLICKHOUSE_CLIENT --send_logs_level=fatal --implicit_table_at_top_level=system.one -q "SELECT nonexistent_column" 2>&1 | check_hint
+
+# `implicit_table_at_top_level` only changes the top-level SELECT; subqueries
+# still fall back to `system.one`, so the hint should still appear there.
+$CLICKHOUSE_CLIENT --send_logs_level=fatal --implicit_table_at_top_level=system.one -q "SELECT (SELECT nonexistent_column)" 2>&1 | check_hint
