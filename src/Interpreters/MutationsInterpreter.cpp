@@ -931,9 +931,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// either directly (ORDER BY col) or indirectly (ORDER BY func(col)).
             /// Materializing such a column recalculates its values, which would
             /// invalidate the sort order of existing data parts.
-            const auto & sorting_key = metadata_snapshot->getSortingKey();
-            Names sort_columns = sorting_key.column_names;
-            Names sort_required_columns = sorting_key.expression->getRequiredColumns();
+            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+            Names sort_required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
             if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end()
                 || std::find(sort_required_columns.begin(), sort_required_columns.end(), command.column_name) != sort_required_columns.end())
             {
