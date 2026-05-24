@@ -117,19 +117,16 @@ static bool extractBboxFromNestedArray(
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col_ptr))
     {
         const auto & offsets = arr_col->getOffsets();
-        const size_t end = offsets.size() > 0 ? offsets.back() : 0;
         const IColumn & nested = arr_col->getData();
         size_t start = 0;
-        for (size_t i = 0; i < end; ++i)
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
             size_t next = offsets[i];
             for (size_t j = start; j < next; ++j)
             {
-                /// Build a ColumnVector-like view of a single nested element.
-                /// ColumnArray::getData() returns the flattened data column.
-                /// For nested arrays, each element is a range of rows in that column.
-                if (extractBboxFromNestedArray(nested.get(j), acc))
-                    ; /// found something — keep going
+                /// Each element of the outer array may itself be an array (nested
+                /// geometry) or a tuple (base point). Recurse to handle both.
+                extractBboxFromNestedArray(nested.get(j), acc);
             }
             start = next;
         }
