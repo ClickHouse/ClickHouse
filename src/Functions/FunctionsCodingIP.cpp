@@ -338,9 +338,9 @@ public:
         if (column->isNullable())
         {
             const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
-            column = column_nullable->getNestedColumnPtr();
             null_map_column = column_nullable->getNullMapColumnPtr();
             null_map = &column_nullable->getNullMapData();
+            column = column_nullable->getNestedColumnPtr();
         }
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
@@ -412,7 +412,7 @@ private:
                 const auto src_value_size = value.size();
                 const char * src_value_end = src_value + src_value_size;
                 unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[o]);
-                detail::convertToIPv6Impl<exception_mode>(src_value, src_value_end, vec_res[o], res_value, [&](auto v){ (*vec_null_map_to)[i] = v;});
+                detail::convertToIPv6Impl<exception_mode>(src_value, src_value_end, res_value, [&](auto v){ (*vec_null_map_to)[i] = v;});
             }
         };
 
@@ -567,9 +567,7 @@ public:
         auto result_type = std::make_shared<DataTypeUInt32>();
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
             return makeNullable(result_type);
-        }
 
         return removeLowCardinality(arguments[0])->isNullable() ? makeNullable(result_type) : result_type;
     }
@@ -597,9 +595,9 @@ public:
         if (column->isNullable())
         {
             const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
-            column = column_nullable->getNestedColumnPtr();
             null_map_column = column_nullable->getNullMapColumnPtr();
             null_map = &column_nullable->getNullMapData();
+            column = column_nullable->getNestedColumnPtr();
         }
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)

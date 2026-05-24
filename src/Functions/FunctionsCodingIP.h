@@ -36,11 +36,11 @@ namespace detail
 {
 
     template <IPStringToNumExceptionMode exception_mode, typename DstNullMapSetter>
-    void convertToIPv6Impl(const char * src_value, const char * src_value_end, auto & vec_res, unsigned char * res_value, DstNullMapSetter && dst_null_map_setter)
+    void convertToIPv6Impl(const char * src_value, const char * src_value_end, unsigned char * res_value, DstNullMapSetter && dst_null_map_setter)
     {
         bool parsed = false;
 
-        /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zeros.
+        /// For both cases below: In case of failure, the function parseIPv6 fills `res_value` with zeros.
 
         /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
         UInt32 ipv4 = 0;
@@ -65,7 +65,7 @@ namespace detail
             if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
                 throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Invalid IPv6 value");
             else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
-                vec_res = 0;
+                memset(res_value, 0, IPV6_BINARY_LENGTH);
             else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
                 dst_null_map_setter(true);
         }
