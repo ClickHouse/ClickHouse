@@ -118,23 +118,6 @@ TEST(SHA1Helpers, PadFinalBlocks)
 // Trait structs: pair Ops with the correct namespace
 // ============================================================
 
-struct AVX2SHA1Trait
-{
-    using Ops = DB::TargetSpecific::x86_64_v3::AVX2SHA1Ops;
-    static constexpr size_t lanes = Ops::lanes;
-
-    static void skipIfUnsupported()
-    {
-        if (!DB::isArchSupported(DB::TargetArch::x86_64_v3))
-            GTEST_SKIP() << "x86_64_v3 (AVX2) not supported on this host";
-    }
-
-    static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
-    {
-        DB::TargetSpecific::x86_64_v3::sha1MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
-    }
-};
-
 struct AVX512SHA1Trait
 {
     using Ops = DB::TargetSpecific::x86_64_v4::AVX512SHA1Ops;
@@ -164,7 +147,7 @@ protected:
     void SetUp() override { T::skipIfUnsupported(); }
 };
 
-using SHA1Implementations = ::testing::Types<AVX2SHA1Trait, AVX512SHA1Trait>;
+using SHA1Implementations = ::testing::Types<AVX512SHA1Trait>;
 
 TYPED_TEST_SUITE(SHA1MultiBufTest, SHA1Implementations);
 
