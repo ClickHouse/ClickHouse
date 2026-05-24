@@ -55,7 +55,7 @@ done
 if [[ -z "$LOCAL_TCP_PORT" || "$LOCAL_TCP_PORT" -eq 0 ]]; then
     echo "Failed to discover TCP listener port (clickhouse-local stderr below):" >&2
     cat "$LOCAL_STDERR" >&2
-    kill "$LOCAL_PID" 2>/dev/null
+    kill "$LOCAL_PID" 2>/dev/null || true
     wait "$LOCAL_PID" 2>/dev/null || true
     exit 1
 fi
@@ -75,12 +75,12 @@ if [[ "$CONNECTED" -eq 1 ]]; then
 else
     echo "Failed to connect to TCP listener on port $LOCAL_TCP_PORT (clickhouse-local stderr below):" >&2
     cat "$LOCAL_STDERR" >&2
-    kill "$LOCAL_PID" 2>/dev/null
+    kill "$LOCAL_PID" 2>/dev/null || true
     wait "$LOCAL_PID" 2>/dev/null || true
     exit 1
 fi
 
-kill "$LOCAL_PID" 2>/dev/null
+kill "$LOCAL_PID" 2>/dev/null || true
 wait "$LOCAL_PID" 2>/dev/null || true
 
 # SYSTEM START LISTEN with an invalid listen_host must fail, not silently succeed
