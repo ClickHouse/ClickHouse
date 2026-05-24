@@ -7,6 +7,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <IO/WriteBuffer.h>
 
+#include <vector>
+
 namespace DB
 {
 class StorageTimeSeries;
@@ -48,14 +50,14 @@ public:
     /// Get series metadata (/api/v1/series)
     void getSeries(
         WriteBuffer & response,
-        const String & match_param,
+        const std::vector<String> & match_params,
         const String & start_param,
         const String & end_param);
 
     /// Get all label names (/api/v1/labels)
     void getLabels(
         WriteBuffer & response,
-        const String & match_param,
+        const std::vector<String> & match_params,
         const String & start_param,
         const String & end_param);
 
@@ -63,7 +65,7 @@ public:
     void getLabelValues(
         WriteBuffer & response,
         const String & label_name,
-        const String & match_param,
+        const std::vector<String> & match_params,
         const String & start_param,
         const String & end_param);
 

@@ -65,7 +65,7 @@
                 </handler>
             </my_rule_8>
             <my_rule_9>
-                <url>/api/v1/label/*/values</url>
+                <url>regex:^/api/v1/label/[^/]+/values</url>
                 <handler>
                     <type>query_api</type>
                     <table>default.prometheus</table>

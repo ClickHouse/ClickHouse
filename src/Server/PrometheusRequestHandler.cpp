@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "config.h"
@@ -36,6 +37,7 @@
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -373,7 +375,7 @@ public:
 
         /// Some parameters (database, default_format, everything used in the code above) do not
         /// belong to the Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]"};
         return !reserved_param_names.contains(name);
     }
 
@@ -383,6 +385,12 @@ public:
         PrometheusHTTPProtocolAPI protocol{table, context};
 
         const String & uri = request.getURI();
+        /// `uri` includes the query string; path-only checks must ignore it (e.g. `/api/v1/label/x/values?match[]=...`).
+        const String path_without_query = [&]
+        {
+            const auto q = uri.find('?');
+            return q == String::npos ? uri : uri.substr(0, q);
+        }();
         LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
@@ -442,34 +450,42 @@ public:
             }
             else if (uri.starts_with("/api/v1/series"))
             {
-                String match = params->get("match[]", "");
+                std::vector<String> match_params = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
                 /// TODO: Support limit=<number> optional parameter
 
-                protocol.getSeries(getOutputStream(response), match, start, end);
+                protocol.getSeries(getOutputStream(response), match_params, start, end);
             }
             else if (uri.starts_with("/api/v1/labels"))
             {
-                String match = params->get("match[]", "");
+                std::vector<String> match_params = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                protocol.getLabels(getOutputStream(response), match, start, end);
+                protocol.getLabels(getOutputStream(response), match_params, start, end);
             }
-            else if (uri.find("/api/v1/label/") != String::npos && uri.ends_with("/values"))
+            else if (path_without_query.find("/api/v1/label/") != String::npos && path_without_query.ends_with("/values"))
             {
                 // Extract label name from URI: /api/v1/label/<name>/values
-                size_t start_pos = uri.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
-                size_t end_pos = uri.find("/values");
-                String label_name = uri.substr(start_pos, end_pos - start_pos);
+                static constexpr std::string_view label_prefix = "/api/v1/label/";
+                static constexpr std::string_view values_suffix = "/values";
+                /// Use the prefix/suffix anchors (not `find("/values")`, which returns the first match) so that
+                /// labels like `foo/values_bar` in `/api/v1/label/foo/values_bar/values` are not truncated.
+                const size_t start_pos = path_without_query.find(label_prefix) + label_prefix.size();
+                const size_t end_pos = path_without_query.size() - values_suffix.size();
+                String encoded_label_name = path_without_query.substr(start_pos, end_pos - start_pos);
+                /// Path segments may be percent-encoded (e.g. `job%2Fname`); decode before matching against
+                /// stored label names. `Poco::URI::decode` handles `%xx` and `+` consistently with Prometheus.
+                String label_name;
+                Poco::URI::decode(encoded_label_name, label_name);
 
-                String match = params->get("match[]", "");
+                std::vector<String> match_params = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
 
-                protocol.getLabelValues(getOutputStream(response), label_name, match, start, end);
+                protocol.getLabelValues(getOutputStream(response), label_name, match_params, start, end);
             }
             else
             {

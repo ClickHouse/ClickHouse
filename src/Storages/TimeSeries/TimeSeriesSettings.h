@@ -12,7 +12,8 @@ struct TimeSeriesSettingsImpl;
 /// List of available types supported in TimeSeriesSettings object
 #define TIMESERIES_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, Map)
+    M(CLASS_NAME, Map) \
+    M(CLASS_NAME, UInt64)
 
 TIMESERIES_SETTINGS_SUPPORTED_TYPES(TimeSeriesSettings, DECLARE_SETTING_TRAIT)
 
