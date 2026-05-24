@@ -186,7 +186,10 @@ void PartAggregationCache::evictIfNeeded()
     if (lru_list.empty())
         return;
 
-    const Key & evict_key = lru_list.back();
+    /// Copy the key out of `lru_list` before calling `removeEntry`. `removeEntry`
+    /// erases the corresponding list node, which would otherwise leave the
+    /// `Key &` parameter dangling for the rest of the function.
+    Key evict_key = lru_list.back();
     removeEntry(evict_key);
 }
 
