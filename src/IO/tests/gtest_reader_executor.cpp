@@ -824,6 +824,80 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferBytes), 0);     /// No bytes through live buffer.
 }
 
+TEST(ReaderExecutor, LiveBufferReleasedAtEof)
+{
+    /// Once the caller reads to EOF, the per-stream `SourceBufferLimit`
+    /// slot (and the associated open connection) must be returned even if
+    /// the `ReaderExecutor` itself is not yet destroyed. Otherwise a
+    /// finished-but-still-held reader pins capacity from the global
+    /// budget.
+    String content(2000, 'E');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("file", "", 2000);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// Read every window — last call returns an empty rope (EOF).
+    auto r1 = executor.readNextWindow();
+    EXPECT_EQ(r1.range().size, 500u);
+    EXPECT_EQ(limit->getActive().size(), 1u) << "expected one open slot during streaming";
+
+    auto r2 = executor.readNextWindow();
+    auto r3 = executor.readNextWindow();
+    auto r4 = executor.readNextWindow();
+    EXPECT_EQ(r2.range().size, 500u);
+    EXPECT_EQ(r3.range().size, 500u);
+    EXPECT_EQ(r4.range().size, 500u);
+    EXPECT_EQ(limit->getActive().size(), 1u);
+
+    /// EOF — slot must be released by readNextWindow itself.
+    auto r5 = executor.readNextWindow();
+    EXPECT_TRUE(r5.empty());
+    EXPECT_EQ(limit->getActive().size(), 0u)
+        << "live buffer slot must be released when EOF is reached";
+
+    /// Idempotent: calling readNextWindow again at EOF is still EOF and
+    /// keeps the slot count at zero.
+    auto r6 = executor.readNextWindow();
+    EXPECT_TRUE(r6.empty());
+    EXPECT_EQ(limit->getActive().size(), 0u);
+}
+
+TEST(ReaderExecutor, LiveBufferReacquiredAfterSeekBackFromEof)
+{
+    /// After EOF released the slot, a backward seek and re-read must
+    /// re-open the connection and re-acquire a slot.
+    String content(1500, 'R');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("file", "", 1500);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// Read to EOF.
+    while (!executor.readNextWindow().empty()) {}
+    EXPECT_EQ(limit->getActive().size(), 0u);
+
+    /// Seek back to the start and read again — slot must come back.
+    executor.seek(0);
+    auto r = executor.readNextWindow();
+    EXPECT_EQ(r.range().offset, 0u);
+    EXPECT_EQ(r.range().size, 500u);
+    EXPECT_EQ(limit->getActive().size(), 1u)
+        << "slot must be re-acquired after backward seek + read";
+}
+
 TEST(ReaderExecutor, LiveBufferClosedOnSeek)
 {
     TestThreadGroup tg;

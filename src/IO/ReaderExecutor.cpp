@@ -543,6 +543,15 @@ Rope ReaderExecutor::readNextWindow()
     if (position >= logical_size)
     {
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
+        /// Release scarce per-stream resources as soon as the caller
+        /// hits EOF — there's no reason to hold an open connection /
+        /// `SourceBufferLimit` slot just because the caller hasn't
+        /// dropped the `PipelineReadBuffer` yet. If they later seek
+        /// back and read again, we'll re-open and re-acquire.
+        live_buffer.reset();
+        pre_acquired_slot.reset();
+        over_read_buffer = Rope{};
+        discardPrefetch();
         return {};
     }
 
