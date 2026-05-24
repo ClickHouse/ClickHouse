@@ -16,6 +16,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
