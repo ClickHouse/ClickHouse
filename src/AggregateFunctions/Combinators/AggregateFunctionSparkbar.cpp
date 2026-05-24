@@ -2,12 +2,14 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionSparkbar.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -111,7 +113,16 @@ public:
                 if (param_scale == col_scale)
                     return ticks;
                 if (col_scale > param_scale)
-                    return ticks * static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(col_scale - param_scale));
+                {
+                    const Int64 multiplier = static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(col_scale - param_scale));
+                    Int64 result = 0;
+                    if (common::mulOverflow(ticks, multiplier, result))
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                            "DateTime64 value overflows Int64 when rescaling from scale {} to {} "
+                            "for aggregate function with Sparkbar suffix",
+                            param_scale, col_scale);
+                    return result;
+                }
                 return ticks / static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(param_scale - col_scale));
             };
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(

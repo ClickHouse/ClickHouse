@@ -92,3 +92,9 @@ SELECT countSparkbar(5, 5, 5)(number) FROM numbers(10); -- { serverError BAD_ARG
 
 -- Error: unsupported x-axis type (Float64 is not allowed)
 SELECT countSparkbar(5, 0, 4)(toFloat64(number)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Error: DateTime64 rescaling overflow. A `DateTime64(0)` value of 10^18 rescaled to
+-- a `DateTime64(9)` column would require multiplying by 10^9, which exceeds `Int64::max`.
+SELECT countSparkbar(5, toDateTime64(1000000000000000000, 0), toDateTime64(2000000000000000000, 0))(
+    toDateTime64('2024-01-01 00:00:00', 9)
+) FROM numbers(1); -- { serverError DECIMAL_OVERFLOW }
