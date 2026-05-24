@@ -5,6 +5,7 @@ import random
 import subprocess
 from pathlib import Path
 
+from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
@@ -16,27 +17,6 @@ from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
-
-BUGFIX_BUILD_TYPES = ["amd_asan_ubsan", "amd_tsan", "amd_msan", "amd_debug"]
-
-
-def find_master_builds():
-    """Find S3 URLs for all build types from a recent master commit.
-
-    Verifies that artifacts for every entry in BUGFIX_BUILD_TYPES exist
-    before returning, so that a commit with a partial build set is skipped.
-    """
-    commits = Info().get_kv_data("master_commits") or []
-    for sha in commits:
-        urls = {
-            bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/build_{bt}/clickhouse"
-            for bt in BUGFIX_BUILD_TYPES
-        }
-        if all(
-            Shell.check(f"curl -sfI {url} > /dev/null") for url in urls.values()
-        ):
-            return urls
-    return None
 
 
 
@@ -343,6 +323,7 @@ def main():
         Shell.run(
             f"cp {temp_dir}/clickhouse_{BUGFIX_BUILD_TYPES[0]} {temp_dir}/clickhouse",
             verbose=True,
+            strict=True,
         )
     elif args.path:
         assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
