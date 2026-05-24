@@ -6,9 +6,11 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 
 namespace DB
@@ -22,6 +24,58 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsOverflowMode result_overflow_mode;
+}
+
+QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
+{
+    const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        InterpreterSelectQueryAnalyzer interpreter(returning_select, context, select_query_options);
+        return QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
+    }
+
+    InterpreterSelectWithUnionQuery interpreter(returning_select, context, select_query_options);
+    return QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
+}
+
+void setupPullingQueryPipeline(
+    QueryPipeline & pipeline,
+    ContextPtr context,
+    QueryProcessingStage::Enum stage)
+{
+    pipeline.setProgressCallback(context->getProgressCallback());
+    pipeline.setProcessListElement(context->getProcessListElement());
+
+    if (stage == QueryProcessingStage::Complete && pipeline.pulling())
+    {
+        const auto & settings = context->getSettingsRef();
+        StreamLocalLimits limits;
+        limits.mode = LimitsMode::LIMITS_CURRENT;
+        limits.size_limits = SizeLimits(
+            settings[Setting::max_result_rows],
+            settings[Setting::max_result_bytes],
+            settings[Setting::result_overflow_mode]);
+        pipeline.setLimitsAndQuota(limits, context->getQuota());
+    }
+}
+
+bool replacePipelineWithInsertReturningAfterPush(
+    BlockIO & io,
+    const ASTInsertQuery & insert_query,
+    ContextPtr context,
+    QueryProcessingStage::Enum stage)
+{
+    if (!insert_query.returning_select)
+        return false;
+
+    io.pipeline.reset();
+    io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context);
+    setupPullingQueryPipeline(io.pipeline, context, stage);
+    return true;
 }
 
 QueryPipeline buildInsertReturningPipeline(

@@ -1842,7 +1842,7 @@ static BlockIO executeQueryImpl(
 
                     if (insert_query)
                     {
-                        if (insert_query->returning_select && res.pipeline.pushing())
+                        if (insert_query->returning_select && res.pipeline.pushing() && insert_query->hasInlinedData())
                         {
                             auto pipe = getSourceFromASTInsertQuery(out_ast, true, res.pipeline.getHeader(), context, nullptr);
                             res.pipeline.complete(std::move(pipe));

@@ -1916,7 +1916,15 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
-            receiveEndOfQueryForInsert();
+
+            if (parsed_insert_query.returning_select)
+            {
+                const Settings & settings = client_context->getSettingsRef();
+                const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
+                receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+            }
+            else
+                receiveEndOfQueryForInsert();
         }
     }
     catch (...)

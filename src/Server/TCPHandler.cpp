@@ -28,6 +28,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -838,6 +839,14 @@ void TCPHandler::runImpl()
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 query_state->need_receive_data_for_insert = true;
                 processInsertQuery(*query_state);
+
+                if (const auto * insert_query = typeid_cast<const ASTInsertQuery *>(query_state->parsed_query.get()))
+                {
+                    if (replacePipelineWithInsertReturningAfterPush(
+                            query_state->io, *insert_query, query_state->query_context, query_state->stage))
+                        processOrdinaryQuery(*query_state);
+                }
+
                 query_state->io.onFinish();
             }
             else if (query_state->io.pipeline.pulling())

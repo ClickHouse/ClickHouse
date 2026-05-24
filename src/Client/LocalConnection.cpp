@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -306,7 +307,7 @@ void LocalConnection::sendQuery(
     try
     {
         query_context->setSetting("serialize_query_plan", false);
-        state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
+        std::tie(state->parsed_query, state->io) = executeQuery(state->query, query_context, QueryFlags{}, state->stage);
 
         if (state->io.pipeline.pushing())
         {
@@ -385,7 +386,30 @@ void LocalConnection::sendQueryPlan(const QueryPlan &)
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
     if (block.empty())
+    {
+        if (state->pushing_async_executor)
+        {
+            state->pushing_async_executor->finish();
+            state->pushing_async_executor.reset();
+        }
+        else if (state->pushing_executor)
+        {
+            state->pushing_executor->finish();
+            state->pushing_executor.reset();
+        }
+
+        if (const auto * insert_query = state->parsed_query ? state->parsed_query->as<ASTInsertQuery>() : nullptr)
+        {
+            if (replacePipelineWithInsertReturningAfterPush(state->io, *insert_query, query_context, state->stage))
+            {
+                state->block = state->io.pipeline.getHeader();
+                state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+                state->io.pipeline.setConcurrencyControl(false);
+            }
+        }
+
         return;
+    }
 
     if (state->pushing_async_executor)
         state->pushing_async_executor->push(block);
