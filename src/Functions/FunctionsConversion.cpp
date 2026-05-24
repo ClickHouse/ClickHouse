@@ -2788,10 +2788,20 @@ bool FunctionCast::isCompilable() const
         using RightDataType = std::decay_t<decltype(right)>;
         if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
         {
+            using LeftFieldType = typename LeftDataType::FieldType;
             if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                 return true;
             else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+            {
+                /// Same as in `convertIsCompilableImpl`: `Float` → `Decimal` JIT path lowers
+                /// `nativeCast` to `FPToSI`/`FPToUI`, which is poison/undefined for out-of-range
+                /// inputs. The scalar/batch paths in `DataTypesDecimal.cpp` enforce explicit bounds
+                /// and throw `DECIMAL_OVERFLOW`; until the JIT emits equivalent checks, fall back
+                /// to the interpreted path for floats.
+                if constexpr (std::is_floating_point_v<LeftFieldType>)
+                    return false;
                 return true;
+            }
             else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
                 return true;
         }
