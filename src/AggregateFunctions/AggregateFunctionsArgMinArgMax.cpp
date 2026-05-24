@@ -584,6 +584,9 @@ SELECT argMax(a, (b,a)) FROM test;
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, false); },
          documentation_argMax, properties});
 
+    factory.registerAlias("min_by", "argMin", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("max_by", "argMax", AggregateFunctionFactory::Case::Insensitive);
+
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.
 If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.
