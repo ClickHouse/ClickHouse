@@ -132,3 +132,21 @@ SELECT '_' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 1
 SELECT 'a' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 1
 SELECT '5' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 1
 SELECT '!' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 0
+
+SELECT '-- Top-level alternation must match the whole string';
+SELECT 'abc'    SIMILAR TO 'abc|def';              -- Returns: 1
+SELECT 'def'    SIMILAR TO 'abc|def';              -- Returns: 1
+SELECT 'abcdef' SIMILAR TO 'abc|def';              -- Returns: 0
+SELECT 'xabc'   SIMILAR TO 'abc|def';              -- Returns: 0
+SELECT 'defx'   SIMILAR TO 'abc|def';              -- Returns: 0
+SELECT 'a'      SIMILAR TO 'a|b|c';                -- Returns: 1
+SELECT 'd'      SIMILAR TO 'a|b|c';                -- Returns: 0
+SELECT 'ab'     SIMILAR TO 'a|b';                  -- Returns: 0
+
+SELECT '-- Leading ] inside bracket is a literal (POSIX rule)';
+SELECT ']' SIMILAR TO '[]_%]';                     -- Returns: 1
+SELECT '_' SIMILAR TO '[]_%]';                     -- Returns: 1
+SELECT '%' SIMILAR TO '[]_%]';                     -- Returns: 1
+SELECT 'a' SIMILAR TO '[]_%]';                     -- Returns: 0
+SELECT ']' SIMILAR TO '[^]_%]';                    -- Returns: 0
+SELECT 'a' SIMILAR TO '[^]_%]';                    -- Returns: 1

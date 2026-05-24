@@ -104,3 +104,19 @@
 1
 1
 0
+-- Top-level alternation must match the whole string
+1
+1
+0
+0
+0
+1
+0
+0
+-- Leading ] inside bracket is a literal (POSIX rule)
+1
+1
+1
+0
+0
+1
