@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Stopwatch.h>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
@@ -30,13 +31,60 @@ public:
     };
 
 private:
+    friend class KeeperRequestDispatcher;
+
+    /**
+     * Tiny wrapper around nuraft::raft_server which adds some functions
+     * necessary for recovery, mostly connected to config manipulation.
+     */
+    struct KeeperRaftServer : public nuraft::raft_server
+    {
+        bool isClusterHealthy();
+
+        // Manually set the internal config of the raft server
+        // This should be used only for recovery
+        void setConfig(const nuraft::ptr<nuraft::cluster_config> & new_config);
+
+        // Manually reconfigure the cluster
+        // This should be used only for recovery
+        void forceReconfigure(const nuraft::ptr<nuraft::cluster_config> & new_config);
+
+        void commit_in_bg() override;
+        void append_entries_in_bg() override;
+
+        std::unique_lock<std::recursive_mutex> lockRaft();
+
+        bool isCommitInProgress() const;
+
+        void setServingRequest(bool value);
+
+        /// Collect IDs of learner (non-voting) servers from the cluster config.
+        std::unordered_set<int32_t> getLearnerIds();
+
+        /// Returns alive (responding) learner and follower counters.
+        /// Follower counters include only voting peers; learners include all peers.
+        /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
+        KeeperServer::RespondingCounts getRespondingCounts();
+
+        using nuraft::raft_server::raft_server;
+
+        /// Keeper context for accessing coordination settings (e.g. commit profiler).
+        /// Set after construction because the base class constructor is inherited.
+        KeeperContextPtr keeper_context;
+
+        // peers are initially marked as responding because at least one cycle
+        // of heartbeat * response_limit (20) need to pass to be marked
+        // as not responding
+        // until that time passes we can't say that the cluster is healthy
+        std::optional<Stopwatch> timer_from_init = std::make_optional<Stopwatch>();
+    };
+
     const int server_id;
 
     nuraft::ptr<IKeeperStateMachine> state_machine;
 
     nuraft::ptr<KeeperStateManager> state_manager;
 
-    struct KeeperRaftServer;
     nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
     nuraft::ptr<nuraft::asio_service> asio_service;
     std::vector<nuraft::ptr<nuraft::rpc_listener>> asio_listeners;
@@ -78,11 +126,13 @@ private:
 
     const bool create_snapshot_on_exit;
     const bool enable_reconfiguration;
+    const bool is_standalone_keeper;
+
 public:
     KeeperServer(
         const KeeperConfigurationPtr & server_config,
         const Poco::Util::AbstractConfiguration & config_,
-        ResponsesQueue & responses_queue_,
+        KeeperResponseCallback response_callback_,
         SnapshotsQueue & snapshots_queue_,
         KeeperContextPtr keeper_context_,
         KeeperSnapshotManagerS3 & snapshot_manager_s3,
@@ -97,8 +147,8 @@ public:
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
 
-    /// Put batch of requests into Raft and get result of put. Responses will be set separately into
-    /// responses_queue.
+    /// Put batch of requests into Raft and get result of put. Responses will be sent separately
+    /// through response_callback.
     RaftAppendResult putRequestBatch(const KeeperRequestsForSessions & requests);
 
     /// Return set of the non-active sessions
@@ -164,6 +214,8 @@ public:
     void optimizeStorage();
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
+
+    const KeeperContextPtr & getKeeperContext() const { return keeper_context; }
 };
 
 }

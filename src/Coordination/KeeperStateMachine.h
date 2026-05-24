@@ -16,7 +16,7 @@ class ResponseForSession;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
-using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
+using KeeperResponseCallback = std::function<void(KeeperResponseForSession)>; // noexcept
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 struct KeeperStorageStats;
@@ -29,7 +29,7 @@ public:
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
 
     IKeeperStateMachine(
-        ResponsesQueue & responses_queue_,
+        KeeperResponseCallback response_callback_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -159,9 +159,8 @@ protected:
 
     CoordinationSettingsPtr coordination_settings;
 
-    /// Save/Load and Serialize/Deserialize logic for snapshots.
-    /// Put processed responses into this queue
-    ResponsesQueue & responses_queue;
+    /// Function to put processed responses into a queue for sending to the client.
+    KeeperResponseCallback response_callback;
 
     /// Snapshots to create by snapshot thread
     SnapshotsQueue & snapshots_queue;
@@ -173,7 +172,7 @@ protected:
     /// Storage works in thread-safe way ONLY for preprocessing/processing
     /// In any other case, unique storage lock needs to be taken
     mutable SharedMutex state_machine_storage_mutex;
-    /// Lock for processing and responses_queue. It's important to process requests
+    /// Lock for processing and response_callback. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
@@ -214,7 +213,7 @@ class KeeperStateMachine : public IKeeperStateMachine
 {
 public:
     KeeperStateMachine(
-        ResponsesQueue & responses_queue_,
+        KeeperResponseCallback response_callback_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
