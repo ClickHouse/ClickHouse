@@ -87,19 +87,57 @@ void collectSpatialFiltersConjunctive(
         result.push_back(std::move(*filter));
 }
 
-/// Try to extract a bounding box from a constant column.
-/// Handles: WKB-encoded String (via parseWKBFormat), CH native geometry
-/// (ColumnTuple<Float64,Float64> for points, ColumnArray of tuples for collections).
-/// Returns true and sets xmin/ymin/xmax/ymax on success.
-inline bool tryExtractBboxFromColumn(
+/// Extract bbox from a column, recursing through nested Array(Tuple) structures
+/// until reaching the base tuple points. Handles Array(Tuple) for rings,
+/// Array(Array(Tuple)) for polygons-with-holes, and Array(Array(Array(Tuple)))
+/// for multipolygons.
+static bool extractBboxFromNestedArray(
     const IColumn & col,
-    double & xmin, double & ymin,
-    double & xmax, double & ymax)
+    BboxAccumulator & acc)
 {
-    BboxAccumulator acc;
+    /// Unwrap ColumnConst if needed (SQL literals are ColumnConst).
+    const IColumn * col_ptr = &col;
+    if (const auto * const_col = typeid_cast<const ColumnConst *>(&col))
+        col_ptr = &const_col->getDataColumn();
 
-    /// Case 1: WKB-encoded String (used by st_intersects, st_geomfromgeojson, etc.)
-    if (const auto * str_col = typeid_cast<const ColumnString *>(&col))
+    /// Base case: Tuple(Float64, Float64) — a single point.
+    if (const auto * tuple_col = typeid_cast<const ColumnTuple *>(col_ptr))
+    {
+        if (tuple_col->tupleSize() >= 2)
+        {
+            const auto * x_col = typeid_cast<const ColumnFloat64 *>(&tuple_col->getColumn(0));
+            const auto * y_col = typeid_cast<const ColumnFloat64 *>(&tuple_col->getColumn(1));
+            if (x_col && y_col && !x_col->empty())
+                acc.add(x_col->getData()[0], y_col->getData()[0]);
+        }
+        return acc.found;
+    }
+
+    /// Recursive case: Array of something — recurse into the data column.
+    if (const auto * arr_col = typeid_cast<const ColumnArray *>(col_ptr))
+    {
+        const auto & offsets = arr_col->getOffsets();
+        const size_t end = offsets.size() > 0 ? offsets.back() : 0;
+        const IColumn & nested = arr_col->getData();
+        size_t start = 0;
+        for (size_t i = 0; i < end; ++i)
+        {
+            size_t next = offsets[i];
+            for (size_t j = start; j < next; ++j)
+            {
+                /// Build a ColumnVector-like view of a single nested element.
+                /// ColumnArray::getData() returns the flattened data column.
+                /// For nested arrays, each element is a range of rows in that column.
+                if (extractBboxFromNestedArray(nested.get(j), acc))
+                    ; /// found something — keep going
+            }
+            start = next;
+        }
+        return acc.found;
+    }
+
+    /// WKB String case.
+    if (const auto * str_col = typeid_cast<const ColumnString *>(col_ptr))
     {
         if (!str_col->empty())
         {
@@ -132,46 +170,26 @@ inline bool tryExtractBboxFromColumn(
                 return false;
             }
         }
-        else
-        {
-            return false;
-        }
-    }
-    /// Case 2: Native geometry — Tuple(Float64, Float64) (single point)
-    else if (const auto * tuple_col = typeid_cast<const ColumnTuple *>(&col))
-    {
-        if (tuple_col->tupleSize() >= 2)
-        {
-            const auto * x_col = typeid_cast<const ColumnFloat64 *>(&tuple_col->getColumn(0));
-            const auto * y_col = typeid_cast<const ColumnFloat64 *>(&tuple_col->getColumn(1));
-            if (x_col && y_col && !x_col->empty())
-                acc.add(x_col->getData()[0], y_col->getData()[0]);
-        }
-    }
-    /// Case 3: Array(Tuple(Float64,Float64)) — multi-point / polygon ring
-    else if (const auto * arr_col = typeid_cast<const ColumnArray *>(&col))
-    {
-        const auto * arr_tuple_col = typeid_cast<const ColumnTuple *>(&arr_col->getData());
-        if (arr_tuple_col && arr_tuple_col->tupleSize() >= 2)
-        {
-            const auto * xs = typeid_cast<const ColumnFloat64 *>(&arr_tuple_col->getColumn(0));
-            const auto * ys = typeid_cast<const ColumnFloat64 *>(&arr_tuple_col->getColumn(1));
-            if (xs && ys)
-            {
-                const auto & offsets = arr_col->getOffsets();
-                const size_t end = offsets.size() > 0 ? offsets.back() : 0;
-                for (size_t i = 0; i < end; ++i)
-                    acc.add(xs->getData()[i], ys->getData()[i]);
-            }
-        }
-    }
-    else
-    {
-        return false;
+        return acc.found;
     }
 
-    if (!acc.found)
+    return false;
+}
+
+/// Try to extract a bounding box from a constant column.
+/// Handles: WKB-encoded String (via parseWKBFormat), CH native geometry
+/// (Tuple(Float64,Float64) for points, nested Array(Tuple) for collections).
+/// Returns true and sets xmin/ymin/xmax/ymax on success.
+inline bool tryExtractBboxFromColumn(
+    const IColumn & col,
+    double & xmin, double & ymin,
+    double & xmax, double & ymax)
+{
+    BboxAccumulator acc;
+
+    if (!extractBboxFromNestedArray(col, acc))
         return false;
+
     xmin = acc.xmin;
     ymin = acc.ymin;
     xmax = acc.xmax;
