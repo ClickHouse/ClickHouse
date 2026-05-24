@@ -7960,10 +7960,20 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
             auto end = types_view.find(',', pos);
             size_t token_end = end == std::string_view::npos ? types_view.size() : end;
 
+            /// Empty token between separators (e.g. ",DDL" or "DDL, ,DCL"): skip without
+            /// computing token_end - 1, which would underflow when token_end == pos.
+            if (token_end == pos)
+            {
+                if (end == std::string_view::npos)
+                    break;
+                pos = end + 1;
+                continue;
+            }
+
             /// trim trailing whitespaces
             size_t last = types_view.find_last_not_of(" \t", token_end - 1);
 
-            /// DDL, ,DCL
+            /// All-whitespace token between separators (e.g. "DDL,   ,DCL")
             if (last == std::string_view::npos || last < pos)
             {
                 pos = end + 1;
