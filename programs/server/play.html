@@ -3733,6 +3733,7 @@ async function getQueryUnderCursor() {
     }
 
     const tokens = await tokenize(all_queries);
+    const should_select_query = getQueryBoundaries(tokens, all_queries).length > 1;
 
     const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
@@ -3745,7 +3746,7 @@ async function getQueryUnderCursor() {
         current_offset += elem.token.length;
         if (elem.token == ';') {
             if (current_offset >= cursor_position) {
-                query_area.setSelectionRange(current_query_start, current_offset);
+                if (should_select_query) query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
                 return all_queries.substring(current_query_start, current_offset);
             } else {
@@ -3757,7 +3758,7 @@ async function getQueryUnderCursor() {
 
     /// Cursor is in the last query (no trailing semicolon).
     const tail = all_queries.substring(current_query_start);
-    query_area.setSelectionRange(current_query_start, all_queries.length);
+    if (should_select_query) query_area.setSelectionRange(current_query_start, all_queries.length);
     query_area.focus();
     return tail;
 }
