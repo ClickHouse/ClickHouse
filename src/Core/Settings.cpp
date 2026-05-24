@@ -5600,6 +5600,22 @@ Maximum size in bytes of a single partial results cache entry. If the intermedia
 it will not be cached. Only applies when `query_cache_partial_results` is enabled.
 A value of 0 means no per-query limit (the server-level `query_cache_max_entry_size_in_bytes` still applies).
 )", 0) \
+    DECLARE(UInt64, query_cache_partial_results_max_levels, 1, R"(
+Maximum number of query plan nodes at which to cache intermediate results when `query_cache_partial_results` is enabled.
+With multi-level caching, the top N scoring plan nodes each get a cache entry, so queries sharing any sub-plan prefix can
+reuse cached work. A value of 1 (default) caches at the single highest-scoring node. Higher values use more cache memory
+but enable finer-grained reuse.
+)", 0) \
+    DECLARE(Bool, query_cache_partial_results_adaptive_eviction, false, R"(
+When enabled alongside `query_cache_partial_results`, the query result cache uses priority-based eviction.
+Entries are scored by `(hit_count * recompute_cost) / size_bytes`; when the cache is full, the entry with
+the lowest score is evicted first instead of silently dropping the new entry.
+
+Possible values:
+
+- 0 - Disabled (default). Only stale entries are evicted by TTL.
+- 1 - Enabled. Lowest-priority entries may be evicted to make room.
+)", 0) \
     DECLARE(String, query_cache_tag, "", R"(
 A string which acts as a label for [query cache](../query-cache.md) entries.
 The same queries with different tags are considered different by the query cache.

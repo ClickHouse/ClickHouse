@@ -21,10 +21,10 @@ SELECT region, sum(amount) AS s FROM t_cache_totals GROUP BY region WITH TOTALS 
 
 SELECT count() FROM system.query_cache SETTINGS use_query_cache = 0;
 
-SELECT '--- WITH TOTALS: different LIMIT, cache hit — data rows correct, totals absent ---';
+SELECT '--- WITH TOTALS: different LIMIT, cache hit — data rows and totals both correct ---';
 SELECT region, sum(amount) AS s FROM t_cache_totals GROUP BY region WITH TOTALS ORDER BY region LIMIT 3;
 
-SELECT '--- Main result has exactly 3 data rows, not 4 (totals not leaked into main) ---';
+SELECT '--- Cache entry count unchanged ---';
 SELECT count() FROM system.query_cache SETTINGS use_query_cache = 0;
 
 SELECT '--- Correctness: non-cached WITH TOTALS ---';

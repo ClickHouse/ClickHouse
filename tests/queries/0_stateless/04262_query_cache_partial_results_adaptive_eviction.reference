@@ -1,0 +1,9 @@
+--- adaptive eviction setting accepted ---
+--- cache populated ---
+1
+--- cache hit with adaptive eviction ---
+249500
+--- different agg, shared filter ---
+499
+--- default (no adaptive) still works ---
+1

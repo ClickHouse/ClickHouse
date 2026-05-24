@@ -93,6 +93,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_cache_before_limit_and_order_by", false, false, "New setting to cache pre-sort/pre-limit data so that queries differing only in ORDER BY or LIMIT share a query result cache entry."},
             {"query_cache_partial_results", false, false, "New setting to cache intermediate results at each query plan level, keyed by prefix hash of the sub-plan."},
             {"query_cache_partial_results_max_bytes", 0, 0, "New setting to limit the size in bytes of a single partial results cache entry."},
+            {"query_cache_partial_results_max_levels", 1, 1, "New setting to control multi-level caching: how many query plan nodes to cache at simultaneously."},
+            {"query_cache_partial_results_adaptive_eviction", false, false, "New setting to enable priority-based cache eviction for partial results entries."},
             {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
             {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
             {"iceberg_max_number_datafiles_to_compact", 1000, 1000, "New setting"},

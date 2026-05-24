@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/WriteToQueryResultCacheStep.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -27,10 +28,23 @@ WriteToQueryResultCacheStep::WriteToQueryResultCacheStep(
 
 void WriteToQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const SharedHeader & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, Pipe::StreamType stream_type)
     {
+        QueryResultCacheWriter::ChunkType chunk_type;
+        switch (stream_type)
+        {
+            case Pipe::StreamType::Totals:
+                chunk_type = QueryResultCacheWriter::ChunkType::Totals;
+                break;
+            case Pipe::StreamType::Extremes:
+                chunk_type = QueryResultCacheWriter::ChunkType::Extremes;
+                break;
+            default:
+                chunk_type = QueryResultCacheWriter::ChunkType::Result;
+                break;
+        }
         return std::make_shared<StreamInQueryResultCacheTransform>(
-            *header, cache_writer, QueryResultCacheWriter::ChunkType::Result);
+            *header, cache_writer, chunk_type);
     });
 }
 

@@ -679,12 +679,14 @@ bool QueryResultCache::IsStale::operator()(const Key & key) const
 
 QueryResultCacheWriter::QueryResultCacheWriter(
     Cache & cache_,
+    QueryResultCache & result_cache_,
     const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t recompute_cost_)
     : cache(cache_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
@@ -692,6 +694,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
+    , result_cache(result_cache_)
+    , recompute_cost(recompute_cost_)
 {
     if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
@@ -708,6 +712,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    , result_cache(other.result_cache)
+    , recompute_cost(other.recompute_cost)
 {
 }
 
@@ -872,7 +878,13 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
+    if (recompute_cost > 0)
+        result_cache.adaptiveEvict(new_entry_size_in_bytes);
+
     cache.set(key, query_result);
+
+    if (recompute_cost > 0)
+        result_cache.registerEvictionMetadata(key, recompute_cost, new_entry_size_in_bytes);
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 }
@@ -1050,7 +1062,8 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     size_t max_block_size,
     size_t max_query_result_cache_size_in_bytes_quota,
     size_t max_query_result_cache_entries_quota,
-    size_t per_query_max_entry_size_in_bytes)
+    size_t per_query_max_entry_size_in_bytes,
+    size_t recompute_cost)
 {
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
@@ -1059,7 +1072,7 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     size_t effective_max = max_entry_size_in_bytes;
     if (per_query_max_entry_size_in_bytes > 0 && per_query_max_entry_size_in_bytes < effective_max)
         effective_max = per_query_max_entry_size_in_bytes;
-    return QueryResultCacheWriter(cache, key, effective_max, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    return QueryResultCacheWriter(cache, *this, key, effective_max, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size, recompute_cost);
 }
 
 void QueryResultCache::clear(const std::optional<String> & tag)
@@ -1076,6 +1089,64 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+    eviction_metadata.clear();
+}
+
+void QueryResultCache::adaptiveEvict(size_t needed_bytes)
+{
+    std::lock_guard lock(mutex);
+    if (!adaptive_eviction_enabled)
+        return;
+
+    while (cache.sizeInBytes() + needed_bytes > cache.maxSizeInBytes()
+           || cache.count() + 1 > cache.maxCount())
+    {
+        if (eviction_metadata.empty())
+            break;
+
+        const Key * victim_key = nullptr;
+        double lowest_priority = std::numeric_limits<double>::max();
+
+        for (const auto & [k, meta] : eviction_metadata)
+        {
+            double p = meta.priority();
+            if (p < lowest_priority)
+            {
+                lowest_priority = p;
+                victim_key = &k;
+            }
+        }
+
+        if (!victim_key)
+            break;
+
+        Key victim_copy = *victim_key;
+        eviction_metadata.erase(victim_copy);
+        cache.remove(victim_copy);
+    }
+}
+
+void QueryResultCache::registerEvictionMetadata(const Key & key, size_t cost, size_t size_bytes)
+{
+    std::lock_guard lock(mutex);
+    auto & meta = eviction_metadata[key];
+    meta.recompute_cost = cost;
+    meta.size_bytes = size_bytes;
+    meta.hit_count = 0;
+}
+
+void QueryResultCache::recordCacheHit(const Key & key)
+{
+    std::lock_guard lock(mutex);
+    auto it = eviction_metadata.find(key);
+    if (it != eviction_metadata.end())
+        ++it->second.hit_count;
+}
+
+void QueryResultCache::setAdaptiveEviction(bool enabled)
+{
+    std::lock_guard lock(mutex);
+    adaptive_eviction_enabled = enabled;
 }
 
 size_t QueryResultCache::maxSizeInBytes() const

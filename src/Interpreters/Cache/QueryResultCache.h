@@ -156,6 +156,21 @@ public:
         std::optional<Chunk> extremes = std::nullopt;
     };
 
+    struct EvictionMetadata
+    {
+        size_t hit_count = 0;
+        size_t recompute_cost = 0;
+        size_t size_bytes = 0;
+
+        double priority() const
+        {
+            if (size_bytes == 0)
+                return std::numeric_limits<double>::max();
+            return static_cast<double>((hit_count + 1) * recompute_cost)
+                 / static_cast<double>(size_bytes);
+        }
+    };
+
 private:
     struct KeyHasher
     {
@@ -188,7 +203,8 @@ public:
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
         size_t max_query_result_cache_entries_quota,
-        size_t per_query_max_entry_size_in_bytes = 0);
+        size_t per_query_max_entry_size_in_bytes = 0,
+        size_t recompute_cost = 0);
 
     void clear(const std::optional<String> & tag);
 
@@ -198,6 +214,17 @@ public:
 
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
+
+    /// Adaptive eviction: record a cache hit for priority tracking.
+    void recordCacheHit(const Key & key);
+
+    /// Adaptive eviction: register metadata after a successful cache write.
+    void registerEvictionMetadata(const Key & key, size_t recompute_cost, size_t size_bytes);
+
+    /// Adaptive eviction: evict lowest-priority entries to make room for a new entry.
+    void adaptiveEvict(size_t needed_bytes);
+
+    void setAdaptiveEviction(bool enabled);
 
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
@@ -210,6 +237,11 @@ private:
     /// query --> query execution count
     using TimesExecuted = std::unordered_map<Key, size_t, KeyHasher>;
     TimesExecuted times_executed TSA_GUARDED_BY(mutex);
+
+    /// Adaptive eviction metadata, keyed by the same Key as the cache.
+    using EvictionMetadataMap = std::unordered_map<Key, EvictionMetadata, KeyHasher>;
+    EvictionMetadataMap eviction_metadata TSA_GUARDED_BY(mutex);
+    bool adaptive_eviction_enabled TSA_GUARDED_BY(mutex) = false;
 
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
@@ -264,12 +296,17 @@ private:
 
     QueryResultCacheWriter(
         Cache & cache_,
+        QueryResultCache & result_cache_,
         const Cache::Key & key_,
         size_t max_entry_size_in_bytes_,
         size_t max_entry_size_in_rows_,
         std::chrono::milliseconds min_query_runtime_,
         bool squash_partial_results_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t recompute_cost_);
+
+    QueryResultCache & result_cache;
+    size_t recompute_cost;
 
     friend class QueryResultCache; /// for createWriter()
 };
