@@ -275,10 +275,10 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
 
     UInt64 file_version;
     readIntBinary(file_version, istr);
-    if (file_version > FILE_FORMAT_VERSION)
+    if (file_version < 1 || file_version > FILE_FORMAT_VERSION)
         throw Exception(
             ErrorCodes::FORMAT_VERSION_TOO_OLD,
-            "Vector similarity index could not be loaded because its version ({}) is newer than the current supported version ({}). Please drop the index and create it again.",
+            "Vector similarity index could not be loaded because its version ({}) is not supported (supported range: 1 to {}). Please drop the index and create it again.",
             file_version, FILE_FORMAT_VERSION);
         /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
         /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
@@ -369,9 +369,12 @@ void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
 
     /// Parallel HNSW insertions assign slots in non-deterministic order, so key K (= row K in the granule)
     /// may end up at slot S ≠ K. Recover the row assigned to each slot by iterating the loaded graph.
-    /// Validate the slot/key pairs against `num_rows` so a malformed index file cannot drive out-of-bounds writes.
+    /// Validate the slot/key pairs against `num_rows` so a malformed index file cannot drive out-of-bounds writes,
+    /// and require both slots and keys to form a one-to-one mapping over [0, num_rows) so a payload with duplicate
+    /// keys cannot leave some rows unread.
     std::vector<size_t> slot_to_row(num_rows);
     std::vector<bool> slot_assigned(num_rows, false);
+    std::vector<bool> key_assigned(num_rows, false);
     for (auto it = index->cbegin(); it != index->cend(); ++it)
     {
         const size_t slot = static_cast<size_t>(get_slot(it));
@@ -386,8 +389,14 @@ void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
                 ErrorCodes::INCORRECT_DATA,
                 "Vector similarity index has a duplicate slot {} during deserialization",
                 slot);
+        if (key_assigned[row])
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector similarity index has a duplicate key {} during deserialization",
+                row);
         slot_to_row[slot] = row;
         slot_assigned[slot] = true;
+        key_assigned[row] = true;
     }
 
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
