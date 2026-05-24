@@ -631,12 +631,6 @@ void PostgreSQLHandler::processQuery()
         /// For admission queue disconnect detection.
         query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
 
-        if (should_init_system_tables)
-        {
-            initializeSystemTables(query_context);
-            should_init_system_tables = false;
-        }
-
         if (processExecute(query->query, query_context))
             return;
 
