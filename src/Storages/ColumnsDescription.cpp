@@ -23,6 +23,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTAsterisk.h>
@@ -1252,17 +1253,11 @@ void collectAliasDependenciesFromAST(
     if (!node)
         return;
 
-    if (const auto * identifier = node->as<ASTIdentifier>())
-    {
-        const auto & column_name = identifier->name();
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(node);
+    for (const auto & column_name : columns_context.requiredColumns())
         if (candidate_names.contains(column_name))
             dependencies.insert(column_name);
-        return;
-    }
-
-    for (const auto & child : node->children)
-        if (child)
-            collectAliasDependenciesFromAST(child, candidate_names, dependencies);
 }
 
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
