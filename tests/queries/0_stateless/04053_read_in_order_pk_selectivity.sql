@@ -62,4 +62,16 @@ SELECT count() > 0 FROM (
     SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 1.0
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
+-- Full scan with `ORDER BY` on the sort key (no WHERE/PREWHERE) selects all marks,
+-- so the PK-selectivity ratio is 1.0 by construction, but that is not a sign that the
+-- primary key failed — there was nothing to filter on. Read-in-order must stay enabled,
+-- otherwise we would replace a low-memory streaming plan with full parallel reading plus
+-- a global `MergeSortingTransform`.
+SELECT 'full_scan_keeps_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_read_in_order_pk
+    ORDER BY path
+    SETTINGS enable_parallel_replicas = 0, read_in_order_max_primary_key_ratio = 0.5
+) WHERE explain LIKE '%PartialSortingTransform%';
+
 DROP TABLE t_read_in_order_pk;

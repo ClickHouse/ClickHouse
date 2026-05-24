@@ -6,3 +6,5 @@ correctness
 100000
 setting_disabled
 0
+full_scan_keeps_in_order
+0
