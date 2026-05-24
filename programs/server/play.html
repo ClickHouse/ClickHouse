@@ -3642,6 +3642,23 @@ function appendTextareaResizer() {
     queryDiv.appendChild(resizer);
 }
 
+function resizeQueryAreaIfSlightlyOverflowing()
+{
+    const textarea = document.getElementById('query');
+    const current_height = textarea.offsetHeight;
+    if (!current_height) { return; }
+
+    const style = window.getComputedStyle(textarea);
+    const vertical_border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const required_height = textarea.scrollHeight + vertical_border;
+    const max_auto_resize_height = current_height * 1.3;
+
+    if (required_height > current_height && required_height <= max_auto_resize_height)
+    {
+        textarea.style.height = `${required_height}px`;
+    }
+}
+
 let lexer_module;
 async function loadLexer() {
     // base64 -w0 build/src/Parsers/Lexer.wasm
@@ -4147,6 +4164,8 @@ function setParamValues(values)
 
 async function updateQueryParams()
 {
+    resizeQueryAreaIfSlightlyOverflowing();
+
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
     {
         return;
