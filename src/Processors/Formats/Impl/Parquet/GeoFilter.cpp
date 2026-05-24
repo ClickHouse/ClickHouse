@@ -55,7 +55,10 @@ std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::N
         if (child->type != ActionsDAG::ActionType::COLUMN || !child->column
             || !child->is_deterministic_constant)
             continue;
-        double cxmin = 0, cymin = 0, cxmax = 0, cymax = 0;
+        double cxmin = 0;
+        double cymin = 0;
+        double cxmax = 0;
+        double cymax = 0;
         if (!tryExtractBboxFromColumn(*child->column, cxmin, cymin, cxmax, cymax))
             continue;
         xmin = std::min(xmin, cxmin);
