@@ -90,6 +90,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int OPENSSL_ERROR;
 extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -485,17 +486,26 @@ public:
         /// EVP_MD_CTX_copy_ex, which is much faster than EVP_DigestInit_ex
         /// per row (OpenSSL 3.x init goes through the provider layer).
         EVP_MD_CTX_ptr ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-        if (!ctx_template)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-        EVP_DigestInit_ex(ctx_template.get(), EVP_sha1(), nullptr);
+        if (!ctx_template) [[unlikely]]
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestInit_ex(ctx_template.get(), EVP_sha1(), nullptr) != 1) [[unlikely]]
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
 
         EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+        if (!ctx) [[unlikely]]
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
         auto hash_one = [&](const uint8_t * data, size_t len, uint8_t * out)
         {
-            EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get());
-            EVP_DigestUpdate(ctx.get(), data, len);
-            EVP_DigestFinal_ex(ctx.get(), out, nullptr);
+            if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1) [[unlikely]]
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
+
+            if (EVP_DigestUpdate(ctx.get(), data, len) != 1) [[unlikely]]
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
+
+            if (EVP_DigestFinal_ex(ctx.get(), out, nullptr) != 1) [[unlikely]]
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
         };
 
         if (const auto * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
