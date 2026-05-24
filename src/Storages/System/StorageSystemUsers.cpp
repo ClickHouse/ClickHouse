@@ -52,24 +52,48 @@ namespace
         return node->result_name == "name";
     }
 
-    /// Extract user names from the predicate for O(1) lookups.
+    /// Extract candidate user names from the predicate for O(1) lookups.
+    /// Returns `nullopt` when no constraint on `name` can be derived (fall back to full scan).
+    /// A returned set is a superset of names that can satisfy the predicate; the upstream
+    /// filter still applies the full predicate to the produced rows. An empty set means the
+    /// predicate is unsatisfiable on `name`, so the fast path emits nothing.
     /// Handles `name = 'literal'`, `name IN ('a', 'b')`, and `AND` conjunctions.
-    void extractNamesFromPredicateImpl(const ActionsDAG::Node & node, std::unordered_set<String> & names, ContextPtr context)
+    std::optional<std::unordered_set<String>> extractNamesFromPredicateImpl(const ActionsDAG::Node & node, ContextPtr context)
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION)
-            return;
+            return {};
 
         auto function_name = node.function_base->getName();
 
         if (function_name == "and")
         {
+            /// `AND` requires intersecting children's candidate sets. Children that do not
+            /// constrain `name` (return `nullopt`) contribute the universal set and are skipped;
+            /// the remaining predicate is enforced by the upstream filter.
+            std::optional<std::unordered_set<String>> result;
             for (const auto * child : node.children)
-                extractNamesFromPredicateImpl(*child, names, context);
-            return;
+            {
+                auto child_names = extractNamesFromPredicateImpl(*child, context);
+                if (!child_names)
+                    continue;
+                if (!result)
+                {
+                    result = std::move(*child_names);
+                    continue;
+                }
+                std::unordered_set<String> intersection;
+                for (const auto & name : *result)
+                {
+                    if (child_names->contains(name))
+                        intersection.insert(name);
+                }
+                result = std::move(intersection);
+            }
+            return result;
         }
 
         if (node.children.size() != 2)
-            return;
+            return {};
 
         if (function_name == "equals")
         {
@@ -81,21 +105,24 @@ namespace
                 value = node.children.at(0);
 
             if (!value || !value->column || value->column->size() != 1)
-                return;
+                return {};
 
             if (!isString(removeNullable(removeLowCardinality(value->result_type))))
-                return;
+                return {};
 
+            std::unordered_set<String> names;
             names.insert(String(value->column->getDataAt(0)));
+            return names;
         }
-        else if (function_name == "in")
+
+        if (function_name == "in")
         {
             if (!isNameNode(node.children.at(0)))
-                return;
+                return {};
 
             auto value = node.children.at(1)->column;
             if (!value)
-                return;
+                return {};
 
             const IColumn * column = value.get();
             if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
@@ -103,38 +130,36 @@ namespace
 
             const auto * column_set = typeid_cast<const ColumnSet *>(column);
             if (!column_set)
-                return;
+                return {};
 
             auto future_set = column_set->getData();
             if (!future_set)
-                return;
+                return {};
 
             auto set = future_set->buildOrderedSetInplace(context);
             if (!set || !set->hasExplicitSetElements())
-                return;
+                return {};
 
             set->checkColumnsNumber(1);
             auto type = set->getElementsTypes()[0];
             if (!isString(removeNullable(removeLowCardinality(type))))
-                return;
+                return {};
 
+            std::unordered_set<String> names;
             auto elements = set->getSetElements()[0];
             for (size_t i = 0; i < elements->size(); ++i)
                 names.insert(String(elements->getDataAt(i)));
+            return names;
         }
+
+        return {};
     }
 
     std::optional<std::unordered_set<String>> extractNamesFromPredicate(const ActionsDAG::Node * predicate, ContextPtr context)
     {
         if (!predicate)
             return {};
-
-        std::unordered_set<String> names;
-        extractNamesFromPredicateImpl(*predicate, names, context);
-
-        if (names.empty())
-            return {};
-        return names;
+        return extractNamesFromPredicateImpl(*predicate, context);
     }
 }
 
