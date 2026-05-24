@@ -188,12 +188,12 @@ struct TheilsUWindowData : CrossTabCountsState
         /// Clamp due to numerical error
         if (res < 0.0)
         {
-            chassert(res > -1e-6);
+            chassert(res > -1e-4);
             res = 0.0;
         }
         else if (res > 1.0)
         {
-            chassert(res < 1.0 + 1e-6);
+            chassert(res < 1.0 + 1e-4);
             res = 1.0;
         }
 

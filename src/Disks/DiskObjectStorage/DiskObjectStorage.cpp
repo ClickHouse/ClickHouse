@@ -855,10 +855,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         const auto object_namespace = object_storages->takePointingTo(cluster->getLocalLocation())->getObjectsNamespace();
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
-        const auto cache_key = PageCacheKey { .path = cache_path_prefix + storage_objects.at(0).remote_path };
+        const auto cache_file = PageCacheFile { .path = cache_path_prefix + storage_objects.at(0).remote_path };
 
         impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_key, read_settings.page_cache, std::move(impl), read_settings);
+            cache_file, read_settings.page_cache, std::move(impl), read_settings);
     }
 
     if (use_async_buffer)
