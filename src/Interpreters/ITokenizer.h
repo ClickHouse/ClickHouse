@@ -466,7 +466,7 @@ struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     ChineseTokenizationGranularity getGranularity() const { return granularity; }
 

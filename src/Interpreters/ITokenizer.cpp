@@ -769,7 +769,7 @@ void ChineseTokenizer::substringToBloomFilter(const char * data, size_t length, 
     stringToBloomFilter(data, length, bloom_filter);
 }
 
-void ChineseTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool, bool) const
+void ChineseTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool, bool) const
 {
     stringToTokens(data, length, tokens);
 }
