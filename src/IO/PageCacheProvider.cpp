@@ -151,14 +151,18 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
 }
 
 
-std::unique_ptr<ICacheHandle> PageCacheProvider::lookup(CacheKey key, ByteRange range)
+std::unique_ptr<ICacheHandle> PageCacheProvider::lookup(
+    const StoredObject & /*object*/,
+    size_t /*object_file_offset*/,
+    ByteRange range_in_file)
 {
-    PageCacheFile file;
-    file.path = std::move(key.path);
-    file.file_version = std::move(key.version);
-
+    /// PageCache is configured at the file level (one `PageCacheFile` for
+    /// the entire `ReadPipeline`), so the per-object identity is
+    /// irrelevant. `range_in_file` is already in the file-level coordinate
+    /// space the `PageCacheHandle` uses internally — pass it through
+    /// unchanged.
     return std::make_unique<PageCacheHandle>(
-        std::move(file), range, cache, block_size, inject_eviction);
+        file, range_in_file, cache, block_size, inject_eviction);
 }
 
 }

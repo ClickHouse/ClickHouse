@@ -267,36 +267,41 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     if (!source_reader)
         return nullptr;
 
-    size_t total_file_size = 0;
-    for (const auto & obj : source->objects)
-        total_file_size += obj.bytes_size;
-
     std::vector<std::shared_ptr<ICacheProvider>> executor_caches;
-    CacheKey executor_cache_key;
 
-    /// PageCache (memory) — goes first in chain (fastest).
+    /// PageCache (memory) — goes first in chain (fastest). It's a
+    /// file-level cache: derive a single `PageCacheFile` from the front
+    /// object (or custom path/version) and let the provider use it for
+    /// every lookup, regardless of which `StoredObject` is being accessed.
     if (memory_cache && memory_cache->cache)
     {
         const auto & pcs = memory_cache->page_cache_settings;
-        executor_caches.push_back(std::make_shared<PageCacheProvider>(
-            memory_cache->cache, pcs.page_cache_block_size, pcs.page_cache_inject_eviction));
-        executor_cache_key.path = memory_cache->custom_cache_path.value_or(
+        PageCacheFile cache_file;
+        cache_file.path = memory_cache->custom_cache_path.value_or(
             memory_cache->cache_path_prefix + source->objects.front().remote_path);
-        executor_cache_key.version = memory_cache->custom_file_version.value_or("");
+        cache_file.file_version = memory_cache->custom_file_version.value_or("");
+        executor_caches.push_back(std::make_shared<PageCacheProvider>(
+            memory_cache->cache,
+            std::move(cache_file),
+            pcs.page_cache_block_size,
+            pcs.page_cache_inject_eviction));
     }
 
-    /// FileCache (disk) — goes second in chain.
+    /// FileCache (disk) — goes second in chain. Pass the stage's
+    /// `custom_cache_key` / `custom_origin` through so the provider can
+    /// honour caller-specified cache identity (etag-keyed flow,
+    /// `Data` / `System` origin classification) per-object.
     for (const auto & dc : filesystem_caches)
     {
         if (dc.cache)
         {
             executor_caches.push_back(std::make_shared<DiskCacheProvider>(
-                dc.cache, total_file_size, dc.cache_settings, dc.cache_log));
-
-            if (executor_cache_key.path.empty())
-                executor_cache_key.path = source->objects.front().remote_path;
+                dc.cache, dc.cache_settings, dc.cache_log,
+                dc.custom_cache_key, dc.custom_origin));
         }
     }
+
+    String log_file_path = source->objects.empty() ? "" : source->objects.front().remote_path;
 
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader,
@@ -304,7 +309,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
         std::move(executor_caches),
         ReaderExecutor::DEFAULT_WINDOW_SIZE,
         min_bytes_for_seek,
-        std::move(executor_cache_key));
+        std::move(log_file_path));
 
     if (prefetch_pool)
         executor->setPrefetchPool(prefetch_pool);

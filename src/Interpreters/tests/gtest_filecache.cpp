@@ -1967,7 +1967,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
     FilesystemCacheSettings cache_settings;
     cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
-    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
 
     StoredObjects objects;
@@ -1980,7 +1980,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
             std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
-            CacheKey{file_path, ""});
+            file_path);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2005,7 +2005,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
             std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
-            CacheKey{file_path, ""});
+            file_path);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2044,7 +2044,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
     FilesystemCacheSettings cache_settings;
     cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
-    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
 
     StoredObjects objects;
@@ -2057,7 +2057,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
             std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/10,
             /*min_bytes_for_seek=*/0,
-            CacheKey{file_path, ""});
+            file_path);
 
         PipelineReadBuffer buf(std::move(executor));
         WriteBufferFromOwnString result;
@@ -2074,7 +2074,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
             std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/10,
             /*min_bytes_for_seek=*/0,
-            CacheKey{file_path, ""});
+            file_path);
 
         PipelineReadBuffer buf(std::move(executor));
         buf.seek(10, SEEK_SET);
@@ -2125,7 +2125,7 @@ namespace
 
             FilesystemCacheSettings cs;
             cs.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
-            provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cs);
+            provider = std::make_shared<DiskCacheProvider>(cache, cs);
             source_reader = std::make_shared<LocalSourceReader>();
             objects.emplace_back(file_path, "", data.size());
         }
@@ -2138,7 +2138,7 @@ namespace
                 source_reader, objects,
                 std::vector<std::shared_ptr<ICacheProvider>>{provider},
                 window_size, /*min_bytes_for_seek=*/0,
-                CacheKey{file_path, ""});
+                file_path);
             /// Wire a permissive buffer_limit so the executor's source reads
             /// promote to `live_buffer`. Without it, every source read takes the
             /// fallback path that closes the connection — and `over_read_buffer`
@@ -2299,7 +2299,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
     FilesystemCacheSettings cache_settings;
     cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
-    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
 
     StoredObjects objects;
@@ -2310,7 +2310,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
         std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
         /*window_size=*/ReaderExecutor::DEFAULT_WINDOW_SIZE,
         /*min_bytes_for_seek=*/0,
-        CacheKey{file_path, ""});
+        file_path);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -2390,7 +2390,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
     FilesystemCacheSettings cache_settings;
     cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
-    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, data.size(), cache_settings);
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
     StoredObjects objects;
     objects.emplace_back(file_path, "", data.size());
@@ -2400,7 +2400,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
         std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
         /*window_size=*/16,
         /*min_bytes_for_seek=*/0,
-        CacheKey{file_path, ""});
+        file_path);
     PipelineReadBuffer buf(std::move(executor));
 
     /// Read first 32 bytes sequentially.
@@ -2464,7 +2464,7 @@ namespace
         RecordingCacheProvider(ByteRange hit_, std::string data_)
             : hit_range(hit_), data(std::move(data_)) {}
 
-        std::unique_ptr<ICacheHandle> lookup(CacheKey, ByteRange) override
+        std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange) override
         {
             return std::make_unique<RecordingHandle>(hit_range, recorded_gets, data);
         }
@@ -2512,7 +2512,7 @@ TEST_F(FileCacheTest, ReaderExecutorClampsHitToRequestedWindow)
         std::vector<std::shared_ptr<ICacheProvider>>{recording},
         /*window_size=*/10,
         /*min_bytes_for_seek=*/0,
-        CacheKey{file_path, ""});
+        file_path);
 
     PipelineReadBuffer buf(std::move(executor));
     WriteBufferFromOwnString result;

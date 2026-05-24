@@ -22,6 +22,22 @@ void OffsetMap::build(const StoredObjects & objects)
     }
 }
 
+const StoredObject * OffsetMap::findObjectAt(size_t logical_offset, size_t * object_file_offset) const
+{
+    /// Linear scan — `segments.size()` is bounded by the file's object
+    /// count, typically <= a handful even for gather-mode reads.
+    for (const auto & seg : segments)
+    {
+        if (seg.logical_offset <= logical_offset && logical_offset < seg.logical_offset + seg.size)
+        {
+            if (object_file_offset)
+                *object_file_offset = seg.logical_offset;
+            return &seg.object;
+        }
+    }
+    return nullptr;
+}
+
 std::vector<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logical_range) const
 {
     std::vector<PhysicalRange> result;

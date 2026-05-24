@@ -28,6 +28,7 @@ namespace
     void appendCacheLogEntry(
         FilesystemCacheLog & cache_log,
         const FileSegment & segment,
+        const FileCacheOriginInfo & origin,
         FilesystemCacheLogElement::CacheType cache_type,
         const String & source_file_path,
         ByteRange requested_range)
@@ -46,7 +47,7 @@ namespace
             .file_segment_size = seg_range.size(),
             .read_from_cache_attempted = true,
             .read_buffer_id = {},
-            .user_id = FileCache::getCommonOrigin().user_id,
+            .user_id = origin.user_id,
         };
         cache_log.add(std::move(elem));
     }
@@ -56,49 +57,60 @@ namespace
 DiskCacheHandle::DiskCacheHandle(
     FileCachePtr cache_,
     FileCacheKey cache_key_,
+    FileCacheOriginInfo origin_,
+    size_t object_file_offset_,
+    size_t object_size_,
     ByteRange requested,
-    size_t file_size_,
     const FilesystemCacheSettings & cache_settings_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     String source_file_path_)
     : cache(std::move(cache_))
     , cache_key(cache_key_)
-    , file_size(file_size_)
+    , origin(std::move(origin_))
+    , object_file_offset(object_file_offset_)
+    , object_size(object_size_)
     , cache_settings(cache_settings_)
     , cache_log(std::move(cache_log_))
     , source_file_path(std::move(source_file_path_))
     , requested_range(requested)
 {
-    /// When `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` is set
-    /// (used for background merges/mutations via `MergeTreeSequentialSource`),
-    /// only return already-cached segments — never create new empty segments.
-    /// Mirrors `CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`. Without
-    /// this, every merge that reads a not-yet-cached object pollutes the cache,
+    /// `FileCache` keys segments by object-local offset (the cache key is
+    /// per-object). Convert the caller's file-level `requested` range.
+    chassert(requested.offset >= object_file_offset);
+    ByteRange requested_in_object{requested.offset - object_file_offset, requested.size};
+
+    /// When `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` is
+    /// set (used for background merges/mutations via
+    /// `MergeTreeSequentialSource`), only return already-cached segments —
+    /// never create new empty segments. Mirrors
+    /// `CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`. Without this,
+    /// every merge that reads a not-yet-cached object pollutes the cache,
     /// which `02241_filesystem_cache_on_write_operations` detects.
     if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         holder = cache->get(
             cache_key,
-            requested.offset,
-            requested.size,
+            requested_in_object.offset,
+            requested_in_object.size,
             cache_settings.filesystem_cache_segments_batch_size,
-            FileCache::getCommonOrigin().user_id);
+            origin.user_id);
     }
     else
     {
         holder = cache->getOrSet(
             cache_key,
-            requested.offset,
-            requested.size,
-            file_size,
+            requested_in_object.offset,
+            requested_in_object.size,
+            object_size,
             CreateFileSegmentSettings{},
             cache_settings.filesystem_cache_segments_batch_size,
-            FileCache::getCommonOrigin(),
+            origin,
             cache_settings.filesystem_cache_boundary_alignment);
     }
 
-    LOG_TRACE(log, "DiskCacheHandle: requested [{}, {}), got {} segments",
+    LOG_TRACE(log, "DiskCacheHandle: requested file [{}, {}) = obj [{}, {}), got {} segments",
         requested.offset, requested.end(),
+        requested_in_object.offset, requested_in_object.end(),
         holder ? holder->size() : 0);
 }
 
@@ -108,10 +120,11 @@ CacheLookupResult DiskCacheHandle::status() const
     if (!holder)
         return result;
 
+    /// Translate segments' object-local ranges to file-level for the caller.
     for (const auto & segment : *holder)
     {
         const auto & seg_range = segment->range();
-        ByteRange r{seg_range.left, seg_range.size()};
+        ByteRange r{seg_range.left + object_file_offset, seg_range.size()};
 
         auto state = segment->state();
         if (state == FileSegmentState::DOWNLOADED)
@@ -128,6 +141,12 @@ Rope DiskCacheHandle::get(ByteRange range)
     if (!holder)
         return result;
 
+    /// `range` is file-level; segments are object-local. Translate the
+    /// caller's range into object-local for the overlap math, then attach
+    /// file-level `logical_offset` to the returned nodes.
+    chassert(range.offset >= object_file_offset);
+    ByteRange range_in_object{range.offset - object_file_offset, range.size};
+
     for (const auto & segment : *holder)
     {
         if (segment->state() != FileSegmentState::DOWNLOADED)
@@ -136,12 +155,11 @@ Rope DiskCacheHandle::get(ByteRange range)
         const auto & seg_range = segment->range();
         ByteRange seg_r{seg_range.left, seg_range.size()};
 
-        /// Check overlap.
-        if (seg_r.end() <= range.offset || seg_r.offset >= range.end())
+        if (seg_r.end() <= range_in_object.offset || seg_r.offset >= range_in_object.end())
             continue;
 
-        size_t overlap_start = std::max(seg_r.offset, range.offset);
-        size_t overlap_end = std::min(seg_r.end(), range.end());
+        size_t overlap_start = std::max(seg_r.offset, range_in_object.offset);
+        size_t overlap_end = std::min(seg_r.end(), range_in_object.end());
         size_t overlap_size = overlap_end - overlap_start;
 
         /// Read from local file. The segment is pinned by the holder, so the
@@ -174,17 +192,19 @@ Rope DiskCacheHandle::get(ByteRange range)
                 "DiskCacheHandle::get: pread({}) short read: got {} bytes, expected {} at offset {}",
                 path, bytes_read, overlap_size, offset_in_file);
 
-        result.append(RopeNode{std::move(buf), 0, overlap_size, overlap_start});
+        /// Node's logical_offset is file-level — translate from object-local.
+        result.append(RopeNode{
+            std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
         /// Bump per-segment LRU position + hits_count. Mirrors what the legacy
-        /// `CachedOnDiskReadBufferFromFile` does on every cache hit; without it,
-        /// `system.filesystem_cache.cache_hits` stays at zero and segments
+        /// `CachedOnDiskReadBufferFromFile` does on every cache hit; without
+        /// it, `system.filesystem_cache.cache_hits` stays at zero and segments
         /// don't move to the protected queue under SLRU.
         segment->increasePriority();
 
         if (cache_log)
             appendCacheLogEntry(
-                *cache_log, *segment,
+                *cache_log, *segment, origin,
                 FilesystemCacheLogElement::CacheType::READ_FROM_CACHE,
                 source_file_path, requested_range);
     }
@@ -203,6 +223,14 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
     if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         return 0;
 
+    /// `range` and `data`'s nodes are in file-level coordinates;
+    /// `FileCache::FileSegment::range()` is object-local. Translate the
+    /// caller's range into object-local for the overlap math and shift `data`
+    /// into object-local so `Rope::copyTo` sees matching coordinates.
+    chassert(range.offset >= object_file_offset);
+    ByteRange range_in_object{range.offset - object_file_offset, range.size};
+    data.shift(-static_cast<ssize_t>(object_file_offset));
+
     size_t bytes_written = 0;
 
     for (auto & segment : *holder)
@@ -216,8 +244,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         const auto & seg_range = segment->range();
         ByteRange seg_r{seg_range.left, seg_range.size()};
 
-        /// Check overlap.
-        if (seg_r.end() <= range.offset || seg_r.offset >= range.end())
+        if (seg_r.end() <= range_in_object.offset || seg_r.offset >= range_in_object.end())
             continue;
 
         /// Try to become the downloader.
@@ -229,8 +256,8 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
             continue;
         }
 
-        size_t overlap_start = std::max(seg_r.offset, range.offset);
-        size_t overlap_end = std::min(seg_r.end(), range.end());
+        size_t overlap_start = std::max(seg_r.offset, range_in_object.offset);
+        size_t overlap_end = std::min(seg_r.end(), range_in_object.end());
         size_t write_size = overlap_end - overlap_start;
 
         /// Reserve space.
@@ -248,12 +275,8 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
             continue;
         }
 
-        /// Flatten the relevant slice of `data` directly into a contiguous
-        /// buffer for `segment->write()`. `copyTo` asserts full coverage,
-        /// which the caller guarantees: `data` is the source-read result for
-        /// this miss range. The buffer goes through `AllocatorWithMemoryTracking`
-        /// so its bytes count against the query memory limit — for big puts
-        /// (e.g. 4 MiB segments) the transient allocation is observable.
+        /// Flatten the relevant slice of `data` (now in object-local coords)
+        /// directly into a contiguous buffer for `segment->write()`.
         std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(write_size);
         data.copyTo(flat_buf.data(), ByteRange{overlap_start, write_size});
 
@@ -268,7 +291,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
 
         if (cache_log)
             appendCacheLogEntry(
-                *cache_log, *segment,
+                *cache_log, *segment, origin,
                 FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
                 source_file_path, requested_range);
     }
@@ -277,11 +300,23 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
 }
 
 
-std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(CacheKey key, ByteRange range)
+std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
+    const StoredObject & object,
+    size_t object_file_offset,
+    ByteRange range_in_file)
 {
-    auto cache_key = FileCacheKey::fromPath(key.path);
+    auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
+    auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
     return std::make_unique<DiskCacheHandle>(
-        cache, cache_key, range, file_size, cache_settings, cache_log, key.path);
+        cache,
+        std::move(resolved_key),
+        std::move(resolved_origin),
+        object_file_offset,
+        object.bytes_size,
+        range_in_file,
+        cache_settings,
+        cache_log,
+        object.remote_path);
 }
 
 }

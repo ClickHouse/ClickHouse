@@ -227,7 +227,7 @@ public:
     explicit MockCacheProvider(size_t block_size_)
         : block_size(block_size_) {}
 
-    std::unique_ptr<ICacheHandle> lookup(CacheKey, ByteRange range) override
+    std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override
     {
         return std::make_unique<MockCacheHandle>(range, storage, block_size);
     }
@@ -1088,7 +1088,7 @@ public:
     WideGranularityMockCache(size_t block_size_, String name_)
         : block_size(block_size_), provider_name(std::move(name_)) {}
 
-    std::unique_ptr<ICacheHandle> lookup(CacheKey, ByteRange range) override
+    std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override
     {
         return std::make_unique<WideGranularityMockCacheHandle>(
             range, storage, put_log, block_size);
@@ -1308,4 +1308,161 @@ TEST(ReaderExecutor, ChainWindowEndCacheMissExtendsPast)
     EXPECT_EQ(rope.totalBytes(), 50u * 1024u);
     EXPECT_TRUE(disk_cache->hasBlock(0))
         << "Cache block must be filled past the window end (intentional read-ahead)";
+}
+
+namespace
+{
+    /// Records every `lookup` call so tests can assert which `StoredObject`
+    /// and `object_file_offset` the cache provider received per piece.
+    /// `status()` always reports the whole range as a miss so the executor
+    /// falls through to the source — keeps the data path simple.
+    struct TrackedLookup
+    {
+        String remote_path;
+        size_t object_file_offset;
+        ByteRange range_in_file;
+    };
+
+    class TrackingCacheHandle : public ICacheHandle
+    {
+    public:
+        explicit TrackingCacheHandle(ByteRange range_) : range(range_) {}
+        CacheLookupResult status() const override
+        {
+            CacheLookupResult r;
+            r.miss_ranges.push_back(range);
+            return r;
+        }
+        Rope get(ByteRange) override { return {}; }
+        size_t put(ByteRange, Rope) override { return 0; }
+    private:
+        ByteRange range;
+    };
+
+    class TrackingCacheProvider : public ICacheProvider
+    {
+    public:
+        std::unique_ptr<ICacheHandle> lookup(
+            const StoredObject & object,
+            size_t object_file_offset,
+            ByteRange range_in_file) override
+        {
+            log.push_back(TrackedLookup{object.remote_path, object_file_offset, range_in_file});
+            return std::make_unique<TrackingCacheHandle>(range_in_file);
+        }
+        String name() const override { return "Tracking"; }
+
+        std::vector<TrackedLookup> log;
+    };
+}
+
+TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
+{
+    /// A single physical request that spans two objects must be issued to
+    /// the cache as TWO `lookup` calls — one per object — each carrying
+    /// the right `StoredObject` and `object_file_offset`. Previously the
+    /// executor handed the cache a single file-level range with one
+    /// (executor-wide) cache key, so caches that key per object (the new
+    /// `DiskCacheProvider`) couldn't tell the bytes apart.
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{
+            {"blob_A", String(300, 'A')},
+            {"blob_B", String(200, 'B')},
+        });
+
+    StoredObjects objects;
+    objects.emplace_back("blob_A", "", 300);
+    objects.emplace_back("blob_B", "", 200);
+
+    auto tracker = std::make_shared<TrackingCacheProvider>();
+
+    ReaderExecutor executor(
+        source, objects,
+        std::vector<std::shared_ptr<ICacheProvider>>{tracker},
+        /*window_size=*/500);
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 500u);
+
+    ASSERT_EQ(tracker->log.size(), 2u);
+
+    EXPECT_EQ(tracker->log[0].remote_path, "blob_A");
+    EXPECT_EQ(tracker->log[0].object_file_offset, 0u);
+    EXPECT_EQ(tracker->log[0].range_in_file.offset, 0u);
+    EXPECT_EQ(tracker->log[0].range_in_file.size, 300u);
+
+    EXPECT_EQ(tracker->log[1].remote_path, "blob_B");
+    EXPECT_EQ(tracker->log[1].object_file_offset, 300u);
+    EXPECT_EQ(tracker->log[1].range_in_file.offset, 300u);
+    EXPECT_EQ(tracker->log[1].range_in_file.size, 200u);
+}
+
+TEST(ReaderExecutor, PreAcquiredSlotMatchesObjectAtCursor)
+{
+    /// Previously `ensurePreAcquiredSlot` blindly pre-acquired for the
+    /// FIRST object's path. A `seek` into a later object would acquire a
+    /// slot for object A that the next source read (against object B)
+    /// couldn't consume, then re-acquire another slot — and the first
+    /// slot stayed pinned. The fix: pre-acquire for the object that
+    /// covers the cursor's current `position`.
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{
+            {"obj_A", String(500, 'A')},
+            {"obj_B", String(500, 'B')},
+        });
+
+    StoredObjects objects;
+    objects.emplace_back("obj_A", "", 500);
+    objects.emplace_back("obj_B", "", 500);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// Seek past the first object before any reads.
+    executor.seek(700);
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().offset, 700u);
+
+    /// Exactly one active slot, and its path is obj_B (not obj_A).
+    const auto active = limit->getActive();
+    ASSERT_EQ(active.size(), 1u);
+    EXPECT_EQ(active.front().object_path, "obj_B")
+        << "pre-acquired slot must match the object at the cursor, not the first object in the file";
+}
+
+TEST(ReaderExecutor, SlotReleasedOnSeekToDifferentObject)
+{
+    /// After reading from object A, a seek into object B must release
+    /// A's slot (live buffer for A is now stale) so total active slots
+    /// stay at 1 — not grow with each cross-object seek.
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{
+            {"obj_A", String(500, 'A')},
+            {"obj_B", String(500, 'B')},
+        });
+
+    StoredObjects objects;
+    objects.emplace_back("obj_A", "", 500);
+    objects.emplace_back("obj_B", "", 500);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/200, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// First read from object A.
+    auto r1 = executor.readNextWindow();
+    EXPECT_EQ(r1.range().offset, 0u);
+    EXPECT_EQ(limit->getActive().size(), 1u);
+
+    /// Seek into object B and read.
+    executor.seek(750);
+    auto r2 = executor.readNextWindow();
+    EXPECT_EQ(r2.range().offset, 750u);
+
+    const auto active = limit->getActive();
+    ASSERT_EQ(active.size(), 1u) << "must not accumulate slots across cross-object seeks";
+    EXPECT_EQ(active.front().object_path, "obj_B");
 }

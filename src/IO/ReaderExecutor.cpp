@@ -146,18 +146,16 @@ ReaderExecutor::ReaderExecutor(
     std::vector<std::shared_ptr<ICacheProvider>> caches_,
     size_t window_size_,
     size_t min_bytes_for_seek_,
-    CacheKey cache_key_)
+    String log_file_path_)
     : source(std::move(source_))
     , stored_objects(objects)
     , caches(std::move(caches_))
-    , cache_key(std::move(cache_key_))
+    , log_file_path(std::move(log_file_path_))
     , window_size(window_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
 {
     CurrentMetrics::add(CurrentMetrics::ReaderExecutorActive);
     offset_map.build(stored_objects);
-    if (!stored_objects.empty())
-        first_object_path = stored_objects.front().remote_path;
     /// Capture in the ctor — the executor may be destroyed on a worker thread
     /// whose `CurrentThread` is no longer attached to the query, in which
     /// case `getQueryId()` would return empty at destruction time and
@@ -214,7 +212,7 @@ ReaderExecutor::~ReaderExecutor()
         ReaderExecutorLogElement elem;
         elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         elem.query_id = creator_query_id;
-        elem.source_file_path = cache_key.path;
+        elem.source_file_path = log_file_path;
         elem.total_size = offset_map.totalSize();
         elem.cache_hit_bytes = stats.cache_hit_bytes;
         elem.cache_miss_bytes = stats.cache_miss_bytes;
@@ -286,15 +284,25 @@ void ReaderExecutor::setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log
 
 void ReaderExecutor::ensurePreAcquiredSlot()
 {
-    if (live_buffer || pre_acquired_slot || !buffer_limit || first_object_path.empty())
+    if (live_buffer || pre_acquired_slot || !buffer_limit)
         return;
 
-    auto slot = buffer_limit->tryAcquire(buffer_limit, first_object_path, String(CurrentThread::getQueryId()));
+    /// Pre-acquire for the object the next source read will actually hit, not
+    /// blindly for the first object. Otherwise a seek into a later object
+    /// would acquire a slot for object A that `readFromSource` can't consume
+    /// (it sees object B), forcing it to acquire a *second* slot — and the
+    /// first slot then stays pinned for the executor's lifetime.
+    const size_t physical_position = position + data_start_offset;
+    const StoredObject * object = offset_map.findObjectAt(physical_position);
+    if (!object)
+        return;
+
+    auto slot = buffer_limit->tryAcquire(buffer_limit, object->remote_path, String(CurrentThread::getQueryId()));
     if (slot)
     {
-        LOG_TRACE(log, "ensurePreAcquiredSlot: got slot for {}", first_object_path);
+        LOG_TRACE(log, "ensurePreAcquiredSlot: got slot for {}", object->remote_path);
         pre_acquired_slot.emplace(std::move(*slot));
-        pre_acquired_slot_path = first_object_path;
+        pre_acquired_slot_path = object->remote_path;
         ProfileEvents::increment(ProfileEvents::ReaderExecutorBufferSlotAcquired);
     }
     else
@@ -902,56 +910,70 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
         for (const auto & r : remaining)
         {
-            auto handle = cache->lookup(cache_key, r);
-            auto status = handle->status();
-
-            for (const auto & hit : status.hit_ranges)
+            /// Split `r` by object boundaries so each `cache->lookup` carries
+            /// a single `StoredObject` and the cache provider can derive a
+            /// per-object key / origin (etag-keyed cache identity, segment
+            /// key-type classification, ...). The handles still report
+            /// hits / misses in FILE-LEVEL coordinates — the per-object
+            /// translation lives entirely inside the cache provider.
+            auto pieces = offset_map.map(r);
+            size_t piece_file_start = r.offset;
+            for (const auto & pr : pieces)
             {
-                LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})",
-                    cache->name(), hit.offset, hit.end());
+                const size_t object_file_offset = piece_file_start - pr.object_offset;
+                ByteRange piece_range{piece_file_start, pr.size};
 
-                /// `hit` is the cache's *segment* range (typically
-                /// `max_file_segment_size`, default 4 MiB). Our actual request
-                /// is `r` (a window slice). Clamp to the intersection so
-                /// `handle->get` doesn't allocate buffer memory for segment
-                /// bytes outside `r`. With many concurrent readers, the
-                /// unclamped allocations push past the per-query memory limit
-                /// (`MEMORY_LIMIT_EXCEEDED` in the dataset-preload INSERT).
-                /// Miss ranges are intentionally left segment-sized: the wider
-                /// miss is what enables the next cache layer (or the source)
-                /// to fully populate this cache via `put`.
-                size_t lo = std::max(hit.offset, r.offset);
-                size_t hi = std::min(hit.end(), r.end());
-                if (lo >= hi)
-                    continue;
-                ByteRange clamped{lo, hi - lo};
+                auto handle = cache->lookup(pr.object, object_file_offset, piece_range);
+                auto status = handle->status();
 
-                auto useful = covered.subtract(clamped);
-                if (useful.empty())
-                    continue;
-                ++stats.cache_get_requests;
-                StopwatchAccumulator get_scope(stats.cache_get_us);
-                Rope hit_rope = handle->get(clamped);
-                HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
-                    static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
-                stats.allocated_bytes += hit_rope.totalBytes();
-                for (const auto & sub : useful)
+                for (const auto & hit : status.hit_ranges)
                 {
-                    result.append(hit_rope.extract(sub));
-                    covered.add(sub);
-                    stats.cache_hit_bytes += sub.size;
+                    LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})",
+                        cache->name(), hit.offset, hit.end());
+
+                    /// `hit` is the cache's *segment* range (typically
+                    /// `max_file_segment_size`, default 4 MiB). Our actual
+                    /// request is `piece_range`. Clamp to the intersection so
+                    /// `handle->get` doesn't allocate buffer memory for
+                    /// segment bytes outside the piece. Miss ranges are
+                    /// intentionally left segment-sized: the wider miss is
+                    /// what enables the next cache layer (or the source) to
+                    /// fully populate this cache via `put`.
+                    size_t lo = std::max(hit.offset, piece_range.offset);
+                    size_t hi = std::min(hit.end(), piece_range.end());
+                    if (lo >= hi)
+                        continue;
+                    ByteRange clamped{lo, hi - lo};
+
+                    auto useful = covered.subtract(clamped);
+                    if (useful.empty())
+                        continue;
+                    ++stats.cache_get_requests;
+                    StopwatchAccumulator get_scope(stats.cache_get_us);
+                    Rope hit_rope = handle->get(clamped);
+                    HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
+                        static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
+                    stats.allocated_bytes += hit_rope.totalBytes();
+                    for (const auto & sub : useful)
+                    {
+                        result.append(hit_rope.extract(sub));
+                        covered.add(sub);
+                        stats.cache_hit_bytes += sub.size;
+                    }
                 }
-            }
 
-            for (const auto & miss : status.miss_ranges)
-            {
-                LOG_TRACE(log, "readPhysicalWindow: cache {} miss [{}, {})",
-                    cache->name(), miss.offset, miss.end());
-                still_missing.push_back(miss);
-            }
+                for (const auto & miss : status.miss_ranges)
+                {
+                    LOG_TRACE(log, "readPhysicalWindow: cache {} miss [{}, {})",
+                        cache->name(), miss.offset, miss.end());
+                    still_missing.push_back(miss);
+                }
 
-            if (!status.miss_ranges.empty())
-                miss_handles.push_back(std::move(handle));
+                if (!status.miss_ranges.empty())
+                    miss_handles.push_back(std::move(handle));
+
+                piece_file_start += pr.size;
+            }
         }
 
         remaining = std::move(still_missing);
@@ -1106,8 +1128,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     /// with each other or with the parent's `next()`/`seek()`):
     ///   - `position`, `live_buffer`, `prefetch_handle`, `prefetch_range`,
     ///     `pre_acquired_slot`, `pre_acquired_slot_path`,
-    ///     `first_object_path`, `stats`, `creator_query_id`,
-    ///     `reader_executor_log` ptr.
+    ///     `stats`, `creator_query_id`, `reader_executor_log` ptr.
     ///
     /// Intentionally NOT propagated (the transient runs without them):
     ///   - `prefetch_pool`: a one-shot read can't amortise prefetch latency;
@@ -1120,7 +1141,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     ///     `readBigAt` in `system.reader_executor_log`.
     auto t = std::make_unique<ReaderExecutor>(
         source, stored_objects, caches,
-        window_size, min_bytes_for_seek, cache_key);
+        window_size, min_bytes_for_seek, log_file_path);
 
 #if USE_SSL
     t->decryption_layers = decryption_layers;

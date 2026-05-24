@@ -60,21 +60,36 @@ private:
 
 
 /// ICacheProvider wrapping PageCache.
+///
+/// PageCache is a FILE-level cache (one logical file per `PageCacheFile`
+/// regardless of how many `StoredObject`s back it), so the `file` is
+/// configured once at construction. `lookup` ignores the `StoredObject`
+/// argument — multi-object gather mode still results in a single
+/// PageCacheFile.
 class PageCacheProvider : public ICacheProvider
 {
 public:
-    PageCacheProvider(PageCachePtr cache_, size_t block_size_, bool inject_eviction_)
+    PageCacheProvider(
+        PageCachePtr cache_,
+        PageCacheFile file_,
+        size_t block_size_,
+        bool inject_eviction_)
         : cache(std::move(cache_))
+        , file(std::move(file_))
         , block_size(block_size_)
         , inject_eviction(inject_eviction_)
     {
     }
 
-    std::unique_ptr<ICacheHandle> lookup(CacheKey key, ByteRange range) override;
+    std::unique_ptr<ICacheHandle> lookup(
+        const StoredObject & object,
+        size_t object_file_offset,
+        ByteRange range_in_file) override;
     String name() const override { return "PageCache"; }
 
 private:
     PageCachePtr cache;
+    PageCacheFile file;
     size_t block_size;
     bool inject_eviction;
 };

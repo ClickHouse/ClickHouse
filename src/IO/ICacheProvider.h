@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/Rope.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <base/types.h>
 
 #include <memory>
@@ -8,12 +9,6 @@
 
 namespace DB
 {
-
-struct CacheKey
-{
-    String path;
-    String version;
-};
 
 struct CacheLookupResult
 {
@@ -25,36 +20,60 @@ struct CacheLookupResult
 };
 
 /// Handle returned by cache lookup. Pins results, provides get/put.
+///
+/// All `ByteRange` parameters and results are in FILE-LEVEL coordinates
+/// (logical offsets inside the file the `ReadPipeline` is reading), so
+/// the executor never has to translate. Caches whose internal key space
+/// is per-object (`DiskCacheHandle` / FileCache) do their own
+/// object_file_offset ↔ file-level translation internally.
+///
 /// RAII — destructor releases pins.
 class ICacheHandle
 {
 public:
     virtual ~ICacheHandle() = default;
 
-    /// What's cached, what's not (in this cache's granularity).
+    /// What's cached, what's not (in this cache's granularity), in
+    /// file-level coordinates.
     virtual CacheLookupResult status() const = 0;
 
-    /// Read cached data as a rope slice. ByteRange must be within hit_ranges.
+    /// Read cached data as a rope slice. `range` must be within
+    /// `hit_ranges`. The returned rope's nodes carry file-level
+    /// `logical_offset`s.
     virtual Rope get(ByteRange range) = 0;
 
-    /// Provide data for a miss range. ByteRange must be within miss_ranges.
-    /// Cache may copy (disk cache) or take ownership (page cache).
-    /// First writer wins on a per-segment basis. Returns the number of bytes
-    /// that actually landed in the cache; can be less than `range.size` when
-    /// we lost the downloader race on some segments, reservation failed
-    /// (cache full), or the handle is in bypass mode (returns 0).
+    /// Provide data for a miss range. `range` must be within
+    /// `miss_ranges`; `data` must hold nodes in file-level coordinates.
+    /// Returns the number of bytes that actually landed in the cache;
+    /// can be less than `range.size` when we lost the downloader race
+    /// on some segments, reservation failed (cache full), or the
+    /// handle is in bypass mode (returns 0).
     virtual size_t put(ByteRange range, Rope data) = 0;
 };
 
-/// Cache provider interface. ReadPipeline configures the chain.
+/// Cache provider interface. `ReadPipeline` configures the chain.
 class ICacheProvider
 {
 public:
     virtual ~ICacheProvider() = default;
 
-    /// Lookup a range. Returns a handle that pins the result.
-    /// The cache determines granularity internally.
-    virtual std::unique_ptr<ICacheHandle> lookup(CacheKey key, ByteRange range) = 0;
+    /// Lookup a range of `object` inside the file.
+    ///   - `object` is the per-object identity (`remote_path` / `local_path`).
+    ///     Per-object caches (`DiskCacheProvider`) derive their cache key
+    ///     and origin from it; file-level caches (`PageCacheProvider`)
+    ///     ignore it.
+    ///   - `object_file_offset` is the offset inside the logical file
+    ///     where `object` starts. Used by per-object caches to translate
+    ///     the file-level `range_in_file` to / from their object-local
+    ///     internal key space.
+    ///   - `range_in_file` is the request range in file-level
+    ///     coordinates — `[object_file_offset,
+    ///     object_file_offset + object.bytes_size)` is the slice that
+    ///     belongs to this `object`.
+    virtual std::unique_ptr<ICacheHandle> lookup(
+        const StoredObject & object,
+        size_t object_file_offset,
+        ByteRange range_in_file) = 0;
 
     virtual String name() const = 0;
 };

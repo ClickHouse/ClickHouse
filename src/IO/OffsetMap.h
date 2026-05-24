@@ -28,6 +28,13 @@ public:
     /// A single logical range may span multiple objects.
     std::vector<PhysicalRange> map(ByteRange logical_range) const;
 
+    /// Find the object whose range contains `logical_offset`. Returns nullptr
+    /// if `logical_offset` is at or past `totalSize()`. The optional output
+    /// `object_file_offset` (the segment's `logical_offset`) lets callers
+    /// translate between object-local and file-level coordinates without
+    /// re-walking the segment list.
+    const StoredObject * findObjectAt(size_t logical_offset, size_t * object_file_offset = nullptr) const;
+
     size_t totalSize() const { return total_size; }
 
 private:

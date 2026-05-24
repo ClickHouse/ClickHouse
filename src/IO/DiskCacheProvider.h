@@ -19,8 +19,10 @@ public:
     DiskCacheHandle(
         FileCachePtr cache,
         FileCacheKey cache_key,
+        FileCacheOriginInfo origin,
+        size_t object_file_offset,
+        size_t object_size,
         ByteRange requested,
-        size_t file_size,
         const FilesystemCacheSettings & cache_settings,
         std::shared_ptr<FilesystemCacheLog> cache_log,
         String source_file_path);
@@ -32,7 +34,14 @@ public:
 private:
     FileCachePtr cache;
     FileCacheKey cache_key;
-    size_t file_size;
+    FileCacheOriginInfo origin;
+    /// Where this object starts inside the file the executor is reading.
+    /// All public-facing `ByteRange`s on this handle are file-level; we
+    /// subtract `object_file_offset` to obtain the object-local offsets
+    /// that `FileCache` keys by.
+    size_t object_file_offset;
+    /// Size of the object itself (bytes_size from StoredObject).
+    size_t object_size;
     FilesystemCacheSettings cache_settings;
     std::shared_ptr<FilesystemCacheLog> cache_log;
     String source_file_path;
@@ -43,29 +52,49 @@ private:
 
 
 /// ICacheProvider wrapping FileCache.
+///
+/// Per-object cache identity:
+///   - When `custom_cache_key` is set, that key is used for every lookup
+///     (single-object, etag-keyed flow such as `StorageObjectStorageSource`).
+///   - Otherwise the per-object `FileCacheKey::fromPath(object.remote_path)`
+///     is used — supports multi-object gather mode where each object has
+///     its own cache identity.
+///
+/// Per-object origin classification:
+///   - When `custom_origin` is set, that origin is used.
+///   - Otherwise `cache->getCommonOriginWithSegmentKeyType(object.local_path)`
+///     is called per lookup — preserves the `Data` / `System` segment
+///     classification (by file extension) that legacy `CachedObjectStorage`
+///     applied per object.
 class DiskCacheProvider : public ICacheProvider
 {
 public:
     DiskCacheProvider(
         FileCachePtr cache_,
-        size_t file_size_,
         const FilesystemCacheSettings & cache_settings_,
-        std::shared_ptr<FilesystemCacheLog> cache_log_ = nullptr)
+        std::shared_ptr<FilesystemCacheLog> cache_log_ = nullptr,
+        std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
+        std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt)
         : cache(std::move(cache_))
-        , file_size(file_size_)
         , cache_settings(cache_settings_)
         , cache_log(std::move(cache_log_))
+        , custom_cache_key(std::move(custom_cache_key_))
+        , custom_origin(std::move(custom_origin_))
     {
     }
 
-    std::unique_ptr<ICacheHandle> lookup(CacheKey key, ByteRange range) override;
+    std::unique_ptr<ICacheHandle> lookup(
+        const StoredObject & object,
+        size_t object_file_offset,
+        ByteRange range_in_file) override;
     String name() const override { return "DiskCache"; }
 
 private:
     FileCachePtr cache;
-    size_t file_size;
     FilesystemCacheSettings cache_settings;
     std::shared_ptr<FilesystemCacheLog> cache_log;
+    std::optional<FileCacheKey> custom_cache_key;
+    std::optional<FileCacheOriginInfo> custom_origin;
 };
 
 }

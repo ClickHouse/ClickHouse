@@ -39,7 +39,7 @@ public:
         std::vector<std::shared_ptr<ICacheProvider>> caches,
         size_t window_size = DEFAULT_WINDOW_SIZE,
         size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
-        CacheKey cache_key = {});
+        String log_file_path = {});
 
     /// Destructor must be out-of-line because LiveBuffer holds unique_ptr<ReadBufferFromFileBase>.
     ~ReaderExecutor();
@@ -161,7 +161,11 @@ private:
     StoredObjects stored_objects;  /// retained for makeTransientForReadAt
     OffsetMap offset_map;
     std::vector<std::shared_ptr<ICacheProvider>> caches;
-    CacheKey cache_key;
+    /// File path used only for `system.reader_executor_log` /
+    /// `ReaderExecutorLogElement::source_file_path`. Cache identity is
+    /// derived per-object by the cache providers themselves and no longer
+    /// goes through the executor.
+    String log_file_path;
     size_t window_size;
     size_t min_bytes_for_seek;
     size_t position = 0;
@@ -198,7 +202,6 @@ private:
 
     /// First object's path — used by pre-acquire to ask the right slot key.
     /// Empty for executors with no objects (no-op fallback path).
-    String first_object_path;
 
 #if USE_SSL
     /// Decryption
