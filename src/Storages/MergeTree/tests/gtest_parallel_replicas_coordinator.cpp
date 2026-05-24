@@ -205,3 +205,72 @@ TEST(ParallelReplicasCoordinator, DefaultRejectsDivergentMarkLayoutForSamePart)
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(divergent))),
         DB::Exception);
 }
+
+/// Regression test: after the first replica announces and the coordinator dispatches some marks
+/// in response to a read request, `all_parts_to_read[i].description.ranges` is consumed in place
+/// (popped or shrunk). A subsequent replica announcing the same part with the SAME original
+/// layout must still be accepted; the divergence check must compare against the immutable
+/// snapshot taken at first announcement, not against the live (consumed) `description.ranges`.
+/// Before the snapshot fix, this case incorrectly raised `BAD_ARGUMENTS` because the live
+/// `description` showed `rows=N marks=0 max_end=0` after dispatch while the second announcement
+/// showed `rows=N marks=M max_end=M`, breaking ~11k parallel-replicas Fast tests on PR #105710.
+TEST(ParallelReplicasCoordinator, InOrderAcceptsIdenticalAnnouncementAfterDispatch)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// Replica 0 announces a part with 8 marks and then drains the coordinator's range queue.
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription request_parts;
+    request_parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    request_parts.front().ranges.clear();  // request carries only part identity, no mark ranges
+    ParallelReadRequest request(
+        CoordinationMode::WithOrder,
+        /*replica_num=*/0,
+        /*min_marks_per_request=*/1000,  // ask for more than the part has, drains everything
+        std::move(request_parts),
+        /*stream_id=*/"default.t2");
+    auto response = coordinator.handleRequest(std::move(request));
+    EXPECT_FALSE(response.description.empty());
+
+    /// Replica 1 now announces the same part with the same layout. Without the snapshot fix this
+    /// would raise BAD_ARGUMENTS because the live `description.ranges` has been popped to empty.
+    RangesInDataPartsDescription same_announcement;
+    same_announcement.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(same_announcement))));
+}
+
+/// Same regression in `Default` coordination mode: range dispatch consumes
+/// `all_parts_to_read[i].description.ranges` via `pop_front` / `range.begin += taken`, and a
+/// subsequent identical announcement must still be accepted.
+TEST(ParallelReplicasCoordinator, DefaultAcceptsIdenticalAnnouncementAfterDispatch)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription request_parts;
+    request_parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    request_parts.front().ranges.clear();
+    ParallelReadRequest request(
+        CoordinationMode::Default,
+        /*replica_num=*/0,
+        /*min_marks_per_request=*/1000,
+        std::move(request_parts),
+        /*stream_id=*/"default.t2");
+    coordinator.handleRequest(std::move(request));
+
+    RangesInDataPartsDescription same_announcement;
+    same_announcement.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(same_announcement))));
+}

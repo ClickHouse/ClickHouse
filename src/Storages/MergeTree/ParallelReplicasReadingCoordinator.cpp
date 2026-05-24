@@ -109,6 +109,13 @@ struct Part
     // and modify through iterator
     mutable std::set<size_t> replicas;
 
+    /// Immutable snapshot of the first replica's announcement for this part. `description.ranges`
+    /// is consumed by the coordinator as ranges are dispatched, so we cannot use it for
+    /// cross-replica divergence checks. These fields stay fixed for the lifetime of the part.
+    size_t initial_rows = 0;
+    size_t initial_marks_count = 0;
+    size_t initial_last_mark = 0;
+
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
 }
@@ -138,22 +145,24 @@ extern const int ALL_CONNECTION_TRIES_FAILED;
 namespace
 {
 
-/// Returns true when two same-named announcements describe the same local data layout.
-/// We compare row count and mark space (max mark end + total number of marks). A mismatch on
-/// any of these signals that replicas have divergent local data, so the coordinator must reject
+/// Returns true when an announcement describes the same local data layout as the first replica's
+/// initial snapshot. We compare announced rows, total number of marks, and max mark end against
+/// the snapshot taken at first announcement (Part::initial_*) — never against the live
+/// `description` fields, which are mutated by the coordinator as ranges are dispatched.
+/// A mismatch signals that replicas have divergent local data, so the coordinator must reject
 /// the merge: otherwise it later hands snapshot ranges to a replica whose local mark space is
 /// smaller and reading hits a non-existing mark.
-bool sameLocalLayout(const RangesInDataPartDescription & a, const RangesInDataPartDescription & b)
+bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & announced)
 {
-    return a.rows == b.rows
-        && getLastMark(a.ranges) == getLastMark(b.ranges)
-        && a.ranges.getNumberOfMarks() == b.ranges.getNumberOfMarks();
+    return known.initial_rows == announced.rows
+        && known.initial_last_mark == getLastMark(announced.ranges)
+        && known.initial_marks_count == announced.ranges.getNumberOfMarks();
 }
 
 [[noreturn]] void throwDivergentLocalPart(
     size_t replica_num,
     const RangesInDataPartDescription & announced,
-    const RangesInDataPartDescription & known)
+    const Part & known)
 {
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
@@ -166,9 +175,19 @@ bool sameLocalLayout(const RangesInDataPartDescription & a, const RangesInDataPa
         announced.rows,
         announced.ranges.getNumberOfMarks(),
         getLastMark(announced.ranges),
-        known.rows,
-        known.ranges.getNumberOfMarks(),
-        getLastMark(known.ranges));
+        known.initial_rows,
+        known.initial_marks_count,
+        known.initial_last_mark);
+}
+
+/// Snapshots the immutable layout fields from an announced part. Call this exactly once per part,
+/// at the time of first insertion into `all_parts_to_read`, so the snapshot reflects the original
+/// announcement (before any range dispatch).
+void captureInitialLayout(Part & p)
+{
+    p.initial_rows = p.description.rows;
+    p.initial_marks_count = p.description.ranges.getNumberOfMarks();
+    p.initial_last_mark = getLastMark(p.description.ranges);
 }
 
 }
@@ -445,11 +464,11 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
         part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
     }
 
-    /// Reject same-named parts whose row count or mark space differs from the snapshot built by
-    /// the first announcement. Otherwise the coordinator later hands snapshot ranges to a replica
-    /// whose local part is smaller and reading hits a non-existing mark. The mark-space check is
-    /// needed in addition to rows to catch adaptive-granularity divergence where two parts share
-    /// a row count but disagree on the number of marks.
+    /// Reject same-named parts whose row count or mark space differs from the immutable snapshot
+    /// taken at first announcement. The mark-space check (in addition to rows) catches
+    /// adaptive-granularity divergence where two parts share a row count but disagree on the
+    /// number of marks. We compare against `Part::initial_*` rather than `Part::description`
+    /// because the coordinator mutates `description.ranges` as it dispatches reads.
     if (state_initialized)
     {
         for (const auto & part : announcement.description)
@@ -459,8 +478,8 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
                 all_parts_to_read.end(),
                 [&part](const Part & other) { return other.description.info == part.info; });
 
-            if (known_it != all_parts_to_read.end() && !sameLocalLayout(known_it->description, part))
-                throwDivergentLocalPart(announcement.replica_num, part, known_it->description);
+            if (known_it != all_parts_to_read.end() && !sameLocalLayout(*known_it, part))
+                throwDivergentLocalPart(announcement.replica_num, part, *known_it);
         }
         return;
     }
@@ -477,7 +496,9 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
 
             known_parts.emplace(Part{.description = part, .replicas = {}});
-            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+            Part stored{.description = std::move(part), .replicas = {announcement.replica_num}};
+            captureInitialLayout(stored);
+            all_parts_to_read.push_back(std::move(stored));
         }
     }
 
@@ -1030,9 +1051,11 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         {
             /// Same part name but a different row count or mark layout means replicas have
             /// divergent local data; merging here would later hand out non-existing marks to the
-            /// replica whose local mark space is smaller.
-            if (!sameLocalLayout(the_same_it->description, part))
-                throwDivergentLocalPart(announcement.replica_num, part, the_same_it->description);
+            /// replica whose local mark space is smaller. Compare against the immutable snapshot
+            /// (Part::initial_*) rather than the live `description`, which is mutated by
+            /// `handleRequest` as ranges are dispatched.
+            if (!sameLocalLayout(*the_same_it, part))
+                throwDivergentLocalPart(announcement.replica_num, part, *the_same_it);
 
             the_same_it->replicas.insert(announcement.replica_num);
             continue;
@@ -1066,7 +1089,9 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 
         new_rows_to_read += part.rows;
 
-        auto [inserted_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        Part stored{.description = std::move(part), .replicas = {announcement.replica_num}};
+        captureInitialLayout(stored);
+        auto [inserted_it, _] = all_parts_to_read.emplace(std::move(stored));
         auto & ranges = inserted_it->description.ranges;
         std::sort(ranges.begin(), ranges.end());
     }
