@@ -1124,19 +1124,21 @@ void ProcessList::releaseAdmissionSlotLocked(Lock & /* acquired_lock */)
 {
     chassert(admission_running > 0);
 
-    if (!admission_queue.empty())
+    /// Respect runtime decreases of `max_concurrent_queries`: when we are over
+    /// the current limit, decrement instead of transferring so the new (smaller)
+    /// limit takes effect. The next release that brings `admission_running` back
+    /// to `max_size` will hand the slot to the front waiter.
+    if (admission_queue.empty() || admission_running > max_size)
     {
-        /// Transfer the slot to the front waiter (FIFO).
-        AdmissionWaiter * front = admission_queue.front();
-        admission_queue.pop_front();
-        front->granted = true;
-        front->cv.notify_one();
-    }
-    else
-    {
-        /// No waiters — just free the slot.
         --admission_running;
+        return;
     }
+
+    /// Transfer the slot to the front waiter (FIFO).
+    AdmissionWaiter * front = admission_queue.front();
+    admission_queue.pop_front();
+    front->granted = true;
+    front->cv.notify_one();
 }
 
 void QueryStatus::releaseAdmissionSlot()
