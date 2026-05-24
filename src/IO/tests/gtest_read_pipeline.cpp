@@ -237,6 +237,72 @@ catch (...)
 }
 
 
+TEST(ReadPipeline, UnknownSizeReadsToEofViaExecutor)
+try
+{
+    /// `StoredObject::UnknownSize` callers (S3 `HEAD` without
+    /// `Content-Length`, local `stat()` failure) put the sentinel into
+    /// `bytes_size` instead of `0` so consumers can distinguish from a
+    /// truly empty file. The executor recognises the sentinel via
+    /// `OffsetMap::hasUnknownSize` and switches to streaming-until-EOF
+    /// — it reads window-sized chunks from the source and detects EOF
+    /// when the source returns short. No fall back to the legacy
+    /// pipeline.
+    std::string data = "actually-not-empty";
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator(data),
+        StoredObjects{testObject(StoredObject::UnknownSize)},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data)
+        << "ReaderExecutor must stream unknown-size sources to EOF without "
+           "needing bytes_size up front";
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, KnownSizeUsesReaderExecutor)
+try
+{
+    /// Sanity check the other side: when the size IS known (default), the
+    /// executor path runs and produces the same bytes.
+    std::string data = "executor-path-ok";
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator(data),
+        StoredObjects{testObject(data.size())},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
 /// -- describe --
 
 TEST(ReadPipeline, DescribeEmpty)

@@ -1,17 +1,47 @@
 #include <IO/OffsetMap.h>
 
+#include <Common/Exception.h>
+
 #include <algorithm>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void OffsetMap::build(const StoredObjects & objects)
 {
     segments.clear();
     total_size = 0;
+    has_unknown_size = false;
 
     for (const auto & obj : objects)
     {
+        if (obj.bytes_size == StoredObject::UnknownSize)
+        {
+            /// Unknown-size objects (S3 `HEAD` without `Content-Length`,
+            /// `stat()` failure on local disk) can only appear ALONE — we
+            /// can't compute logical offsets for objects that follow an
+            /// unknown-size one. In practice the only caller passing
+            /// `UnknownSize` is `StorageObjectStorageSource`, which always
+            /// reads single objects.
+            if (objects.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "OffsetMap: unknown-size object is only supported in single-object pipelines (got {} objects)",
+                    objects.size());
+            has_unknown_size = true;
+            total_size = StoredObject::UnknownSize;
+            segments.push_back(Segment{
+                .object = obj,
+                .object_offset = 0,
+                .logical_offset = 0,
+                .size = StoredObject::UnknownSize,
+            });
+            return;
+        }
         segments.push_back(Segment{
             .object = obj,
             .object_offset = 0,

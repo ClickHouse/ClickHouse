@@ -927,6 +927,84 @@ TEST(ReaderExecutor, LiveBufferReleasedAtEof)
     EXPECT_EQ(limit->getActive().size(), 0u);
 }
 
+TEST(ReaderExecutor, UnknownSizeStreamsToEof)
+{
+    /// When `StoredObject::bytes_size == UnknownSize`,
+    /// `OffsetMap::hasUnknownSize` is true and the executor switches to
+    /// streaming-until-EOF: it reads `window_size` bytes at a time from
+    /// the source and detects EOF when the source returns short. The
+    /// source itself (`MemorySourceReader` backed by a temp file) knows
+    /// the real size; only the executor's view is unknown.
+    String content(1500, 'U');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", StoredObject::UnknownSize);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
+
+    String collected;
+    while (true)
+    {
+        Rope w = executor.readNextWindow();
+        if (w.empty())
+            break;
+        for (const auto & node : w.getNodes())
+            collected.append(node.data(), node.size);
+    }
+    EXPECT_EQ(collected.size(), content.size());
+    EXPECT_EQ(collected, content);
+}
+
+TEST(ReaderExecutor, UnknownSizeEofIsLatchedUntilSeek)
+{
+    /// After the source returns short and EOF is latched, subsequent
+    /// `readNextWindow` calls keep returning empty without re-hitting
+    /// the source. A backward `seek` clears the latch so reads resume.
+    String content(600, 'L');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", StoredObject::UnknownSize);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/1000);
+
+    auto r1 = executor.readNextWindow();   /// reads all 600 bytes, latches EOF
+    EXPECT_EQ(r1.range().size, 600u);
+
+    /// Latched: stays empty without re-reading.
+    EXPECT_TRUE(executor.readNextWindow().empty());
+    EXPECT_TRUE(executor.readNextWindow().empty());
+
+    /// Seek back to position 0 — latch cleared, reads resume.
+    executor.seek(0);
+    auto r2 = executor.readNextWindow();
+    EXPECT_EQ(r2.range().size, 600u);
+    EXPECT_EQ(r2.range().offset, 0u);
+}
+
+TEST(ReaderExecutor, UnknownSizeMultiObjectRejected)
+{
+    /// Multi-object pipelines need each object's `bytes_size` to compute
+    /// the cumulative `logical_offset`. With an unknown size we can't.
+    /// `OffsetMap::build` rejects the combination outright.
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{
+            {"a", "AA"},
+            {"b", "BB"},
+        });
+
+    StoredObjects objects;
+    objects.emplace_back("a", "", StoredObject::UnknownSize);
+    objects.emplace_back("b", "", 2);
+
+    EXPECT_ANY_THROW({
+        ReaderExecutor executor(source, objects, {}, /*window_size=*/100);
+    });
+}
+
 TEST(ReaderExecutor, LiveBufferReacquiredAfterSeekBackFromEof)
 {
     /// After EOF released the slot, a backward seek and re-read must

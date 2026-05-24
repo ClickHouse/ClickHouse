@@ -176,6 +176,11 @@ private:
     /// the handle is non-null.
     std::unique_ptr<PrefetchHandle> prefetch_handle;
     ByteRange prefetch_range;
+    /// Set when the source returned fewer bytes than requested AND the
+    /// total file size is unknown — in that mode the short return IS the
+    /// EOF marker. `readNextWindow` consults this so a subsequent call
+    /// short-circuits to EOF without re-issuing a read.
+    bool reached_eof = false;
 
     /// Live buffer: keeps a connection open for sequential reads.
     struct LiveBuffer

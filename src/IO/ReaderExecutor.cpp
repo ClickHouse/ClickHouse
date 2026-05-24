@@ -326,15 +326,21 @@ size_t ReaderExecutor::effectiveWindowSize() const
 
 void ReaderExecutor::maybeTriggerPrefetch()
 {
-    if (!prefetch_pool || prefetch_handle)
+    if (!prefetch_pool || prefetch_handle || reached_eof)
         return;
 
     size_t logical_size = totalSize();
-    if (position >= logical_size)
+    /// Size-known: bail at EOF. Size-unknown: `logical_size == MAX` so
+    /// `position >= logical_size` never fires; we instead rely on
+    /// `reached_eof` (checked above) and the fact that
+    /// `effectiveWindowSize()` doesn't depend on `logical_size`.
+    if (!offset_map.hasUnknownSize() && position >= logical_size)
         return;
 
     ensurePreAcquiredSlot();
-    size_t next_size = std::min(effectiveWindowSize(), logical_size - position);
+    size_t next_size = offset_map.hasUnknownSize()
+        ? effectiveWindowSize()
+        : std::min(effectiveWindowSize(), logical_size - position);
     ByteRange next_physical_window{position + data_start_offset, next_size};
     size_t next_logical_offset = position;
 
@@ -548,7 +554,15 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
 Rope ReaderExecutor::readNextWindow()
 {
     size_t logical_size = totalSize();
-    if (position >= logical_size)
+    /// EOF detection has two flavours:
+    ///   1. Size-known: `position >= totalSize` is authoritative.
+    ///   2. Size-unknown (`offset_map.hasUnknownSize()`): we can only
+    ///      learn EOF from the source returning fewer bytes than asked
+    ///      for. `reached_eof` is set in the read path when that happens
+    ///      and consulted here so subsequent calls don't re-issue a
+    ///      doomed read.
+    const bool size_known_eof = !offset_map.hasUnknownSize() && position >= logical_size;
+    if (size_known_eof || reached_eof)
     {
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
         /// Release scarce per-stream resources as soon as the caller
@@ -589,7 +603,9 @@ Rope ReaderExecutor::readNextWindow()
             ++stats.prefetch_cancelled;
 
             ensurePreAcquiredSlot();
-            size_t win_size = std::min(effectiveWindowSize(), logical_size - position);
+            size_t win_size = offset_map.hasUnknownSize()
+                ? effectiveWindowSize()
+                : std::min(effectiveWindowSize(), logical_size - position);
             ByteRange physical_window{position + data_start_offset, win_size};
             StopwatchAccumulator sync_scope(stats.sync_read_us);
             rope = decryptRope(readPhysicalWindow(physical_window), position);
@@ -658,6 +674,10 @@ void ReaderExecutor::seek(size_t new_position)
     /// with the live connection and we can't reuse them productively.
     over_read_buffer = {};
     position = new_position;
+    /// Clear the unknown-size EOF latch: a seek backward might land in a
+    /// region the source can re-deliver. We learn EOF again from the next
+    /// short return.
+    reached_eof = false;
 
     /// Start prefetching the new window right away so the next `readNextWindow`
     /// can hit a warm prefetch instead of paying full source-read latency
@@ -1026,20 +1046,31 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             size_t actual = source_rope.totalBytes();
             stats.cache_miss_bytes += actual;
-            /// offset_map's pr.size is authoritative — any short read indicates the
-            /// source can't deliver what offset_map (and therefore StoredObject.bytes_size)
-            /// promised. Failing fast is the only correct choice: a short read on a
-            /// non-terminal range shifts subsequent ranges' logical placement, and on a
-            /// terminal range, returning an empty rope from the next readNextWindow would
-            /// produce an infinite loop because position can't advance past the missing
-            /// bytes.
+            /// Short-return handling:
+            ///   - Size known: `offset_map.totalSize` is authoritative.
+            ///     A short read means the source can't deliver bytes the
+            ///     map already promised — failing fast is the only safe
+            ///     choice (otherwise subsequent logical offsets would
+            ///     shift, or `readNextWindow` would loop with
+            ///     `position` stuck).
+            ///   - Size unknown: the short return IS the EOF marker.
+            ///     We record it via `reached_eof`, treat the request
+            ///     range as covering only the actual bytes, and let
+            ///     subsequent calls return empty.
             if (actual != pr.size)
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
-                    pr.object.remote_path, pr.object_offset, pr.size, actual);
+            {
+                if (!offset_map.hasUnknownSize())
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
+                        pr.object.remote_path, pr.object_offset, pr.size, actual);
+                reached_eof = true;
+            }
 
             /// Append only the parts of source_rope not already in `result`.
-            ByteRange pr_range{logical_pos, pr.size};
+            /// Use `actual` (not `pr.size`) so the recorded range matches what
+            /// the source actually delivered — relevant only when
+            /// `reached_eof` is set, since otherwise `actual == pr.size`.
+            ByteRange pr_range{logical_pos, actual};
             auto uncovered = covered.subtract(pr_range);
             for (const auto & sub : uncovered)
             {

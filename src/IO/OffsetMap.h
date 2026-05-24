@@ -37,6 +37,12 @@ public:
 
     size_t totalSize() const { return total_size; }
 
+    /// True iff the single stored object had `bytes_size == UnknownSize`
+    /// at `build` time. Consumers (`ReaderExecutor::readNextWindow`) use
+    /// this to switch to streaming-until-EOF behaviour instead of
+    /// trusting `totalSize` as the EOF marker.
+    bool hasUnknownSize() const { return has_unknown_size; }
+
 private:
     struct Segment
     {
@@ -48,6 +54,7 @@ private:
 
     std::vector<Segment> segments;
     size_t total_size = 0;
+    bool has_unknown_size = false;
 };
 
 }

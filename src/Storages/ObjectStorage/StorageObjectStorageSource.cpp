@@ -1030,7 +1030,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// filename to `readWithDistributedCache` (it ends up in `getFileName()` and in
     /// `system.distributed_cache_log.filename`). Set it to the object path so the DC
     /// log shows a useful name (master also passed `object_info.getPath()`).
-    StoredObject stored_object(object_info.getPath(), object_info.getPath(), object_size);
+    /// When HEAD didn't return Content-Length we don't know the real size.
+    /// Use `UnknownSize` as a sentinel — `bytes_size = 0` would conflate with
+    /// "really empty file". The executor / `OffsetMap` recognise the sentinel
+    /// and stream the source to EOF instead of treating it as empty.
+    const UInt64 stored_bytes = is_size_known ? object_size : StoredObject::UnknownSize;
+    StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_bytes);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
