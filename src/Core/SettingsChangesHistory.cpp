@@ -1211,11 +1211,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
             {"leader_election", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"},
             {"leader_election_heartbeat_interval", 10, 10, "New setting to control leader lease renewal interval"},
             {"leader_election_session_timeout", 30, 30, "New setting to control leader lease expiry threshold"},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        {
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
