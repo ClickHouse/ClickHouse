@@ -645,6 +645,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         try:
             pr_labels = Info().pr_labels
             skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            if not skip_lookup:
+                # Fail loud on missing S3 read access. Otherwise CacheRunnerHooks
+                # silently treats every fetch as a cache miss, hiding the real
+                # cause (e.g. AccessDenied from a misconfigured runner fleet).
+                S3.assert_read_access(f"{Settings.CACHE_S3_PATH}/_read_probe")
             workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True

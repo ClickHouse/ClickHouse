@@ -413,7 +413,9 @@ Chunk StorageObjectStorageSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    read_context);
             }
 
             const String * iceberg_metadata_file_path = nullptr;
@@ -436,7 +438,8 @@ Chunk StorageObjectStorageSource::generate()
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
                 },
-                read_context);
+                read_context,
+                format_settings);
 
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())

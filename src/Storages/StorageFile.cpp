@@ -1710,7 +1710,9 @@ Chunk StorageFileSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    current_path);
+                    current_path,
+                    storage->format_settings,
+                    getContext());
             }
 
             /// Enrich with virtual columns.
@@ -1722,7 +1724,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified,
-                }, getContext());
+                }, getContext(), storage->format_settings);
 
             return chunk;
         }

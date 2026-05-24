@@ -239,3 +239,13 @@ def _update_workflow_with_native_jobs(workflow):
             aux_job.run_after.append(job.name)
         workflow.jobs.append(aux_job)
 
+    if workflow.runs_on_label_prefix:
+        prefix = workflow.runs_on_label_prefix
+        for job in workflow.jobs:
+            if not job.runs_on:
+                continue
+            job.runs_on = [
+                label if label == "self-hosted" else f"{prefix}{label}"
+                for label in job.runs_on
+            ]
+

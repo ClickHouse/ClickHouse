@@ -165,6 +165,8 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
 
 void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 {
+    init();
+
     if (compressed_data_buffer)
     {
         compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
