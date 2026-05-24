@@ -8,7 +8,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/TargetSpecific.h>
-#include <absl/container/flat_hash_set.h>
 #include <algorithm>
 #include <cstring>
 #include <numeric>
@@ -1139,8 +1138,7 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
 
 void lazyUnionPostingLists(
     IColumn & column,
-    const PostingListCursorMap & postings,
-    const VectorWithMemoryTracking<String> & search_tokens,
+    const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows)
@@ -1150,33 +1148,19 @@ void lazyUnionPostingLists(
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
 
-    /// Duplicate search tokens (e.g. `hasAnyTokens(..., ['foo', 'foo'])`) map to the same cursor in `postings`.
-    std::vector<PostingListCursorPtr> cursors;
-    cursors.reserve(postings.size());
-
-    absl::flat_hash_set<const PostingListCursor *> seen_cursors;
-    seen_cursors.reserve(postings.size());
-
-    for (const auto & token : search_tokens)
-    {
-        auto it = postings.find(token);
-        if (it != postings.end() && seen_cursors.insert(it->second.get()).second)
-            cursors.emplace_back(it->second);
-    }
-
     /// Sort by descending density so the densest cursor fills the output buffer first.
-    std::stable_sort(cursors.begin(), cursors.end(),
+    std::vector<PostingListCursorPtr> sorted_cursors = cursors;
+    std::stable_sort(sorted_cursors.begin(), sorted_cursors.end(),
         [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
         { return a->density() > b->density(); });
 
-    for (auto & cursor : cursors)
+    for (auto & cursor : sorted_cursors)
         cursor->linearOr(out, row_offset, num_rows);
 }
 
 void lazyIntersectPostingLists(
     IColumn & column,
-    const PostingListCursorMap & postings,
-    const VectorWithMemoryTracking<String> & search_tokens,
+    const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
@@ -1186,20 +1170,6 @@ void lazyIntersectPostingLists(
 
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * __restrict out = data.data() + column_offset;
-
-    /// Duplicate search tokens (e.g. `hasAllTokens(..., ['foo', 'foo'])`) map to the same cursor in `postings`.
-    std::vector<PostingListCursorPtr> cursors;
-    cursors.reserve(postings.size());
-
-    absl::flat_hash_set<const PostingListCursor *> seen_cursors;
-    seen_cursors.reserve(postings.size());
-
-    for (const auto & token : search_tokens)
-    {
-        auto it = postings.find(token);
-        if (it != postings.end() && seen_cursors.insert(it->second.get()).second)
-            cursors.emplace_back(it->second);
-    }
 
     const size_t n = cursors.size();
     const size_t end = row_offset + num_rows;
@@ -1227,19 +1197,20 @@ void lazyIntersectPostingLists(
     }
 
     /// Sort cursors by ascending cardinality so the sparsest cursor leads the leapfrog.
-    std::sort(cursors.begin(), cursors.end(),
+    std::vector<PostingListCursorPtr> sorted_cursors = cursors;
+    std::sort(sorted_cursors.begin(), sorted_cursors.end(),
         [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
         { return a->cardinality() < b->cardinality(); });
 
     for (size_t i = 0; i < n; ++i)
     {
-        cursors[i]->advance(static_cast<uint32_t>(row_offset));
-        if (!cursors[i]->valid() || cursors[i]->value() >= end)
+        sorted_cursors[i]->advance(static_cast<uint32_t>(row_offset));
+        if (!sorted_cursors[i]->valid() || sorted_cursors[i]->value() >= end)
             return;
     }
 
     ProfileEvents::increment(ProfileEvents::TextIndexLazyLeapfrogIntersections);
-    intersectLeapfrog(out, cursors, row_offset, end);
+    intersectLeapfrog(out, sorted_cursors, row_offset, end);
 }
 
 }

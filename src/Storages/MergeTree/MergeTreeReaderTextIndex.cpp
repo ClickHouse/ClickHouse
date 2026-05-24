@@ -236,6 +236,7 @@ void MergeTreeReaderTextIndex::readGranule()
 
     sparse_index_stream->seekToStart();
     lazy_cursors.clear();
+    prebuilt_cursors.clear();
 
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
@@ -326,32 +327,21 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
 PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info)
 {
-    /// Embedded postings — fully decoded inline; no stream needed.
-    if (token_info.embedded_postings)
-    {
-        return std::make_shared<PostingListCursor>(token_info);
-    }
+    /// Only called for tokens whose postings span multiple blocks (large postings).
+    chassert(token_info.hasLargePostings());
 
-    /// All non-embedded posting lists in lazy mode go through the cursor's stream path.
-    /// (Pre-PR-98226, single-block postings were eagerly materialized into a per-granule
-    /// `rare_tokens_postings` map and reused here. After the analyzer refactor, small
-    /// postings are folded into per-query bitmaps that we don't consult in lazy mode,
-    /// so we just decode them on demand via the cursor — one read per segment.)
-    if (token_info.header & PostingsSerialization::Flags::IsCompressed)
-    {
-        auto stream_it = large_postings_streams.find(token);
-        if (stream_it != large_postings_streams.end())
-            return std::make_shared<PostingListCursor>(*stream_it->second, token_info);
+    if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
-        if (!small_postings_stream)
-            small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
+    auto stream_it = large_postings_streams.find(token);
+    if (stream_it != large_postings_streams.end())
+        return std::make_shared<PostingListCursor>(*stream_it->second, token_info);
 
-        return std::make_shared<PostingListCursor>(*small_postings_stream, token_info);
-    }
+    if (!small_postings_stream)
+        small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Token postings should be embedded or compressed", token);
+    return std::make_shared<PostingListCursor>(*small_postings_stream, token_info);
 }
-
 
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
@@ -376,7 +366,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
         /// `current_segment_idx` onward), so they cannot serve an earlier `row_offset`.
         if (from_mark < current_mark)
+        {
             lazy_cursors.clear();
+            prebuilt_cursors.clear();
+        }
 
         from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
@@ -744,59 +737,69 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
 
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
-
-    if (search_query->tokens.empty() && search_query->patterns.empty())
-        return;
-
-    /// Lazy mode is only enabled when no virtual column carries pattern predicates
-    /// (see `setIndexGranule`). Patterns require the materialize path.
     chassert(search_query->patterns.empty());
 
-    /// `query_builder.is_failed` is set when a required token is missing in `All` mode
-    /// or when an `All`-mode intersection collapsed during dictionary scan. Either way,
-    /// the result is definitely empty — no need to even build cursors.
+    if (search_query->tokens.empty())
+        return;
+
     const auto & analyzer = granule->getAnalyzer();
     const auto & query_builder = analyzer.getQueryBuilder(*search_query);
+
     if (query_builder.is_failed)
         return;
 
-    const auto & token_infos = analyzer.getTokenInfos();
+    /// Synthetic cursor wraps `query_builder.postings` — the analyzer's pre-folded OR/AND
+    /// across all embedded + single-block tokens — collapsing `num_small` token cursors into one.
+    /// `addPostings` folds with the same direction the kernel applies (All=AND, Any=OR).
 
-    /// Build `PostingListCursorMap` for query tokens. Cursors are cached per `(column, token)`
-    /// to keep mutable forward-only state isolated; backward jumps drop the cache in `readRows`.
-    auto & column_cursors = lazy_cursors[column_name];
-    PostingListCursorMap cursor_map;
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(query_builder.tokens.size());
 
-    for (const auto & token : search_query->tokens)
+    if (query_builder.postings && query_builder.postings->cardinality() > 0)
     {
-        auto cursor_it = column_cursors.find(token);
-        if (cursor_it != column_cursors.end())
+        auto [it, inserted] = prebuilt_cursors.try_emplace(column_name);
+
+        if (inserted)
         {
-            cursor_map[token] = cursor_it->second;
-            continue;
+            TokenPostingsInfo prebuilt_info;
+            prebuilt_info.header = PostingsSerialization::Flags::EmbeddedPostings;
+            prebuilt_info.cardinality = static_cast<UInt32>(query_builder.postings->cardinality());
+            prebuilt_info.offsets = {0};
+            prebuilt_info.ranges = {{query_builder.postings->minimum(), query_builder.postings->maximum()}};
+            prebuilt_info.embedded_postings = std::make_shared<PostingList>(*query_builder.postings);
+
+            it->second = std::make_shared<PostingListCursor>(prebuilt_info);
         }
 
-        auto info_it = token_infos.find(token);
-        if (info_it == token_infos.end())
-        {
-            /// ALL mode: if any query token is missing, the intersection is empty.
-            if (search_query->search_mode == TextSearchMode::All)
-                return;
-            continue;
-        }
-
-        auto cursor = makeLazyCursor(token, *info_it->second);
-        column_cursors.emplace(token, cursor);
-        cursor_map[token] = std::move(cursor);
+        cursors.push_back(it->second);
     }
 
-    if (cursor_map.empty())
+    if (query_builder.has_large_postings)
+    {
+        auto & column_cursors = lazy_cursors[column_name];
+        cursors.reserve(query_builder.tokens.size() + 1);
+
+        for (const auto & [token, token_info] : query_builder.tokens)
+        {
+            if (!token_info->hasLargePostings())
+                continue;
+
+            auto [it, inserted] = column_cursors.try_emplace(token);
+
+            if (inserted)
+                it->second = makeLazyCursor(token, *token_info);
+
+            cursors.push_back(it->second);
+        }
+    }
+
+    if (cursors.empty())
         return;
 
     if (search_query->search_mode == TextSearchMode::Any)
-        lazyUnionPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows);
+        lazyUnionPostingLists(column, cursors, old_size, row_offset, num_rows);
     else if (search_query->search_mode == TextSearchMode::All)
-        lazyIntersectPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows, lazy_density_threshold);
+        lazyIntersectPostingLists(column, cursors, old_size, row_offset, num_rows, lazy_density_threshold);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }
@@ -837,6 +840,7 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
     if (it != granules.end() && it->second)
     {
         lazy_cursors.clear();
+        prebuilt_cursors.clear();
         postings_blocks.clear();
         setIndexGranule(it->second);
     }

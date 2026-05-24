@@ -141,6 +141,12 @@ private:
     /// hold mutable segment/block position, so they must not be shared across columns.
     /// Cleared on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
     absl::flat_hash_map<String, absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
+
+    /// Per-column synthetic cursor that wraps `query_builder.postings` (the analyzer-folded
+    /// OR/AND of all embedded and single-block tokens). Combined alongside large-posting
+    /// stream cursors so small tokens contribute via one already-decoded bitmap instead of
+    /// one stream cursor per token. Cleared on the same triggers as `lazy_cursors`.
+    absl::flat_hash_map<String, PostingListCursorPtr> prebuilt_cursors;
 };
 
 }
