@@ -88,100 +88,66 @@ void collectSpatialFiltersConjunctive(
         result.push_back(std::move(*filter));
 }
 
-/// Extract bbox from a Field, recursing through nested Array(Tuple) structures
-/// until reaching the base tuple points. Handles Array(Tuple) for rings,
-/// Array(Array(Tuple)) for polygons-with-holes, and Array(Array(Array(Tuple)))
-/// for multipolygons.
-static bool extractBboxFromField(const Field & field, BboxAccumulator & acc)
+/// Extract bbox from a single Field value (not a column).
+/// Handles Tuple (native geometry points), Array (nested geometry collections),
+/// and String (WKB-encoded geometry).
+static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc)
 {
-    /// Handle ColumnConst — unwrap to get the underlying data column.
-    if (field.type() == Field::Types::ColumnConst)
+    const auto type = field.getType();
+
+    /// Tuple(Float64, Float64) — a single point.
+    if (type == Field::Types::Tuple)
     {
-        return extractBboxFromField(*field.safeGet<ColumnPtr>().get(), acc);
+        const auto & tuple = field.safeGet<Tuple>();
+        if (tuple.size() >= 2)
+        {
+            if (tuple[0].getType() == Field::Types::Float64 && tuple[1].getType() == Field::Types::Float64)
+                acc.add(tuple[0].safeGet<Float64>(), tuple[1].safeGet<Float64>());
+        }
+        return acc.found;
     }
 
-    /// Handle ColumnTuple — extract point coordinates.
-    if (field.type() == Field::Types::Column)
+    /// Array — recurse into each element.
+    if (type == Field::Types::Array)
     {
-        const IColumn & col = *field.safeGet<ColumnPtr>();
+        const auto & array = field.safeGet<Array>();
+        for (const auto & elem : array)
+            extractBboxFromFieldValue(elem, acc);
+        return acc.found;
+    }
 
-        /// Unwrap ColumnConst if needed (SQL literals are ColumnConst).
-        const IColumn * col_ptr = &col;
-        if (const auto * const_col = typeid_cast<const ColumnConst *>(&col))
-            col_ptr = &const_col->getDataColumn();
-
-        /// Base case: Tuple(Float64, Float64) — a single point.
-        if (const auto * tuple_col = typeid_cast<const ColumnTuple *>(col_ptr))
+    /// String — try WKB parsing.
+    if (type == Field::Types::String)
+    {
+        auto sv = field.safeGet<String>();
+        ReadBufferFromMemory buf(sv.data(), sv.size());
+        try
         {
-            if (tuple_col->tupleSize() >= 2)
+            auto geo = parseWKBFormat(buf);
+            std::visit([&]<typename T>(const T & g)
             {
-                const auto * x_col = typeid_cast<const ColumnFloat64 *>(&tuple_col->getColumn(0));
-                const auto * y_col = typeid_cast<const ColumnFloat64 *>(&tuple_col->getColumn(1));
-                if (x_col && y_col && !x_col->empty())
-                    acc.add(x_col->getData()[0], y_col->getData()[0]);
-            }
-            return acc.found;
+                if constexpr (std::is_same_v<T, CartesianPoint>)
+                    acc.add(g.x(), g.y());
+                else if constexpr (std::is_same_v<T, LineString<CartesianPoint>>)
+                    acc.addAll(g);
+                else if constexpr (std::is_same_v<T, Polygon<CartesianPoint>>)
+                    acc.addAll(g.outer());
+                else if constexpr (std::is_same_v<T, MultiLineString<CartesianPoint>>)
+                    for (const auto & ls : g)
+                        acc.addAll(ls);
+                else if constexpr (std::is_same_v<T, MultiPolygon<CartesianPoint>>)
+                    for (const auto & poly : g)
+                        acc.addAll(poly.outer());
+                else
+                    static_assert(!sizeof(T), "Unhandled geometry type — add a case here");
+            }, geo);
         }
-
-        /// Recursive case: Array of something — recurse into the data column.
-        if (const auto * arr_col = typeid_cast<const ColumnArray *>(col_ptr))
+        catch (...)
         {
-            const auto & offsets = arr_col->getOffsets();
-            const IColumn & nested = arr_col->getData();
-            size_t start = 0;
-            /// NOLINT: range-based for loop not applicable — we need consecutive offset pairs.
-            for (size_t i = 0; i < offsets.size(); ++i)
-            {
-                size_t next = offsets[i];
-                for (size_t j = start; j < next; ++j)
-                {
-                    Field elem;
-                    nested.get(j, elem);
-                    extractBboxFromField(elem, acc);
-                }
-                start = next;
-            }
-            return acc.found;
+            LOG_TRACE(getLogger("GeoBbox"), "Failed to parse WKB geometry for bbox extraction: {}", getCurrentExceptionMessage(false));
+            return false;
         }
-
-        /// WKB String case.
-        if (const auto * str_col = typeid_cast<const ColumnString *>(col_ptr))
-        {
-            if (!str_col->empty())
-            {
-                auto sv = str_col->getDataAt(0);
-                ReadBufferFromMemory buf(sv.data(), sv.size());
-                try
-                {
-                    auto geo = parseWKBFormat(buf);
-                    std::visit([&]<typename T>(const T & g)
-                    {
-                        if constexpr (std::is_same_v<T, CartesianPoint>)
-                            acc.add(g.x(), g.y());
-                        else if constexpr (std::is_same_v<T, LineString<CartesianPoint>>)
-                            acc.addAll(g);
-                        else if constexpr (std::is_same_v<T, Polygon<CartesianPoint>>)
-                            acc.addAll(g.outer());
-                        else if constexpr (std::is_same_v<T, MultiLineString<CartesianPoint>>)
-                            for (const auto & ls : g)
-                                acc.addAll(ls);
-                        else if constexpr (std::is_same_v<T, MultiPolygon<CartesianPoint>>)
-                            for (const auto & poly : g)
-                                acc.addAll(poly.outer());
-                        else
-                            static_assert(!sizeof(T), "Unhandled geometry type — add a case here");
-                    }, geo);
-                }
-                catch (...)
-                {
-                    LOG_TRACE(getLogger("GeoBbox"), "Failed to parse WKB geometry for bbox extraction: {}", getCurrentExceptionMessage(false));
-                    return false;
-                }
-            }
-            return acc.found;
-        }
-
-        return false;
+        return acc.found;
     }
 
     return false;
@@ -198,12 +164,29 @@ inline bool tryExtractBboxFromColumn(
 {
     BboxAccumulator acc;
 
-    ColumnPtr col_ptr = std::make_shared<IColumn>(&col);
-    /// Actually, we need to wrap the const reference properly.
-    /// The caller passes a ColumnPtr or a raw column — use Field to handle it.
-    Field field(col_ptr);
-    if (!extractBboxFromField(field, acc))
-        return false;
+    /// Unwrap ColumnConst to get the underlying data column.
+    const IColumn * data_col = &col;
+    if (const auto * const_col = typeid_cast<const ColumnConst *>(&col))
+        data_col = &const_col->getDataColumn();
+
+    /// Single-element column: extract the field value at index 0.
+    if (data_col->size() == 1)
+    {
+        Field field;
+        data_col->get(0, field);
+        if (!extractBboxFromFieldValue(field, acc))
+            return false;
+    }
+    else
+    {
+        /// Multi-element column: iterate all rows.
+        for (size_t i = 0; i < data_col->size(); ++i)
+        {
+            Field field;
+            data_col->get(i, field);
+            extractBboxFromFieldValue(field, acc);
+        }
+    }
 
     xmin = acc.xmin;
     ymin = acc.ymin;
