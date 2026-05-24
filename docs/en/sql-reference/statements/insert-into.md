@@ -169,6 +169,35 @@ INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
 
+## INSERT ... RETURNING {#insert-returning}
+
+**Syntax**
+
+For `INSERT VALUES` and `INSERT FORMAT`, the `RETURNING` clause must appear before the data clause:
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] RETURNING (SELECT ...) VALUES ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] RETURNING (SELECT ...) FORMAT format_name data_set
+```
+
+For `INSERT SELECT`, the `RETURNING` clause appears after the source query:
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ... RETURNING (SELECT ...)
+```
+
+The parenthesized subquery is required. The client receives a single result set: the result of the `RETURNING` subquery.
+
+The `INSERT` runs first using the normal insert pipeline. If the `INSERT` fails, the `RETURNING` subquery is not executed. If the `INSERT` succeeds, the subquery runs in the same session with the same settings. The subquery can reference any table and use the full `SELECT` grammar.
+
+This feature is **not atomic**. Concurrent writers can insert rows between the `INSERT` and the `RETURNING` subquery. Unlike PostgreSQL `RETURNING`, ClickHouse does not infer which rows were inserted by the current statement; the user must provide a subquery with filters that identify the desired rows (for example, a unique id or batch identifier).
+
+Limitations:
+
+- Not compatible with `async_insert=1`.
+- On `Replicated` tables, the `RETURNING` subquery may read from a replica that has not yet received the insert. Use `select_sequential_consistency=1` and `insert_quorum` when read-your-own-writes semantics are required.
+- If the `INSERT` succeeds but the `RETURNING` subquery fails, the inserted data is not rolled back.
+
 ## Inserting Data from a File {#inserting-data-from-a-file}
 
 **Syntax**

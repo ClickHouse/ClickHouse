@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -65,6 +66,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool async_insert;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -1040,6 +1042,16 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     BlockIO res;
+    if (query.returning_select)
+    {
+        if (async_insert || settings[Setting::async_insert])
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT ... RETURNING is not supported with async_insert=1");
+        }
+    }
+
     if (query.select)
     {
         if (settings[Setting::parallel_distributed_insert_select])
@@ -1073,6 +1085,9 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.pipeline = buildInsertPipeline(query, table);
     }
+
+    if (query.returning_select && !res.pipeline.pushing())
+        res.pipeline = buildInsertReturningPipeline(std::move(res.pipeline), query.returning_select, context);
 
     res.pipeline.addStorageHolder(table);
 

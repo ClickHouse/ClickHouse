@@ -50,6 +50,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -1519,6 +1520,13 @@ static BlockIO executeQueryImpl(
                 if (insert_table)
                     async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
             }
+
+            if (insert_query->returning_select && async_insert_enabled)
+            {
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "INSERT ... RETURNING is not supported with async_insert=1");
+            }
         }
 
         if (insert_query && insert_query->select)
@@ -2470,6 +2478,9 @@ void executeQuery(
         {
             auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
+
+            if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->returning_select)
+                pipeline = buildInsertReturningPipeline(std::move(pipeline), insert_query->returning_select, context);
         }
         else if (pipeline.pulling())
         {

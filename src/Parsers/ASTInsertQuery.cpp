@@ -104,6 +104,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         settings_ast->format(ostr, settings, state, frame);
     }
 
+    if (returning_select && !select)
+    {
+        ostr << settings.nl_or_ws << "RETURNING" << " (";
+        returning_select->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
+
     /// Compatibility for INSERT without SETTINGS to format in oneline, i.e.:
     ///
     ///     INSERT INTO foo VALUES
@@ -132,6 +139,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << delim
                 << "FORMAT" << " " << format;
+        }
+
+        if (returning_select)
+        {
+            ostr << settings.nl_or_ws << "RETURNING" << " (";
+            returning_select->format(ostr, settings, state, frame);
+            ostr << ")";
         }
     }
     else

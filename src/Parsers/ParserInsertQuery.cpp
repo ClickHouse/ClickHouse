@@ -36,6 +36,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_values(Keyword::VALUES);
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_returning(Keyword::RETURNING);
     ParserKeyword s_select(Keyword::SELECT);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
     ParserKeyword s_with(Keyword::WITH);
@@ -57,6 +58,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr select;
     ASTPtr table_function;
     ASTPtr settings_ast;
+    ASTPtr returning_select;
     ASTPtr partition_by_expr;
     ASTPtr compression;
     ASTPtr with_expression_list;
@@ -164,8 +166,30 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    auto try_parse_returning_subquery = [&]() -> bool
+    {
+        if (!s_returning.ignore(pos, expected))
+            return false;
+
+        if (!s_lparen.ignore(pos, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected opening round bracket after RETURNING");
+
+        ParserSelectWithUnionQuery select_p;
+        if (!select_p.parse(pos, returning_select, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected SELECT query in RETURNING clause");
+
+        if (!s_rparen.ignore(pos, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected closing round bracket after RETURNING subquery");
+
+        return true;
+    };
+
     String format_str;
     Pos before_values = pos;
+
+    /// For INSERT VALUES and INSERT FORMAT, RETURNING must appear before the data clause.
+    if (!infile)
+        try_parse_returning_subquery();
 
     /// VALUES or FORMAT or SELECT or WITH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
@@ -191,6 +215,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// If SELECT is defined (possibly in parentheses), return to position before select and parse
         /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
         pos = before_values;
+        returning_select.reset();
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
 
@@ -218,6 +243,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
+
+        /// For INSERT SELECT, RETURNING appears after the source SELECT.
+        try_parse_returning_subquery();
     }
     else if (!infile)
     {
@@ -322,6 +350,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
+    query->returning_select = returning_select;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = data ? end : nullptr;
@@ -330,6 +359,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (returning_select)
+        query->children.push_back(returning_select);
     if (settings_ast)
         query->children.push_back(settings_ast);
 

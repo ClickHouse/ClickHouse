@@ -1,0 +1,10 @@
+1	foo
+table after values returning
+1	foo
+2	1
+table after select returning
+2	bar
+10
+insert failure
+2
+async insert rejection
