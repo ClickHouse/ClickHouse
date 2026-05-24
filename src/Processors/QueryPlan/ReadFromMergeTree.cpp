@@ -2039,22 +2039,21 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
         const auto & sorting_key_reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
 
-        /// Find the first non-fixed sorting key column that is also a partition key column.
-        /// Fixed columns (constant due to WHERE) have the same value in every partition and
-        /// cannot distinguish partition order, so we skip them.
+        /// The partition-related column that drives partition ordering must be the very
+        /// first non-fixed sorting key column (i.e. at position `num_fixed`). If a
+        /// non-fixed sorting key column lies *before* the partition key column, the
+        /// global order is driven by that column instead, and ordering partitions by
+        /// the later partition key column would return wrong top-N results.
+        ///
+        /// Example: sorting key `(a, b)`, partition key `b`, query `ORDER BY a, b LIMIT 1`.
+        /// `a` is not fixed; ordering partitions by `b` produces a wrong top-1 because
+        /// the smallest `a` may live in a partition whose `b` range is not first.
         std::optional<size_t> minmax_col_index;
         bool partition_sort_key_reverse = false;
 
-        for (size_t sk = 0; sk < sorting_key_columns.size(); ++sk)
+        if (num_fixed < sorting_key_columns.size() && num_fixed < used_prefix)
         {
-            /// Only consider sorting key columns within the read-in-order prefix.
-            if (sk >= used_prefix)
-                break;
-
-            /// Skip fixed columns — they are constant and cannot order partitions.
-            if (sk < num_fixed)
-                continue;
-
+            const size_t sk = num_fixed;
             for (size_t mm = 0; mm < num_minmax_columns; ++mm)
             {
                 if (sorting_key_columns[sk] == minmax_column_names[mm])
@@ -2064,13 +2063,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     break;
                 }
             }
-            if (minmax_col_index)
-                break;
         }
 
         /// The partition-related column found above must satisfy:
-        /// 1) All columns before it are fixed (guaranteed by the search starting at num_fixed)
-        /// 2) It's within the read-in-order prefix (guaranteed by the search stopping at used_prefix)
+        /// 1) All columns before it are fixed (guaranteed by the check at `sk == num_fixed`)
+        /// 2) It's within the read-in-order prefix (guaranteed by `num_fixed < used_prefix`)
         /// 3) The minmax bounds for this column were collected from a valid minmax index
         ///    in every partition. If any partition lacks the index (or its hyperrectangle
         ///    is shorter than `mm_idx`), the bounds stay default-constructed, which would
