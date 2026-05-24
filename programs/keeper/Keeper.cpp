@@ -364,6 +364,8 @@ try
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
 
+    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
 
@@ -632,6 +634,7 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             updateLevels(config(), logger());
+            KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
 
             if (config().has("keeper_server"))
                 global_context->updateKeeperConfiguration(config());
@@ -673,7 +676,7 @@ try
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperDispatcher(current_connections == 0);
+        global_context->shutdownKeeperDispatcher();
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

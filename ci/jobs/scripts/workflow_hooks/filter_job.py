@@ -17,6 +17,7 @@ def only_docs(changed_files):
             file.startswith("docs/")
             or file.startswith("docker/docs")
             or file.endswith(".md")
+            or "aspell-dict.txt" in file
         ):
             continue
         else:
