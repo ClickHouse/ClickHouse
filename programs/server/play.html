@@ -3221,10 +3221,10 @@ async function postMulti(posted_request_num, parsed)
 async function restoreFromHistory(state) {
     clear();
     query_area.value = state.query;
+    query_area.dispatchEvent(new Event('input'));
     resultEl.queryText = state.query;
 
     /// Restore query parameter inputs and their values.
-    resizeQueryAreaIfSlightlyOverflowing();
     await updateQueryParams();
     if (state.params)
     {
@@ -3311,6 +3311,7 @@ window.onpopstate = function(event) {
 
 if (window.location.hash) {
     query_area.value = fromBase64(window.location.hash.substr(1));
+    query_area.dispatchEvent(new Event('input'));
 }
 
 let in_flight = false;
