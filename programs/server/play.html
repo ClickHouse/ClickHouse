@@ -4164,8 +4164,6 @@ function setParamValues(values)
 
 async function updateQueryParams()
 {
-    resizeQueryAreaIfSlightlyOverflowing();
-
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
     {
         return;
@@ -4273,6 +4271,8 @@ async function updateQueryParams()
 
 query_area.addEventListener('input', () =>
 {
+    resizeQueryAreaIfSlightlyOverflowing();
+
     /// Run the update synchronously instead of with a setTimeout: the heavy work
     /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
     /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
