@@ -4,7 +4,6 @@
 #include <utility>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadSettings.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include "config.h"
 
@@ -26,9 +25,11 @@ public:
     explicit AsynchronousBoundedReadBuffer(
         ImplPtr impl_,
         IAsynchronousReader & reader_,
-        const ReadSettings & settings_,
         size_t buffer_size_,
         size_t min_bytes_for_seek_,
+        Priority priority_,
+        size_t page_cache_block_size_,
+        bool enable_prefetches_log_,
         AsyncReadCountersPtr async_read_counters_ = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
 
@@ -61,7 +62,9 @@ public:
 
 private:
     const ImplPtr impl;
-    const ReadSettings read_settings;
+    const Priority base_priority;
+    const size_t page_cache_block_size;
+    const bool enable_prefetches_log;
     size_t buffer_size;
     const size_t min_bytes_for_seek;
     const String file_name;
