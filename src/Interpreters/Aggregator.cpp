@@ -495,6 +495,26 @@ ColumnRawPtrs makeRawKeyColumns(const Columns & columns, size_t keys_size)
     return key_columns;
 }
 
+/// Extract raw key column pointers from partially aggregated columns, materializing `ColumnConst` keys.
+ColumnRawPtrs makeRawKeyColumnsForMerging(const Columns & columns, size_t keys_size, Columns & materialized_key_columns)
+{
+    ColumnRawPtrs key_columns(keys_size);
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        const auto & column = columns[i];
+        if (isColumnConst(*column))
+        {
+            materialized_key_columns.push_back(column->convertToFullColumnIfConst());
+            key_columns[i] = materialized_key_columns.back().get();
+        }
+        else
+        {
+            key_columns[i] = column.get();
+        }
+    }
+    return key_columns;
+}
+
 /// Extract aggregate column data from columns with fixed layout (aggregates at positions keys_size..keys_size+aggregates_size-1).
 Aggregator::AggregateColumnsConstData makeAggregateColumnsData(const Columns & columns, size_t keys_size, size_t aggregates_size)
 {
@@ -3287,7 +3307,11 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * arena_for_keys) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = makeAggregateColumnsData(columns, params.keys_size, params.aggregates_size);
-    ColumnRawPtrs key_columns = makeRawKeyColumns(columns, params.keys_size);
+
+    /// Partially aggregated blocks can pass through expressions or filters before `MergingAggregated`.
+    /// Numeric merge methods read key columns through raw data, so `ColumnConst` keys must be materialized here.
+    Columns materialized_key_columns;
+    ColumnRawPtrs key_columns = makeRawKeyColumnsForMerging(columns, params.keys_size, materialized_key_columns);
 
     mergeStreamsImpl<Method, Table>(
         aggregates_pool,
@@ -3904,7 +3928,8 @@ std::vector<Aggregator::AggregatedChunk> Aggregator::convertBlockToTwoLevel(cons
 
     AggregatedDataVariants data;
 
-    ColumnRawPtrs key_columns = makeRawKeyColumns(columns, params.keys_size);
+    Columns materialized_key_columns;
+    ColumnRawPtrs key_columns = makeRawKeyColumnsForMerging(columns, params.keys_size, materialized_key_columns);
 
     AggregatedDataVariants::Type type = method_chosen;
     data.keys_size = params.keys_size;
