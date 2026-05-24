@@ -330,10 +330,19 @@ struct MinMaxProjectionCandidate
     Block block;
 };
 
+/// Column statistics projection candidate for aggregation optimization.
+/// This is used when min/max aggregates can be answered from per-column
+/// `StatisticsMinMax` metadata without reading index files.
+struct ColumnStatisticsProjectionCandidate
+{
+    Block block;
+};
+
 struct AggregateProjectionCandidates
 {
     std::vector<AggregateProjectionCandidate> real;
     std::optional<MinMaxProjectionCandidate> minmax_projection;
+    std::optional<ColumnStatisticsProjectionCandidate> column_statistics_projection;
 
     /// This flag means that DAG for projection candidate should be used in FilterStep.
     bool has_filter = false;
@@ -341,6 +350,75 @@ struct AggregateProjectionCandidates
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
 };
+
+/// Build a part-level DAG containing partition key expressions and virtual columns.
+/// This is used to check whether filter and GROUP BY keys can be resolved at the part level.
+static ActionsDAG buildPartLevelDAG(const StorageMetadataPtr & metadata, const Block & virtual_columns_block)
+{
+    ActionsDAG part_level_dag;
+    if (metadata->hasPartitionKey())
+    {
+        const auto & partition_key = metadata->getPartitionKey();
+        if (partition_key.expression)
+            part_level_dag = partition_key.expression->getActionsDAG().clone();
+    }
+
+    for (const auto & col : virtual_columns_block)
+    {
+        const auto * node = &part_level_dag.addInput(col.name, col.type);
+        part_level_dag.getOutputs().push_back(node);
+    }
+
+    return part_level_dag;
+}
+
+/// Result of checking whether GROUP BY keys and filter can be resolved at the part level.
+struct PartLevelResolutionResult
+{
+    bool valid = false;
+    MergeTreeData::GroupByKeyToPartitionIdx group_by_key_to_partition_idx;
+};
+
+/// Check whether GROUP BY keys map to partition keys and filter is deterministic,
+/// building the mapping from query key names to partition key indices.
+static PartLevelResolutionResult resolvePartLevelKeys(
+    const StorageMetadataPtr & metadata,
+    const Names & keys,
+    const DAGIndex & query_index,
+    const MatchedTrees::Matches & part_level_matches)
+{
+    PartLevelResolutionResult result;
+    result.valid = true;
+
+    if (!keys.empty() && metadata->hasPartitionKey())
+    {
+        const auto & partition_key = metadata->getPartitionKey();
+        std::unordered_map<String, size_t> partition_col_to_idx;
+        for (size_t i = 0; i < partition_key.column_names.size(); ++i)
+            partition_col_to_idx[partition_key.column_names[i]] = i;
+
+        for (const auto & key : keys)
+        {
+            auto it = query_index.find(key);
+            if (it != query_index.end())
+            {
+                auto match_it = part_level_matches.find(it->second);
+                if (match_it != part_level_matches.end() && match_it->second.node != nullptr)
+                {
+                    const String & partition_col_name = match_it->second.node->result_name;
+                    auto idx_it = partition_col_to_idx.find(partition_col_name);
+                    if (idx_it != partition_col_to_idx.end())
+                        result.group_by_key_to_partition_idx.emplace_back(key, idx_it->second);
+                }
+            }
+        }
+
+        if (result.group_by_key_to_partition_idx.size() != keys.size())
+            result.valid = false;
+    }
+
+    return result;
+}
 
 AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
@@ -419,7 +497,114 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         }
     }
 
-    if (!candidates.minmax_projection)
+    /// Try to use column statistics (StatisticsMinMax) for min/max aggregation.
+    if (!candidates.minmax_projection
+        && candidates.real.empty()
+        && (metadata->hasPartitionKey() || keys.empty()))
+    {
+        /// Only applicable when all aggregates are min or max
+        bool all_min_max = !aggregates.empty()
+            && std::all_of(aggregates.begin(), aggregates.end(), [](const AggregateDescription & agg)
+            {
+                const String & name = agg.function->getName();
+                return name == "min" || name == "max";
+            });
+
+        if (all_min_max)
+        {
+            /// Check filter and GROUP BY keys can be computed from part-level expressions
+            auto part_level_dag = buildPartLevelDAG(metadata, key_virtual_columns);
+
+            std::unordered_set<const ActionsDAG::Node *> part_level_nodes;
+            for (const auto * output : part_level_dag.getOutputs())
+                part_level_nodes.insert(output);
+
+            auto part_level_matches = matchTrees(part_level_dag.getOutputs(), *dag.dag, false /* check_monotonicity */);
+
+            auto [group_by_keys_valid, group_by_key_to_partition_idx]
+                = resolvePartLevelKeys(metadata, keys, query_index, part_level_matches);
+
+            if (group_by_keys_valid)
+            {
+                std::vector<const ActionsDAG::Node *> nodes_to_resolve;
+                if (dag.filter_node)
+                {
+                    if (VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
+                        nodes_to_resolve.push_back(dag.filter_node);
+                    else
+                        group_by_keys_valid = false;
+                }
+
+                for (const auto & key : keys)
+                {
+                    auto it = query_index.find(key);
+                    if (it != query_index.end())
+                        nodes_to_resolve.push_back(it->second);
+                }
+
+                if (group_by_keys_valid
+                    && (nodes_to_resolve.empty()
+                        || resolveMatchedInputs(part_level_matches, part_level_nodes, nodes_to_resolve)))
+                {
+                    /// Aggregate argument names from the analyzer may be qualified (e.g. `__table1.value`).
+                    /// Use matchTrees against an identity DAG of the physical inputs to resolve them.
+                    ActionsDAG inputs_dag;
+                    for (const auto * input : dag.dag->getInputs())
+                    {
+                        const auto & input_node = inputs_dag.addInput(input->result_name, input->result_type);
+                        inputs_dag.getOutputs().push_back(&input_node);
+                    }
+                    auto inputs_matches = matchTrees(inputs_dag.getOutputs(), *dag.dag, false /* check_monotonicity */);
+
+                    MergeTreeData::AggColumnToPhysicalName agg_col_to_physical_name;
+                    bool all_args_resolved = true;
+                    for (const auto & agg : aggregates)
+                    {
+                        if (agg.argument_names.empty())
+                        {
+                            all_args_resolved = false;
+                            break;
+                        }
+                        auto query_it = query_index.find(agg.argument_names[0]);
+                        if (query_it == query_index.end())
+                        {
+                            all_args_resolved = false;
+                            break;
+                        }
+                        auto match_it = inputs_matches.find(query_it->second);
+                        if (match_it == inputs_matches.end() || match_it->second.node == nullptr)
+                        {
+                            all_args_resolved = false;
+                            break;
+                        }
+                        agg_col_to_physical_name[agg.column_name] = match_it->second.node->result_name;
+                    }
+
+                    if (all_args_resolved)
+                    {
+                        auto block = reading.getMergeTreeData().getColumnStatisticsAggregationBlock(
+                            metadata,
+                            aggregates,
+                            agg_col_to_physical_name,
+                            group_by_key_to_partition_idx,
+                            dag.filter_node ? &*dag.dag : nullptr,
+                            reading.getParts(),
+                            max_added_blocks.get(),
+                            context);
+
+                        if (!block.empty())
+                        {
+                            ColumnStatisticsProjectionCandidate col_stats_candidate;
+                            col_stats_candidate.block = std::move(block);
+                            candidates.column_statistics_projection = std::move(col_stats_candidate);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!candidates.minmax_projection && !candidates.column_statistics_projection)
     {
         auto it = std::find_if(
             agg_projections.begin(),
@@ -578,7 +763,7 @@ std::optional<String> optimizeUseAggregateProjections(
     {
         best_candidate = &candidates.minmax_projection->candidate;
     }
-    else if (!candidates.real.empty() || !candidates.only_count_column.empty())
+    else if (!candidates.column_statistics_projection && (!candidates.real.empty() || !candidates.only_count_column.empty()))
     {
         parent_reading_select_result = reading->getAnalyzedResult();
         bool find_exact_ranges = !candidates.only_count_column.empty();
@@ -754,7 +939,7 @@ std::optional<String> optimizeUseAggregateProjections(
         if (!best_candidate && exact_count == 0)
             return {};
     }
-    else
+    else if (!candidates.column_statistics_projection)
     {
         return {};
     }
@@ -814,6 +999,20 @@ std::optional<String> optimizeUseAggregateProjections(
             pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(candidates.minmax_projection->block.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
+    }
+    else if (candidates.column_statistics_projection)
+    {
+        /// Column statistics aggregation optimization modifies ReadFromMergeTree to ReadFromPreparedSource.
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
+                std::make_shared<const Block>(std::move(candidates.column_statistics_projection->block))));
+        else
+            pipe = Pipe(std::make_shared<NullSource>(
+                std::make_shared<const Block>(candidates.column_statistics_projection->block.cloneEmpty())));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        has_parent_parts = false;
+        selected_projection_name = "_column_statistics_aggregation";
     }
     else if (best_candidate == nullptr)
     {

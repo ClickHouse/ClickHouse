@@ -10,6 +10,7 @@
 
 #include <Access/AccessControl.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
 #include <Backups/BackupEntriesCollector.h>
@@ -23,6 +24,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -98,6 +100,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/Increment.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -8817,6 +8820,103 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
     return false;
 }
 
+/// Result of filtering/pruning parts based on virtual columns, partition pruning, and minmax index conditions.
+struct PartsPruningResult
+{
+    Block virtual_columns_block;
+    size_t rows = 0;
+    ColumnPtr part_name_column;
+    std::optional<PartitionPruner> partition_pruner;
+    std::optional<KeyCondition> minmax_idx_condition;
+    DataTypes minmax_columns_types;
+    bool valid = true;  /// False if filtering resulted in zero rows
+
+    /// Check whether a part should be skipped due to pruning conditions.
+    bool shouldSkipPart(const DataPartPtr & part, const PartitionIdToMaxBlock * max_block_numbers_to_read) const
+    {
+        if (part->isEmpty())
+            return true;
+
+        if (!part->getMinMaxIndex()->initialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
+
+        if (max_block_numbers_to_read)
+        {
+            auto it = max_block_numbers_to_read->find(part->info.getPartitionId());
+            if (it == max_block_numbers_to_read->end() || part->info.max_block > it->second)
+                return true;
+        }
+
+        if (minmax_idx_condition
+            && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+            return true;
+
+        if (partition_pruner && partition_pruner->canBePruned(*part))
+            return true;
+
+        return false;
+    }
+};
+
+/// Prepares parts pruning result for iterating over parts.
+static PartsPruningResult preparePartsPruning(
+    const MergeTreeData & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Names & required_columns,
+    const ActionsDAG * filter_dag,
+    const RangesInDataParts & parts,
+    ContextPtr query_context)
+{
+    PartsPruningResult result;
+
+    auto virtual_block = storage.getHeaderWithVirtualsForFilter(metadata_snapshot);
+    bool has_virtual_column
+        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
+
+    if (has_virtual_column || filter_dag)
+    {
+        result.virtual_columns_block = storage.getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
+        if (result.virtual_columns_block.rows() == 0)
+        {
+            result.valid = false;
+            return result;
+        }
+    }
+
+    result.rows = parts.size();
+
+    if (filter_dag)
+    {
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            const auto & partition_key = metadata_snapshot->getPartitionKey();
+            const auto data_settings = storage.getSettings();
+            auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings);
+            result.minmax_columns_types = minmax_columns.getTypes();
+
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            const auto & query_settings = query_context->getSettingsRef();
+            result.minmax_idx_condition.emplace(
+                inverted_dag, query_context, minmax_columns.getNames(),
+                MergeTreeData::getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context)),
+                /* single_point_ = */ false,
+                /* skip_analysis_ = */ !query_settings[Setting::use_partition_pruning] || !query_settings[Setting::use_skip_indexes]);
+            result.partition_pruner.emplace(
+                metadata_snapshot, inverted_dag, query_context,
+                false /* strict */, !query_settings[Setting::use_partition_pruning]);
+        }
+
+        const auto * predicate = filter_dag->getOutputs().at(0);
+        VirtualColumnUtils::filterBlockWithPredicate(
+            predicate, result.virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
+
+        result.rows = result.virtual_columns_block.rows();
+        result.part_name_column = result.virtual_columns_block.getByName("_part").column;
+    }
+
+    return result;
+}
+
 Block MergeTreeData::getMinMaxCountProjectionBlock(
     const StorageMetadataPtr & metadata_snapshot,
     const Names & required_columns,
@@ -8859,103 +8959,27 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         column.insertFrom(place);
     };
 
-    Block virtual_columns_block;
-    auto virtual_block = getHeaderWithVirtualsForFilter(metadata_snapshot);
-    bool has_virtual_column
-        = std::any_of(required_columns.begin(), required_columns.end(), [&](const auto & name) { return virtual_block.has(name); });
-    if (has_virtual_column || filter_dag)
-    {
-        virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts, /*ignore_empty=*/true);
-        if (virtual_columns_block.rows() == 0)
-            return {};
-    }
-
-    size_t rows = parts.size();
-    ColumnPtr part_name_column;
-    std::optional<PartitionPruner> partition_pruner;
-    std::optional<KeyCondition> minmax_idx_condition;
-    DataTypes minmax_columns_types;
-    if (filter_dag)
-    {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-        const auto data_settings = getSettings();
-
-        if (auto minmax_columns = getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
-        {
-            minmax_columns_types = minmax_columns.getTypes();
-
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
-            const auto & query_settings = query_context->getSettingsRef();
-
-            minmax_idx_condition.emplace(
-                inverted_dag, query_context, minmax_columns.getNames(),
-                getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context)),
-                /*single_point_=*/false,
-                /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning] || !query_settings[Setting::use_skip_indexes]);
-        }
-
-        if (metadata_snapshot->hasPartitionKey())
-        {
-            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
-            const auto & query_settings = query_context->getSettingsRef();
-
-            partition_pruner.emplace(
-                metadata_snapshot,
-                inverted_dag,
-                query_context,
-                /*strict=*/false,
-                /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning]);
-        }
-
-        const auto * predicate = filter_dag->getOutputs().at(0);
-
-        // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(
-            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
-
-        rows = virtual_columns_block.rows();
-        part_name_column = virtual_columns_block.getByName("_part").column;
-    }
+    auto pruning_result = preparePartsPruning(*this, metadata_snapshot, required_columns, filter_dag, parts, query_context);
+    if (!pruning_result.valid)
+        return {};
 
     auto filter_column = ColumnUInt8::create();
     auto & filter_column_data = filter_column->getData();
 
     DataPartsVector real_parts;
-    real_parts.reserve(rows);
-    for (size_t row = 0, part_idx = 0; row < rows; ++row, ++part_idx)
+    real_parts.reserve(pruning_result.rows);
+    for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
     {
-        if (part_name_column)
+        if (pruning_result.part_name_column)
         {
-            while (parts[part_idx].data_part->name != part_name_column->getDataAt(row))
+            while (parts[part_idx].data_part->name != pruning_result.part_name_column->getDataAt(row))
                 ++part_idx;
         }
 
         const auto & part = parts[part_idx].data_part;
 
-        if (part->isEmpty())
+        if (pruning_result.shouldSkipPart(part, max_block_numbers_to_read))
             continue;
-
-        if (!part->getMinMaxIndex()->initialized)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
-
-        filter_column_data.emplace_back();
-
-        if (max_block_numbers_to_read)
-        {
-            auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
-            if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
-                continue;
-        }
-
-        if (minmax_idx_condition
-            && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-            continue;
-
-        if (partition_pruner)
-        {
-            if (partition_pruner->canBePruned(*part))
-                continue;
-        }
 
         /// It's extremely rare that some parts have final marks while others don't. To make it
         /// straightforward, disable minmax_count projection when `max(pk)' encounters any part with
@@ -8971,9 +8995,9 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         return {};
 
     FilterDescription filter(*filter_column);
-    for (size_t i = 0; i < virtual_columns_block.columns(); ++i)
+    for (size_t i = 0; i < pruning_result.virtual_columns_block.columns(); ++i)
     {
-        ColumnPtr & column = virtual_columns_block.safeGetByPosition(i).column;
+        ColumnPtr & column = pruning_result.virtual_columns_block.safeGetByPosition(i).column;
         column = column->filter(*filter.data, -1);
     }
 
@@ -9055,8 +9079,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     Block res;
     for (const auto & name : required_columns)
     {
-        if (virtual_columns_block.has(name))
-            res.insert(virtual_columns_block.getByName(name));
+        if (pruning_result.virtual_columns_block.has(name))
+            res.insert(pruning_result.virtual_columns_block.getByName(name));
         else if (block.has(name))
             res.insert(block.getByName(name));
         else if (startsWith(name, "count")) // special case to match count(...) variants
@@ -9072,6 +9096,256 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     }
 
     return res;
+}
+
+/// Info about an aggregate result column produced by column statistics optimization.
+struct AggResultColumnInfo
+{
+    String col_name;
+    DataTypePtr data_type;
+    MutableColumnPtr column;
+    AggregateFunctionPtr func;
+
+    /// For minmax index: whether this is min (true) or max (false)
+    bool is_min = false;
+};
+
+/// Build the result Block in the order of required_columns, consuming aggregate and key columns.
+static Block buildAggResultBlock(
+    const Names & required_columns,
+    const MergeTreeData::GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
+    std::unordered_map<String, MutableColumnPtr> & key_columns,
+    std::vector<AggResultColumnInfo> & agg_columns,
+    const KeyDescription & partition_key,
+    const PartsPruningResult & pruning_result)
+{
+    const bool has_group_by = !group_by_key_to_partition_idx.empty();
+
+    std::unordered_map<String, AggResultColumnInfo *> agg_col_map;
+    for (auto & agg_col : agg_columns)
+        agg_col_map[agg_col.col_name] = &agg_col;
+
+    std::unordered_map<String, size_t> key_to_partition_idx;
+    for (const auto & [key_name, partition_idx] : group_by_key_to_partition_idx)
+        key_to_partition_idx[key_name] = partition_idx;
+
+    Block result;
+    for (const auto & col_name : required_columns)
+    {
+        /// Try aggregate columns first
+        auto agg_it = agg_col_map.find(col_name);
+        if (agg_it != agg_col_map.end())
+        {
+            auto & agg_col = *agg_it->second;
+            auto agg_type = std::make_shared<DataTypeAggregateFunction>(agg_col.func, DataTypes{agg_col.data_type}, agg_col.func->getParameters());
+            result.insert({std::move(agg_col.column), agg_type, col_name});
+            continue;
+        }
+
+        /// Try GROUP BY key columns
+        auto key_it = key_columns.find(col_name);
+        if (key_it != key_columns.end())
+        {
+            size_t partition_idx = key_to_partition_idx.at(col_name);
+            result.insert({std::move(key_it->second), partition_key.data_types[partition_idx], col_name});
+            continue;
+        }
+
+        /// Try virtual columns (only when there is no GROUP BY)
+        if (!has_group_by && pruning_result.virtual_columns_block.has(col_name))
+        {
+            result.insert(pruning_result.virtual_columns_block.getByName(col_name));
+            continue;
+        }
+
+        return {};
+    }
+
+    return result;
+}
+
+/// Insert a single scalar value into an aggregate function column.
+static void insertAggValue(ColumnAggregateFunction & column, const Field & value)
+{
+    auto func = column.getAggregateFunction();
+    Arena & arena = column.createOrGetArena();
+    auto * place = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
+    func->create(place);
+    auto value_column = func->getArgumentTypes().front()->createColumnConst(1, value)->convertToFullColumnIfConst();
+    const auto * value_column_ptr = value_column.get();
+    func->add(place, &value_column_ptr, 0, &arena);
+    column.insertFrom(place);
+    /// Destroy the temporary state: insertFrom merges into a new state owned by the column,
+    /// but does not take ownership of `place`.
+    if (!func->hasTrivialDestructor())
+        func->destroy(place);
+}
+
+Block MergeTreeData::getColumnStatisticsAggregationBlock(
+    const StorageMetadataPtr & metadata_snapshot,
+    const AggregateDescriptions & aggregate_descriptions,
+    const AggColumnToPhysicalName & agg_col_to_physical_name,
+    const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
+    const ActionsDAG * filter_dag,
+    const RangesInDataParts & parts,
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    ContextPtr query_context) const
+{
+    const bool has_group_by = !group_by_key_to_partition_idx.empty();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto & columns_desc = metadata_snapshot->getColumns();
+
+    /// Only support min() and max() aggregate functions
+    for (const auto & agg_desc : aggregate_descriptions)
+    {
+        const String & func_name = agg_desc.function->getName();
+        if (func_name != "min" && func_name != "max")
+        {
+            LOG_TRACE(log, "Column statistics aggregation: unsupported function '{}', only min/max supported", func_name);
+            return {};
+        }
+    }
+
+    /// Check all aggregate argument columns have StatisticsMinMax configured.
+    for (const auto & agg_desc : aggregate_descriptions)
+    {
+        auto name_it = agg_col_to_physical_name.find(agg_desc.column_name);
+        if (name_it == agg_col_to_physical_name.end())
+        {
+            LOG_TRACE(log, "Column statistics aggregation: aggregate column '{}' has no physical name mapping", agg_desc.column_name);
+            return {};
+        }
+        const String & physical_name = name_it->second;
+        if (!columns_desc.has(physical_name))
+        {
+            LOG_TRACE(log, "Column statistics aggregation: column '{}' not found in schema", physical_name);
+            return {};
+        }
+        const auto & col_desc = columns_desc.get(physical_name);
+        if (!col_desc.statistics.types_to_desc.contains(StatisticsType::MinMax))
+        {
+            LOG_TRACE(log, "Column statistics aggregation: column '{}' has no MinMax statistics configured", physical_name);
+            return {};
+        }
+    }
+
+    /// Build required_columns: GROUP BY keys + aggregate column names
+    Names required_columns;
+    for (const auto & [query_key_name, _] : group_by_key_to_partition_idx)
+        required_columns.push_back(query_key_name);
+    for (const auto & agg : aggregate_descriptions)
+        required_columns.push_back(agg.column_name);
+
+    auto pruning_result = preparePartsPruning(*this, metadata_snapshot, required_columns, filter_dag, parts, query_context);
+    if (!pruning_result.valid)
+        return {};
+
+    /// For each aggregate column, build an AggResultColumnInfo
+    std::vector<AggResultColumnInfo> agg_columns;
+    for (const auto & agg_desc : aggregate_descriptions)
+    {
+        const String & func_name = agg_desc.function->getName();
+        const DataTypePtr data_type = agg_desc.function->getArgumentTypes().front();
+
+        AggregateFunctionProperties properties;
+        auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {data_type}, {}, properties);
+        agg_columns.push_back({agg_desc.column_name, data_type, ColumnAggregateFunction::create(func), func, func_name == "min"});
+    }
+
+    /// Aggregate per-partition min/max values using column statistics from each part
+    /// Key: partition_id (or empty string if no GROUP BY)
+    std::unordered_map<String, std::pair<Row, std::unordered_map<String, std::pair<Field, Field>>>> partition_minmax;
+
+    for (size_t row = 0, part_idx = 0; row < pruning_result.rows; ++row, ++part_idx)
+    {
+        if (pruning_result.part_name_column)
+        {
+            while (parts[part_idx].data_part->name != pruning_result.part_name_column->getDataAt(row))
+                ++part_idx;
+        }
+
+        const auto & part = parts[part_idx].data_part;
+
+        if (pruning_result.shouldSkipPart(part, max_block_numbers_to_read))
+            continue;
+
+        const Estimates estimates = part->getEstimates();
+
+        const String agg_key = has_group_by ? part->info.getPartitionId() : String{};
+        auto & [partition_values, col_minmax] = partition_minmax[agg_key];
+        if (has_group_by && partition_values.empty())
+            partition_values = part->partition.value;
+
+        for (const auto & agg_col : agg_columns)
+        {
+            const String & arg_col_name = agg_col_to_physical_name.at(agg_col.col_name);
+            auto est_it = estimates.find(arg_col_name);
+            if (est_it == estimates.end()
+                || !est_it->second.estimated_min.has_value()
+                || !est_it->second.estimated_max.has_value())
+            {
+                /// Statistics not available for this part — fallback
+                LOG_TRACE(log, "Column statistics aggregation: part '{}' lacks MinMax statistics for column '{}'", part->name, arg_col_name);
+                return {};
+            }
+
+            const Field & part_min = *est_it->second.estimated_min;
+            const Field & part_max = *est_it->second.estimated_max;
+
+            auto & [cur_min, cur_max] = col_minmax[agg_col.col_name];
+            if (cur_min.isNull() || accurateLess(part_min, cur_min))
+                cur_min = part_min;
+            if (cur_max.isNull() || accurateLess(cur_max, part_max))
+                cur_max = part_max;
+        }
+    }
+
+    if (partition_minmax.empty())
+        return {};
+
+    /// Build aggregate columns from collected min/max values
+    std::unordered_map<String, MutableColumnPtr> key_columns;
+    for (const auto & [agg_key, partition_data] : partition_minmax)
+    {
+        const auto & [partition_values, col_minmax] = partition_data;
+
+        if (has_group_by)
+        {
+            for (const auto & [query_key_name, partition_idx] : group_by_key_to_partition_idx)
+            {
+                auto & col = key_columns[query_key_name];
+                if (!col)
+                    col = partition_key.data_types[partition_idx]->createColumn();
+                col->insert(partition_values[partition_idx]);
+            }
+        }
+
+        for (auto & agg_col : agg_columns)
+        {
+            auto minmax_it = col_minmax.find(agg_col.col_name);
+            if (minmax_it == col_minmax.end())
+            {
+                LOG_TRACE(log, "Column statistics aggregation: no min/max for column '{}' in partition, falling back", agg_col.col_name);
+                return {};
+            }
+            const Field & value = agg_col.is_min ? minmax_it->second.first : minmax_it->second.second;
+            if (value.isNull() || value.isPositiveInfinity())
+            {
+                LOG_TRACE(log, "Column statistics aggregation: NULL/infinity bound for column '{}', falling back", agg_col.col_name);
+                return {};
+            }
+            insertAggValue(assert_cast<ColumnAggregateFunction &>(*agg_col.column), value);
+        }
+    }
+
+    Block result = buildAggResultBlock(required_columns, group_by_key_to_partition_idx, key_columns, agg_columns, partition_key, pruning_result);
+    if (!result.columns())
+        return {};
+
+    LOG_DEBUG(log, "Column statistics aggregation optimization applied: {} partitions, {} aggregates",
+        partition_minmax.size(), agg_columns.size());
+
+    return result;
 }
 
 ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterSelectQuery & select)
