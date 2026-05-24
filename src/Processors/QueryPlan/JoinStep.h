@@ -43,6 +43,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    QueryPlanStepPtr clone() const override;
+
     const JoinPtr & getJoin() const { return join; }
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
     void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);

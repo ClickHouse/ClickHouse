@@ -326,6 +326,11 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     updateOutputHeader();
 }
 
+QueryPlanStepPtr JoinStep::clone() const
+{
+    return std::make_unique<JoinStep>(*this);
+}
+
 void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
 {
     join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
