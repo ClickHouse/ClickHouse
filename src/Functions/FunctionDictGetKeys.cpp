@@ -274,7 +274,7 @@ private:
         const size_t num_streams = pipe.numOutputPorts();
         auto processors = pipe.getProcessorsPtr();
 
-        std::vector<std::shared_ptr<DictGetKeysMatchingRowsSink>> sinks;
+        VectorWithMemoryTracking<std::shared_ptr<DictGetKeysMatchingRowsSink>> sinks;
         sinks.reserve(num_streams);
 
         /// Attach one sink to each reading output stream
