@@ -33,8 +33,8 @@ struct UserDefinedExecutableFunctionDriver
     String name;
     String create_command;
     String drop_command;
-    std::map<String, EngineArgument> engine_arguments;
-    std::map<String, String> env;
+    std::map<String, EngineArgument> engine_arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::map<String, String> env; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 using UserDefinedExecutableFunctionDriverPtr = std::shared_ptr<const UserDefinedExecutableFunctionDriver>;

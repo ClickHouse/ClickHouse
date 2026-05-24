@@ -32,18 +32,18 @@ public:
     /// Throws if the driver is not present.
     UserDefinedExecutableFunctionDriverPtr get(const String & driver_name) const;
 
-    std::vector<String> getAllRegisteredNames() const;
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Replaces all currently loaded drivers with definitions parsed from the passed configurations.
     /// Each AbstractConfiguration entry corresponds to one XML/YAML file with the format described
     /// in `UserDefinedExecutableFunctionDriver.h`.
-    void loadDriversFromConfigs(const std::vector<ConfigWithPath> & configs);
+    void loadDriversFromConfigs(const std::vector<ConfigWithPath> & configs); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     UserDefinedExecutableFunctionDriverRegistry() = default;
 
     mutable std::mutex mutex;
-    std::unordered_map<String, UserDefinedExecutableFunctionDriverPtr> drivers;
+    std::unordered_map<String, UserDefinedExecutableFunctionDriverPtr> drivers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 }

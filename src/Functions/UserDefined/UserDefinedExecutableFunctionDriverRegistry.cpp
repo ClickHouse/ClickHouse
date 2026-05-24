@@ -59,10 +59,10 @@ UserDefinedExecutableFunctionDriverPtr UserDefinedExecutableFunctionDriverRegist
         registered_names);
 }
 
-std::vector<String> UserDefinedExecutableFunctionDriverRegistry::getAllRegisteredNames() const
+std::vector<String> UserDefinedExecutableFunctionDriverRegistry::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     std::lock_guard lock(mutex);
-    std::vector<String> names;
+    std::vector<String> names; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     names.reserve(drivers.size());
     for (const auto & [name, _] : drivers)
         names.push_back(name);
@@ -122,9 +122,9 @@ namespace
 }
 
 void UserDefinedExecutableFunctionDriverRegistry::loadDriversFromConfigs(
-    const std::vector<ConfigWithPath> & configs)
+    const std::vector<ConfigWithPath> & configs) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::unordered_map<String, UserDefinedExecutableFunctionDriverPtr> new_drivers;
+    std::unordered_map<String, UserDefinedExecutableFunctionDriverPtr> new_drivers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     auto log = getLogger("UserDefinedExecutableFunctionDriverRegistry");
 

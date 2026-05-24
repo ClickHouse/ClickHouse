@@ -32,7 +32,7 @@ namespace
     struct DirectCommand
     {
         /// Arguments after `argv[0]`. The binary is always `ENV_BINARY`.
-        std::vector<String> arguments;
+        std::vector<String> arguments; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         String describe() const
         {
@@ -51,7 +51,7 @@ namespace
         const String & return_type,
         const String & args_signature,
         const String & working_directory,
-        const std::vector<std::pair<String, String>> & engine_argument_values)
+        const std::vector<std::pair<String, String>> & engine_argument_values) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         DirectCommand cmd;
 
@@ -170,7 +170,7 @@ String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
     const String & args_signature,
     const String & source_code,
     const String & working_directory,
-    const std::vector<std::pair<String, String>> & engine_argument_values)
+    const std::vector<std::pair<String, String>> & engine_argument_values) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if (driver.create_command.empty())
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
@@ -242,7 +242,7 @@ void UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
     const String & return_type,
     const String & args_signature,
     const String & working_directory,
-    const std::vector<std::pair<String, String>> & engine_argument_values)
+    const std::vector<std::pair<String, String>> & engine_argument_values) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if (driver.drop_command.empty())
         return;

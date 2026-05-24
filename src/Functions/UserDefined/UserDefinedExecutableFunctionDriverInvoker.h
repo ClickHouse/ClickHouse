@@ -31,7 +31,7 @@ struct UserDefinedExecutableFunctionDriverInvoker
         const String & args_signature,
         const String & source_code,
         const String & working_directory,
-        const std::vector<std::pair<String, String>> & engine_argument_values);
+        const std::vector<std::pair<String, String>> & engine_argument_values); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Invokes driver->drop_command if present. Mirrors runCreateCommand's argument layout
     /// but does not send anything on stdin.
@@ -41,7 +41,7 @@ struct UserDefinedExecutableFunctionDriverInvoker
         const String & return_type,
         const String & args_signature,
         const String & working_directory,
-        const std::vector<std::pair<String, String>> & engine_argument_values);
+        const std::vector<std::pair<String, String>> & engine_argument_values); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 }
