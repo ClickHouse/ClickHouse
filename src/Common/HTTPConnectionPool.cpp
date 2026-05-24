@@ -22,6 +22,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/RegularExpression.h>
 #include <Poco/Timespan.h>
 
 #include <climits>
@@ -835,7 +836,21 @@ private:
         /// connect failures: the failure belongs to the proxy path, not the target,
         /// and must not pessimize target-address resolver state or trigger DNS
         /// refreshes for the target host.
-        const bool retry_resolved_addresses = proxy_configuration.isEmpty();
+        ///
+        /// `Poco::Net::HTTPClientSession::reconnect` only takes the proxy path when
+        /// `!_proxyConfig.host.empty() && !bypassProxy()`. When `no_proxy_hosts`
+        /// matches the target host, `bypassProxy()` is true and Poco connects directly
+        /// to `_resolved_host`, so per-address retries and `setFail` pessimization
+        /// must apply just like the no-proxy case.
+        auto poco_proxy_config = proxy_configuration.isEmpty()
+            ? Poco::Net::HTTPClientSession::ProxyConfig{}
+            : proxyConfigurationToPocoProxyConfig(proxy_configuration);
+        const bool proxy_bypassed_for_host = !poco_proxy_config.nonProxyHosts.empty()
+            && Poco::RegularExpression::match(
+                host,
+                poco_proxy_config.nonProxyHosts,
+                Poco::RegularExpression::RE_CASELESS | Poco::RegularExpression::RE_ANCHORED);
+        const bool retry_resolved_addresses = proxy_configuration.isEmpty() || proxy_bypassed_for_host;
         const size_t connect_attempt_budget = retry_resolved_addresses ? max_connect_attempts : 1;
         const size_t resolve_iteration_budget = retry_resolved_addresses ? max_resolve_iterations : 1;
 
@@ -868,7 +883,7 @@ private:
 
             if (!proxy_configuration.isEmpty())
             {
-                connection->setProxyConfig(proxyConfigurationToPocoProxyConfig(proxy_configuration));
+                connection->setProxyConfig(poco_proxy_config);
             }
 
             connection->setResolvedHost(*address);
