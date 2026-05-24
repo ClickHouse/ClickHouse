@@ -828,7 +828,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             /// Mark that we're formatting an argument of this function (needed for IN operator parentheses)
             if (arguments->children.size() > 1)
                 nested_dont_need_parens.current_function = this;
-            argument->format(ostr, settings, state, nested_dont_need_parens);
+            /// When formatting in function-call form (operators disabled, e.g. `EXPLAIN SYNTAX`),
+            /// the function call's own `(arg1, arg2, ...)` parens already group each argument, so the
+            /// argument's own `parenthesized` flag would emit redundant parens like
+            /// `multiply((plus(1, 2)), 3)` for `(1 + 2) * 3`. Suppress them. We leave the normal
+            /// formatting path (`allow_operators = true`) unchanged so non-`EXPLAIN SYNTAX` queries
+            /// keep round-tripping the user's parens.
+            FormatStateStacked argument_frame = nested_dont_need_parens;
+            if (!frame.allow_operators)
+                argument_frame.wrapped_in_parens = true;
+            argument->format(ostr, settings, state, argument_frame);
         }
 
     }
