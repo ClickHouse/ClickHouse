@@ -1,0 +1,40 @@
+--- Populate cache with tag alpha ---
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+--- Cache entries after tag alpha ---
+1
+--- Same query with tag beta creates separate entry ---
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9
+--- DROP TAG alpha removes only alpha entries ---
+1
+--- DROP TAG beta removes remaining entries ---
+0
+--- Mutual exclusion: both flags reject early ---
+--- Correctness check ---
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+7	7
+8	8
+9	9

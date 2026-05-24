@@ -17,26 +17,26 @@ SELECT '--- First query populates cache ---';
 SELECT a, b FROM t_cache_before_limit WHERE a < 20 ORDER BY a LIMIT 5;
 
 SELECT '--- Cache has one entry ---';
-SELECT count() FROM system.query_cache;
+SELECT count() FROM system.query_cache SETTINGS use_query_cache = 0;
 
 SELECT '--- Same query, different LIMIT — should use cache ---';
 SELECT a, b FROM t_cache_before_limit WHERE a < 20 ORDER BY a LIMIT 10;
 
 SELECT '--- Cache still has exactly one entry ---';
-SELECT count() FROM system.query_cache;
+SELECT count() FROM system.query_cache SETTINGS use_query_cache = 0;
 
 SELECT '--- Same query, different ORDER BY direction — re-sorts cached data ---';
 SELECT a, b FROM t_cache_before_limit WHERE a < 20 ORDER BY a DESC LIMIT 5;
 
 SELECT '--- Different ORDER BY direction may create a second cache entry ---';
-SELECT count() >= 1 FROM system.query_cache;
+SELECT count() >= 1 FROM system.query_cache SETTINGS use_query_cache = 0;
 
 SELECT '--- Verify mutual exclusion: normal cache path is disabled ---';
 SYSTEM DROP QUERY CACHE;
 -- With query_cache_before_limit_and_order_by, queries without ORDER BY/LIMIT that
 -- have no SortingStep or LimitStep should not be cached at all
 SELECT count() FROM t_cache_before_limit SETTINGS enable_reads_from_query_cache = 0;
-SELECT count() FROM system.query_cache;
+SELECT count() FROM system.query_cache SETTINGS use_query_cache = 0;
 
 SELECT '--- Correctness check: results match non-cached execution ---';
 SYSTEM DROP QUERY CACHE;

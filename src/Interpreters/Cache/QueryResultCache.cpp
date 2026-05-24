@@ -612,7 +612,8 @@ QueryResultCache::Key::Key(
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_)
+    bool is_compressed_,
+    const String & tag_)
     : ast_hash(precomputed_hash)
     , header(header_)
     , user_id(user_id_)
@@ -623,7 +624,7 @@ QueryResultCache::Key::Key(
     , is_compressed(is_compressed_)
     , query_string("partial_result")
     , query_id(query_id_)
-    , tag("")
+    , tag(tag_)
     , is_subquery(false)
 {
 }
@@ -632,7 +633,8 @@ QueryResultCache::Key::Key(
     IASTHash precomputed_hash,
     const String & query_id_,
     std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
+    const std::vector<UUID> & current_user_roles_,
+    const String & tag_)
     : QueryResultCache::Key(
             precomputed_hash,
             std::make_shared<const Block>(Block{}),
@@ -642,7 +644,8 @@ QueryResultCache::Key::Key(
             false,
             std::chrono::system_clock::from_time_t(1),
             std::chrono::system_clock::from_time_t(1),
-            false)
+            false,
+            tag_)
 {
 }
 
@@ -1046,17 +1049,17 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     bool squash_partial_results,
     size_t max_block_size,
     size_t max_query_result_cache_size_in_bytes_quota,
-    size_t max_query_result_cache_entries_quota)
+    size_t max_query_result_cache_entries_quota,
+    size_t per_query_max_entry_size_in_bytes)
 {
-    /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
-    /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
-    /// users.xml change.
-    /// user_id == std::nullopt is the internal user for which no quota can be configured
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    size_t effective_max = max_entry_size_in_bytes;
+    if (per_query_max_entry_size_in_bytes > 0 && per_query_max_entry_size_in_bytes < effective_max)
+        effective_max = per_query_max_entry_size_in_bytes;
+    return QueryResultCacheWriter(cache, key, effective_max, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
 void QueryResultCache::clear(const std::optional<String> & tag)

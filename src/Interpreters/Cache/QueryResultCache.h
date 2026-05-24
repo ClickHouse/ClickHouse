@@ -137,12 +137,14 @@ public:
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            bool is_compressed,
+            const String & tag_);
 
         /// Read variant:
         Key(IASTHash precomputed_hash,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            const String & tag_);
 
         bool operator==(const Key & other) const;
     };
@@ -185,7 +187,8 @@ public:
         bool squash_partial_results,
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
-        size_t max_query_result_cache_entries_quota);
+        size_t max_query_result_cache_entries_quota,
+        size_t per_query_max_entry_size_in_bytes = 0);
 
     void clear(const std::optional<String> & tag);
 

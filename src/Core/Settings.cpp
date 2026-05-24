@@ -5595,6 +5595,11 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(UInt64, query_cache_partial_results_max_bytes, 0, R"(
+Maximum size in bytes of a single partial results cache entry. If the intermediate result exceeds this limit,
+it will not be cached. Only applies when `query_cache_partial_results` is enabled.
+A value of 0 means no per-query limit (the server-level `query_cache_max_entry_size_in_bytes` still applies).
+)", 0) \
     DECLARE(String, query_cache_tag, "", R"(
 A string which acts as a label for [query cache](../query-cache.md) entries.
 The same queries with different tags are considered different by the query cache.

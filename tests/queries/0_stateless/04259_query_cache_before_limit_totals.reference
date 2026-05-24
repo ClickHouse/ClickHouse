@@ -1,0 +1,18 @@
+--- WITH TOTALS: first query populates cache (cache miss) ---
+A	145
+B	155
+
+	465
+1
+--- WITH TOTALS: different LIMIT, cache hit — data rows correct, totals absent ---
+A	145
+B	155
+C	165
+--- Main result has exactly 3 data rows, not 4 (totals not leaked into main) ---
+1
+--- Correctness: non-cached WITH TOTALS ---
+A	145
+B	155
+C	165
+
+	465
