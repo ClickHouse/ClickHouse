@@ -602,7 +602,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (use_sharded_aggregation)
     {
         /// TODO(nihalzp): Compare perf against always choosing a power of two.
-        const size_t num_shards = transform_params->params.max_threads;
+        const size_t num_shards = max_threads;
         const size_t num_streams = pipeline.getNumStreams();
 
         /// Resolve key column positions for BufferedShardByHashTransform.
