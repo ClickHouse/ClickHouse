@@ -22,6 +22,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool extremes;
 }
 
 QueryPipeline buildInsertReturningPipeline(
@@ -59,7 +60,12 @@ QueryPipeline buildInsertReturningPipeline(
         return interpreter.buildQueryPipeline();
     };
 
-    Pipe pipe = createDelayedPipe(returning_header, std::move(creator), false, false);
+    /// Preserve totals/extremes streams from the trailing SELECT. If DelayedSource
+    /// omits a port that the inner pipeline produces, synchronizePorts drops it into NullSink.
+    const bool add_totals_port = true;
+    const bool add_extremes_port = context->getSettingsRef()[Setting::extremes];
+
+    Pipe pipe = createDelayedPipe(returning_header, std::move(creator), add_totals_port, add_extremes_port);
     return QueryPipeline(std::move(pipe));
 }
 

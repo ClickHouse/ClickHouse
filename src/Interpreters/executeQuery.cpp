@@ -1839,6 +1839,17 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
+
+                    if (const auto * insert_query = out_ast->as<ASTInsertQuery>())
+                    {
+                        if (insert_query->returning_select && res.pipeline.pushing())
+                        {
+                            auto pipe = getSourceFromASTInsertQuery(out_ast, true, res.pipeline.getHeader(), context, nullptr);
+                            res.pipeline.complete(std::move(pipe));
+                            res.pipeline = buildInsertReturningPipeline(std::move(res.pipeline), insert_query->returning_select, context);
+                        }
+                    }
+
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context))
@@ -2478,9 +2489,6 @@ void executeQuery(
         {
             auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
             pipeline.complete(std::move(pipe));
-
-            if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->returning_select)
-                pipeline = buildInsertReturningPipeline(std::move(pipeline), insert_query->returning_select, context);
         }
 
         if (pipeline.pulling())
