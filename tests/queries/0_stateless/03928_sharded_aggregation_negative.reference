@@ -1,7 +1,5 @@
 Base case: sharded aggregation is used
 1
-Aggregation in order enabled, takes precedence over sharded aggregation
-1
 No GROUP BY keys
 1
 UInt8 key (too low cardinality for sharding)
