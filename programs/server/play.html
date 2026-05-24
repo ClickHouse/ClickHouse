@@ -3224,7 +3224,8 @@ async function restoreFromHistory(state) {
     resultEl.queryText = state.query;
 
     /// Restore query parameter inputs and their values.
-    await updateQueryArea();
+    resizeQueryAreaIfSlightlyOverflowing();
+    await updateQueryParams();
     if (state.params)
     {
         setParamValues(state.params);
@@ -4267,7 +4268,7 @@ async function updateQueryParams()
     }
 }
 
-function updateQueryArea()
+query_area.addEventListener('input', () =>
 {
     resizeQueryAreaIfSlightlyOverflowing();
 
@@ -4278,10 +4279,8 @@ function updateQueryArea()
     /// would render one frame with the textarea's own text hidden (`color:
     /// transparent` from `.has-backdrop`) and the backdrop still showing the
     /// pre-edit contents, so the freshly typed characters would be invisible.
-    return updateQueryParams();
-}
-
-query_area.addEventListener('input', updateQueryArea);
+    updateQueryParams();
+});
 
 function setColorTheme(new_theme, update_preference) {
     theme = new_theme;
@@ -4318,7 +4317,8 @@ if (theme) {
 /// If run_immediately is set, run the query after params are ready.
 if (query_area.value)
 {
-    updateQueryArea().then(() =>
+    resizeQueryAreaIfSlightlyOverflowing();
+    updateQueryParams().then(() =>
     {
         const urlParamValues = {};
         for (const param of currentQueryParams)
