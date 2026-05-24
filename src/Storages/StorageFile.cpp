@@ -2963,7 +2963,13 @@ SinkToStoragePtr StorageFile::write(
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
                     if (write_disk)
                     {
-                        auto rel_pos = write_relative_path.find_first_of('.', write_relative_path.find_last_of('/'));
+                        /// For a disk-relative path the last `/` may be absent (file directly
+                        /// at the disk root). In that case start the extension search at the
+                        /// beginning of the string - otherwise `find_first_of('.', npos)`
+                        /// also returns `npos` and the numeric suffix lands after the
+                        /// extension (e.g. `data.csv.0` instead of `data.0.csv`).
+                        auto rel_slash = write_relative_path.find_last_of('/');
+                        auto rel_pos = write_relative_path.find_first_of('.', rel_slash == std::string::npos ? 0 : rel_slash);
                         new_relative_path = write_relative_path.substr(0, rel_pos) + "." + std::to_string(index)
                             + (rel_pos == std::string::npos ? "" : write_relative_path.substr(rel_pos));
                     }
