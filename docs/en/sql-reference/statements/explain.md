@@ -649,6 +649,46 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
+### EXPLAIN GRANT {#explain-grant}
+
+Simulates a `GRANT` or `REVOKE` statement and returns the resulting [`system.grants`](/operations/system-tables/grants) rows for each affected user or role, **without applying the change**. The schema of the result matches `system.grants` exactly.
+
+This is useful for tools that need to verify what a `GRANT` will produce — for example umbrella privileges like `CREATE` expand into `CREATE DATABASE`, `CREATE TABLE`, `CREATE VIEW`, `CREATE DICTIONARY`, and the caller does not have to know the expansion in advance.
+
+The same access checks as a real `GRANT` / `REVOKE` apply, so `EXPLAIN GRANT` cannot be used to observe the expansion of a privilege the caller could not actually grant.
+
+**Syntax**
+
+```sql
+EXPLAIN GRANT <grant-statement>
+EXPLAIN REVOKE <revoke-statement>
+```
+
+**Limitations**
+
+- Role grants of the form `GRANT some_role TO user` do not add any role-related rows to the output. Role memberships are stored separately from access rights, so the only rows returned for the grantee are the direct privilege grants the grantee already has — those remain in the post-state and continue to appear. Use [`system.role_grants`](/operations/system-tables/role_grants) to introspect role memberships.
+- `ON CLUSTER` is not supported — explanation is local-only.
+
+**Example**
+
+```sql
+CREATE USER tf_test;
+EXPLAIN GRANT CREATE ON foo.* TO tf_test FORMAT Pretty;
+```
+
+Result:
+
+```text
+   ┌─user_name─┬─role_name─┬─access_type───────┬─access_object─┬─database─┬─table─┬─column─┬─is_partial_revoke─┬─grant_option─┐
+1. │ tf_test   │ ᴺᵁᴸᴸ      │ CREATE DATABASE   │               │ foo      │ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ   │                 0 │            0 │
+2. │ tf_test   │ ᴺᵁᴸᴸ      │ CREATE TABLE      │               │ foo      │ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ   │                 0 │            0 │
+3. │ tf_test   │ ᴺᵁᴸᴸ      │ CREATE VIEW       │               │ foo      │ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ   │                 0 │            0 │
+4. │ tf_test   │ ᴺᵁᴸᴸ      │ CREATE DICTIONARY │               │ foo      │ ᴺᵁᴸᴸ  │ ᴺᵁᴸᴸ   │                 0 │            0 │
+   └───────────┴───────────┴───────────────────┴───────────────┴──────────┴───────┴────────┴───────────────────┴──────────────┘
+```
+
+`EXPLAIN REVOKE` works the same way and shows the post-revoke effective grants, including any `is_partial_revoke = 1` rows synthesised by partial revokes.
+
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Shows the result of a table override on a table schema accessed through a table function.

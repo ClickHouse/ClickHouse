@@ -512,6 +512,101 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     updateFromQuery(role, query);
 }
 
+
+void InterpreterGrantQuery::simulate(
+    const ASTPtr & query_ptr,
+    ContextPtr query_context,
+    const SimulationCallback & on_grantee)
+{
+    /// Reject `ON CLUSTER` on the *original* AST. `removeOnClusterClauseIfNeeded` rewrites
+    /// the cluster clause away when `ignore_on_cluster_for_replicated_access_entities_queries`
+    /// is enabled with replicated access storage — checking after the rewrite would silently
+    /// accept `ON CLUSTER` in that configuration. Explanation is strictly local.
+    if (const auto * original_grant = query_ptr->as<ASTGrantQuery>(); original_grant && !original_grant->cluster.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ON CLUSTER is not supported with EXPLAIN GRANT / EXPLAIN REVOKE — explanation is local-only");
+
+    const auto updated_query = removeOnClusterClauseIfNeeded(query_ptr, query_context);
+    auto & query = updated_query->as<ASTGrantQuery &>();
+
+    query.replaceCurrentUserTag(query_context->getUserName());
+    query.access_rights_elements.eraseNotGrantable();
+
+    if (!query.access_rights_elements.sameOptions())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
+    if (!query.access_rights_elements.empty() && query.access_rights_elements[0].is_partial_revoke && !query.is_revoke)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A partial revoke should be revoked, not granted");
+
+    const auto & access_control = query_context->getAccessControl();
+    auto current_user_access = query_context->getAccess();
+
+    /// Validate TABLE ENGINE parameter names if explicitly specified — same as `execute`.
+    for (const auto & element : query.access_rights_elements)
+    {
+        if (element.isGlobalWithParameter()
+            && (element.access_flags.getParameterType() == AccessFlags::TABLE_ENGINE)
+            && !element.anyParameter())
+        {
+            (void)StorageFactory::instance().getStorageFeatures(element.parameter);
+        }
+    }
+
+    std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, query_context->getUserID()}.getMatchingIDs(access_control);
+
+    AccessRightsElements elements_to_grant;
+    AccessRightsElements elements_to_revoke;
+    collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
+
+    std::vector<UUID> roles_to_grant;
+    RolesOrUsersSet roles_to_revoke;
+    collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
+
+    String current_database = query_context->getCurrentDatabase();
+    elements_to_grant.replaceEmptyDatabase(current_database);
+    elements_to_revoke.replaceEmptyDatabase(current_database);
+    query.access_rights_elements.replaceEmptyDatabase(current_database);
+
+    /// Mirror the access checks `execute` performs so that `EXPLAIN GRANT` cannot be used to
+    /// observe what a forbidden GRANT would produce (no privilege-escalation surface).
+    bool need_check_grantees_are_allowed = true;
+    if (!query.current_grants)
+        checkGrantOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, elements_to_grant, elements_to_revoke);
+
+    checkAdminOption(access_control, *current_user_access, grantees, need_check_grantees_are_allowed, roles_to_grant, roles_to_revoke, query.admin_option);
+
+    if (need_check_grantees_are_allowed)
+        current_user_access->checkGranteesAreAllowed(grantees);
+
+    AccessRights new_rights;
+    if (query.current_grants)
+        calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
+
+    /// Clone each grantee, apply the change in-memory, and report the post-state.
+    for (const auto & grantee_id : grantees)
+    {
+        auto entity = access_control.tryRead(grantee_id);
+        if (!entity)
+            continue;
+
+        auto clone = entity->clone();
+        if (query.current_grants)
+            grantCurrentGrants(*clone, new_rights, elements_to_revoke);
+        else
+            updateGrantedAccessRightsAndRoles(*clone, elements_to_grant, elements_to_revoke, roles_to_grant, roles_to_revoke, query.admin_option);
+
+        const AccessRights * access = nullptr;
+        if (auto * user_clone = typeid_cast<User *>(clone.get()))
+            access = &user_clone->access;
+        else if (auto * role_clone = typeid_cast<Role *>(clone.get()))
+            access = &role_clone->access;
+        else
+            continue;
+
+        on_grantee(clone->getName(), clone->getType(), *access);
+    }
+}
+
+
 void registerInterpreterGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

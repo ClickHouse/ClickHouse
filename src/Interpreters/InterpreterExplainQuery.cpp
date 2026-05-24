@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <Access/AccessControl.h>
+#include <Access/AccessRights.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -12,6 +14,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -22,9 +25,11 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <Storages/StorageView.h>
+#include <Storages/System/StorageSystemGrants.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -163,6 +168,15 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
             {cols[3].type->createColumn(), cols[3].type, cols[3].name},
             {cols[4].type->createColumn(), cols[4].type, cols[4].name},
         });
+    }
+
+    if (kind == ASTExplainQuery::ExplainKind::Grant)
+    {
+        /// Mirror `system.grants` exactly so `EXPLAIN GRANT` rows are directly comparable.
+        Block res;
+        for (const auto & col : StorageSystemGrants::getColumnsDescription())
+            res.insert({col.type->createColumn(), col.type, col.name});
+        return res;
     }
 
     Block res;
@@ -743,6 +757,32 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 writeCString("<no current transaction>", buf);
             }
 
+            break;
+        }
+        case ASTExplainQuery::Grant:
+        {
+            if (ast.getSettings())
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Settings are not supported for EXPLAIN GRANT / EXPLAIN REVOKE.");
+
+            if (!ast.getExplainedQuery() || !ast.getExplainedQuery()->as<ASTGrantQuery>())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN GRANT / EXPLAIN REVOKE expects a GRANT or REVOKE statement");
+
+            const bool is_enabled_read_write_grants = query_context->getAccessControl().isEnabledReadWriteGrants();
+
+            InterpreterGrantQuery::simulate(
+                ast.getExplainedQuery(),
+                query_context,
+                [&](const String & grantee_name, AccessEntityType grantee_type, const AccessRights & access)
+                {
+                    StorageSystemGrants::emitGranteeRows(
+                        res_columns,
+                        grantee_name,
+                        grantee_type,
+                        access.getElements(),
+                        is_enabled_read_write_grants);
+                });
+
+            insert_buf = false;
             break;
         }
     }

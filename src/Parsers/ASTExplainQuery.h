@@ -25,6 +25,7 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        Grant, /// 'EXPLAIN GRANT ...' or 'EXPLAIN REVOKE ...'
     };
 
     static String toString(ExplainKind kind)
@@ -39,6 +40,10 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            /// `Grant` shares the bare `"EXPLAIN"` prefix with `QueryPlan`; the inner
+            /// `ASTGrantQuery` formats itself as `GRANT ...` or `REVOKE ...`, so the
+            /// roundtripped text disambiguates the kind for the parser.
+            case Grant: return "EXPLAIN";
         }
     }
 
@@ -60,6 +65,8 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN GRANT" || str == "EXPLAIN REVOKE")
+            return Grant;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);
     }
@@ -134,10 +141,15 @@ protected:
             /// through the frame and is handled by each query's own `formatQueryImpl`.
             /// INSERT queries also don't need wrapping: wrapping INSERT in parens would
             /// produce `(INSERT ...)` which cannot be parsed back.
+            /// `EXPLAIN GRANT` / `EXPLAIN REVOKE` similarly cannot be wrapped — `ParserGrantQuery`
+            /// has no notion of `( ... )` wrapping, and the inner GRANT/REVOKE never consumes
+            /// trailing SETTINGS itself, so the wrap is unnecessary as well as unparsable.
             bool need_parens = frame.has_trailing_output_options
                 && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
                 && query->getQueryKind() != QueryKind::Insert
-                && query->getQueryKind() != QueryKind::AsyncInsertFlush;
+                && query->getQueryKind() != QueryKind::AsyncInsertFlush
+                && query->getQueryKind() != QueryKind::Grant
+                && query->getQueryKind() != QueryKind::Revoke;
             if (need_parens)
                 ostr << "(";
             query->format(ostr, settings, state, frame);
