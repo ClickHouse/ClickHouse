@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/PNGWriter.h>
 #include <Common/Exception.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -283,7 +284,12 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
 
     /// Allocate the image buffer. For RGBA this leaves the image transparent;
     /// for RGB / grayscale / binary this leaves it black.
-    pixels.assign(channels * width * height, 0);
+    size_t total_bytes = 0;
+    if (common::mulOverflow(width, height, total_bytes) || common::mulOverflow(total_bytes, channels, total_bytes))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Image dimensions {}x{} with {} channel(s) overflow the maximum buffer size",
+            width, height, channels);
+    pixels.assign(total_bytes, 0);
 
     writer.setImage(width, height, channels);
 }
