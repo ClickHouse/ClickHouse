@@ -882,7 +882,7 @@ namespace
             , compression_method(compression_method_)
             , headers(headers_)
             , body_callback(body_.makeCallback(context_))
-            , http_method(body_.empty() ? "" : Poco::Net::HTTPRequest::HTTP_POST)
+            , http_method(body_.empty() ? Poco::Net::HTTPRequest::HTTP_GET : Poco::Net::HTTPRequest::HTTP_POST)
             , format_settings(format_settings_)
         {
             url_options_to_check.reserve(urls_to_check_.size());
