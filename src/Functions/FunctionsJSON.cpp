@@ -1,5 +1,4 @@
 #include <type_traits>
-#include <unordered_set>
 
 #include <base/range.h>
 
@@ -9,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
@@ -272,7 +272,7 @@ public:
             /// user-provided one ignoring case. With one match we read its `@` subcolumn directly;
             /// with several (e.g. rows storing `Name` and `name` for query key `name`) we resolve
             /// the path per row so a row's local match is not shadowed by a column-wide choice.
-            std::vector<String> case_insensitive_matches;
+            VectorWithMemoryTracking<String> case_insensitive_matches;
             if constexpr (is_case_insensitive)
             {
                 auto match_case_insensitive = [](std::string_view a, std::string_view b) -> bool
@@ -285,7 +285,7 @@ public:
                     return true;
                 };
 
-                std::unordered_set<String> seen;
+                SetWithMemoryTracking<String> seen;
                 auto try_add = [&](std::string_view candidate)
                 {
                     if (!match_case_insensitive(candidate, path))
@@ -360,14 +360,14 @@ public:
                 if (case_insensitive_matches.size() > 1)
                 {
                     const size_t num_paths = case_insensitive_matches.size();
-                    std::vector<ColumnPtr> per_path_merged(num_paths);
-                    std::vector<DataTypePtr> per_path_merged_type(num_paths);
+                    VectorWithMemoryTracking<ColumnPtr> per_path_merged(num_paths);
+                    VectorWithMemoryTracking<DataTypePtr> per_path_merged_type(num_paths);
                     for (size_t k = 0; k < num_paths; ++k)
                         std::tie(per_path_merged[k], per_path_merged_type[k]) = read_merged_for_path(case_insensitive_matches[k]);
 
                     if constexpr (is_extract_raw)
                     {
-                        std::vector<SerializationPtr> serializations(num_paths);
+                        VectorWithMemoryTracking<SerializationPtr> serializations(num_paths);
                         for (size_t k = 0; k < num_paths; ++k)
                             serializations[k] = per_path_merged_type[k]->getDefaultSerialization();
 
@@ -398,7 +398,7 @@ public:
                             ? DataTypeFactory::instance().get("Bool")
                             : result_type;
 
-                        std::vector<ColumnPtr> per_path_casted(num_paths);
+                        VectorWithMemoryTracking<ColumnPtr> per_path_casted(num_paths);
                         for (size_t k = 0; k < num_paths; ++k)
                         {
                             auto casted = castColumnAccurateOrNull({per_path_merged[k], per_path_merged_type[k], ""}, cast_target);
