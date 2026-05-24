@@ -21,7 +21,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class ConcatWithSeparatorImpl : public IFunction
+class ConcatWithSeparatorImpl final : public IFunction
 {
 public:
     ConcatWithSeparatorImpl(ContextPtr context_, const char * name_, bool is_injective_)
@@ -88,11 +88,11 @@ public:
         const size_t num_exprs = arguments.size() - 1;
         const size_t num_args = 2 * num_exprs - 1;
 
-        std::vector<const ColumnString::Chars *> data(num_args);
-        std::vector<const ColumnString::Offsets *> offsets(num_args);
-        std::vector<size_t> fixed_string_sizes(num_args);
-        std::vector<std::optional<String>> constant_strings(num_args);
-        std::vector<ColumnString::MutablePtr> converted_col_ptrs(num_args);
+        VectorWithMemoryTracking<const ColumnString::Chars *> data(num_args);
+        VectorWithMemoryTracking<const ColumnString::Offsets *> offsets(num_args);
+        VectorWithMemoryTracking<size_t> fixed_string_sizes(num_args);
+        VectorWithMemoryTracking<std::optional<String>> constant_strings(num_args);
+        VectorWithMemoryTracking<ColumnString::MutablePtr> converted_col_ptrs(num_args);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;

@@ -15,6 +15,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -329,7 +330,7 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
 {
-    bool is_initial_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+    bool is_initial_query = !context->isDDLOrOnClusterInternal() ||
                             (context->getZooKeeperMetadataTransaction() && context->getZooKeeperMetadataTransaction()->isInitialQuery());
 
     const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
