@@ -958,12 +958,26 @@ private:
             }
             catch (...)
             {
-                if (retry_resolved_addresses)
-                    address.setFail();
-                else
-                    address.setUnused();
                 ProfileEvents::increment(getMetrics().errors);
                 (*connection).reset();
+                if (retry_resolved_addresses)
+                {
+                    try
+                    {
+                        /// `Entry::setFail` can throw on DNS errors (see `NetException`
+                        /// handler above). Swallow that here so the original (non-network)
+                        /// exception is preserved when this catch-all rethrows.
+                        address.setFail();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during catch-all rethrow");
+                    }
+                }
+                else
+                {
+                    address.setUnused();
+                }
                 throw;
             }
         }
