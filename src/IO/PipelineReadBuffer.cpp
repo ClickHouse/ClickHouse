@@ -22,62 +22,35 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
 
 bool PipelineReadBuffer::nextImpl()
 {
-    while (true)
+    /// Tell the rope that the bytes we exposed last time are now fully
+    /// consumed (the caller would not have called us otherwise). This is
+    /// where the rope releases nodes whose data we no longer need.
+    /// `working_buffer.size()` is 0 right after construction or right
+    /// after `seek` — so the first call and post-seek calls don't
+    /// over-advance.
+    rope.advance(working_buffer.size());
+
+    if (rope.atEnd())
     {
-        /// Try next node from current rope
-        while (!current_rope.empty())
-        {
-            current_node = current_rope.popFront();
-            has_current_node = true;
-
-            size_t node_start = current_node.logical_offset;
-            size_t node_end = node_start + current_node.size;
-
-            /// Skip nodes entirely before our read position
-            if (node_end <= read_position)
-            {
-                LOG_TRACE(log, "nextImpl: skipping node [{}, {}), read_position={}", node_start, node_end, read_position);
-                continue;
-            }
-
-            /// Trim the front of the node if it starts before our position
-            char * data_start = current_node.data();
-            size_t usable_size = current_node.size;
-
-            if (node_start < read_position)
-            {
-                size_t skip = read_position - node_start;
-                LOG_TRACE(log, "nextImpl: trimming {} bytes from node [{}, {}), read_position={}", skip, node_start, node_end, read_position);
-                data_start += skip;
-                usable_size -= skip;
-            }
-
-            if (usable_size == 0)
-                continue;
-
-            internal_buffer = Buffer(data_start, data_start + usable_size);
-            working_buffer = internal_buffer;
-            pos = working_buffer.begin();
-            read_position = node_start + current_node.size;
-            LOG_TRACE(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
-                usable_size, node_start, read_position);
-            return true;
-        }
-
-        /// Current rope exhausted — get next window from executor
         LOG_TRACE(log, "nextImpl: rope exhausted, requesting next window at position {}", read_position);
-        current_rope = executor->readNextWindow();
-        has_current_node = false;
-
-        if (current_rope.empty())
+        rope = executor->readNextWindow();
+        if (rope.atEnd())
         {
             LOG_TRACE(log, "nextImpl: EOF");
             return false;
         }
-
-        LOG_TRACE(log, "nextImpl: got rope [{}, {}), {} nodes",
-            current_rope.range().offset, current_rope.range().end(), current_rope.getNodes().size());
+        LOG_TRACE(log, "nextImpl: got window [{}, {}), {} nodes",
+            rope.range().offset, rope.range().end(), rope.getNodes().size());
     }
+
+    auto span = rope.peek();
+    internal_buffer = Buffer(span.data, span.data + span.size);
+    working_buffer = internal_buffer;
+    pos = working_buffer.begin();
+    read_position = span.logical_offset + span.size;
+    LOG_TRACE(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
+        span.size, span.logical_offset, read_position);
+    return true;
 }
 
 off_t PipelineReadBuffer::seek(off_t off, int whence)
@@ -104,47 +77,23 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
 
     LOG_DEBUG(log, "seek to {}", new_pos);
 
-    /// Check if seek target is within the current node's data
-    if (has_current_node)
-    {
-        size_t node_start = current_node.logical_offset;
-        size_t node_end = node_start + current_node.size;
-        if (new_pos >= node_start && new_pos < node_end)
-        {
-            LOG_TRACE(log, "seek: found in current node [{}, {})", node_start, node_end);
-            size_t offset_in_node = new_pos - node_start;
-            char * data_start = current_node.data();
-            internal_buffer = Buffer(data_start + offset_in_node, data_start + current_node.size);
-            working_buffer = internal_buffer;
-            pos = working_buffer.begin();
-            read_position = node_end;
-            return new_pos;
-        }
-    }
-
-    /// Check if seek target is within the remaining rope
-    if (!current_rope.empty())
-    {
-        auto rope_range = current_rope.range();
-        if (new_pos >= rope_range.offset && new_pos < rope_range.end())
-        {
-            LOG_TRACE(log, "seek: found in remaining rope [{}, {})", rope_range.offset, rope_range.end());
-            read_position = new_pos;
-            has_current_node = false;
-            resetWorkingBuffer();
-            return new_pos;
-        }
-    }
-
-    /// Target is outside what we have — ask the executor
-    LOG_TRACE(log, "seek: delegating to executor");
-    executor->seek(new_pos);
-    current_rope = {};
-    has_current_node = false;
-    read_position = new_pos;
-
+    /// Reset `working_buffer` BEFORE asking the rope to rewind. This makes
+    /// the next `nextImpl` advance by 0 (instead of by the size of the
+    /// partially-consumed previous span), so the rewind position is
+    /// preserved.
     resetWorkingBuffer();
 
+    if (rope.tryRewind(new_pos))
+    {
+        LOG_TRACE(log, "seek: rewound inside rope");
+        read_position = new_pos;
+        return new_pos;
+    }
+
+    LOG_TRACE(log, "seek: delegating to executor");
+    executor->seek(new_pos);
+    rope = Rope{};
+    read_position = new_pos;
     return new_pos;
 }
 

@@ -39,6 +39,105 @@ ByteRange Rope::range() const
     return {start, end - start};
 }
 
+Rope::Span Rope::peek() const
+{
+    if (nodes.empty())
+        return {};
+    const RopeNode & n = nodes.front();
+    return Span{
+        const_cast<char *>(n.data()) + front_offset,
+        n.size - front_offset,
+        n.logical_offset + front_offset,
+    };
+}
+
+void Rope::shrinkIntervalsFront(size_t bytes)
+{
+    if (bytes == 0 || intervals.empty())
+        return;
+    ByteRange & first = intervals.front();
+    if (bytes >= first.size)
+    {
+        intervals.erase(intervals.begin());
+    }
+    else
+    {
+        first.offset += bytes;
+        first.size -= bytes;
+    }
+}
+
+void Rope::extendIntervalsFront(size_t bytes)
+{
+    if (bytes == 0)
+        return;
+    chassert(!intervals.empty());
+    chassert(intervals.front().offset >= bytes);
+    intervals.front().offset -= bytes;
+    intervals.front().size += bytes;
+}
+
+void Rope::advance(size_t bytes)
+{
+    while (bytes > 0 && !nodes.empty())
+    {
+        const size_t available = nodes.front().size - front_offset;
+        if (bytes >= available)
+        {
+            /// Consume the rest of the front node and release it.
+            shrinkIntervalsFront(available);
+            nodes.pop_front();
+            front_offset = 0;
+            bytes -= available;
+        }
+        else
+        {
+            /// Partial consumption inside the front node.
+            shrinkIntervalsFront(bytes);
+            front_offset += bytes;
+            bytes = 0;
+        }
+    }
+    /// If `bytes > 0` here the caller advanced past EOF — silently clamp.
+}
+
+bool Rope::tryRewind(size_t new_position)
+{
+    if (nodes.empty())
+        return false;
+
+    /// Reachable from the cursor = entire held nodes (their buffers are
+    /// alive). The lowest reachable byte is the ORIGINAL start of the
+    /// front node (`logical_offset`, not `+ front_offset`), because a
+    /// backward rewind into the buffer is supported.
+    const size_t reachable_lo = nodes.front().logical_offset;
+    const size_t reachable_hi = nodes.back().logical_offset + nodes.back().size;
+    if (new_position < reachable_lo || new_position > reachable_hi)
+        return false;
+
+    const RopeNode & front = nodes.front();
+    const size_t front_end = front.logical_offset + front.size;
+
+    if (new_position < front_end)
+    {
+        /// Inside the front node — just adjust `front_offset`. Going
+        /// backward extends `intervals.front()` so coverage queries
+        /// report the rewound-into bytes; going forward shrinks it.
+        const size_t new_front_offset = new_position - front.logical_offset;
+        if (new_front_offset > front_offset)
+            shrinkIntervalsFront(new_front_offset - front_offset);
+        else if (new_front_offset < front_offset)
+            extendIntervalsFront(front_offset - new_front_offset);
+        front_offset = new_front_offset;
+        return true;
+    }
+
+    /// new_position is in a later node — advance through the front
+    /// node and any intermediate nodes.
+    advance(new_position - (front.logical_offset + front_offset));
+    return true;
+}
+
 void Rope::mergeInterval(ByteRange iv)
 {
     if (iv.size == 0)
@@ -100,39 +199,28 @@ void Rope::append(Rope && other)
     other.intervals.clear();
 }
 
-RopeNode Rope::popFront()
-{
-    RopeNode node = std::move(nodes.front());
-    nodes.pop_front();
-
-    /// Rebuild `intervals` from the remaining nodes so that coverage queries
-    /// (`range`, `covers`, `gaps`, `coveredBytes`) reflect what is actually
-    /// still available. `PipelineReadBuffer::seek` reads `current_rope.range`
-    /// to decide whether `new_pos` is reachable in the unconsumed nodes —
-    /// leaving `intervals` stale here was a silent data-corruption bug
-    /// (callers saw a "found in remaining rope" path even when the popped
-    /// nodes contained the requested offset, and `nextImpl` then served
-    /// bytes from a different region of the file as if they were the
-    /// requested ones).
-    ///
-    /// Rebuild is O(n^2) worst case but n is small (~window_size /
-    /// source_read_block_size, typically <10 nodes) and `popFront` is only
-    /// called by streaming consumers.
-    intervals.clear();
-    for (const auto & n : nodes)
-        mergeInterval(n.range());
-
-    return node;
-}
-
 Rope Rope::slice(ByteRange req) const
 {
     Rope result;
-    /// Nodes are sorted by `logical_offset`, so we can stop early.
+    /// Nodes are sorted by `logical_offset`, so we can stop early. The
+    /// first node has `front_offset` bytes already consumed by the cursor
+    /// — those bytes are not slice-able. Subsequent nodes are unaffected.
+    bool first = true;
     for (const auto & node : nodes)
     {
-        size_t node_start = node.logical_offset;
-        size_t node_end = node_start + node.size;
+        size_t effective_buffer_offset = node.buffer_offset;
+        size_t effective_size = node.size;
+        size_t effective_logical = node.logical_offset;
+        if (first)
+        {
+            effective_buffer_offset += front_offset;
+            effective_size -= front_offset;
+            effective_logical += front_offset;
+            first = false;
+        }
+
+        size_t node_start = effective_logical;
+        size_t node_end = node_start + effective_size;
         size_t req_end = req.end();
 
         if (node_start >= req_end)
@@ -146,7 +234,7 @@ Rope Rope::slice(ByteRange req) const
 
         RopeNode sliced;
         sliced.buffer = node.buffer;
-        sliced.buffer_offset = node.buffer_offset + trim_front;
+        sliced.buffer_offset = effective_buffer_offset + trim_front;
         sliced.size = overlap_end - overlap_start;
         sliced.logical_offset = overlap_start;
         /// Go through `append` so intervals on the result are maintained.
@@ -157,10 +245,12 @@ Rope Rope::slice(ByteRange req) const
 
 size_t Rope::totalBytes() const
 {
+    if (nodes.empty())
+        return 0;
     size_t total = 0;
     for (const auto & node : nodes)
         total += node.size;
-    return total;
+    return total - front_offset;
 }
 
 size_t Rope::coveredBytes(ByteRange req) const
@@ -231,19 +321,31 @@ void Rope::shift(ssize_t delta)
 size_t Rope::copyTo(char * dst, ByteRange req) const
 {
     chassert(covers(req));
-    /// Nodes are sorted by logical_offset (invariant) and overlap, if any, is
-    /// resolved by "later-inserted wins for the overlap bytes" — which falls
-    /// out of the memcpy order naturally below.
+    /// Nodes are sorted by logical_offset (invariant). The first node's
+    /// `front_offset` bytes are already consumed — they're not part of
+    /// the reachable bytes and `covers(req)` must have ruled them out.
     size_t written = 0;
+    bool first = true;
     for (const auto & n : nodes)
     {
-        if (n.logical_offset >= req.end())
+        size_t node_logical = n.logical_offset;
+        size_t node_buffer_off = n.buffer_offset;
+        size_t node_size = n.size;
+        if (first)
+        {
+            node_logical += front_offset;
+            node_buffer_off += front_offset;
+            node_size -= front_offset;
+            first = false;
+        }
+
+        if (node_logical >= req.end())
             break;
-        size_t lo = std::max(n.logical_offset, req.offset);
-        size_t hi = std::min(n.logical_offset + n.size, req.end());
+        size_t lo = std::max(node_logical, req.offset);
+        size_t hi = std::min(node_logical + node_size, req.end());
         if (lo >= hi)
             continue;
-        size_t src_off = n.buffer_offset + (lo - n.logical_offset);
+        size_t src_off = node_buffer_off + (lo - node_logical);
         size_t copy = hi - lo;
         std::memcpy(dst + (lo - req.offset), n.buffer->data() + src_off, copy);
         written += copy;

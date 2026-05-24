@@ -173,7 +173,7 @@ TEST(Rope, TotalBytes)
     EXPECT_EQ(rope.totalBytes(), 250);
 }
 
-TEST(Rope, PopFront)
+TEST(Rope, PeekAndAdvanceWalkNodes)
 {
     auto buf = std::make_shared<OwnedRopeBuffer>(300);
     std::memset(buf->data(), 'A', 100);
@@ -185,55 +185,50 @@ TEST(Rope, PopFront)
     rope.append(RopeNode{buf, 100, 100, 100});
     rope.append(RopeNode{buf, 200, 100, 200});
 
-    auto node1 = rope.popFront();
-    EXPECT_EQ(node1.logical_offset, 0);
-    EXPECT_EQ(node1.size, 100);
-    EXPECT_EQ(node1.data()[0], 'A');
-    EXPECT_EQ(rope.getNodes().size(), 2);
+    auto s1 = rope.peek();
+    EXPECT_EQ(s1.logical_offset, 0u);
+    EXPECT_EQ(s1.size, 100u);
+    EXPECT_EQ(s1.data[0], 'A');
+    rope.advance(100);
+    EXPECT_EQ(rope.getNodes().size(), 2u);
 
-    auto node2 = rope.popFront();
-    EXPECT_EQ(node2.logical_offset, 100);
-    EXPECT_EQ(node2.data()[0], 'B');
-    EXPECT_EQ(rope.getNodes().size(), 1);
+    auto s2 = rope.peek();
+    EXPECT_EQ(s2.logical_offset, 100u);
+    EXPECT_EQ(s2.data[0], 'B');
+    rope.advance(100);
+    EXPECT_EQ(rope.getNodes().size(), 1u);
 
-    auto node3 = rope.popFront();
-    EXPECT_EQ(node3.logical_offset, 200);
-    EXPECT_EQ(node3.data()[0], 'C');
-    EXPECT_TRUE(rope.empty());
+    auto s3 = rope.peek();
+    EXPECT_EQ(s3.logical_offset, 200u);
+    EXPECT_EQ(s3.data[0], 'C');
+    rope.advance(100);
+    EXPECT_TRUE(rope.atEnd());
 }
 
-TEST(Rope, PopFrontReleasesBuffer)
+TEST(Rope, AdvanceReleasesBuffer)
 {
     std::weak_ptr<RopeBuffer> weak;
+    Rope rope;
     {
         auto buf = std::make_shared<OwnedRopeBuffer>(64);
         weak = buf;
-
-        Rope rope;
         rope.append(RopeNode{buf, 0, 64, 0});
-        buf.reset(); /// only rope holds the ref now
-
-        auto node = rope.popFront();
-        /// node holds the last ref
+        buf.reset(); /// only rope holds the ref
         EXPECT_FALSE(weak.expired());
     }
-    /// node destroyed, buffer freed
+    /// Consume the whole node — the underlying buffer should be released.
+    rope.advance(64);
+    EXPECT_TRUE(rope.atEnd());
     EXPECT_TRUE(weak.expired());
 }
 
-TEST(Rope, PopFrontUpdatesCoverageAndRange)
+TEST(Rope, AdvanceUpdatesCoverageAndRange)
 {
-    /// Regression for the stale-intervals bug: after `popFront`, coverage
-    /// queries (`range`, `covers`, `coveredBytes`) must reflect the bytes
-    /// still in the rope — NOT the bytes that were appended originally.
-    ///
-    /// `PipelineReadBuffer::seek` reads `current_rope.range()` to decide
-    /// whether `new_pos` is still reachable; if `popFront` left `intervals`
-    /// stale, a backwards seek into already-consumed territory would
-    /// "succeed" and the next `nextImpl` would serve bytes from the wrong
-    /// region of the file. Manifested in fast-test as
-    /// `UNKNOWN_CODEC: codec family 0` (the wrong byte interpreted as a
-    /// compression header).
+    /// `range` / `covers` / `coveredBytes` must reflect what is still
+    /// reachable after the cursor advances — NOT the appended coverage.
+    /// Regression for the stale-intervals bug that caused
+    /// `UNKNOWN_CODEC: codec family 0` in fast-test on
+    /// `03785_rebuild_projection_with_part_offset`.
     auto buf = std::make_shared<OwnedRopeBuffer>(300);
     Rope rope;
     rope.append(RopeNode{buf, 0, 100, 0});
@@ -244,26 +239,96 @@ TEST(Rope, PopFrontUpdatesCoverageAndRange)
     EXPECT_EQ(rope.range().size, 300u);
     EXPECT_TRUE(rope.covers({50, 50}));
 
-    /// Pop the first node — coverage should shrink to [100, 300).
-    rope.popFront();
+    /// Advance past the first node — coverage shrinks to [100, 300).
+    rope.advance(100);
     EXPECT_EQ(rope.range().offset, 100u);
     EXPECT_EQ(rope.range().size, 200u);
-    EXPECT_FALSE(rope.covers({50, 50}));   /// no longer covered
+    EXPECT_FALSE(rope.covers({50, 50}));
     EXPECT_TRUE(rope.covers({150, 50}));
     EXPECT_EQ(rope.coveredBytes({0, 300}), 200u);
 
-    /// Pop the second node — coverage shrinks to [200, 300).
-    rope.popFront();
+    /// Advance past the second node — coverage shrinks to [200, 300).
+    rope.advance(100);
     EXPECT_EQ(rope.range().offset, 200u);
     EXPECT_EQ(rope.range().size, 100u);
     EXPECT_FALSE(rope.covers({150, 50}));
     EXPECT_TRUE(rope.covers({250, 50}));
 
-    /// Pop the last node — empty rope.
-    rope.popFront();
-    EXPECT_TRUE(rope.empty());
+    /// Advance past the last node — empty rope.
+    rope.advance(100);
+    EXPECT_TRUE(rope.atEnd());
     EXPECT_EQ(rope.range().offset, 0u);
     EXPECT_EQ(rope.range().size, 0u);
+}
+
+TEST(Rope, AdvancePartialKeepsBufferAndAdjustsCursor)
+{
+    /// Partial consumption inside the front node: `peek` should return
+    /// the remaining tail; `range` should shrink from the front by the
+    /// consumed amount; the buffer stays alive.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    for (size_t i = 0; i < 100; ++i)
+        buf->data()[i] = static_cast<char>('a' + i);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+
+    rope.advance(30);
+    EXPECT_EQ(rope.range().offset, 30u);
+    EXPECT_EQ(rope.range().size, 70u);
+
+    auto s = rope.peek();
+    EXPECT_EQ(s.logical_offset, 30u);
+    EXPECT_EQ(s.size, 70u);
+    EXPECT_EQ(s.data[0], static_cast<char>('a' + 30));
+}
+
+TEST(Rope, TryRewindBackwardInsideFrontNode)
+{
+    /// After consuming 50 bytes, a backward rewind to position 20 must
+    /// restore coverage and `peek` from the rewound position.
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    for (size_t i = 0; i < 100; ++i)
+        buf->data()[i] = static_cast<char>('a' + i);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+
+    rope.advance(50);
+    EXPECT_EQ(rope.range().offset, 50u);
+
+    ASSERT_TRUE(rope.tryRewind(20));
+    EXPECT_EQ(rope.range().offset, 20u);
+    EXPECT_EQ(rope.range().size, 80u);
+
+    auto s = rope.peek();
+    EXPECT_EQ(s.logical_offset, 20u);
+    EXPECT_EQ(s.data[0], static_cast<char>('a' + 20));
+}
+
+TEST(Rope, TryRewindForwardSkipsToLaterNode)
+{
+    /// Forward rewind past the current front node releases it and
+    /// advances into a later node.
+    auto buf = std::make_shared<OwnedRopeBuffer>(200);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 0});
+    rope.append(RopeNode{buf, 100, 100, 100});
+
+    ASSERT_TRUE(rope.tryRewind(150));
+    EXPECT_EQ(rope.getNodes().size(), 1u);
+    EXPECT_EQ(rope.range().offset, 150u);
+    EXPECT_EQ(rope.range().size, 50u);
+}
+
+TEST(Rope, TryRewindOutOfRangeFails)
+{
+    auto buf = std::make_shared<OwnedRopeBuffer>(100);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 100, 50});  /// covers [50, 150)
+
+    EXPECT_FALSE(rope.tryRewind(10));   /// before front node
+    EXPECT_FALSE(rope.tryRewind(200));  /// past back node
+    EXPECT_EQ(rope.range().offset, 50u);
+    EXPECT_EQ(rope.range().size, 100u);
 }
 
 namespace

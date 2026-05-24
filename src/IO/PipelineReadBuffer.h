@@ -36,10 +36,15 @@ private:
     bool nextImpl() override;
 
     std::unique_ptr<ReaderExecutor> executor;
-    Rope current_rope;
-    RopeNode current_node;
-    bool has_current_node = false;
-    size_t read_position = 0;  /// logical offset past the last served node
+    /// The rope-with-cursor we're currently streaming from. Empty between
+    /// windows. `nextImpl` advances it by `working_buffer.size()`,
+    /// `seek` either rewinds it via `tryRewind` or replaces it on a
+    /// long-distance jump.
+    Rope rope;
+    /// Logical offset just past the last byte exposed via `working_buffer`.
+    /// `getPosition()` subtracts `available()` to get the caller's
+    /// current read position.
+    size_t read_position = 0;
     LoggerPtr log = getLogger("PipelineReadBuffer");
 };
 
