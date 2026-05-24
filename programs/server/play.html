@@ -3221,11 +3221,10 @@ async function postMulti(posted_request_num, parsed)
 async function restoreFromHistory(state) {
     clear();
     query_area.value = state.query;
-    query_area.dispatchEvent(new Event('input'));
     resultEl.queryText = state.query;
 
     /// Restore query parameter inputs and their values.
-    await updateQueryParams();
+    await updateQueryArea();
     if (state.params)
     {
         setParamValues(state.params);
@@ -3311,7 +3310,6 @@ window.onpopstate = function(event) {
 
 if (window.location.hash) {
     query_area.value = fromBase64(window.location.hash.substr(1));
-    query_area.dispatchEvent(new Event('input'));
 }
 
 let in_flight = false;
@@ -4269,7 +4267,7 @@ async function updateQueryParams()
     }
 }
 
-query_area.addEventListener('input', () =>
+function updateQueryArea()
 {
     resizeQueryAreaIfSlightlyOverflowing();
 
@@ -4280,8 +4278,10 @@ query_area.addEventListener('input', () =>
     /// would render one frame with the textarea's own text hidden (`color:
     /// transparent` from `.has-backdrop`) and the backdrop still showing the
     /// pre-edit contents, so the freshly typed characters would be invisible.
-    updateQueryParams();
-});
+    return updateQueryParams();
+}
+
+query_area.addEventListener('input', updateQueryArea);
 
 function setColorTheme(new_theme, update_preference) {
     theme = new_theme;
@@ -4318,7 +4318,7 @@ if (theme) {
 /// If run_immediately is set, run the query after params are ready.
 if (query_area.value)
 {
-    updateQueryParams().then(() =>
+    updateQueryArea().then(() =>
     {
         const urlParamValues = {};
         for (const param of currentQueryParams)
