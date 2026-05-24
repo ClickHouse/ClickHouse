@@ -1,6 +1,4 @@
 #include <Functions/FunctionsConversion.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -81,8 +79,8 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
 
     /// First, cast usual variants to result type.
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-    VectorWithMemoryTracking<ColumnPtr> cast_variant_columns(variant_types.size());
-    VectorWithMemoryTracking<bool> cast_variant_columns_is_const(variant_types.size(), false);
+    std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
+    std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
     for (size_t i = 0; i != variant_types.size(); ++i)
     {
         /// Skip shared variant, it will be processed later.
@@ -100,13 +98,13 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     }
 
     /// Second, collect all variants stored in shared variant and cast them to result type.
-    VectorWithMemoryTracking<MutableColumnPtr> variant_columns_from_shared_variant;
+    std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
     DataTypes variant_types_from_shared_variant;
     /// We will need to know what variant to use when we see discriminator of a shared variant.
     /// To do it, we remember what variant was extracted from each row and what was it's offset.
     PaddedPODArray<UInt64> shared_variant_indexes;
     PaddedPODArray<UInt64> shared_variant_offsets;
-    UnorderedMapWithMemoryTracking<String, UInt64> shared_variant_to_index;
+    std::unordered_map<String, UInt64> shared_variant_to_index;
     const auto & shared_variant = column_dynamic.getSharedVariant();
     const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
@@ -147,8 +145,8 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     }
 
     /// Cast all extracted variants into result type.
-    VectorWithMemoryTracking<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
-    VectorWithMemoryTracking<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
+    std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
+    std::vector<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
     for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
     {
         ColumnsWithTypeAndName new_args = arguments;
@@ -420,14 +418,12 @@ FunctionCast::WrapperType FunctionCast::createStringWrapper(const DataTypePtr & 
     return createFunctionAdaptor(function, from_type);
 }
 
-FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypePtr & from_type, const size_t N, bool requested_result_is_nullable) const
+FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypePtr & from_type, const size_t N) const
 {
     if (!isStringOrFixedString(from_type))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CAST AS FixedString is only implemented for types String and FixedString");
 
-    /// Return NULL instead of throwing when the target type is explicitly Nullable
-    /// (e.g. CAST('abc', 'Nullable(FixedString(2))')) or when using accurateCastOrNull.
-    bool exception_mode_null = cast_type == CastType::accurateOrNull || requested_result_is_nullable;
+    bool exception_mode_null = cast_type == CastType::accurateOrNull;
     return [exception_mode_null, N] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/)
     {
         if (exception_mode_null)
@@ -586,35 +582,6 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
                 }
             };
         }
-
-        /// Different state variants (e.g. Window vs Aggregation) of the same aggregate function
-        /// can be converted by merging the source state into a fresh target state.
-        if (to_type->getFunction()->canMergeStateFromDifferentVariant(*agg_type->getFunction()))
-        {
-            return [function = to_type->getFunction(), from_function = agg_type->getFunction()](
-                       ColumnsWithTypeAndName & arguments,
-                       const DataTypePtr & /* result_type */,
-                       const ColumnNullable * /* nullable_source */,
-                       size_t /*input_rows_count*/) -> ColumnPtr
-            {
-                const auto & argument_column = arguments.front();
-                const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
-                if (!col_agg)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Illegal column {} for function CAST AS AggregateFunction",
-                        argument_column.column->getName());
-
-                auto res = ColumnAggregateFunction::create(function);
-
-                for (const auto * src_state : col_agg->getData())
-                {
-                    res->insertDefault();
-                    function->mergeStateFromDifferentVariant(res->getData().back(), *from_function, src_state, &res->createOrGetArena());
-                }
-                return res;
-            };
-        }
     }
 
     if (cast_type == CastType::accurateOrNull)
@@ -738,8 +705,8 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     const auto & from_element_types = from_type->getElements();
     const auto & to_element_types = to_type->getElements();
 
-    ElementWrappers element_wrappers;
-    VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
+    std::vector<WrapperType> element_wrappers;
+    std::vector<std::optional<size_t>> to_reverse_index;
 
     /// For named tuples allow conversions for tuples with
     /// different sets of elements. If element exists in @to_type
@@ -747,7 +714,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
     {
         const auto & from_names = from_type->getElementNames();
-        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
+        std::unordered_map<String, size_t> from_positions;
         from_positions.reserve(from_names.size());
         for (size_t i = 0; i < from_names.size(); ++i)
             from_positions[from_names[i]] = i;
@@ -1016,7 +983,7 @@ ColumnPtr FunctionCast::convertArrayToQBit(
         }
 
         /// Insert default values for each FixedString column and keep pointers to them
-        VectorWithMemoryTracking<char *> row_ptrs(size);
+        std::vector<char *> row_ptrs(size);
         for (size_t j = 0; j < size; ++j)
         {
             auto & fixed_string_column = assert_cast<ColumnFixedString &>(*tuple_columns[j]);
@@ -1237,7 +1204,7 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
             ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
@@ -1253,9 +1220,6 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
-            if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
-
             return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
         };
     }
@@ -1281,20 +1245,20 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
 
     /// Create map (new variant type) -> (it's global discriminator in new order).
     const auto & new_variants = to_variant.getVariants();
-    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
+    std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
     new_variant_types_to_new_global_discriminator.reserve(new_variants.size());
     for (ColumnVariant::Discriminator i = 0; i != new_variants.size(); ++i)
         new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
 
     /// Create set of old variant types.
     const auto & old_variants = from_variant.getVariants();
-    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
+    std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
     old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
     for (ColumnVariant::Discriminator i = 0; i != old_variants.size(); ++i)
         old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
 
     /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
-    UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
+    std::unordered_map<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
     old_global_discriminator_to_new.reserve(old_variants.size());
     for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
     {
@@ -1308,7 +1272,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     }
 
     /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
-    VectorWithMemoryTracking<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
+    std::vector<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
     variant_types_and_discriminators_to_add.reserve(new_variants.size() - old_variants.size());
     for (size_t i = 0; i != new_variants.size(); ++i)
     {
@@ -1366,7 +1330,7 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
 FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
 {
     const auto & variant_types = from_variant.getVariants();
-    ElementWrappers variant_wrappers;
+    std::vector<WrapperType> variant_wrappers;
     variant_wrappers.reserve(variant_types.size());
 
     /// Create conversion wrapper for each variant.
@@ -1391,7 +1355,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
 
         /// First, cast each variant to the result type.
-        VectorWithMemoryTracking<ColumnPtr> cast_variant_columns;
+        std::vector<ColumnPtr> cast_variant_columns;
         cast_variant_columns.reserve(variant_types.size());
         for (size_t i = 0; i != variant_types.size(); ++i)
         {
@@ -1473,8 +1437,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
         };
     }
 
-    auto from_nested_type = removeNullableOrLowCardinalityNullable(from_type);
-    auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(from_nested_type->getName());
+    auto variant_discr_opt = to_variant.tryGetVariantDiscriminator(removeNullableOrLowCardinalityNullable(from_type)->getName());
     /// Cast String to Variant through parsing if it's not Variant(String).
     if (settings.cast_string_to_variant_use_inference && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))) && (!variant_discr_opt || to_variant.getVariants().size() > 1))
         return createStringToVariantWrapper();
@@ -1482,41 +1445,11 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
     if (!variant_discr_opt)
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert type {} to {}. Conversion to Variant allowed only for types from this Variant", from_type->getName(), to_variant.getName());
 
-    /// We resolve the destination variant type by name, but two distinct types can share the same name.
-    /// AggregateFunction has a hidden state representation (Aggregation vs Window) that is not encoded
-    /// in its name, since it is not a user-facing difference but an internal implementation detail.
-    /// So when DataTypeVariant is constructed from two AggregateFunction(f, ...) types that differ only
-    /// in state representation, its constructor collapses them by name to a single variant type.
-    /// If our source column carries the other state representation, we must cast it to the destination
-    /// variant type before storing it as a subcolumn, otherwise serialization would interpret the bytes
-    /// using the wrong layout and crash.
-    const auto & target_variant_type = to_variant.getVariants()[*variant_discr_opt];
-    const auto * from_agg_type = typeid_cast<const DataTypeAggregateFunction *>(from_nested_type.get());
-    const auto * target_variant_agg_type = typeid_cast<const DataTypeAggregateFunction *>(target_variant_type.get());
-    WrapperType to_target_variant_type_cast;
-    if (from_agg_type && target_variant_agg_type && from_agg_type->equalsIgnoringVariant(*target_variant_type)
-        && !from_nested_type->equals(*target_variant_type))
-    {
-        to_target_variant_type_cast = prepareUnpackDictionaries(from_nested_type, target_variant_type);
-    }
-
-    return [variant_discr = *variant_discr_opt,
-            cast_to_variant_type_wrapper = std::move(to_target_variant_type_cast),
-            target_variant_type,
-            unwrapped_from_type = from_nested_type]
+    return [variant_discr = *variant_discr_opt]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t) -> ColumnPtr
     {
         const auto & result_variant_type = assert_cast<const DataTypeVariant &>(*result_type);
         const auto & variant_types = result_variant_type.getVariants();
-
-        auto cast_to_variant_type_if_needed = [&](const ColumnPtr & col) -> ColumnPtr
-        {
-            if (!cast_to_variant_type_wrapper)
-                return col;
-            ColumnsWithTypeAndName args = {{col, unwrapped_from_type, ""}};
-            return cast_to_variant_type_wrapper(args, target_variant_type, nullptr, col->size());
-        };
-
         if (const ColumnNullable * col_nullable = typeid_cast<const ColumnNullable *>(arguments.front().column.get()))
         {
             const auto & column = col_nullable->getNestedColumnPtr();
@@ -1549,7 +1482,7 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
             /// Otherwise we should use filtered column.
             else
                 variant_column = column->filter(filter, variant_size_hint);
-            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), cast_to_variant_type_if_needed(variant_column), variant_discr);
+            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
         }
         else if (isColumnLowCardinalityNullable(*arguments.front().column))
         {
@@ -1590,14 +1523,14 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
             else
                 variant_column = assert_cast<const ColumnLowCardinality &>(*column->filter(filter, variant_size_hint)).cloneWithDefaultOnNull();
 
-            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), cast_to_variant_type_if_needed(variant_column), variant_discr);
+            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), variant_column, variant_discr);
         }
         else
         {
             const auto & column = arguments.front().column;
             auto discriminators = ColumnVariant::ColumnDiscriminators::create();
             discriminators->getData().resize_fill(column->size(), variant_discr);
-            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), cast_to_variant_type_if_needed(column), variant_discr);
+            return createVariantFromDescriptorsAndOneNonEmptyVariant(variant_types, std::move(discriminators), column, variant_discr);
         }
     };
 }
@@ -1758,7 +1691,7 @@ FunctionCast::WrapperType FunctionCast::createDynamicToDynamicWrapper(const Data
         const auto & statistics = dynamic_column.getStatistics();
         const auto & variant_column = dynamic_column.getVariantColumn();
         auto shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
-        VectorWithMemoryTracking<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
+        std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
         variants_with_sizes.reserve(variant_info.variant_names.size());
         for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
         {
@@ -1799,7 +1732,7 @@ FunctionCast::WrapperType FunctionCast::createDynamicToDynamicWrapper(const Data
         auto & result_variant_column = result_dynamic_column->getVariantColumn();
         auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
         /// Create mapping from old discriminators to the new ones.
-        VectorWithMemoryTracking<ColumnVariant::Discriminator> old_to_new_discriminators;
+        std::vector<ColumnVariant::Discriminator> old_to_new_discriminators;
         old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size(), result_shared_variant_discr);
         for (const auto & [name, discr] : result_variant_info.variant_name_to_discriminator)
         {
@@ -1935,7 +1868,7 @@ void FunctionCast::checkEnumToEnumConversion(const EnumTypeFrom * from_type, con
 
     using ValueType = std::common_type_t<typename EnumTypeFrom::FieldType, typename EnumTypeTo::FieldType>;
     using NameValuePair = std::pair<std::string, ValueType>;
-    using EnumValues = VectorWithMemoryTracking<NameValuePair>;
+    using EnumValues = std::vector<NameValuePair>;
 
     EnumValues name_intersection;
     std::set_intersection(std::begin(from_values), std::end(from_values),
@@ -2516,7 +2449,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
         case TypeIndex::String:
             return createStringWrapper(from_type);
         case TypeIndex::FixedString:
-            return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN(), requested_result_is_nullable);
+            return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN());
         case TypeIndex::Array:
             return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
         case TypeIndex::Tuple:

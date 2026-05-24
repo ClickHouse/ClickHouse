@@ -1,7 +1,6 @@
 #include <memory>
-#include <optional>
-#include <unordered_set>
 #include <Common/CurrentThread.h>
+#include <optional>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -12,7 +11,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -40,8 +38,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/operators.hpp>
-#include <Poco/String.h>
-#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -54,9 +50,6 @@
 #include <fmt/ranges.h>
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
-
-#include <Storages/MergeTree/MarkRange.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -89,6 +82,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool input_format_parquet_use_native_reader_v3;
 }
 
 namespace ErrorCodes
@@ -117,7 +111,6 @@ void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & lo
 }
 
 StorageObjectStorageSource::StorageObjectStorageSource(
-    const StorageID & storage_id_,
     String name_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
@@ -131,7 +124,6 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     FormatFilterInfoPtr format_filter_info_,
     bool need_only_count_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
-    , storage_id(storage_id_)
     , name(std::move(name_))
     , object_storage(object_storage_)
     , configuration(configuration_)
@@ -361,11 +353,6 @@ void StorageObjectStorageSource::lazyInitialize()
     initialized = true;
 }
 
-void StorageObjectStorageSource::onFinish()
-{
-    parser_shared_resources->finishStream();
-}
-
 Chunk StorageObjectStorageSource::generate()
 {
     lazyInitialize();
@@ -517,63 +504,6 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
-        {
-            const auto & object_info = reader.getObjectInfo();
-            try
-            {
-                const auto * input_format = reader.getInputFormat();
-                if (input_format)
-                {
-                    auto buckets_opt = input_format->getMatchedBuckets();
-
-                    if (buckets_opt.has_value())
-                    {
-                        const auto & matched_groups = buckets_opt->first;
-                        size_t total_groups = buckets_opt->second;
-
-                        std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
-                        MarkRanges unmatched_ranges;
-                        for (size_t i = 0; i < total_groups; ++i)
-                        {
-                            if (!matched_set.contains(i))
-                            {
-                                if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                                    unmatched_ranges.back().end++;
-                                else
-                                    unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-                            }
-                        }
-
-                        size_t unmatched_count = total_groups - matched_groups.size();
-                        LOG_DEBUG(log,
-                            "Query condition cache: storing {}/{} unmatched row groups for condition {} in file {}.",
-                            unmatched_count,
-                            total_groups,
-                            format_filter_info->filter_actions_dag->dumpNames(),
-                            object_info->getFileName());
-
-                        if (!unmatched_ranges.empty())
-                        {
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            query_condition_cache->write(
-                                storage_id.uuid,
-                                object_info->getFileName(),
-                                *format_filter_info->condition_hash,
-                                format_filter_info->filter_actions_dag->dumpNames(),
-                                unmatched_ranges,
-                                total_groups,
-                                false
-                            );
-                        }
-                    }
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(getLogger("StorageObjectStorageSource"), "Failed to write to query condition cache");
-            }
-        }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && !format_filter_info->filter_actions_dag)
@@ -612,7 +542,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 {
     return createReader(
         0,
-        storage_id,
         file_iterator,
         configuration,
         object_storage,
@@ -629,7 +558,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
     size_t processor,
-    const StorageID & storage_id,
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
     const ObjectStoragePtr & object_storage,
@@ -646,16 +574,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
-    QueryConditionCachePtr query_condition_cache;
-    if (format_filter_info && format_filter_info->condition_hash)
-        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-
-    while (true)
+    do
     {
         object_info = file_iterator->next(processor);
 
         if (!object_info || object_info->getPath().empty())
             return {};
+
         if (!object_info->getObjectMetadata())
         {
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
@@ -672,48 +597,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             else
                 object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
         }
-
-        if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0
-            && object_info->getObjectMetadata()->is_size_known)
-            continue;
-
-        if (query_condition_cache && !object_info->file_bucket_info)
-        {
-            auto matching_marks = query_condition_cache->read(
-                storage_id.uuid, object_info->getFileName(), *format_filter_info->condition_hash);
-            if (matching_marks.has_value())
-            {
-                const auto & marks = *matching_marks;
-                size_t total_row_groups = marks.size();
-                std::vector<size_t> matching_row_groups;
-                for (size_t i = 0; i < total_row_groups; ++i)
-                    if (marks[i])
-                        matching_row_groups.push_back(i);
-
-                size_t dropped_row_groups = total_row_groups - matching_row_groups.size();
-                LOG_DEBUG(log,
-                    "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
-                    dropped_row_groups,
-                    total_row_groups,
-                    format_filter_info->filter_actions_dag->dumpNames(),
-                    object_info->getFileName());
-
-                if (matching_row_groups.empty())
-                    continue;
-
-                auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
-                    object_info->getFileFormat().value_or(configuration->format));
-                if (file_bucket_info)
-                {
-                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
-                    if (!filtered)
-                        continue;
-                    object_info->file_bucket_info = std::move(filtered);
-                }
-            }
-        }
-        break;
-    }
+    } while (query_settings.skip_empty_files
+             && object_info->getObjectMetadata()->size_bytes == 0
+             && object_info->getObjectMetadata()->is_size_known);
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
@@ -807,8 +693,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        bool use_native_reader_v3 = format_settings.has_value()
+            ? format_settings->parquet.use_native_reader_v3
+            : context_->getSettingsRef()[Setting::input_format_parquet_use_native_reader_v3];
+
         InputFormatPtr input_format;
-        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
+        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
             && (Poco::toLower(object_info->getFileFormat().value_or(configuration->format)) == "parquet")
             && !object_info->getObjectMetadata()->etag.empty())
         {
@@ -1093,8 +983,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (use_page_cache)
     {
-        PageCacheFile cache_file = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
-        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(cache_file, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
+        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, effective_read_settings.page_cache, std::move(impl), modified_read_settings);
     }
 
     if (!use_async_buffer)

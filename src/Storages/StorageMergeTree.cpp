@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <ranges>
-#include <thread>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -51,7 +50,6 @@
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -1316,8 +1314,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
-                /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID()
+                /*range_filter_=*/nullptr
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -1629,8 +1626,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                     auto fake_query_context = Context::createCopy(getContext());
                     fake_query_context->makeQueryContext();
                     fake_query_context->setCurrentQueryId("");
-                    commands_size += evaluateMutationCommandsSize(
-                        commands_for_size_validation, shared_from_this(), fake_query_context);
+                    MutationsInterpreter::Settings settings(false);
+                    MutationsInterpreter interpreter(
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, settings);
+                    commands_size += interpreter.evaluateCommandsSize();
                 }
                 catch (...)
                 {
@@ -2548,13 +2547,6 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     assertNotReadonly();
     LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom\tsource_table: {}, replace: {}", source_table->getStorageID().getShortName(), replace);
 
-    /// Source-side UK reject (destination-side rejection is centralized in
-    /// MergeTreeData::alterPartition). Without this, REPLACE PARTITION FROM a
-    /// UK source into a plain table would silently break UK invariants.
-    if (source_table->getInMemoryMetadataPtr(local_context, false)->hasUniqueKey())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "REPLACE/ATTACH PARTITION FROM a source table with UNIQUE KEY is not supported");
-
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
@@ -2709,12 +2701,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Table {} supports movePartitionToTable only for MergeTree family of table engines. Got {}",
                         getStorageID().getNameForLogs(), dest_table->getName());
-
-    /// Destination-side UK reject (source-side rejection is centralized in
-    /// MergeTreeData::alterPartition).
-    if (dest_table_storage->getInMemoryMetadataPtr(local_context, false)->hasUniqueKey())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(dest_table_storage->getStoragePolicy());
 
     if (!are_policies_partition_op_compatible)
@@ -3031,7 +3017,7 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
 NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 {
     NameSet res = getColumnsUpdatedInPatches();
-    if (!hasDataMutations() && !hasAlterMutations())
+    if (!hasDataMutations())
         return res;
 
     for (const auto & [version, commands] : mutations_by_version)

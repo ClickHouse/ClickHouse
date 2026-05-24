@@ -12,7 +12,6 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -25,14 +24,6 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
-}
-
-namespace ProfileEvents
-{
-    extern const Event UserThrottlerBytes;
-    extern const Event UserThrottlerSleepMicroseconds;
-    extern const Event AllUsersThrottlerBytes;
-    extern const Event AllUsersThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -368,20 +359,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
-            total_network_throttler = std::make_shared<Throttler>(
-                settings[Setting::max_network_bandwidth_for_all_users],
-                ProfileEvents::AllUsersThrottlerBytes,
-                ProfileEvents::AllUsersThrottlerSleepMicroseconds);
+            total_network_throttler = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_all_users]);
         }
 
         if (!user_process_list.user_throttler)
         {
             if (settings[Setting::max_network_bandwidth_for_user])
-                user_process_list.user_throttler = std::make_shared<Throttler>(
-                    settings[Setting::max_network_bandwidth_for_user],
-                    total_network_throttler,
-                    ProfileEvents::UserThrottlerBytes,
-                    ProfileEvents::UserThrottlerSleepMicroseconds);
+                user_process_list.user_throttler
+                    = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
@@ -638,12 +623,6 @@ void QueryStatus::throwIfKilled()
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
 }
 
-CancelReason QueryStatus::getCancelReason() const
-{
-    std::lock_guard<std::mutex> lock(cancel_mutex);
-    return cancel_reason;
-}
-
 bool QueryStatus::checkTimeLimitSoft()
 {
     if (is_killed.load())
@@ -681,12 +660,6 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
     return user_process_list->user_throttler;
 }
 
-MemoryTracker * QueryStatus::getMemoryTracker() const
-{
-    if (!thread_group)
-        return nullptr;
-    return &thread_group->memory_tracker;
-}
 
 QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {
