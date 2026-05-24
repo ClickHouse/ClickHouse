@@ -119,7 +119,7 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     /// String — try WKB parsing.
     if (type == Field::Types::String)
     {
-        auto sv = field.safeGet<String>();
+        const auto & sv = field.safeGet<String>();
         ReadBufferFromMemory buf(sv.data(), sv.size());
         try
         {
