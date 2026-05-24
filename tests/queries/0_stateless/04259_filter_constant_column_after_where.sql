@@ -190,6 +190,35 @@ FROM
 WHERE t = tuple(0.0)
 ORDER BY reinterpretAsUInt64(dynamicElement(tupleElement(t, 1), 'Float64'));
 
+DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_fixed_string;
+
+CREATE TABLE 04259_filter_constant_column_after_where_fixed_string
+(
+    s String
+)
+ENGINE = Memory;
+
+INSERT INTO 04259_filter_constant_column_after_where_fixed_string VALUES
+    (unhex('616263')),
+    (unhex('61626300')),
+    (unhex('6162630000')),
+    (unhex('61626364'));
+
+SELECT hex(s), length(s)
+FROM 04259_filter_constant_column_after_where_fixed_string
+WHERE s = toFixedString('abc', 5)
+ORDER BY length(s), hex(s);
+
+SELECT hex(tupleElement(t, 1)), length(tupleElement(t, 1))
+FROM
+(
+    SELECT tuple(s) AS t
+    FROM 04259_filter_constant_column_after_where_fixed_string
+)
+WHERE t = tuple(toFixedString('abc', 5))
+ORDER BY length(tupleElement(t, 1)), hex(tupleElement(t, 1));
+
 DROP TABLE 04259_filter_constant_column_after_where;
 DROP TABLE 04259_filter_constant_column_after_where_decimal;
 DROP TABLE 04259_filter_constant_column_after_where_dynamic;
+DROP TABLE 04259_filter_constant_column_after_where_fixed_string;

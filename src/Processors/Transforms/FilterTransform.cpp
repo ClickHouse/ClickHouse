@@ -83,6 +83,16 @@ bool containsDecimal(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isDecimal);
 }
 
+bool containsString(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isString);
+}
+
+bool containsFixedString(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isFixedString);
+}
+
 std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
@@ -121,6 +131,8 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     if (containsFloat(result_column.type))
         return {};
     if (containsDecimal(result_column.type) && containsFloat(constant_node->result_type))
+        return {};
+    if (containsString(result_column.type) && containsFixedString(constant_node->result_type))
         return {};
 
     try
