@@ -49,7 +49,10 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     image="clickhouse/clickhouse-server",
-    tag="25.10",
+    # The tag is pinned to a release that knows the `table_readonly`
+    # MergeTree setting (added in 26.3) so that rotated system log
+    # tables can be re-attached after `restart_with_original_version`.
+    tag="26.3",
     with_installed_binary=True,
     stay_alive=True,
 )

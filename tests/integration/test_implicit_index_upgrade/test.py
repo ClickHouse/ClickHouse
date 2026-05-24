@@ -11,11 +11,14 @@ def started_cluster():
         # 25.10 stored implicit indices in ZooKeeper metadata.
         # Newer versions only store explicit indices, so upgrading
         # requires backward-compatible metadata comparison.
+        # The tag is pinned to a release that knows the `table_readonly`
+        # MergeTree setting (added in 26.3) so that rotated system log
+        # tables can be re-attached after `restart_with_original_version`.
         cluster.add_instance(
             "node",
             with_zookeeper=True,
             image="clickhouse/clickhouse-server",
-            tag="25.10",
+            tag="26.3",
             with_installed_binary=True,
             stay_alive=True,
         )
