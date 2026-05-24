@@ -16,7 +16,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionRegexpQuoteMeta final : public IFunction
+class FunctionRegexpQuoteMeta : public IFunction
 {
 public:
     static constexpr auto name = "regexpQuoteMeta";
