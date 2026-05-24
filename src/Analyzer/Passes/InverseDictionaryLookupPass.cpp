@@ -389,58 +389,60 @@ public:
             QueryTreeNodePtr node_function_ptr = dict_get_keys_fn;
             analyzer.resolveConstantExpression(node_function_ptr, nullptr, getContext());
 
-            auto * keys_constant = node_function_ptr->as<ConstantNode>();
-
-            if (keys_constant == nullptr)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "dictGetKeys did not resolve to ConstantNode as expected");
-
-            const Field & keys_field = keys_constant->getValue();
-
-            if (keys_field.getType() != Field::Types::Array)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "dictGetKeys expected to return Array field. Actual type: {}", keys_field.getType());
-
-            const auto & keys_array = keys_field.safeGet<Array>();
-            const size_t keys_size = keys_array.size();
-
-            /// No keys -> WHERE 0
-            if (keys_size == 0)
+            /// `resolveConstantExpression` intentionally skips folding large constants
+            /// (see `column->byteSize() < 1_MiB` in `src/Analyzer/Resolve/resolveFunction.cpp`).
+            /// In that case `dictGetKeys` remains a `FunctionNode`; fall back to the IN-subquery
+            /// path below instead of throwing.
+            if (const auto * keys_constant = node_function_ptr->as<ConstantNode>())
             {
-                auto zero_type = std::make_shared<DataTypeUInt8>();
-                auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
-                node = preserve_result_type(zero_node);
+                const Field & keys_field = keys_constant->getValue();
+
+                if (keys_field.getType() != Field::Types::Array)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "dictGetKeys expected to return Array field. Actual type: {}", keys_field.getType());
+
+                const auto & keys_array = keys_field.safeGet<Array>();
+                const size_t keys_size = keys_array.size();
+
+                /// No keys -> WHERE 0
+                if (keys_size == 0)
+                {
+                    auto zero_type = std::make_shared<DataTypeUInt8>();
+                    auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
+                    node = preserve_result_type(zero_node);
+                    return;
+                }
+
+                DataTypePtr key_expr_type = dictget_function_info.key_expr_node->getResultType();
+
+                /// Single key -> key_expr = <that key>
+                if (keys_size == 1)
+                {
+                    const Field & single_key_field = keys_array.front();
+
+                    auto single_key_const = std::make_shared<ConstantNode>(single_key_field, key_expr_type);
+
+                    auto equals_node = std::make_shared<FunctionNode>("equals");
+                    equals_node->markAsOperator();
+                    equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
+                    resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
+
+                    node = preserve_result_type(equals_node);
+                    return;
+                }
+
+                /// Multiple keys -> key_expr IN <constant array-of-keys>
+                /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
+                auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
+
+                auto in_function_node = std::make_shared<FunctionNode>("in");
+                in_function_node->markAsOperator();
+                in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
+                resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+
+                node = preserve_result_type(in_function_node);
                 return;
             }
-
-            DataTypePtr key_expr_type = dictget_function_info.key_expr_node->getResultType();
-
-            /// Single key -> key_expr = <that key>
-            if (keys_size == 1)
-            {
-                const Field & single_key_field = keys_array.front();
-
-                auto single_key_const = std::make_shared<ConstantNode>(single_key_field, key_expr_type);
-
-                auto equals_node = std::make_shared<FunctionNode>("equals");
-                equals_node->markAsOperator();
-                equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
-                resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
-
-                node = preserve_result_type(equals_node);
-                return;
-            }
-
-            /// Multiple keys -> key_expr IN <constant array-of-keys>
-            /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
-            auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
-
-            auto in_function_node = std::make_shared<FunctionNode>("in");
-            in_function_node->markAsOperator();
-            in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
-            resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
-
-            node = preserve_result_type(in_function_node);
-            return;
         }
 
         if (getSettings()[Setting::rewrite_in_to_join])
