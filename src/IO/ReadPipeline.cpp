@@ -161,8 +161,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (!source)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReadPipeline: source stage is not set, call setSource first");
 
-    /// Empty objects = zero-blob file. Return `ReadBufferFromEmptyFile` so callers
-    /// don't need workarounds (e.g. injecting a dummy `StoredObject`).
+    /// Empty objects = zero-blob file.
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
 
@@ -370,6 +369,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ReadPipeline: distributed cache requires ObjectStorageSource");
 
+        /// FIXME: lift this restriction. Filesystem cache should be reachable on the
+        /// DC fallback path (DC miss → fallback → FS cache → source). Today the
+        /// fallback creator below goes directly to `storage->readObject`, skipping
+        /// any filesystem-cache layer; we'd need to feed the FS-cache-wrapped source
+        /// into the fallback creator instead, mirroring how the gather path composes
+        /// the two stages.
         if (!filesystem_caches.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ReadPipeline: filesystem cache + distributed cache without gather is not supported. "
