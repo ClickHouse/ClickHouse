@@ -2482,7 +2482,8 @@ void executeQuery(
             if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->returning_select)
                 pipeline = buildInsertReturningPipeline(std::move(pipeline), insert_query->returning_select, context);
         }
-        else if (pipeline.pulling())
+
+        if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
             format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr

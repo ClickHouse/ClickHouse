@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
