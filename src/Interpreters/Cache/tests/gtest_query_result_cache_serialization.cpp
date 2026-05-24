@@ -325,6 +325,26 @@ TEST(QueryResultCacheSerialization, RedisKeyTagParsingRejectsMalformedKeys)
     EXPECT_FALSE(QueryResultCacheRedisKeyUtils::tryGetTagFromRedisKey("ch:qcache:v0:t0:tag:shared").has_value());
 }
 
+TEST(QueryResultCacheSerialization, RedisKeyTagParsingDistinguishesPrefixOverlap)
+{
+    /// `clearByTag("foo")` must not see a key whose tag starts with `foo:`.
+    /// `SCAN MATCH ch:qcache:v*:t*:foo:*:?{32}` over-matches because Redis `*`
+    /// also crosses `:`, so the exact-tag check in `hasTag` is what makes the
+    /// clear-by-tag path safe for tags containing `:`.
+    auto header = makeTwoColumnHeader();
+    auto key_foo = makeKey("SELECT 18", header, std::nullopt, {}, true, false, "foo");
+    auto key_foo_bar = makeKey("SELECT 19", header, std::nullopt, {}, true, false, "foo:bar");
+
+    const String redis_key_foo = key_foo.encodeToRedisKey();
+    const String redis_key_foo_bar = key_foo_bar.encodeToRedisKey();
+
+    EXPECT_TRUE(QueryResultCacheRedisKeyUtils::hasTag(redis_key_foo, "foo"));
+    EXPECT_FALSE(QueryResultCacheRedisKeyUtils::hasTag(redis_key_foo, "foo:bar"));
+
+    EXPECT_TRUE(QueryResultCacheRedisKeyUtils::hasTag(redis_key_foo_bar, "foo:bar"));
+    EXPECT_FALSE(QueryResultCacheRedisKeyUtils::hasTag(redis_key_foo_bar, "foo"));
+}
+
 /// ==========================================================================
 /// A3. Entry serialization roundtrip
 /// ==========================================================================

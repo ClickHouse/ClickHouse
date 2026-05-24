@@ -12,6 +12,41 @@
 #include <string>
 #include <unordered_map>
 
+/// Lua helper inlined into the SCAN-and-delete scripts to filter candidate
+/// keys by the exact tag parsed from the key. The glob patterns used by
+/// `dataKeysPatternForTag` / `lockKeysPatternForTag` rely on `*` between the
+/// tag and the trailing scope/hash, and `*` also matches `:`, so a tag like
+/// `foo` would otherwise hit keys for `foo:bar`. Defined as a macro because
+/// `static constexpr std::string_view` members cannot be concatenated with
+/// string literals at compile time. An empty `expected` short-circuits to
+/// match every key, used for the all-tags clear path.
+#define CH_QCACHE_TAG_MATCH_HELPER_LUA \
+    "local function tag_matches(k, expected) " \
+    "    if expected == '' then return true end " \
+    "    if string.sub(k, -5) == ':lock' then " \
+    "        k = string.sub(k, 1, -6) " \
+    "    end " \
+    "    local _, prefix_end = string.find(k, '^ch:qcache:v%d+:t%d+:') " \
+    "    if not prefix_end then return false end " \
+    "    local tag_start = prefix_end + 1 " \
+    "    local etag_len = #expected " \
+    "    if string.sub(k, tag_start, tag_start + etag_len - 1) ~= expected then return false end " \
+    "    if string.sub(k, tag_start + etag_len, tag_start + etag_len) ~= ':' then return false end " \
+    "    local scope_part = string.sub(k, tag_start + etag_len + 1) " \
+    "    if string.sub(scope_part, 1, 7) == 'shared:' then " \
+    "        local hex = string.sub(scope_part, 8) " \
+    "        return #hex == 32 and string.find(hex, '^%x+$') ~= nil " \
+    "    end " \
+    "    if string.sub(scope_part, 1, 8) == 'private:' then " \
+    "        local hex1 = string.sub(scope_part, 9, 40) " \
+    "        if #hex1 ~= 32 or string.find(hex1, '^%x+$') == nil then return false end " \
+    "        if string.sub(scope_part, 41, 41) ~= ':' then return false end " \
+    "        local hex2 = string.sub(scope_part, 42) " \
+    "        return #hex2 == 32 and string.find(hex2, '^%x+$') ~= nil " \
+    "    end " \
+    "    return false " \
+    "end "
+
 namespace DB
 {
 
@@ -176,16 +211,31 @@ private:
         "    return 0 "
         "end";
 
+    /// SCAN MATCH globs over-match: `*` between tag and hash in
+    /// `dataKeysPatternForTag` also matches `:`, so clearing tag `foo` would
+    /// otherwise hit keys for tag `foo:bar`. The expected tag is therefore
+    /// passed in `ARGV[3]` and each candidate is parsed to verify an exact
+    /// tag match before deletion. An empty `ARGV[3]` skips the filter and is
+    /// used for `clear()` where the all-tags pattern intentionally matches
+    /// every entry under the qcache namespace.
     static constexpr std::string_view CLEAR_BY_TAG_SCRIPT =
+        CH_QCACHE_TAG_MATCH_HELPER_LUA
+        "local expected_tag = ARGV[3] or '' "
         "local cursor = '0' "
         "local deleted = 0 "
         "repeat "
         "    local res = redis.call('SCAN', cursor, 'MATCH', ARGV[1], 'COUNT', ARGV[2]) "
         "    cursor = res[1] "
         "    local keys = res[2] "
-        "    if #keys > 0 then "
-        "        redis.call('DEL', unpack(keys)) "
-        "        deleted = deleted + #keys "
+        "    local to_del = {} "
+        "    for _, k in ipairs(keys) do "
+        "        if tag_matches(k, expected_tag) then "
+        "            table.insert(to_del, k) "
+        "        end "
+        "    end "
+        "    if #to_del > 0 then "
+        "        redis.call('DEL', unpack(to_del)) "
+        "        deleted = deleted + #to_del "
         "    end "
         "until cursor == '0' "
         "return deleted";
@@ -275,14 +325,24 @@ private:
         "end "
         "return {0, ''}";
 
+    /// Same exact-tag filter as `CLEAR_BY_TAG_SCRIPT`: the expected tag is
+    /// passed via `ARGV[4]` (empty when clearing all tags).
     static constexpr std::string_view CLEAR_AND_BUMP_SCRIPT =
+        CH_QCACHE_TAG_MATCH_HELPER_LUA
+        "local expected_tag = ARGV[4] or '' "
         "local cursor = '0' "
         "repeat "
         "    local res = redis.call('SCAN', cursor, 'MATCH', ARGV[1], 'COUNT', ARGV[3]) "
         "    cursor = res[1] "
         "    local keys = res[2] "
-        "    if #keys > 0 then "
-        "        redis.call('DEL', unpack(keys)) "
+        "    local to_del = {} "
+        "    for _, k in ipairs(keys) do "
+        "        if tag_matches(k, expected_tag) then "
+        "            table.insert(to_del, k) "
+        "        end "
+        "    end "
+        "    if #to_del > 0 then "
+        "        redis.call('DEL', unpack(to_del)) "
         "    end "
         "until cursor == '0' "
         "cursor = '0' "
@@ -290,8 +350,14 @@ private:
         "    local res = redis.call('SCAN', cursor, 'MATCH', ARGV[2], 'COUNT', ARGV[3]) "
         "    cursor = res[1] "
         "    local keys = res[2] "
-        "    if #keys > 0 then "
-        "        redis.call('DEL', unpack(keys)) "
+        "    local to_del = {} "
+        "    for _, k in ipairs(keys) do "
+        "        if tag_matches(k, expected_tag) then "
+        "            table.insert(to_del, k) "
+        "        end "
+        "    end "
+        "    if #to_del > 0 then "
+        "        redis.call('DEL', unpack(to_del)) "
         "    end "
         "until cursor == '0' "
         "return redis.call('INCR', KEYS[1])";
@@ -312,3 +378,5 @@ private:
 };
 
 }
+
+#undef CH_QCACHE_TAG_MATCH_HELPER_LUA

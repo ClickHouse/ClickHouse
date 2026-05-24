@@ -66,16 +66,21 @@ std::string lockKeysPatternForAllTags()
     return std::string(QUERY_RESULT_CACHE_REDIS_KEY_PREFIX) + "v*:t*:*:*:" + std::string(QUERY_CACHE_HASH_GLOB) + ":lock";
 }
 
+/// `expected_tag` is forwarded to `CLEAR_BY_TAG_SCRIPT` so it can filter out
+/// SCAN hits whose parsed tag does not match exactly. An empty string keeps
+/// the all-tags semantics where every qcache-namespace match is in scope.
 void deleteByPatternWithCachedScript(
     Poco::Redis::Client & client,
     const std::string & script_sha,
-    const std::string & pattern)
+    const std::string & pattern,
+    const std::string & expected_tag)
 {
     Poco::Redis::Command cmd("EVALSHA");
     cmd << script_sha;
     cmd << "0"; /// no KEYS[], only ARGV[]
     cmd << pattern;
     cmd << "100"; /// batch size per SCAN iteration
+    cmd << expected_tag;
     client.execute<Poco::Int64>(cmd);
 }
 
@@ -365,8 +370,10 @@ catch (...)
         "Failed to remove entry from external query result cache: {}", getCurrentExceptionMessage(false));
 }
 
-/// Use the `CLEAR_BY_TAG_SCRIPT` Lua script to SCAN and delete
-/// all query-cache keys matching the exact `{tag}:{32hex}` format.
+/// Use the `CLEAR_BY_TAG_SCRIPT` Lua script to SCAN candidates by glob and
+/// then delete only those whose exact parsed tag matches `tag`. The glob
+/// alone over-matches when a tag contains `:`, so the script-side exact
+/// check is required to avoid clearing unrelated tags.
 void RedisRemoteCacheBackend::clearByTag(const String & tag)
 try
 {
@@ -379,7 +386,7 @@ try
         executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
         {
             for (const auto & pattern : patterns)
-                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern);
+                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern, tag);
         });
     });
 }
@@ -408,7 +415,7 @@ try
         executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
         {
             for (const auto & pattern : patterns)
-                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern);
+                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern, /*expected_tag=*/"");
         });
     });
 }
@@ -679,13 +686,16 @@ try
     const std::string data_pattern = has_tag ? dataKeysPatternForTag(*tag) : dataKeysPatternForAllTags();
     const std::string lock_pattern = has_tag ? lockKeysPatternForTag(*tag) : lockKeysPatternForAllTags();
     const std::string generation_key = has_tag ? tagGenerationKey(*tag) : globalGenerationKey();
+    /// Empty `expected_tag` disables the in-script exact-match filter for the
+    /// all-tags path, where the qcache-namespaced glob is already the right scope.
+    const std::string expected_tag = has_tag ? *tag : std::string();
 
     execute([&](Poco::Redis::Client & client)
     {
         executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
         {
             Poco::Redis::Command cmd("EVALSHA");
-            cmd << shas.clear_and_bump << "1" << generation_key << data_pattern << lock_pattern << "100";
+            cmd << shas.clear_and_bump << "1" << generation_key << data_pattern << lock_pattern << "100" << expected_tag;
             client.execute<Poco::Int64>(cmd);
         });
     });
