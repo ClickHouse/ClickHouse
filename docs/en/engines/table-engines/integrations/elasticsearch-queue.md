@@ -13,6 +13,12 @@ The `ElasticsearchQueue` table engine reads documents from Elasticsearch and str
 
 `ElasticsearchQueue` is similar to other queue engines such as `Kafka` and `S3Queue`: the engine table is a source, not the final storage. A `MATERIALIZED VIEW` receives blocks from the engine table and writes them into a destination table such as `MergeTree`.
 
+`ElasticsearchQueue` is experimental. Enable `allow_experimental_elasticsearch_queue` before creating a table:
+
+```sql
+SET allow_experimental_elasticsearch_queue = 1;
+```
+
 ## Creating a table {#creating-a-table}
 
 ```sql
@@ -113,6 +119,8 @@ ORDER BY seq;
 Create the `ElasticsearchQueue` engine table:
 
 ```sql
+SET allow_experimental_elasticsearch_queue = 1;
+
 CREATE TABLE events_queue
 (
     seq UInt64,

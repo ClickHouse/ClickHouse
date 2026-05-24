@@ -22,6 +22,7 @@
 namespace DB
 {
 
+struct ConnectionTimeouts;
 struct ElasticsearchQueueSettings;
 
 class StorageElasticsearchQueue final : public IStorage, WithContext
@@ -82,7 +83,6 @@ public:
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
-    size_t getPollTimeoutMilliseconds() const;
     size_t getFlushIntervalMilliseconds() const;
     size_t getConsumerRescheduleMilliseconds() const;
     bool commitOnSelect() const;
@@ -142,6 +142,7 @@ private:
     std::pair<zkutil::ZooKeeperPtr, zkutil::EphemeralNodeHolder::Ptr> tryAcquireKeeperCheckpointLock() const;
 
     void validateAuthenticationSettings() const;
+    ConnectionTimeouts getHTTPTimeouts() const;
     HTTPHeaderEntries makeAuthHeaders() const;
     void setBasicCredentials(Poco::Net::HTTPBasicCredentials & credentials) const;
     String executeHTTPRequest(const String & method, const Poco::URI & uri, const String & body_string) const;

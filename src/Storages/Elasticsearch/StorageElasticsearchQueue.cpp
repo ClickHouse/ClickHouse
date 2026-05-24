@@ -93,7 +93,6 @@ namespace
 {
     constexpr auto CHECKPOINT_FILE = "checkpoint.json";
     constexpr auto TMP_SUFFIX = ".tmp";
-    constexpr auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
     enum class ElasticsearchAuthType
     {
@@ -175,6 +174,20 @@ namespace
         Poco::JSON::Object::Ptr sort_entry = new Poco::JSON::Object;
         sort_entry->set(field, order);
         return sort_entry;
+    }
+
+    String getUpdatedPointInTimeId(const String & response, const String & current_pit_id)
+    {
+        Poco::JSON::Parser parser;
+        auto parsed = parser.parse(response);
+        if (parsed.type() != typeid(Poco::JSON::Object::Ptr))
+            return current_pit_id;
+
+        auto root = parsed.extract<Poco::JSON::Object::Ptr>();
+        if (root->has("pit_id"))
+            return root->getValue<String>("pit_id");
+
+        return current_pit_id;
     }
 }
 
@@ -323,7 +336,10 @@ void StorageElasticsearchQueue::drop()
     try
     {
         if (disk->existsDirectory(metadata_base_path))
+        {
+            LOG_INFO(log, "Removing ElasticsearchQueue metadata directory {}", metadata_base_path);
             disk->removeRecursive(metadata_base_path);
+        }
     }
     catch (...)
     {
@@ -507,6 +523,21 @@ void StorageElasticsearchQueue::validateAuthenticationSettings() const
     }
 }
 
+ConnectionTimeouts StorageElasticsearchQueue::getHTTPTimeouts() const
+{
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings());
+
+    const auto & poll_timeout = (*settings)[ElasticsearchQueueSetting::elasticsearch_poll_timeout_ms];
+    if (poll_timeout.changed && poll_timeout.totalMilliseconds() > 0)
+    {
+        timeouts.withConnectionTimeout(poll_timeout);
+        timeouts.withSendTimeout(poll_timeout);
+        timeouts.withReceiveTimeout(poll_timeout);
+    }
+
+    return timeouts;
+}
+
 HTTPHeaderEntries StorageElasticsearchQueue::makeAuthHeaders() const
 {
     HTTPHeaderEntries headers{
@@ -567,7 +598,7 @@ String StorageElasticsearchQueue::executeHTTPRequest(const String & method, cons
     auto buf = BuilderRWBufferFromHTTP(uri)
         .withMethod(method)
         .withSettings(getContext()->getReadSettings())
-        .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
+        .withTimeouts(getHTTPTimeouts())
         .withHostFilter(&getContext()->getRemoteHostFilter())
         .withOutCallback(std::move(out_callback))
         .withHeaders(std::move(headers))
@@ -675,7 +706,11 @@ String StorageElasticsearchQueue::executeSearchRequest(size_t max_rows, const St
         response = executeHTTPRequest(Poco::Net::HTTPRequest::HTTP_POST, Poco::URI(endpoint), body_string);
 
         if (!pit_id.empty())
+        {
+            pit_id = getUpdatedPointInTimeId(response, pit_id);
             closePointInTime(pit_id);
+            pit_id.clear();
+        }
     }
     catch (...)
     {
@@ -794,17 +829,11 @@ size_t StorageElasticsearchQueue::getPollMaxBatchSize() const
     return std::min(batch_size, getMaxBlockSize());
 }
 
-size_t StorageElasticsearchQueue::getPollTimeoutMilliseconds() const
-{
-    return (*settings)[ElasticsearchQueueSetting::elasticsearch_poll_timeout_ms].changed
-        ? (*settings)[ElasticsearchQueueSetting::elasticsearch_poll_timeout_ms].totalMilliseconds()
-        : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
-}
-
 size_t StorageElasticsearchQueue::getFlushIntervalMilliseconds() const
 {
-    return (*settings)[ElasticsearchQueueSetting::elasticsearch_flush_interval_ms].changed
-        ? (*settings)[ElasticsearchQueueSetting::elasticsearch_flush_interval_ms].totalMilliseconds()
+    const auto & flush_interval = (*settings)[ElasticsearchQueueSetting::elasticsearch_flush_interval_ms];
+    return flush_interval.changed && flush_interval.totalMilliseconds() > 0
+        ? flush_interval.totalMilliseconds()
         : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms].totalMilliseconds();
 }
 
@@ -852,7 +881,7 @@ void StorageElasticsearchQueue::threadFunc()
 
                 auto ts = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
-                if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
+                if (duration > std::chrono::milliseconds(getFlushIntervalMilliseconds()))
                     break;
             }
         }

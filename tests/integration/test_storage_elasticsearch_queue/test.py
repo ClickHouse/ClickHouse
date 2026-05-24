@@ -133,7 +133,8 @@ def create_target_and_queue(node, database_name, index, extra_settings):
             elasticsearch_poll_max_batch_size = 2,
             elasticsearch_consumer_reschedule_ms = 100
             {extra_settings}
-        """
+        """,
+        settings={"allow_experimental_elasticsearch_queue": 1},
     )
     node.query(
         f"""
@@ -166,6 +167,22 @@ def test_point_in_time_lifecycle(started_cluster, database):
     )
 
 
+def test_experimental_setting_is_required(started_cluster, database):
+    with pytest.raises(QueryRuntimeException) as exc:
+        node1.query(
+            f"""
+            CREATE TABLE {database}.disabled_engine
+            (
+                seq UInt64,
+                message String
+            )
+            ENGINE = ElasticsearchQueue('{clickhouse_elasticsearch_url()}', 'missing-index', 'seq')
+            """
+        )
+
+    assert "allow_experimental_elasticsearch_queue" in str(exc.value)
+
+
 def test_keeper_checkpoint_is_shared_between_replicas(started_cluster, database):
     index = f"keeper_{database}"
     put_elasticsearch_documents(index, [{"seq": i, "message": f"value-{i}"} for i in range(1, 7)])
@@ -194,7 +211,8 @@ def test_authentication_settings_validation(started_cluster, database):
             SETTINGS
                 elasticsearch_auth_type = 'none',
                 elasticsearch_api_key = 'secret'
-            """
+            """,
+            settings={"allow_experimental_elasticsearch_queue": 1},
         )
 
     assert "elasticsearch_auth_type=none" in str(exc.value)

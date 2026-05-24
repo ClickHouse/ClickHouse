@@ -1,5 +1,7 @@
 #include <Access/Common/AccessType.h>
+#include <Core/Settings.h>
 #include <Core/Types.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -32,10 +34,16 @@ namespace ElasticsearchQueueSetting
     extern const ElasticsearchQueueSettingsBool elasticsearch_use_point_in_time;
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_elasticsearch_queue;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -51,6 +59,14 @@ void registerStorageElasticsearchQueue(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args) -> std::shared_ptr<IStorage>
     {
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_elasticsearch_queue])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Table engine ElasticsearchQueue is experimental. Set `allow_experimental_elasticsearch_queue` setting to enable it");
+        }
+
         ASTs & engine_args = args.engine_args;
         const size_t args_count = engine_args.size();
         const bool has_settings = args.storage_def->settings;
