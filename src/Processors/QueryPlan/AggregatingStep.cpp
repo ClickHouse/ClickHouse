@@ -4,7 +4,9 @@
 #include <numeric>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -107,8 +109,8 @@ static inline void convertToNullable(Block & header, const Names & keys)
     {
         auto & column = header.getByName(key);
 
-        column.type = makeNullableSafe(column.type);
-        column.column = makeNullableSafe(column.column);
+        column.type = makeNullableOrLowCardinalityNullableSafe(column.type);
+        column.column = makeNullableOrLowCardinalityNullableSafe(column.column);
     }
 }
 
@@ -247,7 +249,7 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
         else
         {
             const auto * column_node = dag.getOutputs()[in_header.getPositionByName(col.name)];
-            if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+            if (used_it != used_keys.end() && group_by_use_nulls && removeLowCardinality(column_node->result_type)->canBeInsideNullable())
                 outputs.push_back(&dag.addFunction(to_nullable_function, { column_node }, col.name));
             else
                 outputs.push_back(column_node);
@@ -392,7 +394,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         if (grouping_sets_size > 1)
         {
-            pipeline.transform([&](OutputPortRawPtrs ports)
+            pipeline.transform([&](const OutputPortRawPtrs & ports)
             {
                 Processors copiers;
 
