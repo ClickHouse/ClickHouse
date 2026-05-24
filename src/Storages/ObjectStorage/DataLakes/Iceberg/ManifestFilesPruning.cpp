@@ -37,138 +37,37 @@ using namespace DB;
 namespace
 {
 
-
-/// Try to extract the bounding box from a WKB-encoded constant column node.
-bool tryExtractWkbBboxForIceberg(
-    const DB::ActionsDAG::Node * node,
-    double & xmin, double & ymin,
-    double & xmax, double & ymax)
+/// Extractor callback for the shared conjunctive collection template.
+/// Returns an optional (column_name, bbox) pair when the node is a spatial
+/// predicate with at least one constant geometry argument.
+std::optional<std::pair<String, std::array<double, 4>>>
+tryExtractSpatialPredicateFromNode(const ActionsDAG::Node & node)
 {
-    if (!node->column || !node->is_deterministic_constant)
-        return false;
-
-    const DB::IColumn * raw = node->column.get();
-    if (const auto * const_col = typeid_cast<const DB::ColumnConst *>(raw))
-        raw = &const_col->getDataColumn();
-
-    DB::BboxAccumulator acc;
-
-    // Case 1: WKB-encoded String (used by st_intersects / WKB-based spatial functions)
-    if (const auto * str_col = typeid_cast<const DB::ColumnString *>(raw))
-    {
-        if (str_col->empty())
-            return false;
-        auto sv = str_col->getDataAt(0);
-        DB::ReadBufferFromMemory buf(sv.data(), sv.size());
-        try
-        {
-            auto geo = DB::parseWKBFormat(buf);
-            std::visit([&]<typename T>(const T & g)
-            {
-                if constexpr (std::is_same_v<T, DB::CartesianPoint>)
-                    acc.add(g.x(), g.y());
-                else if constexpr (std::is_same_v<T, DB::LineString<DB::CartesianPoint>>)
-                    acc.addAll(g);
-                else if constexpr (std::is_same_v<T, DB::Polygon<DB::CartesianPoint>>)
-                    acc.addAll(g.outer());
-                else if constexpr (std::is_same_v<T, DB::MultiLineString<DB::CartesianPoint>>)
-                    for (const auto & ls : g)
-                        acc.addAll(ls);
-                else if constexpr (std::is_same_v<T, DB::MultiPolygon<DB::CartesianPoint>>)
-                    for (const auto & poly : g)
-                        acc.addAll(poly.outer());
-                else
-                    static_assert(!sizeof(T), "Unhandled geometry type — add a case here");
-            }, geo);
-        }
-        catch (...)
-        {
-            LOG_TRACE(getLogger("ManifestFilesPruner"), "Failed to parse WKB geometry for bbox extraction: {}", getCurrentExceptionMessage(false));
-            return false;
-        }
-    }
-    // Case 2: Array(Tuple(Float64, Float64)) — used by pointInPolygon / polygonsIntersectCartesian
-    else if (const auto * arr_col = typeid_cast<const DB::ColumnArray *>(raw))
-    {
-        const auto * tuple_col = typeid_cast<const DB::ColumnTuple *>(&arr_col->getData());
-        if (!tuple_col || tuple_col->tupleSize() < 2)
-            return false;
-        const auto * xs = typeid_cast<const DB::ColumnFloat64 *>(&tuple_col->getColumn(0));
-        const auto * ys = typeid_cast<const DB::ColumnFloat64 *>(&tuple_col->getColumn(1));
-        if (!xs || !ys)
-            return false;
-        for (size_t i = 0; i < xs->size(); ++i)
-            acc.add(xs->getElement(i), ys->getElement(i));
-    }
-    else
-        return false;
-
-    if (!acc.found)
-        return false;
-    xmin = acc.xmin;
-    ymin = acc.ymin;
-    xmax = acc.xmax;
-    ymax = acc.ymax;
-    return true;
-}
-
-/// Recursively collect spatial predicates from `node` only when they are in a
-/// conjunctive-only context. Traverses `and` function nodes; stops at `or` or any
-/// non-spatial leaf — a predicate reachable via OR cannot safely be used for pruning
-/// because the non-spatial OR branch may still match even when the spatial branch is false.
-void collectSpatialPredicatesConjunctive(
-    const DB::ActionsDAG::Node & node,
-    std::unordered_set<const DB::ActionsDAG::Node *> & visited,
-    std::vector<std::pair<String, std::array<double, 4>>> & result)
-{
-    if (!visited.insert(&node).second)
-        return;
-
-    if (node.type == DB::ActionsDAG::ActionType::ALIAS)
-    {
-        for (const auto * child : node.children)
-            collectSpatialPredicatesConjunctive(*child, visited, result);
-        return;
-    }
-
-    if (node.type != DB::ActionsDAG::ActionType::FUNCTION || !node.function_base)
-        return;
-
-    if (node.function_base->getName() == "and")
-    {
-        for (const auto * child : node.children)
-            collectSpatialPredicatesConjunctive(*child, visited, result);
-        return;
-    }
-
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return std::nullopt;
     if (!node.function_base->isSpatialPredicate() || node.children.size() < 2)
-        return;
+        return std::nullopt;
 
-    const DB::ActionsDAG::Node * col_node = nullptr;
+    const ActionsDAG::Node * col_node = nullptr;
     for (const auto * child : node.children)
-        if (child->type == DB::ActionsDAG::ActionType::INPUT && !col_node)
+        if (child->type == ActionsDAG::ActionType::INPUT && !col_node)
             col_node = child;
     if (!col_node)
-        return;
+        return std::nullopt;
 
-    /// Union bbox across all constant geometry arguments — safe for variadic predicates
-    /// like pointInPolygon(pt, poly1, poly2, ...) where pruning requires disjointness
-    /// from ALL polygons; the union bbox covers this correctly.
     double xmin = std::numeric_limits<double>::infinity();
     double ymin = std::numeric_limits<double>::infinity();
     double xmax = -std::numeric_limits<double>::infinity();
     double ymax = -std::numeric_limits<double>::infinity();
     bool found_const = false;
+
     for (const auto * child : node.children)
     {
-        if (child->type != DB::ActionsDAG::ActionType::COLUMN || !child->column
+        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column
             || !child->is_deterministic_constant)
             continue;
-        double cxmin = 0;
-        double cymin = 0;
-        double cxmax = 0;
-        double cymax = 0;
-        if (!tryExtractWkbBboxForIceberg(child, cxmin, cymin, cxmax, cymax))
+        double cxmin = 0, cymin = 0, cxmax = 0, cymax = 0;
+        if (!tryExtractBboxFromColumn(*child->column, cxmin, cymin, cxmax, cymax))
             continue;
         xmin = std::min(xmin, cxmin);
         ymin = std::min(ymin, cymin);
@@ -177,24 +76,9 @@ void collectSpatialPredicatesConjunctive(
         found_const = true;
     }
     if (!found_const)
-        return;
+        return std::nullopt;
 
-    result.push_back({col_node->result_name, {xmin, ymin, xmax, ymax}});
-}
-
-/// Walk filter_dag for spatial predicates (isSpatialPredicate()==true) where one child
-/// is an INPUT column and the other is a constant WKB geometry. Only collects predicates
-/// in conjunctive-only positions — spatial predicates under OR are excluded to avoid
-/// false-negative pruning when a non-spatial OR branch can still match.
-/// Returns pairs of (column_name, [xmin,ymin,xmax,ymax]).
-std::vector<std::pair<String, std::array<double, 4>>> extractSpatialPredicatesFromDag(
-    const DB::ActionsDAG & filter_dag)
-{
-    std::vector<std::pair<String, std::array<double, 4>>> result;
-    std::unordered_set<const DB::ActionsDAG::Node *> visited;
-    for (const auto * output : filter_dag.getOutputs())
-        collectSpatialPredicatesConjunctive(*output, visited, result);
-    return result;
+    return std::make_pair(col_node->result_name, std::array<double, 4>{xmin, ymin, xmax, ymax});
 }
 
 } // anonymous namespace
@@ -315,7 +199,15 @@ ManifestFilesPruner::ManifestFilesPruner(
     /// covering.bbox columns in the Iceberg schema using the naming convention
     /// {geo_col}_bbox.{xmin,ymin,xmax,ymax}. If found, register a SpatialBboxPruneInfo
     /// that can cheaply prune files whose bbox is disjoint from the query bbox.
-    for (const auto & [geo_col_name, bbox] : extractSpatialPredicatesFromDag(*filter_dag))
+    std::vector<std::pair<String, std::array<double, 4>>> spatial_predicates;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    for (const auto * output : filter_dag->getOutputs())
+        collectSpatialFiltersConjunctive(
+            *output, visited,
+            [](const ActionsDAG::Node & n) { return tryExtractSpatialPredicateFromNode(n); },
+            spatial_predicates);
+
+    for (const auto & [geo_col_name, bbox] : spatial_predicates)
     {
         /// Try struct sub-field convention first: {geo_col}_bbox.{xmin,ymin,xmax,ymax}
         /// (used by GeoParquet writers that store bbox as a Struct column).

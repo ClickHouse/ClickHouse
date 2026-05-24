@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 
+#include <Common/GeoBbox.h>
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
@@ -10,7 +11,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/WKB.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,7 +19,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
 namespace DB::Parquet
@@ -28,145 +27,36 @@ namespace DB::Parquet
 namespace
 {
 
-/// Recursively walk a CH column at the given row, adding all 2D points to acc.
-/// Handles: ColumnConst (unwrap), ColumnTuple(Float64,Float64) (point),
-/// ColumnArray (recurse into elements).
-void addFromColumn(DB::BboxAccumulator & acc, const DB::IColumn & col, size_t row)
+/// Extractor callback for the shared conjunctive collection template.
+/// Returns an optional SpatialFilter when the node is a spatial predicate
+/// with at least one constant geometry argument.
+std::optional<SpatialFilter> tryExtractSpatialFilterFromNode(const ActionsDAG::Node & node, const Block & sample_block)
 {
-    if (const auto * const_col = typeid_cast<const DB::ColumnConst *>(&col))
-    {
-        addFromColumn(acc, const_col->getDataColumn(), 0);
-        return;
-    }
-    if (const auto * tuple_col = typeid_cast<const DB::ColumnTuple *>(&col))
-    {
-        if (tuple_col->tupleSize() < 2 || row >= tuple_col->size())
-            return;
-        const auto * x_col = typeid_cast<const DB::ColumnFloat64 *>(&tuple_col->getColumn(0));
-        const auto * y_col = typeid_cast<const DB::ColumnFloat64 *>(&tuple_col->getColumn(1));
-        if (!x_col || !y_col)
-            return;
-        acc.add(x_col->getData()[row], y_col->getData()[row]);
-        return;
-    }
-    if (const auto * array_col = typeid_cast<const DB::ColumnArray *>(&col))
-    {
-        if (row >= array_col->size())
-            return;
-        const auto & offsets = array_col->getOffsets();
-        const size_t start = row > 0 ? offsets[row - 1] : 0;
-        const size_t end = offsets[row];
-        for (size_t i = start; i < end; ++i)
-            addFromColumn(acc, array_col->getData(), i);
-    }
-}
-
-bool tryExtractWkbBbox(std::string_view wkb,
-                       double & xmin, double & ymin,
-                       double & xmax, double & ymax)
-{
-    DB::ReadBufferFromMemory buf(wkb);
-    DB::BboxAccumulator acc;
-    try
-    {
-        auto geo = DB::parseWKBFormat(buf);
-        std::visit([&]<typename T>(const T & g)
-        {
-            if constexpr (std::is_same_v<T, DB::CartesianPoint>)
-                acc.add(g.x(), g.y());
-            else if constexpr (std::is_same_v<T, DB::LineString<DB::CartesianPoint>>)
-                acc.addAll(g);
-            else if constexpr (std::is_same_v<T, DB::Polygon<DB::CartesianPoint>>)
-                acc.addAll(g.outer());
-            else if constexpr (std::is_same_v<T, DB::MultiLineString<DB::CartesianPoint>>)
-                for (const auto & ls : g) acc.addAll(ls);
-            else if constexpr (std::is_same_v<T, DB::MultiPolygon<DB::CartesianPoint>>)
-                for (const auto & poly : g) acc.addAll(poly.outer());
-            else
-                static_assert(!sizeof(T), "Unhandled geometry type — add a case here");
-        }, geo);
-    }
-    catch (...)
-    {
-        LOG_TRACE(getLogger("GeoFilter"), "Failed to parse WKB geometry for bbox extraction: {}", getCurrentExceptionMessage(false));
-        return false;
-    }
-
-    if (!acc.found) return false;
-    xmin = acc.xmin; ymin = acc.ymin;
-    xmax = acc.xmax; ymax = acc.ymax;
-    return true;
-}
-
-/// Try to extract the bounding box of a constant ActionsDAG node.
-/// Handles WKB-encoded String (st_geomfromgeojson / st_geomfromtext constants)
-/// and CH native geometry (ColumnTuple / ColumnArray).
-bool tryExtractConstBbox(
-    const DB::ActionsDAG::Node * node,
-    double & xmin, double & ymin,
-    double & xmax, double & ymax)
-{
-    if (!node->column || !node->is_deterministic_constant)
-        return false;
-
-    const DB::IColumn * raw = node->column.get();
-    if (const auto * const_col = typeid_cast<const DB::ColumnConst *>(raw))
-        raw = &const_col->getDataColumn();
-
-    /// WKB-encoded String (e.g., constant from st_geomfromgeojson / st_geomfromtext).
-    if (const auto * str_col = typeid_cast<const DB::ColumnString *>(raw))
-    {
-        if (str_col->empty()) return false;
-        return tryExtractWkbBbox(str_col->getDataAt(0), xmin, ymin, xmax, ymax);
-    }
-
-    /// CH native geometry (Tuple of floats, Array of Tuples, etc.).
-    DB::BboxAccumulator acc;
-    addFromColumn(acc, *raw, 0);
-    if (!acc.found) return false;
-    xmin = acc.xmin; ymin = acc.ymin;
-    xmax = acc.xmax; ymax = acc.ymax;
-    return true;
-}
-
-/// Try to extract a SpatialFilter from a spatial-predicate FUNCTION node.
-/// Returns true and appends to result on success.
-bool trySpatialFilterFromNode(
-    const DB::ActionsDAG::Node & node,
-    const DB::Block & sample_block,
-    std::vector<SpatialFilter> & result)
-{
-    if (node.type != DB::ActionsDAG::ActionType::FUNCTION || !node.function_base)
-        return false;
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return std::nullopt;
     if (!node.function_base->isSpatialPredicate() || node.children.size() < 2)
-        return false;
+        return std::nullopt;
 
-    const DB::ActionsDAG::Node * col_node = nullptr;
+    const ActionsDAG::Node * col_node = nullptr;
     for (const auto * child : node.children)
-        if (child->type == DB::ActionsDAG::ActionType::INPUT && !col_node)
+        if (child->type == ActionsDAG::ActionType::INPUT && !col_node)
             col_node = child;
     if (!col_node || !sample_block.has(col_node->result_name))
-        return false;
+        return std::nullopt;
 
-    /// Compute the union bbox across all constant geometry arguments. For variadic predicates
-    /// like pointInPolygon(pt, poly1, poly2, ...), a row group is only prunable if it is
-    /// disjoint from ALL polygons; the union bbox covers this correctly.
     double xmin = std::numeric_limits<double>::infinity();
     double ymin = std::numeric_limits<double>::infinity();
     double xmax = -std::numeric_limits<double>::infinity();
     double ymax = -std::numeric_limits<double>::infinity();
     bool found_const = false;
+
     for (const auto * child : node.children)
     {
-        if (child->type != DB::ActionsDAG::ActionType::COLUMN
-            || !child->column
+        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column
             || !child->is_deterministic_constant)
             continue;
-        double cxmin = 0;
-        double cymin = 0;
-        double cxmax = 0;
-        double cymax = 0;
-        if (!tryExtractConstBbox(child, cxmin, cymin, cxmax, cymax))
+        double cxmin = 0, cymin = 0, cxmax = 0, cymax = 0;
+        if (!tryExtractBboxFromColumn(*child->column, cxmin, cymin, cxmax, cymax))
             continue;
         xmin = std::min(xmin, cxmin);
         ymin = std::min(ymin, cymin);
@@ -175,7 +65,7 @@ bool trySpatialFilterFromNode(
         found_const = true;
     }
     if (!found_const)
-        return false;
+        return std::nullopt;
 
     SpatialFilter filter;
     filter.geometry_column_name = col_node->result_name;
@@ -183,41 +73,7 @@ bool trySpatialFilterFromNode(
     filter.query_ymin = ymin;
     filter.query_xmax = xmax;
     filter.query_ymax = ymax;
-    result.push_back(std::move(filter));
-    return true;
-}
-
-/// Recursively collect spatial predicates that are in a conjunctive-only context.
-/// Traverses `and` function nodes; stops at `or` or any non-spatial leaf to preserve
-/// boolean semantics — a predicate reachable via OR cannot safely be used for pruning.
-void collectSpatialFiltersConjunctive(
-    const DB::ActionsDAG::Node & node,
-    std::unordered_set<const DB::ActionsDAG::Node *> & visited,
-    const DB::Block & sample_block,
-    std::vector<SpatialFilter> & result)
-{
-    if (!visited.insert(&node).second)
-        return;
-
-    if (node.type == DB::ActionsDAG::ActionType::ALIAS)
-    {
-        for (const auto * child : node.children)
-            collectSpatialFiltersConjunctive(*child, visited, sample_block, result);
-        return;
-    }
-
-    if (node.type != DB::ActionsDAG::ActionType::FUNCTION || !node.function_base)
-        return;
-
-    if (node.function_base->getName() == "and")
-    {
-        for (const auto * child : node.children)
-            collectSpatialFiltersConjunctive(*child, visited, sample_block, result);
-        return;
-    }
-
-    /// Any non-`and` function: attempt extraction as spatial predicate, do not recurse further.
-    trySpatialFilterFromNode(node, sample_block, result);
+    return filter;
 }
 
 }
@@ -234,7 +90,11 @@ std::vector<SpatialFilter> extractSpatialFilters(
     /// because pruning on them would be incorrect (a disjoint spatial branch doesn't mean
     /// the full predicate is false — a non-spatial OR branch could still match).
     for (const auto * output : filter_dag.getOutputs())
-        collectSpatialFiltersConjunctive(*output, visited, sample_block, result);
+        collectSpatialFiltersConjunctive(
+            *output, visited,
+            [&sample_block](const ActionsDAG::Node & n)
+            { return tryExtractSpatialFilterFromNode(n, sample_block); },
+            result);
 
     return result;
 }
@@ -272,9 +132,9 @@ bool rowGroupFailsSpatialFilters(
 
         const auto & bbox = col_meta.geospatial_statistics.bbox;
         bool disjoint = bbox.xmax < filter.query_xmin
-                     || bbox.xmin > filter.query_xmax
-                     || bbox.ymax < filter.query_ymin
-                     || bbox.ymin > filter.query_ymax;
+                      || bbox.xmin > filter.query_xmax
+                      || bbox.ymax < filter.query_ymin
+                      || bbox.ymin > filter.query_ymax;
         if (disjoint)
             return true;
     }
