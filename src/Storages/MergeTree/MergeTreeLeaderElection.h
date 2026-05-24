@@ -179,7 +179,6 @@ private:
     /// Used to detect stalled heartbeat threads.
     std::atomic<std::chrono::steady_clock::time_point> last_renewal_time{std::chrono::steady_clock::time_point{}};
 
-    String current_etag;
     String leader_id;
 
     CallbackOnLeadershipChange on_leadership_change;

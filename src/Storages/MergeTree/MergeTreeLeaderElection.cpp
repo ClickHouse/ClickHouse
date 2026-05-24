@@ -362,10 +362,11 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
         buffer->write(content.data(), content.size());
         buffer->finalize();
 
-        /// Retrieve the new ETag after a successful write.
-        auto metadata = object_storage->getObjectMetadata(lease_path, /* with_tags= */ false);
-        current_etag = metadata.etag;
-
+        /// The next heartbeat will read the lease back together with its ETag
+        /// (single round-trip via `readSmallObjectAndGetObjectMetadata`), so an
+        /// extra `getObjectMetadata` call here would only add a chance for a
+        /// transient remote failure to surface as spurious leadership loss
+        /// without providing any value to subsequent renewals.
         last_renewal_time.store(std::chrono::steady_clock::now(), std::memory_order_release);
 
         return true;
