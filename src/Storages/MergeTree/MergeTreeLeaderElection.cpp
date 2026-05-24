@@ -106,7 +106,18 @@ void MergeTreeLeaderElection::stop()
         CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
         CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
         if (on_leadership_change)
-            on_leadership_change(false);
+        {
+            /// Shield the callback so an exception cannot escape the destructor
+            /// (which calls `stop`) and trigger `std::terminate`.
+            try
+            {
+                on_leadership_change(false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Exception in leadership-loss callback during stop");
+            }
+        }
     }
 }
 
@@ -328,7 +339,20 @@ void MergeTreeLeaderElection::run()
             CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
             CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
             if (on_leadership_change)
-                on_leadership_change(false);
+            {
+                /// Shield the callback so that an exception thrown from the
+                /// leadership-loss notification cannot escape `run` and skip the
+                /// `scheduleAfter` call below, which would permanently stop the
+                /// heartbeat task with no recovery path.
+                try
+                {
+                    on_leadership_change(false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Exception in leadership-loss callback");
+                }
+            }
         }
 
         tryLogCurrentException(log, "Error in leader election heartbeat");
