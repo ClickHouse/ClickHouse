@@ -176,6 +176,10 @@ void IOutputFormat::finalizeUnlocked()
         /// Phase 1 complete: everything except statistics is written.
         /// Phase 2 (statistics + closing delimiter) will happen in completeDeferredStatistics()
         /// after PipelineExecutor::finalizeExecution() collects remaining progress.
+        /// Honor `auto_flush` for the data already written here so streaming consumers
+        /// see the partial output without waiting for the finalize callback.
+        if (auto_flush)
+            flushImpl();
         statistics_deferred = true;
         finalized = true;
         return;
