@@ -32,11 +32,6 @@ public:
     int64_t getSessionID() const override { return session_id; }
     int64_t getLastZXIDSeen() const override { return 0; }
 
-    Int64 getLastReceivedTimestamp() const override
-    {
-        return callback_state->last_received_timestamp_us.load(std::memory_order_relaxed);
-    }
-
     using ResponseCallback = std::function<void(const ZooKeeperResponsePtr &)>;
 
     void create(
@@ -66,11 +61,6 @@ public:
         const String & path,
         GetCallback callback,
         WatchCallbackPtrOrEventPtr watch) override;
-
-    void listRecursive(
-        const String & path,
-        uint32_t get_children_recursive_nodes_limit,
-        ListRecursiveCallback callback) override;
 
     void set(
         const String & path,
@@ -128,8 +118,6 @@ private:
     struct CallbackState
     {
         std::atomic<bool> expired{false};
-        /// Progress tracker: microseconds since `steady_clock` epoch of the last received data.
-        std::atomic<Int64> last_received_timestamp_us{0};
         std::mutex callbacks_mutex;
         std::unordered_map<XID, ResponseCallback> callbacks;
     };
