@@ -1212,11 +1212,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
             {"merge_selector_small_parts_threshold", 0, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
             {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
             {"merge_selector_small_parts_max_age", 0, 600, "Age limit for the small-parts merge restriction"},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        {
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
