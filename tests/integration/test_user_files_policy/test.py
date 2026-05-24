@@ -172,6 +172,53 @@ def test_local_symlink_escape_rejected():
         )
 
 
+def test_local_scalar_file_function():
+    """The scalar `file(path)` function has its own `user_files_policy` branch in
+    `FunctionFile`, separate from the `file` table function / `StorageFile`. Cover
+    a success case, the symlink-escape rejection, and the optional-default fallback
+    so a regression in that branch is caught."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo -n 'scalar contents' > /test_user_files_disk1/scalar_test.txt",
+        ]
+    )
+
+    # Success: relative path resolves through the configured disk.
+    assert node_local.query("SELECT file('scalar_test.txt')").strip() == "scalar contents"
+
+    # Absolute path equal to the disk-rooted file resolves the same way.
+    assert (
+        node_local.query("SELECT file('/test_user_files_disk1/scalar_test.txt')").strip()
+        == "scalar contents"
+    )
+
+    # `..` traversal is rejected lexically.
+    with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|escapes"):
+        node_local.query("SELECT file('../../etc/passwd')")
+
+    # In-root symlink pointing outside the disk root is blocked by the symlink-aware check.
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "ln -snf /etc /test_user_files_disk1/scalar_escape_link",
+        ]
+    )
+    try:
+        with pytest.raises(Exception, match="DATABASE_ACCESS_DENIED|outside"):
+            node_local.query("SELECT file('scalar_escape_link/passwd')")
+    finally:
+        node_local.exec_in_container(
+            ["bash", "-c", "rm -f /test_user_files_disk1/scalar_escape_link"]
+        )
+
+    # Optional default is returned on failure instead of throwing.
+    result = node_local.query("SELECT file('nonexistent_scalar.txt', 'fallback')")
+    assert result.strip() == "fallback"
+
+
 def test_local_insert_into_file():
     """Test that writing files uses the first disk by default."""
     node_local.query(
