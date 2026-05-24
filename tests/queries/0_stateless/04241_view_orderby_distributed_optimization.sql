@@ -176,6 +176,33 @@ SELECT 'row policy result count:', count() FROM (
 
 DROP ROW POLICY test_policy_04241 ON test_view_04241;
 
+-- View with a named `WINDOW` clause: pushdown must be disabled. Pushing
+-- `ORDER BY/LIMIT` would make each shard compute its window over only the
+-- per-shard rows, which is not equivalent to computing the window over the
+-- global row set and then taking the top-N.
+DROP VIEW IF EXISTS test_view_window_named_04241;
+CREATE VIEW test_view_window_named_04241 AS
+SELECT id, val, ts, row_number() OVER w AS rn FROM test_distributed_04241 WINDOW w AS (ORDER BY id);
+
+SELECT 'view named WINDOW disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_window_named_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+DROP VIEW test_view_window_named_04241;
+
+-- View with an inline `OVER (...)` window function call: same reasoning as
+-- above — pushdown must be disabled because the window's partition/order are
+-- evaluated over the per-shard rows after `LIMIT` truncates them.
+DROP VIEW IF EXISTS test_view_window_inline_04241;
+CREATE VIEW test_view_window_inline_04241 AS
+SELECT id, val, ts, row_number() OVER (ORDER BY id) AS rn FROM test_distributed_04241;
+
+SELECT 'view inline OVER disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_window_inline_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+DROP VIEW test_view_window_inline_04241;
+
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;

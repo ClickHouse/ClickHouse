@@ -50,6 +50,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -768,13 +769,29 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     return alias_column_step;
 }
 
+/// Recursively check whether `node` (or any descendant) contains an `OVER (...)`
+/// window function call. Used to reject window-function VIEWs from `ORDER BY`
+/// pushdown — per-shard window evaluation is not equivalent to a global one.
+bool containsWindowFunction(const IAST & node)
+{
+    if (const auto * fn = node.as<ASTFunction>(); fn && fn->isWindowFunction())
+        return true;
+    for (const auto & child : node.children)
+    {
+        if (child && containsWindowFunction(*child))
+            return true;
+    }
+    return false;
+}
+
 /// Push ORDER BY and LIMIT from outer query into simple VIEW's inner query.
 /// This enables merge-sorted-streams optimization for views over `Distributed` tables.
 ///
 /// Only safe when the VIEW is a "transparent projection" that does not change
 /// ORDER BY/LIMIT semantics:
 /// - Single SELECT from one table (no UNION)
-/// - No row transformations (JOIN, GROUP BY, DISTINCT, window functions)
+/// - No row transformations (JOIN, GROUP BY, DISTINCT, named `WINDOW` clauses
+///   or `OVER (...)` window function calls)
 /// - No existing ORDER BY/LIMIT in the view
 ///
 /// Outer query restrictions (to preserve semantics under shard-local truncation):
@@ -895,6 +912,18 @@ void pushOrderByIntoView(
     if (sel->hasJoin() || sel->groupBy() || sel->distinct)
         return;
 
+    /// Window functions partition/order globally; with ORDER BY/LIMIT pushed
+    /// per-shard each replica would compute its window over only its rows and
+    /// then return the top-N, which is not equivalent to computing the window
+    /// over all rows and taking the global top-N. Reject the view if it has
+    /// a named `WINDOW` clause or any `OVER (...)` call inside the select list
+    /// (or any nested expression of the select).
+    if (sel->window())
+        return;
+
+    if (const auto & select_expr = sel->select(); select_expr && containsWindowFunction(*select_expr))
+        return;
+
     /// View must not already have ORDER BY/LIMIT
     if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
         return;
@@ -982,10 +1011,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         ///
         /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
         if (!select_query_options.only_analyze)
+        {
             parseAdditionalFilterAstIfNeeded(
                 storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
 
-        pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, query_context, table_expression_query_info);
+            /// `pushOrderByIntoView` depends on `additional_filter_ast` being parsed
+            /// above, so it must run inside the same `!only_analyze` branch — otherwise
+            /// the check at the top of the function would see a null `additional_filter_ast`
+            /// and fail to block the pushdown when `additional_table_filters` are configured.
+            pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, query_context, table_expression_query_info);
+        }
 
         const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);

@@ -21,3 +21,5 @@ additional_table_filters disables pushdown:	1
 additional_table_filters result count:	10
 row policy disables pushdown:	1
 row policy result count:	10
+view named WINDOW disables pushdown:	1
+view inline OVER disables pushdown:	1
