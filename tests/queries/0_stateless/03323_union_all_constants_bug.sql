@@ -1,8 +1,3 @@
--- Tags: no-random-settings
--- `ORDER BY grade_name_id` sorts on a constant key (always 42), so the relative
--- order of the two UNION ALL branches is undefined and sensitive to pipeline
--- shape changes from `max_streams_for_union_step` etc.
-
 WITH transactions_data AS
     (
         SELECT

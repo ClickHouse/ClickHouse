@@ -1,8 +1,3 @@
--- Tags: no-random-settings
--- Many sub-tests `UNION ALL` followed by `ORDER BY tuple()` (i.e. no real order);
--- the resulting row order depends on pipeline shape and is sensitive to
--- `max_streams_for_union_step` randomization.
-
 -- { echoOn }
 
 SET allow_experimental_nullable_tuple_type = 1;

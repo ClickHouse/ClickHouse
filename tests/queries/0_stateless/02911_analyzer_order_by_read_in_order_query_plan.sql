@@ -1,8 +1,3 @@
--- Tags: no-random-settings
--- ORDER BY uses `sin(a/b)` whose result is NaN for the rows where a = b = 0;
--- NaN sort order is unstable, so the test output is sensitive to pipeline shape
--- changes from `max_streams_for_union_step` etc.
-
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, enable_analyzer = 1;
 
 drop table if exists tab;

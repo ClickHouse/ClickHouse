@@ -1,8 +1,3 @@
--- Tags: no-random-settings
--- This is the dedicated test of the setting itself; randomized session-level
--- `max_streams_for_union_step` would interfere with the explicit `SETTINGS`
--- clauses inside the queries.
-
 -- Test that max_streams_for_union_step and max_streams_for_union_step_to_max_threads_ratio
 -- limit the number of active streams in UNION ALL.
 
