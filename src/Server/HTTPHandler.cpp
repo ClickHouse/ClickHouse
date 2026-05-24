@@ -714,14 +714,24 @@ void HTTPHandler::processQuery(
     Float64 page_value = settings[Setting::page];
     if (page_value != 0)
     {
-        if (settings[Setting::limit] == 0)
+        Float64 limit_value = settings[Setting::limit];
+        if (limit_value == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Setting `page` requires `limit` to be set (got page={}, limit=0).", page_value);
         if (settings[Setting::offset] != 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Setting `page` cannot be combined with `offset` (got page={}, offset={}).",
                 page_value, settings[Setting::offset].value);
-        Float64 limit_value = settings[Setting::limit];
+        /// `page` semantics (positive starts from the front; negative starts from the back) assume
+        /// a positive page size. Combining `page` with a negative `limit` (which by itself already
+        /// requests "the last |limit| rows") would either double-flip the direction or produce
+        /// nonsensical offsets — reject it explicitly so the user picks one or the other.
+        if (limit_value < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with a negative `limit` (got page={}, limit={}). "
+                "Use a positive `limit` with `page` for pagination, or use a negative `limit` alone "
+                "for tail selection.",
+                page_value, limit_value);
         SettingsChanges page_change;
         if (page_value > 0)
         {
@@ -792,13 +802,18 @@ void HTTPHandler::processQuery(
         /// query execution path preserves the existing response headers (Content-Disposition,
         /// X-ClickHouse-Format) that other tests assert on.
         ///
-        /// Skip the pre-check when the user supplied an explicit `query` parameter: in that case
-        /// the path table is at most a filename hint for `Content-Disposition`, or the source for
+        /// Skip the pre-check when the user supplied an explicit query: either via the `query` URL
+        /// parameter (`raw_query`) or via a `POST`/`PUT` body. In those cases the path table is at
+        /// most a filename hint for `Content-Disposition`, or the source for
         /// `implicit_table_at_top_level` (only applied to FROM-less queries). Forcing the path
-        /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`.
+        /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`
+        /// or `POST /db/path_table` with body `SELECT ... FROM other_table`.
+        bool request_has_body = (request.getMethod() == HTTPRequest::HTTP_POST
+                                 || request.getMethod() == HTTPRequest::HTTP_PUT)
+                              && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
         bool table_name_is_simple = path_info.table.find('.') == String::npos;
-        if (table_name_is_simple && !table_db.empty() && raw_query.empty())
+        if (table_name_is_simple && !table_db.empty() && raw_query.empty() && !request_has_body)
         {
             StorageID table_id(table_db, path_info.table);
             if (!DatabaseCatalog::instance().isTableExist(table_id, context))
@@ -833,9 +848,6 @@ void HTTPHandler::processQuery(
         context->applySettingsChanges(implicit_change);
 
         /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
-        bool request_has_body = (request.getMethod() == HTTPRequest::HTTP_POST
-                                 || request.getMethod() == HTTPRequest::HTTP_PUT)
-                              && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
         if (raw_query.empty() && !request_has_body)
             final_query = "SELECT * FROM " + qualified_table;
     }
