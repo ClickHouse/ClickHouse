@@ -1,7 +1,7 @@
 /// Multi-buffer SHA-1 function.
 ///
 /// Processes multiple independent SHA-1 digests in parallel using SIMD.
-/// On x86-64 with AVX2 or AVX-512, computes 8 or 16 digests simultaneously.
+/// On x86-64 with AVX-512, computes 16 digests simultaneously.
 /// On other architectures, falls back to OpenSSL (which uses hardware
 /// SHA-1 instructions: SHA-NI on x86, ARM CE on ARM).
 
@@ -121,8 +121,8 @@ public:
 ///
 /// Template functions go inside DECLARE_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
-/// The Ops struct (AVX512SHA1Ops) is
-/// in their own DECLARE blocks and found via same-namespace lookup.
+/// The Ops struct (AVX512SHA1Ops) is in its own DECLARE block
+/// and found via same-namespace lookup.
 /// ============================================================
 
 /// One SHA-1 round step for a single group of N lanes.
