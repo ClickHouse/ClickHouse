@@ -42,6 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+            {"output_format_parquet_column_field_ids", "", "", "New setting to specify explicit Parquet `field_id` overrides per column (`Map(String, Int32)`), useful for Iceberg compatibility."},
+            {"output_format_parquet_auto_assign_field_ids", false, false, "New setting to auto-assign sequential Parquet `field_id`s to every output column, Iceberg-style."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -93,8 +95,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
-            {"output_format_parquet_column_field_ids", "", "", "New setting to specify explicit Parquet `field_id` overrides per column (`Map(String, Int32)`), useful for Iceberg compatibility."},
-            {"output_format_parquet_auto_assign_field_ids", false, false, "New setting to auto-assign sequential Parquet `field_id`s to every output column, Iceberg-style."},
             {"query_cache_for_subqueries", false, false, "New setting to enable propagation of `use_query_cache` into all subqueries. Without it, subqueries are only cached on explicit per-subquery `SETTINGS use_query_cache = true` opt-in."},
             {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
             {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
