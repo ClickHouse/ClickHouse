@@ -542,8 +542,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
             expr_0->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
 
-            /// expr 1
-            auto expr_1 = std::make_shared<ConstantNode>(limit > 0);
+            /// expr 1 — `limit` may be negative or fractional (e.g. `limit=-1` for tail
+            /// pagination), so the guard mirrors the `limit != 0` checks below.
+            auto expr_1 = std::make_shared<ConstantNode>(limit != 0);
 
             auto function_node = std::make_shared<FunctionNode>("multiIf");
             function_node->getArguments().getNodes().push_back(expr_0);
