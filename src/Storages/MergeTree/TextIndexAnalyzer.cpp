@@ -214,6 +214,11 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
             if (global_search_mode == TextSearchMode::All)
                 always_false = true;
 
+            /// Erase the failed query for the full declared token set so yet-unseen tokens stop passing isTokenNeeded.
+            for (const auto & query_token : query_builder.query->tokens)
+                queries_by_token[query_token].erase(query_hash);
+
+            /// Also erase for already-discovered dynamic pattern tokens (not in query->tokens).
             for (const auto & [query_token, _] : query_builder.tokens)
                 queries_by_token[query_token].erase(query_hash);
         }
