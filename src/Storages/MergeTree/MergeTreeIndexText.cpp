@@ -678,9 +678,8 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     /// Process regular tokens.
     for (const auto & [token, token_info] : token_infos)
     {
-        if (token_info->hasSmallPostings() && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
+        if (token_info->offsets.size() == 1 && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
         {
-            chassert(token_info->offsets.size() == 1);
             auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
             analyzer->addPostings(token, std::move(block));
         }
@@ -733,7 +732,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
     if (!intersection.has_value())
         return false;
 
-    if (!query_builder.has_large_postings && query_builder.postings)
+    if (!query_builder.needReadPostings() && query_builder.postings)
     {
         PostingList range_posting;
         range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));

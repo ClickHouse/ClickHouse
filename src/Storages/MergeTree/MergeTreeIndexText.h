@@ -210,9 +210,6 @@ struct TokenPostingsInfo
     PostingListPtr embedded_postings;
 
     bool hasEmbeddedPostings() const { return embedded_postings != nullptr; }
-    bool hasSmallPostings() const { return !hasEmbeddedPostings() && offsets.size() == 1; }
-    bool hasLargePostings() const { return offsets.size() > 1; }
-
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
     size_t bytesAllocated() const;

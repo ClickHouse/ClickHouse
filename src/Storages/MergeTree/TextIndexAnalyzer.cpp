@@ -43,9 +43,6 @@ void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, Token
 
     if (token_info->embedded_postings)
         addPostings(token_info->embedded_postings);
-
-    if (token_info->ranges.size() > 1)
-        has_large_postings = true;
 }
 
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
@@ -74,6 +71,8 @@ void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings)
 {
     if (is_failed)
         return;
+
+    ++num_read_postings;
 
     if (!postings)
     {

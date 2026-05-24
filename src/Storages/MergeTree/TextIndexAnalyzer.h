@@ -21,7 +21,7 @@ public:
 
         bool is_failed = false;
         bool is_bypassed = false;
-        bool has_large_postings = false;
+        size_t num_read_postings = 0;
 
         void markFailed();
         void markBypassed();
@@ -29,6 +29,7 @@ public:
         void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(PostingListPtr token_postings);
+        bool needReadPostings() const { return num_read_postings < tokens.size(); }
     };
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);

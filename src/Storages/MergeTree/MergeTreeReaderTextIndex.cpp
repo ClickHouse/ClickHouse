@@ -320,16 +320,13 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
     for (const auto & [token, token_info] : token_infos)
     {
-        if (useful_tokens.contains(token) && token_info->hasLargePostings())
+        if (useful_tokens.contains(token) && !analyzer.hasReadPostings(token))
             large_postings_streams.emplace(token, makeTextIndexStream(substream));
     }
 }
 
 PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info)
 {
-    /// Only called for tokens whose postings span multiple blocks (large postings).
-    chassert(token_info.hasLargePostings());
-
     if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
@@ -621,7 +618,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     if (query_builder.postings)
         result = *query_builder.postings & range_posting;
 
-    if (!query_builder.has_large_postings)
+    if (!query_builder.needReadPostings())
         return result.value_or(PostingList{});
 
     for (const auto & [token, token_info] : query_builder.tokens)
@@ -774,14 +771,14 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
         cursors.push_back(it->second);
     }
 
-    if (query_builder.has_large_postings)
+    if (query_builder.needReadPostings())
     {
         auto & column_cursors = lazy_cursors[column_name];
         cursors.reserve(query_builder.tokens.size() + 1);
 
         for (const auto & [token, token_info] : query_builder.tokens)
         {
-            if (!token_info->hasLargePostings())
+            if (analyzer.hasReadPostings(token))
                 continue;
 
             auto [it, inserted] = column_cursors.try_emplace(token);
