@@ -6,13 +6,13 @@ name:                     text_idx
 type:                     text
 type_full:                text(tokenizer = ngrams(3))
 granularity:              100000000 -- 100.00 million
-data⋯bytes > 100: 1
-data⋯_bytes > 75: 1
+greater(data⋯bytes, 100): 1
+greater(data⋯_bytes, 75): 1
 marks_bytes:              72
 Row 1:
 ──────
 partition:                     tuple()
 name:                          all_1_1_1
-seco⋯bytes > 150:      1
-seco⋯bytes > 100:      1
+greater(seco⋯bytes, 150):      1
+greater(seco⋯bytes, 100):      1
 secondary_indices_marks_bytes: 96

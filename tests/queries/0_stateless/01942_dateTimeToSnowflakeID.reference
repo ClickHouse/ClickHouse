@@ -22,10 +22,10 @@ dateTime64To⋯eID(dt64_4): 6832747190385901568
 -- Idempotency
 Row 1:
 ──────
-snowf⋯', dt64_0): 1
-snowf⋯', dt64_1): 1
-snowf⋯', dt64_2): 1
-snowf⋯', dt64_3): 1
+equals(snowf⋯'), dt64_0): 1
+equals(snowf⋯'), dt64_1): 1
+equals(snowf⋯'), dt64_2): 1
+equals(snowf⋯'), dt64_3): 1
 Row 1:
 ──────
 dt64_4:                   2023-11-11 11:11:11.1231
