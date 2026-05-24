@@ -112,6 +112,11 @@ struct FindReadingStepContext
     bool read_in_order_through_join;
 
     std::list<JoinStep *> joins_to_keep_in_order = {};
+    /// True if `findReadingStep` traversed any join (`JoinStep` or `FilledJoinStep`)
+    /// between the sorting step and the reading step. `joins_to_keep_in_order`
+    /// only records `JoinStep` because only those need `keepLeftPipelineInOrder`,
+    /// so a separate flag is needed for correctness gates such as FINAL LIMIT pushdown.
+    bool has_join_on_path = false;
 };
 
 QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext & data)
@@ -151,8 +156,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
                 && !join_ptr->hasDelayedBlocks())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
-                if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
-                    data.joins_to_keep_in_order.push_back(join_step);
+                if (reading_step)
+                {
+                    if (auto * join_step = typeid_cast<JoinStep *>(step))
+                        data.joins_to_keep_in_order.push_back(join_step);
+                    /// Track that a join (either JoinStep or FilledJoinStep) lies between
+                    /// the sorting and reading steps, so callers can disable optimizations
+                    /// that are unsafe across joins (e.g. FINAL LIMIT pushdown).
+                    data.has_join_on_path = true;
+                }
                 return reading_step;
             }
         }
@@ -1179,13 +1191,14 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             /// Likewise, the limit must not be pushed below a join: `buildSortingDAG`
             /// already clears the local `limit` when it encounters a `JoinStep`/`FilledJoinStep`
             /// for exactly this reason, but here we use `sorting.getLimit` (to bypass the
-            /// filter-related clearing). When read-in-order traverses a join, that join is
-            /// recorded in `find_reading_ctx.joins_to_keep_in_order`, so use that as the
-            /// authoritative signal that a join is on the path.
+            /// filter-related clearing). When read-in-order traverses a join, the context
+            /// flag `has_join_on_path` is set for both `JoinStep` and `FilledJoinStep`; use
+            /// that as the authoritative signal — `joins_to_keep_in_order` alone is not
+            /// enough because it intentionally records only `JoinStep` for downstream
+            /// `keepLeftPipelineInOrder` calls.
             bool sorting_key_covers_order_by = order_info.input_order->sort_description_for_merging.size() == description.size();
             bool has_deferred_filters = reading->getDeferredRowLevelFilter() || reading->getDeferredPrewhereInfo();
-            bool has_join_on_path = !find_reading_ctx.joins_to_keep_in_order.empty();
-            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && !has_deferred_filters && !has_join_on_path && sorting_key_covers_order_by)
+            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && !has_deferred_filters && !find_reading_ctx.has_join_on_path && sorting_key_covers_order_by)
                 reading->setFinalLimit(sorting.getLimit());
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
