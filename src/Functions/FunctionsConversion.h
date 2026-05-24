@@ -41,6 +41,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -4561,6 +4562,8 @@ private:
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 
     WrapperType createTupleWrapper(const DataTypePtr & from_type_untyped, const DataTypeTuple * to_type) const;
+
+    WrapperType createRowWrapper(const DataTypePtr & from_type_untyped, const DataTypeRow * to_type) const;
 
     WrapperType createQBitWrapper(const DataTypePtr & from_type_untyped, const DataTypeQBit & to_type) const;
 

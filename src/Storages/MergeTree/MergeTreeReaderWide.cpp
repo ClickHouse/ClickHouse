@@ -2,7 +2,9 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -10,6 +12,8 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>

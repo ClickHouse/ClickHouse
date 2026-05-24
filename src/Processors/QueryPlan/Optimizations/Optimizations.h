@@ -155,9 +155,13 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Route reads of columns covered by a `Row(...)` wrapper through the wrapper
+/// column instead of the individual column streams. See optimizeUseRowWrappers.cpp.
+size_t tryOptimizeUseRowWrappers(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 19> optimizations = {{
+    static const std::array<Optimization, 20> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -177,6 +181,7 @@ inline const auto & getOptimizations()
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
+        {tryOptimizeUseRowWrappers, "useRowWrappers", &QueryPlanOptimizationSettings::use_row_wrappers},
     }};
 
     return optimizations;

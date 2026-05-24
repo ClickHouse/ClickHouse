@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
@@ -29,6 +30,7 @@ namespace
 {
     using OffsetColumns = std::map<std::string, ColumnPtr>;
 }
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;

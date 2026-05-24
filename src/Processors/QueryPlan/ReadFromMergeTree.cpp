@@ -3318,6 +3318,34 @@ void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_sta
     required_source_columns = all_column_names;
 }
 
+void ReadFromMergeTree::replaceWithRowWrappers(const Names & covered_columns_to_remove, const Names & wrappers_to_add)
+{
+    NameSet to_remove(covered_columns_to_remove.begin(), covered_columns_to_remove.end());
+
+    Names new_column_names;
+    new_column_names.reserve(all_column_names.size() + wrappers_to_add.size());
+    for (const auto & col_name : all_column_names)
+        if (!to_remove.contains(col_name))
+            new_column_names.push_back(col_name);
+
+    NameSet present(new_column_names.begin(), new_column_names.end());
+    for (const auto & wrapper : wrappers_to_add)
+        if (present.insert(wrapper).second)
+            new_column_names.push_back(wrapper);
+
+    all_column_names = std::move(new_column_names);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
+}
+
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 {
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())

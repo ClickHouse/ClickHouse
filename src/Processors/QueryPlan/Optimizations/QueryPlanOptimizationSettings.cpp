@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_remove_unused_columns;
+    extern const SettingsBool query_plan_use_row_wrappers;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
@@ -175,6 +176,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
     remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
+    use_row_wrappers = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_use_row_wrappers];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     optimize_prewhere_after_pushdown = optimize_prewhere && from[Setting::optimize_prewhere_after_pushdown];

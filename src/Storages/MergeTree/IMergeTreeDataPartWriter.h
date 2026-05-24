@@ -75,7 +75,7 @@ protected:
 
     const String data_part_name;
     /// Serializations for every columns and subcolumns by their names.
-    const SerializationByName serializations;
+    SerializationByName serializations;
     const MergeTreeIndexGranularityInfo index_granularity_info;
     const MergeTreeSettingsPtr storage_settings;
     const StorageMetadataPtr metadata_snapshot;

@@ -1434,6 +1434,9 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
+    M(RowWrapperReads, "Number of ReadFromMergeTree steps where a Row(...) wrapper column was used to satisfy required column reads.", ValueType::Number) \
+    M(RowWrapperReadFields, "Number of column reads avoided by routing through a Row(...) wrapper column.", ValueType::Number) \
+    \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

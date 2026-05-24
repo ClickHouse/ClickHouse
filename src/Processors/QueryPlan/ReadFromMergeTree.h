@@ -264,6 +264,10 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// Drop `covered_columns_to_remove` from the read set and add the Row(...)
+    /// `wrappers_to_add` instead; used by optimizeUseRowWrappers.
+    void replaceWithRowWrappers(const Names & covered_columns_to_remove, const Names & wrappers_to_add);
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }

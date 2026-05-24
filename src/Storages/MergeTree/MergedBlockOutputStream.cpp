@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
 #include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
