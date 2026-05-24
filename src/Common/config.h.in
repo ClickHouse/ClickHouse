@@ -25,7 +25,6 @@
 #cmakedefine01 USE_MINIZIP
 #cmakedefine01 USE_SNAPPY
 #cmakedefine01 USE_HIVE
-#cmakedefine01 USE_REPLXX
 #cmakedefine01 USE_JEMALLOC
 #cmakedefine01 USE_H3
 #cmakedefine01 USE_S2_GEOMETRY

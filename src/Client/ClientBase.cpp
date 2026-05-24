@@ -4,6 +4,8 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
+#include <Client/RustylineLineReader.h>
+#include <Client/RustylineCallbackContext.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
@@ -459,11 +461,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         res_buf.finalize();
 
         output_stream << std::endl;
-#if USE_REPLXX
-        output_stream << highlighted(res_buf.str(), *client_context, rainbow_parentheses);
-#else
-        output_stream << res_buf.str();
-#endif
+        output_stream << highlightAnsi(res_buf.str(), *client_context, -1, rainbow_parentheses);
         output_stream << std::endl << std::endl;
     }
 
@@ -3643,16 +3641,7 @@ void ClientBase::runInteractive()
     std::unique_ptr<LineReader> lr;
 
 
-#if USE_REPLXX
-    replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
-
-    if (getClientConfiguration().getBool("highlight", true))
-    {
-        highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
-        {
-            highlight(query, colors, *client_context, pos, rainbow_parentheses);
-        };
-    }
+    enable_highlight = getClientConfiguration().getBool("highlight", true);
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;
@@ -3691,7 +3680,7 @@ void ClientBase::runInteractive()
         actual_history_file_path = history_file;
     }
 
-    auto options = ReplxxLineReader::Options
+    auto options = RustylineLineReader::Options
     {
         .suggest = *suggest,
         .history_file_path = actual_history_file_path,
@@ -3700,10 +3689,10 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
+        .enable_highlight = enable_highlight,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
-        .highlighter = highlight_callback,
         .input_stream = input_stream,
         .output_stream = output_stream,
         .in_fd = stdin_fd,
@@ -3711,19 +3700,11 @@ void ClientBase::runInteractive()
         .err_fd = stderr_fd,
     };
 
-    lr = std::make_unique<ReplxxLineReader>(std::move(options));
-#else
-    lr = LineReader(
-        history_file,
-        getClientConfiguration().has("multiline"),
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        input_stream,
-        output_stream,
-        stdin_fd
-    );
-#endif
+    /// Set up callback context for the Rust bridge (highlighter / completer / editor).
+    DB::rustyline::setCallbackContext(&*suggest, client_context.get(), word_break_characters,
+                                      rainbow_parentheses, isEmbeeddedClient());
+
+    lr = std::make_unique<RustylineLineReader>(std::move(options));
 
     /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
     lr->enableBracketedPaste();

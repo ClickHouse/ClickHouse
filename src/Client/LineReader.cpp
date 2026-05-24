@@ -66,7 +66,7 @@ bool LineReader::hasInputData() const
     return select(1, &fds, nullptr, nullptr, &timeout) == 1;
 }
 
-replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
+std::vector<std::string> LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
 {
     std::string_view last_word;
 
@@ -114,7 +114,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
                 return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
 
-    return replxx::Replxx::completions_t(range.first, range.second);
+    return std::vector<std::string>(range.first, range.second);
 }
 
 void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
@@ -173,7 +173,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
 
         if (input.empty())
         {
-            if (!line.empty() && !multiline && !hasInputData())
+            if (!line.empty() && !multiline)
                 break;
             continue;
         }
@@ -198,7 +198,16 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             }
         }
 
-        need_next_line = has_extender || (multiline && !has_delimiter) || hasInputData();
+        /// Note: `hasInputData()` (a `select()` on stdin) used to trigger
+        /// extra accumulation here for pasted multi-line queries. With
+        /// rustyline's bracketed-paste mode enabled, the whole paste is
+        /// already delivered as a single readline return — and worse,
+        /// rustyline's cursor-position-query response sometimes lingers
+        /// in stdin across calls, which made the poll mistakenly stitch
+        /// the next user-typed query onto the previous one (and corrupt
+        /// the saved history entry). Trust extenders / multiline mode
+        /// instead.
+        need_next_line = has_extender || (multiline && !has_delimiter);
 
         if (has_extender)
         {

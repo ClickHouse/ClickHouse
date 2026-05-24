@@ -6,7 +6,7 @@
 #include <atomic>
 #include <vector>
 #include <optional>
-#include <replxx.hxx>
+#include <functional>
 
 #include <base/types.h>
 #include <base/defines.h>
@@ -23,7 +23,7 @@ public:
         using Callback = std::function<Words(const String & prefix, size_t prefix_length)>;
 
         /// Get vector for the matched range of words if any.
-        replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters);
+        std::vector<std::string> getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters);
         void addWords(Words && new_words);
 
         void setCompletionsCallback(Callback && callback) { custom_completions_callback = callback; }

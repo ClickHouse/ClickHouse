@@ -129,13 +129,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         auto context_const = WithContext(context).getContext();
         context->makeGlobalContext();
 
-#if !USE_REPLXX
-        if (hilite)
-        {
-            std::cerr << "Option 'hilite' is only available if ClickHouse is built with replxx library." << std::endl;
-            return 2;
-        }
-#endif
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -303,10 +296,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(query_buf, settings);
                         String formatted_query = query_buf.str();
-#if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
-#endif
+                            formatted_query = highlightAnsi(formatted_query, *context, -1, rainbow_parentheses);
                         str_buf.write(formatted_query.data(), formatted_query.size());
 
                         if (insert_query_payload)
@@ -357,10 +348,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         res->format(str_buf, settings);
 
                         String formatted_query = str_buf.str();
-#if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
-#endif
+                            formatted_query = highlightAnsi(formatted_query, *context, -1, rainbow_parentheses);
                         WriteBufferFromOStream res_cout(std::cout, 4096);
 
                         const char * s_pos = formatted_query.data();

@@ -1,4 +1,5 @@
 #include <Client/ClientBaseHelpers.h>
+#include <Client/RustylineLineReader.h>
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -14,10 +15,6 @@
 #include <base/find_symbols.h>
 #include <Poco/String.h>
 #include <string_view>
-
-#if USE_REPLXX
-namespace replxx { char const * ansi_color(Replxx::Color); }
-#endif
 
 namespace DB
 {
@@ -135,7 +132,6 @@ bool isCloudEndpoint(const std::string & host)
     return endsWith(host, ".clickhouse.cloud") || endsWith(host, ".clickhouse-staging.com") || endsWith(host, ".clickhouse-dev.com");
 }
 
-#if USE_REPLXX
 /// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
 /// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
 /// colors vector allocation (with iteration and `UTF8::seqLength`). This function replaces the use
@@ -155,9 +151,10 @@ static size_t countCodePointsWithSeqLength(const String & query, const char * en
     return code_points;
 }
 
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses)
+void highlight(const String & query, std::vector<AnsiColor::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses)
 {
-    using namespace replxx;
+    using Color = AnsiColor::Color;
+    namespace ac = AnsiColor;
 
     /// The `colors` array maps to a Unicode code point position in a string into a color.
     /// A color is set for every position individually (not for a range).
@@ -169,17 +166,17 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     /// The colors should be legible (and look gorgeous) in both dark and light themes.
     /// When modifying this, check it in both themes.
 
-    static const std::unordered_map<Highlight, Replxx::Color> type_to_color =
+    static const std::unordered_map<Highlight, Color> type_to_color =
     {
-        {Highlight::keyword, replxx::color::bold(Replxx::Color::DEFAULT)},
-        {Highlight::identifier, Replxx::Color::CYAN},
-        {Highlight::function, Replxx::Color::BROWN},
-        {Highlight::alias, replxx::color::rgb666(0, 4, 4)},
-        {Highlight::substitution, Replxx::Color::MAGENTA},
-        {Highlight::number, replxx::color::rgb666(0, 4, 0)},
-        {Highlight::string, Replxx::Color::GREEN},
-        {Highlight::string_escape, replxx::color::bold(Replxx::Color::LIGHTGRAY)},
-        {Highlight::string_metacharacter, replxx::color::bold(Replxx::Color::BRIGHTMAGENTA)},
+        {Highlight::keyword, ac::bold(ac::c::DEFAULT)},
+        {Highlight::identifier, ac::c::CYAN},
+        {Highlight::function, ac::c::BROWN},
+        {Highlight::alias, ac::rgb666(0, 4, 4)},
+        {Highlight::substitution, ac::c::MAGENTA},
+        {Highlight::number, ac::rgb666(0, 4, 0)},
+        {Highlight::string, ac::c::GREEN},
+        {Highlight::string_escape, ac::bold(ac::c::LIGHTGRAY)},
+        {Highlight::string_metacharacter, ac::bold(ac::c::BRIGHTMAGENTA)},
     };
 
     /// We set reasonably small limits for size/depth, because we don't want the CLI to be slow.
@@ -313,7 +310,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     for (int64_t offset = number_length - 4; offset >= 0; offset -= 3)
                     {
                         size_t number_code_point_pos = *regular_number_before_decimal_code_point_first + offset;
-                        colors[number_code_point_pos] = replxx::color::underline(colors[number_code_point_pos]);
+                        colors[number_code_point_pos] = ac::underline(colors[number_code_point_pos]);
                     }
                 }
             }
@@ -337,7 +334,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
                 while (identifiers_char_pos < range.end)
                 {
-                    colors[identifiers_code_point_pos] = replxx::color::underline(colors[identifiers_code_point_pos]);
+                    colors[identifiers_code_point_pos] = ac::underline(colors[identifiers_code_point_pos]);
                     ++identifiers_code_point_pos;
                     identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
                 }
@@ -346,32 +343,32 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 
     // Pride flag colors.
-    static const std::array<Replxx::Color, 8> default_colormap =
+    static const std::array<Color, 8> default_colormap =
     {
-        replxx::color::rgb666(4, 2, 3), // Soft pink
-        replxx::color::rgb666(4, 1, 1), // Red
-        replxx::color::rgb666(4, 3, 1), // Gold-orange
-        replxx::color::rgb666(4, 4, 1), // Yellow
-        replxx::color::rgb666(1, 4, 1), // Green
-        replxx::color::rgb666(1, 4, 4), // Teal
-        replxx::color::rgb666(2, 1, 4), // Indigo
-        replxx::color::rgb666(4, 1, 4)  // Violet
+        ac::rgb666(4, 2, 3), // Soft pink
+        ac::rgb666(4, 1, 1), // Red
+        ac::rgb666(4, 3, 1), // Gold-orange
+        ac::rgb666(4, 4, 1), // Yellow
+        ac::rgb666(1, 4, 1), // Green
+        ac::rgb666(1, 4, 4), // Teal
+        ac::rgb666(2, 1, 4), // Indigo
+        ac::rgb666(4, 1, 4)  // Violet
     };
 
-    static const std::unordered_map<Replxx::Color, Replxx::Color> bright_colormap =
+    static const std::unordered_map<Color, Color> bright_colormap =
     {
-        {replxx::color::rgb666(4, 2, 3), replxx::color::rgb666(5, 3, 4)}, // Soft pink
-        {replxx::color::rgb666(4, 1, 1), replxx::color::rgb666(5, 2, 2)}, // Red
-        {replxx::color::rgb666(4, 3, 1), replxx::color::rgb666(5, 4, 2)}, // Gold-orange
-        {replxx::color::rgb666(4, 4, 1), replxx::color::rgb666(5, 5, 2)}, // Yellow
-        {replxx::color::rgb666(1, 4, 1), replxx::color::rgb666(2, 5, 2)}, // Green
-        {replxx::color::rgb666(1, 4, 4), replxx::color::rgb666(2, 5, 5)}, // Teal
-        {replxx::color::rgb666(2, 1, 4), replxx::color::rgb666(3, 2, 5)}, // Indigo
-        {replxx::color::rgb666(4, 1, 4), replxx::color::rgb666(5, 2, 5)}  // Violet
+        {ac::rgb666(4, 2, 3), ac::rgb666(5, 3, 4)}, // Soft pink
+        {ac::rgb666(4, 1, 1), ac::rgb666(5, 2, 2)}, // Red
+        {ac::rgb666(4, 3, 1), ac::rgb666(5, 4, 2)}, // Gold-orange
+        {ac::rgb666(4, 4, 1), ac::rgb666(5, 5, 2)}, // Yellow
+        {ac::rgb666(1, 4, 1), ac::rgb666(2, 5, 2)}, // Green
+        {ac::rgb666(1, 4, 4), ac::rgb666(2, 5, 5)}, // Teal
+        {ac::rgb666(2, 1, 4), ac::rgb666(3, 2, 5)}, // Indigo
+        {ac::rgb666(4, 1, 4), ac::rgb666(5, 2, 5)}  // Violet
     };
 
     size_t current_color = 0;
-    std::vector<Replxx::Color> color_stack;
+    std::vector<Color> color_stack;
     std::vector<Token> brace_stack;
     std::optional<std::tuple<size_t, size_t>> active_matching_brace;
 
@@ -483,7 +480,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         if (code_point_pos >= colors.size())
             code_point_pos = colors.size() - 1;
 
-        colors[code_point_pos] = Replxx::Color::BRIGHTRED;
+        colors[code_point_pos] = ac::c::BRIGHTRED;
 
         if (active_matching_brace)
         {
@@ -494,8 +491,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             /// highlight both with a brighter color.
             if (code_point_pos == matching_brace_pos || code_point_pos == highlight_pos)
             {
-                colors[matching_brace_pos] = replxx::color::rgb666(5, 0, 1);
-                colors[highlight_pos] = replxx::color::rgb666(5, 0, 1);
+                colors[matching_brace_pos] = ac::rgb666(5, 0, 1);
+                colors[highlight_pos] = ac::rgb666(5, 0, 1);
             }
         }
     }
@@ -504,20 +501,24 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     if (last_token.type == TokenType::Semicolon || last_token.type == TokenType::VerticalDelimiter
         || query.ends_with(';') || query.ends_with("\\G"))  /// This is for raw data in INSERT queries, which is not necessarily tokenized.
     {
-        ReplxxLineReader::setLastIsDelimiter(true);
+        RustylineLineReader::setLastIsDelimiter(true);
     }
     else if (last_token.type != TokenType::Whitespace)
     {
-        ReplxxLineReader::setLastIsDelimiter(false);
+        RustylineLineReader::setLastIsDelimiter(false);
     }
 }
 
-String highlighted(const String & query, const Context & context, bool rainbow_parentheses)
+String highlightAnsi(const String & query, const Context & context, int cursor_position, bool rainbow_parentheses)
 {
-    const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
+    namespace ac = AnsiColor;
 
-    std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
-    highlight(query, colors, context, 0, rainbow_parentheses);
+    const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
+    if (num_code_points == 0)
+        return query;
+
+    std::vector<ac::Color> colors(num_code_points, ac::c::DEFAULT);
+    highlight(query, colors, context, cursor_position, rainbow_parentheses);
 
     String res;
     size_t query_size = query.size();
@@ -525,13 +526,13 @@ String highlighted(const String & query, const Context & context, bool rainbow_p
 
     size_t byte_pos = 0;
     size_t code_point_pos = 0;
-    replxx::Replxx::Color prev_color = replxx::Replxx::Color::DEFAULT;
+    ac::Color prev_color = ac::c::DEFAULT;
     while (byte_pos < query_size)
     {
         auto curr_color = colors[code_point_pos];
         if (curr_color != prev_color)
         {
-            res += replxx::ansi_color(curr_color);
+            res += ac::ansiSequence(curr_color);
             prev_color = curr_color;
         }
         size_t code_point_length = UTF8::seqLength(query[byte_pos]);
@@ -539,12 +540,11 @@ String highlighted(const String & query, const Context & context, bool rainbow_p
         byte_pos += code_point_length;
         ++code_point_pos;
     }
-    if (replxx::Replxx::Color::DEFAULT != prev_color)
-        res += replxx::ansi_color(replxx::Replxx::Color::DEFAULT);
+    if (prev_color != ac::c::DEFAULT)
+        res += ac::ansiSequence(ac::c::DEFAULT);
 
     return res;
 }
-#endif
 
 void skipSpacesAndComments(const char*& pos, const char* end, std::function<void(std::string_view)> comment_callback)
 {

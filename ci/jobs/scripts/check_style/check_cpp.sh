@@ -278,7 +278,7 @@ std_cerr_cout_excludes=(
     src/Client/ClientApplicationBase.cpp
     src/Common/ProgressIndication.h
     src/Client/LineReader.h
-    src/Client/ReplxxLineReader.h
+    src/Client/RustylineLineReader.h
     src/Client/Suggest.cpp
     src/Client/ClientBase.h
     src/Daemon/BaseDaemon.cpp

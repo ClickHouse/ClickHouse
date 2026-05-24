@@ -69,7 +69,6 @@ target_link_libraries (common
         Poco::Net::SSL
         Poco::Util
         Poco::Foundation
-        ch_contrib::replxx
         ch_contrib::cctz
         ch_contrib::fmt
         ch_contrib::magic_enum

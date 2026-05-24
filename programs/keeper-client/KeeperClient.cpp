@@ -1,5 +1,6 @@
 #include <KeeperClient.h>
-#include <Client/ReplxxLineReader.h>
+#include <Client/RustylineLineReader.h>
+#include <Client/RustylineCallbackContext.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -552,19 +553,20 @@ void KeeperClient::runInteractiveReplxx()
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {};
 
-    auto reader_options = ReplxxLineReader::Options
+    auto reader_options = RustylineLineReader::Options
     {
         .suggest = suggest,
         .history_file_path = history_file,
         .history_max_entries = history_max_entries,
         .multiline = false,
         .ignore_shell_suspend = false,
+        .enable_highlight = false,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = WORD_BREAK_CHARACTERS,
-        .highlighter = {},
     };
-    ReplxxLineReader lr(std::move(reader_options));
+    DB::rustyline::setCallbackContext(&suggest, nullptr, WORD_BREAK_CHARACTERS, false, false);
+    RustylineLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
 
     while (true)
