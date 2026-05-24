@@ -1,12 +1,16 @@
 #pragma once
 
-#include <Common/ColumnsHashingImpl.h>
-#include <Common/SipHash.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/ColumnsHashingImpl.h>
+#include <Common/NaNUtils.h>
+#include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/types.h>
+
+#include <bit>
 
 namespace DB
 {
@@ -29,6 +33,52 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
     return hash.get128();
 }
 
+namespace columns_hashing_impl
+{
+
+/// Return true when the (already-nullable-unwrapped) column is a `Float` column
+/// whose value width matches `FieldType`. Used by `HashMethodOneNumber` to
+/// decide whether to canonicalize NaN bit patterns when extracting hash keys.
+template <typename FieldType>
+inline bool needsFloatNaNCanonicalization(const IColumn * actual_column)
+{
+    if constexpr (sizeof(FieldType) == sizeof(Float32))
+        return typeid_cast<const ColumnFloat32 *>(actual_column) != nullptr;
+    else if constexpr (sizeof(FieldType) == sizeof(Float64))
+        return typeid_cast<const ColumnFloat64 *>(actual_column) != nullptr;
+    else
+        return false;
+}
+
+/// Reinterpret the `FieldType` bytes as `Float32`/`Float64`, canonicalize the
+/// NaN bit pattern, and return the resulting bytes back as `FieldType`. For
+/// `FieldType` widths that do not correspond to a floating-point type this is
+/// a compile-time no-op.
+template <typename FieldType>
+inline FieldType canonicalizeFloatBitsAsField(FieldType bits)
+{
+    if constexpr (sizeof(FieldType) == sizeof(Float32))
+    {
+        Float32 f = std::bit_cast<Float32>(bits);
+        if (isNaN(f))
+            return std::bit_cast<FieldType>(canonicalNaN<Float32>());
+        return bits;
+    }
+    else if constexpr (sizeof(FieldType) == sizeof(Float64))
+    {
+        Float64 f = std::bit_cast<Float64>(bits);
+        if (isNaN(f))
+            return std::bit_cast<FieldType>(canonicalNaN<Float64>());
+        return bits;
+    }
+    else
+    {
+        return bits;
+    }
+}
+
+}
+
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
 template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
@@ -46,7 +96,18 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     static constexpr bool has_cheap_key_calculation = true;
     static constexpr bool has_pre_computed_hashes = false;
 
+    /// `FieldType` widths 4 and 8 correspond to `Float32` and `Float64`. For
+    /// smaller widths there is no matching floating-point type so we never
+    /// need a runtime check and the branch is pruned at compile time.
+    static constexpr bool may_canonicalize_nan
+        = (sizeof(FieldType) == sizeof(Float32)) || (sizeof(FieldType) == sizeof(Float64));
+
     const char * vec;
+    /// Set in the constructor when the underlying column is `ColumnFloat32`/`ColumnFloat64`.
+    /// Used by `getKeyHolder` to fold every NaN bit pattern onto the canonical one so that
+    /// `DISTINCT`/`GROUP BY`/`uniqExact` hash-based set semantics treat all NaNs as a single
+    /// value regardless of where the NaN was produced (see issue #105748).
+    bool canonicalize_nan_in_keys = false;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
     HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
@@ -54,11 +115,16 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
         if constexpr (nullable)
         {
             const auto & null_column = checkAndGetColumn<ColumnNullable>(*key_columns[0]);
-            vec = null_column.getNestedColumnPtr()->getRawData().data();
+            const auto * nested = null_column.getNestedColumnPtr().get();
+            vec = nested->getRawData().data();
+            if constexpr (may_canonicalize_nan)
+                canonicalize_nan_in_keys = columns_hashing_impl::needsFloatNaNCanonicalization<FieldType>(nested);
         }
         else
         {
             vec = key_columns[0]->getRawData().data();
+            if constexpr (may_canonicalize_nan)
+                canonicalize_nan_in_keys = columns_hashing_impl::needsFloatNaNCanonicalization<FieldType>(key_columns[0]);
         }
     }
 
@@ -67,11 +133,16 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
         if constexpr (nullable)
         {
             const auto & null_column = checkAndGetColumn<ColumnNullable>(*column);
-            vec = null_column.getNestedColumnPtr()->getRawData().data();
+            const auto * nested = null_column.getNestedColumnPtr().get();
+            vec = nested->getRawData().data();
+            if constexpr (may_canonicalize_nan)
+                canonicalize_nan_in_keys = columns_hashing_impl::needsFloatNaNCanonicalization<FieldType>(nested);
         }
         else
         {
             vec = column->getRawData().data();
+            if constexpr (may_canonicalize_nan)
+                canonicalize_nan_in_keys = columns_hashing_impl::needsFloatNaNCanonicalization<FieldType>(column);
         }
     }
 
@@ -90,7 +161,16 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     using Base::getHash; /// (const Data & data, size_t row, Arena & pool) -> size_t
 
     /// Is used for default implementation in HashMethodBase.
-    FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
+    FieldType getKeyHolder(size_t row, Arena &) const
+    {
+        FieldType bits = unalignedLoad<FieldType>(vec + row * sizeof(FieldType));
+        if constexpr (may_canonicalize_nan)
+        {
+            if (canonicalize_nan_in_keys)
+                return columns_hashing_impl::canonicalizeFloatBitsAsField<FieldType>(bits);
+        }
+        return bits;
+    }
 
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 };

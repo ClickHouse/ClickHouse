@@ -14,6 +14,7 @@
 
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/NaNUtils.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -306,7 +307,10 @@ struct Adder
             else
             {
                 using ValueType = typename decltype(data.set)::value_type;
-                const auto & value = assert_cast<const ColumnVector<T> &>(column).getElement(row_num);
+                /// Canonicalize NaN bit patterns so that approximate uniq estimators
+                /// count every NaN as the same value, matching `uniqExact` semantics
+                /// (see issue #105748).
+                const auto value = canonicalizeNaN(assert_cast<const ColumnVector<T> &>(column).getElement(row_num));
                 data.set.insert(static_cast<ValueType>(AggregateFunctionUniqTraits<T>::hash(value)));
             }
         }
@@ -325,7 +329,12 @@ struct Adder
             }
             else
             {
-                data.set.template insert<const T &, hint>(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+                /// `HashSet` compares keys via `bitEquals`, so two NaNs with different
+                /// bit patterns (e.g. `0./0.` vs the literal `nan`, or scalar `log(-1.)`
+                /// vs the ARM NEON `log` after PR #98230) would otherwise be treated as
+                /// distinct values. Canonicalize NaN before inserting (issue #105748).
+                const T value = canonicalizeNaN(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+                data.set.template insert<const T &, hint>(value);
             }
         }
 #if USE_DATASKETCHES
@@ -371,9 +380,14 @@ private:
         {
             if (!null_map)
             {
+                /// `insertMany` reads raw values from the column without any
+                /// NaN canonicalization; floating-point columns must go through
+                /// the per-row `add` path so that the canonicalization done
+                /// there (see issue #105748) is applied to every value.
                 if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData> &&
                         !std::is_same_v<T, String> &&
-                        !std::is_same_v<T, IPv6>)
+                        !std::is_same_v<T, IPv6> &&
+                        !is_floating_point<T>)
                 {
                     const auto & column = *columns[0];
                     data.set.template insertMany<T, AggregateFunctionUniqTraits<T>::hash>(

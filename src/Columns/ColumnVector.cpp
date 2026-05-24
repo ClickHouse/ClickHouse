@@ -69,13 +69,30 @@ void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(data[n]);
+    /// For floating-point columns, fold every NaN bit pattern onto the canonical
+    /// NaN before hashing so that `DISTINCT`/`GROUP BY`/`uniqExact` and similar
+    /// hash-based set semantics treat NaNs as a single group regardless of
+    /// where the NaN was produced (see issue #105748).
+    if constexpr (is_floating_point<T>)
+        hash.update(canonicalizeNaN(data[n]));
+    else
+        hash.update(data[n]);
 }
 
 template <typename T>
 void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
+    if constexpr (is_floating_point<T>)
+    {
+        /// Per-element path: cannot use the bulk byte update because NaN bit
+        /// patterns must be canonicalized first.
+        for (size_t i = begin; i < end; ++i)
+            hash.update(canonicalizeNaN(data[i]));
+    }
+    else
+    {
+        hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
+    }
 }
 
 template <typename T>
@@ -90,7 +107,10 @@ WeakHash32 ColumnVector<T>::getWeakHash32() const
 
     while (begin < end)
     {
-        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
+        if constexpr (is_floating_point<T>)
+            *hash_data = static_cast<UInt32>(hashCRC32(canonicalizeNaN(*begin), *hash_data));
+        else
+            *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
         ++begin;
         ++hash_data;
     }
@@ -101,7 +121,16 @@ WeakHash32 ColumnVector<T>::getWeakHash32() const
 template <typename T>
 void ColumnVector<T>::updateHashFast(SipHash & hash) const
 {
-    hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
+    if constexpr (is_floating_point<T>)
+    {
+        const size_t s = size();
+        for (size_t i = 0; i < s; ++i)
+            hash.update(canonicalizeNaN(data[i]));
+    }
+    else
+    {
+        hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
+    }
 }
 
 template <typename T>

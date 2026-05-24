@@ -65,6 +65,41 @@ T NaNOrZero()
     return {};
 }
 
+/// Canonical positive quiet NaN for a floating-point type. For BFloat16 we
+/// construct it from the Float32 canonical NaN; for the other floats we use the
+/// implementation-defined `std::numeric_limits<T>::quiet_NaN()`.
+template <typename T>
+inline T canonicalNaN()
+{
+    static_assert(is_floating_point<T>, "canonicalNaN is only defined for floating-point types");
+    if constexpr (std::is_same_v<T, BFloat16>)
+        return BFloat16(std::numeric_limits<Float32>::quiet_NaN());
+    else
+        return std::numeric_limits<T>::quiet_NaN();
+}
+
+/// If `x` is a NaN, return the canonical NaN for type `T`. Otherwise return `x`
+/// unchanged. For non-floating-point types this is a compile-time no-op.
+///
+/// Different operations and platforms can produce NaN bit patterns that differ
+/// in the sign bit or in the payload (for example glibc's scalar `log(-1.)`
+/// versus the ARM NEON fastops `log` after PR #98230, or division by zero
+/// versus the literal `nan` in SQL). Hash tables in ClickHouse compare keys
+/// byte-wise via `bitEquals`, so two NaNs that differ only in bit pattern are
+/// treated as distinct, which breaks `DISTINCT`, `GROUP BY`, `uniqExact`, and
+/// related set semantics. Call this helper at the hash/equality boundary to
+/// fold every NaN bit pattern onto a single canonical representation.
+template <typename T>
+inline T canonicalizeNaN(T x)
+{
+    if constexpr (is_floating_point<T>)
+    {
+        if (isNaN(x))
+            return canonicalNaN<T>();
+    }
+    return x;
+}
+
 template <typename T>
 bool signBit(T x)
 {
