@@ -15,6 +15,9 @@ namespace DB
 
 class TextIndexAnalyzer;
 
+class PostingListCursor;
+using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
+
 using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<size_t, PostingListPtr>>;
 
 /// A part of "direct read from text index" optimization.
@@ -48,8 +51,10 @@ public:
     void setPrecomputedGranule(const IndexGranulesMap & granules);
 
 private:
+    void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(Columns & columns) const;
+    std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
 
     /// Returns combined postings per column for the given mark, restricted to `slice_range`.
     /// The slice is the actual read window inside the mark and may be narrower than the full
@@ -82,6 +87,11 @@ private:
     void analyzeTokensCardinality();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
+    /// Lazy-mode counterpart of `fillColumn`. Builds `PostingListCursor`s on the fly
+    /// from `granule->getAnalyzer().getTokenInfos()` and runs the leapfrog / brute-force
+    /// kernels — never materializes the per-mark `PostingList`. Used when `use_lazy_mode` is set.
+    void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows);
+    PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
@@ -101,6 +111,9 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
+    /// Small postings stream — kept as a class member because cached lazy cursors
+    /// hold a reference to it for on-demand segment reads.
+    std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
     /// A separate stream is created for each token to read
     /// postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
@@ -116,7 +129,18 @@ private:
     /// Tokens that are useful for analysis and filling virtual columns.
     absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
-    PostingsSerialization postings_serialization;
+    std::optional<PostingsSerialization> postings_serialization;
+
+    /// Requested in the constructor; enabled per granule in `setIndexGranule` after checking the
+    /// sparse-index header and confirming no virtual column carries pattern predicates.
+    bool lazy_mode_requested = false;
+    bool use_lazy_mode = false;
+    float lazy_density_threshold = 0.2f;
+
+    /// Cached lazy cursors keyed by `(virtual column name, token)`. Cursors are forward-only and
+    /// hold mutable segment/block position, so they must not be shared across columns.
+    /// Cleared on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
+    absl::flat_hash_map<String, absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 };
 
 }
