@@ -109,12 +109,17 @@ struct Part
     // and modify through iterator
     mutable std::set<size_t> replicas;
 
-    /// Immutable snapshot of the first replica's announcement for this part. `description.ranges`
-    /// is consumed by the coordinator as ranges are dispatched, so we cannot use it for
-    /// cross-replica divergence checks. These fields stay fixed for the lifetime of the part.
-    size_t initial_rows = 0;
-    size_t initial_marks_count = 0;
-    size_t initial_last_mark = 0;
+    /// Total mark count of the underlying part on the first announcing replica's local disk
+    /// (snapshotted from `description.total_marks_in_part` at first insertion). This describes
+    /// the part itself, NOT the analyzed `description.ranges`, so it is invariant across
+    /// replicas that share the same underlying data and unaffected by per-replica PK or
+    /// skip-index analysis. `description.ranges` cannot be used for cross-replica divergence
+    /// checks because it (a) reflects only the analyzed subset, which legitimately differs
+    /// between replicas, and (b) is consumed in place by `handleRequest` as ranges are
+    /// dispatched. A value of `0` means the first replica spoke an older protocol that did not
+    /// carry the field; the coordinator skips divergence validation in that case to preserve
+    /// mixed-version compatibility.
+    size_t initial_total_marks_in_part = 0;
 
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
@@ -145,18 +150,38 @@ extern const int ALL_CONNECTION_TRIES_FAILED;
 namespace
 {
 
-/// Returns true when an announcement describes the same local data layout as the first replica's
-/// initial snapshot. We compare announced rows, total number of marks, and max mark end against
-/// the snapshot taken at first announcement (Part::initial_*) — never against the live
-/// `description` fields, which are mutated by the coordinator as ranges are dispatched.
-/// A mismatch signals that replicas have divergent local data, so the coordinator must reject
-/// the merge: otherwise it later hands snapshot ranges to a replica whose local mark space is
-/// smaller and reading hits a non-existing mark.
+/// Returns true when an announcement describes the same underlying part as the first replica's
+/// initial snapshot.
+///
+/// We compare the total number of marks in the underlying part — `total_marks_in_part` —
+/// which is sourced from `data_part->index_granularity->getMarksCountWithoutFinal` and is
+/// invariant across replicas that share the same on-disk data. We deliberately do NOT compare
+/// `description.rows`, `description.ranges`, `getLastMark`, or any other analyzed-view field
+/// because:
+///
+///   1. Per-replica PK and skip-index analysis can legitimately select different mark subsets
+///      from the same underlying part (for example, when local statistics differ); two such
+///      announcements describe the same data even though their analyzed views diverge.
+///
+///   2. `description.ranges` is consumed in place by `handleRequest` as ranges are dispatched
+///      (`pop_front`, `pop_back`, `range.begin += taken`), so it shrinks below its original
+///      layout between announcements.
+///
+/// A mismatch in `total_marks_in_part` signals that the replicas hold genuinely different
+/// underlying parts (for example, two non-replicated `MergeTree` instances that each created a
+/// part named `all_1_1_0` from independent local inserts). Merging them would later let the
+/// coordinator dispatch a mark from the larger replica's view to a replica whose underlying
+/// part has fewer marks, hitting `MergeTreeIndexGranularityConstant::getMarkRows`.
+///
+/// `total_marks_in_part == 0` on either side means the field was unset — either because the
+/// announcing replica speaks an older `DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION` or because the
+/// description was synthesized internally by the coordinator (queue entries). In both cases we
+/// skip validation to preserve mixed-version compatibility; a zero value carries no information.
 bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & announced)
 {
-    return known.initial_rows == announced.rows
-        && known.initial_last_mark == getLastMark(announced.ranges)
-        && known.initial_marks_count == announced.ranges.getNumberOfMarks();
+    if (known.initial_total_marks_in_part == 0 || announced.total_marks_in_part == 0)
+        return true;
+    return known.initial_total_marks_in_part == announced.total_marks_in_part;
 }
 
 [[noreturn]] void throwDivergentLocalPart(
@@ -166,28 +191,23 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
 {
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
-        "Replica {} announced part {} with {} rows / {} marks (max mark end {}), but an earlier "
-        "replica announced a same-named part with {} rows / {} marks (max mark end {}). Parallel "
-        "replicas requires consistent data across cluster members. Use ReplicatedMergeTree or "
-        "disable parallel_replicas_for_non_replicated_merge_tree.",
+        "Replica {} announced part {} with {} marks in the underlying part, but an earlier "
+        "replica announced a same-named part with {} marks. Parallel replicas requires "
+        "consistent data across cluster members. Use ReplicatedMergeTree or disable "
+        "parallel_replicas_for_non_replicated_merge_tree.",
         replica_num,
         announced.info.getPartNameV1(),
-        announced.rows,
-        announced.ranges.getNumberOfMarks(),
-        getLastMark(announced.ranges),
-        known.initial_rows,
-        known.initial_marks_count,
-        known.initial_last_mark);
+        announced.total_marks_in_part,
+        known.initial_total_marks_in_part);
 }
 
-/// Snapshots the immutable layout fields from an announced part. Call this exactly once per part,
-/// at the time of first insertion into `all_parts_to_read`, so the snapshot reflects the original
-/// announcement (before any range dispatch).
+/// Snapshots the immutable underlying-part fields from an announced part. Call this exactly once
+/// per part, at the time of first insertion into `all_parts_to_read`, so the snapshot reflects
+/// the announcing replica's view of the on-disk part (before any range dispatch consumes
+/// `description.ranges`).
 void captureInitialLayout(Part & p)
 {
-    p.initial_rows = p.description.rows;
-    p.initial_marks_count = p.description.ranges.getNumberOfMarks();
-    p.initial_last_mark = getLastMark(p.description.ranges);
+    p.initial_total_marks_in_part = p.description.total_marks_in_part;
 }
 
 }
@@ -464,11 +484,12 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
         part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
     }
 
-    /// Reject same-named parts whose row count or mark space differs from the immutable snapshot
-    /// taken at first announcement. The mark-space check (in addition to rows) catches
-    /// adaptive-granularity divergence where two parts share a row count but disagree on the
-    /// number of marks. We compare against `Part::initial_*` rather than `Part::description`
-    /// because the coordinator mutates `description.ranges` as it dispatches reads.
+    /// Reject same-named parts whose underlying total mark count differs from the snapshot taken
+    /// at first announcement. We compare `Part::initial_total_marks_in_part` (sourced from the
+    /// part's `index_granularity` and therefore invariant across replicas with the same on-disk
+    /// data) rather than analyzed-view fields like `description.rows` or `description.ranges`,
+    /// because per-replica PK and skip-index analysis legitimately produces different analyzed
+    /// views from the same underlying part. See `sameLocalLayout` for the full rationale.
     if (state_initialized)
     {
         for (const auto & part : announcement.description)
@@ -1049,11 +1070,11 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
         {
-            /// Same part name but a different row count or mark layout means replicas have
+            /// Same part name but a different underlying total mark count means replicas have
             /// divergent local data; merging here would later hand out non-existing marks to the
-            /// replica whose local mark space is smaller. Compare against the immutable snapshot
-            /// (Part::initial_*) rather than the live `description`, which is mutated by
-            /// `handleRequest` as ranges are dispatched.
+            /// replica whose local mark space is smaller. We compare the snapshot of the
+            /// announcing replica's `data_part->index_granularity` mark count (invariant across
+            /// replicas with the same on-disk data), not analyzed-view fields.
             if (!sameLocalLayout(*the_same_it, part))
                 throwDivergentLocalPart(announcement.replica_num, part, *the_same_it);
 

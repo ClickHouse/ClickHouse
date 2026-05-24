@@ -31,6 +31,17 @@ struct RangesInDataPartDescription
     /// The initiator computes this per part after PK analysis and propagates back to replicas in read request responses.
     size_t min_marks_per_task = 0;
 
+    /// Total mark count of the underlying part on disk (NOT of the analyzed `ranges` above).
+    /// Populated from `data_part->index_granularity->getMarksCountWithoutFinal` in
+    /// `RangesInDataPart::getDescription`. Used by `ParallelReplicasReadingCoordinator` to detect
+    /// divergent local data across replicas: two replicas announcing parts with the same
+    /// `MergeTreePartInfo` but different `total_marks_in_part` cannot have come from the same
+    /// underlying part, and merging them would later let the coordinator dispatch marks beyond
+    /// the smaller replica's local mark space. A value of `0` means the field was not populated
+    /// (older replica protocol or coordinator-internal queue entry); the coordinator skips
+    /// divergence validation in that case.
+    size_t total_marks_in_part = 0;
+
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);

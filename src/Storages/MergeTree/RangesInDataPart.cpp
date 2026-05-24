@@ -42,6 +42,9 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_r
 
     if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
         writeVarUInt(min_marks_per_task, out);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_TOTAL_MARKS_IN_PART)
+        writeVarUInt(total_marks_in_part, out);
 }
 
 String RangesInDataPartDescription::describe() const
@@ -70,6 +73,9 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_r
 
     if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
         readVarUInt(min_marks_per_task, in);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_TOTAL_MARKS_IN_PART)
+        readVarUInt(total_marks_in_part, in);
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const
@@ -138,6 +144,10 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
         .ranges = ranges,
         .rows = getRowsCount(),
         .projection_name = data_part->isProjectionPart() ? data_part->name : "",
+        /// Total mark count of the underlying part — invariant across replicas with the same
+        /// underlying data and unaffected by per-replica PK or skip-index analysis. Used by
+        /// `ParallelReplicasReadingCoordinator` to detect cross-replica part divergence.
+        .total_marks_in_part = data_part->index_granularity->getMarksCountWithoutFinal(),
     };
 }
 
