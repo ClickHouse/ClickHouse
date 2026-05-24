@@ -135,7 +135,7 @@ public:
                     getName(), MAX_PERMUTATION_RESULT_ELEMENTS, n, k);
 
             /// Generate k-permutations of n elements using index arrays.
-            std::vector<size_t> indices(n);
+            std::vector<size_t> indices(n); // STYLE_CHECK_ALLOW_STD_CONTAINERS
             std::iota(indices.begin(), indices.end(), 0);
 
             if (k == n)
@@ -153,8 +153,8 @@ public:
             else
             {
                 /// Partial permutations in lexicographic order using used-flags approach
-                std::vector<bool> used(n, false);
-                std::vector<size_t> current(k);
+                std::vector<bool> used(n, false); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+                std::vector<size_t> current(k); // STYLE_CHECK_ALLOW_STD_CONTAINERS
                 generatePartialPermutationsLex(arr_values, arr_begin, n, k, 0, used, current,
                     *col_res_data, inner_offsets, inner_pos, outer_pos);
             }
@@ -170,7 +170,7 @@ public:
 private:
     static void generatePartialPermutationsLex(
         const IColumn & arr_values, size_t arr_begin, size_t n, size_t k, size_t depth,
-        std::vector<bool> & used, std::vector<size_t> & current,
+        std::vector<bool> & used, std::vector<size_t> & current, // STYLE_CHECK_ALLOW_STD_CONTAINERS
         IColumn & res_data, IColumn::Offsets & inner_offsets, size_t & inner_pos, size_t & outer_pos)
     {
         if (depth == k)

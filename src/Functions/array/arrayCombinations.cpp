@@ -109,7 +109,7 @@ public:
                     getName(), MAX_COMBINATION_RESULT_ELEMENTS, n, k);
 
             /// Generate combinations using iterative approach with index array
-            std::vector<size_t> indices(k);
+            std::vector<size_t> indices(k); // STYLE_CHECK_ALLOW_STD_CONTAINERS
             for (Int64 i = 0; i < k; ++i)
                 indices[i] = i;
 
