@@ -30,7 +30,7 @@ namespace
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
-class FunctionIsNotNull final : public IFunction
+class FunctionIsNotNull : public IFunction
 {
 public:
     static constexpr auto name = "isNotNull";
