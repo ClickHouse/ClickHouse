@@ -316,24 +316,29 @@ MemoryWorker::MemoryWorker(
             /// file names and v2 uses a hierarchy.
             if (version == ICgroupsReader::CgroupsVersion::V2)
             {
-                /// In cgroup v2, every ancestor cgroup has its own `memory.max`, and
-                /// the effective limit is the minimum finite value among them. Open
-                /// each ancestor's file so we can re-read them on every tick. If we
-                /// only opened the leaf, an ancestor's finite limit would be hidden
-                /// when the leaf has `memory.max = max`.
+                /// In cgroup v2, every ancestor cgroup has its own `memory.max` and
+                /// `memory.current`. We pair them at the same level so the computed
+                /// per-level `available_i = max_i - current_i` reflects sibling
+                /// consumption inside an ancestor: using the leaf's `memory.current`
+                /// against an ancestor's `memory.max` would ignore other children of
+                /// that ancestor and let us exceed its budget.
                 fs::path current = fs::path(cgroup_path);
                 while (current != default_cgroups_mount.parent_path())
                 {
-                    fs::path path = current / "memory.max";
-                    if (fs::exists(path))
+                    fs::path max_path = current / "memory.max";
+                    fs::path current_path = current / "memory.current";
+                    if (fs::exists(max_path) && fs::exists(current_path))
                     {
                         try
                         {
-                            cgroup_memory_max_bufs.push_back(std::make_unique<ReadBufferFromFile>(path.string()));
+                            CgroupMemoryLevel level;
+                            level.max_buf = std::make_unique<ReadBufferFromFile>(max_path.string());
+                            level.current_buf = std::make_unique<ReadBufferFromFile>(current_path.string());
+                            cgroup_memory_levels.push_back(std::move(level));
                         }
                         catch (...)
                         {
-                            tryLogCurrentException(log, fmt::format("Cannot open cgroup memory limit file '{}'", path.string()));
+                            tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
                         }
                     }
                     current = current.parent_path();
@@ -346,7 +351,11 @@ MemoryWorker::MemoryWorker(
                 {
                     try
                     {
-                        cgroup_memory_max_bufs.push_back(std::make_unique<ReadBufferFromFile>(memory_max_path.string()));
+                        CgroupMemoryLevel level;
+                        level.max_buf = std::make_unique<ReadBufferFromFile>(memory_max_path.string());
+                        /// v1 has no per-level `memory.current` analogue we use here;
+                        /// leaf usage comes from `cgroups_reader` in `readAvailableForDynamicLimit`.
+                        cgroup_memory_levels.push_back(std::move(level));
                     }
                     catch (...)
                     {
@@ -497,70 +506,87 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
     /// processes in the cgroup count toward our budget. Use the cgroup view instead,
     /// the same way `AsynchronousMetrics` reports `CGroupMemoryTotal` / `CGroupMemoryUsed`.
     ///
-    /// In cgroup v2, walk all ancestors (their files were opened in the constructor)
-    /// and take the minimum finite `memory.max`. Any one of them can be the binding
-    /// limit, so missing an ancestor's limit could let us inflate the hard limit above
-    /// the effective cgroup budget. If *no* ancestor has a finite limit, the cgroup
-    /// has no memory limit at all, and `/proc/meminfo` (host-wide) is the right source.
-    if (cgroups_reader && !cgroup_memory_max_bufs.empty())
+    /// In cgroup v2, walk all ancestors and compute per-level headroom
+    /// `available_i = memory.max_i - memory.current_i`, then take the minimum. Pairing
+    /// max and current at the *same* level matters: an ancestor's `memory.current`
+    /// includes sibling cgroups under that ancestor, while the leaf's `memory.current`
+    /// does not. Using the leaf's usage against an ancestor's limit would ignore
+    /// siblings and let the dynamic hard limit exceed the ancestor's remaining budget,
+    /// which can still trigger a cgroup OOM kill.
+    /// If *no* level has a finite limit, the cgroup has no memory limit at all, and
+    /// `/proc/meminfo` (host-wide) is the right source.
+    if (cgroups_reader && !cgroup_memory_levels.empty())
     {
-        uint64_t effective_limit = std::numeric_limits<uint64_t>::max();
+        uint64_t min_available = std::numeric_limits<uint64_t>::max();
         bool any_finite = false;
         bool any_read_failure = false;
-        for (auto & buf : cgroup_memory_max_bufs)
+        for (auto & level : cgroup_memory_levels)
         {
             try
             {
-                buf->rewind();
+                level.max_buf->rewind();
                 /// `memory.max` value `"max"` means "no limit at this level". Handle it
                 /// explicitly so the common path doesn't depend on parse-failure semantics.
                 String first_token;
-                readStringUntilWhitespace(first_token, *buf);
+                readStringUntilWhitespace(first_token, *level.max_buf);
                 if (first_token == "max")
                     continue;
 
                 uint64_t limit_bytes = 0;
                 ReadBufferFromString token_buf(first_token);
-                if (tryReadIntText(limit_bytes, token_buf) && limit_bytes > 0)
-                {
-                    /// On cgroup v1, `memory.limit_in_bytes` uses a huge sentinel value
-                    /// (`PAGE_COUNTER_MAX`, around `2^63`) to mean "no limit". On a host
-                    /// without cgroup memory limits this looks like a finite limit far
-                    /// above any real RAM amount and would otherwise pin the dynamic
-                    /// limit to the startup ceiling. Anything `>= host_memory_bytes` is
-                    /// effectively unbounded, so treat it the same as the v2 `"max"` token.
-                    if (host_memory_bytes != 0 && limit_bytes >= host_memory_bytes)
-                        continue;
+                if (!tryReadIntText(limit_bytes, token_buf) || limit_bytes == 0)
+                    continue;
 
-                    effective_limit = std::min(effective_limit, limit_bytes);
-                    any_finite = true;
+                /// On cgroup v1, `memory.limit_in_bytes` uses a huge sentinel value
+                /// (`PAGE_COUNTER_MAX`, around `2^63`) to mean "no limit". On a host
+                /// without cgroup memory limits this looks like a finite limit far
+                /// above any real RAM amount and would otherwise pin the dynamic
+                /// limit to the startup ceiling. Anything `>= host_memory_bytes` is
+                /// effectively unbounded, so treat it the same as the v2 `"max"` token.
+                if (host_memory_bytes != 0 && limit_bytes >= host_memory_bytes)
+                    continue;
+
+                uint64_t used = 0;
+                if (level.current_buf)
+                {
+                    /// v2: read `memory.current` for the same level, so sibling
+                    /// consumption inside an ancestor counts against that ancestor's budget.
+                    level.current_buf->rewind();
+                    readIntText(used, *level.current_buf);
                 }
+                else
+                {
+                    /// v1: the only opened level is the leaf cgroup; use the same usage
+                    /// source as `cgroups_reader`. v1 does not traverse the hierarchy.
+                    used = cgroups_reader->readMemoryUsage();
+                }
+
+                uint64_t available = (limit_bytes > used) ? (limit_bytes - used) : 0;
+                min_available = std::min(min_available, available);
+                any_finite = true;
             }
             catch (...)
             {
                 any_read_failure = true;
                 if (!std::exchange(cgroup_memory_max_warnings_printed, true))
-                    tryLogCurrentException(log, "Cannot read cgroup memory limit");
+                    tryLogCurrentException(log, "Cannot read cgroup memory limit/current");
             }
         }
         if (any_finite)
         {
-            /// If the cgroup is at or over its effective limit, return `0` (a real
-            /// pressure signal), not `nullopt`. The caller must still apply its
-            /// shrink-to-`used + safety_margin` clamp so the dynamic limit shrinks
-            /// at the highest-pressure point instead of staying pinned to the prior
-            /// (larger) value.
-            uint64_t used = cgroups_reader->readMemoryUsage();
-            return (effective_limit > used) ? (effective_limit - used) : 0;
+            /// `min_available == 0` is a real "at or over the binding limit" signal,
+            /// not a read failure. The caller's `used + safety_margin` clamp will keep
+            /// the dynamic limit from strangling in-flight queries, while still
+            /// shrinking the budget at the highest-pressure point.
+            return min_available;
         }
-        /// Fail-close: if *every* `memory.max` read failed and none parsed as either
-        /// "no limit" or a finite value, we have no idea whether the cgroup has a
-        /// binding limit. Falling through to host-wide `/proc/meminfo` here would
-        /// be fail-open — on a containerized deployment the host's free memory can
-        /// be far above the cgroup budget, and using it as the headroom estimate
-        /// can let `total_memory_tracker` grow past the cgroup limit and trigger
-        /// a cgroup OOM kill. Skip the adjustment this tick instead; the worker
-        /// will retry on the next tick.
+        /// Fail-close: if every level's read failed and none parsed as either "no limit"
+        /// or a finite value, we have no idea whether the cgroup has a binding limit.
+        /// Falling through to host-wide `/proc/meminfo` would be fail-open — on a
+        /// containerized deployment the host's free memory can be far above the cgroup
+        /// budget, and using it as the headroom estimate can let `total_memory_tracker`
+        /// grow past the cgroup limit and trigger a cgroup OOM kill. Skip the adjustment
+        /// this tick instead; the worker will retry on the next tick.
         if (any_read_failure)
             return std::nullopt;
     }

@@ -140,13 +140,21 @@ private:
     std::unique_ptr<ReadBufferFromFile> meminfo_buf;
     [[maybe_unused]] bool meminfo_warnings_printed = false;
 
-    /// Open files for the effective cgroup memory limits. On cgroup v2, every ancestor
-    /// cgroup up to the mount root has its own `memory.max`, and any of them can apply.
-    /// We open all of them at startup and on each tick take the minimum finite value,
-    /// so an ancestor's `memory.max = 10G` is respected even when the leaf cgroup has
-    /// `memory.max = max`. On cgroup v1 there is a single `memory.limit_in_bytes` for
-    /// the leaf cgroup, which is the only entry in the vector.
-    std::vector<std::unique_ptr<ReadBufferFromFile>> cgroup_memory_max_bufs;
+    /// Per-cgroup-level open files used to compute headroom. On cgroup v2, every ancestor
+    /// cgroup up to the mount root has its own `memory.max` *and* `memory.current`, and
+    /// any of them can be the binding limit. We pair each level's `memory.max` with the
+    /// same level's `memory.current` so the computed `available_i = max_i - current_i`
+    /// reflects sibling consumption inside an ancestor (otherwise the leaf's
+    /// `memory.current` would undercount and we could exceed the ancestor's budget).
+    /// We then take the minimum of `available_i` across the hierarchy.
+    /// On cgroup v1 there is a single `memory.limit_in_bytes` for the leaf cgroup,
+    /// and leaf usage comes from `cgroups_reader` (`current_buf` is left empty).
+    struct CgroupMemoryLevel
+    {
+        std::unique_ptr<ReadBufferFromFile> max_buf;
+        std::unique_ptr<ReadBufferFromFile> current_buf;
+    };
+    std::vector<CgroupMemoryLevel> cgroup_memory_levels;
     [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
 
     /// Total host RAM, captured at construction. Used to filter out the cgroup v1
