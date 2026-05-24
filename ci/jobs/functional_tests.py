@@ -748,6 +748,7 @@ def main():
         results[-1].results = []
 
     # invert result status for bugfix validation
+    bugfix_validation_no_repro = False
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         has_failure = False
         for r in test_result.results:
@@ -770,6 +771,13 @@ def main():
             test_result.set_status(Result.Status.SKIPPED).set_info(
                 "Bug does not reproduce on this arch — bugfix validation N/A"
             )
+            # The SKIPPED status must also be applied to the top-level `R`
+            # below. `Result.create_from` treats SKIPPED child results as
+            # benign and defaults the parent status to OK, which would let the
+            # post-hook in `new_tests_check.py` count this per-arch job as a
+            # validation via `is_success()`. Track the no-repro outcome and
+            # apply it on `R` after it is created.
+            bugfix_validation_no_repro = True
         else:
             # For bugfix validation, the expected behavior is:
             # - At least one test must fail (bug reproduced)
@@ -836,6 +844,17 @@ def main():
         files=CH.logs + debug_files,
         info=job_info,
     )
+
+    if bugfix_validation_no_repro:
+        # See the comment above where `bugfix_validation_no_repro` is set.
+        # `R` is otherwise OK because `Result.create_from` skips over SKIPPED
+        # children when deriving the parent status. Mirror the per-arch
+        # integration-test path (`integration_test_job.py`) and set SKIPPED on
+        # `R` directly so the post-hook does not treat this arch as a
+        # validation.
+        R.set_status(Result.Status.SKIPPED).set_info(
+            "Bug does not reproduce on this arch — bugfix validation N/A"
+        )
 
     if is_llvm_coverage and not is_per_test_coverage:
         print("Collecting and merging LLVM coverage files...")
