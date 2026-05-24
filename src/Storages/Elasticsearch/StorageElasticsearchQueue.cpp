@@ -527,8 +527,11 @@ ConnectionTimeouts StorageElasticsearchQueue::getHTTPTimeouts() const
 {
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings());
 
-    const auto & poll_timeout = (*settings)[ElasticsearchQueueSetting::elasticsearch_poll_timeout_ms];
-    if (poll_timeout.changed && poll_timeout.totalMilliseconds() > 0)
+    const auto & engine_poll_timeout = (*settings)[ElasticsearchQueueSetting::elasticsearch_poll_timeout_ms];
+    const Poco::Timespan poll_timeout = engine_poll_timeout.changed
+        ? engine_poll_timeout
+        : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms];
+    if (poll_timeout.totalMilliseconds() > 0)
     {
         timeouts.withConnectionTimeout(poll_timeout);
         timeouts.withSendTimeout(poll_timeout);
@@ -661,6 +664,10 @@ Poco::JSON::Object::Ptr StorageElasticsearchQueue::makeSearchBody(size_t max_row
         match_all->set("match_all", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
         body->set("query", match_all);
     }
+
+    /// The engine owns cursor and PIT state. Values supplied by a user query would bypass checkpoints.
+    body->remove("pit");
+    body->remove("search_after");
 
     if (!pit_id.empty())
     {

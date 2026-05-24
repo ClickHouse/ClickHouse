@@ -167,6 +167,45 @@ def test_point_in_time_lifecycle(started_cluster, database):
     )
 
 
+def test_user_query_cannot_override_internal_cursor_or_pit(started_cluster, database):
+    index = f"query_reserved_{database}"
+    put_elasticsearch_documents(
+        index,
+        [
+            {"seq": 1, "message": "keep"},
+            {"seq": 2, "message": "skip"},
+            {"seq": 3, "message": "keep"},
+        ],
+    )
+
+    query_body = json.dumps(
+        {
+            "query": {"term": {"message": "keep"}},
+            "pit": {"id": "stale-pit", "keep_alive": "1m"},
+            "search_after": [999],
+            "size": 1,
+            "sort": [{"seq": "desc"}],
+        }
+    )
+
+    create_target_and_queue(
+        node1,
+        database,
+        index,
+        f"""
+            , elasticsearch_query = '{query_body}'
+        """,
+    )
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT seq FROM {database}.dst ORDER BY seq",
+        "1\n3\n",
+        retry_count=80,
+        sleep_time=0.5,
+    )
+
+
 def test_experimental_setting_is_required(started_cluster, database):
     with pytest.raises(QueryRuntimeException) as exc:
         node1.query(

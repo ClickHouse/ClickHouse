@@ -21,7 +21,7 @@ namespace ErrorCodes
     DECLARE(String, elasticsearch_index, "", "Elasticsearch index or index pattern for the ElasticsearchQueue engine.", 0) \
     DECLARE(String, elasticsearch_cursor_field, "", "Field used as an ascending search_after cursor for the ElasticsearchQueue engine.", 0) \
     DECLARE(String, elasticsearch_tiebreaker_field, "", "Optional second ascending sort field used to make search_after deterministic.", 0) \
-    DECLARE(String, elasticsearch_query, "", "Optional Elasticsearch JSON request body fragment. The engine overwrites size, sort, and search_after.", 0) \
+    DECLARE(String, elasticsearch_query, "", "Optional Elasticsearch JSON request body fragment. The engine overwrites size, sort, pit, and search_after.", 0) \
     DECLARE(String, elasticsearch_auth_type, "auto", "Authentication type for Elasticsearch. Supported values: auto, none, basic, api_key, bearer.", 0) \
     DECLARE(String, elasticsearch_user, "", "HTTP basic authentication user for Elasticsearch.", 0) \
     DECLARE(String, elasticsearch_password, "", "HTTP basic authentication password for Elasticsearch.", 0) \
