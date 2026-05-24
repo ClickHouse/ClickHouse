@@ -45,6 +45,8 @@ void registerOutputFormatPNG(FormatFactory & factory)
         {
             return std::make_shared<PNGOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
         });
+    factory.markOutputFormatNotTTYFriendly(FORMAT_NAME);
+    factory.setContentType(FORMAT_NAME, "image/png");
 }
 
 }
