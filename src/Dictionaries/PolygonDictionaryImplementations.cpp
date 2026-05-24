@@ -31,6 +31,7 @@ PolygonDictionarySimple::PolygonDictionarySimple(
         Configuration configuration_)
     : IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_)
 {
+    calculateBytesAllocated();
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionarySimple::clone() const
@@ -78,6 +79,7 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
         single.emplace_back(polygon);
         buckets.emplace_back(single);
     }
+    calculateBytesAllocated();
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexEach::clone() const
@@ -90,6 +92,15 @@ std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexEach::clone() const
             this->configuration,
             this->min_intersections,
             this->max_depth);
+}
+
+size_t PolygonDictionaryIndexEach::getIndexBytesAllocated() const
+{
+    size_t total = grid.getBytesAllocated();
+    total += buckets.capacity() * sizeof(SlabsPolygonIndex);
+    for (const auto & bucket : buckets)
+        total += bucket.getBytesAllocated();
+    return total;
 }
 
 bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_index) const
@@ -128,6 +139,7 @@ PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
       min_intersections(min_intersections_),
       max_depth(max_depth_)
 {
+    calculateBytesAllocated();
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexCell::clone() const
@@ -140,6 +152,11 @@ std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexCell::clone() const
             this->configuration,
             this->min_intersections,
             this->max_depth);
+}
+
+size_t PolygonDictionaryIndexCell::getIndexBytesAllocated() const
+{
+    return index.getBytesAllocated();
 }
 
 bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_index) const
