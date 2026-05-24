@@ -74,16 +74,6 @@ static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan:
     return actions;
 }
 
-static const ActionsDAG * findFilterDAG(QueryPlan::Node & node)
-{
-    IQueryPlanStep * step = node.step.get();
-    if (auto * filter = typeid_cast<FilterStep *>(step))
-        return &filter->getExpression();
-    if (node.children.size() == 1)
-        return findFilterDAG(*node.children.front());
-    return nullptr;
-}
-
 void optimizeUsePartAggregationCache(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes)
@@ -217,9 +207,15 @@ void optimizeUsePartAggregationCache(
     if (cached_entries.empty())
         return;
 
+    /// Derive the cached-blocks header from the aggregator's input header, which is
+    /// the same header the populator passes into `Aggregator::Params::getHeader` (see
+    /// `PartAggregationCachePopulator.cpp`). Using `reading->getOutputHeader()` would
+    /// diverge when intermediate `ExpressionStep`s compute GROUP BY keys not present
+    /// on the read step (e.g. `toYear(date) AS y`).
+    const auto & aggregator_input_header = *aggregating->getInputHeaders().front();
     auto intermediate_header = std::make_shared<Block>(
         Aggregator::Params::getHeader(
-            *reading->getOutputHeader(), params.only_merge, params.keys, params.aggregates, /* final = */ false));
+            aggregator_input_header, params.only_merge, params.keys, params.aggregates, /* final = */ false));
 
     Pipe cached_pipe(std::make_shared<PartAggregationCacheSource>(
         *intermediate_header, std::move(cached_entries)));
