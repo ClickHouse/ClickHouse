@@ -75,7 +75,6 @@ protected:
 
     const String data_part_name;
     /// Serializations for every columns and subcolumns by their names.
-    /// NOTE: Made non-const to allow adding __row serialization for hybrid storage.
     SerializationByName serializations;
     const MergeTreeIndexGranularityInfo index_granularity_info;
     const MergeTreeSettingsPtr storage_settings;

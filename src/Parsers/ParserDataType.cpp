@@ -473,6 +473,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ParserDataType only_type_parser;
             name_and_type_parser.parse(pos, arg, expected) || only_type_parser.parse(pos, arg, expected);
         }
+        else if (type_name == "Row")
+        {
+            /// Row(...) requires every field to be named, so reject positional types here.
+            ParserNameTypePair name_and_type_parser;
+            name_and_type_parser.parse(pos, arg, expected);
+        }
         else if (type_name == "AggregateFunction" || type_name == "SimpleAggregateFunction")
         {
             /// This is less trivial.

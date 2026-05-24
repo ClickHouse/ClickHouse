@@ -69,8 +69,6 @@ struct MergeTreeReaderSettings
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
-    /// If true, use hybrid row-based reading from __row column instead of individual columns.
-    bool use_hybrid_row_reading = false;
     /// If true, only column sample with 0 rows will be read.
     /// This information can be used for more optimal reading of
     /// columns prefixes.
@@ -137,11 +135,6 @@ struct MergeTreeWriterSettings
     size_t min_columns_to_activate_adaptive_write_buffer;
     size_t adaptive_write_buffer_initial_size;
     bool compress_per_column_in_compact_parts;
-
-    /// Skip hybrid row writing (__row column). This should be set to true for vertical merge
-    /// column-only output streams where columns are written one at a time, since the __row
-    /// column requires all non-key columns to be available together.
-    bool skip_hybrid_row_writing = false;
 };
 
 }

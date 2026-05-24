@@ -11,7 +11,6 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Logger.h>
@@ -35,12 +34,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char wide_part_writer_fail_in_add_streams[];
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool enable_hybrid_storage;
-    extern const MergeTreeSettingsUInt64 hybrid_storage_max_row_size;
 }
 
 namespace
@@ -128,41 +121,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     {
         auto columns_vec = getColumnsToPrewarmMarks(*storage_settings, columns_list);
         columns_to_load_marks = NameSet(columns_vec.begin(), columns_vec.end());
-    }
-
-    /// Initialize hybrid storage if enabled and not skipped.
-    /// skip_hybrid_row_writing is set for column-only output streams (vertical merge)
-    /// where columns are written one at a time, so __row cannot be properly generated.
-    /// Column streams themselves are created lazily by initStreamsIfNeeded on first write;
-    /// only the __row stream needs explicit setup here because __row is not part of columns_list.
-    hybrid_storage_enabled = (*storage_settings)[MergeTreeSetting::enable_hybrid_storage]
-        && !settings.skip_hybrid_row_writing;
-    if (hybrid_storage_enabled)
-    {
-        NameSet key_columns_set;
-        if (metadata_snapshot)
-        {
-            const auto & primary_key_columns = metadata_snapshot->getPrimaryKeyColumns();
-            key_columns_set.insert(primary_key_columns.begin(), primary_key_columns.end());
-        }
-
-        for (const auto & column : columns_list)
-        {
-            if (!key_columns_set.contains(column.name))
-                non_key_columns.push_back(column);
-        }
-
-        RowDataSerializer::Settings serializer_settings;
-        serializer_settings.max_row_size = (*storage_settings)[MergeTreeSetting::hybrid_storage_max_row_size];
-        serializer_settings.enable_checksum = true;
-
-        row_data_serializer = std::make_unique<RowDataSerializer>(serializer_settings);
-
-        row_column_serialization = RowDataColumn::type->getDefaultSerialization();
-        serializations.emplace(RowDataColumn::name, row_column_serialization);
-
-        NameAndTypePair row_column(RowDataColumn::name, RowDataColumn::type);
-        MergeTreeDataPartWriterWide::addStreams(row_column, RowDataColumn::codec);
     }
 }
 
@@ -270,21 +228,8 @@ void MergeTreeDataPartWriterWide::addStreams(
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
     };
 
-    /// For the __row column (hybrid storage) we have a pre-initialized serialization that isn't
-    /// in the regular serializations map, and block_sample won't contain __row either.
-    SerializationPtr serialization;
-    ColumnPtr sample_column_ptr;
-    if (name_and_type.name == RowDataColumn::name && row_column_serialization)
-    {
-        serialization = row_column_serialization;
-        if (auto * sample = block_sample.findByName(name_and_type.name))
-            sample_column_ptr = sample->column;
-    }
-    else
-    {
-        serialization = getSerialization(name_and_type.name);
-        sample_column_ptr = block_sample.getByName(name_and_type.name).column;
-    }
+    auto serialization = getSerialization(name_and_type.name);
+    auto sample_column_ptr = block_sample.getByName(name_and_type.name).column;
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column_ptr);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
@@ -456,9 +401,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
 
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
-    /// Write hybrid row data if enabled
-    writeHybridRowData(block_to_write, granules_to_write);
-
     shiftCurrentMark(granules_to_write);
 }
 
@@ -528,7 +470,6 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
     };
 
     auto serialization = getSerialization(name_and_type.name);
-    /// Use findByName since the column may not be in block_sample (e.g., __row for hybrid storage).
     auto * sample_column = block_sample.findByName(name_and_type.name);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column ? sample_column->column : nullptr);
     auto enumerate_settings = getEnumerateSettings(settings);
@@ -857,22 +798,6 @@ void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
                 writeFinalMark(*it, offset_substreams);
         }
     }
-
-    /// Handle __row column for hybrid storage.
-    if (hybrid_storage_enabled && row_column_serialization)
-    {
-        NameAndTypePair row_column_type(RowDataColumn::name, RowDataColumn::type);
-
-        auto state_it = serialization_states.find(RowDataColumn::name);
-        if (state_it != serialization_states.end())
-        {
-            serialize_settings.getter = createStreamGetter(row_column_type, offset_substreams);
-            row_column_serialization->serializeBinaryBulkStateSuffix(serialize_settings, state_it->second);
-        }
-
-        if (write_final_mark)
-            writeFinalMark(row_column_type, offset_substreams);
-    }
 }
 
 void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove)
@@ -1056,68 +981,6 @@ void MergeTreeDataPartWriterWide::adjustLastMarkIfNeedAndFlushToDisk(size_t new_
             setCurrentMark(getCurrentMark() + 1);
             /// Without offset
             rows_written_in_last_mark = 0;
-        }
-    }
-}
-
-void MergeTreeDataPartWriterWide::writeHybridRowData(const Block & block, const Granules & granules)
-{
-    if (!hybrid_storage_enabled || non_key_columns.empty() || !row_data_serializer || !row_column_serialization)
-        return;
-
-    if (granules.empty())
-        return;
-
-    auto row_data_column = row_data_serializer->serializeBlock(block, non_key_columns, serializations);
-
-    NameAndTypePair row_column_type(RowDataColumn::name, RowDataColumn::type);
-    const String & name = row_column_type.name;
-
-    auto [it, inserted] = serialization_states.emplace(name, nullptr);
-
-    auto serialize_settings = getSerializationSettings();
-    WrittenOffsetSubstreams dummy_offset_substreams;
-    WrittenOffsetSubstreams & offset_substreams = written_offset_substreams ? *written_offset_substreams : dummy_offset_substreams;
-    serialize_settings.getter = createStreamGetter(row_column_type, offset_substreams);
-
-    if (inserted)
-    {
-        row_column_serialization->serializeBinaryBulkStatePrefix(*row_data_column, serialize_settings, it->second);
-    }
-
-    serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
-    {
-        auto stream_name = getStreamName(row_column_type, substream_path);
-        auto & stream = column_streams.at(stream_name);
-        return {stream->plain_hashing.count(), stream->compressed_hashing.offset()};
-    };
-
-    for (const auto & granule : granules)
-    {
-        data_written = true;
-
-        if (granule.mark_on_start)
-        {
-            if (!last_non_written_marks.contains(name))
-                last_non_written_marks[name] = getCurrentMarksForColumn(row_column_type, offset_substreams);
-        }
-
-        row_column_serialization->serializeBinaryBulkWithMultipleStreams(
-            *row_data_column,
-            granule.start_row,
-            granule.rows_to_write,
-            serialize_settings,
-            it->second);
-
-        if (granule.is_complete)
-        {
-            auto marks_it = last_non_written_marks.find(name);
-            if (marks_it != last_non_written_marks.end())
-            {
-                for (const auto & mark : marks_it->second)
-                    flushMarkToFile(mark, index_granularity->getMarkRows(granule.mark_number));
-                last_non_written_marks.erase(marks_it);
-            }
         }
     }
 }

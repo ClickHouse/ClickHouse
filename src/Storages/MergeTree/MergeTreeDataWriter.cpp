@@ -84,7 +84,6 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
-    extern const MergeTreeSettingsBool enable_hybrid_storage;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;

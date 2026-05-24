@@ -207,6 +207,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
                     return BinaryTypeIndex::JSON;
             }
         }
+        case TypeIndex::Row:
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of type Row is not supported");
     }
 
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Type {} is not supported for binary encoding", type->getName());

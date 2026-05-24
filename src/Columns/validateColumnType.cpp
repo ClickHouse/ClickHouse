@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 
@@ -49,6 +50,17 @@ bool columnMatchesType(const IColumn & column, const IDataType & type)
         if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
         {
             const auto & type_elements = type_tuple->getElements();
+            if (col_tuple->tupleSize() != type_elements.size())
+                return false;
+            for (size_t i = 0; i < col_tuple->tupleSize(); ++i)
+                if (!columnMatchesType(col_tuple->getColumn(i), *type_elements[i]))
+                    return false;
+            return true;
+        }
+        /// Row(...) shares its in-memory representation with Tuple.
+        if (const auto * type_row = typeid_cast<const DataTypeRow *>(&type))
+        {
+            const auto & type_elements = type_row->getElements();
             if (col_tuple->tupleSize() != type_elements.size())
                 return false;
             for (size_t i = 0; i < col_tuple->tupleSize(); ++i)

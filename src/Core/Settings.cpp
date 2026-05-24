@@ -6153,12 +6153,6 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
-    DECLARE(Bool, query_plan_optimize_hybrid_storage, true, R"(
-Enable query plan optimization for hybrid row-column storage.
-When enabled and a table has hybrid storage enabled (enable_hybrid_storage = 1),
-the optimizer may choose to read from the __row column instead of individual
-columns if it's more efficient (i.e., when reading many columns).
-)", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
 Optimize reading with FINAL from ReplacingMergeTree by building a set of primary keys and using it for index analysis.
 )", 0) \
@@ -7691,6 +7685,15 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_use_row_wrappers, true, R"(
+Toggles a query-plan-level optimization that routes column reads through a `Row(...)` wrapper column when the wrapper covers two or more of the requested columns, reducing per-query file open and seek cost.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
 

@@ -22,7 +22,6 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool enable_hybrid_storage;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
@@ -236,27 +235,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync
             = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
-
-        /// If hybrid storage is enabled and __row data was written, add __row to the part's columns.
-        /// This allows the reader to detect that hybrid row data is available in this part.
-        /// NOTE: For wide parts only. Compact parts have a different marks structure where __row
-        /// is appended after the rows_to_write marker, so we cannot add __row to part columns
-        /// without breaking the marks file format. The reader detects hybrid data in compact
-        /// parts through hasRowColumn() which checks if the __row stream exists.
-        if ((*storage_settings)[MergeTreeSetting::enable_hybrid_storage])
-        {
-            bool is_wide_part = new_part->getType() == MergeTreeDataPartType::Wide;
-
-            /// Only add __row to columns for wide parts where __row.bin exists
-            if (is_wide_part && checksums.has(RowDataColumn::name + ".bin"))
-            {
-                if (std::find_if(part_columns.begin(), part_columns.end(),
-                        [](const auto & col) { return col.name == RowDataColumn::name; }) == part_columns.end())
-                {
-                    part_columns.push_back(NameAndTypePair(RowDataColumn::name, RowDataColumn::type));
-                }
-            }
-        }
 
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }

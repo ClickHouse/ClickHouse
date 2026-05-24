@@ -2,7 +2,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/RowDataSerializer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -101,13 +100,6 @@ protected:
 
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     DeserializeBinaryBulkStateMap cached_subcolumn_prefixes;
-
-    /// Hybrid storage support
-    bool use_hybrid_row_reading = false;
-    std::unique_ptr<RowDataSerializer> row_data_serializer;
-
-    /// Initialize hybrid storage reading infrastructure
-    void initHybridStorage();
 
 private:
     void readPrefix(

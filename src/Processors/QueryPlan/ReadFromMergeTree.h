@@ -264,6 +264,10 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// Drop `covered_columns_to_remove` from the read set and add the Row(...)
+    /// `wrappers_to_add` instead; used by optimizeUseRowWrappers.
+    void replaceWithRowWrappers(const Names & covered_columns_to_remove, const Names & wrappers_to_add);
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
@@ -398,10 +402,6 @@ public:
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
-
-    /// Hybrid storage optimization: enable reading from __row column instead of individual columns
-    void enableHybridRowReading() { use_hybrid_row_reading = true; }
-    bool isUsingHybridRowReading() const { return use_hybrid_row_reading; }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
@@ -557,7 +557,6 @@ private:
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
-    bool use_hybrid_row_reading = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
 

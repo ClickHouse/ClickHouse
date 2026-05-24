@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -27,12 +26,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char compact_part_writer_fail_in_add_streams[];
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool enable_hybrid_storage;
-    extern const MergeTreeSettingsUInt64 hybrid_storage_max_row_size;
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -81,38 +74,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     if (settings.save_marks_in_cache)
         cached_marks[MergeTreeDataPartCompact::DATA_FILE_NAME] = std::make_unique<MarksInCompressedFile::PlainArray>();
-
-    /// Initialize hybrid storage if enabled.
-    /// Column streams themselves are created lazily by initStreamsIfNeeded on first write;
-    /// only the __row stream needs explicit setup here because __row is not part of columns_list.
-    hybrid_storage_enabled = (*storage_settings)[MergeTreeSetting::enable_hybrid_storage];
-    if (hybrid_storage_enabled)
-    {
-        NameSet key_columns_set;
-        if (metadata_snapshot_)
-        {
-            const auto & primary_key_columns = metadata_snapshot_->getPrimaryKeyColumns();
-            key_columns_set.insert(primary_key_columns.begin(), primary_key_columns.end());
-        }
-
-        for (const auto & column : columns_list_)
-        {
-            if (!key_columns_set.contains(column.name))
-                non_key_columns.push_back(column);
-        }
-
-        RowDataSerializer::Settings serializer_settings;
-        serializer_settings.max_row_size = (*storage_settings)[MergeTreeSetting::hybrid_storage_max_row_size];
-        serializer_settings.enable_checksum = true;
-
-        row_data_serializer = std::make_unique<RowDataSerializer>(serializer_settings);
-
-        row_column_serialization = RowDataColumn::type->getDefaultSerialization();
-        serializations.emplace(RowDataColumn::name, row_column_serialization);
-
-        NameAndTypePair row_column(RowDataColumn::name, RowDataColumn::type);
-        MergeTreeDataPartWriterCompact::addStreams(row_column, RowDataColumn::codec);
-    }
 }
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
@@ -160,21 +121,8 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
-    /// For the __row column (hybrid storage) we have a pre-initialized serialization that isn't
-    /// in the regular serializations map, and block_sample won't contain __row either.
-    SerializationPtr serialization;
-    ColumnPtr sample_column_ptr;
-    if (name_and_type.name == RowDataColumn::name && row_column_serialization)
-    {
-        serialization = row_column_serialization;
-        if (auto * sample = block_sample.findByName(name_and_type.name))
-            sample_column_ptr = sample->column;
-    }
-    else
-    {
-        serialization = getSerialization(name_and_type.name);
-        sample_column_ptr = block_sample.getByName(name_and_type.name).column;
-    }
+    auto serialization = getSerialization(name_and_type.name);
+    auto sample_column_ptr = block_sample.getByName(name_and_type.name).column;
     auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(sample_column_ptr);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
 }
@@ -417,9 +365,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
         writeBinaryLittleEndian(granule.rows_to_write, marks_out);
         data_written = true;
     }
-
-    /// Write hybrid row data after all regular columns
-    writeHybridRowData(block, granules);
 }
 
 void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
@@ -652,68 +597,6 @@ void MergeTreeDataPartWriterCompact::cancel() noexcept
     marks_file->cancel();
 
     Base::cancel();
-}
-
-void MergeTreeDataPartWriterCompact::writeHybridRowData(const Block & block, const Granules & granules)
-{
-    if (!hybrid_storage_enabled || non_key_columns.empty() || !row_data_serializer || !row_column_serialization)
-        return;
-
-    if (granules.empty())
-        return;
-
-    /// Serialize all rows in the block to row format
-    auto row_data_column = row_data_serializer->serializeBlock(block, non_key_columns, serializations);
-
-    NameAndTypePair row_column_type(RowDataColumn::name, RowDataColumn::type);
-
-    for (const auto & granule : granules)
-    {
-        /// Set up stream getter for the __row column.
-        /// NOTE: We do NOT write marks for __row in compact parts to avoid corrupting the shared marks file.
-        /// The marks file format expects marks for all columns followed by rows_count, and adding __row marks
-        /// after rows_count would break the reader. The __row data is written sequentially after each granule's
-        /// regular column data, so it can be read by seeking past the regular columns.
-        CompressedStreamPtr prev_stream;
-        auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
-        {
-            String stream_name = ISerialization::getFileNameForStream(row_column_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-
-            auto stream_it = compressed_streams.find(stream_name);
-            if (stream_it == compressed_streams.end())
-                return nullptr; /// Stream not found, skip
-
-            auto & result_stream = stream_it->second;
-            if (prev_stream && prev_stream != result_stream)
-            {
-                prev_stream->hashing_buf.next();
-            }
-
-            prev_stream = result_stream;
-            return &result_stream->hashing_buf;
-        };
-
-        auto stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
-        {
-            String stream_name = ISerialization::getFileNameForStream(row_column_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            auto it = compressed_streams.find(stream_name);
-            if (it == compressed_streams.end())
-                return {};
-            return {plain_hashing.count(), it->second->hashing_buf.offset()};
-        };
-
-        /// Write the __row column data for this granule
-        writeColumnSingleGranule(
-            ColumnWithTypeAndName{row_data_column, RowDataColumn::type, RowDataColumn::name},
-            row_column_serialization,
-            stream_getter, stream_mark_getter,
-            granule.start_row, granule.rows_to_write,
-            false, /// is_first_granule - don't write stats for __row
-            settings);
-
-        if (prev_stream)
-            prev_stream->hashing_buf.next();
-    }
 }
 
 }

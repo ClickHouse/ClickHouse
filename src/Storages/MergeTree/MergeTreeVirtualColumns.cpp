@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -21,13 +20,6 @@ static ASTPtr getCompressionCodecDeltaLZ4()
         make_intrusive<ASTIdentifier>("LZ4"));
 }
 
-/// ZSTD(3) compression codec for hybrid storage row data
-static ASTPtr getCompressionCodecZSTD3()
-{
-    auto zstd_func = makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(Field(UInt64(3))));
-    return makeASTFunction("CODEC", std::move(zstd_func));
-}
-
 const String RowExistsColumn::name = "_row_exists";
 const DataTypePtr RowExistsColumn::type = std::make_shared<DataTypeUInt8>();
 
@@ -41,10 +33,6 @@ const ASTPtr BlockOffsetColumn::codec = getCompressionCodecDeltaLZ4();
 
 const String PartDataVersionColumn::name = "_part_data_version";
 const DataTypePtr PartDataVersionColumn::type = std::make_shared<DataTypeUInt64>();
-
-const String RowDataColumn::name = "__row";
-const DataTypePtr RowDataColumn::type = std::make_shared<DataTypeString>();
-const ASTPtr RowDataColumn::codec = getCompressionCodecZSTD3();
 
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection)
 {
