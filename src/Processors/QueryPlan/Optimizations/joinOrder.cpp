@@ -412,24 +412,29 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edg
 
     UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
-    UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
-    if (max_ndv > 0)
+    if (lhs_ndv > 0 && rhs_ndv > 0)
     {
-        info.value = std::min(info.value, 1.0 / static_cast<double>(max_ndv));
+        info.value = std::min(info.value, 1.0 / static_cast<double>(std::max(lhs_ndv, rhs_ndv)));
     }
     else
     {
-        /// NDV unknown: fall back to `1 / max(rows)` (PostgreSQL-style eqjoinsel).
-        /// Marked untrusted so it cannot leak past the trust boundary.
+        /// At least one side has no NDV stats. The mixed case (one NDV known, the
+        /// other unknown) still produces a usable denominator from the known side,
+        /// but the resulting selectivity is partially fabricated and must not cross
+        /// the trust boundary - otherwise it could influence upstream join ordering
+        /// and build-side decisions as if it were fully stats-backed.
         info.trusted = false;
-        auto lhs_rows = getEstimatedRows(lhs.getSourceRelations());
-        auto rhs_rows = getEstimatedRows(rhs.getSourceRelations());
-        if (lhs_rows && rhs_rows)
+        UInt64 denom = std::max(lhs_ndv, rhs_ndv);
+        if (denom == 0)
         {
-            UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
-            if (max_rows > 0)
-                info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
+            /// Both NDVs unknown: fall back to `1 / max(rows)` (PostgreSQL-style eqjoinsel).
+            auto lhs_rows = getEstimatedRows(lhs.getSourceRelations());
+            auto rhs_rows = getEstimatedRows(rhs.getSourceRelations());
+            if (lhs_rows && rhs_rows)
+                denom = std::max(*lhs_rows, *rhs_rows);
         }
+        if (denom > 0)
+            info.value = std::min(info.value, 1.0 / static_cast<double>(denom));
     }
     return info;
 }
@@ -471,28 +476,36 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(
         /// Find the maximum NDV across all members of this class that belong
         /// to either side of the join. This is equivalent to evaluating all
         /// (left_member, right_member) pairs and taking the minimum selectivity,
-        /// since min(1/max(l,r)) = 1/max(all l's and r's).
+        /// since min(1/max(l,r)) = 1/max(all l's and r's). Track whether every
+        /// participating member had a known NDV so the trust flag stays consistent
+        /// with the direct-edge path: if any participating column lacks NDV stats,
+        /// the resulting estimate is partially fabricated and must be demoted.
         size_t max_ndv = 0;
         bool has_left = false;
         bool has_right = false;
+        bool all_ndvs_known = true;
         for (const auto & equiv_member : *equiv_class)
         {
             auto relation = equiv_member.getSourceRelations().getSingleBit();
             if (!relation)
                 continue;
+            if (!left.test(*relation) && !right.test(*relation))
+                continue;
             if (left.test(*relation))
-            {
                 has_left = true;
-                max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-            }
-            else if (right.test(*relation))
-            {
+            else
                 has_right = true;
-                max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-            }
+            UInt64 ndv = getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName());
+            if (ndv == 0)
+                all_ndvs_known = false;
+            else
+                max_ndv = std::max(max_ndv, ndv);
         }
         if (!has_left || !has_right)
             continue;
+
+        if (!all_ndvs_known)
+            info.trusted = false;
 
         if (max_ndv > 0)
         {
@@ -500,9 +513,8 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(
         }
         else
         {
-            /// Transitive-only equi-join with unknown NDVs along the class.
+            /// Transitive-only equi-join with all NDVs unknown along the class.
             /// Same fallback as for direct edges (see computeSelectivity(edge)).
-            info.trusted = false;
             auto lhs_rows = getEstimatedRows(left);
             auto rhs_rows = getEstimatedRows(right);
             if (lhs_rows && rhs_rows)
