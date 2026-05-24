@@ -54,7 +54,7 @@ namespace Setting
 extern const SettingsUInt64 input_format_binary_max_type_complexity;
 }
 
-DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity);
+static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity);
 
 namespace
 {
