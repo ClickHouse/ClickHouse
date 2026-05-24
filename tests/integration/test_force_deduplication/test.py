@@ -47,15 +47,11 @@ def test_basic(start_cluster):
         CREATE MATERIALIZED VIEW test_mv_a Engine=ReplicatedMergeTree ('/clickhouse/test/tables/test_mv_a','1') order by tuple() AS SELECT A FROM test;
         CREATE MATERIALIZED VIEW test_mv_b Engine=ReplicatedMergeTree ('/clickhouse/test/tables/test_mv_b','1') partition by A order by tuple() AS SELECT A FROM test;
         CREATE MATERIALIZED VIEW test_mv_c Engine=ReplicatedMergeTree ('/clickhouse/test/tables/test_mv_c','1') order by tuple() AS SELECT A FROM test;
-        """)
-
-    node.query(
-        """
-        SET deduplicate_blocks_in_dependent_materialized_views = 0;
         INSERT INTO test values(999);
         INSERT INTO test values(999);
         """
     )
+
     src, a, b, c = get_counts()
     assert src == old_src + 1
     assert a == old_a + 2
@@ -68,8 +64,7 @@ def test_basic(start_cluster):
         """
         SET max_partitions_per_insert_block = 3;
         SET materialized_views_ignore_errors = 1;
-        SET deduplicate_blocks_in_dependent_materialized_views = 0;
-        INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL;
+        INSERT INTO test SELECT number FROM numbers(10);
         """
     )
     src, a, b, c = get_counts()
@@ -80,11 +75,7 @@ def test_basic(start_cluster):
     old_src, old_a, old_b, old_c = src, a, b, c
 
     # deduplication only for src table
-    node.query(
-        """
-        SET deduplicate_blocks_in_dependent_materialized_views = 0;
-        INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL
-        """)
+    node.query("INSERT INTO test SELECT number FROM numbers(10)")
     src, a, b, c = get_counts()
     assert src == old_src
     assert a == old_a + 10
@@ -96,7 +87,7 @@ def test_basic(start_cluster):
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL;
+        INSERT INTO test SELECT number FROM numbers(10);
         """
     )
     src, a, b, c = get_counts()
@@ -110,7 +101,7 @@ def test_basic(start_cluster):
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(10) ORDER BY ALL;
+        INSERT INTO test SELECT number FROM numbers(10);
         """
     )
     src, a, b, c = get_counts()
@@ -126,7 +117,7 @@ def test_basic(start_cluster):
         SET max_partitions_per_insert_block = 3;
         SET materialized_views_ignore_errors = 1;
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(100,10) ORDER BY ALL;
+        INSERT INTO test SELECT number FROM numbers(100,10);
         """
     )
     src, a, b, c = get_counts()
@@ -140,7 +131,7 @@ def test_basic(start_cluster):
     node.query(
         """
         SET deduplicate_blocks_in_dependent_materialized_views = 1;
-        INSERT INTO test SELECT number FROM numbers(100,10) ORDER BY ALL;
+        INSERT INTO test SELECT number FROM numbers(100,10);
         """
     )
     src, a, b, c = get_counts()

@@ -2,12 +2,8 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -26,32 +22,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-/// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
-/// Types that cannot be inside Nullable (Array, Map, etc.) are not supported.
-/// The nested elements need to be Nullable-capable so that we can propagate NULLs which tell
-/// us whether the conversion is accurate or not.
-/// This check walks Tuple elements recursively to also reject cases like
-/// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
-static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
-{
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        for (const auto & element : tuple_type->getElements())
-            validateNestedTypesForAccurateCastOrNull(element);
-    }
-    else if (type->isNullable())
-    {
-        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
-    }
-    else if (!type->canBeInsideNullable() && !canContainNull(*type))
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
-            type->getName());
-    }
-}
-
 FunctionBasePtr createFunctionBaseCast(
     ContextPtr context,
     const char * name,
@@ -61,70 +31,13 @@ FunctionBasePtr createFunctionBaseCast(
     CastType cast_type,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
-/// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
-/// without an explicit time zone, return a copy of it with the given time zone substituted.
-/// Otherwise return `target` unchanged.
-static DataTypePtr substituteTimeZoneInDateTimeType(const DataTypePtr & target, const String & timezone)
-{
-    if (timezone.empty())
-        return target;
-
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(target.get()))
-    {
-        auto nested = substituteTimeZoneInDateTimeType(nullable_type->getNestedType(), timezone);
-        if (nested.get() == nullable_type->getNestedType().get())
-            return target;
-        return std::make_shared<DataTypeNullable>(nested);
-    }
-
-    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(target.get()))
-    {
-        auto nested = substituteTimeZoneInDateTimeType(lc_type->getDictionaryType(), timezone);
-        if (nested.get() == lc_type->getDictionaryType().get())
-            return target;
-        return std::make_shared<DataTypeLowCardinality>(nested);
-    }
-
-    if (const auto * dt_type = typeid_cast<const DataTypeDateTime *>(target.get()))
-    {
-        if (dt_type->hasExplicitTimeZone())
-            return target;
-        return std::make_shared<DataTypeDateTime>(timezone);
-    }
-
-    if (const auto * dt64_type = typeid_cast<const DataTypeDateTime64 *>(target.get()))
-    {
-        if (dt64_type->hasExplicitTimeZone())
-            return target;
-        return std::make_shared<DataTypeDateTime64>(dt64_type->getScale(), timezone);
-    }
-
-    return target;
-}
-
-/// Extract the explicit time zone of the source argument's `DateTime` or `DateTime64` type,
-/// looking through `Nullable` and `LowCardinality` wrappers. Returns an empty string if the
-/// source has no explicit time zone or is not a date-time type.
-static String getExplicitTimeZoneOfDateTimeArgument(const DataTypePtr & source)
-{
-    DataTypePtr unwrapped = removeNullable(recursiveRemoveLowCardinality(source));
-
-    if (const auto * dt = typeid_cast<const DataTypeDateTime *>(unwrapped.get()))
-        return dt->hasExplicitTimeZone() ? dt->getTimeZone().getTimeZone() : String();
-
-    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(unwrapped.get()))
-        return dt64->hasExplicitTimeZone() ? dt64->getTimeZone().getTimeZone() : String();
-
-    return {};
-}
-
 /** CastInternal does not preserve nullability of the data type,
   * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
   *
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-class CastOverloadResolverImpl final : public IFunctionOverloadResolver, private WithContext
+class CastOverloadResolverImpl : public IFunctionOverloadResolver
 {
 public:
     static const char * getNameImpl(CastType cast_type, bool internal)
@@ -148,7 +61,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
-        : WithContext(context_)
+        : context(context_)
         , cast_type(cast_type_)
         , internal(internal_)
         , diagnostic(std::move(diagnostic_))
@@ -157,42 +70,40 @@ public:
     {
     }
 
-    static FunctionOverloadResolverPtr create(ContextPtr context_, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
+    static FunctionOverloadResolverPtr create(ContextPtr context, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
     {
         if (internal)
-            return std::make_unique<CastOverloadResolverImpl>(context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
+            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
 
-        const auto & settings_ref = context_->getSettingsRef();
+        const auto & settings_ref = context->getSettingsRef();
         return std::make_unique<CastOverloadResolverImpl>(
-            context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
+            context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
     static FunctionBasePtr createInternalCast(
         ColumnWithTypeAndName from,
         DataTypePtr to,
         CastType cast_type,
-        std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context_)
+        std::optional<CastDiagnostic> diagnostic)
     {
-        if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
-        {
-            validateNestedTypesForAccurateCastOrNull(to);
+        if (cast_type == CastType::accurateOrNull && !isVariant(to))
             to = makeNullable(to);
-        }
 
         ColumnsWithTypeAndName arguments;
         arguments.emplace_back(std::move(from));
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
+        /// We consistently use Saturate for internal toDateTime conversion to ensure monotonic so that index analysis is correct.
+        /// Reference: https://github.com/ClickHouse/ClickHouse/issues/73307
         return createFunctionBaseCast(
-            context_, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            nullptr, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         return createFunctionBaseCast(
-            getContext(),
+            context,
             getNameImpl(cast_type, internal),
             arguments,
             return_type,
@@ -216,35 +127,17 @@ protected:
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
         validateDataType(type, data_type_validation_settings);
 
-        /// CAST to `DateTime` or `DateTime64` without an explicit time zone should preserve
-        /// the time zone of the source argument when it is a `DateTime`/`DateTime64` with
-        /// an explicit time zone — matching the behavior of the `toDateTime`/`toDateTime64` functions.
-        /// Internal `_CAST` is excluded because it is used to enforce a target column's exact type.
-        if (!internal && !arguments.empty())
-        {
-            String source_timezone = getExplicitTimeZoneOfDateTimeArgument(arguments.front().type);
-            if (!source_timezone.empty())
-                type = substituteTimeZoneInDateTimeType(type, source_timezone);
-        }
-
         if (cast_type == CastType::accurateOrNull)
         {
             /// Variant handles NULLs by itself during conversions.
-            if (!canContainNull(*type))
-            {
-                /// Reject types inside Tuple that cannot handle accurateOrNull's
-                /// ColumnNullable failure mechanism (e.g., Array, Map).
-                validateNestedTypesForAccurateCastOrNull(type);
+            if (!isVariant(type))
                 return makeNullable(type);
-            }
         }
 
         if (internal)
             return type;
 
-        if (keep_nullable
-            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
-            && type->canBeInsideNullable())
+        if (keep_nullable && arguments.front().type->isNullable() && type->canBeInsideNullable())
             return makeNullable(type);
 
         return type;
@@ -255,6 +148,7 @@ protected:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
+    ContextPtr context;
     CastType cast_type;
     bool internal;
     std::optional<CastDiagnostic> diagnostic;
@@ -263,155 +157,19 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
+    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic));
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
 {
-    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, {}, FunctionFactory::Case::Insensitive);
     /// Note: "internal" (not affected by null preserving setting) versions of accurate cast functions are unneeded.
 
-    /// CAST documentation
-    FunctionDocumentation::Description CAST_description = R"(
-Converts a value to a specified data type.
-Unlike the reinterpret function, CAST tries to generate the same value in the target type.
-If that is not possible, an exception is raised.
-    )";
-    FunctionDocumentation::Syntax CAST_syntax = R"(
-CAST(x, T)
-or CAST(x AS T)
-or x::T
-    )";
-    FunctionDocumentation::Arguments CAST_arguments = {
-        {"x", "A value of any type.", {"Any"}},
-        {"T", "The target data type.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue CAST_returned_value = {"Returns the converted value with the target data type.", {"Any"}};
-    FunctionDocumentation::Examples CAST_examples = {
-    {
-        "Basic usage",
-        R"(
-SELECT CAST(42, 'String')
-        )",
-        R"(
-┌─CAST(42, 'String')─┐
-│ 42                 │
-└────────────────────┘
-        )"
-    },
-    {
-        "Using AS syntax",
-        R"(
-SELECT CAST('2025-01-01' AS Date)
-        )",
-        R"(
-┌─CAST('2025-01-01', 'Date')─┐
-│                 2025-01-01 │
-└────────────────────────────┘
-        )"
-    },
-    {
-        "Using :: syntax",
-        R"(
-SELECT '123'::UInt32
-        )",
-        R"(
-┌─CAST('123', 'UInt32')─┐
-│                   123 │
-└───────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn CAST_introduced_in = {1, 1};
-    FunctionDocumentation::Category CAST_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation CAST_documentation = {CAST_description, CAST_syntax, CAST_arguments, {}, CAST_returned_value, CAST_examples, CAST_introduced_in, CAST_category};
-
-    /// accurateCast documentation
-    FunctionDocumentation::Description accurateCast_description = R"(
-Converts a value to a specified data type. Unlike [`CAST`](#CAST), `accurateCast` performs stricter type checking and throws an exception if the conversion would result in a loss of data precision or if the conversion is not possible.
-
-This function is safer than regular `CAST` as it prevents precision loss and invalid conversions.
-    )";
-    FunctionDocumentation::Syntax accurateCast_syntax = "accurateCast(x, T)";
-    FunctionDocumentation::Arguments accurateCast_arguments = {
-        {"x", "A value to convert.", {"Any"}},
-        {"T", "The target data type name.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue accurateCast_returned_value = {"Returns the converted value with the target data type.", {"Any"}};
-    FunctionDocumentation::Examples accurateCast_examples = {
-    {
-        "Successful conversion",
-        R"(
-SELECT accurateCast(42, 'UInt16')
-        )",
-        R"(
-┌─accurateCast(42, 'UInt16')─┐
-│                        42 │
-└───────────────────────────┘
-        )"
-    },
-    {
-        "String to number",
-        R"(
-SELECT accurateCast('123.45', 'Float64')
-        )",
-        R"(
-┌─accurateCast('123.45', 'Float64')─┐
-│                            123.45 │
-└───────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn accurateCast_introduced_in = {1, 1};
-    FunctionDocumentation::Category accurateCast_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCast_documentation = {accurateCast_description, accurateCast_syntax, accurateCast_arguments, {}, accurateCast_returned_value, accurateCast_examples, accurateCast_introduced_in, accurateCast_category};
-
-    /// accurateCastOrNull documentation
-    FunctionDocumentation::Description accurateCastOrNull_description = R"(
-Converts a value to a specified data type.
-Like [`accurateCast`](#accurateCast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
-
-This function combines the safety of [`accurateCast`](#accurateCast) with graceful error handling.
-    )";
-    FunctionDocumentation::Syntax accurateCastOrNull_syntax = "accurateCastOrNull(x, T)";
-    FunctionDocumentation::Arguments accurateCastOrNull_arguments = {
-        {"x", "A value to convert.", {"Any"}},
-        {"T", "The target data type name.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue accurateCastOrNull_returned_value = {"Returns the converted value with the target data type, or `NULL` if conversion is not possible.", {"Any"}};
-    FunctionDocumentation::Examples accurateCastOrNull_examples = {
-    {
-        "Successful conversion",
-        R"(
-SELECT accurateCastOrNull(42, 'String')
-        )",
-        R"(
-┌─accurateCastOrNull(42, 'String')─┐
-│ 42                               │
-└──────────────────────────────────┘
-        )"
-    },
-    {
-        "Failed conversion returns NULL",
-        R"(
-SELECT accurateCastOrNull('abc', 'UInt32')
-        )",
-        R"(
-┌─accurateCastOrNull('abc', 'UInt32')─┐
-│                                ᴺᵁᴸᴸ │
-└─────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn accurateCastOrNull_introduced_in = {1, 1};
-    FunctionDocumentation::Category accurateCastOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCastOrNull_documentation = {accurateCastOrNull_description, accurateCastOrNull_syntax, accurateCastOrNull_arguments, {}, accurateCastOrNull_returned_value, accurateCastOrNull_examples, accurateCastOrNull_introduced_in, accurateCastOrNull_category};
-
-    factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
-    factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
-    factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
+    factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, {});
+    factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, {});
 }
 
 }
