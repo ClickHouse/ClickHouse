@@ -1,115 +1,113 @@
+import os
+import sys
+import traceback
+
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
+
+
+def install_clickbench_config():
+    config_dir = f"{temp_dir}/etc/clickhouse-server"
+    users_d = f"{config_dir}/users.d"
+    os.makedirs(users_d, exist_ok=True)
+    content = """
+profiles:
+    default:
+        allow_introspection_functions: 1
+"""
+    file_path = f"{users_d}/allow_introspection_functions.yaml"
+    with open(file_path, "w") as file:
+        file.write(content)
+    return True
 
 
 def main():
-    res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseProc()
+    ch = ClickHouseProc(ch_config_dir=f"{temp_dir}/etc/clickhouse-server")
     info = Info()
 
-    if res:
-        print("Install ClickHouse")
-
+    try:
         def install():
-            res = ch.install_clickbench_config()
-            # The ClickBench `create.sql` attaches `hits` on a cached disk
-            # rooted at `/dev/shm/clickhouse/`; ship the matching server-side
-            # allowed-directory override alongside it.
-            res = res and Shell.check(
-                f"cp ./ci/jobs/scripts/clickbench/filesystem_caches_path.xml {temp_dir}/config.d/",
-                verbose=True,
-            )
-            # `programs/server/config.d/storage_conf_local.xml` is a symlink to
-            # the test-only config that defines pre-configured `local_cache*`
-            # disks with `max_size = 22548578304` (~21 GiB) under relative path
-            # `local_cache/`. With our `filesystem_caches_path` override the
-            # cache base path becomes `/dev/shm/clickhouse/local_cache/`, but
-            # the ClickBench container runs with `--shm-size=16g`, so the
-            # capacity check in `FileCache::initialize` rejects the disk and
-            # the server fails to start. ClickBench doesn't use these test
-            # disks, so drop the config.
-            res = res and Shell.check(
-                f"rm -f {temp_dir}/config.d/storage_conf_local.xml",
-                verbose=True,
-            )
+            if not install_clickbench_config():
+                return False
             if info.is_local_run:
-                return res
-            return res and ch.create_log_export_config()
+                return True
+            return ch.create_log_export_config()
 
-        results.append(
-            Result.from_commands_run(name="Install ClickHouse", command=install)
-        )
-        res = results[-1].is_ok()
+        results.append(r := Result.from_commands_run(name="Install ClickHouse", command=install))
+        r.raise_if_failed()
 
-    if res:
-        print("Start ClickHouse")
-
-        def start():
-            res = ch.start_light()
+        # `programs/server/config.d/storage_conf_local.xml` is a symlink to
+        # the test-only config that defines pre-configured `local_cache*`
+        # disks with `max_size = 22548578304` (~21 GiB) under relative path
+        # `local_cache/`. With our `filesystem_caches_path` override the
+        # cache base path becomes `/dev/shm/clickhouse/local_cache/`, but
+        # the ClickBench container runs with `--shm-size=16g`, so the
+        # capacity check in `FileCache::initialize` rejects the disk and
+        # the server fails to start. ClickBench doesn't use these test
+        # disks, so skip the file at copy time.
+        with ClickHouseService(
+            results=results,
+            config_ignore_patterns=["storage_conf_local.xml"],
+        ) as service:
             if not info.is_local_run:
                 if not ch.start_log_exports(check_start_time=stop_watch.start_time):
                     print("WARNING: Failed to start log export")
-            return res
 
-        results.append(
-            Result.from_commands_run(
-                name="Start ClickHouse",
-                command=start,
+            results.append(
+                r := Result.from_commands_run(
+                    name="Load the data",
+                    command="clickhouse-client --time < ./ci/jobs/scripts/clickbench/create.sql",
+                )
             )
-        )
-        res = results[-1].is_ok()
+            r.raise_if_failed()
 
-    if res:
-        print("Load the data")
-        results.append(
-            Result.from_commands_run(
-                name="Load the data",
-                command="clickhouse-client --time < ./ci/jobs/scripts/clickbench/create.sql",
-            )
-        )
-        res = results[-1].is_ok()
+            print("Queries")
+            stop_watch_ = Utils.Stopwatch()
+            TRIES = 3
+            QUERY_NUM = 1
 
-    if res:
-        print("Queries")
-        stop_watch_ = Utils.Stopwatch()
-        TRIES = 3
-        QUERY_NUM = 1
+            with open(
+                "./ci/jobs/scripts/clickbench/queries.sql", "r"
+            ) as queries_file:
+                query_results = []
+                for query in queries_file:
+                    query = query.strip()
+                    timing = []
 
-        with open("./ci/jobs/scripts/clickbench/queries.sql", "r") as queries_file:
-            query_results = []
-            for query in queries_file:
-                query = query.strip()
-                timing = []
-
-                for i in range(1, TRIES + 1):
-                    query_id = f"q{QUERY_NUM}-{i}"
-                    res, out, time_err = Shell.get_res_stdout_stderr(
-                        f'clickhouse-client --query_id {query_id} --time --format Null --query "{query}" --progress 0',
-                        verbose=True,
-                    )
-                    timing.append(time_err)
-                    query_results.append(
-                        Result(
-                            name=f"{QUERY_NUM}_{i}",
-                            status=Result.Status.OK,
-                            duration=float(time_err),
+                    for i in range(1, TRIES + 1):
+                        query_id = f"q{QUERY_NUM}-{i}"
+                        res, out, time_err = Shell.get_res_stdout_stderr(
+                            f'clickhouse-client --query_id {query_id} --time --format Null --query "{query}" --progress 0',
+                            verbose=True,
                         )
-                    )
-                print(timing)
-                QUERY_NUM += 1
+                        timing.append(time_err)
+                        query_results.append(
+                            Result(
+                                name=f"{QUERY_NUM}_{i}",
+                                status=Result.Status.OK,
+                                duration=float(time_err),
+                            )
+                        )
+                    print(timing)
+                    QUERY_NUM += 1
 
-        results.append(
-            Result.create_from(
-                name="Queries", results=query_results, stopwatch=stop_watch_
+            results.append(
+                Result.create_from(
+                    name="Queries", results=query_results, stopwatch=stop_watch_
+                )
             )
+    except Exception as e:
+        print(traceback.format_exc(), file=sys.stdout)
+        results.append(
+            Result(name="Job error", status=Result.Status.FAIL, info=str(e))
         )
-        res = results[-1].is_ok()
 
     # stop log replication
     Shell.check(
