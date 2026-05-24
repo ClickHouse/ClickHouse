@@ -5,7 +5,9 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadPipeline.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
@@ -30,6 +32,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    ReadPipeline pipeline;
+    prepareRead(name, settings, read_hint, pipeline);
+    return pipeline.build();
 }
 
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_)

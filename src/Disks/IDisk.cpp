@@ -2,6 +2,7 @@
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -74,6 +75,16 @@ void IDisk::copyFile( /// NOLINT
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
+}
+
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readFile(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    ReadPipeline pipeline;
+    prepareRead(path, settings, read_hint, pipeline);
+    return pipeline.build();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
