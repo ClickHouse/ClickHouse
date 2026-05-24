@@ -294,6 +294,86 @@ TEST(ParallelReplicasCoordinator, DefaultAcceptsDivergentAnalyzedViewForSamePart
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(divergent_view))));
 }
 
+/// Regression test for the iteration-5 perf concern raised on PR #105710: with a large parts
+/// snapshot and many post-snapshot announcements, `DefaultCoordinator::initializeReadingState`
+/// previously did `std::find_if` over the full `all_parts_to_read` per announced part, producing
+/// O(parts^2) work in startup. The fix replaces the scan with an `unordered_map` index built
+/// once after `all_parts_to_read` is sorted. This test exercises the post-snapshot path with
+/// many parts to guard the correctness of that index: every same-named-but-divergent part must
+/// still be rejected, every same-named identical part must still be accepted, and parts with
+/// names that are NOT in the snapshot must be ignored.
+TEST(ParallelReplicasCoordinator, DefaultDivergenceCheckUsesIndexForManyParts)
+{
+    constexpr size_t num_parts = 32;
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// Replica 0 announces `num_parts` distinct same-block-level parts with 8 underlying marks
+    /// each. After the initial announcement the coordinator's snapshot is final and sorted; the
+    /// index maps every part name to its position in `all_parts_to_read`.
+    {
+        RangesInDataPartsDescription parts;
+        for (size_t i = 0; i < num_parts; ++i)
+            parts.push_back(makePart("all", static_cast<Int64>(i + 1), static_cast<Int64>(i + 1), 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Replica 1 re-announces all `num_parts` parts with identical underlying layout: the index
+    /// must locate each one and the divergence check must accept all of them.
+    RangesInDataPartsDescription parts_identical;
+    for (size_t i = 0; i < num_parts; ++i)
+        parts_identical.push_back(makePart("all", static_cast<Int64>(i + 1), static_cast<Int64>(i + 1), 0, /*marks=*/8));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_identical))));
+}
+
+TEST(ParallelReplicasCoordinator, DefaultDivergenceCheckRejectsViaIndex)
+{
+    constexpr size_t num_parts = 32;
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// Snapshot from replica 0: each part has 8 underlying marks.
+    {
+        RangesInDataPartsDescription parts;
+        for (size_t i = 0; i < num_parts; ++i)
+            parts.push_back(makePart("all", static_cast<Int64>(i + 1), static_cast<Int64>(i + 1), 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Replica 1 re-announces but the part in the middle of the set has a DIFFERENT underlying
+    /// mark count. The index must correctly locate that one same-named entry (it is not the
+    /// first or last in either the original announcement order or the sorted snapshot order)
+    /// and `sameLocalLayout` must reject it.
+    RangesInDataPartsDescription parts_divergent;
+    for (size_t i = 0; i < num_parts; ++i)
+    {
+        size_t marks = (i == num_parts / 2) ? 5 : 8;
+        parts_divergent.push_back(makePart("all", static_cast<Int64>(i + 1), static_cast<Int64>(i + 1), 0, /*marks=*/marks));
+    }
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_divergent))),
+        DB::Exception);
+}
+
+TEST(ParallelReplicasCoordinator, DefaultDivergenceCheckIgnoresUnknownNames)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// Snapshot from replica 0 contains only one part named `all_1_1_0`.
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Replica 1 announces a DIFFERENT part name (`all_2_2_0`). The coordinator's working set
+    /// is frozen to the first replica's snapshot, so this part is just discarded. The index
+    /// lookup must miss cleanly without throwing.
+    RangesInDataPartsDescription parts2;
+    parts2.push_back(makePart("all", 2, 2, 0, /*marks=*/8));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts2))));
+}
+
 /// Backward-compatibility: announcements that do not carry `total_marks_in_part` (older replica
 /// protocol versions that predate `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_TOTAL_MARKS_IN_PART`)
 /// arrive with `total_marks_in_part == 0`. The coordinator must skip divergence validation in

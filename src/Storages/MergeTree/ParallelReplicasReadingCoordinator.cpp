@@ -385,6 +385,13 @@ private:
     /// Parts view from the first announcement we received
     std::vector<Part> all_parts_to_read;
 
+    /// Index into `all_parts_to_read` keyed by `getPartOrProjectionName()`. Built once at snapshot
+    /// initialization (after `all_parts_to_read` is sorted into its final order) and read-only
+    /// afterward; `all_parts_to_read` is not mutated past initialization in this coordinator. Lets
+    /// the post-snapshot divergence-validation path look up the matching `Part` in O(1) instead of
+    /// scanning `all_parts_to_read` linearly per announced part.
+    std::unordered_map<std::string, size_t> part_index_by_name;
+
     std::unordered_map<std::string, std::unordered_set<size_t>> part_visibility; /// part_name -> set of replicas announced that part
 
     /// We order parts from biggest (= oldest) to newest and steal from newest. Because we assume
@@ -490,17 +497,21 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     /// data) rather than analyzed-view fields like `description.rows` or `description.ranges`,
     /// because per-replica PK and skip-index analysis legitimately produces different analyzed
     /// views from the same underlying part. See `sameLocalLayout` for the full rationale.
+    ///
+    /// `part_index_by_name` was built once at snapshot initialization, so lookups are O(1) per
+    /// announced part. This avoids the O(parts^2) linear scan that would otherwise dominate
+    /// startup latency on large scans with many parts and many replicas.
     if (state_initialized)
     {
         for (const auto & part : announcement.description)
         {
-            auto known_it = std::find_if(
-                all_parts_to_read.begin(),
-                all_parts_to_read.end(),
-                [&part](const Part & other) { return other.description.info == part.info; });
+            const auto known_idx_it = part_index_by_name.find(part.getPartOrProjectionName());
+            if (known_idx_it == part_index_by_name.end())
+                continue;
 
-            if (known_it != all_parts_to_read.end() && !sameLocalLayout(*known_it, part))
-                throwDivergentLocalPart(announcement.replica_num, part, *known_it);
+            const Part & known = all_parts_to_read[known_idx_it->second];
+            if (!sameLocalLayout(known, part))
+                throwDivergentLocalPart(announcement.replica_num, part, known);
         }
         return;
     }
@@ -525,6 +536,13 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
 
     std::ranges::sort(
         all_parts_to_read, [](const Part & lhs, const Part & rhs) { return BiggerPartsFirst()(lhs.description, rhs.description); });
+
+    /// `all_parts_to_read` is final from this point on (no `push_back`, no `erase`, no reorder).
+    /// Build the lookup index so post-snapshot announcements can validate divergence in O(1).
+    part_index_by_name.reserve(all_parts_to_read.size());
+    for (size_t i = 0; i < all_parts_to_read.size(); ++i)
+        part_index_by_name.emplace(all_parts_to_read[i].description.getPartOrProjectionName(), i);
+
     state_initialized = true;
     source_replica_for_parts_snapshot = announcement.replica_num;
 
