@@ -16,6 +16,26 @@ SourceBufferSlot::SourceBufferSlot(std::shared_ptr<SourceBufferLimit> limit_, si
 {
 }
 
+SourceBufferSlot::SourceBufferSlot(SourceBufferSlot && other) noexcept
+    : limit(std::move(other.limit))
+    , slot_id(other.slot_id)
+{
+    other.slot_id = 0;
+}
+
+SourceBufferSlot & SourceBufferSlot::operator=(SourceBufferSlot && other) noexcept
+{
+    if (this != &other)
+    {
+        if (limit)
+            limit->release(slot_id);
+        limit = std::move(other.limit);
+        slot_id = other.slot_id;
+        other.slot_id = 0;
+    }
+    return *this;
+}
+
 SourceBufferSlot::~SourceBufferSlot()
 {
     if (limit)

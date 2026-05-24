@@ -824,6 +824,64 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferBytes), 0);     /// No bytes through live buffer.
 }
 
+TEST(SourceBufferLimit, MoveAssignReleasesPreviousSlot)
+{
+    /// Defaulted move-assignment used to overwrite `limit` / `slot_id`
+    /// without calling `release` on the previously held slot, permanently
+    /// pinning one unit of capacity. The explicit move-assignment must
+    /// release the old slot first.
+    auto limit = std::make_shared<SourceBufferLimit>(2);
+
+    auto a = limit->tryAcquire(limit, "obj-a");
+    auto b = limit->tryAcquire(limit, "obj-b");
+    ASSERT_TRUE(a.has_value());
+    ASSERT_TRUE(b.has_value());
+    EXPECT_EQ(limit->getActive().size(), 2u);
+
+    /// Move-assign `b` into `a` — slot for `obj-a` must come back.
+    *a = std::move(*b);
+    EXPECT_EQ(limit->getActive().size(), 1u);
+
+    /// The remaining active slot is the one moved from `b` (obj-b).
+    EXPECT_EQ(limit->getActive().front().object_path, "obj-b");
+
+    a.reset();
+    b.reset();
+    EXPECT_EQ(limit->getActive().size(), 0u);
+}
+
+TEST(SourceBufferLimit, MoveAssignFromEmptySlotReleasesCurrent)
+{
+    /// Edge case: assigning a moved-from / empty `SourceBufferSlot` into a
+    /// holding one should still release the current slot.
+    auto limit = std::make_shared<SourceBufferLimit>(2);
+
+    auto a = limit->tryAcquire(limit, "obj-a");
+    ASSERT_TRUE(a.has_value());
+    EXPECT_EQ(limit->getActive().size(), 1u);
+
+    auto empty = limit->tryAcquire(limit, "obj-tmp");
+    ASSERT_TRUE(empty.has_value());
+    auto moved_from = std::move(*empty);  // `*empty` is now empty (no slot)
+    (void)moved_from;                      // moved_from owns the slot
+    EXPECT_EQ(limit->getActive().size(), 2u);
+
+    *a = std::move(*empty);   // assign an empty slot — must drop a's slot
+    EXPECT_EQ(limit->getActive().size(), 1u);
+}
+
+TEST(SourceBufferLimit, SelfMoveAssignIsNoOp)
+{
+    /// Self-assignment (e.g. `*s = std::move(*s)`) must not double-release.
+    auto limit = std::make_shared<SourceBufferLimit>(1);
+    auto s = limit->tryAcquire(limit, "obj");
+    ASSERT_TRUE(s.has_value());
+    EXPECT_EQ(limit->getActive().size(), 1u);
+
+    *s = std::move(*s);   // not a real-world pattern, but must be safe
+    EXPECT_EQ(limit->getActive().size(), 1u);
+}
+
 TEST(ReaderExecutor, LiveBufferReleasedAtEof)
 {
     /// Once the caller reads to EOF, the per-stream `SourceBufferLimit`

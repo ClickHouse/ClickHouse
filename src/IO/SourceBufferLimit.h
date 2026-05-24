@@ -22,8 +22,12 @@ public:
 
     SourceBufferSlot(const SourceBufferSlot &) = delete;
     SourceBufferSlot & operator=(const SourceBufferSlot &) = delete;
-    SourceBufferSlot(SourceBufferSlot && other) noexcept = default;
-    SourceBufferSlot & operator=(SourceBufferSlot && other) noexcept = default;
+    SourceBufferSlot(SourceBufferSlot && other) noexcept;
+    /// Releases the currently-held slot (if any) BEFORE taking ownership of
+    /// `other`'s slot. The defaulted move-assignment that this replaces just
+    /// overwrote `limit` / `slot_id`, leaking the previous slot's registry
+    /// entry and permanently consuming one unit of capacity.
+    SourceBufferSlot & operator=(SourceBufferSlot && other) noexcept;
 
     /// Update the position tracked in the registry (for observability).
     void updatePosition(size_t new_position);
