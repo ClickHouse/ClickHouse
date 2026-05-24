@@ -158,7 +158,7 @@ private:
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
     bool s3_experimental_changelog{false};
-    Int64 s3_flush_interval;
+    Int64 s3_flush_interval{500};
     std::string s3_log_disk_name;
 
     std::shared_ptr<DiskSelector> disk_selector;

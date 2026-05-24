@@ -298,7 +298,12 @@ public:
     {
         LOG_TRACE(log, "Finalize S3 buffer");
 
-        flush();
+        /// `flush` dereferences `last_index_written`, which is empty until the first
+        /// `appendRecord`. Skip the flush if nothing was ever written (e.g. immediate
+        /// shutdown after startup) — mirrors the `isFileSet() && prealloc_done` guard
+        /// in the local `ChangelogWriter`.
+        if (last_index_written)
+            flush();
 
         if (write_buffer)
         {
@@ -345,8 +350,13 @@ private:
             std::vector<ChangelogFileDescriptionPtr> to_remove;
             ChangelogFileDescriptionPtr merged_changelog;
 
-            std::lock_guard<std::mutex> lock(writer_mutex);
+            /// Planning phase: choose adjacent S3 changelogs to merge.
+            /// The lock is released before the slow S3 I/O so the write thread,
+            /// which also holds `writer_mutex` to call `appendRecord`/`flush`,
+            /// is not blocked for the duration of the merge.
             {
+                std::lock_guard<std::mutex> lock(writer_mutex);
+
                 if (existing_changelogs.empty())
                     continue;
 
@@ -424,11 +434,21 @@ private:
                 new_file->sync();
                 new_file->finalize();
 
+                /// Publish the merged changelog and unlist the merged sources.
+                /// The actual `removeFile` runs unlocked below — readers that lost
+                /// the race will simply not find the path in `existing_changelogs`.
+                {
+                    std::lock_guard<std::mutex> lock(writer_mutex);
+                    for (const auto & changelog : to_remove)
+                        existing_changelogs.erase(changelog->from_log_index);
+
+                    existing_changelogs[merged_changelog->from_log_index] = merged_changelog;
+                    last_merged_index = merged_changelog->to_log_index;
+                }
+
                 for (const auto & changelog : to_remove)
                 {
                     LOG_INFO(log, "Removing merged S3 changelog: {}", changelog->path);
-                    existing_changelogs.erase(changelog->from_log_index);
-
                     try
                     {
                         changelog->disk->removeFile(changelog->path);
@@ -439,9 +459,6 @@ private:
                     }
                 }
 
-                existing_changelogs[merged_changelog->from_log_index] = merged_changelog;
-
-                last_merged_index = merged_changelog->to_log_index;
                 LOG_INFO(log, "Successfully merged {} S3 changelogs", to_merge.size());
             }
             catch (...)
