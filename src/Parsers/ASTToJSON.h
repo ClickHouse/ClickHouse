@@ -9,7 +9,7 @@ namespace DB
 class WriteBuffer;
 
 /// Serialize an AST tree to a JSON string.
-/// The resulting JSON is designed to be round-trippable: deserializeASTFromJSON(serializeASTToJSON(ast))
+/// The resulting JSON is designed to be round-trippable: `IAST::createFromJSON(serializeASTToJSON(ast), max_depth, max_elements)`
 /// should produce an equivalent AST.
 String serializeASTToJSON(const IAST & ast);
 

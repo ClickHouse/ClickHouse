@@ -313,17 +313,6 @@ ASTPtr IAST::createFromJSON(const String & json, size_t max_depth, size_t max_el
 }
 
 
-/// Wrapper functions for backward compatibility.
-ASTPtr deserializeASTFromJSON(const String & json)
-{
-    return IAST::createFromJSON(json);
-}
-
-ASTPtr deserializeASTFromJSON(const Poco::JSON::Object & json)
-{
-    return IAST::createFromJSON(json);
-}
-
 size_t getJSONDeserializationMaxDepth()
 {
     return json_deser_max_depth;
