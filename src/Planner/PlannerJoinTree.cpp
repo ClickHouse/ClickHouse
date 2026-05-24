@@ -1800,7 +1800,13 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
         prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
-    if (!prepared_join && allow_storage_join && allow_lookup_join)
+    /// Skip the eager lookup index lookup when `join_algorithm` does not permit `direct` join.
+    /// Without this gate we would pay the cost of building the lookup cache during planning and then
+    /// still fall back to `HashJoin` (or another algorithm) in `chooseJoinAlgorithm`, leaving the cache unused.
+    const auto & join_algorithms = settings[Setting::join_algorithm].value;
+    bool direct_join_enabled = TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::DIRECT)
+        || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::DEFAULT);
+    if (!prepared_join && allow_storage_join && allow_lookup_join && direct_join_enabled)
     {
         if (auto right_key_names = tryExtractLookupJoinRightKeys(join_step_logical->getJoinOperator()))
             prepared_join = tryGetLookupJoinStorage(*right_key_names, join_node.getRightTableExpression(), planner_context);
