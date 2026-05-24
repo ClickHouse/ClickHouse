@@ -32,13 +32,13 @@
 //  rows), so grouping them together creates long runs of similar bytes
 //  that compress dramatically better with a subsequent codec like LZ4
 //  or ZSTD.
-//  
+//
 // Can be Deleted later
 // =============================================================================
 //  Throughput reference (GB/s)
 //  Hardware: Intel i7-12500H (12th gen Alder Lake)
 //  Data: 500 MiB, 40 rounds × 8 inner iterations, averaged over 2 runs
-// 
+//
 // =============================================================================
 //  ByteStreamSplit Benchmark — 256 MiB, 10 rounds × 4 inner, Clang -O2
 // =============================================================================
@@ -72,7 +72,7 @@
 //
 // https://github.com/apache/arrow/blob/main/cpp/src/arrow/util/byte_stream_split_internal.h
 //
-//  Arrow (xsimd, -O2) 
+//  Arrow (xsimd, -O2)
 //   2   xsimd AVX2               9.7   10.2      10.0   10.7
 //   4   xsimd AVX2              10.0   10.7       9.7   10.9
 //   8   xsimd AVX2              10.5   11.0      10.6   10.9
@@ -125,7 +125,6 @@ private:
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
@@ -430,11 +429,14 @@ ALWAYS_INLINE void encodeW<16>(
     {
         auto u8 = [](uint8_t v) -> uint64_t { return v; };
         constexpr int S = 8;
-        for (int b0 = 0; b0 < 16; b0 += S) {
+        for (int b0 = 0; b0 < 16; b0 += S)
+        {
             int bend = b0 + S <= 16 ? b0 + S : 16;
             int64_t i = 0;
-            for (; i + 8 <= num_elements; i += 8) {
-                for (int64_t b = b0; b < bend; ++b) {
+            for (; i + 8 <= num_elements; i += 8)
+            {
+                for (int64_t b = b0; b < bend; ++b)
+                {
                     uint64_t r = u8(s[(i + 0) * 16 + b])
                                | (u8(s[(i + 1) * 16 + b]) <<  8)
                                | (u8(s[(i + 2) * 16 + b]) << 16)
@@ -585,24 +587,28 @@ ALWAYS_INLINE void decodeRuntime(
 
     int64_t i = 0;
 
-    for (; i + 16 <= num_elements; i += 16) {
+    for (; i + 16 <= num_elements; i += 16)
+    {
         /// NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
         uint64_t s[MAX_ELEMENT_WIDTH][2];
-        for (int b = 0; b < W; ++b) {
+        for (int b = 0; b < W; ++b)
+        {
             memcpy(&s[b][0], src + b * num_elements + i,     8);
             memcpy(&s[b][1], src + b * num_elements + i + 8, 8);
         }
 
-        for (int chunk = 0; chunk < 16; chunk += 4) {
-            int qword = chunk / 8;       
+        for (int chunk = 0; chunk < 16; chunk += 4)
+        {
+            int qword = chunk / 8;
             int shift  = (chunk % 8) * 8;
 
-            uint8_t *e0 = dst + (i + chunk + 0) * W;
-            uint8_t *e1 = dst + (i + chunk + 1) * W;
-            uint8_t *e2 = dst + (i + chunk + 2) * W;
-            uint8_t *e3 = dst + (i + chunk + 3) * W;
+            uint8_t * e0 = dst + (i + chunk + 0) * W;
+            uint8_t * e1 = dst + (i + chunk + 1) * W;
+            uint8_t * e2 = dst + (i + chunk + 2) * W;
+            uint8_t * e3 = dst + (i + chunk + 3) * W;
 
-            for (int b = 0; b < W; ++b) {
+            for (int b = 0; b < W; ++b)
+            {
                 uint32_t four = static_cast<uint32_t>(s[b][qword] >> shift);
                 e0[b] = static_cast<uint8_t>(four);
                 e1[b] = static_cast<uint8_t>(four >> 8);
@@ -873,8 +879,6 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
     return uncompressed_size;
 }
 
-
-
 void registerCodecByteStreamSplit(CompressionCodecFactory & factory)
 {
     UInt8 method_code = static_cast<uint8_t>(CompressionMethodByte::ByteStreamSplit);
@@ -929,4 +933,4 @@ void registerCodecByteStreamSplit(CompressionCodecFactory & factory)
     factory.registerCompressionCodecWithType("ByteStreamSplit", method_code, codec_builder);
 }
 
-} // namespace DB
+}
