@@ -10,7 +10,7 @@
 #include <vector>
 
 #include <Common/WKB.h>
-#include <Common/Field.h>
+#include <Core/Field.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Columns/ColumnArray.h>
