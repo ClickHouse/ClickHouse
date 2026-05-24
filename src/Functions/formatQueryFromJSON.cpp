@@ -30,9 +30,9 @@ namespace
 {
 
 /// Tokenize a query string, returning all tokens (including whitespace and comments).
-std::vector<Token> tokenize(const String & query)
+std::vector<Token> tokenize(const String & query) /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::vector<Token> tokens;
+    std::vector<Token> tokens; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     Lexer lexer(query.data(), query.data() + query.size());
     while (true)
     {
@@ -67,9 +67,9 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
         size_t index; /// Index in the full token array.
     };
 
-    auto extractSignificant = [](const std::vector<Token> & tokens) -> std::vector<SignificantToken>
+    auto extractSignificant = [](const std::vector<Token> & tokens) -> std::vector<SignificantToken> /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
-        std::vector<SignificantToken> result;
+        std::vector<SignificantToken> result; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (size_t i = 0; i < tokens.size(); ++i)
             if (tokens[i].isSignificant() && !tokens[i].isEnd())
                 result.push_back({std::string_view(tokens[i].begin, tokens[i].size()), tokens[i].type, i});
@@ -81,7 +81,7 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
 
     /// Get the inter-token material (whitespace + comments) between token at full_index
     /// and the previous significant token (or start of string).
-    auto getInterTokenMaterial = [](const std::vector<Token> & tokens, size_t sig_idx, const String & source) -> std::string_view
+    auto getInterTokenMaterial = [](const std::vector<Token> & tokens, size_t sig_idx, const String & source) -> std::string_view /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         if (sig_idx == 0)
         {
