@@ -1840,7 +1840,7 @@ static BlockIO executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    if (const auto * insert_query = out_ast->as<ASTInsertQuery>())
+                    if (insert_query)
                     {
                         if (insert_query->returning_select && res.pipeline.pushing())
                         {
