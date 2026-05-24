@@ -440,6 +440,8 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("is_clone_as", is_clone_as);
     w.writeBool("replace_view", replace_view);
     w.writeBool("has_uuid", has_uuid);
+    w.writeBool("has_uuid_clause", has_uuid_clause);
+    w.writeBool("has_inner_uuid_clause", has_inner_uuid_clause);
     if (uuid != UUIDHelpers::Nil)
         w.writeString("uuid", toString(uuid));
     w.writeBool("is_dictionary", is_dictionary);
@@ -497,6 +499,8 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     is_clone_as = r.getBool("is_clone_as");
     replace_view = r.getBool("replace_view");
     has_uuid = r.getBool("has_uuid");
+    has_uuid_clause = r.getBool("has_uuid_clause");
+    has_inner_uuid_clause = r.getBool("has_inner_uuid_clause");
     if (r.has("uuid"))
         uuid = parseFromString<UUID>(r.getString("uuid"));
     is_dictionary = r.getBool("is_dictionary");
