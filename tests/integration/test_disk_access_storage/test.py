@@ -170,3 +170,108 @@ def test_drop():
     check()
     instance.restart_clickhouse()  # Check persistency
     check()
+
+
+def test_drop_role_cascades_to_disk():
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/104298.
+
+    Before the fix, DROP ROLE only removed the role from the in-memory entity map. Other
+    entities that referenced the dropped role (e.g. a user's DEFAULT ROLE list, a settings
+    profile's TO list) still kept the dropped UUID in their on-disk *.sql files. The
+    SHOW CREATE output looked clean only because the rendering layer filters unknown UUIDs,
+    but on the next server restart those references were loaded back into memory and
+    surfaced as `ACCESS_ENTITY_NOT_FOUND` errors during distributed/Remote query execution.
+
+    This test creates a role, references it from several other entities, drops the role,
+    and asserts that the dropped UUID is no longer present in any *.sql file under the
+    access directory — and that after a restart no entity refers back to it.
+    """
+    instance.query(
+        """
+        DROP USER     IF EXISTS u_104298;
+        DROP ROLE     IF EXISTS r_keep_104298, r_drop_104298, r_parent_104298;
+        DROP SETTINGS PROFILE IF EXISTS sp_104298;
+        DROP ROW POLICY IF EXISTS rp_104298 ON mydb.mytable;
+        DROP QUOTA    IF EXISTS q_104298;
+        """
+    )
+
+    instance.query("CREATE ROLE r_keep_104298")
+    instance.query("CREATE ROLE r_drop_104298")
+    instance.query("CREATE ROLE r_parent_104298")
+    instance.query(
+        "CREATE USER u_104298 DEFAULT ROLE r_keep_104298, r_drop_104298"
+    )
+    instance.query("GRANT r_keep_104298, r_drop_104298 TO u_104298")
+    instance.query("GRANT r_drop_104298 TO r_parent_104298")
+    instance.query(
+        "CREATE SETTINGS PROFILE sp_104298 SETTINGS max_memory_usage = 1000000 TO r_drop_104298"
+    )
+    instance.query(
+        "CREATE ROW POLICY rp_104298 ON mydb.mytable FOR SELECT USING 1 TO r_drop_104298"
+    )
+    instance.query(
+        "CREATE QUOTA q_104298 FOR INTERVAL 1 HOUR MAX QUERIES 100 TO r_drop_104298"
+    )
+
+    drop_uuid = instance.query(
+        "SELECT id FROM system.roles WHERE name = 'r_drop_104298'"
+    ).strip()
+    assert drop_uuid
+
+    instance.query("DROP ROLE r_drop_104298")
+
+    def grep_dropped_uuid():
+        # Returns the names of any *.sql file under the access dir that still
+        # references the dropped role's UUID.
+        return instance.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"grep -l '{drop_uuid}' /var/lib/clickhouse/access/*.sql || true",
+            ]
+        ).strip()
+
+    # The fix must propagate the cleanup to disk synchronously.
+    assert grep_dropped_uuid() == "", (
+        f"Dropped role UUID {drop_uuid} still found in access dir on disk"
+    )
+
+    # And after a restart the in-memory state must still be clean: nobody references
+    # the dropped role any more.
+    instance.restart_clickhouse()
+
+    assert grep_dropped_uuid() == ""
+
+    assert (
+        instance.query("SHOW CREATE USER u_104298")
+        == "CREATE USER u_104298 IDENTIFIED WITH no_password DEFAULT ROLE r_keep_104298\n"
+    )
+    assert (
+        instance.query("SHOW GRANTS FOR u_104298") == "GRANT r_keep_104298 TO u_104298\n"
+    )
+    assert instance.query("SHOW GRANTS FOR r_parent_104298") == ""
+    assert (
+        instance.query("SHOW CREATE SETTINGS PROFILE sp_104298")
+        == "CREATE SETTINGS PROFILE `sp_104298` SETTINGS max_memory_usage = 1000000\n"
+    )
+    assert (
+        instance.query("SHOW CREATE ROW POLICY rp_104298 ON mydb.mytable")
+        == "CREATE ROW POLICY rp_104298 ON mydb.mytable FOR SELECT USING 1\n"
+    )
+    assert (
+        instance.query("SHOW CREATE QUOTA q_104298")
+        == "CREATE QUOTA q_104298 FOR INTERVAL 1 hour MAX queries = 100\n"
+    )
+
+    # Cleanup so we don't leak state into other tests.
+    instance.query(
+        """
+        DROP USER     IF EXISTS u_104298;
+        DROP ROLE     IF EXISTS r_keep_104298, r_parent_104298;
+        DROP SETTINGS PROFILE IF EXISTS sp_104298;
+        DROP ROW POLICY IF EXISTS rp_104298 ON mydb.mytable;
+        DROP QUOTA    IF EXISTS q_104298;
+        """
+    )

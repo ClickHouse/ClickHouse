@@ -7,7 +7,7 @@
 /** Calculates StringViewHash from stdin. For debugging.
   */
 
-int main(int, char **)
+int mainEntryExampleStringRefHash(int, char **)
 {
     using namespace DB;
 

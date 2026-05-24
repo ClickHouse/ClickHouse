@@ -17,7 +17,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/FieldAccurateComparison.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -496,7 +495,7 @@ public:
 }
 
 template <typename ConcreteAction, typename Name>
-class FunctionArrayIndex : public IFunction
+class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

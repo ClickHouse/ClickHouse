@@ -205,6 +205,7 @@ private:
     std::unordered_map<String, SQLFunction> staged_functions;
     std::unordered_map<String, SQLFunction> functions;
     std::unordered_map<uint32_t, CatalogBackup> backups;
+    std::unordered_map<uint32_t, CatalogBackup> snapshots;
     std::unordered_map<String, SQLPolicy> staged_policies;
     std::unordered_map<String, SQLPolicy> policies;
 
@@ -274,7 +275,8 @@ private:
         SelectQuery,
         Kill,
         ShowStatement,
-        CreatePolicy
+        CreatePolicy,
+        SnapshotQuery
     };
 
     enum class LitOp
@@ -361,7 +363,8 @@ private:
         MergeIndexUDF,
         MergeProjectionUDF,
         MergeTextIndexUDF,
-        MergeIndexAnalyzeUDF
+        MergeIndexAnalyzeUDF,
+        FilesystemUDF
     };
 
     ProbabilityGenerator SQLGen;
@@ -701,9 +704,11 @@ private:
     void generateNextTablePartition(
         RandomGenerator & rg, uint32_t allow_parts, bool detached, bool supports_all, const SQLTable & t, PartitionExpr * pexpr);
 
+    void setBackupOut(RandomGenerator & rg, BackupOut * bout);
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
+    void generateNextSnapshot(RandomGenerator & rg, SnapshotQuery * sq);
     void updateGeneratorFromSingleQuery(const SingleSQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     template <typename T>
@@ -852,7 +857,7 @@ private:
                       }
                       else
                       {
-                          next->set_value(getTableStructure(rg, b, true));
+                          next->set_value(getTableStructure(rg, b, false));
                       }
                       added_structure++;
                   }}});
@@ -883,8 +888,11 @@ public:
         = [](const SQLTable & t) { return t.isAttached() && !t.isNotTruncableEngine() && t.hasClickHousePeer(); };
     const std::function<bool(const SQLTable &)> attached_tables_for_external_call
         = [](const SQLTable & t) { return t.isAttached() && t.integration == IntegrationCall::Dolor; };
-    const std::function<bool(const SQLPolicy &)> row_policies_for_oracle
-        = [](const SQLPolicy & p) -> bool { return p.is_row && p.where_expr.has_value() && p.targets_oracle_role; };
+    const std::function<bool(const SQLDictionary &)> attached_dictionaries_to_compare_content
+        = [](const SQLDictionary & d) { return d.isAttached() && d.is_deterministic; };
+    const std::function<bool(const SQLView &)> attached_views_to_compare_content
+        = [](const SQLView & v) { return v.isAttached() && v.is_deterministic; };
+    bool rowPolicyForOracle(const SQLPolicy & p) const;
 
     const std::function<bool(const std::shared_ptr<SQLDatabase> &)> detached_databases
         = [](const std::shared_ptr<SQLDatabase> & d) { return d->isDettached(); };
@@ -908,7 +916,6 @@ public:
 
     StatementGenerator(RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, bool supports_cloud_features_);
 
-    void setBackupDestination(RandomGenerator & rg, BackupRestore * br);
     std::optional<String> backupOrRestoreObject(BackupRestoreObject * bro, SQLObject obj, const SQLBase & b);
 
     void generateNextCreateTable(RandomGenerator & rg, bool in_parallel, CreateTable * ct);
