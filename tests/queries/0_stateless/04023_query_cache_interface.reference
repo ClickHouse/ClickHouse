@@ -5,6 +5,7 @@
 columns:
 compressed
 expires_at
+is_subquery
 key_hash
 query
 query_id
