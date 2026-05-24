@@ -1985,9 +1985,13 @@ static BlockIO executeQueryImpl(
 
                             /// Compute a prefix hash for a sub-plan rooted at `node`.
                             /// The hash includes step type, parameters (via describeActions), output header, and children hashes.
+                            std::unordered_map<QueryPlan::Node *, IASTHash> prefix_hash_cache;
                             std::function<IASTHash(QueryPlan::Node *)> compute_prefix_hash =
                                 [&](QueryPlan::Node * node) -> IASTHash
                             {
+                                if (auto it = prefix_hash_cache.find(node); it != prefix_hash_cache.end())
+                                    return it->second;
+
                                 SipHash hash;
                                 hash.update(node->step->getName());
 
@@ -2013,7 +2017,9 @@ static BlockIO executeQueryImpl(
                                     hash.update(child_hash.high64);
                                 }
 
-                                return getSipHash128AsPair(hash);
+                                auto result = getSipHash128AsPair(hash);
+                                prefix_hash_cache[node] = result;
+                                return result;
                             };
 
                             /// Try to read from cache: walk top-down, find highest-level cache hit.
@@ -2068,85 +2074,117 @@ static BlockIO executeQueryImpl(
                             /// the most reusable intermediate result across structurally similar queries.
                             if (!partial_cache_hit && settings[Setting::enable_writes_to_query_cache])
                             {
-                                auto created_at = std::chrono::system_clock::now();
-                                auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                                const bool ast_has_nondeterministic = astContainsNonDeterministicFunctions(out_ast, context);
+                                const bool ast_has_system_tables = astContainsSystemTables(out_ast, context);
 
-                                /// Find the deepest non-leaf node (the one whose children are all leaves or has one non-leaf child)
-                                std::function<QueryPlan::Node *(QueryPlan::Node *)> find_deepest_non_leaf =
-                                    [&](QueryPlan::Node * node) -> QueryPlan::Node *
+                                const auto ndf_handling = settings[Setting::query_cache_nondeterministic_function_handling];
+                                const auto st_handling = settings[Setting::query_cache_system_table_handling];
+
+                                if (ast_has_nondeterministic && ndf_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
+                                    throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                                        "The query result was not cached because the query contains a non-deterministic function."
+                                        " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'`"
+                                        " to cache the query result regardless or to omit caching");
+
+                                if (ast_has_system_tables && st_handling == QueryResultCacheSystemTableHandling::Throw)
+                                    throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                                        "The query result was not cached because the query contains a system table."
+                                        " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'`"
+                                        " to cache the query result regardless or to omit caching");
+
+                                if ((!ast_has_nondeterministic || ndf_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
+                                    && (!ast_has_system_tables || st_handling == QueryResultCacheSystemTableHandling::Save))
                                 {
-                                    if (!node)
-                                        return nullptr;
-                                    for (auto * child : node->children)
-                                    {
-                                        if (!child->children.empty())
-                                        {
-                                            auto * deeper = find_deepest_non_leaf(child);
-                                            if (deeper)
-                                                return deeper;
-                                        }
-                                    }
-                                    /// This node has children but all children are leaves — this is the deepest non-leaf
-                                    if (!node->children.empty())
-                                        return node;
-                                    return nullptr;
-                                };
+                                    auto created_at = std::chrono::system_clock::now();
+                                    auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
-                                auto * cache_target = find_deepest_non_leaf(plan.getRootNode());
-                                if (cache_target && !cache_target->children.empty())
-                                {
-                                    auto prefix_hash = compute_prefix_hash(cache_target);
-                                    auto target_header = cache_target->step->getOutputHeader();
-                                    auto shared_header = std::make_shared<const Block>(*target_header);
-
-                                    QueryResultCache::Key write_key(
-                                        prefix_hash, shared_header,
-                                        context->getCurrentQueryId(),
-                                        context->getUserID(), context->getCurrentRoles(),
-                                        settings[Setting::query_cache_share_between_users],
-                                        created_at, expires_at,
-                                        settings[Setting::query_cache_compress_entries]);
-
-                                    auto writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
-                                        write_key,
-                                        std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                        settings[Setting::query_cache_squash_partial_results],
-                                        settings[Setting::max_block_size],
-                                        settings[Setting::query_cache_max_size_in_bytes],
-                                        settings[Setting::query_cache_max_entries]));
-
-                                    /// Insert cache step ABOVE cache_target (between its parent and itself).
-                                    /// We need to find cache_target's parent to call insertStep.
-                                    std::function<QueryPlan::Node *(QueryPlan::Node *, QueryPlan::Node *)> find_parent =
-                                        [&](QueryPlan::Node * node, QueryPlan::Node * target) -> QueryPlan::Node *
+                                    /// Find the deepest non-leaf node (the one whose children are all leaves or has one non-leaf child)
+                                    std::function<QueryPlan::Node *(QueryPlan::Node *)> find_deepest_non_leaf =
+                                        [&](QueryPlan::Node * node) -> QueryPlan::Node *
                                     {
                                         if (!node)
                                             return nullptr;
-                                        for (size_t i = 0; i < node->children.size(); ++i)
-                                            if (node->children[i] == target)
-                                                return node;
                                         for (auto * child : node->children)
                                         {
-                                            auto * result = find_parent(child, target);
-                                            if (result)
-                                                return result;
+                                            if (!child->children.empty())
+                                            {
+                                                auto * deeper = find_deepest_non_leaf(child);
+                                                if (deeper)
+                                                    return deeper;
+                                            }
                                         }
+                                        if (!node->children.empty())
+                                            return node;
                                         return nullptr;
                                     };
 
-                                    auto * parent = find_parent(plan.getRootNode(), cache_target);
-                                    if (parent)
+                                    auto * cache_target = find_deepest_non_leaf(plan.getRootNode());
+                                    if (cache_target && !cache_target->children.empty())
                                     {
-                                        for (size_t i = 0; i < parent->children.size(); ++i)
+                                        auto prefix_hash = compute_prefix_hash(cache_target);
+                                        auto target_header = cache_target->step->getOutputHeader();
+                                        auto shared_header = std::make_shared<const Block>(*target_header);
+
+                                        QueryResultCache::Key write_key(
+                                            prefix_hash, shared_header,
+                                            context->getCurrentQueryId(),
+                                            context->getUserID(), context->getCurrentRoles(),
+                                            settings[Setting::query_cache_share_between_users],
+                                            created_at, expires_at,
+                                            settings[Setting::query_cache_compress_entries]);
+
+                                        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs]
+                                            ? query_result_cache->recordQueryRun(write_key) : 1;
+
+                                        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                                         {
-                                            if (parent->children[i] == cache_target)
+                                            LOG_TRACE(getLogger("QueryResultCache"),
+                                                "Skipped insert (partial results) because the query ran {} times but the minimum required number is {}",
+                                                num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+                                        }
+                                        else
+                                        {
+                                            auto writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                                write_key,
+                                                std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                                settings[Setting::query_cache_squash_partial_results],
+                                                settings[Setting::max_block_size],
+                                                settings[Setting::query_cache_max_size_in_bytes],
+                                                settings[Setting::query_cache_max_entries]));
+
+                                            /// Insert cache step ABOVE cache_target (between its parent and itself).
+                                            std::function<QueryPlan::Node *(QueryPlan::Node *, QueryPlan::Node *)> find_parent =
+                                                [&](QueryPlan::Node * node, QueryPlan::Node * target) -> QueryPlan::Node *
                                             {
-                                                auto write_step = std::make_unique<WriteToQueryResultCacheStep>(shared_header, writer);
-                                                plan.insertStep(parent, i, std::move(write_step));
-                                                break;
+                                                if (!node)
+                                                    return nullptr;
+                                                for (size_t i = 0; i < node->children.size(); ++i)
+                                                    if (node->children[i] == target)
+                                                        return node;
+                                                for (auto * child : node->children)
+                                                {
+                                                    auto * found = find_parent(child, target);
+                                                    if (found)
+                                                        return found;
+                                                }
+                                                return nullptr;
+                                            };
+
+                                            auto * parent = find_parent(plan.getRootNode(), cache_target);
+                                            if (parent)
+                                            {
+                                                for (size_t i = 0; i < parent->children.size(); ++i)
+                                                {
+                                                    if (parent->children[i] == cache_target)
+                                                    {
+                                                        auto write_step = std::make_unique<WriteToQueryResultCacheStep>(shared_header, writer);
+                                                        plan.insertStep(parent, i, std::move(write_step));
+                                                        break;
+                                                    }
+                                                }
+                                                query_result_cache_usage = QueryResultCacheUsage::Write;
                                             }
                                         }
-                                        query_result_cache_usage = QueryResultCacheUsage::Write;
                                     }
                                 }
                             }
