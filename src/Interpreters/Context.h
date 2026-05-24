@@ -870,8 +870,8 @@ public:
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
     void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
     void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
-    UUIDs getCurrentProfiles() const;
-    UUIDs getEnabledProfiles() const;
+    std::vector<UUID> getCurrentProfiles() const;
+    std::vector<UUID> getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -1365,7 +1365,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher(bool closed_all_connections) const;
+    void shutdownKeeperDispatcher() const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
@@ -1609,12 +1609,6 @@ public:
     /// Only for system.server_settings, actual value is stored in ConfigReloader
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
-
-    /// Server-wide override for the new analyzer in mutations.
-    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
-    /// Set from the main config reload callback.
-    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
-    std::optional<bool> getMutationsUseAnalyzerOverride() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
