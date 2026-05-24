@@ -114,11 +114,11 @@ ENGINE = MergeTree ORDER BY id;
 -- Unknown/disallowed setting
 ALTER TABLE t_bad_settings ADD PROJECTION p_bad INDEX region TYPE basic WITH SETTINGS (max_parts_to_merge_at_once = 5); -- { serverError BAD_ARGUMENTS }
 
--- index_granularity = 0 should fail sanity check
-ALTER TABLE t_bad_settings ADD PROJECTION p_bad INDEX region TYPE basic WITH SETTINGS (index_granularity = 0); -- { serverError BAD_ARGUMENTS }
-
--- index_granularity_bytes = 0 forces non-adaptive granularity which is disallowed
+-- `index_granularity_bytes = 0` forces non-adaptive granularity, which projections do not support.
 ALTER TABLE t_bad_settings ADD PROJECTION p_bad INDEX region TYPE basic WITH SETTINGS (index_granularity_bytes = 0); -- { serverError BAD_ARGUMENTS }
+
+-- Both `index_granularity` and `index_granularity_bytes` set to zero leaves granule sizing with no driver.
+ALTER TABLE t_bad_settings ADD PROJECTION p_bad INDEX region TYPE basic WITH SETTINGS (index_granularity = 0, index_granularity_bytes = 0); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t_bad_settings;
 
