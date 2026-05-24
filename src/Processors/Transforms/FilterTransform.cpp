@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -115,6 +116,8 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
         return {};
 
     const auto & result_column = transformed_header.getByPosition(*position);
+    if (hasDynamicType(result_column.type))
+        return {};
     if (containsFloat(result_column.type))
         return {};
     if (containsDecimal(result_column.type) && containsFloat(constant_node->result_type))

@@ -164,5 +164,32 @@ WHERE t = tuple(1.0)
 GROUP BY ALL
 ORDER BY ALL;
 
+DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_dynamic;
+
+CREATE TABLE 04259_filter_constant_column_after_where_dynamic
+(
+    d Dynamic
+)
+ENGINE = Memory;
+
+INSERT INTO 04259_filter_constant_column_after_where_dynamic VALUES
+    (CAST(reinterpretAsFloat64(toUInt64(0)), 'Dynamic')),
+    (CAST(reinterpretAsFloat64(toUInt64(9223372036854775808)), 'Dynamic'));
+
+SELECT reinterpretAsUInt64(dynamicElement(d, 'Float64'))
+FROM 04259_filter_constant_column_after_where_dynamic
+WHERE d = CAST(0.0, 'Dynamic')
+ORDER BY reinterpretAsUInt64(dynamicElement(d, 'Float64'));
+
+SELECT reinterpretAsUInt64(dynamicElement(tupleElement(t, 1), 'Float64'))
+FROM
+(
+    SELECT tuple(d) AS t
+    FROM 04259_filter_constant_column_after_where_dynamic
+)
+WHERE t = tuple(0.0)
+ORDER BY reinterpretAsUInt64(dynamicElement(tupleElement(t, 1), 'Float64'));
+
 DROP TABLE 04259_filter_constant_column_after_where;
 DROP TABLE 04259_filter_constant_column_after_where_decimal;
+DROP TABLE 04259_filter_constant_column_after_where_dynamic;
