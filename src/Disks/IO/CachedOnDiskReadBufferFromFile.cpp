@@ -279,9 +279,8 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     ///     (the same segments are read many times across queries). The kernel page cache
     ///     keeps recently-read pages in RAM, so subsequent reads avoid disk I/O.
     ///     O_DIRECT/mmap would bypass the kernel page cache, forcing disk reads on every
-    ///     access — counterproductive for cache files. Master copied the full settings
-    ///     and so could inherit these flags for cache file reads; our defaults are
-    ///     intentionally narrower.
+    ///     access — counterproductive for cache files. Use the narrow defaults below
+    ///     so cache file reads never inherit these flags from the caller's settings.
     ///   - `priority`, `enable_filesystem_read_prefetches_log`: only used by the async
     ///     local readers (`io_uring`, `pread_fake_async`, `pread_threadpool`). We force
     ///     pread, so these are irrelevant.
