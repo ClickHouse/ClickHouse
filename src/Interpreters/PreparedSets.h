@@ -178,7 +178,7 @@ public:
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
     void setQueryPlanBuilder(QueryPlanBuilder query_plan_builder_);
 
-    void buildExternalTableFromInplaceSet(StoragePtr external_table_);
+    void buildExternalTableFromInplaceSet(StoragePtr external_table_, const SizeLimits & network_transfer_limits);
     void setExternalTable(StoragePtr external_table_);
 
     const QueryPlan * getQueryPlan() const { return source.get(); }

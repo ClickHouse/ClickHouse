@@ -90,6 +90,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 namespace FailPoints
@@ -327,7 +328,7 @@ void FutureSetFromSubquery::restoreQueryPlanForRetry(std::unique_ptr<QueryPlan> 
     setQueryPlan(std::move(source_for_retry));
 }
 
-void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
+void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_, const SizeLimits & network_transfer_limits)
 {
     const auto & set = *set_and_key->set;
 
@@ -366,6 +367,19 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     }
 
     Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
+
+    /// Enforce `max_rows_to_transfer` / `max_bytes_to_transfer` on this in-place
+    /// external-table write path. The streaming `CreatingSetsTransform` checks
+    /// these limits per-block; here we are writing the deduplicated set as a
+    /// single chunk, so a single check on the chunk size is equivalent.
+    /// With `transfer_overflow_mode = 'break'` we silently skip the write
+    /// (consistent with the streaming path setting `done_with_table = true`).
+    if (!network_transfer_limits.check(
+            set_chunk.getNumRows(), set_chunk.bytes(),
+            "IN/JOIN external table",
+            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+        return;
+
     auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
     PushingPipelineExecutor executor(pipeline);
     executor.push(std::move(set_chunk));
@@ -379,7 +393,10 @@ void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
         if (!set_and_key->set->hasExplicitSetElements())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a ready set without explicit elements");
 
-        buildExternalTableFromInplaceSet(external_table_);
+        /// Attaching an external table to an already-built set preserves prior behavior:
+        /// the set elements have already passed in-set size limits, and the network
+        /// transfer limits do not apply at attachment time.
+        buildExternalTableFromInplaceSet(external_table_, SizeLimits{});
     }
 
     set_and_key->external_table = std::move(external_table_);
@@ -424,7 +441,6 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
 
     if (set_and_key->set->isCreated())
         return;
@@ -439,7 +455,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
         plan->getCurrentHeader(),
         inplace_set_and_key,
         network_transfer_limits,
-        prepared_sets_cache);
+        /*prepared_sets_cache=*/nullptr);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
 
@@ -481,7 +497,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
     set_and_key->set = std::move(inplace_set_and_key->set);
     if (set_and_key->external_table)
-        buildExternalTableFromInplaceSet(set_and_key->external_table);
+        buildExternalTableFromInplaceSet(set_and_key->external_table, network_transfer_limits);
 
     /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
     pipeline.finalizeWriteInQueryResultCache();
@@ -517,7 +533,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
 
     if (!source)
         return nullptr;
@@ -529,7 +544,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         plan->getCurrentHeader(),
         inplace_set_and_key,
         network_transfer_limits,
-        prepared_sets_cache);
+        /*prepared_sets_cache=*/nullptr);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
 
@@ -574,7 +589,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     set_and_key->set = std::move(inplace_set_and_key->set);
     if (set_and_key->external_table)
-        buildExternalTableFromInplaceSet(set_and_key->external_table);
+        buildExternalTableFromInplaceSet(set_and_key->external_table, network_transfer_limits);
     logProcessorProfile(context, pipeline.getProcessors());
 
     /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
