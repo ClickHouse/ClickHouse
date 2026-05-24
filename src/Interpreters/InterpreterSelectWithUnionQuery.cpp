@@ -28,6 +28,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include <fmt/ranges.h>
 
@@ -49,6 +50,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
 }
@@ -380,18 +382,30 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 
     if (settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
-        /// This fallback path is only taken for `WITH FILL` / `WITH TIES` queries where the
-        /// AST-level injection above is skipped. `LimitStep` / `OffsetStep` operate on `size_t`,
-        /// so negative or fractional setting values are not supported here — those values reach
-        /// the SQL-level `LIMIT`/`OFFSET` clause via the AST injection above instead.
+        /// This fallback path is taken when the AST-level injection above is skipped — `WITH FILL`
+        /// / `WITH TIES` queries, and `UNION`/`INTERSECT`/`EXCEPT` queries with more than one child.
+        /// `LimitStep` / `OffsetStep` operate on `size_t`, so they cannot represent the negative or
+        /// fractional values that `limit` / `offset` were widened to. Surface that limitation
+        /// explicitly instead of truncating to `0` and silently changing query semantics.
         const Float64 limit_setting = settings[Setting::limit];
         const Float64 offset_setting = settings[Setting::offset];
+        auto check_non_negative_integer = [](Float64 value, const char * name)
+        {
+            if (value < 0 || value != std::trunc(value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Setting `{}` = {} cannot be applied to this query — it is a UNION or has WITH FILL/WITH TIES, "
+                    "where the SETTINGS-level LIMIT/OFFSET fallback only supports non-negative integers. "
+                    "Use a positive integer setting, or specify `LIMIT`/`OFFSET` directly in the SQL.",
+                    name, value);
+        };
+        check_non_negative_integer(limit_setting, "limit");
+        check_non_negative_integer(offset_setting, "offset");
         if (limit_setting > 0)
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(),
                 static_cast<size_t>(limit_setting),
-                static_cast<size_t>(offset_setting > 0 ? offset_setting : 0),
+                static_cast<size_t>(offset_setting),
                 settings[Setting::exact_rows_before_limit]);
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
