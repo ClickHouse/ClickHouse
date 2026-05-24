@@ -1211,9 +1211,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
             {"add_minmax_index_for_numeric_columns", false, true, "Automatic min-max skipping indices on numeric columns can speed up range-filter queries; the trade-off is some additional storage and ingestion overhead, which may be noticeable on very wide or high-ingest tables. Set to false to revert to the previous behavior."},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        {
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
