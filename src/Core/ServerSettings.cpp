@@ -1968,6 +1968,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "warning_supress_regexp",
         "enable_system_unfreeze",
         "disable_insertion_and_mutation",
+        "use_analyzer_for_mutations",
         "streaming_storage_shutdown_threads",
         "local_disk_check_period_ms",
         "page_cache_size",
