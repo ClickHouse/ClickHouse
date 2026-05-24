@@ -37,7 +37,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -1710,9 +1709,7 @@ Chunk StorageFileSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    current_path,
-                    storage->format_settings,
-                    getContext());
+                    current_path);
             }
 
             /// Enrich with virtual columns.
@@ -1724,7 +1721,7 @@ Chunk StorageFileSource::generate()
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
                     .last_modified = current_file_last_modified,
-                }, getContext(), storage->format_settings);
+                }, getContext());
 
             return chunk;
         }
@@ -1762,8 +1759,6 @@ Chunk StorageFileSource::generate()
 
     return {};
 }
-
-void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {

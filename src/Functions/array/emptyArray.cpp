@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionEmptyArray final : public IFunction
+class FunctionEmptyArray : public IFunction
 {
 private:
     String element_type;
