@@ -120,7 +120,7 @@ public:
 ///
 /// Template functions go inside DECLARE_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
-/// The Ops structs (AVX2SHA1Ops, AVX512SHA1Ops) are
+/// The Ops struct (AVX512SHA1Ops) is
 /// in their own DECLARE blocks and found via same-namespace lookup.
 /// ============================================================
 
@@ -139,10 +139,11 @@ public:
     }
 
 /// Message schedule expansion for rounds >= 16.
+/// Uses 3-way XOR (vpternlogd on AVX-512) to save one instruction vs chained XORs.
 #define SHA1_EXPAND(w, i) \
     { \
         (w)[(i) & 15] = Ops::template rotl<1>( \
-            Ops::xor_((w)[((i) - 3) & 15], Ops::xor_((w)[((i) - 8) & 15], Ops::xor_((w)[((i) - 14) & 15], (w)[(i) & 15])))); \
+            Ops::xor_(Ops::xor3((w)[(i) & 15], (w)[((i) - 3) & 15], (w)[((i) - 8) & 15]), (w)[((i) - 14) & 15])); \
     }
 
 /// Combined expand + step for rounds >= 16.
@@ -613,6 +614,11 @@ struct AVX512SHA1Ops
     static inline Vec xor_(Vec a, Vec b)
     {
         return _mm512_xor_si512(a, b);
+    }
+    /// 3-way XOR in a single instruction (used in message schedule expansion).
+    static inline Vec xor3(Vec a, Vec b, Vec c)
+    {
+        return _mm512_ternarylogic_epi32(a, b, c, 0x96);
     }
 
     /// Ternary logic: single-instruction 3-input boolean functions.
