@@ -6,6 +6,11 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -35,16 +40,59 @@ namespace ErrorCodes
 namespace
 {
 
+    /// Enumerate, in the same DFS order that `prepareColumnRecursive` visits them, the dotted
+    /// `field_id`-bearing paths under a column named `name` of type `type`. `Nullable` and
+    /// `LowCardinality` wrappers don't add a path segment; `Array` adds `.element`, `Map` adds
+    /// `.key` / `.value`, and `Tuple` adds the subfield names.
+    void enumerateFieldPaths(const String & name, const DataTypePtr & type, std::vector<String> & out)
+    {
+        out.push_back(name);
+
+        DataTypePtr inner = type;
+        while (true)
+        {
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(inner.get()))
+            {
+                inner = nullable_type->getNestedType();
+                continue;
+            }
+            if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(inner.get()))
+            {
+                inner = lc_type->getDictionaryType();
+                continue;
+            }
+            break;
+        }
+
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner.get()))
+        {
+            enumerateFieldPaths(name + ".element", array_type->getNestedType(), out);
+        }
+        else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner.get()))
+        {
+            for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+                enumerateFieldPaths(name + "." + tuple_type->getNameByPosition(i + 1), tuple_type->getElement(i), out);
+        }
+        else if (const auto * map_type = typeid_cast<const DataTypeMap *>(inner.get()))
+        {
+            enumerateFieldPaths(name + ".key", map_type->getKeyType(), out);
+            enumerateFieldPaths(name + ".value", map_type->getValueType(), out);
+        }
+    }
+
     /// Build the per-column Parquet `field_id` map from the user-facing settings.
     /// Returns nullopt when the output should carry no field_ids (both overrides empty
     /// and auto-assign disabled).
     ///
-    ///   1. Every entry in `overrides` is applied verbatim. Negative ids, unknown columns,
-    ///      duplicate column names and duplicate ids are rejected so users get a clear
-    ///      signal when the setting drifts from the query's schema.
-    ///   2. If `auto_assign` is true, the remaining columns are given the smallest unused
-    ///      positive ids (Iceberg writers conventionally start at 1 and go up).
-    ///   3. If `auto_assign` is false, the override map must cover every output column.
+    ///   1. Every entry in `overrides` is applied verbatim. Negative ids, unknown paths,
+    ///      duplicate paths and duplicate ids are rejected so users get a clear signal when
+    ///      the setting drifts from the query's schema. Keys may be top-level column names
+    ///      or dotted nested paths (e.g. `arr.element`, `m.key`, `m.value`, `t.subfield`).
+    ///   2. If `auto_assign` is true, the remaining paths — top-level and nested — are given
+    ///      the smallest unused positive ids in schema DFS order (Iceberg writers
+    ///      conventionally start at 1 and go up).
+    ///   3. If `auto_assign` is false, the override map must cover every path produced by
+    ///      the schema (top-level and nested).
     std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
         const Block & header,
         const std::vector<std::pair<String, Int32>> & overrides,
@@ -53,8 +101,10 @@ namespace
         if (overrides.empty() && !auto_assign)
             return std::nullopt;
 
-        const auto column_names = header.getNames();
-        std::unordered_set<String> known_columns(column_names.begin(), column_names.end());
+        std::vector<String> all_paths;
+        for (const auto & col : header)
+            enumerateFieldPaths(col.name, col.type, all_paths);
+        std::unordered_set<String> known_paths(all_paths.begin(), all_paths.end());
 
         std::unordered_map<String, Int64> result;
         std::unordered_set<Int32> used_ids;
@@ -64,7 +114,7 @@ namespace
             if (id < 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids value {} must be non-negative", id);
-            if (!known_columns.contains(name))
+            if (!known_paths.contains(name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids references unknown column '{}'", name);
             if (!result.emplace(name, id).second)
@@ -78,25 +128,25 @@ namespace
         if (auto_assign)
         {
             Int32 next_id = 1;
-            for (const auto & name : column_names)
+            for (const auto & path : all_paths)
             {
-                if (result.contains(name))
+                if (result.contains(path))
                     continue;
                 while (used_ids.contains(next_id))
                     ++next_id;
-                result.emplace(name, next_id);
+                result.emplace(path, next_id);
                 used_ids.insert(next_id);
                 ++next_id;
             }
         }
         else
         {
-            /// If auto-assign is off we require the map to cover every column so that the
-            /// resulting Parquet file isn't a mix of "has field_id" and "no field_id" columns.
-            if (result.size() != column_names.size())
+            /// If auto-assign is off we require the map to cover every path so that the
+            /// resulting Parquet file isn't a mix of "has field_id" and "no field_id" fields.
+            if (result.size() != all_paths.size())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids is non-empty but does not cover every output column "
-                    "(enable output_format_parquet_auto_assign_field_ids to fill the gaps automatically)");
+                    "or nested field (enable output_format_parquet_auto_assign_field_ids to fill the gaps automatically)");
         }
 
         return result;

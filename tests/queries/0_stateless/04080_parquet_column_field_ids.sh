@@ -16,10 +16,30 @@ mkdir -p "$WORKDIR"
 dump_field_ids () {
     local path="$1"
     python3 -c "
+import pyarrow as pa
 import pyarrow.parquet as pq
 schema = pq.read_schema('$path')
+
+def field_id(field):
+    if field.metadata:
+        return field.metadata.get(b'PARQUET:field_id', b'-').decode()
+    return '-'
+
+def walk(field, prefix=''):
+    full = f'{prefix}{field.name}' if prefix else field.name
+    print(f'{full}\t{field_id(field)}')
+    t = field.type
+    if pa.types.is_struct(t):
+        for i in range(t.num_fields):
+            walk(t.field(i), full + '.')
+    elif pa.types.is_list(t) or pa.types.is_large_list(t):
+        walk(t.value_field.with_name('element'), full + '.')
+    elif pa.types.is_map(t):
+        walk(t.key_field, full + '.')
+        walk(t.item_field.with_name('value'), full + '.')
+
 for field in schema:
-    print(f'{field.name}\t{field.metadata.get(b\"PARQUET:field_id\", b\"-\").decode()}' if field.metadata else f'{field.name}\t-')
+    walk(field)
 "
 }
 
@@ -27,12 +47,13 @@ run_insert () {
     local label="$1"
     local file="$2"
     local query="$3"
+    local select_columns="${4:-a, b, c}"
     echo "== $label =="
     ${CLICKHOUSE_LOCAL} --query="$query" --output-format=TSV
     echo "-- field_ids --"
     dump_field_ids "$file"
     echo "-- values --"
-    ${CLICKHOUSE_LOCAL} --query="SELECT a, b, c FROM file('$file')"
+    ${CLICKHOUSE_LOCAL} --query="SELECT ${select_columns} FROM file('$file')"
 }
 
 # 1. Explicit per-column overrides. ClickHouse's settings parser only accepts string
@@ -74,6 +95,26 @@ SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
 SETTINGS engine_file_truncate_on_insert = 1;
 "
 
+# 5. Nested types: auto-assign recursively walks Array.element, Tuple.<subfield>,
+#    Map.key/value so the resulting Parquet schema is fully `field_id`-annotated.
+F="$WORKDIR/04080_field_ids_nested_auto.parquet"
+run_insert "nested auto-assign" "$F" "
+INSERT INTO FUNCTION file('$F', 'Parquet')
+SELECT [1, 2, 3]::Array(UInt32) AS a, ('hi', 7)::Tuple(s String, i Int32) AS b, map('k', 1)::Map(String, UInt8) AS c
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_auto_assign_field_ids = 1;
+"
+
+# 6. Nested overrides: dotted keys pin specific nested ids; auto-assign fills the gaps.
+F="$WORKDIR/04080_field_ids_nested_overrides.parquet"
+run_insert "nested overrides" "$F" "
+INSERT INTO FUNCTION file('$F', 'Parquet')
+SELECT [1, 2, 3]::Array(UInt32) AS a, ('hi', 7)::Tuple(s String, i Int32) AS b
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_auto_assign_field_ids = 1,
+         output_format_parquet_column_field_ids = {'a.element': '100', 'b.s': '200'};
+" "a, b"
+
 echo "== error: unknown column =="
 ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04080_err1.parquet', 'Parquet')
@@ -86,6 +127,14 @@ echo "== error: non-covering map without auto-assign =="
 ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04080_err2.parquet', 'Parquet')
 SELECT 1 AS a, 2 AS b
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'a': '1'};
+" 2>&1 | grep -oE 'BAD_ARGUMENTS|does not cover every output column' | sort -u
+
+echo "== error: non-covering map skips nested field =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$WORKDIR/04080_err6.parquet', 'Parquet')
+SELECT [1, 2, 3] AS a
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '1'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|does not cover every output column' | sort -u

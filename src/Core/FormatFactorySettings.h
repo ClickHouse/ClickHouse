@@ -1568,16 +1568,18 @@ Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/Mult
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0) \
     DECLARE(Map, output_format_parquet_column_field_ids, "", R"(
-Explicit Parquet `field_id` overrides for output columns, keyed by column name. Useful for producing Parquet files compatible with Apache Iceberg, which identifies columns by `field_id` rather than by name.
+Explicit Parquet `field_id` overrides for output columns, keyed by column name or dotted nested path. Useful for producing Parquet files compatible with Apache Iceberg, which identifies columns by `field_id` rather than by name.
+
+Top-level columns are addressed by name (e.g. `col_a`), and nested fields by dotted path: `arr.element` for an `Array` element, `m.key` / `m.value` for a `Map`, and `t.subfield` for a `Tuple` subfield. Paths nest naturally (`arr.element.x`, `t.element.key`).
 
 The value of the map is a string holding a non-negative `Int32` `field_id` (ClickHouse's setting parser only accepts string literals as `Map` values). IDs must be unique across the map.
 
-Takes precedence over `output_format_parquet_auto_assign_field_ids` for any column that appears in the map. When writing to a datalake table that provides its own column-id mapping (e.g. Iceberg), this setting must not be combined with that mapping — set it only for direct Parquet output.
+Takes precedence over `output_format_parquet_auto_assign_field_ids` for any path that appears in the map. When writing to a datalake table that provides its own column-id mapping (e.g. Iceberg), this setting must not be combined with that mapping — set it only for direct Parquet output.
 
 Example: `SET output_format_parquet_column_field_ids = {'col_a': '1', 'col_b': '2', 'col_c': '3'}`.
 )", 0) \
     DECLARE(Bool, output_format_parquet_auto_assign_field_ids, false, R"(
-When enabled, every output column is assigned a unique Parquet `field_id` automatically (sequential, starting at 1), matching the convention used by Apache Iceberg writers. Columns with an explicit override in `output_format_parquet_column_field_ids` keep the overridden value; remaining columns fill in around those overrides.
+When enabled, every output column and every nested field (Array `element`, Map `key`/`value`, Tuple subfields) is assigned a unique Parquet `field_id` automatically (sequential, starting at 1, in schema DFS order), matching the convention used by Apache Iceberg writers. Paths with an explicit override in `output_format_parquet_column_field_ids` keep the overridden value; remaining paths fill in around those overrides.
 
 Disabled by default so that existing Parquet output is unchanged. Cannot be used when writing to a datalake table that provides its own column-id mapping.
 )", 0) \

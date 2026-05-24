@@ -26,10 +26,34 @@ b	-
 c	-
 -- values --
 1	hello	42
+== nested auto-assign ==
+-- field_ids --
+a	1
+a.element	2
+b	3
+b.s	4
+b.i	5
+c	6
+c.key	7
+c.value	8
+-- values --
+[1,2,3]	('hi',7)	{'k':1}
+== nested overrides ==
+-- field_ids --
+a	1
+a.element	100
+b	2
+b.s	200
+b.i	3
+-- values --
+[1,2,3]	('hi',7)
 == error: unknown column ==
 BAD_ARGUMENTS
 references unknown column
 == error: non-covering map without auto-assign ==
+BAD_ARGUMENTS
+does not cover every output column
+== error: non-covering map skips nested field ==
 BAD_ARGUMENTS
 does not cover every output column
 == error: duplicate id ==
