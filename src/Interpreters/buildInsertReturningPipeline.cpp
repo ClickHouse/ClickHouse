@@ -45,6 +45,11 @@ QueryPipeline buildInsertReturningPipeline(
 
     DelayedSource::Creator creator = [insert_pipeline_holder, returning_select, context]() -> QueryPipelineBuilder
     {
+        /// The INSERT pipeline is captured before executeQueryImpl wires process list / progress
+        /// onto the outer RETURNING pipeline; attach them here so timeout/cancel work during INSERT.
+        insert_pipeline_holder->setProcessListElement(context->getProcessListElement());
+        insert_pipeline_holder->setProgressCallback(context->getProgressCallback());
+
         CompletedPipelineExecutor insert_executor(*insert_pipeline_holder);
         insert_executor.execute();
 
