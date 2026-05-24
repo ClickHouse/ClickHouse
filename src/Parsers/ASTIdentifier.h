@@ -89,6 +89,10 @@ public:
     void readJSON(const Poco::JSON::Object & json) override;
 
     UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
+    /// True iff the parser saw an explicit `UUID '...'` clause, set even when the parsed value is `Nil`.
+    /// Use this (not `uuid != UUIDHelpers::Nil`) when you need to distinguish "user wrote `UUID '...'`"
+    /// from "no UUID clause": explicit `UUID '00000000-0000-0000-0000-000000000000'` parses to `Nil`.
+    bool has_uuid = false;
 
     StorageID getTableId() const;
     String getDatabaseName() const;

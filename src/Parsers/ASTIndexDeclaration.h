@@ -22,7 +22,7 @@ public:
     ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_);
 
     String name;
-    UInt64 granularity;
+    UInt64 granularity = DEFAULT_INDEX_GRANULARITY;
     bool part_of_create_index_query = false;
 
     /** Get the text that identifies this element. */

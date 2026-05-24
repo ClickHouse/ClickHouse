@@ -356,7 +356,8 @@ ${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
-${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
+${CMAKE_SOURCE_DIR}/programs/server/schema.html")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
