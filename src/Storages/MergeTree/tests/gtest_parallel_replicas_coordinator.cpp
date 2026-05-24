@@ -23,6 +23,19 @@ RangesInDataPartDescription makePart(const String & partition_id, Int64 min_bloc
     return desc;
 }
 
+/// Same as `makePart` but allows decoupling row count from mark count, used to simulate two
+/// replicas whose local parts hold the same number of rows but with different mark layouts (for
+/// example under adaptive granularity).
+RangesInDataPartDescription makePartWithRows(
+    const String & partition_id, Int64 min_block, Int64 max_block, UInt32 level, size_t marks, size_t rows)
+{
+    RangesInDataPartDescription desc;
+    desc.info = MergeTreePartInfo(partition_id, min_block, max_block, level);
+    desc.ranges = MarkRanges{MarkRange{0, marks}};
+    desc.rows = rows;
+    return desc;
+}
+
 InitialAllRangesAnnouncement makeAnnouncement(size_t replica_num, RangesInDataPartsDescription parts)
 {
     return InitialAllRangesAnnouncement(
@@ -152,4 +165,43 @@ TEST(ParallelReplicasCoordinator, DefaultAcceptsIdenticalAnnouncementsFromMultip
     parts2.push_back(makePart("all", 1, 1, 0, /*marks=*/128));
     EXPECT_NO_THROW(
         coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts2))));
+}
+
+/// Two replicas announce the same part with the same row count but different mark layouts (the
+/// adaptive-granularity case raised by `clickhouse-gh[bot]` review on PR #105710). Without the
+/// mark-space check the coordinator would accept the merge and later hand out marks beyond the
+/// smaller replica's local mark space.
+TEST(ParallelReplicasCoordinator, InOrderRejectsDivergentMarkLayoutForSamePart)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// Replica 1 announces the part with 100K rows split across 12 marks.
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePartWithRows("all", 1, 1, 0, /*marks=*/12, /*rows=*/100'000));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(parts)));
+    }
+
+    /// Replica 0 announces the same row count but its local part has 20 marks.
+    RangesInDataPartsDescription divergent;
+    divergent.push_back(makePartWithRows("all", 1, 1, 0, /*marks=*/20, /*rows=*/100'000));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(divergent))),
+        DB::Exception);
+}
+
+/// The same mark-layout divergence must also be rejected in `Default` coordination mode.
+TEST(ParallelReplicasCoordinator, DefaultRejectsDivergentMarkLayoutForSamePart)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    RangesInDataPartsDescription parts;
+    parts.push_back(makePartWithRows("all", 1, 1, 0, /*marks=*/12, /*rows=*/100'000));
+    coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+
+    RangesInDataPartsDescription divergent;
+    divergent.push_back(makePartWithRows("all", 1, 1, 0, /*marks=*/20, /*rows=*/100'000));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(divergent))),
+        DB::Exception);
 }

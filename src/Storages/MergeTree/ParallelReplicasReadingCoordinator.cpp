@@ -135,6 +135,44 @@ extern const int LOGICAL_ERROR;
 extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
+namespace
+{
+
+/// Returns true when two same-named announcements describe the same local data layout.
+/// We compare row count and mark space (max mark end + total number of marks). A mismatch on
+/// any of these signals that replicas have divergent local data, so the coordinator must reject
+/// the merge: otherwise it later hands snapshot ranges to a replica whose local mark space is
+/// smaller and reading hits a non-existing mark.
+bool sameLocalLayout(const RangesInDataPartDescription & a, const RangesInDataPartDescription & b)
+{
+    return a.rows == b.rows
+        && getLastMark(a.ranges) == getLastMark(b.ranges)
+        && a.ranges.getNumberOfMarks() == b.ranges.getNumberOfMarks();
+}
+
+[[noreturn]] void throwDivergentLocalPart(
+    size_t replica_num,
+    const RangesInDataPartDescription & announced,
+    const RangesInDataPartDescription & known)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Replica {} announced part {} with {} rows / {} marks (max mark end {}), but an earlier "
+        "replica announced a same-named part with {} rows / {} marks (max mark end {}). Parallel "
+        "replicas requires consistent data across cluster members. Use ReplicatedMergeTree or "
+        "disable parallel_replicas_for_non_replicated_merge_tree.",
+        replica_num,
+        announced.info.getPartNameV1(),
+        announced.rows,
+        announced.ranges.getNumberOfMarks(),
+        getLastMark(announced.ranges),
+        known.rows,
+        known.ranges.getNumberOfMarks(),
+        getLastMark(known.ranges));
+}
+
+}
+
 class ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
@@ -407,9 +445,11 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
         part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
     }
 
-    /// Reject same-named parts whose row count differs from the snapshot built by the first
-    /// announcement. Otherwise the coordinator later hands snapshot ranges to a replica whose
-    /// local part is smaller and reading hits a non-existing mark.
+    /// Reject same-named parts whose row count or mark space differs from the snapshot built by
+    /// the first announcement. Otherwise the coordinator later hands snapshot ranges to a replica
+    /// whose local part is smaller and reading hits a non-existing mark. The mark-space check is
+    /// needed in addition to rows to catch adaptive-granularity divergence where two parts share
+    /// a row count but disagree on the number of marks.
     if (state_initialized)
     {
         for (const auto & part : announcement.description)
@@ -419,17 +459,8 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
                 all_parts_to_read.end(),
                 [&part](const Part & other) { return other.description.info == part.info; });
 
-            if (known_it != all_parts_to_read.end() && known_it->description.rows != part.rows)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Replica {} announced part {} with {} rows, but an earlier replica announced "
-                    "a same-named part with {} rows. Parallel replicas requires consistent data "
-                    "across cluster members. Use ReplicatedMergeTree or disable "
-                    "parallel_replicas_for_non_replicated_merge_tree.",
-                    announcement.replica_num,
-                    part.info.getPartNameV1(),
-                    part.rows,
-                    known_it->description.rows);
+            if (known_it != all_parts_to_read.end() && !sameLocalLayout(known_it->description, part))
+                throwDivergentLocalPart(announcement.replica_num, part, known_it->description);
         }
         return;
     }
@@ -997,19 +1028,11 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
         {
-            /// Same part name but different row count means replicas have divergent local data;
-            /// merging here would later hand out non-existing marks to the smaller replica.
-            if (the_same_it->description.rows != part.rows)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Replica {} announced part {} with {} rows, but an earlier replica announced "
-                    "a same-named part with {} rows. Parallel replicas requires consistent data "
-                    "across cluster members. Use ReplicatedMergeTree or disable "
-                    "parallel_replicas_for_non_replicated_merge_tree.",
-                    announcement.replica_num,
-                    part.info.getPartNameV1(),
-                    part.rows,
-                    the_same_it->description.rows);
+            /// Same part name but a different row count or mark layout means replicas have
+            /// divergent local data; merging here would later hand out non-existing marks to the
+            /// replica whose local mark space is smaller.
+            if (!sameLocalLayout(the_same_it->description, part))
+                throwDivergentLocalPart(announcement.replica_num, part, the_same_it->description);
 
             the_same_it->replicas.insert(announcement.replica_num);
             continue;
