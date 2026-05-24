@@ -142,65 +142,15 @@ def test_correctness(started_cluster):
         for child in node_zk.get_children("/test"):
             assert node_zk.get(f"/test/{child}")[0] == b"somedata"
 
-        # stop_zk(node_zk)
-
-        # previous_log_files = get_local_logs(node_logs)
-
-        # setup_storage(
-        #     started_cluster,
-        #     node_logs,
-        #     "<log_storage_disk>log_s3_plain<\\/log_storage_disk>"
-        #     "<latest_log_storage_disk>log_local<\\/latest_log_storage_disk>"
-        #     "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
-        #     cleanup_disks=False,
-        # )
-
-        # node_logs.wait_for_log_line(
-        #     "KeeperLogStore: Continue to write into changelog_34_36.bin",
-        #     look_behind_lines=2000,
-        # )
-
-        # # all but the latest log should be on S3
-        # s3_log_files = list_s3_objects(started_cluster, "logs/")
-        # assert set(s3_log_files) == set(previous_log_files[:-1])
-        # local_log_files = get_local_logs(node_logs)
-        # assert len(local_log_files) == 1
-        # assert local_log_files[0] == previous_log_files[-1]
-
-        # previous_log_files = s3_log_files + local_log_files
-
-        # node_zk = get_fake_zk("node_logs")
-
-        # for _ in range(30):
-        #     node_zk.create("/test/somenode", b"somedata", sequence=True)
-
-        # stop_zk(node_zk)
-
-        # log_files = list_s3_objects(started_cluster, "logs/")
-        # local_log_files = get_local_logs(node_logs)
-        # assert len(local_log_files) == 1
-
-        # log_files.extend(local_log_files)
-        # assert set(log_files) != previous_log_files
-
-        # previous_log_files = log_files
-
-        # setup_storage(
-        #     started_cluster,
-        #     node_logs,
-        #     "<old_log_storage_disk>log_s3_plain<\\/old_log_storage_disk>"
-        #     "<log_storage_disk>log_local<\\/log_storage_disk>"
-        #     "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
-        #     cleanup_disks=False,
-        # )
-
-        # local_log_files = get_local_logs(node_logs)
-        # assert set(local_log_files) == set(previous_log_files)
-
-        # node_zk = get_fake_zk("node_logs")
-
-        # for child in node_zk.get_children("/test"):
-        #     assert node_zk.get(f"/test/{child}")[0] == b"somedata"
-
+        # The static config sets `s3_experimental_changelog=true` and
+        # `s3_log_disk=s3_changelog`, so changelog segments must land in MinIO
+        # under `snaplogs/` rather than on the local log disk.
+        s3_changelog_files = list_s3_objects(started_cluster, "snaplogs/")
+        assert (
+            len(s3_changelog_files) > 0
+        ), f"expected S3 changelog files under snaplogs/, got: {s3_changelog_files}"
+        assert all(
+            name.startswith("changelog_") for name in s3_changelog_files
+        ), f"unexpected S3 changelog file names: {s3_changelog_files}"
     finally:
         stop_zk(node_zk)
