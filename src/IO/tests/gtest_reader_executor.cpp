@@ -5,6 +5,8 @@
 #include <IO/SourceBufferLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
+#include <IO/PageCacheProvider.h>
+#include <Common/PageCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -925,6 +927,107 @@ TEST(ReaderExecutor, LiveBufferReleasedAtEof)
     auto r6 = executor.readNextWindow();
     EXPECT_TRUE(r6.empty());
     EXPECT_EQ(limit->getActive().size(), 0u);
+}
+
+TEST(PageCacheProvider, BypassMissDoesNotPolluteCache)
+{
+    /// `read_from_page_cache_if_exists_otherwise_bypass_cache = true`
+    /// (e.g. background merges/mutations via `MergeTreeSequentialSource`)
+    /// must not populate the page cache on miss. Confirm by writing data
+    /// through a bypass-mode provider and verifying that a fresh handle
+    /// from a non-bypass provider on the same `PageCacheFile` sees a
+    /// MISS — the bytes never made it into the registered cache.
+    using namespace DB;
+    /// `min_size_in_bytes` is the initial per-shard capacity. Tests don't
+    /// call `autoResize`, so we set it equal to `max_size_in_bytes` so the
+    /// shard can actually store entries from the get-go.
+    constexpr size_t cache_capacity = 1ull << 20;
+    auto cache = std::make_shared<PageCache>(
+        std::chrono::milliseconds(2000), "LRU", 0.5,
+        /*min_size_in_bytes=*/cache_capacity,
+        /*max_size_in_bytes=*/cache_capacity,
+        /*free_memory_ratio=*/0.0,
+        /*num_shards=*/1);
+
+    PageCacheFile file;
+    file.path = "test-bypass";
+    file.file_version = "v1";
+
+    constexpr size_t block_size = 4096;
+    constexpr size_t inject_eviction = false;
+
+    /// Step 1: bypass=true. Put bytes into block [0, 4096).
+    PageCacheProvider bypass_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/true);
+    {
+        auto handle = bypass_provider.lookup(StoredObject{}, /*object_file_offset=*/0, ByteRange{0, block_size});
+        auto status = handle->status();
+        ASSERT_EQ(status.hit_ranges.size(), 0u);
+        ASSERT_EQ(status.miss_ranges.size(), 1u);
+
+        Rope data;
+        auto buf = std::make_shared<OwnedRopeBuffer>(block_size);
+        std::memset(buf->data(), 'B', block_size);
+        data.append(RopeNode{buf, 0, block_size, 0});
+
+        size_t written = handle->put(ByteRange{0, block_size}, std::move(data));
+        EXPECT_EQ(written, block_size);
+    }   /// bypass handle drops here; if the cell was detached, the data is
+        /// reclaimed; the cache stays empty.
+
+    /// Step 2: lookup via a NON-bypass provider on the same file/block.
+    /// Should be a MISS — bypass mode did not register the bytes.
+    PageCacheProvider observer_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false);
+    {
+        auto handle = observer_provider.lookup(StoredObject{}, /*object_file_offset=*/0, ByteRange{0, block_size});
+        auto status = handle->status();
+        EXPECT_EQ(status.hit_ranges.size(), 0u)
+            << "bypass-mode put must NOT register the cell with the cache; "
+               "subsequent lookups must miss";
+        EXPECT_EQ(status.miss_ranges.size(), 1u);
+    }
+}
+
+TEST(PageCacheProvider, NonBypassMissPopulatesCache)
+{
+    /// Symmetry check: when bypass is OFF, put DOES populate the cache,
+    /// and a later lookup hits.
+    using namespace DB;
+    /// `min_size_in_bytes` is the initial per-shard capacity. Tests don't
+    /// call `autoResize`, so we set it equal to `max_size_in_bytes` so the
+    /// shard can actually store entries from the get-go.
+    constexpr size_t cache_capacity = 1ull << 20;
+    auto cache = std::make_shared<PageCache>(
+        std::chrono::milliseconds(2000), "LRU", 0.5,
+        /*min_size_in_bytes=*/cache_capacity,
+        /*max_size_in_bytes=*/cache_capacity,
+        /*free_memory_ratio=*/0.0,
+        /*num_shards=*/1);
+
+    PageCacheFile file;
+    file.path = "test-populate";
+    file.file_version = "v1";
+
+    constexpr size_t block_size = 4096;
+    constexpr size_t inject_eviction = false;
+
+    PageCacheProvider provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false);
+
+    {
+        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, block_size});
+        EXPECT_EQ(handle->status().miss_ranges.size(), 1u);
+
+        Rope data;
+        auto buf = std::make_shared<OwnedRopeBuffer>(block_size);
+        std::memset(buf->data(), 'P', block_size);
+        data.append(RopeNode{buf, 0, block_size, 0});
+        handle->put(ByteRange{0, block_size}, std::move(data));
+    }
+
+    {
+        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, block_size});
+        EXPECT_EQ(handle->status().hit_ranges.size(), 1u)
+            << "non-bypass put must register the cell so subsequent lookups hit";
+    }
 }
 
 TEST(ReaderExecutor, UnknownSizeStreamsToEof)

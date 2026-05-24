@@ -11,10 +11,12 @@ PageCacheHandle::PageCacheHandle(
     ByteRange requested,
     PageCachePtr cache_,
     size_t block_size,
-    bool inject_eviction_)
+    bool inject_eviction_,
+    bool bypass_if_missing_)
     : file(std::move(file_))
     , cache(std::move(cache_))
     , inject_eviction(inject_eviction_)
+    , bypass_if_missing(bypass_if_missing_)
 {
     /// Split the requested range into block-aligned chunks.
     size_t aligned_start = (requested.offset / block_size) * block_size;
@@ -100,10 +102,18 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
         /// getOrSet returns the existing cell and doesn't call load.
         bool loaded = false;
         size_t loaded_bytes = 0;
+        /// `detached_if_missing` (= `bypass_if_missing`) makes
+        /// `getOrSet` allocate a standalone cell that is NOT registered
+        /// with the cache. The load lambda still fills it, the handle
+        /// still serves it via `get`, but it's invisible to other
+        /// queries — matching the
+        /// `read_from_page_cache_if_exists_otherwise_bypass_cache`
+        /// semantics (read-only probe for cache; populate transient cell
+        /// for this read only).
         auto cell = cache->getOrSet(
             file,
             block.byte_range,
-            /*detached_if_missing=*/false,
+            /*detached_if_missing=*/bypass_if_missing,
             inject_eviction,
             [&](const PageCache::MappedPtr & new_cell)
             {
@@ -162,7 +172,7 @@ std::unique_ptr<ICacheHandle> PageCacheProvider::lookup(
     /// space the `PageCacheHandle` uses internally — pass it through
     /// unchanged.
     return std::make_unique<PageCacheHandle>(
-        file, range_in_file, cache, block_size, inject_eviction);
+        file, range_in_file, cache, block_size, inject_eviction, bypass_if_missing);
 }
 
 }

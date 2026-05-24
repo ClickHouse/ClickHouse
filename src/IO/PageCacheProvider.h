@@ -36,7 +36,8 @@ public:
         ByteRange requested,
         PageCachePtr cache,
         size_t block_size,
-        bool inject_eviction);
+        bool inject_eviction,
+        bool bypass_if_missing);
 
     CacheLookupResult status() const override;
     Rope get(ByteRange range) override;
@@ -54,6 +55,13 @@ private:
     PageCacheFile file;
     PageCachePtr cache;
     bool inject_eviction;
+    /// Mirrors `PageCacheSettings::read_from_page_cache_if_exists_otherwise_bypass_cache`.
+    /// When true, misses populate a *detached* cell (held by this handle but
+    /// not registered with the cache) — the data is usable for the lifetime
+    /// of the handle but doesn't pollute the global cache. Matches the
+    /// legacy `CachedInMemoryReadBufferFromFile` behaviour for bypass-mode
+    /// reads (background merges/mutations).
+    bool bypass_if_missing;
     std::vector<Block> blocks;
     LoggerPtr log = getLogger("PageCacheHandle");
 };
@@ -73,11 +81,13 @@ public:
         PageCachePtr cache_,
         PageCacheFile file_,
         size_t block_size_,
-        bool inject_eviction_)
+        bool inject_eviction_,
+        bool bypass_if_missing_)
         : cache(std::move(cache_))
         , file(std::move(file_))
         , block_size(block_size_)
         , inject_eviction(inject_eviction_)
+        , bypass_if_missing(bypass_if_missing_)
     {
     }
 
@@ -92,6 +102,7 @@ private:
     PageCacheFile file;
     size_t block_size;
     bool inject_eviction;
+    bool bypass_if_missing;
 };
 
 }

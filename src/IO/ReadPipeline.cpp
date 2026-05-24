@@ -284,7 +284,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
             memory_cache->cache,
             std::move(cache_file),
             pcs.page_cache_block_size,
-            pcs.page_cache_inject_eviction));
+            pcs.page_cache_inject_eviction,
+            pcs.read_from_page_cache_if_exists_otherwise_bypass_cache));
     }
 
     /// FileCache (disk) — goes second in chain. Pass the stage's
