@@ -1688,6 +1688,9 @@ static BlockIO executeQueryImpl(
             || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW))
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
 
+        if (settings[Setting::query_cache_before_limit_and_order_by] && settings[Setting::query_cache_partial_results])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`query_cache_before_limit_and_order_by` and `query_cache_partial_results` are mutually exclusive and cannot be enabled together");
+
         /// If the query runs with "use_query_cache = 1", we first probe if the query result cache already contains the query result (if
         /// yes: return result from cache). If doesn't, we execute the query normally and write the result into the query result cache. Both
         /// steps use a hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places
