@@ -221,7 +221,14 @@ size_t readOrGetCachedSparseOffsets(
         if (!settings.continuous_reading)
             state_sparse.reset();
 
-        auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column->assumeMutableRef()).getData();
+        /// `offsets_column` may be shared because `SerializationSparse::SubcolumnCreator::create`
+        /// builds a `ColumnSparse` via `ColumnSparse::create(values, offsets, size)` that shares
+        /// `offsets` with the originating sparse column (so all sub-columns reading from the
+        /// same sparse stream observe the deserialized offsets in-place). `assumeMutableRef`
+        /// would `chassert(use_count() == 1)` and abort. Bypass via `const_cast` — mirrors the
+        /// `borrowColumnRef` helper in `ProtobufSerializer` and the `const_cast` + `getPtr`
+        /// pattern in `ColumnSparse::create(const ColumnPtr &, ...)`.
+        auto & offsets_data = assert_cast<ColumnUInt64 &>(const_cast<IColumn &>(*offsets_column)).getData();
         size_t old_size = offsets_data.size();
         read_rows = deserializeOffsets(offsets_data, *stream, prev_size, rows_offset, limit, skipped_values_rows, state_sparse);
 
