@@ -1992,8 +1992,7 @@ static BlockIO executeQueryImpl(
                         auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get());
                         if (interpreter_with_analyzer)
                         {
-                            if (settings[Setting::query_cache_partial_results_adaptive_eviction])
-                                query_result_cache->setAdaptiveEviction(true);
+                            query_result_cache->setAdaptiveEviction(settings[Setting::query_cache_partial_results_adaptive_eviction]);
 
                             auto & plan = interpreter_with_analyzer->getQueryPlan();
 
@@ -2206,6 +2205,8 @@ static BlockIO executeQueryImpl(
                                         if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                                             continue;
 
+                                        size_t recompute_cost = settings[Setting::query_cache_partial_results_adaptive_eviction]
+                                            ? candidate.score : 0;
                                         auto writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
                                             write_key,
                                             std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
@@ -2214,7 +2215,7 @@ static BlockIO executeQueryImpl(
                                             settings[Setting::query_cache_max_size_in_bytes],
                                             settings[Setting::query_cache_max_entries],
                                             settings[Setting::query_cache_partial_results_max_bytes],
-                                            candidate.score));
+                                            recompute_cost));
 
                                         auto * parent = find_parent(plan.getRootNode(), cache_target);
                                         if (parent)
