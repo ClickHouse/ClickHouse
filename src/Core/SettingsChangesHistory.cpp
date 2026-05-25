@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
+            {"allow_experimental_bernoulli_sample", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."},
+            {"bernoulli_sample_seed", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -89,8 +91,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
-            {"allow_experimental_bernoulli_sample", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."},
-            {"bernoulli_sample_seed", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."},
             {"query_plan_use_logical_join_step", true, true, "Obsolete setting, the logical join step is now always used."},
             {"query_plan_use_new_logical_join_step", true, true, "Obsolete setting, the logical join step is now always used."},
             {"query_plan_top_k_through_join", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."},
