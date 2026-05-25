@@ -1,8 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
--- Regression: `vector_search_with_rescoring = 1` must not fall into the fused
--- range-reader path for vector columns whose element type is not `Float32`.
--- The fused path currently hardcodes `ColumnFloat32`; non-Float32 columns must
--- keep using the ExpressionStep-based rescore.
+-- Regression: `vector_search_with_rescoring = 1` keeps using the regular
+-- ExpressionStep-based rescore for vector columns whose element type is not
+-- `Float32`, while the range reader may still apply exact row-positioning.
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;

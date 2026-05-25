@@ -39,7 +39,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT '-- Expect column "_distance" in EXPLAIN (fused rescoring inserts it).';
+SELECT '-- Do not expect column "_distance" in EXPLAIN. Rescoring keeps the regular distance expression.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH CAST([0.0, 2.0], 'Array(Float32)') AS reference_vec
@@ -48,8 +48,18 @@ SELECT trimLeft(explain) AS explain FROM (
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 1)
-WHERE explain = '_distance Float32'
-LIMIT 1;
+WHERE explain = '_distance Float32';
+
+SELECT 'Test exact row-positioning filters before ExpressionStep';
+
+WITH CAST([0.0, 2.0], 'Array(Float32)') AS reference_vec
+SELECT id, throwIf(id = 4, 'Expected exact row-positioning before ExpressionStep')
+FROM tab
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 1,
+         query_plan_optimize_lazy_materialization = 0,
+         query_plan_execute_functions_after_sorting = 0;
 
 SELECT 'Test "SELECT id, vec" without and with rescoring';
 

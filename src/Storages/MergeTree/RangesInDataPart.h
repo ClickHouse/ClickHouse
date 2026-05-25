@@ -93,14 +93,13 @@ struct RangesInDataPartReadHints
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
+    /// Apply a row-level filter from vector_search_results.rows even when `_distance`
+    /// is not requested. Used by exact rescoring so the regular ExpressionStep
+    /// reranks only rows returned by the vector index instead of all rows in the mark.
+    bool use_vector_search_result_filter = false;
     /// Pre-computed index granules for indexes that are
     /// created for the whole part. For example, text indexes.
     IndexGranulesMap index_granules;
-    /// When present, the range reader will overwrite the quantized distances with
-    /// full-precision kernel values computed from the vector column for the exact rows
-    /// matched by `vector_search_results`. Used by the `useVectorSearch` optimizer to
-    /// fuse the rerank pass into reading on the `vector_search_with_rescoring = 1` path.
-    std::optional<FusedRescoreHint> fused_rescore;
 };
 
 struct RangesInDataPart

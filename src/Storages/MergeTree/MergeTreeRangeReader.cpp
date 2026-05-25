@@ -34,15 +34,6 @@
 #include <immintrin.h>
 #endif
 
-/// Include immintrin first. Otherwise `simsimd` fails to build on some targets:
-/// `unknown type name '__bfloat16'`.
-#if USE_SIMSIMD
-#    if defined(__x86_64__) || defined(__i386__)
-#        include <immintrin.h>
-#    endif
-#    include <simsimd/simsimd.h>
-#endif
-
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
 #      pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -1205,7 +1196,9 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has("_part_granule_offset"))
         add_offset_column("_part_granule_offset");
 
-    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
+    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    bool is_vector_search = read_hints.vector_search_results.has_value()
+        && (read_sample_block.has("_distance") || read_hints.use_vector_search_result_filter);
     if (is_vector_search)
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
@@ -1252,66 +1245,20 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     }
 }
 
-namespace
-{
-
-Float64 dotProductF32(const Float32 * lhs, const Float32 * rhs, size_t dim)
-{
-#if USE_SIMSIMD
-    simsimd_distance_t result = 0;
-    simsimd_dot_f32(lhs, rhs, dim, &result);
-    return result;
-#else
-    Float32 result = 0;
-    for (size_t i = 0; i < dim; ++i)
-        result += lhs[i] * rhs[i];
-    return result;
-#endif
-}
-
-Float32 computeFusedDistance(
-    VectorSearchKernel kernel,
-    const Float32 * vec,
-    const Float32 * query,
-    size_t dim,
-    Float64 query_norm_squared)
-{
-    switch (kernel)
-    {
-        case VectorSearchKernel::L2:
-        {
-#if USE_SIMSIMD
-            simsimd_distance_t result = 0;
-            simsimd_l2_f32(vec, query, dim, &result);
-            return static_cast<Float32>(result);
-#else
-            Float32 sum = 0;
-            for (size_t k = 0; k < dim; ++k)
-            {
-                Float32 d = vec[k] - query[k];
-                sum += d * d;
-            }
-            return std::sqrt(sum);
-#endif
-        }
-        case VectorSearchKernel::Cosine:
-        {
-            const Float64 dot = dotProductF32(vec, query, dim);
-            const Float64 vec_norm_squared = dotProductF32(vec, vec, dim);
-            return static_cast<Float32>(Float64(1) - dot / std::sqrt(vec_norm_squared * query_norm_squared));
-        }
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected vector search kernel for fused rescoring");
-}
-
-}
-
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)
 {
-    /// Populate the "_distance" virtual column from the distances we got from vector index
-    auto distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
-    ColumnFloat32::Container & distance_container = distance_column->getData();
-    Float32 * distances = distance_container.data();
+    /// Populate the `_distance` virtual column from the distances we got from vector index,
+    /// if the optimized non-rescoring plan requested it. Exact rescoring only needs the row
+    /// filter below; the regular ExpressionStep computes the distance after filtering.
+    const bool fill_distance = read_sample_block.has("_distance");
+    MutableColumnPtr distance_column;
+    Float32 * distances = nullptr;
+    if (fill_distance)
+    {
+        auto mutable_distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
+        distances = mutable_distance_column->getData().data();
+        distance_column = std::move(mutable_distance_column);
+    }
 
     /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
     auto filter_data = ColumnUInt8::create(part_offsets_auto_column->size(), UInt8(0));
@@ -1320,15 +1267,15 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
     const auto & offsets_and_distances = read_hints.vector_search_results.value();
     const auto & row_offsets_from_index = offsets_and_distances.rows;
-    if (!offsets_and_distances.distances.has_value())
+    if (fill_distance && !offsets_and_distances.distances.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must contain distances");
-    const auto & distances_from_index = offsets_and_distances.distances.value();
-    if (row_offsets_from_index.size() != distances_from_index.size())
+    const auto * distances_from_index = offsets_and_distances.distances ? &offsets_and_distances.distances.value() : nullptr;
+    if (distances_from_index && row_offsets_from_index.size() != distances_from_index->size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Vector search read hints size mismatch: {} row offsets and {} distances",
             row_offsets_from_index.size(),
-            distances_from_index.size());
+            distances_from_index->size());
     if (!std::is_sorted(row_offsets_from_index.begin(), row_offsets_from_index.end()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must be sorted by row offset");
 
@@ -1345,63 +1292,17 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
         if (offsets[i] == row_offsets_from_index[j])
         {
             filter[i] = true;
-            distances[i] = distances_from_index[j];
+            if (fill_distance)
+                distances[i] = (*distances_from_index)[j];
             j++;
         }
     }
 
-    /// Fused full-precision rescoring path: overwrite the quantized USearch distances
-    /// with full-precision kernel values computed from the actual vector column bytes.
-    /// Handles only Array(Float32) element type. Other element types
-    /// (BFloat16, Float64) should have been rejected by the optimizer before setting the hint.
-    if (read_hints.fused_rescore.has_value())
+    if (fill_distance)
     {
-        const auto & hint = read_hints.fused_rescore.value();
-        if (!hint.query_vector)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Fused rescoring expected query vector to be set");
-        const size_t dim = hint.query_vector->size();
-        const Float32 * query = hint.query_vector->data();
-        const Float64 query_norm_squared = hint.kernel == VectorSearchKernel::Cosine
-            ? dotProductF32(query, query, dim)
-            : 0;
-
-        if (!read_sample_block.has(hint.vector_column))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Fused rescoring expected vector column '{}' to be in the read list", hint.vector_column);
-
-        auto vec_col_pos = read_sample_block.getPositionByName(hint.vector_column);
-        const auto * vec_array_col = typeid_cast<const ColumnArray *>(columns[vec_col_pos].get());
-        if (!vec_array_col)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Fused rescoring: vector column '{}' is not a ColumnArray", hint.vector_column);
-
-        const auto * vec_data_f32 = typeid_cast<const ColumnFloat32 *>(&vec_array_col->getData());
-        if (!vec_data_f32)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Fused rescoring: only Array(Float32) element type is supported (got '{}')",
-                vec_array_col->getData().getName());
-
-        const Float32 * all_elems = vec_data_f32->getData().data();
-        const auto & arr_offsets = vec_array_col->getOffsets();
-
-        for (size_t i = 0; i < part_offsets_auto_column->size(); ++i)
-        {
-            if (!filter[i])
-                continue;
-
-            const size_t start = (i == 0) ? 0 : arr_offsets[i - 1];
-            const size_t end = arr_offsets[i];
-            if (end - start != dim)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Fused rescoring: row {} has vector of length {} but query vector has length {}",
-                    i, end - start, dim);
-
-            distances[i] = computeFusedDistance(hint.kernel, all_elems + start, query, dim, query_norm_squared);
-        }
+        auto distance_column_pos = read_sample_block.getPositionByName("_distance");
+        columns[distance_column_pos] = std::move(distance_column);
     }
-
-    auto distance_column_pos = read_sample_block.getPositionByName("_distance");
-    columns[distance_column_pos] = std::move(distance_column);
     part_offsets_filter_for_vector_search = FilterWithCachedCount(std::move(filter_data));
 }
 
@@ -1708,7 +1609,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     /// The vector index has returned the exact row offsets of the nearest neighbours. We use the saved Filter
     /// to only output those rows from this reader to the next Sorting step.
-    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
+    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    bool is_vector_search = read_hints.vector_search_results.has_value()
+        && (read_sample_block.has("_distance") || read_hints.use_vector_search_result_filter);
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
         result.optimize(part_offsets_filter_for_vector_search, can_read_incomplete_granules, false);
 

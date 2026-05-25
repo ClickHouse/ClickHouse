@@ -330,10 +330,6 @@ public:
 
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
     void replaceVectorColumnWithDistanceColumn(const String & vector_column);
-    /// Add the virtual "_distance" column to the read list while keeping the vector column.
-    /// Used by the fused rescoring path where the range reader needs the vector bytes to
-    /// compute full-precision distances, but the `_distance` column must also be produced.
-    void addDistanceColumnKeepingVector(const String & vector_column);
     bool isVectorColumnReplaced() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
@@ -424,11 +420,6 @@ private:
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
 
     Names all_column_names;
-
-    /// Vector column pinned by the fused-rescoring path. The range reader needs the raw
-    /// vector bytes to compute full-precision distances; this field tells
-    /// `removeUnusedColumns` to keep the column even when no downstream step references it.
-    String fused_rescore_vector_column;
 
     const MergeTreeData & data;
     ExpressionActionsSettings actions_settings;

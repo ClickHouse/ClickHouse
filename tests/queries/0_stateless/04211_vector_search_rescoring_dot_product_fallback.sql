@@ -1,7 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
--- Regression: `dotProduct` uses the vector index with DESC ordering, but fused
--- rescoring stays disabled until its ordering semantics are covered by parity
--- tests against the regular ExpressionStep rerank path.
+-- Regression: `dotProduct` uses the vector index with DESC ordering, and exact
+-- rescoring keeps the regular ExpressionStep rerank path.
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
@@ -25,7 +24,7 @@ ORDER BY dotProduct(vec, ref) DESC
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT '-- Do not expect fused "_distance" rewrite for dotProduct.';
+SELECT '-- Do not expect "_distance" rewrite for dotProduct.';
 SELECT trimLeft(explain) AS explain FROM
 (
     EXPLAIN header = 1

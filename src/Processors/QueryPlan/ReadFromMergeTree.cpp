@@ -483,7 +483,6 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
-    reading_step->fused_rescore_vector_column = fused_rescore_vector_column;
     return reading_step;
 }
 
@@ -2978,21 +2977,6 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
-void ReadFromMergeTree::addDistanceColumnKeepingVector(const String & vector_column)
-{
-    if (isVectorColumnReplaced())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "_distance column already present in read list.");
-    all_column_names.emplace_back("_distance");
-    fused_rescore_vector_column = vector_column;
-    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(all_column_names),
-        query_info.row_level_filter,
-        query_info.prewhere_info));
-
-    if (analyzed_result_ptr)
-        analyzed_result_ptr->column_names_to_read = all_column_names;
-}
-
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 {
     if (isQueryWithFinal())
@@ -3222,7 +3206,6 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
-    cloned_step->fused_rescore_vector_column = fused_rescore_vector_column;
     return cloned_step;
 }
 
@@ -3235,11 +3218,6 @@ std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColu
 
     for (const auto & column_name : required_outputs)
         columns_to_keep.insert(column_name);
-
-    /// Fused rescoring needs the raw vector bytes in the range reader even though
-    /// no downstream step references the vector column directly.
-    if (!fused_rescore_vector_column.empty())
-        columns_to_keep.insert(fused_rescore_vector_column);
 
     if (query_info.row_level_filter)
     {
@@ -4468,11 +4446,6 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
 
     for (const auto & column_name : required_outputs)
         columns_to_keep.insert(column_name);
-
-    /// Fused rescoring needs the raw vector bytes in the range reader even though
-    /// no downstream step references the vector column directly.
-    if (!fused_rescore_vector_column.empty())
-        columns_to_keep.insert(fused_rescore_vector_column);
 
     auto removed_output_from_prewhere = false;
 

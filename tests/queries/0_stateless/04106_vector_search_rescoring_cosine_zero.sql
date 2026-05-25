@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
--- Regression: fused rescoring for `cosineDistance` must preserve the regular
--- function's `NaN` semantics for zero query vectors.
+-- Regression: exact row-positioning for `cosineDistance` must preserve the
+-- regular function's `NaN` semantics for zero query vectors.
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
@@ -15,7 +15,7 @@ INSERT INTO tab_cosine_zero VALUES
     (2, [2.0, 0.0]),
     (3, [0.0, 2.0]);
 
-SELECT 'cosine zero query keeps function NaN semantics under fused rescoring';
+SELECT 'cosine zero query keeps function NaN semantics under rescoring';
 WITH CAST([0.0, 0.0], 'Array(Float32)') AS ref
 SELECT countIf(isNaN(d))
 FROM
@@ -27,7 +27,7 @@ FROM
 )
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT '-- Expect fused "_distance" rewrite.';
+SELECT '-- Do not expect "_distance" rewrite for exact rescoring.';
 SELECT trimLeft(explain) AS explain FROM
 (
     EXPLAIN header = 1
@@ -43,6 +43,6 @@ SELECT trimLeft(explain) AS explain FROM
     SETTINGS vector_search_with_rescoring = 1
 )
 WHERE explain = '_distance Float32'
-LIMIT 1;
+;
 
 DROP TABLE tab_cosine_zero;

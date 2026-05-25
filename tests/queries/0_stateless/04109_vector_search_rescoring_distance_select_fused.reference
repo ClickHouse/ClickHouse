@@ -1,6 +1,0 @@
-distance expression in select list under fused rescoring
-2	0	Float32
-3	0.1	Float32
-4	0.2	Float32
--- Expect fused "_distance" rewrite.
-_distance Float32

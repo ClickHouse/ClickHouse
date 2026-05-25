@@ -1,5 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
--- Regression: fused rescoring must not replace a `Float64` distance expression
+-- Regression: exact rescoring must not replace a `Float64` distance expression
 -- with the `Float32` `_distance` virtual column.
 
 SET enable_analyzer = 1;
@@ -27,7 +27,7 @@ FROM
 )
 SETTINGS vector_search_with_rescoring = 1;
 
-SELECT '-- Do not expect fused "_distance" rewrite for Float64 distance result.';
+SELECT '-- Do not expect "_distance" rewrite for Float64 distance result.';
 SELECT trimLeft(explain) AS explain FROM
 (
     EXPLAIN header = 1

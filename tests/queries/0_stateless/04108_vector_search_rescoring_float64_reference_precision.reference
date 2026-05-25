@@ -1,3 +1,3 @@
 Float64 reference keeps ExpressionStep rescoring precision
 0	1	Float64
--- Do not expect fused "_distance" rewrite for Float64 distance result.
+-- Do not expect "_distance" rewrite for Float64 distance result.
