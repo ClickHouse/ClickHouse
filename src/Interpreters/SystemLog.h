@@ -10,7 +10,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 
-#include <Interpreters/SystemLogFlushPolicy.h>
 #include <boost/noncopyable.hpp>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
@@ -44,8 +43,6 @@
     M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
     M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
     M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
-    M(PredicateStatisticsLog, predicate_statistics_log, "Contains sampled per-predicate selectivity statistics collected during query execution. Sampling is controlled by predicate_statistics_sample_rate; lower values increase overhead and should be tuned with care.") \
-    M(HistogramMetricLog,    histogram_metric_log, "Contains periodic snapshots of histogram metrics. Each row stores histogram bucket counts of one metric and label-combination.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
@@ -189,7 +186,6 @@ class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, 
 public:
     using Self = SystemLog;
     using Base = SystemLogBase<LogElement>;
-    using Element = LogElement;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -215,14 +211,7 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() const { return table_id; }
-
-    ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
-
-    void setManualFlushTargetIndex(ISystemLog::Index target_index) override
-    {
-        flush_policy->prepareManualFlush(target_index);
-    }
+    const StorageID & getTableID() { return table_id; }
 
 protected:
     LoggerPtr log;
@@ -238,8 +227,7 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
-    String create_query;
+    const String create_query;
     String old_create_query;
     bool is_prepared = false;
 

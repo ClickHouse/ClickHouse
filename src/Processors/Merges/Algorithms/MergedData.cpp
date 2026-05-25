@@ -16,7 +16,7 @@ extern const int LOGICAL_ERROR;
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
+    std::vector<Columns> source_columns(columns.size());
     std::vector<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
@@ -132,12 +132,10 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
         }
         /// For columns with statistics (like Map with adaptive buckets) we can reuse the column
         /// from the input chunk, but need to preserve the merged statistics computed during `initialize`.
+        /// `takeOrCalculateStatisticsFrom` is delegated through `ColumnReplicated` to the nested
+        /// column, so no special handling is needed when `chunk_columns[i]` is `ColumnReplicated`.
         else if (columns[i]->hasStatistics())
         {
-            /// We cannot call takeOrCalculateStatisticsFrom for non-replicated column with replicated arguments.
-            if (columns[i]->getPtr()->isReplicated() && !chunk_columns[i]->isReplicated())
-                chunk_columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
-
             chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()});
             columns[i] = std::move(chunk_columns[i]);
         }

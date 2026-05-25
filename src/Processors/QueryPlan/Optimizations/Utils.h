@@ -72,8 +72,6 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
-[[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
-
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
