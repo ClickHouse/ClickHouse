@@ -308,6 +308,59 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     return makeASTOperator("and", f_left_expr, f_right_expr);
 }
 
+ASTPtr makeTruthValuePredicateOperator(std::string_view predicate_name, const ASTPtr & argument)
+{
+    auto is_not_distinct_from_true = [&]
+    {
+        return makeASTOperator("isNotDistinctFrom", argument, make_intrusive<ASTLiteral>(true));
+    };
+
+    auto is_not_distinct_from_false = [&]
+    {
+        return makeASTOperator("isNotDistinctFrom", argument, make_intrusive<ASTLiteral>(false));
+    };
+
+    auto is_null = [&]
+    {
+        return makeASTOperator("isNull", argument);
+    };
+
+    auto is_not_null = [&]
+    {
+        return makeASTOperator("isNotNull", argument);
+    };
+
+    auto is_distinct_from_true = [&]
+    {
+        return makeASTOperator("isDistinctFrom", argument, make_intrusive<ASTLiteral>(true));
+    };
+
+    auto is_distinct_from_false = [&]
+    {
+        return makeASTOperator("isDistinctFrom", argument, make_intrusive<ASTLiteral>(false));
+    };
+
+    if (predicate_name == "isTruePredicate")
+        return is_not_distinct_from_true();
+
+    if (predicate_name == "isFalsePredicate")
+        return is_not_distinct_from_false();
+
+    if (predicate_name == "isUnknownPredicate")
+        return is_null();
+
+    if (predicate_name == "isNotTruePredicate")
+        return is_distinct_from_true();
+
+    if (predicate_name == "isNotFalsePredicate")
+        return is_distinct_from_false();
+
+    if (predicate_name == "isNotUnknownPredicate")
+        return is_not_null();
+
+    return {};
+}
+
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas)
     : impl(std::make_unique<ParserWithOptionalAlias>(
         is_table_function ? ParserPtr(std::make_unique<ParserTableFunctionExpression>()) : ParserPtr(std::make_unique<ParserExpression>(allow_trailing_commas)),
@@ -490,6 +543,7 @@ enum class OperatorType : uint8_t
     ArrayElement,
     TupleElement,
     IsNull,
+    IsTruthValue,
     StartBetween,
     StartNotBetween,
     FinishBetween,
@@ -2995,6 +3049,12 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::AND),           Operator("and",             4,  2, OperatorType::Mergeable)},
     {toStringView(Keyword::IS_NOT_DISTINCT_FROM), Operator("isNotDistinctFrom", 6, 2)},
     {toStringView(Keyword::IS_DISTINCT_FROM), Operator("isDistinctFrom", 6, 2)},
+    {toStringView(Keyword::IS_NOT_UNKNOWN), Operator("isNotUnknownPredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_UNKNOWN),    Operator("isUnknownPredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_NOT_FALSE),  Operator("isNotFalsePredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_FALSE),      Operator("isFalsePredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_NOT_TRUE),   Operator("isNotTruePredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_TRUE),       Operator("isTruePredicate", 6, 1, OperatorType::IsTruthValue)},
     {toStringView(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
@@ -3346,6 +3406,67 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
 
+    /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
+    if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
+    {
+        /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
+        /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
+        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
+        constexpr int like_priority = 9;
+        while (layers.back()->previousPriority() > like_priority)
+        {
+            Operator higher_op;
+            if (!layers.back()->popOperator(higher_op))
+                break;
+
+            auto function = makeASTFunction(higher_op);
+            if (!layers.back()->popLastNOperands(function->children[0]->children, higher_op.arity))
+            {
+                layers.back()->pushOperator(higher_op);
+                break;
+            }
+            layers.back()->pushOperand(function);
+        }
+
+        Operator top_op;
+        bool popped = layers.back()->popOperator(top_op);
+
+        bool is_like = popped
+            && (top_op.function_name == "like" || top_op.function_name == "ilike"
+                || top_op.function_name == "notLike" || top_op.function_name == "notILike");
+
+        if (is_like)
+        {
+            auto saved_pos = pos;
+
+            /// Consume the ESCAPE keyword
+            ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
+
+            ASTPtr escape_ast;
+            if (ParserStringLiteral().parse(pos, escape_ast, expected))
+            {
+                ASTs arguments;
+                if (layers.back()->popLastNOperands(arguments, 2))
+                {
+                    auto function = makeASTFunction(top_op.function_name, arguments[0], arguments[1], escape_ast);
+                    function->setIsOperator(true);
+
+                    layers.back()->pushOperand(std::move(function));
+                    return Action::OPERATOR;
+                }
+            }
+
+            /// Parsing ESCAPE clause failed — restore operator stack and position
+            pos = saved_pos;
+            layers.back()->pushOperator(top_op);
+            return Action::NONE;
+        }
+
+        /// Not a LIKE operator on top, push the popped operator back and fall through
+        if (popped)
+            layers.back()->pushOperator(top_op);
+    }
+
     /// Try to find operators from 'operators_table'
     auto saved_pos = pos;
     auto cur_op = operators_table.begin();
@@ -3485,7 +3606,19 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         layers.back()->pushOperand(std::move(function));
         return Action::OPERATOR;
     }
+    if (op.type == OperatorType::IsTruthValue)
+    {
+        ASTPtr argument;
+        if (!layers.back()->popOperand(argument))
+            return Action::NONE;
 
+        ASTPtr function = makeTruthValuePredicateOperator(op.function_name, argument);
+        if (!function)
+            return Action::NONE;
+
+        layers.back()->pushOperand(std::move(function));
+        return Action::OPERATOR;
+    }
     layers.back()->pushOperator(op);
 
     if (op.type == OperatorType::Cast)
