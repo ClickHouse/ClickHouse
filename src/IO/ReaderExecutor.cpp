@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/ReaderExecutorLog.h>
@@ -314,15 +315,26 @@ void ReaderExecutor::ensurePreAcquiredSlot()
 
 size_t ReaderExecutor::effectiveWindowSize() const
 {
-    /// Live path streams 1 MiB at a time via the live buffer's next() — a
+    /// Live path streams one block at a time via the live buffer's next() — a
     /// larger window just inflates the in-flight rope without any throughput
-    /// gain. Cap to ROPE_BLOCK_SIZE in that mode but never grow past the
-    /// caller-configured window_size (tests pin it small on purpose).
+    /// gain. Cap to `effectiveBlockSize()` in that mode but never grow past
+    /// the caller-configured `window_size` (tests pin it small on purpose).
     /// Stateless path benefits from the larger batch read to amortise the
     /// HTTP setup cost of a fresh underlying buffer.
+    ///
+    /// Both paths additionally clamp against the current
+    /// `MemoryPressureMonitor` window — under memory pressure the executor
+    /// shrinks per-call allocations before the server's hard limit fires.
+    const size_t pressure_window = MemoryPressureMonitor::instance().effective().window_bytes;
     if (live_buffer || pre_acquired_slot)
-        return std::min(window_size, ROPE_BLOCK_SIZE);
-    return window_size;
+        return std::min({window_size, effectiveBlockSize(), pressure_window});
+    return std::min(window_size, pressure_window);
+}
+
+size_t ReaderExecutor::effectiveBlockSize() const
+{
+    const size_t pressure_block = MemoryPressureMonitor::instance().effective().block_bytes;
+    return std::min(ROPE_BLOCK_SIZE, pressure_block);
 }
 
 void ReaderExecutor::maybeTriggerPrefetch()
@@ -514,10 +526,11 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
             decryption_headers[i].init_vector);
 
     Rope result;
+    const size_t block = effectiveBlockSize();
     size_t pos = 0;
     while (pos < total)
     {
-        const size_t chunk = std::min(ROPE_BLOCK_SIZE, total - pos);
+        const size_t chunk = std::min(block, total - pos);
         auto buf = std::make_shared<OwnedRopeBuffer>(chunk);
 
         /// Drain `chunk` bytes from the front of `rope` via peek/advance.
@@ -688,10 +701,11 @@ void ReaderExecutor::seek(size_t new_position)
 }
 
 std::vector<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::allocateBlocks(
-    size_t size, const std::vector<size_t> & splits)
+    size_t size, size_t block_size, const std::vector<size_t> & splits)
 {
+    chassert(block_size > 0);
     std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks;
-    blocks.reserve((size + ROPE_BLOCK_SIZE - 1) / ROPE_BLOCK_SIZE + splits.size());
+    blocks.reserve((size + block_size - 1) / block_size + splits.size());
 
     size_t pos = 0;
     auto split_it = splits.begin();
@@ -703,7 +717,7 @@ std::vector<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::allocateBlocks(
 
         /// Next mandatory boundary: either the next split or the end.
         const size_t boundary = (split_it != splits.end()) ? std::min(*split_it, size) : size;
-        const size_t chunk = std::min(ROPE_BLOCK_SIZE, boundary - pos);
+        const size_t chunk = std::min(block_size, boundary - pos);
         blocks.push_back(std::make_shared<OwnedRopeBuffer>(chunk));
         pos += chunk;
     }
@@ -1038,7 +1052,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 splits.push_back(physical_window.end() - pr_lo);
             std::sort(splits.begin(), splits.end());
 
-            auto blocks = allocateBlocks(pr.size, splits);
+            auto blocks = allocateBlocks(pr.size, effectiveBlockSize(), splits);
             stats.allocated_bytes += pr.size;
             StopwatchAccumulator src_scope(stats.source_read_us);
             Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);

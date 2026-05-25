@@ -1309,6 +1309,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(NonZeroUInt64, reader_executor_prefetch_pool_size, 8, R"(Number of threads in the shared prefetch pool for `ReaderExecutor` (experimental `use_reader_executor` setting).)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_prefetch_queue_size, 80, R"(Maximum number of prefetch tasks (running + queued) for the shared `ReaderExecutor` prefetch pool. `submit` returns immediately (with nullptr handle) when this limit is reached; the executor falls back to a synchronous read.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_level_1_pct, 75, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L1 sizes. Must satisfy `level_1 < level_2 < level_3`; out-of-order values are sorted before use. See [[MemoryPressureMonitor]] for the level table.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_level_2_pct, 90, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L2 sizes.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_level_3_pct, 95, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L3 sizes (CRITICAL — smallest window and block).)", EXPERIMENTAL) \
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \

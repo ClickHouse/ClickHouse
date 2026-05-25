@@ -134,13 +134,13 @@ private:
     Rope readFromLiveBufferIntoRope(
         std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
 
-    /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ ROPE_BLOCK_SIZE.
+    /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ `block_size`.
     /// `splits` (sorted, relative offsets within `[0, size)`) forces a block boundary at each
     /// listed offset so the resulting `OwnedRopeBuffer` allocations don't straddle those points.
     /// Used to keep user-window bytes and over-read bytes in separate buffers so each can be
     /// released independently.
     static std::vector<std::shared_ptr<OwnedRopeBuffer>> allocateBlocks(
-        size_t size, const std::vector<size_t> & splits = {});
+        size_t size, size_t block_size, const std::vector<size_t> & splits = {});
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
@@ -152,10 +152,17 @@ private:
     /// allocating a larger rope just inflates the in-flight memory.
     void ensurePreAcquiredSlot();
 
-    /// Effective window size for the next read: ROPE_BLOCK_SIZE when we're
-    /// (or about to be) on the live path, the constructor-supplied
-    /// window_size otherwise. Caller still caps by remaining file bytes.
+    /// Effective window size for the next read: `effectiveBlockSize()` when we're
+    /// (or about to be) on the live path, otherwise the constructor-supplied
+    /// `window_size` clamped down by the current `MemoryPressureMonitor` level.
+    /// Caller still caps by remaining file bytes.
     size_t effectiveWindowSize() const;
+
+    /// Effective per-block allocation size: `ROPE_BLOCK_SIZE` at normal memory,
+    /// shrinks under pressure (see `MemoryPressureMonitor`). Used for both the
+    /// `allocateBlocks` source-read tile and `decryptRope`'s output blocks so
+    /// the in-flight allocation per call falls when free memory does.
+    size_t effectiveBlockSize() const;
 
     /// Decrypt rope data; returns the input unchanged when no decryption layers
     /// are configured (which is always the case in builds without SSL).

@@ -1,6 +1,7 @@
 #include <Server.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <IO/SourceBufferLimit.h>
 
 #include <memory>
@@ -303,6 +304,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsUInt64 max_remote_read_connections;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_1_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_2_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_3_pct;
     extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
@@ -2501,6 +2505,11 @@ try
 
             global_context->getSourceBufferLimit()->setCapacity(
                 new_server_settings[ServerSetting::max_remote_read_connections]);
+
+            MemoryPressureMonitor::instance().setThresholds(
+                static_cast<uint8_t>(new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct]),
+                static_cast<uint8_t>(new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct]),
+                static_cast<uint8_t>(new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]));
 
             if (config().has("resources"))
             {
