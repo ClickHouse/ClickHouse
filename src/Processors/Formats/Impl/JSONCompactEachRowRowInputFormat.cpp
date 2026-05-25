@@ -251,6 +251,7 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {true, false})
     {
+        const String base_format_name = yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow";
         auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
             factory.registerInputFormat(format_name, [with_names, with_types, yield_strings](
@@ -263,8 +264,9 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
             });
         };
 
-        registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
-        markFormatWithNamesAndTypesSupportsSamplingColumns(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", factory);
+        registerWithNamesAndTypes(base_format_name, register_func);
+        markFormatWithNamesAndTypesSupportsSamplingColumns(base_format_name, factory);
+        factory.markFormatSupportsSubsetOfColumnsByPosition(base_format_name);
     }
 }
 
