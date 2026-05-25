@@ -42,6 +42,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+            {"allow_experimental_automatic_fill_on_cluster_mode", false, false, "New experimental setting to allow queries with empty ON CLUSTER to be automatically routed to a configured cluster."},
+            {"cluster_for_automatic_fill_mode", "", "", "New setting for the default cluster name used when `allow_experimental_automatic_fill_on_cluster_mode` is enabled and the query omits ON CLUSTER."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -100,8 +102,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
             {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
             {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
-            {"allow_experimental_automatic_fill_on_cluster_mode", false, false, "New experimental setting to allow queries with empty ON CLUSTER to be automatically routed to a configured cluster."},
-            {"cluster_for_automatic_fill_mode", "", "", "New setting for the default cluster name used when `allow_experimental_automatic_fill_on_cluster_mode` is enabled and the query omits ON CLUSTER."},
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
