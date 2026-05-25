@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include <mysqlxx/Pool.h>
 
 

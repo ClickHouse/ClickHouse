@@ -56,7 +56,6 @@ struct QueryPlanOptimizationSettings
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
-    bool limit_by_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -81,7 +80,6 @@ struct QueryPlanOptimizationSettings
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
-    bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
     bool optimize_sorting_by_input_stream_properties;
@@ -90,7 +88,6 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
-    bool push_limit_by_into_sort;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting

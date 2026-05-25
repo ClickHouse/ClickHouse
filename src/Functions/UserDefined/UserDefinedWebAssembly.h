@@ -10,9 +10,6 @@
 
 #include <Common/SharedMutex.h>
 #include <Common/StopToken.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -24,7 +21,6 @@ enum class WasmAbiVersion : uint8_t
 {
     RowDirect,
     BufferedV1,
-    AssemblyScript,
 };
 
 String toString(WasmAbiVersion abi_type);
@@ -37,7 +33,7 @@ public:
     Field getValue(const String & name) const;
 
 private:
-    UnorderedMapWithMemoryTracking<String, Field> settings;
+    std::unordered_map<String, Field> settings;
 };
 
 class UserDefinedWebAssemblyFunction
@@ -110,7 +106,7 @@ public:
     bool dropIfExists(const String & function_name);
 
     /// Returns all registered WASM functions with their metadata for introspection (e.g. system.functions).
-    VectorWithMemoryTracking<RegisteredFunction> getAllFunctions() const;
+    std::vector<RegisteredFunction> getAllFunctions() const;
 
     static UserDefinedWebAssemblyFunctionFactory & instance();
 private:
@@ -121,7 +117,7 @@ private:
     };
 
     mutable DB::SharedMutex registry_mutex;
-    UnorderedMapWithMemoryTracking<String, RegistryEntry> registry;
+    std::unordered_map<String, RegistryEntry> registry;
 };
 
 }

@@ -84,52 +84,6 @@ namespace
         return base;
     }
 
-    void cancelAndResetWriteBuffer(std::unique_ptr<WriteBuffer> & buffer)
-    {
-        if (buffer && !buffer->isFinalized() && !buffer->isCanceled())
-            buffer->cancel();
-
-        buffer.reset();
-    }
-
-    void removeFailedSnapshotArtifacts(
-        const DiskPtr & disk,
-        const std::string & snapshot_file_name,
-        const std::string & tmp_snapshot_file_name,
-        const LoggerPtr & log)
-    {
-        try
-        {
-            disk->removeFileIfExists(snapshot_file_name);
-            LOG_DEBUG(log, "Ensured partial snapshot artifact {} is absent from disk {}", snapshot_file_name, disk->getName());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                log,
-                fmt::format("Failed to remove partial snapshot artifact {} from disk {}", snapshot_file_name, disk->getName()));
-            LOG_WARNING(
-                log,
-                "Keeping partial snapshot marker {} on disk {} because data file {} could not be removed",
-                tmp_snapshot_file_name,
-                disk->getName(),
-                snapshot_file_name);
-            return;
-        }
-
-        try
-        {
-            disk->removeFileIfExists(tmp_snapshot_file_name);
-            LOG_DEBUG(log, "Ensured partial snapshot marker {} is absent from disk {}", tmp_snapshot_file_name, disk->getName());
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                log,
-                fmt::format("Failed to remove partial snapshot marker {} from disk {}", tmp_snapshot_file_name, disk->getName()));
-        }
-    }
-
     template<typename Node>
     void writeNode(const Node & node, SnapshotVersion version, WriteBuffer & out)
     {
@@ -853,49 +807,31 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
     auto disk = getLatestSnapshotDisk();
     LOG_DEBUG(log, "Receiving snapshot {} to {} disk", up_to_log_idx, isLocalDisk(*disk) ? "local" : "remote");
 
-    std::unique_ptr<WriteBuffer> plain_buf;
-    try
+    /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
+    /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
     {
-        /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
-        /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
-        {
-            auto buf = disk->writeFile(tmp_snapshot_file_name);
-            buf->finalize();
-        }
-
-        plain_buf = disk->writeFile(snapshot_file_name);
-        copyData(reader, *plain_buf);
-
-        const size_t bytes_written = plain_buf->count();
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
-
-        plain_buf->finalize();
-
-        Stopwatch watch;
-        plain_buf->sync();
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
-
-        plain_buf.reset();
-        disk->removeFile(tmp_snapshot_file_name);
+        auto buf = disk->writeFile(tmp_snapshot_file_name);
+        buf->finalize();
     }
-    catch (...)
-    {
-        cancelAndResetWriteBuffer(plain_buf);
-        removeFailedSnapshotArtifacts(disk, snapshot_file_name, tmp_snapshot_file_name, log);
-        throw;
-    }
+
+    auto plain_buf = disk->writeFile(snapshot_file_name);
+    copyData(reader, *plain_buf);
+
+    const size_t bytes_written = plain_buf->count();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+
+    plain_buf->finalize();
+
+    Stopwatch watch;
+    plain_buf->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
+    disk->removeFile(tmp_snapshot_file_name);
 
     auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
-    try
-    {
-        removeOutdatedSnapshotsIfNeeded();
-        moveSnapshotsIfNeeded();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
-    }
+    removeOutdatedSnapshotsIfNeeded();
+    moveSnapshotsIfNeeded();
 
     return snapshot_file_info;
 }
@@ -909,49 +845,30 @@ std::unique_ptr<SnapshotReceiveCtx> KeeperSnapshotManager<Storage>::beginSnapsho
 
     const auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
-    try
+    /// Create an empty tmp_ marker file. On restart, if both tmp_<name> and <name> exist,
+    /// the snapshot is treated as incomplete and both are removed (see constructor).
     {
-        /// Create an empty tmp_ marker file. On restart, if both tmp_<name> and <name> exist,
-        /// the snapshot is treated as incomplete and both are removed (see constructor).
-        {
-            auto buf = disk->writeFile(tmp_snapshot_file_name);
-            buf->finalize();
-        }
+        auto buf = disk->writeFile(tmp_snapshot_file_name);
+        buf->finalize();
+    }
 
-        auto write_buf = disk->writeFile(snapshot_file_name);
-        return std::make_unique<SnapshotReceiveCtx>(std::move(write_buf), disk, std::move(snapshot_file_name), up_to_log_idx);
-    }
-    catch (...)
-    {
-        removeFailedSnapshotArtifacts(disk, snapshot_file_name, tmp_snapshot_file_name, log);
-        throw;
-    }
+    auto write_buf = disk->writeFile(snapshot_file_name);
+    return std::make_unique<SnapshotReceiveCtx>(std::move(write_buf), disk, std::move(snapshot_file_name), up_to_log_idx);
 }
 
 template<typename Storage>
 SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDisk(SnapshotReceiveCtx & ctx)
 {
-    const auto tmp_snapshot_file_name = "tmp_" + ctx.snapshot_file_name;
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, ctx.write_buf->count());
 
-    try
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, ctx.write_buf->count());
+    ctx.write_buf->finalize();
 
-        ctx.write_buf->finalize();
+    Stopwatch watch;
+    ctx.write_buf->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
-        Stopwatch watch;
-        ctx.write_buf->sync();
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
-
-        ctx.write_buf.reset();
-        ctx.disk->removeFile(tmp_snapshot_file_name);
-    }
-    catch (...)
-    {
-        cancelAndResetWriteBuffer(ctx.write_buf);
-        removeFailedSnapshotArtifacts(ctx.disk, ctx.snapshot_file_name, tmp_snapshot_file_name, log);
-        throw;
-    }
+    ctx.write_buf.reset();
+    ctx.disk->removeFile("tmp_" + ctx.snapshot_file_name);
 
     auto snapshot_file_info = makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx);
     existing_snapshots.emplace(ctx.log_idx, snapshot_file_info);
@@ -962,7 +879,8 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
     }
 
     return snapshot_file_info;
@@ -1134,45 +1052,32 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
     auto disk = getLatestSnapshotDisk();
-    std::unique_ptr<WriteBuffer> writer;
+    /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
+    /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
+    {
+        auto buf = disk->writeFile(tmp_snapshot_file_name);
+        buf->finalize();
+    }
+
+    auto writer = disk->writeFile(snapshot_file_name);
     std::unique_ptr<WriteBuffer> compressed_writer;
-    try
-    {
-        /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
-        /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
-        {
-            auto buf = disk->writeFile(tmp_snapshot_file_name);
-            buf->finalize();
-        }
+    if (compress_snapshots_zstd)
+        compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
+    else
+        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-        writer = disk->writeFile(snapshot_file_name);
-        if (compress_snapshots_zstd)
-            compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
-        else
-            compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+    const size_t bytes_before = compressed_writer->count();
+    KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
+    const size_t bytes_written = compressed_writer->count() - bytes_before;
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
 
-        const size_t bytes_before = compressed_writer->count();
-        KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
-        const size_t bytes_written = compressed_writer->count() - bytes_before;
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+    compressed_writer->finalize();
 
-        compressed_writer->finalize();
+    Stopwatch watch;
+    compressed_writer->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
-        Stopwatch watch;
-        compressed_writer->sync();
-        ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
-
-        compressed_writer.reset();
-        writer.reset();
-        disk->removeFile(tmp_snapshot_file_name);
-    }
-    catch (...)
-    {
-        cancelAndResetWriteBuffer(compressed_writer);
-        cancelAndResetWriteBuffer(writer);
-        removeFailedSnapshotArtifacts(disk, snapshot_file_name, tmp_snapshot_file_name, log);
-        throw;
-    }
+    disk->removeFile(tmp_snapshot_file_name);
 
     auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);

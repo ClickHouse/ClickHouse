@@ -655,11 +655,6 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
-    /// Optional server-wide override for the new analyzer in mutations.
-    /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
-    /// Refreshed on config reload.
-    std::atomic<int8_t> mutations_use_analyzer_override = -1;
-
     double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
     double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
 
@@ -2238,7 +2233,7 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
     setCurrentProfilesWithLock(profiles_info, check_constraints, lock);
 }
 
-UUIDs Context::getCurrentProfiles() const
+std::vector<UUID> Context::getCurrentProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
@@ -2246,7 +2241,7 @@ UUIDs Context::getCurrentProfiles() const
     return settings_constraints_and_current_profiles->current_profiles;
 }
 
-UUIDs Context::getEnabledProfiles() const
+std::vector<UUID> Context::getEnabledProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
@@ -2492,7 +2487,7 @@ void Context::updateExternalTable(const String & table_name, std::shared_ptr<Tem
     std::lock_guard lock(mutex);
     auto it = external_tables_mapping.find(table_name);
     if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_name));
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} does not exist", backQuoteIfNeed(table_name));
 
     it->second = std::move(temporary_table);
 }
@@ -6650,20 +6645,6 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
 {
     checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
-}
-
-void Context::setMutationsUseAnalyzerOverride(std::optional<bool> value)
-{
-    int8_t encoded = !value.has_value() ? int8_t{-1} : (*value ? int8_t{1} : int8_t{0});
-    shared->mutations_use_analyzer_override.store(encoded, std::memory_order_relaxed);
-}
-
-std::optional<bool> Context::getMutationsUseAnalyzerOverride() const
-{
-    int8_t encoded = shared->mutations_use_analyzer_override.load(std::memory_order_relaxed);
-    if (encoded < 0)
-        return std::nullopt;
-    return encoded != 0;
 }
 
 void Context::setConfigReloaderInterval(size_t value_ms)

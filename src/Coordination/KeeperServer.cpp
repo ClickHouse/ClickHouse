@@ -33,7 +33,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStatus.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
