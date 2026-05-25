@@ -395,13 +395,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 ostr << func_symbol;
 
                 if (inside_parens)
+                {
                     ostr << '(';
-
-                arguments->format(ostr, settings, state, nested_need_parens);
-                written = true;
-
-                if (inside_parens)
+                    /// We have just emitted `(` around the single argument, so suppress the
+                    /// argument's own `parenthesized` parens (which would otherwise duplicate ours).
+                    /// We bypass ASTExpressionList::format here to ensure the flag reaches the
+                    /// argument node directly (the flag is consumed at the first IAST::format call).
+                    FormatStateStacked inner_frame = nested_need_parens;
+                    inner_frame.wrapped_in_parens = true;
+                    arguments->children[0]->format(ostr, settings, state, inner_frame);
                     ostr << ')';
+                }
+                else
+                {
+                    arguments->format(ostr, settings, state, nested_need_parens);
+                }
+                written = true;
 
                 if (outside_parens)
                     ostr << ')';
@@ -434,7 +443,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        if (!written && arguments->children.size() == 2)
+        bool is_like_with_escape = false;
+        if (arguments->children.size() == 3
+            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
+        {
+            if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
+                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
+        }
+        if (!written && (arguments->children.size() == 2 || is_like_with_escape))
         {
             static constexpr std::array<FunctionOperatorMapping, 21> operators =
             {{
@@ -495,12 +511,23 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (extra_parents_around_in_rhs)
                 {
                     ostr << '(';
-                    arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                    /// We have just emitted `(` around the right-hand side, so suppress the
+                    /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+                    FormatStateStacked inner_frame = nested_dont_need_parens;
+                    inner_frame.wrapped_in_parens = true;
+                    arguments->children[1]->format(ostr, settings, state, inner_frame);
                     ostr << ')';
                 }
 
                 if (!extra_parents_around_in_rhs)
                     arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+
+                /// LIKE/ILIKE with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
+                if (is_like_with_escape)
+                {
+                    ostr << " ESCAPE ";
+                    arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
+                }
 
                 if (need_parens_around_in)
                     ostr << ')';
@@ -586,6 +613,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (left_needs_parens)
                         {
                             nested_need_parens.need_parens = false; /// Don't want duplicate parens
+                            /// We have just emitted `(` around the child, so suppress the
+                            /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+                            nested_need_parens.wrapped_in_parens = true;
                             ostr << '(';
                         }
 

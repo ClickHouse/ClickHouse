@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathBinaryFloat64 : public IFunction
+class FunctionMathBinaryFloat64 final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
