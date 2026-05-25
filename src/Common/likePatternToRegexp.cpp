@@ -238,4 +238,68 @@ String similarToPatternToRegexp(std::string_view pattern)
     return res;
 }
 
+String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char)
+{
+    String res;
+    res.reserve(pattern.size());
+
+    const char * pos = pattern.data();
+    const char * const end = pattern.data() + pattern.size();
+
+    while (pos < end)
+    {
+        if (*pos == escape_char)
+        {
+            ++pos;
+            if (pos == end)
+                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern '{}'", pattern);
+
+            if (*pos == '%' || *pos == '_')
+            {
+                /// escape_char + wildcard → \wildcard
+                res += '\\';
+                res += *pos;
+            }
+            else if (*pos == escape_char)
+            {
+                /// escape_char + escape_char → literal escape_char
+                /// If escape_char is backslash, emit \\ (standard LIKE escape for literal backslash).
+                /// Otherwise, just emit the escape_char as a regular character.
+                if (escape_char == '\\')
+                    res += "\\\\";
+                else
+                    res += *pos;
+            }
+            else if (escape_char == '\\')
+            {
+                /// Preserve legacy LIKE behavior for the default backslash escape: an unknown
+                /// escape sequence is kept as literal backslash + the next character, matching
+                /// `likePatternToRegexp` and ensuring that `LIKE p` and `LIKE p ESCAPE '\\'`
+                /// stay equivalent for users who only explicitly state the default escape.
+                res += '\\';
+                res += *pos;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE,
+                    "Invalid escape sequence '{}{}' in LIKE pattern '{}': "
+                    "the escape character must be followed by '%', '_', or the escape character itself",
+                    escape_char, *pos, pattern);
+            }
+        }
+        else if (*pos == '\\' && escape_char != '\\')
+        {
+            /// When a custom escape char is used, bare backslashes are literals
+            res += "\\\\";
+        }
+        else
+        {
+            res += *pos;
+        }
+        ++pos;
+    }
+
+    return res;
+}
+
 }
