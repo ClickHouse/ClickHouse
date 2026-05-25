@@ -22,3 +22,4 @@ CREATE TABLE t_mongo_empty_collection (x Int32) ENGINE = MongoDB('some-cluster:2
 CREATE TABLE t_mongo_empty_collection (x Int32) ENGINE = MongoDB('some-cluster:27017', 'db', '\0', 'user', 'pass'); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_mongo_empty_collection (x Int32) ENGINE = MongoDB('mongodb://some-cluster:27017/db', ''); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_mongo_empty_collection (x Int32) ENGINE = MongoDB('mongodb://some-cluster:27017/db', '\0'); -- { serverError BAD_ARGUMENTS }
+DROP TABLE IF EXISTS t_mongo_empty_collection;
