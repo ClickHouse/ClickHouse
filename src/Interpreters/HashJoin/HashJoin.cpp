@@ -2391,7 +2391,7 @@ void HashJoin::publishSharedRuntimeFilters()
 
     /// Only integer-backed build types have meaningful min/max for the bounds check.
     /// Float, Decimal and DateTime64 (scale) drop out via isValueRepresentedByInteger.
-    const auto build_type = removeNullable(recursiveRemoveLowCardinality(filter_column_type));
+    const auto build_type = removeNullable(filter_column_type);
     if (!build_type->isValueRepresentedByInteger())
         return;
     const bool build_signed = !build_type->isValueRepresentedByUnsignedInteger();
@@ -2520,12 +2520,13 @@ void HashJoin::publishSharedRuntimeFilters()
 
         /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
         /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
-        const auto target_type = removeNullable(recursiveRemoveLowCardinality(existing->getFilterColumnTargetType()));
+        const auto target_type = removeNullable(existing->getFilterColumnTargetType());
         WhichDataType target_which(target_type);
         if (!target_type->isValueRepresentedByInteger()
             || target_which.isInt128() || target_which.isUInt128()
             || target_which.isInt256() || target_which.isUInt256()
-            || target_which.isIPv4())
+            || target_which.isIPv4()
+            || target_which.isLowCardinality())
             continue;
 
         auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
