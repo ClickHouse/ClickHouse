@@ -181,6 +181,9 @@ LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UI
 void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
 {
     const UInt64 group_rows_seen_before_run = group_counts[group_idx];
+    if (group_rows_seen_before_run >= group_limit_end)
+        return;
+
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
 
     if (slice.length > 0)
@@ -327,6 +330,9 @@ void LimitBySortedStreamTransform::rememberLastGroupingKey(const Columns & chunk
 void LimitBySortedStreamTransform::processRun(UInt64 run_start_row, UInt64 run_row_count)
 {
     const UInt64 group_rows_seen_before_run = current_group_rows_seen;
+    if (group_rows_seen_before_run >= group_limit_end)
+        return;
+
     const auto slice = shrinkRunToLimitWindow(run_start_row, run_row_count, group_rows_seen_before_run, group_offset, group_limit_end);
 
     if (slice.length > 0)
