@@ -25,7 +25,7 @@ INSERT INTO t_insert_returning (id, name) RETURNING (SELECT id FROM t_insert_ret
 
 -- INSERT failure prevents RETURNING SELECT from running
 SELECT 'insert failure';
-INSERT INTO t_insert_returning (id, bad_col) RETURNING (SELECT 1 AS x) VALUES (1, 'x'); -- { serverError UNKNOWN_IDENTIFIER }
+INSERT INTO t_insert_returning (id, bad_col) RETURNING (SELECT 1 AS x) VALUES (1, 'x'); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 
 SELECT count() AS rows_after_failed_insert FROM t_insert_returning;
 
