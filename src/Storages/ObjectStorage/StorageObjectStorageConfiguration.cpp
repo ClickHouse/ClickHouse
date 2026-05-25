@@ -186,11 +186,11 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
 {
     /// Data lake engines (Iceberg, Delta Lake, etc.) implement their own partitioning and
     /// do not use the file-like `partition_strategy`. Skip applying a default strategy here.
-    if (partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
+    /// Also skip when there is no `PARTITION BY` - there is no strategy to apply, but we still
+    /// fall through to `PartitionStrategyFactory::get` so that consistency checks (e.g. explicit
+    /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
+    if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
     {
-        if (!partition_by)
-            return;
-
         switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
         {
             case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
