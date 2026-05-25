@@ -844,7 +844,9 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate buffer_profile to fix this.", getName());
     }
 
-    flush_handle->activateAndSchedule();
+
+    chassert(flush_handle.has_value());
+    (*flush_handle)->activateAndSchedule();
 }
 
 
@@ -853,7 +855,8 @@ void StorageBuffer::flushAndPrepareForShutdown()
     if (!flush_handle)
         return;
 
-    flush_handle->deactivate();
+    (*flush_handle)->deactivate();
+    flush_handle.reset();
 
     try
     {
@@ -1225,11 +1228,12 @@ void StorageBuffer::reschedule(size_t min_delay)
     {
         reschedule_sec = std::min({min, max});
     }
+    chassert(flush_handle.has_value());
     /// Schedule flush in background immediately, otherwise in case of frequent INSERTs we will never schedule the background flush
     if (reschedule_sec == 0)
-        flush_handle->schedule();
+        (*flush_handle)->schedule();
     else
-        flush_handle->scheduleAfter(reschedule_sec * 1000);
+        (*flush_handle)->scheduleAfter(reschedule_sec * 1000);
     LOG_TRACE(log, "Reschedule in {} sec (processed buffers: {}, rows in processed buffers: {}, time passed: {})", reschedule_sec, processed_buffers, rows, time_passed);
 }
 
