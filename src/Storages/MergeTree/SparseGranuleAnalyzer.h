@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/SparseOffsetsShare.h>
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Common/Logger.h>
 
@@ -32,6 +33,9 @@ struct SparseGranuleAnalysis
 /// granule. Returns `std::nullopt` when the column isn't sparse-encoded on this part
 /// (there is no offsets stream to inspect, and a dense scan can't be served cheaper
 /// than just running the predicate).
+/// `offsets_share` (optional): when non-null, the analyzer persists the per-range
+/// decompressed offsets it reads so the data scan can serve its own reads of the
+/// same column without going back to disk.
 std::optional<SparseGranuleAnalysis>
 analyzeSparseColumnGranules(
     const DataPartPtr & part,
@@ -40,6 +44,7 @@ analyzeSparseColumnGranules(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & query_context,
+    SparseOffsetsShare * offsets_share,
     LoggerPtr log);
 
 
@@ -68,11 +73,17 @@ public:
 
     SparsityReadResultPtr read(const RangesInDataPart & part);
 
+    /// Owned by `MergeTreeIndexReadResultPool`; set after construction. When set, the
+    /// analyzer writes its decompressed per-range offsets here so the data-scan path
+    /// can pick them up.
+    void setSparseOffsetsShare(SparseOffsetsSharePtr share) { offsets_share = std::move(share); }
+
 private:
     std::vector<RecognisedSparsityPredicate> predicates;
     const MergeTreeData & data;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr query_context;
+    SparseOffsetsSharePtr offsets_share;
     LoggerPtr log;
 };
 

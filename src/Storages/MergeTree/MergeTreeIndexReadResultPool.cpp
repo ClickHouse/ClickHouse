@@ -481,6 +481,11 @@ MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(
     , sparsity_reader(std::move(sparsity_reader_))
 {
     chassert(skip_index_reader || projection_index_reader || sparsity_reader);
+    if (sparsity_reader)
+    {
+        sparse_offsets_share = std::make_shared<SparseOffsetsShare>();
+        sparsity_reader->setSparseOffsetsShare(sparse_offsets_share);
+    }
 }
 
 MergeTreeIndexReadResultPtr

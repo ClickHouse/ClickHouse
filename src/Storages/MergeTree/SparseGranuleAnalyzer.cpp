@@ -89,6 +89,7 @@ analyzeSparseColumnGranules(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & query_context,
+    SparseOffsetsShare * offsets_share,
     LoggerPtr log)
 {
     /// Without a sparse offsets stream there is no cheap classification to make.
@@ -212,6 +213,19 @@ analyzeSparseColumnGranules(
         const auto & offsets_column = assert_cast<const ColumnUInt64 &>(sparse->getOffsetsColumn());
         const auto & offsets_data = offsets_column.getData();
 
+        if (offsets_share)
+        {
+            /// Persist the decompressed offsets so the data-scan reader can reuse them
+            /// rather than re-reading the substream from disk.
+            offsets_share->insert(
+                part->name,
+                column_name,
+                range,
+                /*start_row_in_part=*/part->index_granularity->getMarkStartingRow(range.begin),
+                /*total_rows=*/rows_in_range,
+                sparse->getOffsetsPtr());
+        }
+
         size_t offset_idx = 0;
         size_t cursor_row = 0;
 
@@ -278,7 +292,7 @@ SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & par
     for (const auto & predicate : predicates)
     {
         auto analysis = analyzeSparseColumnGranules(
-            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, log);
+            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, offsets_share.get(), log);
         if (!analysis)
             continue;
         any_predicate_used = true;

@@ -3,6 +3,7 @@
 #include <Common/SharedMutex.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/SparseGranuleAnalyzer.h>
+#include <Storages/MergeTree/SparseOffsetsShare.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
@@ -212,10 +213,16 @@ public:
 
     void cancel() noexcept;
 
+    /// Decompressed sparse offsets produced by the sparsity analyzer; the data scan
+    /// readers consult this to skip re-reading the same offsets from disk. May be
+    /// nullptr (older queries / no sparsity reader configured).
+    SparseOffsetsSharePtr getSparseOffsetsShare() const { return sparse_offsets_share; }
+
 private:
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
     MergeTreeSparsityReaderPtr sparsity_reader;
+    SparseOffsetsSharePtr sparse_offsets_share;
 
     /// Stores MergeTreeIndexReadResult instances per part to avoid redundant construction.
     std::unordered_map<const IMergeTreeDataPart *, IndexReadResultEntry> index_read_result_registry;

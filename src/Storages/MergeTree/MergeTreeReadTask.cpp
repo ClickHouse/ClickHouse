@@ -319,6 +319,22 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     if (index_build_context)
         index_read_result = index_build_context->getPreparedIndexReadResult(*this);
 
+    /// `getPreparedIndexReadResult` is what triggers `MergeTreeSparsityReader::read`,
+    /// which populates the offsets share. By the time we get here the share is filled
+    /// (or remained empty if the analyzer was bypassed for this part). Hand it to every
+    /// reader so the column scan can serve sparse-offsets reads from memory.
+    if (index_build_context)
+    {
+        if (auto share = index_build_context->index_reader_pool->getSparseOffsetsShare())
+        {
+            if (readers.main)
+                readers.main->setSparseOffsetsShare(share);
+            for (auto & reader : readers.prewhere)
+                if (reader)
+                    reader->setSparseOffsetsShare(share);
+        }
+    }
+
     const PaddedPODArray<UInt64> * part_rows = nullptr;
     if (lazy_materializing_rows)
     {

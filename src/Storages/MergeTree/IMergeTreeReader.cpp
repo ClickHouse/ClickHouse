@@ -11,6 +11,9 @@
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
+#include <DataTypes/Serializations/SerializationSparse.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/SparseOffsetsShare.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -511,6 +514,33 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
             "Expected {}, got {}",
             converted_requested_columns.size(),
             num_columns_to_read);
+}
+
+void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
+    const String & column_name_in_storage,
+    size_t from_mark,
+    size_t num_rows,
+    size_t frame_prev_size,
+    ISerialization::SubstreamsCache & cache) const
+{
+    if (!sparse_offsets_share)
+        return;
+
+    const auto & granularity = data_part_info_for_read->getIndexGranularity();
+    const size_t abs_row_start = granularity.getMarkStartingRow(from_mark);
+
+    auto element = sparse_offsets_share->slice(
+        data_part_info_for_read->getPartName(),
+        column_name_in_storage,
+        abs_row_start,
+        num_rows,
+        frame_prev_size);
+    if (!element)
+        return;
+
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::SparseOffsets);
+    ISerialization::addElementToSubstreamsCache(&cache, path, std::move(element));
 }
 
 String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const

@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/SparseOffsetsShare.h>
 
 namespace DB
 {
@@ -90,6 +91,13 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
+    /// Query-scoped store of analyzer-produced sparse offsets. When set, the Wide /
+    /// Compact reader's `readRows` may serve sparse-column offset reads from this
+    /// store instead of decompressing the substream from disk. Set after construction
+    /// because the share lives on `MergeTreeIndexReadResultPool`, which is constructed
+    /// independently of the reader.
+    void setSparseOffsetsShare(SparseOffsetsSharePtr share) { sparse_offsets_share = std::move(share); }
+
 protected:
     /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
     /// propagated. Used when compiling default or virtual-column expressions at read time.
@@ -106,6 +114,18 @@ protected:
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
+
+    /// Seed `cache` with a pre-computed `SparseOffsets` entry sliced out of
+    /// `sparse_offsets_share` for the absolute row range starting at `from_mark`.
+    /// Subsequent deserialization of `column_name`'s `SparseOffsets` substream within
+    /// this `readRows` call serves from the cache instead of decompressing the substream.
+    /// A miss in the share is silently ignored: the reader falls back to a normal disk read.
+    void seedSparseOffsetsCacheForColumn(
+        const String & column_name_in_storage,
+        size_t from_mark,
+        size_t num_rows,
+        size_t frame_prev_size,
+        ISerialization::SubstreamsCache & cache) const;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -128,6 +148,9 @@ protected:
 
     MergeTreeReaderSettings settings;
     MergeTreeSettingsPtr storage_settings;
+
+    /// Optional. See `setSparseOffsetsShare`.
+    SparseOffsetsSharePtr sparse_offsets_share;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;

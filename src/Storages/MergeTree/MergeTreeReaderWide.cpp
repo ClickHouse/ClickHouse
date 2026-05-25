@@ -196,6 +196,13 @@ size_t MergeTreeReaderWide::readRows(
                 auto & cache = caches[column_to_read.getNameInStorage()];
                 auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
 
+                seedSparseOffsetsCacheForColumn(
+                    column_to_read.getNameInStorage(),
+                    from_mark,
+                    max_rows_to_read,
+                    column_size_before_reading,
+                    cache);
+
                 readData(
                     column_to_read,
                     serializations[pos],
