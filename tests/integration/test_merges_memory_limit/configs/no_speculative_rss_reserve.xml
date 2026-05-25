@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- The test asserts that three large `INSERT`s followed by `OPTIMIZE
+         TABLE ... FINAL` succeed under a 20 GiB container limit. The default
+         `memory_worker_rss_speculative_reserve_ratio = 1.0` biases the
+         observed RSS upward by the `resident - tracked` gap on every
+         `MemoryWorker` tick, which under this tight budget tips the
+         `INSERT`s past `max_server_memory_usage` and fires
+         `MEMORY_LIMIT_EXCEEDED` before the merge logic the test is
+         exercising can run. The PR's mechanism is not under test here. -->
+    <memory_worker_rss_speculative_reserve_ratio>0</memory_worker_rss_speculative_reserve_ratio>
+</clickhouse>
