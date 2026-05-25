@@ -392,7 +392,9 @@ using ThreadFromGlobalPoolWithoutTraceCollector = ThreadFromGlobalPoolImpl<true,
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
 
 /// Server-level setting `additional_memory_tracking_per_thread`.
-/// Speculatively charged to the MemoryTracker around every job executed in a ThreadPool worker.
+/// Speculatively charged to the MemoryTracker around every thread spawned by a pipeline
+/// executor (`PipelineExecutor`, `PullingAsyncPipelineExecutor`, `PushingAsyncPipelineExecutor`).
+/// Not applied to all `ThreadPool` users (e.g. background merges and fetches).
 /// See ServerSettings.cpp for details.
 extern std::atomic<int64_t> additional_memory_tracking_per_thread;
 
