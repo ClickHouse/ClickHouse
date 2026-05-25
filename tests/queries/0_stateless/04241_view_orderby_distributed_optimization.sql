@@ -203,6 +203,22 @@ SELECT 'view inline OVER disables pushdown:',
 
 DROP VIEW test_view_window_inline_04241;
 
+-- Outer query with a named `WINDOW` clause: pushdown must be disabled because
+-- the named `WINDOW` is evaluated globally after merging, while pushed
+-- `ORDER BY/LIMIT` would truncate rows per-shard before the window step.
+SELECT 'outer named WINDOW disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT row_number() OVER w AS rn, id FROM test_view_04241 WINDOW w AS (ORDER BY id) ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+-- Outer query with an inline `OVER (...)` window function call: pushdown must
+-- be disabled for the same reason. The earlier `outer->hasWindow()` check only
+-- caught the named `WINDOW` form above; this exercises the inline path that is
+-- detected via `select_query_info.has_window` (computed by
+-- `hasWindowFunctionNodes` over the whole query tree).
+SELECT 'outer inline OVER disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT row_number() OVER (ORDER BY id) AS rn, id FROM test_view_04241 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;

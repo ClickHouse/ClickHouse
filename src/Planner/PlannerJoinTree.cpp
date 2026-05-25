@@ -862,7 +862,15 @@ void pushOrderByIntoView(
     /// Outer query must be a transparent SELECT — pushing ORDER BY through
     /// aggregation, DISTINCT or window functions changes semantics and can
     /// disable downstream optimizations (e.g. matching aggregate projections).
-    if (outer->hasGroupBy() || outer->hasHaving() || outer->isDistinct() || outer->hasWindow())
+    ///
+    /// `outer->hasWindow()` only reflects the named `WINDOW` clause, not inline
+    /// `OVER (...)` calls in the projection. Use `select_query_info.has_window`,
+    /// which is computed by `hasWindowFunctionNodes` over the whole query tree
+    /// and catches both forms — otherwise an outer query like
+    /// `SELECT row_number() OVER (ORDER BY id), id FROM v ORDER BY ts LIMIT 10`
+    /// would still push `ORDER BY ts LIMIT 10` into the view and truncate rows
+    /// before the outer window step is evaluated.
+    if (outer->hasGroupBy() || outer->hasHaving() || outer->isDistinct() || select_query_info.has_window)
         return;
 
     /// `LIMIT BY` is evaluated globally on the coordinator after merging.
