@@ -161,7 +161,7 @@ GROUP BY UserID;
 ```
 
 :::note
-Performance of such a query depends on the table layout. The optimisation is enabled by default since version 26.5; runtime heuristics automatically skip it when the layout is unfavorable (the section below lists the relevant criteria).
+Performance of such a query depends on the table layout. The optimisation is enabled by default since version 26.6; runtime heuristics automatically skip it when the layout is unfavorable (the section below lists the relevant criteria).
 :::
 
 The key factors for a good performance:
