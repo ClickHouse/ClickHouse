@@ -8,8 +8,6 @@
 #include <cstring>
 #include <unistd.h>
 #include <poll.h>
-#include <sys/time.h>
-#include <sys/types.h>
 
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -59,7 +57,7 @@ namespace DB
 /// Allows delaying the start of query execution until the entirety of query is inserted.
 bool LineReader::hasInputData() const
 {
-    pollfd pfd{in_fd, POLLIN, 0};
+    pollfd pfd{.fd = in_fd, .events = POLLIN, .revents = 0};
     return poll(&pfd, 1, 0) == 1 && (pfd.revents & POLLIN);
 }
 
