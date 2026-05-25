@@ -5845,14 +5845,22 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
 std::optional<IStorage::ColumnDefaultnessStats>
 MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
 {
+    auto log = getLogger(getStorageID().getNameForLogs());
+
     /// A transaction can change which parts are visible vs the snapshot we'd reason about.
     if (query_context->getCurrentTransaction())
+    {
+        LOG_DEBUG(log, "No defaultness stats for column {}: active transaction", column_name);
         return std::nullopt;
+    }
 
     /// Patch parts apply updates/deletes at read time and don't update the base part's
     /// `serialization.json`, so the recorded `num_defaults` would be stale.
     if (!getPatchPartsVectorForInternalUsage().empty())
+    {
+        LOG_DEBUG(log, "No defaultness stats for column {}: table has patch parts", column_name);
         return std::nullopt;
+    }
 
     ColumnDefaultnessStats aggregate;
     for (const auto & part : getVisibleDataPartsVector(query_context))
@@ -5860,12 +5868,18 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         const auto & infos = part->getSerializationInfos();
         auto it = infos.find(column_name);
         if (it == infos.end())
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: not present in serialization info of part {}", column_name, part->name);
             return std::nullopt;
+        }
 
         /// Pre-flag parts have a sampled `num_defaults` that can't be trusted.
         const auto & info_data = it->second->getData();
         if (!info_data.exact_num_defaults)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: part {} was written without the exact_num_defaults flag", column_name, part->name);
             return std::nullopt;
+        }
 
         aggregate.num_rows += part->rows_count;
         aggregate.num_defaults += info_data.num_defaults;
