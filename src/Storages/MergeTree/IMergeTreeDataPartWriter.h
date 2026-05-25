@@ -22,9 +22,9 @@ using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 using WrittenOffsetSubstreams = std::set<std::string>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -44,7 +44,7 @@ public:
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
+    virtual void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) = 0;
 
     /// Copy a set of virtual files from another part's packed skip-index archive into this
     /// writer's in-flight archive, BEFORE any block is written. Used by mutations to preserve

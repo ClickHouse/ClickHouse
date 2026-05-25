@@ -134,17 +134,30 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
+void DataPartStorageOnDiskFull::prepareRead(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
 {
     if (looksLikePackedSkipIndexFile(name))
     {
         if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return reader->readFile(name, settings, read_hint);
+        {
+            /// Packed substreams skip the disk's normal pipeline (filesystem cache,
+            /// async prefetch, etc.) and read through PackedFilesReader::readFile, which
+            /// already opens the archive via the underlying disk and wraps the result with
+            /// ReadBufferFromFileView at the right offset.
+            ReadPipeline::BufferCreator creator =
+                [reader, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+                {
+                    return reader->readFile(name, s, read_hint);
+                };
+            pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
+            return;
+        }
     }
-    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint);
+    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
