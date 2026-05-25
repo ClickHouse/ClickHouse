@@ -5582,6 +5582,22 @@ Possible values:
 
 - Any string
 )", 0) \
+    DECLARE(Bool, use_partial_aggregate_cache, false, R"(
+Experimental. Enables the partial aggregate cache infrastructure (per MergeTree part, keyed by query hash and part identity). Query execution does not use this cache yet.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", EXPERIMENTAL) \
+    DECLARE(Bool, partial_aggregate_cache_allow_parallel_aggregation_streams, false, R"(
+Experimental. Companion setting for `use_partial_aggregate_cache`. Reserved for future query integration; has no effect until query integration is enabled.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
