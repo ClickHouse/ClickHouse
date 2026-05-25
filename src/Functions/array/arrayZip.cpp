@@ -1,6 +1,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -39,14 +40,16 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypes arguments_types;
+        bool result_is_nullable = false;
         for (size_t index = 0; index < arguments.size(); ++index)
         {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[index].type).get());
 
             if (!array_type)
                 throw Exception(
@@ -56,13 +59,18 @@ public:
                     getName(),
                     arguments[index].type->getName());
 
+            result_is_nullable |= arguments[index].type->isNullable();
+
             auto nested_type = array_type->getNestedType();
             if (allow_unaligned)
                 nested_type = makeNullable(nested_type);
             arguments_types.emplace_back(nested_type);
         }
 
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
+        auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(arguments_types));
+        if (result_is_nullable)
+            return makeNullable(result_type);
+        return result_type;
     }
 
     ColumnPtr
@@ -78,6 +86,7 @@ public:
 
         Columns holders(num_arguments);
         Columns tuple_columns(num_arguments);
+        ColumnUInt8::MutablePtr null_map;
 
         bool has_unaligned = false;
         size_t unaligned_index = 0;
@@ -86,6 +95,22 @@ public:
             /// Constant columns cannot be inside tuple. It's only possible to have constant tuple as a whole.
             ColumnPtr holder = arguments[i].column->convertToFullColumnIfConst();
             holders[i] = holder;
+
+            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(holder.get()))
+            {
+                if (!null_map)
+                    null_map = ColumnUInt8::create(nullable_column->getNullMapData().begin(), nullable_column->getNullMapData().end());
+                else
+                {
+                    auto & null_map_data = null_map->getData();
+                    const auto & other_null_map = nullable_column->getNullMapData();
+                    for (size_t row = 0, rows = null_map_data.size(); row < rows; ++row)
+                        null_map_data[row] |= other_null_map[row];
+                }
+
+                holder = nullable_column->getNestedColumnPtr();
+                holders[i] = holder;
+            }
 
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(holder.get());
             if (!column_array)
@@ -112,11 +137,27 @@ public:
                     "The argument 1 and argument {} of function {} have different array sizes",
                     unaligned_index + 1,
                     getName());
-            return ColumnArray::create(
+            auto result = ColumnArray::create(
                 ColumnTuple::create(std::move(tuple_columns)), static_cast<const ColumnArray &>(*holders[0]).getOffsetsPtr());
+            if (result_type->isNullable())
+            {
+                if (!null_map)
+                    null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+                return ColumnNullable::create(std::move(result), std::move(null_map));
+            }
+            return result;
         }
         else
-            return executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);
+        {
+            auto result = executeUnaligned(holders, tuple_columns, input_rows_count, has_unaligned);
+            if (result_type->isNullable())
+            {
+                if (!null_map)
+                    null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+                return ColumnNullable::create(std::move(result), std::move(null_map));
+            }
+            return result;
+        }
     }
 
 private:

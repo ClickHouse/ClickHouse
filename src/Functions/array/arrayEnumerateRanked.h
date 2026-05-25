@@ -1,7 +1,9 @@
 #pragma once
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
@@ -95,6 +97,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -111,6 +114,11 @@ public:
         for (DepthType i = 0; i < arrays_depths.max_array_depth; ++i)
             type = std::make_shared<DataTypeArray>(type);
 
+        for (const auto & argument : arguments)
+        {
+            if (argument.type->isNullable() && checkAndGetDataType<DataTypeArray>(removeNullable(argument.type).get()))
+                return makeNullable(type);
+        }
         return type;
     }
 
@@ -133,13 +141,14 @@ UInt128 hash128depths(const VectorWithMemoryTracking<size_t> & indices, const Co
 
 template <typename Derived>
 ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns;
 
     Columns array_holders;
     ColumnPtr offsets_column;
+    ColumnUInt8::MutablePtr row_null_map;
 
     const ArraysDepths arrays_depths = getArraysDepths(arguments, Derived::name);
 
@@ -164,9 +173,28 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const auto * array = get_array_column(arguments[i].column.get());
+        ColumnPtr argument_column = arguments[i].column ? arguments[i].column->convertToFullColumnIfConst() : nullptr;
+        if (argument_column)
+        {
+            if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(argument_column.get()))
+            {
+                if (!row_null_map)
+                    row_null_map = ColumnUInt8::create(nullable_array->getNullMapData().begin(), nullable_array->getNullMapData().end());
+                else
+                {
+                    auto & row_null_map_data = row_null_map->getData();
+                    const auto & other_null_map = nullable_array->getNullMapData();
+                    for (size_t row = 0, rows = row_null_map_data.size(); row < rows; ++row)
+                        row_null_map_data[row] |= other_null_map[row];
+                }
+                argument_column = nullable_array->getNestedColumnPtr();
+            }
+        }
+
+        const auto * array = argument_column ? get_array_column(argument_column.get()) : nullptr;
         if (!array)
             continue;
+        array_holders.emplace_back(std::move(argument_column));
 
         if (array_num == 0) // TODO check with prev
         {
@@ -238,6 +266,12 @@ ColumnPtr FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (ssize_t depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(result_nested_array, offsetsptr_by_depth[depth]);
 
+    if (result_type->isNullable())
+    {
+        if (!row_null_map)
+            row_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+        return ColumnNullable::create(std::move(result_nested_array), std::move(row_null_map));
+    }
     return result_nested_array;
 }
 

@@ -32,7 +32,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const cha
 
     DepthType clear_depth = 1;
     size_t i = 0;
-    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(arguments[0].type.get()); !type_array)
+    if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(removeNullable(arguments[0].type).get()); !type_array)
     {
         /// If the first argument is not an array, it must be a const positive and non zero number
         const auto & depth_column = arguments[i].column;
@@ -54,7 +54,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const cha
     for (; i < num_arguments; i++)
     {
         const DataTypePtr & type = arguments[i].type;
-        const DataTypeArray * current_type_array = typeid_cast<const DataTypeArray *>(type.get());
+        const DataTypeArray * current_type_array = typeid_cast<const DataTypeArray *>(removeNullable(type).get());
         if (!current_type_array)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -69,7 +69,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments, const cha
         }
         else
         {
-            const DataTypeArray * next_argument_array = typeid_cast<const DataTypeArray *>(arguments[i + 1].type.get());
+            const DataTypeArray * next_argument_array = typeid_cast<const DataTypeArray *>(removeNullable(arguments[i + 1].type).get());
             if (next_argument_array)
             {
                 depths.emplace_back(current_type_array->getNumberOfDimensions());

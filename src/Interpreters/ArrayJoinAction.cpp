@@ -234,7 +234,8 @@ Block ArrayJoinResultIterator::next()
     size_t next_row = current_row;
     for (; next_row < total_rows; ++next_row)
     {
-        if (offsets[next_row] - offsets[current_row - 1] >= max_block_size)
+        const size_t previous_offset = current_row == 0 ? 0 : offsets[current_row - 1];
+        if (offsets[next_row] - previous_offset >= max_block_size)
             break;
     }
     if (next_row == current_row)
@@ -267,11 +268,13 @@ Block ArrayJoinResultIterator::next()
             if (const auto & type = getArrayJoinDataType(current.type))
             {
                 ColumnPtr array_ptr;
-                if (typeid_cast<const DataTypeArray *>(current.type.get()))
+                if (typeid_cast<const DataTypeArray *>(removeNullable(current.type).get()))
                 {
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : current.column;
                     array_ptr = array_ptr->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    if (const auto * nullable_array = typeid_cast<const ColumnNullable *>(array_ptr.get()))
+                        array_ptr = nullable_array->getNestedColumnPtr();
                 }
                 else
                 {

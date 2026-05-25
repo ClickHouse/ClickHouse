@@ -3,9 +3,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -55,11 +58,18 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
+        auto result_type = std::make_shared<DataTypeArray>(aggregate_function->getResultType());
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            if (arguments[i].type->isNullable())
+                return makeNullable(result_type);
+        }
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
@@ -80,7 +90,16 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     /// Handling ranges
 
-    const IColumn * ranges_col_array = arguments[1].column.get();
+    ColumnUInt8::MutablePtr row_null_map;
+
+    ColumnPtr ranges_column = arguments[1].column->convertToFullColumnIfConst();
+    if (const auto * nullable_ranges = checkAndGetColumn<ColumnNullable>(ranges_column.get()))
+    {
+        row_null_map = ColumnUInt8::create(nullable_ranges->getNullMapData().begin(), nullable_ranges->getNullMapData().end());
+        ranges_column = nullable_ranges->getNestedColumnPtr();
+    }
+
+    const IColumn * ranges_col_array = ranges_column.get();
     const IColumn * ranges_col_tuple = nullptr;
     const ColumnArray::Offsets * ranges_offsets = nullptr;
     if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(ranges_col_array))
@@ -111,7 +130,23 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
-        const IColumn * col = arguments[i + 2].column.get();
+        ColumnPtr argument_column = arguments[i + 2].column->convertToFullColumnIfConst();
+        if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(argument_column.get()))
+        {
+            if (!row_null_map)
+                row_null_map = ColumnUInt8::create(nullable_array->getNullMapData().begin(), nullable_array->getNullMapData().end());
+            else
+            {
+                auto & row_null_map_data = row_null_map->getData();
+                const auto & other_null_map = nullable_array->getNullMapData();
+                for (size_t row = 0, rows = row_null_map_data.size(); row < rows; ++row)
+                    row_null_map_data[row] |= other_null_map[row];
+            }
+            argument_column = nullable_array->getNestedColumnPtr();
+        }
+
+        materialized_columns.emplace_back(std::move(argument_column));
+        const IColumn * col = materialized_columns.back().get();
 
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
@@ -139,7 +174,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 
     /// Handling results
 
-    MutableColumnPtr result_holder = result_type->createColumn();
+    MutableColumnPtr result_holder = removeNullable(result_type)->createColumn();
     ColumnArray * result_arr = static_cast<ColumnArray *>(result_holder.get());
     IColumn & result_data = result_arr->getData();
 
@@ -321,6 +356,13 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
         }
     }
 
+    if (result_type->isNullable())
+    {
+        if (!row_null_map)
+            row_null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+        return ColumnNullable::create(std::move(result_holder), std::move(row_null_map));
+    }
+
     return result_holder;
 }
 
@@ -339,10 +381,18 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return std::make_shared<DataTypeArray>(resolveAggregateFunction(arguments)->getResultType());
+        auto result_type = std::make_shared<DataTypeArray>(resolveAggregateFunction(arguments)->getResultType());
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            if (arguments[i].type->isNullable())
+                return makeNullable(result_type);
+        }
+        return result_type;
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -378,7 +428,7 @@ private:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
                 "name of aggregate function.", getName());
 
-        const DataTypeArray * ranges_type_array = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
+        const DataTypeArray * ranges_type_array = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[1].type).get());
         if (!ranges_type_array)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array of ranges.",
                 getName());
@@ -397,7 +447,7 @@ private:
         DataTypes argument_types(arguments.size() - 2);
         for (size_t i = 2, size = arguments.size(); i < size; ++i)
         {
-            const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
+            const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[i].type).get());
             if (!arg)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "Argument {} for function {} must be an array but it has type {}.",

@@ -2,8 +2,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 
 
@@ -34,22 +36,35 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[0]).get());
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "First argument for function {} must be an array but it has type {}.",
                             getName(), arguments[0]->getName());
 
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+        auto result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+        if (arguments[0]->isNullable())
+            return makeNullable(result_type);
+        return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
+        ColumnPtr column = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr null_map;
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column.get()))
+        {
+            null_map = nullable->getNullMapColumnPtr();
+            column = nullable->getNestedColumnPtr();
+        }
+
+        if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(column.get()))
         {
             const ColumnArray::Offsets & offsets = array->getOffsets();
 
@@ -65,7 +80,14 @@ public:
                 prev_off = off;
             }
 
-            return ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
+            auto result = ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
+            if (result_type->isNullable())
+            {
+                if (!null_map)
+                    null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+                return ColumnNullable::create(std::move(result), std::move(null_map));
+            }
+            return result;
         }
 
         throw Exception(

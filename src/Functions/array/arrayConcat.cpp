@@ -2,10 +2,13 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <base/range.h>
 
 namespace DB
@@ -25,7 +28,7 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
 
     for (auto i : collections::range(0, arguments.size()))
     {
-        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(arguments[i]).get());
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Argument {} for function {} must be an array but it has type {}.",
@@ -56,6 +59,7 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
     }
 
     VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
+    ColumnUInt8::MutablePtr null_map;
 
     for (auto & argument_column : preprocessed_columns)
     {
@@ -67,6 +71,33 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
             argument_column = argument_column_const->getDataColumnPtr();
         }
 
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(argument_column.get()))
+        {
+            if (!null_map)
+            {
+                null_map = ColumnUInt8::create(nullable_column->getNullMapData().begin(), nullable_column->getNullMapData().end());
+                if (is_const && null_map->size() == 1)
+                    null_map->getData().resize_fill(input_rows_count, nullable_column->getNullMapData()[0]);
+            }
+            else
+            {
+                auto & null_map_data = null_map->getData();
+                const auto & other_null_map = nullable_column->getNullMapData();
+                if (is_const && other_null_map.size() == 1)
+                {
+                    for (auto & value : null_map_data)
+                        value |= other_null_map[0];
+                }
+                else
+                {
+                    for (size_t row = 0, rows = null_map_data.size(); row < rows; ++row)
+                        null_map_data[row] |= other_null_map[row];
+                }
+            }
+
+            argument_column = nullable_column->getNestedColumnPtr();
+        }
+
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
             sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, input_rows_count));
         else
@@ -74,6 +105,13 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
     }
 
     auto sink = GatherUtils::concat(sources);
+
+    if (result_type->isNullable())
+    {
+        if (!null_map)
+            null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
+        return ColumnNullable::create(std::move(sink), std::move(null_map));
+    }
 
     return sink;
 }
