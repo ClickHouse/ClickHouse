@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathUnary final : public IFunction
+class FunctionMathUnary : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
