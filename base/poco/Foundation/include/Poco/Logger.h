@@ -18,9 +18,7 @@
 
 #include <atomic>
 #include <memory>
-#include <optional>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "Poco/Channel.h"
@@ -293,22 +291,15 @@ public:
     using LoggerMap = std::unordered_map<std::string, LoggerEntry>;
     using LoggerMapIterator = LoggerMap::iterator;
 
-protected:
     Logger(const std::string & name, Channel * pChannel, int level);
+
+protected:
     ~Logger();
 
     void log(const std::string & text, Message::Priority prio);
     void log(const std::string & text, Message::Priority prio, const char * file, int line);
 
 private:
-    static std::pair<Logger::LoggerMapIterator, bool> unsafeGet(const std::string & name, bool get_shared);
-    static Logger * unsafeGetRawPtr(const std::string & name);
-    static std::pair<LoggerMapIterator, bool> unsafeCreate(const std::string & name, Channel * pChannel, int level = Message::PRIO_INFORMATION);
-    static Logger & parent(const std::string & name);
-    static std::pair<LoggerMapIterator, bool> add(Logger * pLogger);
-    static std::optional<LoggerMapIterator> find(const std::string & name);
-    static Logger * findRawPtr(const std::string & name);
-
     Logger();
     Logger(const Logger &);
     Logger & operator=(const Logger &);
