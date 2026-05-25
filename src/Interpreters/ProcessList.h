@@ -513,11 +513,10 @@ public:
         return mutex;
     }
 
-    void setMaxSize(size_t max_size_)
-    {
-        Lock lock(mutex);
-        max_size = max_size_;
-    }
+    /// Updates the limit and drains the admission queue if the new value
+    /// frees up slots (covers reloads to a larger value or to 0/unlimited
+    /// — without this the queued waiters could be stranded until timeout).
+    void setMaxSize(size_t max_size_);
 
     size_t getMaxSize() const
     {

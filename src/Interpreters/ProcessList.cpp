@@ -1141,6 +1141,28 @@ void ProcessList::releaseAdmissionSlotLocked(Lock & /* acquired_lock */)
     front->cv.notify_one();
 }
 
+void ProcessList::setMaxSize(size_t max_size_)
+{
+    Lock lock(mutex);
+
+    max_size = max_size_;
+
+    /// Drain queued waiters that the new limit now admits. Without this,
+    /// raising `max_concurrent_queries` (or setting it to 0/unlimited) would
+    /// leave existing waiters blocked until their `queue_max_wait_ms` timeout,
+    /// because finishing queries decrement `admission_running` instead of
+    /// transferring slots (see `releaseAdmissionSlotLocked`) and new queries
+    /// bypass admission entirely when `max_size == 0`.
+    while (!admission_queue.empty() && (max_size == 0 || admission_running < max_size))
+    {
+        AdmissionWaiter * front = admission_queue.front();
+        admission_queue.pop_front();
+        ++admission_running;
+        front->granted = true;
+        front->cv.notify_one();
+    }
+}
+
 void QueryStatus::releaseAdmissionSlot()
 {
     if (!holds_admission_slot)
