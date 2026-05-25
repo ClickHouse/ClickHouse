@@ -103,8 +103,13 @@ namespace UDFProcfs
     /// Silently ignores any error.
     void clearRefs(pid_t pid) noexcept;
 
-    /// Parse utime (field 14) and stime (field 15) from /proc/<pid>/stat,
-    /// converting clock ticks to microseconds.
+    /// Parse user and system CPU time from /proc/<pid>/stat, converting clock
+    /// ticks to microseconds. `utime_us` sums fields 14 (`utime`, this pid's
+    /// own user CPU) and 16 (`cutime`, user CPU of children this pid has
+    /// reaped). `stime_us` sums fields 15 (`stime`) and 17 (`cstime`). Reading
+    /// cutime/cstime is necessary because a short-lived helper (e.g. python
+    /// `subprocess.run`) finishes and is `waitpid`-ed before the post-walk
+    /// even sees it; without those two fields the helper's CPU is invisible.
     bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept;
 
     /// Parse VmHWM from /proc/<pid>/status, converted to bytes.

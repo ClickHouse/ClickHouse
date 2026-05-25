@@ -148,7 +148,8 @@ bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept
     const std::string rest_str = line.substr(close_paren + 1);
     ReadBufferFromString rest(rest_str);
     /// After comm, the next token is state (field 3). utime is field 14,
-    /// stime is field 15 — skip 11 fields to land on utime.
+    /// stime is field 15, cutime is field 16, cstime is field 17 — skip 11
+    /// fields to land on utime, then read four consecutive integers.
     for (int i = 0; i < 11; ++i)
     {
         skipWhitespaceIfAny(rest);
@@ -160,14 +161,27 @@ bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept
 
     UInt64 utime_ticks = 0;
     UInt64 stime_ticks = 0;
+    UInt64 cutime_ticks = 0;
+    UInt64 cstime_ticks = 0;
     if (!tryReadIntText(utime_ticks, rest))
         return false;
     skipWhitespaceIfAny(rest);
     if (!tryReadIntText(stime_ticks, rest))
         return false;
+    skipWhitespaceIfAny(rest);
+    if (!tryReadIntText(cutime_ticks, rest))
+        return false;
+    skipWhitespaceIfAny(rest);
+    if (!tryReadIntText(cstime_ticks, rest))
+        return false;
 
-    utime_us = ticksToMicroseconds(utime_ticks);
-    stime_us = ticksToMicroseconds(stime_ticks);
+    /// Sum reaped children's CPU into the parent's totals. A short-lived
+    /// helper (e.g. python `subprocess.run` or a one-shot worker) finishes
+    /// and is reaped well before the post-walk runs, so its own `/proc/<tid>`
+    /// has already vanished; the only place its CPU still exists is in the
+    /// parent's c{u,s}time.
+    utime_us = ticksToMicroseconds(utime_ticks + cutime_ticks);
+    stime_us = ticksToMicroseconds(stime_ticks + cstime_ticks);
     return true;
 #else
     return false;
