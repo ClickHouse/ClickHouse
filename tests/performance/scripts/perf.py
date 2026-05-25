@@ -533,18 +533,96 @@ if not args.use_existing_tables:
         if settings_pos < 0:
             return query
 
-        name_re = re.compile(
-            r"\b" + re.escape(setting_name) + r"\s*=\s*",
-            re.IGNORECASE,
-        )
-        m = name_re.search(query, settings_pos + len("SETTINGS"))
-        if not m:
+        # Locate `setting_name = ` at the top level of the SETTINGS clause:
+        # outside string and backtick literals, outside `--`, `#`, `/* */`
+        # comments, and at bracket depth 0 (so a literal containing the
+        # setting name inside an array, tuple, or function call is not
+        # matched). The plain `re.search` cannot enforce this on raw text.
+        name_lower = setting_name.lower()
+        name_len = len(setting_name)
+        i = settings_pos + len("SETTINGS")
+        n = len(query)
+        quote = None
+        line_comment = False
+        block_comment = False
+        depth = 0
+        name_start = -1
+        value_start = -1
+        while i < n:
+            c = query[i]
+            next_c = query[i + 1] if i + 1 < n else ""
+            if line_comment:
+                if c == "\n":
+                    line_comment = False
+                i += 1
+                continue
+            if block_comment:
+                if c == "*" and next_c == "/":
+                    block_comment = False
+                    i += 2
+                    continue
+                i += 1
+                continue
+            if quote is not None:
+                if c == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if c == quote:
+                    if quote == "'" and next_c == "'":
+                        i += 2
+                        continue
+                    quote = None
+                i += 1
+                continue
+            if (c == "-" and next_c == "-") or c == "#":
+                line_comment = True
+                i += 1
+                continue
+            if c == "/" and next_c == "*":
+                block_comment = True
+                i += 2
+                continue
+            if c in "'\"`":
+                quote = c
+                i += 1
+                continue
+            if c in "([{":
+                depth += 1
+                i += 1
+                continue
+            if c in ")]}":
+                if depth == 0:
+                    break
+                depth -= 1
+                i += 1
+                continue
+            if depth == 0 and query[i : i + name_len].lower() == name_lower:
+                before_ok = i == settings_pos + len("SETTINGS") or not (
+                    query[i - 1].isalnum() or query[i - 1] == "_"
+                )
+                after_idx = i + name_len
+                if before_ok and after_idx < n and not (
+                    query[after_idx].isalnum() or query[after_idx] == "_"
+                ):
+                    j = after_idx
+                    while j < n and query[j] in " \t\r\n":
+                        j += 1
+                    if j < n and query[j] == "=":
+                        j += 1
+                        while j < n and query[j] in " \t\r\n":
+                            j += 1
+                        name_start = i
+                        value_start = j
+                        break
+            i += 1
+
+        if name_start < 0:
             return query
 
         # Optionally include a preceding comma (and surrounding whitespace)
         # so the assignment is removed cleanly when it is not the first
         # entry in the SETTINGS clause.
-        cut_start = m.start()
+        cut_start = name_start
         j = cut_start - 1
         while j >= 0 and query[j] in " \t\r\n":
             j -= 1
@@ -553,8 +631,7 @@ if not args.use_existing_tables:
 
         # Scan from the start of the value to find its end at the next
         # top-level comma or semicolon (or end of query).
-        i = m.end()
-        n = len(query)
+        i = value_start
         quote = None
         depth = 0
         while i < n:
