@@ -1582,10 +1582,10 @@ try
         /// otherwise they keep running indefinitely and block shutdown.
         global_context->signalKeeperDispatcherShutdown();
 
+        size_t current_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
             {
                 std::lock_guard lock(servers_lock);
                 for (auto & server : servers_to_start_before_tables)
@@ -1609,7 +1609,7 @@ try
                 LOG_INFO(log, "Closed connections to servers for tables.");
         }
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
@@ -2368,6 +2368,11 @@ try
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
+
+            global_context->setMutationsUseAnalyzerOverride(
+                config().has("use_analyzer_for_mutations")
+                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
+                    : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
 
