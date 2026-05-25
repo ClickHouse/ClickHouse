@@ -3928,6 +3928,12 @@ def test_message_queue_disable_insertion(kafka_cluster):
 
         assert instance.contains_in_log("Message queue insertion is disabled")
 
+        # Direct INSERT INTO the Kafka table (producer write) must still work
+        instance.query(
+            f"INSERT INTO test.{kafka_table} FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
         # Re-enable insertion
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
@@ -3943,8 +3949,8 @@ def test_message_queue_disable_insertion(kafka_cluster):
             ).strip()
         )
 
-        # Rows should now flow through
-        expected_rows = 10
+        # Rows should now flow through (10 original + 1 from direct INSERT)
+        expected_rows = 11
         for _ in range(100):
             count = int(
                 instance.query(f"SELECT count() FROM test.{kafka_table}_dst")

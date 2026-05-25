@@ -3756,6 +3756,12 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
 
         assert instance.contains_in_log("Message queue insertion is disabled")
 
+        # Direct INSERT INTO the RabbitMQ table (producer write) must still work
+        instance.query(
+            f"INSERT INTO {db}.rabbitmq FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
         # Re-enable insertion
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
@@ -3771,8 +3777,8 @@ def test_message_queue_disable_insertion(rabbitmq_cluster, db, unique):
             ).strip()
         )
 
-        # Rows should flow through now
-        check_expected_result_polling(10, f"SELECT count() FROM {db}.view")
+        # Rows should flow through now (10 original + 1 from direct INSERT)
+        check_expected_result_polling(11, f"SELECT count() FROM {db}.view")
 
         connection.close()
     finally:
