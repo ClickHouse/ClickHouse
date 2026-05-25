@@ -169,7 +169,7 @@ This ensures that the view continues to function after the ephemeral user's toke
 Use the `--jwt` flag with `clickhouse-client` to authenticate with a pre-obtained token:
 
 ```bash
-clickhouse-client --jwt '<your_jwt_token>'
+clickhouse-client --host your-instance.clickhouse.cloud --secure --jwt '<your_jwt_token>'
 ```
 
 :::note
