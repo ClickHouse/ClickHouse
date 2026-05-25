@@ -5,6 +5,14 @@ uniqExact Float64	1
 uniqExact Float32	1
 uniqExact BFloat16	1
 uniq Float64	1
+uniqCombined Float64	1
+uniqCombined Float32	1
+uniqCombined BFloat16	1
+uniqCombined64 Float64	1
+uniqCombined64 Float32	1
+uniqCombined64 BFloat16	1
+countDistinct uniqCombined	1
+countDistinct uniqCombined64	1
 SELECT DISTINCT Float64	1
 SELECT DISTINCT Float32	1
 SELECT DISTINCT BFloat16	1

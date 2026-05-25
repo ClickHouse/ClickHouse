@@ -23,6 +23,25 @@ SELECT 'uniqExact BFloat16', uniqExact(arrayJoin([toBFloat16(0./0.), toBFloat16(
 
 SELECT 'uniq Float64', uniq(arrayJoin([0./0., nan, log(-1.)]));
 
+-- `uniqCombined` / `uniqCombined64` also hash NaN values; both modes are
+-- reachable via `count_distinct_implementation`, so they must canonicalize
+-- NaN too (see issue #105748).
+
+SELECT 'uniqCombined Float64', uniqCombined(arrayJoin([0./0., nan, log(-1.)]));
+SELECT 'uniqCombined Float32', uniqCombined(arrayJoin([toFloat32(0./0.), toFloat32(nan), toFloat32(log(-1.))]));
+SELECT 'uniqCombined BFloat16', uniqCombined(arrayJoin([toBFloat16(0./0.), toBFloat16(nan), toBFloat16(log(-1.))]));
+SELECT 'uniqCombined64 Float64', uniqCombined64(arrayJoin([0./0., nan, log(-1.)]));
+SELECT 'uniqCombined64 Float32', uniqCombined64(arrayJoin([toFloat32(0./0.), toFloat32(nan), toFloat32(log(-1.))]));
+SELECT 'uniqCombined64 BFloat16', uniqCombined64(arrayJoin([toBFloat16(0./0.), toBFloat16(nan), toBFloat16(log(-1.))]));
+
+-- `countDistinct` rewrites to whichever uniq implementation is configured.
+-- Verify the rewrite chain too for `uniqCombined` and `uniqCombined64`.
+
+SELECT 'countDistinct uniqCombined', countDistinct(arrayJoin([0./0., nan, log(-1.)]))
+    SETTINGS count_distinct_implementation = 'uniqCombined';
+SELECT 'countDistinct uniqCombined64', countDistinct(arrayJoin([0./0., nan, log(-1.)]))
+    SETTINGS count_distinct_implementation = 'uniqCombined64';
+
 -- SELECT DISTINCT (DistinctTransform, single Float key, `SetVariants::key64`/`key32`/`key16`)
 
 SELECT 'SELECT DISTINCT Float64', count() FROM (

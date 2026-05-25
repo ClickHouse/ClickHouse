@@ -13,6 +13,7 @@
 #include <base/bit_cast.h>
 
 #include <Common/CombinedCardinalityEstimator.h>
+#include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -113,7 +114,9 @@ public:
             }
             else if constexpr (is_floating_point<T>)
             {
-                hash = static_cast<HashValueType>(intHash64(bit_cast<UInt64>(value)));
+                /// Canonicalize NaN bit patterns so every NaN hashes to the same
+                /// slot, matching `uniqExact` and `DISTINCT` semantics (issue #105748).
+                hash = static_cast<HashValueType>(intHash64(bit_cast<UInt64>(canonicalizeNaN(value))));
             }
             else if constexpr (sizeof(T) > sizeof(UInt64))
             {
