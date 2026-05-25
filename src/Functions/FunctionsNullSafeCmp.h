@@ -124,22 +124,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/false);
-    }
-
-    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/true);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
-    {
-        /// Header-time partial evaluation passes zero-row placeholder columns; we only need
-        /// the result column structure, not its data.  Non-zero dry-run inputs (constant
-        /// folding) have real values and fall through to normal evaluation.
-        if (dry_run && input_rows_count == 0)
-            return result_type->createColumn();
-
         ColumnPtr left_col = arguments[0].column;
         ColumnPtr right_col = arguments[1].column;
         const ColumnWithTypeAndName & type_and_name_left_col = arguments[0];
@@ -208,8 +192,7 @@ public:
 
         auto executable_func = comparator->build(arguments);
         auto data_type = executable_func->getResultType();
-        /// Forward `dry_run` so the flag flows end-to-end (the zero-row case is already handled above).
-        res = executable_func->execute(arguments, data_type, input_rows_count, dry_run);
+        res = executable_func->execute(arguments, data_type, input_rows_count, /* dry_run = */ false);
 
         return res;
     }
