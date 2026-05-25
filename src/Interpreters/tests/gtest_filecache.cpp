@@ -2015,6 +2015,69 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
     }
 }
 
+TEST_F(FileCacheTest, DiskCacheProviderHonoursFullRangeWhenBatchSizeIsOne)
+{
+    /// Regression: with `filesystem_cache_segments_batch_size = 1`, an earlier
+    /// version of `DiskCacheHandle` forwarded that limit to `FileCache::getOrSet`
+    /// and only saw the FIRST segment of the requested range. `status()` then
+    /// under-reported misses and `ReaderExecutor` returned short data (off-by-one
+    /// row in `00009_uniq_distributed` / `00060_move_to_prewhere_and_sets`,
+    /// 41/41 reproducibility). The provider must always get full coverage.
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;  /// → 3 segments for the 30-byte file
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_provider_batch_1", settings);
+    cache->initialize();
+
+    const std::string file_path = fs::current_path() / "test_dc_provider_batch_1";
+    const std::string data(30, 'Z');
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    /// The trigger: tells the provider it may only see ONE segment per call.
+    /// The provider must ignore this (it is a one-shot lookup, not a streaming
+    /// reader); otherwise the read returns only the first 10 bytes.
+    cache_settings.filesystem_cache_segments_batch_size = 1;
+
+    auto provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader, objects,
+        std::vector<std::shared_ptr<ICacheProvider>>{provider},
+        /*window_size=*/30,
+        /*min_bytes_for_seek=*/0,
+        file_path);
+
+    PipelineReadBuffer buf(std::move(executor));
+    WriteBufferFromOwnString result;
+    copyData(buf, result);
+    ASSERT_EQ(result.str(), data);
+
+    /// All 3 segments must end up populated, not just the first.
+    assertEqual(
+        cache->dumpQueue(),
+        {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+}
+
 TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
 {
     ServerUUID::setRandomForUnitTests();

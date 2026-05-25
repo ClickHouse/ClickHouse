@@ -87,13 +87,24 @@ DiskCacheHandle::DiskCacheHandle(
     /// `CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`. Without this,
     /// every merge that reads a not-yet-cached object pollutes the cache,
     /// which `02241_filesystem_cache_on_write_operations` detects.
+    ///
+    /// `file_segments_limit = 0` (unlimited) — `DiskCacheProvider` is a
+    /// one-shot lookup: `status()` / `get()` / `put()` must see every segment
+    /// that overlaps `requested`, otherwise miss ranges past the limit are
+    /// silently dropped and `ReaderExecutor` returns short data. The
+    /// `filesystem_cache_segments_batch_size` setting is designed for the
+    /// legacy streaming reader (`CachedOnDiskReadBufferFromFile`) which
+    /// fetches segments in pages via `nextFileSegmentsBatch`; we don't have
+    /// that loop and the request size is already bounded by the executor's
+    /// window (≤ a few segments per call), so disabling the limit here is
+    /// both correct and bounded.
     if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
         holder = cache->get(
             cache_key,
             requested_in_object.offset,
             requested_in_object.size,
-            cache_settings.filesystem_cache_segments_batch_size,
+            /*file_segments_limit=*/0,
             origin.user_id);
     }
     else
@@ -104,7 +115,7 @@ DiskCacheHandle::DiskCacheHandle(
             requested_in_object.size,
             object_size,
             CreateFileSegmentSettings{},
-            cache_settings.filesystem_cache_segments_batch_size,
+            /*file_segments_limit=*/0,
             origin,
             cache_settings.filesystem_cache_boundary_alignment);
     }
