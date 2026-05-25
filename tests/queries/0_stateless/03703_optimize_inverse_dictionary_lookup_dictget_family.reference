@@ -91,7 +91,7 @@ FROM default.tab AS __table1
 WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE equals(__table1.d, _CAST(\'2025-01-01\', \'Date\'))
+    WHERE equals(__table1.d, toDate(\'2025-01-01\'))
 ))
 ORDER BY
     __table1.id ASC,
@@ -108,7 +108,7 @@ FROM default.tab AS __table1
 WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE equals(__table1.dt, _CAST(\'2025-01-01 10:00:00\', \'DateTime\'))
+    WHERE equals(__table1.dt, toDateTime(\'2025-01-01 10:00:00\'))
 ))
 ORDER BY
     __table1.id ASC,
@@ -125,7 +125,7 @@ FROM default.tab AS __table1
 WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE equals(__table1.uid, _CAST(\'00000000-0000-0000-0000-000000000001\', \'UUID\'))
+    WHERE equals(__table1.uid, toUUID(\'00000000-0000-0000-0000-000000000001\'))
 ))
 ORDER BY
     __table1.id ASC,
@@ -142,7 +142,7 @@ FROM default.tab AS __table1
 WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE equals(__table1.ip4, _CAST(\'192.168.0.1\', \'IPv4\'))
+    WHERE equals(__table1.ip4, toIPv4(\'192.168.0.1\'))
 ))
 ORDER BY
     __table1.id ASC,
@@ -159,7 +159,7 @@ FROM default.tab AS __table1
 WHERE in(__table1.id, (
     SELECT __table1.id AS id
     FROM dictionary(\'dictionary_all\') AS __table1
-    WHERE equals(__table1.ip6, _CAST(\'2001:db8::1\', \'IPv6\'))
+    WHERE equals(__table1.ip6, toIPv6(\'2001:db8::1\'))
 ))
 ORDER BY
     __table1.id ASC,

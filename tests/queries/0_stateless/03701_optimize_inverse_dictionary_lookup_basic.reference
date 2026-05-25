@@ -235,7 +235,7 @@ SELECT
     __table1.color_id AS color_id,
     __table1.payload AS payload
 FROM default.t AS __table1
-WHERE _CAST(NULL, \'Nullable(Nothing)\')
+WHERE equals(dictGetString(\'colors\', \'name\', __table1.color_id), _CAST(NULL, \'Nullable(Nothing)\'))
 ORDER BY
     __table1.color_id ASC,
     __table1.payload ASC
