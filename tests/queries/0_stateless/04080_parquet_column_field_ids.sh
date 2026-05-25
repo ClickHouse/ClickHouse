@@ -162,3 +162,21 @@ SELECT 1 AS a
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '-1'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|must be non-negative' | sort -u
+
+# A top-level column whose name literally contains a '.' would flatten to the same dotted
+# path as a nested subfield of another column. Detected at field_id build time.
+echo "== error: dotted top-level name collides with nested path (auto-assign) =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$WORKDIR/04080_err7.parquet', 'Parquet')
+SELECT (1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_auto_assign_field_ids = 1;
+" 2>&1 | grep -oE 'BAD_ARGUMENTS|two output columns or nested fields flatten' | sort -u
+
+echo "== error: dotted top-level name collides with nested path (overrides) =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$WORKDIR/04080_err8.parquet', 'Parquet')
+SELECT (1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'a': '1', 'a.b': '2'};
+" 2>&1 | grep -oE 'BAD_ARGUMENTS|two output columns or nested fields flatten' | sort -u

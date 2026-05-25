@@ -84,14 +84,16 @@ namespace
     /// Returns nullopt when the output should carry no field_ids (both overrides empty
     /// and auto-assign disabled).
     ///
-    ///   1. Every entry in `overrides` is applied verbatim. Negative ids, unknown paths,
+    ///   1. The flattened schema paths must themselves be unique — if two output columns or
+    ///      nested fields flatten to the same dotted key, the build is rejected.
+    ///   2. Every entry in `overrides` is applied verbatim. Negative ids, unknown paths,
     ///      duplicate paths and duplicate ids are rejected so users get a clear signal when
     ///      the setting drifts from the query's schema. Keys may be top-level column names
     ///      or dotted nested paths (e.g. `arr.element`, `m.key`, `m.value`, `t.subfield`).
-    ///   2. If `auto_assign` is true, the remaining paths — top-level and nested — are given
+    ///   3. If `auto_assign` is true, the remaining paths — top-level and nested — are given
     ///      the smallest unused positive ids in schema DFS order (Iceberg writers
     ///      conventionally start at 1 and go up).
-    ///   3. If `auto_assign` is false, the override map must cover every path produced by
+    ///   4. If `auto_assign` is false, the override map must cover every path produced by
     ///      the schema (top-level and nested).
     std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
         const Block & header,
@@ -104,7 +106,23 @@ namespace
         std::vector<String> all_paths;
         for (const auto & col : header)
             enumerateFieldPaths(col.name, col.type, all_paths);
-        std::unordered_set<String> known_paths(all_paths.begin(), all_paths.end());
+
+        /// Path identity is a dotted string, so a top-level column literally named `a.b` and the
+        /// nested field `b` under `a Tuple(b ...)` would flatten to the same key. Letting that slide
+        /// silently would either emit duplicate `field_id`s in auto-assign mode or make full coverage
+        /// in override-only mode impossible. Detect the collision and reject it up front.
+        std::unordered_set<String> known_paths;
+        known_paths.reserve(all_paths.size());
+        for (const auto & path : all_paths)
+        {
+            if (!known_paths.insert(path).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids "
+                    "cannot disambiguate Parquet schema path '{}': two output columns or nested fields flatten "
+                    "to the same dotted path. Rename the conflicting top-level column (or nested subfield) so "
+                    "no name contains a '.' that collides with another column's nested path.",
+                    path);
+        }
 
         std::unordered_map<String, Int64> result;
         std::unordered_set<Int32> used_ids;

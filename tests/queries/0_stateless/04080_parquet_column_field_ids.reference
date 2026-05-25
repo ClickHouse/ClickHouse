@@ -65,3 +65,9 @@ is not an integer
 == error: negative id ==
 BAD_ARGUMENTS
 must be non-negative
+== error: dotted top-level name collides with nested path (auto-assign) ==
+BAD_ARGUMENTS
+two output columns or nested fields flatten
+== error: dotted top-level name collides with nested path (overrides) ==
+BAD_ARGUMENTS
+two output columns or nested fields flatten
