@@ -182,8 +182,12 @@ Send the token as a Bearer token in the `Authorization` header:
 
 ```bash
 curl -H 'Authorization: Bearer <your_jwt_token>' \
-    'http://localhost:8123/?query=SELECT+currentUser()'
+    'https://your-instance.clickhouse.cloud:8443/?query=SELECT+currentUser()'
 ```
+
+:::warning
+Always send JWTs over HTTPS. A Bearer token sent over plain HTTP is exposed to anyone on the network path and is equivalent to leaking the credential.
+:::
 
 ### OAuth2 device code login {#oauth2-device-code-login}
 
