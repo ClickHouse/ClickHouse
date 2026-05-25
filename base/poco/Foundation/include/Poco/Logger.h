@@ -148,22 +148,6 @@ public:
     /// the __FILE__ macro. The string is not copied
     /// internally for performance reasons.
 
-    void critical(const std::string & msg);
-    /// If the Logger's log level is at least PRIO_CRITICAL,
-    /// creates a Message with priority PRIO_CRITICAL
-    /// and the given message text and sends it
-    /// to the attached channel.
-
-    void critical(const std::string & msg, const char * file, int line);
-    /// If the Logger's log level is at least PRIO_CRITICAL,
-    /// creates a Message with priority PRIO_CRITICAL
-    /// and the given message text and sends it
-    /// to the attached channel.
-    ///
-    /// File must be a static string, such as the value of
-    /// the __FILE__ macro. The string is not copied
-    /// internally for performance reasons.
-
     void error(const std::string & msg);
     /// If the Logger's log level is at least PRIO_ERROR,
     /// creates a Message with priority PRIO_ERROR
@@ -196,22 +180,6 @@ public:
     /// the __FILE__ macro. The string is not copied
     /// internally for performance reasons.
 
-    void notice(const std::string & msg);
-    /// If the Logger's log level is at least PRIO_NOTICE,
-    /// creates a Message with priority PRIO_NOTICE
-    /// and the given message text and sends it
-    /// to the attached channel.
-
-    void notice(const std::string & msg, const char * file, int line);
-    /// If the Logger's log level is at least PRIO_NOTICE,
-    /// creates a Message with priority PRIO_NOTICE
-    /// and the given message text and sends it
-    /// to the attached channel.
-    ///
-    /// File must be a static string, such as the value of
-    /// the __FILE__ macro. The string is not copied
-    /// internally for performance reasons.
-
     void information(const std::string & msg);
     /// If the Logger's log level is at least PRIO_INFORMATION,
     /// creates a Message with priority PRIO_INFORMATION
@@ -237,38 +205,6 @@ public:
     void debug(const std::string & msg, const char * file, int line);
     /// If the Logger's log level is at least PRIO_DEBUG,
     /// creates a Message with priority PRIO_DEBUG
-    /// and the given message text and sends it
-    /// to the attached channel.
-    ///
-    /// File must be a static string, such as the value of
-    /// the __FILE__ macro. The string is not copied
-    /// internally for performance reasons.
-
-    void trace(const std::string & msg);
-    /// If the Logger's log level is at least PRIO_TRACE,
-    /// creates a Message with priority PRIO_TRACE
-    /// and the given message text and sends it
-    /// to the attached channel.
-
-    void trace(const std::string & msg, const char * file, int line);
-    /// If the Logger's log level is at least PRIO_TRACE,
-    /// creates a Message with priority PRIO_TRACE
-    /// and the given message text and sends it
-    /// to the attached channel.
-    ///
-    /// File must be a static string, such as the value of
-    /// the __FILE__ macro. The string is not copied
-    /// internally for performance reasons.
-
-    void test(const std::string & msg);
-    /// If the Logger's log level is at least PRIO_TEST,
-    /// creates a Message with priority PRIO_TEST
-    /// and the given message text and sends it
-    /// to the attached channel.
-
-    void test(const std::string & msg, const char * file, int line);
-    /// If the Logger's log level is at least PRIO_TEST,
-    /// creates a Message with priority PRIO_TEST
     /// and the given message text and sends it
     /// to the attached channel.
     ///
