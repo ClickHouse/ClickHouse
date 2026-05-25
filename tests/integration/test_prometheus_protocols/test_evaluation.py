@@ -347,6 +347,26 @@ def send_test_data():
                 {"__name__": "negative_le_bucket", "le": "+Inf"},
                 {300: 15},
             ),
+            # Histogram with a bucket whose `le` label is not parseable as a float.
+            # Prometheus drops the malformed bucket from the calculation rather than
+            # failing the query, so the result must be the quantile over the remaining
+            # well-formed buckets.
+            (
+                {"__name__": "bad_le_bucket", "le": "0.1"},
+                {300: 10},
+            ),
+            (
+                {"__name__": "bad_le_bucket", "le": "abc"},
+                {300: 25},
+            ),
+            (
+                {"__name__": "bad_le_bucket", "le": "1.0"},
+                {300: 50},
+            ),
+            (
+                {"__name__": "bad_le_bucket", "le": "+Inf"},
+                {300: 60},
+            ),
             (
                 {"__name__": "rate_bucket", "le": "0.1"},
                 {300: 10, 330: 15, 360: 20},
@@ -3311,6 +3331,18 @@ def test_histogram_quantile():
         300,
         '{"resultType": "vector", "result": []}',
         [],
+    )
+
+    # A bucket with an `le` label that does not parse as a float must be silently
+    # dropped (matching Prometheus), not abort the whole query. With the `le="abc"`
+    # bucket excluded, the remaining well-formed buckets are le=0.1 -> 10, le=1.0 -> 50,
+    # le=+Inf -> 60, so phi=0.5 -> rank 30, interpolated within (0.1, 1.0] to 0.55.
+    do_query_test(
+        "histogram_quantile(0.5, bad_le_bucket)",
+        300,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [300, "0.55"]}]}',
+        [["[]", "1970-01-01 00:05:00.000", "0.55"]],
+        eps=1e-12,
     )
 
     # Idiomatic `histogram_quantile(phi, rate(bucket[window]))` pattern.

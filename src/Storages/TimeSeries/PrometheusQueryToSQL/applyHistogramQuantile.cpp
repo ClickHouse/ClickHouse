@@ -148,19 +148,23 @@ SQLQueryPiece applyHistogramQuantile(
             /// quantilePrometheusHistogramForEach(phi)(le_array, values)
             ///
             /// le_array is constructed for each row as an array of the same length as values,
-            /// filled with the extracted 'le' tag value (or NaN if missing).
+            /// filled with the extracted `le` tag value (or NaN if the tag is missing or cannot
+            /// be parsed as a float). Prometheus silently drops bucket series with unparseable
+            /// `le` from the histogram rather than failing the query, so we match that by mapping
+            /// any non-numeric `le` to NaN — `quantilePrometheusHistogramForEach` already treats
+            /// NaN `le` as "ignore this bucket".
             auto le_array_expr = makeASTFunction(
                 "arrayResize",
                 makeASTFunction("CAST",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>("Array(Float64)")),
                 makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                makeASTFunction("toFloat64",
-                    makeASTFunction("ifNull",
+                makeASTFunction("ifNull",
+                    makeASTFunction("toFloat64OrNull",
                         makeASTFunction("timeSeriesExtractTag",
                             make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                            make_intrusive<ASTLiteral>("le")),
-                        make_intrusive<ASTLiteral>("NaN"))));
+                            make_intrusive<ASTLiteral>("le"))),
+                    make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN())));
 
             quantile_expr = addParametersToAggregateFunction(
                 makeASTFunction("quantilePrometheusHistogramForEach",
