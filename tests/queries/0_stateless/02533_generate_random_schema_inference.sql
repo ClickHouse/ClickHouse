@@ -1,5 +1,3 @@
-SET optimize_trivial_insert_select = 0;
-
 drop table if exists test;
 create table test (x UInt32, y String) engine=Memory;
 insert into test select * from generateRandom() limit 10;

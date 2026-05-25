@@ -3,7 +3,6 @@
 #include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -43,7 +42,7 @@ struct MultiSearchFirstPositionImpl
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
                 name, std::to_string(needles_arr.size()), std::to_string(std::numeric_limits<UInt8>::max()));
 
-        VectorWithMemoryTracking<std::string_view> needles;
+        std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
@@ -100,7 +99,7 @@ struct MultiSearchFirstPositionImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        VectorWithMemoryTracking<std::string_view> needles;
+        std::vector<std::string_view> needles;
 
         auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
