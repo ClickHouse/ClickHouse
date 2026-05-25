@@ -3187,17 +3187,22 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         const String & implicit_table = scope.context->getSettingsRef()[Setting::implicit_table_at_top_level];
                         const bool falls_back_to_system_one = query_node->isSubquery() || implicit_table.empty();
                         if (falls_back_to_system_one)
-                            from_clause_hint = ". Note: the query does not have the FROM clause. Did you forget to add it?";
+                            from_clause_hint = "Note: the query does not have the FROM clause. Did you forget to add it?";
                     }
                 }
 
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}{}",
+                /// Keep the original five-placeholder `message_format_string` for `text_log`
+                /// (see `03096_text_log_format_string_args_not_empty`) and attach the optional
+                /// `FROM`-clause hint via `addMessage` so the format string stays stable.
+                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),
                     scope.scope_node->formatASTForErrorMessage(),
-                    getHintsErrorMessageSuffix(hints),
-                    from_clause_hint);
+                    getHintsErrorMessageSuffix(hints));
+                if (!from_clause_hint.empty())
+                    exception.addMessage(from_clause_hint);
+                throw exception; /// NOLINT(hicpp-exception-baseclass,cert-err09-cpp,cert-err61-cpp,misc-throw-by-value-catch-by-reference)
             }
 
             node = std::move(resolved_identifier_node);
