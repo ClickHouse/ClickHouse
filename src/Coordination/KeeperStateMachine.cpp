@@ -15,9 +15,11 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <boost/noncopyable.hpp>
+#include <Common/SipHash.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
@@ -133,6 +135,12 @@ KeeperStateMachine<Storage>::KeeperStateMachine(
 {
 }
 
+namespace
+{
+
+ClusterConfigPtr loadCommittedConfig(const KeeperContextPtr & keeper_context, const LoggerPtr & log);
+
+}
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::init()
@@ -188,6 +196,17 @@ void KeeperStateMachine<Storage>::init()
     else
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
 
+    auto committed_config = loadCommittedConfig(keeper_context, log);
+    if (committed_config && (!cluster_config || committed_config->get_log_idx() > cluster_config->get_log_idx()))
+    {
+        LOG_INFO(
+            log,
+            "Using committed Keeper config with log index {} newer than snapshot config index {}",
+            committed_config->get_log_idx(),
+            cluster_config ? cluster_config->get_log_idx() : 0);
+        cluster_config = committed_config;
+    }
+
     if (!storage)
         storage = std::make_unique<Storage>(
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
@@ -195,6 +214,127 @@ void KeeperStateMachine<Storage>::init()
 
 namespace
 {
+
+constexpr std::string_view committed_config_file_name = "committed_config";
+constexpr std::string_view committed_config_tmp_file_name = "committed_config.tmp";
+
+enum class CommittedConfigVersion : uint8_t
+{
+    V1 = 0,
+};
+
+constexpr auto current_committed_config_version = CommittedConfigVersion::V1;
+
+void updateCommittedConfigHash(SipHash & hash, uint8_t version, uint64_t log_idx, const nuraft::ptr<nuraft::buffer> & config_buf)
+{
+    hash.update(version);
+    hash.update(log_idx);
+    hash.update(reinterpret_cast<const char *>(config_buf->data_begin()), config_buf->size());
+}
+
+void saveCommittedConfig(
+    const KeeperContextPtr & keeper_context,
+    uint64_t log_idx,
+    const ClusterConfigPtr & config,
+    const LoggerPtr & log)
+{
+    auto disk = keeper_context->getStateFileDisk();
+    auto config_buf = config->serialize();
+    auto version = static_cast<uint8_t>(current_committed_config_version);
+
+    auto out = disk->writeFile(std::string(committed_config_tmp_file_name));
+
+    SipHash hash;
+    updateCommittedConfigHash(hash, version, log_idx, config_buf);
+    writeIntBinary(hash.get64(), *out);
+    writeIntBinary(version, *out);
+    writeIntBinary(log_idx, *out);
+    out->write(reinterpret_cast<const char *>(config_buf->data_begin()), config_buf->size());
+    out->sync();
+    out->finalize();
+
+    disk->replaceFile(std::string(committed_config_tmp_file_name), std::string(committed_config_file_name));
+
+    LOG_TRACE(log, "Saved committed Keeper config with log index {}", log_idx);
+}
+
+ClusterConfigPtr loadCommittedConfig(const KeeperContextPtr & keeper_context, const LoggerPtr & log)
+{
+    auto disk = keeper_context->getStateFileDisk();
+    if (!disk->existsFile(std::string(committed_config_file_name)))
+        return nullptr;
+
+    try
+    {
+        auto in = disk->readFile(std::string(committed_config_file_name), getReadSettings());
+        auto content_size = in->getFileSize();
+        const auto header_size = sizeof(uint64_t) + sizeof(uint8_t) + sizeof(uint64_t);
+        if (content_size <= header_size)
+        {
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Committed Keeper config sidecar {} in Keeper state-file directory is too small: {} bytes",
+                committed_config_file_name,
+                content_size);
+        }
+
+        uint64_t read_checksum = 0;
+        readIntBinary(read_checksum, *in);
+
+        uint8_t version = 0;
+        readIntBinary(version, *in);
+        if (version != static_cast<uint8_t>(current_committed_config_version))
+        {
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Unsupported committed Keeper config sidecar {} version {} in Keeper state-file directory",
+                committed_config_file_name,
+                version);
+        }
+
+        uint64_t log_idx = 0;
+        readIntBinary(log_idx, *in);
+
+        auto config_size = content_size - header_size;
+        auto config_buf = nuraft::buffer::alloc(config_size);
+        in->readStrict(reinterpret_cast<char *>(config_buf->data_begin()), config_size);
+
+        SipHash hash;
+        updateCommittedConfigHash(hash, version, log_idx, config_buf);
+        if (read_checksum != hash.get64())
+        {
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Invalid checksum while reading committed Keeper config sidecar {} in Keeper state-file directory. Got {}, expected {}",
+                committed_config_file_name,
+                read_checksum,
+                hash.get64());
+        }
+
+        config_buf->pos(0);
+        auto config = ClusterConfig::deserialize(*config_buf);
+        if (config->get_log_idx() != log_idx)
+        {
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Committed Keeper config sidecar {} in Keeper state-file directory has log index {}, but embedded config index is {}",
+                committed_config_file_name,
+                log_idx,
+                config->get_log_idx());
+        }
+
+        LOG_INFO(log, "Loaded committed Keeper config with log index {}", log_idx);
+        return config;
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Failed to load committed Keeper config sidecar {} in Keeper state-file directory: {}",
+            committed_config_file_name,
+            getCurrentExceptionMessage(/* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true));
+    }
+}
 
 void assertDigest(
     const KeeperDigest & expected,
@@ -763,9 +903,13 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
 void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
-    std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
-    cluster_config = ClusterConfig::deserialize(*tmp);
+    auto committed_config = ClusterConfig::deserialize(*tmp);
+    saveCommittedConfig(keeper_context, log_idx, committed_config, log);
+    {
+        std::lock_guard lock(cluster_config_lock);
+        cluster_config = committed_config;
+    }
     keeper_context->setLastCommitIndex(log_idx);
 }
 
@@ -812,7 +956,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
         snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(
-            storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
+            storage.get(), snapshot_meta_copy, snapshot_meta_copy->get_last_config(), keeper_context->getWriteSnapshotVersion());
     }
 
     /// create snapshot task for background execution (in snapshot thread)

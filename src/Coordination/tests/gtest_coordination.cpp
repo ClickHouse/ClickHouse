@@ -918,6 +918,265 @@ TYPED_TEST(CoordinationTest, TestDurableState)
     }
 }
 
+TYPED_TEST(CoordinationTest, TestCommittedConfigSurvivesRestart)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto committed_config = nuraft::cs_new<nuraft::cluster_config>();
+    committed_config->get_servers().push_back(
+        nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+    committed_config->set_log_idx(7);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+        state_machine->commit_config(7, committed_config);
+        ASSERT_EQ(state_machine->last_commit_index(), 7);
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 7);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 0);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestCommittedConfigCorruptionFailsStartup)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    {
+        WriteBufferFromFile write_buf("./state_dir/committed_config", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        writeIntBinary(uint64_t{1}, write_buf);
+        write_buf.sync();
+        write_buf.close();
+    }
+
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    ASSERT_THROW(state_machine->init(), DB::Exception);
+}
+
+TYPED_TEST(CoordinationTest, TestCommittedConfigNewerThanSnapshotConfigWins)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto make_config = [](uint64_t log_idx)
+    {
+        auto config = nuraft::cs_new<nuraft::cluster_config>();
+        config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+        config->set_log_idx(log_idx);
+        return config;
+    };
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+
+        auto snapshot_config = make_config(3);
+        state_machine->commit_config(3, snapshot_config);
+
+        bool snapshot_created = false;
+        nuraft::snapshot snapshot(3, 0, snapshot_config);
+        nuraft::async_result<bool>::handler_type when_done = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
+        {
+            snapshot_created = ret;
+        };
+
+        state_machine->create_snapshot(snapshot, when_done);
+        CreateSnapshotTask snapshot_task;
+        ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+        ASSERT_TRUE(snapshot_created);
+
+        auto committed_config = make_config(7);
+        state_machine->commit_config(7, committed_config);
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 7);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 3);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestSnapshotCreationUsesSnapshotConfig)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto make_config = [](uint64_t log_idx)
+    {
+        auto config = nuraft::cs_new<nuraft::cluster_config>();
+        config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+        config->set_log_idx(log_idx);
+        return config;
+    };
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+
+        auto snapshot_config = make_config(3);
+        state_machine->commit_config(3, snapshot_config);
+
+        auto committed_config = make_config(7);
+        state_machine->commit_config(7, committed_config);
+
+        bool snapshot_created = false;
+        nuraft::snapshot snapshot(3, 0, snapshot_config);
+        nuraft::async_result<bool>::handler_type when_done = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
+        {
+            snapshot_created = ret;
+        };
+
+        state_machine->create_snapshot(snapshot, when_done);
+        CreateSnapshotTask snapshot_task;
+        ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+        ASSERT_TRUE(snapshot_created);
+    }
+
+    ASSERT_TRUE(std::filesystem::remove("./state_dir/committed_config"));
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 3);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 3);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestSnapshotConfigNewerThanCommittedConfigWins)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto make_config = [](uint64_t log_idx)
+    {
+        auto config = nuraft::cs_new<nuraft::cluster_config>();
+        config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+        config->set_log_idx(log_idx);
+        return config;
+    };
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+
+        auto snapshot_config = make_config(7);
+        state_machine->commit_config(7, snapshot_config);
+
+        bool snapshot_created = false;
+        nuraft::snapshot snapshot(7, 0, snapshot_config);
+        nuraft::async_result<bool>::handler_type when_done = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
+        {
+            snapshot_created = ret;
+        };
+
+        state_machine->create_snapshot(snapshot, when_done);
+        CreateSnapshotTask snapshot_task;
+        ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+        ASSERT_TRUE(snapshot_created);
+
+        auto committed_config = make_config(3);
+        state_machine->commit_config(3, committed_config);
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 7);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 7);
+    }
+}
+
 TYPED_TEST(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;

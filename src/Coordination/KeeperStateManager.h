@@ -88,8 +88,8 @@ public:
         return configuration_wrapper.cluster_config->get_servers().size();
     }
 
-    /// Read all log entries in log store from the begging and return latest config (with largest log_index)
-    ClusterConfigPtr getLatestConfigFromLogStore() const;
+    /// Read latest config entry at or before the supplied cutoff from the log store.
+    ClusterConfigPtr getLatestConfigFromLogStore(uint64_t up_to_log_index) const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
     ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const;

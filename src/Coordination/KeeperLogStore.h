@@ -73,8 +73,8 @@ public:
     /// Flush batch of appended entries
     void end_of_append_batch(uint64_t start_index, uint64_t count) override;
 
-    /// Get entry with latest config in logstore
-    nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
+    /// Get latest config entry at or before the supplied cutoff.
+    nuraft::ptr<nuraft::log_entry> getLatestConfigChange(uint64_t up_to_log_index) const;
 
     void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server);
 

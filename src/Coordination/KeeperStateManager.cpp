@@ -343,9 +343,9 @@ void KeeperStateManager::system_exit(const int /* exit_code */)
     abort();
 }
 
-ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
+ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore(uint64_t up_to_log_index) const
 {
-    auto entry_with_change = log_store->getLatestConfigChange();
+    auto entry_with_change = log_store->getLatestConfigChange(up_to_log_index);
     if (entry_with_change)
         return ClusterConfig::deserialize(entry_with_change->get_buf());
     return nullptr;
