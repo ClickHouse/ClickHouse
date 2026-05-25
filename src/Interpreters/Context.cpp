@@ -7973,7 +7973,7 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
             /// trim trailing whitespaces
             size_t last = types_view.find_last_not_of(" \t", token_end - 1);
 
-            /// All-whitespace token between separators (e.g. "DDL,   ,DCL")
+            /// All-whitespace token between separators (e.g. `DDL,<spaces>,DCL`)
             if (last == std::string_view::npos || last < pos)
             {
                 pos = end + 1;
