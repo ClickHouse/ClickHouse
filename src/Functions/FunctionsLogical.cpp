@@ -19,6 +19,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstring>
 #include <algorithm>
@@ -157,7 +158,7 @@ namespace
 using namespace FunctionsLogicalDetail;
 
 using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
+using UInt8ColumnPtrs = VectorWithMemoryTracking<const ColumnUInt8 *>;
 
 
 MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
@@ -833,7 +834,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
-        std::vector<size_t> short_circuit_args_index;
+        VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)

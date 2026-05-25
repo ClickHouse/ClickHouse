@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
 #include <Common/NaNUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -882,7 +883,7 @@ private:
     void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
     {
         using ValueType = typename Container::value_type;
-        std::vector<ValueType> boundary_values(boundaries.size());
+        VectorWithMemoryTracking<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
             boundary_values[i] = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
 
