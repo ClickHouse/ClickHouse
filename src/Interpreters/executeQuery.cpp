@@ -1821,8 +1821,11 @@ static BlockIO executeQueryImpl(
                     if (!interpreter->ignoreLimits())
                     {
                         limits.mode = LimitsMode::LIMITS_CURRENT;
-                        const Settings & limits_settings = (insert_query && insert_query->returning_select)
-                            ? makeReturningSelectContext(insert_query->returning_select, context)->getSettingsRef()
+                        ContextMutablePtr returning_context_for_limits;
+                        if (insert_query && insert_query->returning_select)
+                            returning_context_for_limits = makeReturningSelectContext(insert_query->returning_select, context);
+                        const Settings & limits_settings = returning_context_for_limits
+                            ? returning_context_for_limits->getSettingsRef()
                             : settings;
                         limits.size_limits = SizeLimits(
                             limits_settings[Setting::max_result_rows],
