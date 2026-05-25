@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <Common/QueryScope.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -18,6 +19,13 @@ struct QueryPipelineFinalizedInfo
     std::optional<ResultProgress> result_progress;
     std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
+};
+
+/// Shared by BlockIO finish callbacks; must outlive executeQueryImpl stack frame.
+struct BlockIOFinishCallbackState
+{
+    bool pulling_pipeline_at_setup = false;
+    bool insert_returning_result_as_select = false;
 };
 
 struct BlockIO
@@ -49,9 +57,7 @@ struct BlockIO
 
     QueryPipeline pipeline;
 
-    /// Native-protocol INSERT ... RETURNING runs INSERT as push, then swaps to a pulling SELECT.
-    /// Query-finish logging must treat the final pipeline as a SELECT result, not written_rows.
-    bool insert_returning_result_as_select = false;
+    std::shared_ptr<BlockIOFinishCallbackState> finish_callback_state;
 
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.

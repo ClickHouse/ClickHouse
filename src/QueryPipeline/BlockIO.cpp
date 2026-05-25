@@ -43,6 +43,7 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
     process_list_entries    = std::move(rhs.process_list_entries);
     query_metadata_cache    = std::move(rhs.query_metadata_cache);
     pipeline                = std::move(rhs.pipeline);
+    finish_callback_state   = std::move(rhs.finish_callback_state);
 
     finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
     finish_callbacks        = std::move(rhs.finish_callbacks);

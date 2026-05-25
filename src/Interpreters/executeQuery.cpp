@@ -1961,20 +1961,23 @@ static BlockIO executeQueryImpl(
 
             /// Also make possible for caller to log successful query finish and exception during execution.
 
-            BlockIO * block_io = &res;
+            res.finish_callback_state = std::make_shared<BlockIOFinishCallbackState>();
+            res.finish_callback_state->pulling_pipeline_at_setup = pipeline.pulling();
+            const auto finish_callback_state = res.finish_callback_state;
 
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
-                                     block_io,
+                                     finish_callback_state,
                                      query_result_cache_usage](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                const bool pulling_pipeline = query_pipeline.pulling() || block_io->insert_returning_result_as_select;
+                const bool pulling_pipeline = finish_callback_state->pulling_pipeline_at_setup
+                    || finish_callback_state->insert_returning_result_as_select;
                 return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
             /// The finish callback logs the query result
             auto finish_callback = [elem,
-                                    block_io,
+                                    finish_callback_state,
                                     context,
                                     out_ast,
                                     query_result_cache_usage,
@@ -1982,8 +1985,8 @@ static BlockIO executeQueryImpl(
                                     implicit_tcl_executor,
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                const bool pulling_pipeline = query_pipeline_finalized_info.result_progress.has_value()
-                    || block_io->insert_returning_result_as_select;
+                const bool pulling_pipeline = finish_callback_state->pulling_pipeline_at_setup
+                    || finish_callback_state->insert_returning_result_as_select;
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
