@@ -347,6 +347,36 @@ def send_test_data():
                 {"__name__": "negative_le_bucket", "le": "+Inf"},
                 {300: 15},
             ),
+            # Two distinct histograms (different `__name__`) selected together by a
+            # name regex. They share `env` but differ in another label, so after
+            # `histogram_quantile` drops `__name__` from the output the two series
+            # remain distinguishable. Used to verify that the quantile is computed
+            # per histogram (i.e. `__name__` participates in the GROUP BY) — merging
+            # buckets across histograms would yield a single, incorrect result.
+            (
+                {"__name__": "two_hist_a_bucket", "env": "prod", "kind": "a", "le": "0.1"},
+                {300: 10},
+            ),
+            (
+                {"__name__": "two_hist_a_bucket", "env": "prod", "kind": "a", "le": "1.0"},
+                {300: 50},
+            ),
+            (
+                {"__name__": "two_hist_a_bucket", "env": "prod", "kind": "a", "le": "+Inf"},
+                {300: 60},
+            ),
+            (
+                {"__name__": "two_hist_b_bucket", "env": "prod", "kind": "b", "le": "0.1"},
+                {300: 5},
+            ),
+            (
+                {"__name__": "two_hist_b_bucket", "env": "prod", "kind": "b", "le": "1.0"},
+                {300: 8},
+            ),
+            (
+                {"__name__": "two_hist_b_bucket", "env": "prod", "kind": "b", "le": "+Inf"},
+                {300: 10},
+            ),
             # Histogram with a bucket whose `le` label is not parseable as a float.
             # Prometheus drops the malformed bucket from the calculation rather than
             # failing the query, so the result must be the quantile over the remaining
@@ -3271,6 +3301,25 @@ def test_histogram_quantile():
         [
             ["[('job','reader')]", "[('1970-01-01 00:05:00.000',2.5)]"],
             ["[('job','writer')]", "[('1970-01-01 00:05:00.000',1.75)]"],
+        ],
+        eps=1e-12,
+    )
+
+    # Two distinct histograms (`two_hist_a_bucket` / `two_hist_b_bucket`) selected
+    # together by a name regex. Quantiles must be computed per histogram and
+    # `__name__` then dropped from the output; merging buckets across histograms
+    # would yield a single, incorrect result. Output ordering is by labelset.
+    #   two_hist_a_bucket{env="prod",kind="a"}: cumulative 10/50/60 -> rank 30 -> 0.55
+    #   two_hist_b_bucket{env="prod",kind="b"}: cumulative  5/ 8/10 -> rank  5 -> 0.1
+    do_range_query_test(
+        'histogram_quantile(0.5, {__name__=~"two_hist_a_bucket|two_hist_b_bucket"})',
+        300,
+        300,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"env": "prod", "kind": "a"}, "values": [[300, "0.55"]]}, {"metric": {"env": "prod", "kind": "b"}, "values": [[300, "0.1"]]}]}',
+        [
+            ["[('env','prod'),('kind','a')]", "[('1970-01-01 00:05:00.000',0.55)]"],
+            ["[('env','prod'),('kind','b')]", "[('1970-01-01 00:05:00.000',0.1)]"],
         ],
         eps=1e-12,
     )

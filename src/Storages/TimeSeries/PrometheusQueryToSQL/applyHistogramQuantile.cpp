@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
 #include <cmath>
@@ -90,11 +91,12 @@ SQLQueryPiece applyHistogramQuantile(
 
     Float64 phi = phi_arg.scalar_value;
 
-    /// Step 1: Extract le tags, group by non-le labels, and compute quantile.
-    /// SELECT timeSeriesRemoveTags(group, ['le', '__name__']) AS new_group,
+    /// Step 1: Extract le tags, group by non-le labels (keeping __name__ so that
+    /// distinct histograms remain separate), and compute quantile.
+    /// SELECT timeSeriesRemoveTag(group, 'le') AS new_group,
     ///        quantilePrometheusHistogramForEach(phi)(
     ///            arrayResize(CAST([] AS Array(Float64)), length(values),
-    ///                toFloat64(ifNull(timeSeriesExtractTag(group, 'le'), 'NaN'))),
+    ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
     ///            values) AS values
     /// FROM <subquery>
     /// GROUP BY new_group
@@ -102,11 +104,17 @@ SQLQueryPiece applyHistogramQuantile(
     {
         SelectQueryBuilder builder;
 
-        /// new_group expression: remove 'le' and '__name__' tags
+        /// new_group expression: remove only the `le` tag. Keep `__name__` in the
+        /// group key so a query that selects multiple `*_bucket` metrics with the
+        /// same non-name labels (for example `{__name__=~"a_bucket|b_bucket"}` or
+        /// `a_bucket or b_bucket`) keeps each histogram's quantile separate. We
+        /// drop `__name__` afterwards through `dropMetricName`, which preserves
+        /// PromQL's "function output has no metric name" semantics while still
+        /// enforcing the no-duplicate-labelset rule via timeSeriesThrowDuplicateSeriesIf.
         auto new_group_expr = makeASTFunction(
-            "timeSeriesRemoveTags",
+            "timeSeriesRemoveTag",
             make_intrusive<ASTIdentifier>(ColumnNames::Group),
-            make_intrusive<ASTLiteral>(Array{"le", kMetricName}));
+            make_intrusive<ASTLiteral>("le"));
         new_group_expr->setAlias(ColumnNames::NewGroup);
         builder.select_list.push_back(std::move(new_group_expr));
 
@@ -205,9 +213,13 @@ SQLQueryPiece applyHistogramQuantile(
     res.start_time = expression.start_time;
     res.end_time = expression.end_time;
     res.step = expression.step;
-    res.metric_name_dropped = true;
+    res.metric_name_dropped = false;
 
-    return res;
+    /// Drop `__name__` from the result (matching PromQL: function outputs have no
+    /// metric name). `dropMetricName` also enforces uniqueness via
+    /// `timeSeriesThrowDuplicateSeriesIf`, which is the right behavior if removing
+    /// `__name__` would produce two output series with identical labels.
+    return dropMetricName(std::move(res), context);
 }
 
 }
