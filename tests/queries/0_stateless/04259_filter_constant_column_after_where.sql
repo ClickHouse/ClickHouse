@@ -30,6 +30,8 @@ GROUP BY ALL
 ORDER BY ALL
 SETTINGS query_plan_merge_filters = 1;
 
+SET query_plan_merge_filters = 0, query_plan_optimize_lazy_materialization = 0;
+
 SELECT dumpColumnStructure(y), count()
 FROM 04259_filter_constant_column_after_where
 WHERE y = 3
