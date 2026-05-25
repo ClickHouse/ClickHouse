@@ -4,6 +4,9 @@ set allow_asynchronous_read_from_io_pool_for_merge_tree = 0;
 set remote_filesystem_read_method = 'read';
 set local_filesystem_read_method = 'pread';
 set load_marks_asynchronously = 0;
+-- `use_reader_executor=0` keeps the reader-executor prefetch pool out of the
+-- query thread group so `length(thread_ids)` stays within the asserted bound.
+set use_reader_executor = 0;
 
 CREATE TABLE data_01283 engine=MergeTree()
 ORDER BY key

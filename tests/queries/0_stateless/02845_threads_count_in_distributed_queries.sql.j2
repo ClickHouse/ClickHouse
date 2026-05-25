@@ -168,7 +168,11 @@ FROM test_lot_of_parts_distributed
 WHERE a = 'foo' AND value != '' AND positionCaseInsensitiveUTF8(value, 'baz') > 0 AND b = 'bar' AND c >= _CAST('1683504000', 'DateTime64')
 ORDER BY c DESC
 LIMIT 5
-SETTINGS log_comment='check_concurrency_in_remote_queries4' FORMAT Null;
+-- `use_reader_executor=0` keeps the prefetch pool out of the query thread
+-- group so `peak_threads` stays within `max_threads + 2`. The pool's worker
+-- threads inherit the query group via `CurrentThread::attachTo` and would
+-- otherwise show up in `system.query_thread_log` and break the assertion.
+SETTINGS log_comment='check_concurrency_in_remote_queries4', use_reader_executor=0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_thread_log, query_log;
 
