@@ -45,10 +45,12 @@ public:
     std::unique_ptr<DB::ReadBufferFromFileBase> readObject( /// NOLINT
         const DB::StoredObject & object,
         const DB::ReadSettings & read_settings,
-        std::optional<size_t> read_hint) const override
+        std::optional<size_t> read_hint,
+        bool use_external_buffer,
+        bool restrict_seek) const override
     {
         ++read_count;
-        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint);
+        return DB::LocalObjectStorage::readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
     }
 };
 
@@ -707,9 +709,8 @@ static std::string runFollower(int idx, DB::IKeeperStateMachine & leader, nuraft
     });
 
     auto ctx = makeFollowerContext<Storage>(idx);
-    DB::ResponsesQueue queue(std::numeric_limits<size_t>::max());
     DB::SnapshotsQueue snapshots_queue{1};
-    auto follower = std::make_shared<DB::KeeperStateMachine<Storage>>(queue, snapshots_queue, ctx, nullptr);
+    auto follower = std::make_shared<DB::KeeperStateMachine<Storage>>(nullptr, snapshots_queue, ctx, nullptr);
     follower->init();
 
     void * user_snp_ctx = nullptr;
@@ -766,10 +767,9 @@ TYPED_TEST(CoordinationTest, TestReadSnapshotParallelMultiChunk)
     auto snap_buf = manager.serializeSnapshotToBuffer(snap);
     manager.serializeSnapshotBufferToDisk(*snap_buf, 50);
 
-    DB::ResponsesQueue leader_queue(std::numeric_limits<size_t>::max());
     DB::SnapshotsQueue leader_snapshots_queue{1};
     auto leader = std::make_shared<DB::KeeperStateMachine<Storage>>(
-        leader_queue, leader_snapshots_queue, leader_ctx, nullptr);
+        nullptr, leader_snapshots_queue, leader_ctx, nullptr);
     leader->init();
 
     nuraft::snapshot s(50, 0, std::make_shared<nuraft::cluster_config>());
