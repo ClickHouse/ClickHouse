@@ -212,20 +212,38 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             }
         }
 
-        /// Username and password parameters are prohibited in cluster version of the function
+        /// Username and password parameters are prohibited in cluster version of the function.
+        /// The user name accepts string literals, and additionally bare identifiers when they
+        /// are followed by a string-literal password — this is consistent with how the database
+        /// and table arguments accept unquoted identifiers, but avoids breaking the historical
+        /// behavior of `remote('host', db.table, sharding_key)`, where a bare identifier at the
+        /// same position was silently treated as a sharding key. The password must still be a
+        /// string literal.
         if (!is_cluster_function)
         {
+            bool password_consumed = false;
             if (arg_num < args.size())
             {
-                if (!get_string_literal(*args[arg_num], username))
+                if (get_string_literal(*args[arg_num], username))
+                {
+                    ++arg_num;
+                }
+                else if (arg_num + 1 < args.size()
+                    && get_string_literal(*args[arg_num + 1], password)
+                    && tryGetIdentifierNameInto(args[arg_num], username))
+                {
+                    arg_num += 2;
+                    password_consumed = true;
+                }
+                else
                 {
                     username = "default";
                     sharding_key = args[arg_num];
+                    ++arg_num;
                 }
-                ++arg_num;
             }
 
-            if (arg_num < args.size() && !sharding_key)
+            if (arg_num < args.size() && !sharding_key && !password_consumed)
             {
                 if (!get_string_literal(*args[arg_num], password))
                 {
@@ -263,7 +281,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
-        std::vector<std::vector<String>> names;
+        HostsByShard names;
         names.reserve(shards.size());
         for (const auto & shard : shards)
         {
