@@ -464,13 +464,80 @@ if not args.use_existing_tables:
         strings, parentheses, brackets, or braces (e.g. tuples, arrays,
         maps). Use a small scanner that tracks quote and bracket state so
         that the whole `name = value` assignment is removed even for such
-        values.
+        values. The same scanner first locates the `SETTINGS` keyword
+        outside of any string/comment context, so an occurrence of the
+        setting name inside, e.g., a column `COMMENT` literal preceding the
+        clause cannot be matched.
         """
+
+        def find_keyword_outside_literals(text, keyword, start=0):
+            """Return the index of `keyword` in `text` ignoring matches inside
+            string literals or `--`/`#`/`/* */` comments. Case-insensitive."""
+            keyword_upper = keyword.upper()
+            klen = len(keyword_upper)
+            i = start
+            n = len(text)
+            quote = None
+            line_comment = False
+            block_comment = False
+            while i < n:
+                c = text[i]
+                next_c = text[i + 1] if i + 1 < n else ""
+                if line_comment:
+                    if c == "\n":
+                        line_comment = False
+                    i += 1
+                    continue
+                if block_comment:
+                    if c == "*" and next_c == "/":
+                        block_comment = False
+                        i += 2
+                        continue
+                    i += 1
+                    continue
+                if quote is not None:
+                    if c == "\\" and i + 1 < n:
+                        i += 2
+                        continue
+                    if c == quote:
+                        # `''` inside a single-quoted string is an escaped quote.
+                        if quote == "'" and next_c == "'":
+                            i += 2
+                            continue
+                        quote = None
+                    i += 1
+                    continue
+                if (c == "-" and next_c == "-") or c == "#":
+                    line_comment = True
+                    i += 1
+                    continue
+                if c == "/" and next_c == "*":
+                    block_comment = True
+                    i += 2
+                    continue
+                if c in "'\"`":
+                    quote = c
+                    i += 1
+                    continue
+                # Word-boundary aware match.
+                if text[i : i + klen].upper() == keyword_upper:
+                    before_ok = i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")
+                    after = text[i + klen] if i + klen < n else ""
+                    after_ok = not (after.isalnum() or after == "_")
+                    if before_ok and after_ok:
+                        return i
+                i += 1
+            return -1
+
+        settings_pos = find_keyword_outside_literals(query, "SETTINGS")
+        if settings_pos < 0:
+            return query
+
         name_re = re.compile(
             r"\b" + re.escape(setting_name) + r"\s*=\s*",
             re.IGNORECASE,
         )
-        m = name_re.search(query)
+        m = name_re.search(query, settings_pos + len("SETTINGS"))
         if not m:
             return query
 
