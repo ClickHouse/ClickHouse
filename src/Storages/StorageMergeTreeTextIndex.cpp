@@ -35,7 +35,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource : public ISource
+class MergeTreeTextIndexSource final : public ISource
 {
 public:
     MergeTreeTextIndexSource(
@@ -221,7 +221,7 @@ private:
                 auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
-                sparse_index = TextIndexSerialization::deserializeSparseIndex(idx_buf);
+                sparse_index = TextIndexSerialization::deserializeHeader(idx_buf).sparse_index;
 
                 if (sparse_index.empty())
                     continue;
@@ -412,8 +412,8 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()

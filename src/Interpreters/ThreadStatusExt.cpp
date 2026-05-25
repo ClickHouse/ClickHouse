@@ -75,6 +75,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings)
+{
+    if (has_trace_collector)
+    {
+        memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
+        /// Only push the query-level sample settings when the user actually changed them from the
+        /// default; otherwise leave the group tracker at -1 so `getResolvedSampleConfig` falls
+        /// through to `total_memory_tracker_sample_probability`.
+        if (settings[Setting::memory_profiler_sample_probability].changed)
+            memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+        if (settings[Setting::memory_profiler_sample_min_allocation_size].changed)
+            memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
+        if (settings[Setting::memory_profiler_sample_max_allocation_size].changed)
+            memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
+    }
+
+    if (settings[Setting::memory_tracker_fault_probability] > 0.0)
+        memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+
+    memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
+}
+
 ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
     : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
@@ -186,14 +208,7 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
 
     /// However settings from storage context have to be applied
     const Settings & settings = context->getSettingsRef();
-    group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
-    group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
-    group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
-    group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
-    group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
-    if (settings[Setting::memory_tracker_fault_probability] > 0.0)
-        group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
-
+    configureMemoryTrackerFromSettings(context->hasTraceCollector(), group->memory_tracker, settings);
     return group;
 }
 
@@ -255,76 +270,6 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
-    : thread_group(std::move(thread_group_))
-{
-    try
-    {
-        if (!thread_group)
-            return;
-
-        prev_thread = current_thread;
-        prev_thread_group = CurrentThread::getGroup();
-        if (prev_thread_group)
-        {
-            if (prev_thread_group == thread_group)
-            {
-                thread_group = nullptr;
-                prev_thread_group = nullptr;
-                return;
-            }
-            else if (!allow_existing_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
-            else
-                CurrentThread::detachFromGroupIfNotDetached();
-        }
-
-        if (!prev_thread)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
-
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-        CurrentThread::attachToGroup(thread_group);
-        setThreadName(thread_name);
-    }
-    catch (...)
-    {
-        /// Unexpected. For caller's convenience avoid throwing exceptions.
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-        thread_group = nullptr;
-        prev_thread_group = nullptr;
-    }
-}
-
-ThreadGroupSwitcher::~ThreadGroupSwitcher()
-{
-    if (!thread_group)
-        return;
-
-    try
-    {
-        ThreadStatus * cur_thread = current_thread;
-        ThreadGroupPtr cur_thread_group = CurrentThread::getGroup();
-        if (cur_thread != prev_thread)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread changed between scope start ({}) and end ({})", prev_thread ? std::to_string(prev_thread->thread_id) : "nullptr", cur_thread ? std::to_string(cur_thread->thread_id) : "nullptr");
-        if (cur_thread_group != thread_group)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread group changed between scope start (master_thread_id {}) and end ({})", thread_group->master_thread_id, cur_thread_group ? "master_thread_id " + std::to_string(cur_thread_group->master_thread_id) : "nullptr");
-        thread_group.reset();
-
-        CurrentThread::detachFromGroupIfNotDetached();
-
-        if (prev_thread_group)
-        {
-            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-            CurrentThread::attachToGroup(prev_thread_group);
-        }
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
 {
     if (!thread_group)
@@ -375,6 +320,15 @@ void ThreadStatus::applyQuerySettings()
     untracked_memory_limit = settings[Setting::max_untracked_memory];
     if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
         untracked_memory_limit = settings[Setting::memory_profiler_step];
+
+    /// Populate the cache from authoritative query settings; on the initiator this runs before ProcessList::insert, on workers after (idempotent)
+    /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)
+    if (thread_group->master_thread_id == thread_id)
+        configureMemoryTrackerFromSettings(query_context_ptr->hasTraceCollector(), thread_group->memory_tracker, settings);
+    auto sample_config = memory_tracker.getResolvedSampleConfig();
+    sample_probability = sample_config.probability;
+    sample_min_allocation_size = sample_config.min_allocation_size;
+    sample_max_allocation_size = sample_config.max_allocation_size;
 
 #if USE_JEMALLOC
     if (settings[Setting::jemalloc_enable_profiler])
@@ -446,7 +400,14 @@ void ThreadStatus::detachFromGroup()
 
 #if USE_JEMALLOC
     if (std::exchange(jemalloc_profiler_enabled, false))
-        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
+    {
+        /// `prof.thread_active_init` / `thread.prof.active` are only available on jemalloc builds
+        /// with `JEMALLOC_PROF`. If either MIB is unavailable, the matching `setValue`/`getValue`
+        /// in `MibCache` is a no-op / would assert, so route the read through `tryGetValue` and
+        /// skip the per-thread reset entirely on builds without prof.
+        if (bool thread_active_init = false; Jemalloc::getThreadProfileInitMib().tryGetValue(thread_active_init))
+            Jemalloc::getThreadProfileActiveMib().setValue(thread_active_init);
+    }
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
@@ -564,7 +525,17 @@ void ThreadStatus::initPerformanceCounters()
         }
     }
     if (taskstats)
-        (*taskstats).reset();
+    {
+        try
+        {
+            (*taskstats).reset();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to reset taskstats counters, disabling for this thread", LogsLevel::warning);
+            taskstats = nullptr;
+        }
+    }
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -623,7 +594,17 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 {
     *last_rusage = RUsageCounters::current();
     if (taskstats)
-        (*taskstats).reset();
+    {
+        try
+        {
+            (*taskstats).reset();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to reset taskstats counters, disabling for this thread", LogsLevel::warning);
+            taskstats = nullptr;
+        }
+    }
 }
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)

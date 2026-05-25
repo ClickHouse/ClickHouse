@@ -42,7 +42,7 @@ using TStatus = typename StorageSystemDatabaseReplicas::TPools::StatusPool::TSta
 namespace
 {
 
-class SystemDatabaseReplicasSource : public ISource
+class SystemDatabaseReplicasSource final : public ISource
 {
 public:
     SystemDatabaseReplicasSource(
@@ -273,8 +273,8 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDatabaseReplicas::createVirtuals()

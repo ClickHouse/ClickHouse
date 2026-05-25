@@ -1204,10 +1204,10 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     /// in columns list, so that when further processing they are also considered.
     if (storage_snapshot)
     {
-        const auto & virtuals = storage_snapshot->virtual_columns;
+        const auto & virtuals = storage_snapshot->metadata->virtuals;
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (auto column = virtuals->tryGet(*it, VirtualsKind::All, VirtualsMaterializationPlace::All))
+            if (auto column = virtuals.tryGet(*it, VirtualsKind::All, VirtualsMaterializationPlace::All))
             {
                 source_columns.push_back(*column);
                 it = unknown_required_source_columns.erase(it);
@@ -1219,7 +1219,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
 
         has_virtual_shard_num
-            = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
+            = is_remote_storage && storage_snapshot->metadata->isVirtualColumn("_shard_num") && virtuals.has("_shard_num");
     }
 
     /// Check for subcolumns in unknown required columns.

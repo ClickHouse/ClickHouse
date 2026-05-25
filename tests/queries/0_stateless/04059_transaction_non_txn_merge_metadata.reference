@@ -1,0 +1,6 @@
+parts_before_merge	2
+source_removal_tid_is_non_transactional	1	1
+source_removal_tid_is_non_transactional	1	1
+merged_creation_is_non_transactional	1	1
+visible_row_count	2
+txn_visible_row_count	2

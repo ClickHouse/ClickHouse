@@ -92,6 +92,7 @@ ln -sf $SRC_PATH/config.d/max_num_to_warn.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/predicate_statistics_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_catalog_drop_table_concurrency.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
@@ -274,6 +275,12 @@ else
     rm -f $DEST_SERVER_PATH/config.d/cannot_allocate_thread_injection.xml ||:
 fi
 
+if [[ -n "$CLICKHOUSE_FAILPOINTS_INJECTION" ]] && [[ "$CLICKHOUSE_FAILPOINTS_INJECTION" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/fail_points_active.xml $DEST_SERVER_PATH/config.d/
+else
+    rm -f $DEST_SERVER_PATH/config.d/fail_points_active.xml ||:
+fi
+
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
 value_create_snapshot_on_exit=$((RANDOM % 2))
 echo "Replacing create_snapshot_on_exit with $value_create_snapshot_on_exit"
@@ -346,10 +353,11 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     else
         ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
     fi
+    ln -sf $SRC_PATH/config.d/azure_storage_connection_limits.xml $DEST_SERVER_PATH/config.d/
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
-    if [[ "$NO_AZURE" != "1" ]] && [[ -n "$AZURE_CONNECTION_STRING" ]]; then
+    if [[ "$NO_AZURE" != "1" ]]; then
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     fi
 
@@ -364,6 +372,8 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03755.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_04070.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/s3_settings_override.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi

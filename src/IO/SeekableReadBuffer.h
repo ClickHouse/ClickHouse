@@ -4,7 +4,9 @@
 #include <IO/WithFileSize.h>
 
 #include <functional>
+#include <memory>
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -88,6 +90,27 @@ public:
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
     virtual bool supportsReadAt() { return false; }
+
+    /// A contiguous region of cached data that the caller can reference directly (zero-copy).
+    /// The `handle` keeps the underlying cache cell alive; the data is valid as long as the handle
+    /// exists. Regions are returned in file order and cover the requested range contiguously.
+    struct CachedRegion
+    {
+        std::shared_ptr<void> handle;
+        const char * data;
+        size_t size;
+        size_t file_offset;
+    };
+
+    /// Like readBigAt, but instead of copying data into a caller-provided buffer, returns
+    /// references to cached data. The caller can read directly from the returned regions without
+    /// any memory copy.
+    ///
+    /// Thread safety: same rules as readBigAt — multiple concurrent calls are allowed.
+    virtual std::vector<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const;
+
+    /// Whether readBigAtRetainCells is available. Only true when an in-memory page cache is in use.
+    virtual bool supportsReadAtRetainCells() const { return false; }
 
     /// We do some tricks to avoid seek cost. E.g we read more data and than ignore it (see remote_read_min_bytes_for_seek).
     /// Sometimes however seek is basically free because underlying read buffer wasn't yet initialised (or re-initialised after reset).
