@@ -288,12 +288,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             bool check_loading_deps = false;
             if (query.permanently)
             {
-                /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones.
-                /// Check referential/loading dependencies BEFORE `flushAndShutdown` so that a failed
-                /// dependency check does not leave the storage in a partially-shut-down state.
-                /// For dictionaries this is critical: `StorageDictionary::shutdown` removes the
-                /// dictionary configuration from `ExternalDictionariesLoader`, and that side effect
-                /// is not undone if the subsequent dependency check throws (issue #105207).
+                /// Check dependencies before `flushAndShutdown` so a failed check leaves the storage untouched.
                 check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
                 check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
                 DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
