@@ -480,7 +480,7 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(
         /// participating member had a known NDV so the trust flag stays consistent
         /// with the direct-edge path: if any participating column lacks NDV stats,
         /// the resulting estimate is partially fabricated and must be demoted.
-        size_t max_ndv = 0;
+        UInt64 max_ndv = 0;
         bool has_left = false;
         bool has_right = false;
         bool all_ndvs_known = true;
