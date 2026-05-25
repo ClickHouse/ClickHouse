@@ -42,6 +42,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.6",
         {
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+            {"use_columns_cache", false, true, "New setting to enable columns cache for MergeTree tables, on by default"},
+            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
+            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
+            {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
+            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: per-query cap on bytes written to the columns cache (0 = half of columns_cache_size)."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -72,11 +77,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
             {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
-            {"use_columns_cache", false, true, "New setting to enable columns cache for MergeTree tables, on by default"},
-            {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
-            {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
-            {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
-            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: per-query cap on bytes written to the columns cache (0 = half of columns_cache_size)."},
             {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
             {"dynamic_disk_allow_include", false, false, "New setting to allow `include` in dynamic disk configuration (the `disk()` function). Disabled by default."},
             {"dynamic_disk_allow_from_zk", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."},
