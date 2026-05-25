@@ -21,11 +21,14 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 # secret_user inserts with async_insert enabled and a very long flush timeout so the entry stays in the queue.
+# Adaptive busy timeout is disabled: otherwise `max_busy_timeout_exceeded` in
+# `AsynchronousInsertQueue::pushDataChunk` can drain the entry immediately when the shared shard has
+# been idle longer than `async_insert_busy_timeout_max_ms`.
 ${CLICKHOUSE_CLIENT} \
     --user "secret_user_${CLICKHOUSE_DATABASE}" \
     --async_insert 1 \
+    --async_insert_use_adaptive_busy_timeout 0 \
     --async_insert_busy_timeout_max_ms 600000 \
-    --async_insert_busy_timeout_min_ms 600000 \
     --wait_for_async_insert 0 \
     -q "INSERT INTO ${CLICKHOUSE_DATABASE}.async_insert_test VALUES (42)"
 
