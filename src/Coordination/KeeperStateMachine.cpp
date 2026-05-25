@@ -38,6 +38,7 @@ namespace ProfileEvents
 {
     extern const Event KeeperCommits;
     extern const Event KeeperReconfigRequest;
+    extern const Event KeeperCommitsFailed;
     extern const Event KeeperSnapshotCreations;
     extern const Event KeeperSnapshotCreationsFailed;
     extern const Event KeeperSnapshotApplys;
@@ -91,14 +92,14 @@ static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
 }
 
 IKeeperStateMachine::IKeeperStateMachine(
-    KeeperResponseCallback response_callback_,
+    ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     CommitCallback commit_callback_,
     const std::string & superdigest_)
     : commit_callback(commit_callback_)
-    , response_callback(response_callback_)
+    , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , min_request_size_to_cache(keeper_context_->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache])
     , log(getLogger("KeeperStateMachine"))
@@ -111,14 +112,14 @@ IKeeperStateMachine::IKeeperStateMachine(
 
 template<typename Storage>
 KeeperStateMachine<Storage>::KeeperStateMachine(
-    KeeperResponseCallback response_callback_,
+    ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     IKeeperStateMachine::CommitCallback commit_callback_,
     const std::string & superdigest_)
     : IKeeperStateMachine(
-        response_callback_,
+        responses_queue_,
         snapshots_queue_,
         keeper_context_,
         snapshot_manager_s3_,
@@ -532,8 +533,14 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & re
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
-    if (response_callback)
-        response_callback(std::move(response));
+    response.response->enqueue_ts = std::chrono::steady_clock::now();
+    if (!responses_queue.push(response))
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+        LOG_WARNING(log,
+            "Failed to push response with session id {} to the queue, probably because of shutdown",
+            response.session_id);
+    }
 }
 
 template<typename Storage>
@@ -618,6 +625,20 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
+    auto try_push = [&](KeeperResponseForSession & response)
+    {
+        response.response->enqueue_ts = std::chrono::steady_clock::now();
+        if (response.request)
+            response.request->spans.maybeInitialize(KeeperSpan::DispatcherResponsesQueue, response.request->tracing_context.get());
+        if (!responses_queue.push(response))
+        {
+            ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+            LOG_WARNING(log,
+                "Failed to push response with session id {} to the queue, probably because of shutdown",
+                response.session_id);
+        }
+    };
+
     const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
         request_for_session->request->spans.maybeInitialize(
@@ -658,8 +679,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
-            if (response_callback)
-                response_callback(std::move(response_for_session));
+            try_push(response_for_session);
         }
         else
         {
@@ -679,8 +699,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
                     if (response_for_session.response->xid != Coordination::WATCH_XID)
                         response_for_session.request = request_for_session->request;
 
-                    if (response_callback)
-                        response_callback(std::move(response_for_session));
+                    try_push(response_for_session);
                 }
             }
 
@@ -1502,8 +1521,14 @@ void KeeperStateMachine<Storage>::processReadRequests(const KeeperRequestsForSes
 
     for (auto & response_for_session : responses)
     {
-        if (response_callback)
-            response_callback(std::move(response_for_session));
+        response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
+        if (response_for_session.response->xid != Coordination::WATCH_XID)
+        {
+            chassert(response_for_session.request);
+            response_for_session.request->spans.maybeInitialize(KeeperSpan::DispatcherResponsesQueue, response_for_session.request->tracing_context.get());
+        }
+        if (!responses_queue.push(response_for_session))
+            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
     }
 }
 

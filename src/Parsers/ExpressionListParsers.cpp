@@ -3406,67 +3406,6 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
 
-    /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
-    if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
-    {
-        /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
-        /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
-        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
-        constexpr int like_priority = 9;
-        while (layers.back()->previousPriority() > like_priority)
-        {
-            Operator higher_op;
-            if (!layers.back()->popOperator(higher_op))
-                break;
-
-            auto function = makeASTFunction(higher_op);
-            if (!layers.back()->popLastNOperands(function->children[0]->children, higher_op.arity))
-            {
-                layers.back()->pushOperator(higher_op);
-                break;
-            }
-            layers.back()->pushOperand(function);
-        }
-
-        Operator top_op;
-        bool popped = layers.back()->popOperator(top_op);
-
-        bool is_like = popped
-            && (top_op.function_name == "like" || top_op.function_name == "ilike"
-                || top_op.function_name == "notLike" || top_op.function_name == "notILike");
-
-        if (is_like)
-        {
-            auto saved_pos = pos;
-
-            /// Consume the ESCAPE keyword
-            ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
-
-            ASTPtr escape_ast;
-            if (ParserStringLiteral().parse(pos, escape_ast, expected))
-            {
-                ASTs arguments;
-                if (layers.back()->popLastNOperands(arguments, 2))
-                {
-                    auto function = makeASTFunction(top_op.function_name, arguments[0], arguments[1], escape_ast);
-                    function->setIsOperator(true);
-
-                    layers.back()->pushOperand(std::move(function));
-                    return Action::OPERATOR;
-                }
-            }
-
-            /// Parsing ESCAPE clause failed — restore operator stack and position
-            pos = saved_pos;
-            layers.back()->pushOperator(top_op);
-            return Action::NONE;
-        }
-
-        /// Not a LIKE operator on top, push the popped operator back and fall through
-        if (popped)
-            layers.back()->pushOperator(top_op);
-    }
-
     /// Try to find operators from 'operators_table'
     auto saved_pos = pos;
     auto cur_op = operators_table.begin();

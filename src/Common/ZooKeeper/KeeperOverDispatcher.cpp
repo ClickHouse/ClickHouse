@@ -33,12 +33,12 @@ KeeperOverDispatcher::KeeperOverDispatcher(
     /// this KeeperOverDispatcher is destroyed (prevents use-after-free when
     /// setResponse invokes the callback outside its mutex).
     auto state = callback_state;
-    auto response_callback = [state](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr) -> bool
+    auto response_callback = [state](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
         if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
         {
             state->expired = true;
-            return false;
+            return;
         }
 
         /// Update progress tracker for normal operation responses.
@@ -60,8 +60,6 @@ KeeperOverDispatcher::KeeperOverDispatcher(
 
         if (callback)
             callback(response);
-
-        return false;
     };
 
     keeper_dispatcher->registerSession(session_id, response_callback);

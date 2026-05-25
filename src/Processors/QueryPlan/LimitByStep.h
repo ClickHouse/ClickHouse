@@ -25,14 +25,6 @@ public:
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     void applyOrder(SortDescription sort_desc);
-
-    /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
-    /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
-    /// partition sets so no `LIMIT BY` group spans two streams.
-    void skipStreamMerging() { skip_stream_merging = true; }
-
-    const Names & getColumns() const { return columns; }
-
 private:
     void updateOutputHeader() override
     {
@@ -45,7 +37,6 @@ private:
     Names columns;
 
     bool in_order = false;
-    bool skip_stream_merging = false;
 };
 
 }
