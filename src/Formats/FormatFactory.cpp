@@ -1092,6 +1092,12 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumnsByPosition(const String 
     return target.subset_of_columns_by_position_support_checker && target.subset_of_columns_by_position_support_checker(format_settings);
 }
 
+bool FormatFactory::checkIfFormatSupportsReadingSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    return checkIfFormatSupportsSubsetOfColumns(name, context, format_settings_)
+        || checkIfFormatSupportsSubsetOfColumnsByPosition(name, context, format_settings_);
+}
+
 void FormatFactory::registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker)
 {
     auto & target = getOrCreateCreators(name).prewhere_support_checker;

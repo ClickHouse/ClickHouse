@@ -1123,8 +1123,7 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
 bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return format_name != "Distributed"
-        && (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings)
-            || FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(format_name, context, format_settings));
+        && FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(format_name, context, format_settings);
 }
 
 bool StorageFile::supportsPrewhere() const

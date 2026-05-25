@@ -535,8 +535,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context_, format_settings)
-        || FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(configuration->format, context_, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(configuration->format, context_, format_settings);
 }
 
 class ReadFromObjectStorageQueue : public SourceStepWithFilter

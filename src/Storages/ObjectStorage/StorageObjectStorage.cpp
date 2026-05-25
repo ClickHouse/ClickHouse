@@ -338,8 +338,7 @@ bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) con
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings)
-        || FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(configuration->format, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(configuration->format, context, format_settings);
 }
 
 bool StorageObjectStorage::supportsPrewhere() const

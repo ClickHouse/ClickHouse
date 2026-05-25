@@ -344,6 +344,7 @@ public:
     bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
     void markFormatSupportsSubsetOfColumnsByPosition(const String & name);
     bool checkIfFormatSupportsSubsetOfColumnsByPosition(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
+    bool checkIfFormatSupportsReadingSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 
     void registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker);
     bool checkIfFormatSupportsPrewhere(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;

@@ -1092,8 +1092,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings)
-        || FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(format_name, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(format_name, context, format_settings);
 }
 
 bool IStorageURLBase::supportsPrewhere() const
