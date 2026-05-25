@@ -443,11 +443,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
     /// Reject user-initiated `CREATE`/`ATTACH` queries with `table_readonly = 1` for
-    /// `ReplicatedMergeTree`. Exempt all metadata-replay paths: `SECONDARY_CREATE` (`RESTORE` from
-    /// backup and `DatabaseReplicated` DDL replay), `FORCE_ATTACH` (server startup), and
-    /// `FORCE_RESTORE` may legitimately carry the setting from metadata created before this check.
-    if ((mode == LoadingStrictnessLevel::CREATE || mode == LoadingStrictnessLevel::ATTACH)
-        && (*getSettings())[MergeTreeSetting::table_readonly])
+    /// `ReplicatedMergeTree`, while still allowing `FORCE_ATTACH`/`FORCE_RESTORE` (server startup,
+    /// restore from backup) to load tables whose metadata may carry the setting from before this check.
+    if (mode <= LoadingStrictnessLevel::ATTACH && (*getSettings())[MergeTreeSetting::table_readonly])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
 
     auto table_disks = getDisks();
