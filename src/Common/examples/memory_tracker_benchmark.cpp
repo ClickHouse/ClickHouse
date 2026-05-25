@@ -75,17 +75,17 @@ bool parseArgs(int argc, char ** argv, Options & opts)
         };
         if (a == "--threads")
         {
-            if (const auto * v = next()) opts.threads = std::atoi(v);
+            if (const auto * v = next()) opts.threads = static_cast<int>(std::strtol(v, nullptr, 10));
             else return false;
         }
         else if (a == "--ops")
         {
-            if (const auto * v = next()) opts.ops = std::atoll(v);
+            if (const auto * v = next()) opts.ops = std::strtoll(v, nullptr, 10);
             else return false;
         }
         else if (a == "--size")
         {
-            if (const auto * v = next()) opts.size = std::atoll(v);
+            if (const auto * v = next()) opts.size = std::strtoll(v, nullptr, 10);
             else return false;
         }
         else if (a == "--mode")
