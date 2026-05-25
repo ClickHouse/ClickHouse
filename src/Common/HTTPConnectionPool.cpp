@@ -898,6 +898,15 @@ private:
                 applySocketBufferSizes(*connection, group->getSocketBufferSizes());
 
                 ProfileEvents::increment(getMetrics().created);
+                /// In non-bypassed proxy mode `Poco::Net::HTTPClientSession::reconnect`
+                /// connects to the proxy and ignores `_resolved_host`, so the target
+                /// address we got from the resolver was never actually exercised by
+                /// this connect. Suppress the `Entry` destructor's `setSuccess` so we
+                /// do not record a spurious success for the target address - that would
+                /// reset `consecutive_fail_count` and let the resolver keep handing out
+                /// a known-bad target IP based on proxy-path success.
+                if (!retry_resolved_addresses)
+                    address.setUnused();
                 return connection;
             }
 #if USE_SSL
