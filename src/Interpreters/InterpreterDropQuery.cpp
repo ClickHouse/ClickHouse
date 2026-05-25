@@ -186,6 +186,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Experimental drop detached table feature is not enabled (the setting 'allow_experimental_drop_detached_table')");
 
+        context_->checkAccess(AccessType::DROP_TABLE, table_id);
+
         auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
         const auto table_name = table_id.getTableName();
 

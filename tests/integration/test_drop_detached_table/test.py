@@ -54,7 +54,7 @@ def assert_zk_node_not_exists(
                 zk,
                 node_path,
             )
-            if exists_replica != None:
+            if exists_replica is None:
                 return
             time.sleep(sleep_time)
         except Exception as ex:
@@ -80,16 +80,14 @@ def create_replicated_table(node, table_name):
         f"ReplicatedMergeTree('/clickhouse/tables/shard1/{table_name}', '{{replica}}')"
     )
 
-    node.query_with_retry(
-        f"""
+    node.query_with_retry(f"""
         CREATE TABLE {table_name} ON CLUSTER test_cluster
         (
             number UInt64
         ) 
         ENGINE={engine}
         ORDER BY number
-        """
-    )
+        """)
 
 
 def create_table(node, table_name):
@@ -106,8 +104,7 @@ def create_distributed_table(node, table_name):
 
 
 def create_s3_table(node, table_name):
-    node.query_with_retry(
-        """
+    node.query_with_retry("""
         CREATE TABLE {table_name} 
         (
             number UInt64
@@ -115,10 +112,7 @@ def create_s3_table(node, table_name):
         ENGINE=MergeTree
         ORDER BY number
         SETTINGS disk='s3'
-        """.format(
-            table_name=table_name
-        )
-    )
+        """.format(table_name=table_name))
 
 
 def check_no_table_in_detached_table(node, table_name: str):
