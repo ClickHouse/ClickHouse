@@ -180,6 +180,12 @@ bool SnappyFramedReadBuffer::nextImpl()
                     "Snappy CRC-32C checksum mismatch{}",
                     getExceptionEntryWithFileName(*in));
 
+            /// `ReadBuffer::next` recursively calls itself when `nextImpl` returns true with an
+            /// empty `working_buffer`, so a crafted stream of empty chunks could exhaust the stack.
+            /// Skip zero-length chunks at the source.
+            if (uncompressed_length == 0)
+                continue;
+
             working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + uncompressed_length);
             return true;
         }
@@ -212,6 +218,11 @@ bool SnappyFramedReadBuffer::nextImpl()
                 throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
                     "Snappy CRC-32C checksum mismatch{}",
                     getExceptionEntryWithFileName(*in));
+
+            /// See the compressed-chunk branch above: skip zero-length chunks to avoid driving
+            /// `ReadBuffer::next` into unbounded recursion on a crafted stream of empty chunks.
+            if (payload_size == 0)
+                continue;
 
             working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + payload_size);
             return true;
