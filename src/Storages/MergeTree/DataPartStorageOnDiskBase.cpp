@@ -1,24 +1,21 @@
 #include <string_view>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Disks/IDiskTransaction.h>
+#include <Disks/TemporaryFileOnDisk.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
+#include <Interpreters/Context.h>
+#include <Storages/MergeTree/Backup.h>
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/BackupSettings.h>
-#include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadPipeline.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
-#include <Storages/MergeTree/Backup.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 #include <fmt/ranges.h>
 
@@ -32,16 +29,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
-}
-
-std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
-    const std::string & name,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
-{
-    ReadPipeline pipeline;
-    prepareRead(name, settings, read_hint, pipeline);
-    return pipeline.build();
 }
 
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -515,14 +502,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -571,14 +558,14 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
     else
     {
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
@@ -911,7 +898,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
             request.emplace_back(fs::path(dir) / file);
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
-        request.emplace_back(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
 
@@ -970,9 +957,9 @@ SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
     return volume->getDisk()->getDirectorySyncGuard(fs::path(root_path) / part_dir);
 }
 
-std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const
+std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(WriteMode mode) const
 {
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / txn_file_name, 256, mode);
+    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, 256, mode);
 }
 
 void DataPartStorageOnDiskBase::removeRecursive()

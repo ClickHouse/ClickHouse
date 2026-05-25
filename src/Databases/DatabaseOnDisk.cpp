@@ -37,7 +37,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
 
 
 namespace fs = std::filesystem;
@@ -165,7 +164,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->isTemporary());
-    create->reset(create->database);
+    create->database.reset();
 
     if (create->uuid != UUIDHelpers::Nil)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -848,7 +847,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & table_name, boo
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const
 {
-    auto metadata_ptr = storage->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_ptr = storage->getInMemoryMetadataPtr();
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
@@ -871,11 +870,10 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         false,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error,
-        getContext());
+        throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadataPtr(getContext(), false)->comment));
+                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadata().comment));
 
     return create_table_query;
 }
