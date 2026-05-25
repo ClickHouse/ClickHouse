@@ -56,6 +56,11 @@ INSERT INTO t_seq_part
 -- Part 1: Correctness - newest 5 rows (DESC)
 -- ============================================================
 
+-- Set do_not_merge_across_partitions_select_final explicitly because the flaky
+-- check randomly turns off enable_automatic_decision_for_merging_across_partitions_for_final,
+-- which makes the automatic detection return false and disables sequential
+-- partition processing (no ConcatProcessor would be added).
+
 SELECT '--- Part 1: Correctness - newest 5 rows (DESC) ---';
 SELECT
     unix_time,
@@ -66,7 +71,8 @@ ORDER BY unix_time DESC
 LIMIT 5
 SETTINGS optimize_read_in_order = 1,
          optimize_final_limit_pushdown = 1,
-         optimize_final_sequential_partitions = 1;
+         optimize_final_sequential_partitions = 1,
+         do_not_merge_across_partitions_select_final = 1;
 
 -- ============================================================
 -- Part 2: Pipeline contains Concat
@@ -85,7 +91,8 @@ FROM (
     LIMIT 5
     SETTINGS optimize_read_in_order = 1,
              optimize_final_limit_pushdown = 1,
-             optimize_final_sequential_partitions = 1
+             optimize_final_sequential_partitions = 1,
+             do_not_merge_across_partitions_select_final = 1
 )
 WHERE explain LIKE '%Concat%';
 
@@ -103,7 +110,8 @@ ORDER BY unix_time DESC
 LIMIT 10
 SETTINGS optimize_read_in_order = 1,
          optimize_final_limit_pushdown = 1,
-         optimize_final_sequential_partitions = 1;
+         optimize_final_sequential_partitions = 1,
+         do_not_merge_across_partitions_select_final = 1;
 
 -- ============================================================
 -- Part 4: ASC direction - oldest 5 rows
@@ -153,7 +161,8 @@ ORDER BY ts ASC
 LIMIT 5
 SETTINGS optimize_read_in_order = 1,
          optimize_final_limit_pushdown = 1,
-         optimize_final_sequential_partitions = 1;
+         optimize_final_sequential_partitions = 1,
+         do_not_merge_across_partitions_select_final = 1;
 
 -- ============================================================
 -- Part 5: Pipeline contains Concat (ASC)
@@ -171,7 +180,8 @@ FROM (
     LIMIT 5
     SETTINGS optimize_read_in_order = 1,
              optimize_final_limit_pushdown = 1,
-             optimize_final_sequential_partitions = 1
+             optimize_final_sequential_partitions = 1,
+             do_not_merge_across_partitions_select_final = 1
 )
 WHERE explain LIKE '%Concat%';
 
@@ -191,7 +201,8 @@ FROM (
     LIMIT 5
     SETTINGS optimize_read_in_order = 1,
              optimize_final_limit_pushdown = 0,
-             optimize_final_sequential_partitions = 1
+             optimize_final_sequential_partitions = 1,
+             do_not_merge_across_partitions_select_final = 1
 )
 WHERE explain LIKE '%Concat%';
 
@@ -310,7 +321,8 @@ FROM (
     LIMIT 5
     SETTINGS optimize_read_in_order = 1,
              optimize_final_limit_pushdown = 1,
-             optimize_final_sequential_partitions = 1
+             optimize_final_sequential_partitions = 1,
+             do_not_merge_across_partitions_select_final = 1
 )
 WHERE explain LIKE '%Concat%';
 
