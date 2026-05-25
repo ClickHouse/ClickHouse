@@ -11,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Core/Joins.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
@@ -247,6 +248,42 @@ bool hasArrayJoinFunction(const ASTPtr & ast)
     }
     for (const auto & child : ast->children)
         if (hasArrayJoinFunction(child))
+            return true;
+    return false;
+}
+
+/// Recursively walks `ast` looking for any window-function call whose
+/// `OVER (...)` definition lacks an `ORDER BY`, or that references a named
+/// window (which we can't verify without scope resolution).
+///
+/// `row_number()`, `rank()`, etc. over a partition without an explicit ORDER BY
+/// produce values in implementation-defined row order — re-running the same
+/// query (or wrapping it in `SELECT * FROM (...)`) is permitted to assign
+/// different row numbers. The Subquery-wrap oracle's row-set comparison
+/// correctly detects this divergence but the divergence is allowed, so we
+/// must skip these queries (issue #105743).
+bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        /// Inline OVER (...) definition.
+        if (func->window_definition)
+        {
+            const auto * def = func->window_definition->as<ASTWindowDefinition>();
+            if (!def || !def->order_by)
+                return true;
+        }
+        /// Named window reference `OVER w` — we can't verify w's ORDER BY
+        /// without resolving the SELECT's WINDOW clause; conservatively reject.
+        else if (!func->window_name.empty())
+        {
+            return true;
+        }
+    }
+    for (const auto & child : ast->children)
+        if (hasWindowFunctionWithoutOrderBy(child))
             return true;
     return false;
 }
@@ -1572,6 +1609,15 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     /// which columns are visible in the outer SELECT and the modifier semantics.
     if (select.group_by_with_rollup || select.group_by_with_cube
         || select.group_by_with_totals || select.group_by_with_grouping_sets)
+        return false;
+
+    /// `row_number()`/`rank()`/etc. over a window without an explicit ORDER BY
+    /// produce implementation-defined row numbers — wrapping the query in
+    /// `SELECT * FROM (...)` is permitted to reorder rows seen by the window
+    /// function, which legitimately changes the assignment. We can't tell that
+    /// apart from a real mismatch without scope resolution. Conservatively
+    /// skip any query that contains such a window function (issue #105743).
+    if (select.select() && hasWindowFunctionWithoutOrderBy(select.select()))
         return false;
 
     auto ref_ast = select.clone();
