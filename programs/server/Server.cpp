@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -421,6 +422,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 query_cache_max_entries;
     extern const ServerSettingsUInt64 query_cache_max_entry_size_in_bytes;
     extern const ServerSettingsUInt64 query_cache_max_entry_size_in_rows;
+    extern const ServerSettingsBool query_cache_snapshot_enabled;
     extern const ServerSettingsString logger_log;
     extern const ServerSettingsString logger_level;
     extern const ServerSettingsString logger_startup_level;
@@ -1572,6 +1574,23 @@ try
           */
         LOG_INFO(log, "Shutting down storages.");
 
+        if (server_settings[ServerSetting::query_cache_snapshot_enabled])
+        {
+            try
+            {
+                std::string snapshot_path = global_context->getPath() + "query_cache_snapshot.bin";
+                if (auto cache = global_context->getQueryResultCache())
+                {
+                    cache->saveSnapshot(snapshot_path);
+                    LOG_INFO(log, "Saved query result cache snapshot to {}", snapshot_path);
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to save query result cache snapshot");
+            }
+        }
+
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
@@ -2164,6 +2183,23 @@ try
         LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
     }
     global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
+
+    if (server_settings[ServerSetting::query_cache_snapshot_enabled])
+    {
+        std::string snapshot_path = path_str + "query_cache_snapshot.bin";
+        if (fs::exists(snapshot_path))
+        {
+            try
+            {
+                global_context->getQueryResultCache()->loadSnapshot(snapshot_path);
+                LOG_INFO(log, "Loaded query result cache snapshot from {}", snapshot_path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to load query result cache snapshot");
+            }
+        }
+    }
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];

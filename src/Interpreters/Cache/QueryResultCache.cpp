@@ -1,5 +1,11 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -649,6 +655,33 @@ QueryResultCache::Key::Key(
 {
 }
 
+QueryResultCache::Key::Key(
+    IASTHash precomputed_hash,
+    SharedHeader header_,
+    std::optional<UUID> user_id_,
+    const std::vector<UUID> & current_user_roles_,
+    bool is_shared_,
+    std::chrono::time_point<std::chrono::system_clock> created_at_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_,
+    bool is_compressed_,
+    const String & tag_,
+    const String & query_string_,
+    bool is_subquery_)
+    : ast_hash(precomputed_hash)
+    , header(header_)
+    , user_id(user_id_)
+    , current_user_roles(current_user_roles_)
+    , is_shared(is_shared_)
+    , created_at(created_at_)
+    , expires_at(expires_at_)
+    , is_compressed(is_compressed_)
+    , query_string(query_string_)
+    , query_id{}
+    , tag(tag_)
+    , is_subquery(is_subquery_)
+{
+}
+
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
     return ast_hash == other.ast_hash && is_subquery == other.is_subquery;
@@ -1178,6 +1211,303 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
 std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
 {
     return cache.dump();
+}
+
+static constexpr std::string_view SNAPSHOT_MAGIC = "CHQCSNP";
+static constexpr UInt32 SNAPSHOT_VERSION = 1;
+
+void QueryResultCache::saveSnapshot(const std::string & path) const
+{
+    auto entries = cache.dump();
+    if (entries.empty())
+        return;
+
+    auto logger = getLogger("QueryResultCache");
+
+    std::string tmp_path = path + ".tmp";
+    WriteBufferFromFile buf(tmp_path);
+
+    writeString(SNAPSHOT_MAGIC, buf);
+    writeBinaryLittleEndian(SNAPSHOT_VERSION, buf);
+    writeBinaryLittleEndian(static_cast<UInt64>(entries.size()), buf);
+
+    size_t written = 0;
+    for (const auto & [entry_key, entry_mapped] : entries)
+    {
+        if (IsStale()(entry_key))
+            continue;
+
+        /// Key fields
+        writeBinaryLittleEndian(entry_key.ast_hash.low64, buf);
+        writeBinaryLittleEndian(entry_key.ast_hash.high64, buf);
+        writeBinary(static_cast<UInt8>(entry_key.is_subquery), buf);
+        writeBinary(static_cast<UInt8>(entry_key.is_shared), buf);
+        writeBinary(static_cast<UInt8>(entry_key.is_compressed), buf);
+
+        UInt8 has_user_id = entry_key.user_id.has_value() ? 1 : 0;
+        writeBinary(has_user_id, buf);
+        if (entry_key.user_id.has_value())
+            writeBinaryLittleEndian(*entry_key.user_id, buf);
+
+        writeVarUInt(entry_key.current_user_roles.size(), buf);
+        for (const auto & role : entry_key.current_user_roles)
+            writeBinaryLittleEndian(role, buf);
+
+        auto created_ms = std::chrono::duration_cast<std::chrono::milliseconds>(entry_key.created_at.time_since_epoch()).count();
+        auto expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(entry_key.expires_at.time_since_epoch()).count();
+        writeBinaryLittleEndian(static_cast<Int64>(created_ms), buf);
+        writeBinaryLittleEndian(static_cast<Int64>(expires_ms), buf);
+
+        writeStringBinary(entry_key.query_string, buf);
+        writeStringBinary(entry_key.tag, buf);
+
+        /// Header as zero-row block
+        Block header_block = *entry_key.header;
+        header_block.clear();
+        {
+            auto header_shared = std::make_shared<const Block>(header_block);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(*entry_key.header);
+        }
+
+        /// Entry chunks
+        writeVarUInt(entry_mapped->chunks.size(), buf);
+        for (const auto & chunk : entry_mapped->chunks)
+        {
+            Block data_block = entry_key.header->cloneWithColumns(chunk.getColumns());
+            auto header_shared = std::make_shared<const Block>(*entry_key.header);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(data_block);
+        }
+
+        UInt8 has_totals = entry_mapped->totals.has_value() ? 1 : 0;
+        writeBinary(has_totals, buf);
+        if (entry_mapped->totals.has_value())
+        {
+            Block totals_block = entry_key.header->cloneWithColumns(entry_mapped->totals->getColumns());
+            auto header_shared = std::make_shared<const Block>(*entry_key.header);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(totals_block);
+        }
+
+        UInt8 has_extremes = entry_mapped->extremes.has_value() ? 1 : 0;
+        writeBinary(has_extremes, buf);
+        if (entry_mapped->extremes.has_value())
+        {
+            Block extremes_block = entry_key.header->cloneWithColumns(entry_mapped->extremes->getColumns());
+            auto header_shared = std::make_shared<const Block>(*entry_key.header);
+            NativeWriter native(buf, 0, header_shared);
+            native.write(extremes_block);
+        }
+
+        /// Eviction metadata
+        {
+            std::lock_guard lock(mutex);
+            auto it = eviction_metadata.find(entry_key);
+            if (it != eviction_metadata.end())
+            {
+                writeBinary(static_cast<UInt8>(1), buf);
+                writeVarUInt(it->second.hit_count, buf);
+                writeVarUInt(it->second.recompute_cost, buf);
+                writeVarUInt(it->second.size_bytes, buf);
+            }
+            else
+            {
+                writeBinary(static_cast<UInt8>(0), buf);
+            }
+        }
+
+        ++written;
+    }
+
+    buf.finalize();
+    std::filesystem::rename(tmp_path, path);
+
+    LOG_INFO(logger, "Saved query result cache snapshot: {} entries to {}", written, path);
+}
+
+void QueryResultCache::loadSnapshot(const std::string & path)
+{
+    auto logger = getLogger("QueryResultCache");
+
+    if (!std::filesystem::exists(path))
+    {
+        LOG_DEBUG(logger, "No query result cache snapshot found at {}", path);
+        return;
+    }
+
+    ReadBufferFromFile buf(path);
+
+    String magic;
+    magic.resize(SNAPSHOT_MAGIC.size());
+    buf.readStrict(magic.data(), magic.size());
+    if (magic != SNAPSHOT_MAGIC)
+    {
+        LOG_WARNING(logger, "Invalid snapshot magic in {}, skipping load", path);
+        return;
+    }
+
+    UInt32 version = 0;
+    readBinaryLittleEndian(version, buf);
+    if (version > SNAPSHOT_VERSION)
+    {
+        LOG_WARNING(logger, "Snapshot version {} is newer than supported ({}), skipping load", version, SNAPSHOT_VERSION);
+        return;
+    }
+
+    UInt64 entry_count = 0;
+    readBinaryLittleEndian(entry_count, buf);
+
+    auto now = std::chrono::system_clock::now();
+    size_t loaded = 0;
+    size_t skipped_stale = 0;
+
+    for (UInt64 i = 0; i < entry_count && !buf.eof(); ++i)
+    {
+        try
+        {
+            /// Key fields
+            UInt64 hash_low = 0, hash_high = 0;
+            readBinaryLittleEndian(hash_low, buf);
+            readBinaryLittleEndian(hash_high, buf);
+            IASTHash ast_hash{hash_low, hash_high};
+
+            UInt8 is_subquery_u8 = 0, is_shared_u8 = 0, is_compressed_u8 = 0;
+            readBinary(is_subquery_u8, buf);
+            readBinary(is_shared_u8, buf);
+            readBinary(is_compressed_u8, buf);
+
+            UInt8 has_user_id = 0;
+            readBinary(has_user_id, buf);
+            std::optional<UUID> user_id;
+            if (has_user_id)
+            {
+                UUID uid{};
+                readBinaryLittleEndian(uid, buf);
+                user_id = uid;
+            }
+
+            UInt64 role_count = 0;
+            readVarUInt(role_count, buf);
+            std::vector<UUID> roles(role_count);
+            for (auto & role : roles)
+                readBinaryLittleEndian(role, buf);
+
+            Int64 created_ms = 0, expires_ms = 0;
+            readBinaryLittleEndian(created_ms, buf);
+            readBinaryLittleEndian(expires_ms, buf);
+
+            auto created_at = std::chrono::system_clock::time_point(std::chrono::milliseconds(created_ms));
+            auto expires_at = std::chrono::system_clock::time_point(std::chrono::milliseconds(expires_ms));
+
+            if (expires_at <= now)
+            {
+                /// Skip the rest of this entry — need to read through it to advance the buffer
+                /// For simplicity, just skip stale entries by breaking early and noting it.
+                /// Since the format has variable-length fields, we can't easily skip; read and discard.
+                ++skipped_stale;
+            }
+
+            String query_string, tag;
+            readStringBinary(query_string, buf);
+            readStringBinary(tag, buf);
+
+            /// Header
+            NativeReader header_reader(buf, 0);
+            Block header_block = header_reader.read();
+            auto shared_header = std::make_shared<const Block>(std::move(header_block));
+
+            /// Entry chunks
+            UInt64 chunk_count = 0;
+            readVarUInt(chunk_count, buf);
+
+            Chunks chunks;
+            for (UInt64 c = 0; c < chunk_count; ++c)
+            {
+                NativeReader data_reader(buf, 0);
+                Block data_block = data_reader.read();
+                chunks.emplace_back(data_block.getColumns(), data_block.rows());
+            }
+
+            /// Totals
+            UInt8 has_totals = 0;
+            readBinary(has_totals, buf);
+            std::optional<Chunk> totals;
+            if (has_totals)
+            {
+                NativeReader totals_reader(buf, 0);
+                Block totals_block = totals_reader.read();
+                totals = Chunk(totals_block.getColumns(), totals_block.rows());
+            }
+
+            /// Extremes
+            UInt8 has_extremes = 0;
+            readBinary(has_extremes, buf);
+            std::optional<Chunk> extremes;
+            if (has_extremes)
+            {
+                NativeReader extremes_reader(buf, 0);
+                Block extremes_block = extremes_reader.read();
+                extremes = Chunk(extremes_block.getColumns(), extremes_block.rows());
+            }
+
+            /// Eviction metadata
+            UInt8 has_meta = 0;
+            readBinary(has_meta, buf);
+            size_t hit_count = 0, recompute_cost = 0, size_bytes = 0;
+            if (has_meta)
+            {
+                readVarUInt(hit_count, buf);
+                readVarUInt(recompute_cost, buf);
+                readVarUInt(size_bytes, buf);
+            }
+
+            if (expires_at <= now)
+                continue;
+
+            /// Re-compress columns if the original entry was compressed
+            if (is_compressed_u8)
+            {
+                for (auto & chunk : chunks)
+                {
+                    const Columns & columns = chunk.getColumns();
+                    Columns compressed;
+                    for (const auto & col : columns)
+                        compressed.push_back(col->compress(false));
+                    chunk = Chunk(std::move(compressed), chunk.getNumRows());
+                }
+            }
+
+            Key key(ast_hash, shared_header, user_id, roles,
+                    is_shared_u8 != 0, created_at, expires_at, is_compressed_u8 != 0,
+                    tag, query_string, is_subquery_u8 != 0);
+
+            auto entry = std::make_shared<Entry>();
+            entry->chunks = std::move(chunks);
+            entry->totals = std::move(totals);
+            entry->extremes = std::move(extremes);
+
+            cache.set(key, entry);
+
+            if (has_meta && recompute_cost > 0)
+            {
+                std::lock_guard lock(mutex);
+                auto & meta = eviction_metadata[key];
+                meta.hit_count = hit_count;
+                meta.recompute_cost = recompute_cost;
+                meta.size_bytes = size_bytes;
+            }
+
+            ++loaded;
+        }
+        catch (...)
+        {
+            LOG_WARNING(logger, "Error reading snapshot entry {}/{}, stopping load: {}", i, entry_count, getCurrentExceptionMessage(false));
+            break;
+        }
+    }
+
+    LOG_INFO(logger, "Loaded query result cache snapshot: {} entries from {} ({} stale entries skipped)", loaded, path, skipped_stale);
 }
 
 }

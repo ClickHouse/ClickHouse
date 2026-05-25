@@ -146,6 +146,18 @@ public:
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             const String & tag_);
 
+        /// Ctor for deserialized snapshot entries (all fields pre-computed):
+        Key(IASTHash precomputed_hash,
+            SharedHeader header_,
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> created_at_,
+            std::chrono::time_point<std::chrono::system_clock> expires_at_,
+            bool is_compressed_,
+            const String & tag_,
+            const String & query_string_,
+            bool is_subquery_);
+
         bool operator==(const Key & other) const;
     };
 
@@ -225,6 +237,12 @@ public:
     void adaptiveEvict(size_t needed_bytes);
 
     void setAdaptiveEviction(bool enabled);
+
+    /// Serialize the cache to disk for warm restart.
+    void saveSnapshot(const std::string & path) const;
+
+    /// Load a previously saved snapshot from disk.
+    void loadSnapshot(const std::string & path);
 
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;

@@ -1575,6 +1575,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \
     DECLARE(UInt64, query_cache_max_entry_size_in_bytes, 1048576, R"(The maximum size in bytes SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_bytes") \
     DECLARE(UInt64, query_cache_max_entry_size_in_rows, 30000000, R"(The maximum number of rows SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_rows") \
+    DECLARE(Bool, query_cache_snapshot_enabled, false, R"(If true, the query result cache is serialized to disk on graceful shutdown and loaded back on startup, preserving cached results across server restarts.)", 0, "query_cache.snapshot_enabled") \
     DECLARE(String, logger_level, "trace", R"(Log level. Acceptable values: `<none>` (turn logging off), `<fatal>`, `<critical>`, `<error>`, `<warning>`, `<notice>`, `<information>`, `<debug>`, `<trace>`, `<test>`.)", 0, "logger.level") \
     DECLARE(String, logger_log, "", R"(The path to the log file.)", 0, "logger.log") \
     DECLARE(String, logger_errorlog, "", R"(The path to the error log file.)", 0, "logger.errorlog") \
