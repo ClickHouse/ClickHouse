@@ -1,6 +1,11 @@
 -- Smoke test for #105650: `<=>` over a `String` `GROUP BY` key with `WITH ROLLUP`
 -- must not touch zero-row placeholder columns during header-time partial
 -- evaluation. See PR description for the full plan path.
+--
+-- The original fuzzer query used a `groupArrayMovingAvgState...DistinctOrDefaultDistinctOrNull`
+-- aggregate, which triggers a separate pre-existing trunk bug (#105740 / #105742)
+-- under MSan. The fix for that bug lives in #105749; keep only the minimised
+-- `isNotDistinctFrom` form here.
 
 DROP TABLE IF EXISTS t1;
 CREATE TABLE t1 (
@@ -19,31 +24,6 @@ INSERT INTO t1 SELECT
     if(number%5=0, NULL, toUInt16(number))
 FROM numbers(500);
 
--- Original fuzzer query. We only check that it does not crash; output is
--- discarded via `FORMAT Null`.
-SELECT
-    c,
-    groupArrayMovingAvgStateDistinctOrDefaultDistinctOrNull(b)
-FROM t1
-GROUP BY
-    c <=> '65535',
-    b <= materialize(toUInt128(1048577)),
-    c
-WITH ROLLUP
-HAVING 2147483648 > countOrNullArgMinOrDefault(
-    b,
-    toString(-9223372036854775808, NULL,
-        toString(-2147483649,
-            toString(toString(toNullable(NULL)), NULL),
-            divide(-9223372036854775807 = a, a > materialize(2147483647))
-        )
-    )
-)
-FORMAT Null;
-
--- Minimised form that hits the same plan path: `isNotDistinctFrom` over a
--- `String` `GROUP BY` key with `WITH ROLLUP`. Stable result, one extra rollup
--- row.
 SELECT c IS NOT DISTINCT FROM '65535' AS k, count() FROM t1
 GROUP BY c <=> '65535', c WITH ROLLUP ORDER BY k, count();
 
