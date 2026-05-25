@@ -169,10 +169,32 @@ Clears the query condition cache.
 ```sql
 SYSTEM CLEAR QUERY CACHE;
 SYSTEM CLEAR QUERY CACHE TAG '<tag>'
-````
+```
 
 Clears the [query cache](../../operations/query-cache.md).
 If a tag is specified, only query cache entries with the specified tag are deleted.
+
+## SYSTEM CLEAR|DROP AGGREGATE CACHE {#drop-aggregate-cache}
+
+:::note
+The partial aggregate cache is experimental. See the [`use_partial_aggregate_cache`](../../operations/settings/settings.md#use_partial_aggregate_cache) setting and related options.
+:::
+
+```sql
+SYSTEM CLEAR AGGREGATE CACHE [ON CLUSTER cluster_name]
+```
+
+Clears the partial aggregate cache.
+
+The following forms are accepted as aliases (they also clear the cache; `DROP` does not disable the feature):
+
+```sql
+SYSTEM DROP AGGREGATE CACHE [ON CLUSTER cluster_name]
+SYSTEM DROP PARTIAL AGGREGATE CACHE [ON CLUSTER cluster_name]
+SYSTEM CLEAR PARTIAL AGGREGATE CACHE [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM DROP AGGREGATE CACHE` privilege (see [GRANT](grant.md#privileges)). Additional names are accepted in `GRANT` for compatibility; the SQL forms above match the parser.
 
 ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 

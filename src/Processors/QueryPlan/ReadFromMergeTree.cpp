@@ -1,12 +1,16 @@
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Analyzer/QueryNode.h>
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Functions/IFunction.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -17,6 +21,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/ConcatProcessor.h>
@@ -34,6 +39,7 @@
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/PartialAggregatePlanHitChunkSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
@@ -50,6 +56,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreePartialAggregateInfo.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
@@ -233,6 +240,9 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_partial_aggregate_cache;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
@@ -768,6 +778,15 @@ Pipe ReadFromMergeTree::readInOrder(
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
+        PartialAggregateInfoPtr partial_aggregate_plan_identity;
+        if (reader_settings.use_partial_aggregate_cache)
+        {
+            partial_aggregate_plan_identity = partialAggregateInfoFromMergeTreePart(*part_with_ranges.data_part);
+            /// Same as `MergeTreeSelectProcessor::buildPartialAggregateInfoFromCurrentTask` for pooled reads: honor plan-time probe skip.
+            partial_aggregate_plan_identity->skip_execution_time_cache_lookup
+                = reader_settings.skip_partial_aggregate_execution_cache_lookup;
+        }
+
         bool use_virtual_row = virtual_row_conversion && (read_type == ReadType::InOrder || read_type == ReadType::InReverseOrder);
         bool use_virtual_row_per_block = use_virtual_row && context->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
 
@@ -788,7 +807,8 @@ Pipe ReadFromMergeTree::readInOrder(
                 processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
         }
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        auto source = std::make_shared<MergeTreeSource>(
+            std::move(processor), data.getLogName(), std::move(partial_aggregate_plan_identity));
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);
 
@@ -3369,7 +3389,6 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     return true;
 }
 
-
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
 
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
@@ -3433,9 +3452,12 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
         predicate_stats_log->add(std::move(elem));
 }
 
-void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_pipeline_settings)
 {
     auto & result = getAnalysisResult();
+
+    /// Cleared each pipeline build; set to true only for miss pipes after plan-time `PartialAggregateCache::get`.
+    reader_settings.skip_partial_aggregate_execution_cache_lookup = false;
 
     logPredicateStatistics(result);
 
@@ -3687,10 +3709,82 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             std::move(part_remaining_marks));
     }
 
-    Pipe pipe = output_each_partition_through_separate_port
-        ? groupStreamsByPartition(result, index_build_context, result_projection)
-        : spreadMarkRanges(
-              std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
+    Pipe pipe;
+    bool used_planning_stage_partial_hits = false;
+
+    /// Plan-time `PartialAggregateCache::get` per part before readers. Key uses `partial_aggregate_cache_query_hash` + part identity.
+    /// Hits skip reading the part; miss readers set `skip_partial_aggregate_execution_cache_lookup` so execution does not repeat `get` per chunk.
+    /// Same group-by limit guard as `AggregatingStep` (`partial_cache_compatible_with_group_by_limits`): no plan probes when execution-time cache is off for semantics.
+    const auto & settings = context->getSettingsRef();
+    const bool partial_cache_compatible_with_group_by_limits
+        = settings[Setting::max_rows_to_group_by] == 0 || settings[Setting::group_by_overflow_mode] == OverflowMode::THROW;
+    const bool can_plan_partial_aggregate_cache_hits = build_pipeline_settings.partial_aggregate_cache_query_hash.has_value()
+        && settings[Setting::use_partial_aggregate_cache] && partial_cache_compatible_with_group_by_limits && !index_build_context
+        && !output_each_partition_through_separate_port && !is_parallel_reading_from_replicas && !isQueryWithFinal()
+        && !result.sampling.use_sampling;
+
+    if (can_plan_partial_aggregate_cache_hits)
+    {
+        if (auto cache = Context::getGlobalContextInstance()->getPartialAggregateCache())
+        {
+            const IASTHash query_hash = *build_pipeline_settings.partial_aggregate_cache_query_hash;
+            RangesInDataParts miss_parts;
+            miss_parts.reserve(result.parts_with_ranges.size());
+            std::vector<Pipe> plan_hit_pipes;
+            SharedHeader read_header = getOutputHeader();
+            size_t num_plan_hits = 0;
+
+            for (const auto & part_range : result.parts_with_ranges)
+            {
+                const auto part_identity = partialAggregateInfoFromMergeTreePart(*part_range.data_part);
+                PartialAggregateCache::Key key{query_hash, part_identity->table_uuid, part_identity->part_name, part_identity->part_mutation_version};
+                if (std::optional<Block> cached = cache->get(key))
+                {
+                    Block materialized = materializeBlock(*cached);
+                    plan_hit_pipes.push_back(Pipe(std::make_shared<PartialAggregatePlanHitChunkSource>(
+                        read_header, std::move(key), std::move(materialized))));
+                    ++num_plan_hits;
+                }
+                else
+                    miss_parts.push_back(part_range);
+            }
+
+            chassert(num_plan_hits + miss_parts.size() == result.parts_with_ranges.size());
+
+            auto read_miss_parts_with_skip_exec_partial_cache_get = [&](RangesInDataParts parts)
+            {
+                /// Plan-time `get` already ran; keep flag for readers created inside `spreadMarkRanges` (reset at start of `initializePipeline`).
+                reader_settings.skip_partial_aggregate_execution_cache_lookup = true;
+
+                return spreadMarkRanges(std::move(parts), index_build_context, requested_num_streams, result, result_projection);
+            };
+
+            if (!plan_hit_pipes.empty())
+            {
+                if (!miss_parts.empty())
+                    plan_hit_pipes.push_back(read_miss_parts_with_skip_exec_partial_cache_get(std::move(miss_parts)));
+                else
+                    result.parts_with_ranges.clear();
+
+                pipe = Pipe::unitePipes(std::move(plan_hit_pipes));
+                used_planning_stage_partial_hits = true;
+            }
+            else if (!miss_parts.empty())
+            {
+                /// All plan-time misses: still set skip flag for execution path.
+                pipe = read_miss_parts_with_skip_exec_partial_cache_get(std::move(miss_parts));
+                used_planning_stage_partial_hits = true;
+            }
+        }
+    }
+
+    if (!used_planning_stage_partial_hits)
+    {
+        pipe = output_each_partition_through_separate_port
+            ? groupStreamsByPartition(result, index_build_context, result_projection)
+            : spreadMarkRanges(
+                  std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
+    }
 
     for (const auto & processor : pipe.getProcessors())
         processor->setStorageLimits(query_info.storage_limits);

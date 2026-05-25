@@ -1,0 +1,10 @@
+--- First run (cold cache, no plan-time pipeline hash for grouping sets)
+0	A	49995000	10000
+0	B	49995000	10000
+1	<total>	99990000	20000
+1
+--- Second run (warm execution-time cache)
+0	A	49995000	10000
+0	B	49995000	10000
+1	<total>	99990000	20000
+1

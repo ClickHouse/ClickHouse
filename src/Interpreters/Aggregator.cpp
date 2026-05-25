@@ -23,11 +23,13 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -82,6 +84,34 @@ namespace ErrorCodes
 
 namespace
 {
+struct HasSubqueryMatcher
+{
+    struct Data
+    {
+        bool has_subquery = false;
+    };
+
+    static bool needChildVisit(const DB::ASTPtr &, const DB::ASTPtr &) { return true; }
+
+    static void visit(const DB::ASTPtr & node, Data & data)
+    {
+        if (node->as<DB::ASTSubquery>())
+            data.has_subquery = true;
+    }
+};
+
+using HasSubqueryVisitor = DB::ConstInDepthNodeVisitor<HasSubqueryMatcher, true>;
+
+bool astContainsSubquery(const DB::ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    HasSubqueryMatcher::Data data;
+    HasSubqueryVisitor(data).visit(ast);
+    return data.has_subquery;
+}
+
 bool worthConvertToTwoLevel(
     size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
 {
@@ -349,7 +379,8 @@ Aggregator::Params::Params(
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_,
     bool enable_producing_buckets_out_of_order_in_aggregation_,
-    bool serialize_string_with_zero_byte_)
+    bool serialize_string_with_zero_byte_,
+    UInt64 query_semantic_hash_for_partial_cache_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -374,6 +405,7 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
+    , query_semantic_hash_for_partial_cache(query_semantic_hash_for_partial_cache_)
 {
 }
 
@@ -4029,12 +4061,44 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+    {
+        hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
+        hash.update(static_cast<UInt8>(is_array_join_left));
+    }
     if (const auto prewhere = select.prewhere())
         hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
     if (const auto where = select.where())
         hash.update(where->getTreeHash(/*ignore_aliases=*/true));
     if (const auto group_by = select.groupBy())
         hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
+    return hash.get64();
+}
+
+UInt64 partialAggregateCacheSemanticKey(
+    const DB::ASTPtr & select_query,
+    const String & current_database,
+    bool apply_deleted_mask,
+    bool has_row_level_filter,
+    bool has_additional_table_filters)
+{
+    if (has_row_level_filter || has_additional_table_filters)
+        return 0;
+
+    const auto & select = select_query->as<DB::ASTSelectQuery &>();
+    /// Predicate subqueries may depend on mutable external sources (`WHERE ... IN (SELECT ...)`).
+    /// Their freshness is not represented in the partial aggregate cache key, so disable cache fail-close.
+    if (astContainsSubquery(select.prewhere()) || astContainsSubquery(select.where()))
+        return 0;
+
+    const UInt64 base = calculateCacheKey(select_query);
+    if (base == 0)
+        return 0;
+
+    SipHash hash;
+    hash.update(base);
+    hash.update(current_database);
+    hash.update(static_cast<UInt8>(apply_deleted_mask));
     return hash.get64();
 }
 }

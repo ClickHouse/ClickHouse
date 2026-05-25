@@ -30,11 +30,18 @@
 
 #include <Core/Settings.h>
 
+#include <vector>
+
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
+#include <Interpreters/Cache/PartialAggregateCacheQueryHash.h>
 #include <Interpreters/QueryLog.h>
+
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -194,6 +201,43 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.force_projection_name.clear();
     plan.optimize(optimization_settings);
     return std::make_unique<QueryPlan>(std::move(plan));
+}
+
+/// For `partial_aggregate_cache_query_hash`: only a single non-`GROUPING SETS` `AggregatingStep` is unambiguous (otherwise leave unset).
+void collectAggregatingSteps(const QueryPlan::Node * node, std::vector<const AggregatingStep *> & out, bool & has_grouping_sets_step)
+{
+    if (!node)
+        return;
+    if (const auto * agg = typeid_cast<const AggregatingStep *>(node->step.get()))
+    {
+        if (agg->isGroupingSets())
+            has_grouping_sets_step = true;
+        else
+            out.push_back(agg);
+    }
+    for (QueryPlan::Node * child : node->children)
+        collectAggregatingSteps(child, out, has_grouping_sets_step);
+}
+
+std::optional<IASTHash> tryPartialAggregateCacheQueryHashFromAnalyzerPlan(const QueryPlan & query_plan, const ContextPtr & query_context)
+{
+    const QueryPlan::Node * root = query_plan.getRootNode();
+    if (!root)
+        return std::nullopt;
+
+    std::vector<const AggregatingStep *> aggregating_steps;
+    bool has_grouping_sets_step = false;
+    collectAggregatingSteps(root, aggregating_steps, has_grouping_sets_step);
+
+    /// `GROUPING SETS` uses per-set hashes, while planner-stage probe accepts only a single hash.
+    if (has_grouping_sets_step || aggregating_steps.size() != 1)
+        return std::nullopt;
+
+    auto cache = Context::getGlobalContextInstance()->getPartialAggregateCache();
+    const auto & settings = query_context->getSettingsRef();
+    const AggregatingStep & agg = *aggregating_steps.front();
+    return tryComputePartialAggregateCacheQueryHash(
+        settings, cache, agg.getParams(), agg.isGroupByUseNulls(), agg.inOrder());
 }
 }
 
@@ -375,6 +419,8 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;
 
     BuildQueryPipelineSettings build_pipeline_settings(context);
+    if (auto pipeline_hash = tryPartialAggregateCacheQueryHashFromAnalyzerPlan(query_plan, context))
+        build_pipeline_settings.partial_aggregate_cache_query_hash = std::move(pipeline_hash);
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 

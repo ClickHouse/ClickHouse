@@ -1,0 +1,6 @@
+--- Warm cache without ARRAY JOIN
+30
+1	1
+--- ARRAY JOIN query must not reuse previous states
+40
+1	1

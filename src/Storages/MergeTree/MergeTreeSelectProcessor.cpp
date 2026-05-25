@@ -4,6 +4,8 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Cache/PartialAggregateInfo.h>
+#include <Storages/MergeTree/MergeTreePartialAggregateInfo.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <city.h>
@@ -427,6 +429,16 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
     }
 
     return {Chunk(), 0, 0, true, {}};
+}
+
+PartialAggregateInfoPtr MergeTreeSelectProcessor::buildPartialAggregateInfoFromCurrentTask() const
+{
+    if (!reader_settings.use_partial_aggregate_cache || !task)
+        return nullptr;
+    auto info = partialAggregateInfoFromMergeTreePart(*task->getInfo().data_part);
+    if (reader_settings.skip_partial_aggregate_execution_cache_lookup)
+        info->skip_execution_time_cache_lookup = true;
+    return info;
 }
 
 /// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.

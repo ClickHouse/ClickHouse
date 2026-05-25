@@ -21,6 +21,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
@@ -63,6 +64,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int DEPRECATED_FUNCTION;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
 }
@@ -87,7 +90,23 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
-            if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
+            FunctionOverloadResolverPtr func;
+            try
+            {
+                func = FunctionFactory::instance().tryGet(function->name, data.context);
+            }
+            catch (const Exception & e)
+            {
+                /// tryGet instantiates the implementation; deprecations and experimental gates may throw instead of returning nullptr.
+                /// Conservative for cache eligibility: treat as non-deterministic (disable caching).
+                if (e.code() == ErrorCodes::DEPRECATED_FUNCTION || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
+                {
+                    data.has_non_deterministic_functions = true;
+                    return;
+                }
+                throw;
+            }
+            if (func)
             {
                 if (!func->isDeterministic())
                     data.has_non_deterministic_functions = true;

@@ -140,9 +140,18 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
-        if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+        ContextPtr query_context = CurrentThread::get().tryGetQueryContext();
+
+        /// Record factory usage in query context only. Helper paths can call function resolution
+        /// with a global/background context while executing in query thread, and global context
+        /// cannot hold query factories info.
+        ContextPtr logging_context = query_context;
+        if (!logging_context && context && !context->isGlobalContext())
+            logging_context = context;
+        /// Skip internal functions (e.g. `_CAST` from the analyzer); user query lists `CAST` and logging both is noisy.
+        if (logging_context && !logging_context->isGlobalContext() && logging_context->getSettingsRef()[Setting::log_queries]
+            && !name.starts_with('_'))
+            logging_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
 
         /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
         /// check this setting here and decide if we need to change the function to get
