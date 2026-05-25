@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
+            {"enable_writes_to_query_cache_disk", false, false, "New setting to allow storing query result cache entries on disk."},
+            {"enable_reads_from_query_cache_disk", false, false, "New setting to allow reading query result cache entries from disk."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -104,8 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
             {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
             {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
-            {"enable_writes_to_query_cache_disk", false, false, "New setting to allow storing query result cache entries on disk."},
-            {"enable_reads_from_query_cache_disk", false, false, "New setting to allow reading query result cache entries from disk."},
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
