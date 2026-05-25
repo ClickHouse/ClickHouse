@@ -365,6 +365,12 @@ void optimizeTreeSecondPass(
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
+            if (optimization_settings.aggregate_partitions_independently)
+                optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.limit_by_partitions_independently)
+                optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
+
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 

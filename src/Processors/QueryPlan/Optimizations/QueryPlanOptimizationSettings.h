@@ -56,6 +56,7 @@ struct QueryPlanOptimizationSettings
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
+    bool limit_by_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;

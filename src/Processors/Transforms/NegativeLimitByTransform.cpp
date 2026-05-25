@@ -1,3 +1,4 @@
+#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Port.h>
@@ -228,10 +229,15 @@ void NegativeLimitByTransform::consume(Chunk chunk)
         return;
     }
 
+    Columns normalized_cols;
+    normalized_cols.reserve(key_positions.size());
     ColumnRawPtrs key_columns;
     key_columns.reserve(key_positions.size());
     for (size_t pos : key_positions)
-        key_columns.push_back(cols[pos].get());
+    {
+        normalized_cols.push_back(removeSpecialRepresentations(cols[pos]));
+        key_columns.push_back(normalized_cols.back().get());
+    }
 
     switch (data.type)
     {
