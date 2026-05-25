@@ -2900,7 +2900,7 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         )
     )
 
-    # `compatibility` older than `26.5` resolves
+    # `compatibility` older than `26.6` resolves
     # `file_like_engine_default_partition_strategy` to `wildcard` via
     # `SettingsChangesHistory`, so the same path must raise the same error
     # without an explicit setting override.
@@ -2911,12 +2911,12 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
     PARTITION BY (b, c)
     """,
-            settings={"compatibility": "26.4"},
+            settings={"compatibility": "26.5"},
         )
     )
 
-    # From `26.5` onwards the default flips to `hive`, so the same statement
-    # under `compatibility = '26.5'` must succeed.
+    # From `26.6` onwards the default flips to `hive`, so the same statement
+    # under `compatibility = '26.6'` must succeed.
     compat_table_name = f"{table_name}_compat"
     compat_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{compat_table_name}"
     node.query(
@@ -2924,7 +2924,7 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     CREATE TABLE {compat_table_name} (a Int32, b Int32, c String) ENGINE = S3('{compat_url}', format = 'Parquet')
     PARTITION BY (b, c)
     """,
-        settings={"compatibility": "26.5"},
+        settings={"compatibility": "26.6"},
     )
     node.query(f"DROP TABLE {compat_table_name}")
 
