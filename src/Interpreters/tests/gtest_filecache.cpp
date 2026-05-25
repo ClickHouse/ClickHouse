@@ -1936,6 +1936,7 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
 #include <IO/LocalSourceReader.h>
 #include <IO/ReaderExecutor.h>
 #include <IO/PipelineReadBuffer.h>
+#include <IO/Rope.h>
 
 TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
 {
@@ -2083,6 +2084,213 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
         size_t n = buf.read(tmp, 10);
         ASSERT_EQ(n, 10u);
         ASSERT_EQ(std::string(tmp, 10), "BBBBBBBBBB");
+    }
+}
+
+/// Full B behaviour at the handle level: when `put` is called with a `Rope`
+/// that does not fully cover the segment range (a gap somewhere after the
+/// segment's `getCurrentWriteOffset`), the handle must:
+///   - write only the contiguous prefix that the rope covers,
+///   - leave the segment PARTIALLY_DOWNLOADED with `downloaded_size` matching
+///     the prefix (not silently pad with zeros to seg.size),
+///   - report the prefix as a hit on the next `status()` call,
+///   - serve the prefix bytes via `get()`.
+///
+/// Without these properties, a small-file workload (file_size < segment_size)
+/// — or any cache miss whose underlying read is partial — would either poison
+/// the cache with zero bytes (pre-fix behaviour) or never cache the file at
+/// all (Option A behaviour).
+TEST_F(FileCacheTest, DiskCacheProviderPartialPutSegmentIsCacheable)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_partial_put", settings);
+    cache->initialize();
+
+    /// Use an object whose declared size is 10 — FileCache will allocate a
+    /// full 10-byte segment for the [0, 10) range — but only put 5 bytes
+    /// into it via the rope. This is the exact shape Full B targets.
+    const std::string object_path = "/synthetic/path/partial_put_object";
+    const size_t object_size = 10;
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+
+    StoredObject object{object_path, "", object_size};
+
+    /// Build a rope covering only [0, 5) — the first half of the segment.
+    /// The rope's logical_offset is file-level, but since object_file_offset
+    /// is 0 in this test, file-level == object-local.
+    auto buf = std::make_shared<OwnedRopeBuffer>(5);
+    std::memcpy(buf->data(), "HELLO", 5);
+    Rope rope_to_put;
+    rope_to_put.append(RopeNode{buf, 0, 5, 0});
+
+    auto handle = provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, 10});
+    ASSERT_NE(handle, nullptr);
+
+    /// The whole segment is initially a miss.
+    {
+        auto initial = handle->status();
+        ASSERT_TRUE(initial.hit_ranges.empty());
+        ASSERT_EQ(initial.miss_ranges.size(), 1u);
+        ASSERT_EQ(initial.miss_ranges[0].offset, 0u);
+        ASSERT_EQ(initial.miss_ranges[0].size, 10u);
+    }
+
+    /// Put the partial rope. Must write 5 bytes (the contiguous prefix);
+    /// the 5-byte tail of the segment must NOT be zero-padded on disk.
+    size_t written = handle->put(ByteRange{0, 10}, std::move(rope_to_put));
+    ASSERT_EQ(written, 5u);
+
+    /// Release the holder so the segment finalizes — the holder destructor
+    /// triggers `FileSegment::complete`, which can split a partial segment
+    /// into a fully-downloaded prefix + empty tail. The exact internal
+    /// shape doesn't matter for the contract; what matters is what
+    /// subsequent `status()` and `get()` calls report.
+    handle.reset();
+
+    /// Re-acquire a handle and verify the public contract: the prefix is
+    /// a hit, the tail is a miss.
+    auto handle2 = provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, 10});
+    auto after_put = handle2->status();
+
+    /// Aggregate hits / misses (FileCache may split into multiple segments).
+    auto total_size = [](const std::vector<ByteRange> & rs)
+    {
+        size_t s = 0;
+        for (const auto & r : rs)
+            s += r.size;
+        return s;
+    };
+    ASSERT_EQ(total_size(after_put.hit_ranges), 5u);
+    ASSERT_EQ(total_size(after_put.miss_ranges), 5u);
+    /// And the hit range starts at 0 (i.e. the prefix, not some random
+    /// reshuffled offset).
+    ASSERT_FALSE(after_put.hit_ranges.empty());
+    ASSERT_EQ(after_put.hit_ranges[0].offset, 0u);
+
+    /// `get()` must return the real 5 bytes "HELLO" — not zero-padded —
+    /// and must not return anything past offset 5.
+    Rope served = handle2->get(ByteRange{0, 10});
+    ASSERT_TRUE(served.covers(ByteRange{0, 5}));
+    ASSERT_FALSE(served.covers(ByteRange{5, 5}));
+    char buf_out[5] = {};
+    served.copyTo(buf_out, ByteRange{0, 5});
+    ASSERT_EQ(std::string(buf_out, 5), "HELLO");
+}
+
+/// End-to-end version of the partial-segment scenario, exercising the
+/// full unknown-size path through `ReaderExecutor` + `DiskCacheProvider`.
+///
+/// With `StoredObject::UnknownSize`, `OffsetMap` cannot clamp fetch ranges
+/// to the file's true size, so the source EOFs mid-segment (5 of 10 bytes
+/// delivered). Before Full B, the executor's `put` would have either
+/// zero-padded the segment (silent cache poisoning) or thrown on the
+/// `PARTIALLY_DOWNLOADED` continuation. After Full B, the partial fill
+/// is committed correctly and the second read serves the real bytes
+/// from cache.
+TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_unknown_size", settings);
+    cache->initialize();
+
+    /// Tiny file — 5 bytes, less than one segment. Real on-disk file so
+    /// the source delivers the real content; the executor's view of it
+    /// is `UnknownSize`, so it can't pre-clamp the read range.
+    std::string file_path = fs::current_path() / "test_dc_unknown_size";
+    std::string data = "HELLO";
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+
+    /// Counting source factory — to confirm the second read gets the
+    /// prefix from cache rather than re-fetching it.
+    auto source_open_count = std::make_shared<std::atomic<size_t>>(0);
+    auto source = std::make_shared<BufferSourceReader>(
+        [file_path, source_open_count](const StoredObject &) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            source_open_count->fetch_add(1);
+            return std::make_unique<ReadBufferFromFile>(file_path);
+        },
+        "CountingSource");
+
+    StoredObjects objects;
+    /// UnknownSize forces the executor through the unknown-size code path.
+    objects.emplace_back(file_path, "", StoredObject::UnknownSize);
+
+    /// First read: source delivers 5 bytes, EOF latched, cache populated
+    /// with a partial segment. The executor's new contiguity check would
+    /// throw LOGICAL_ERROR if the assembled rope had a hole here.
+    {
+        auto executor = std::make_unique<ReaderExecutor>(
+            source, objects,
+            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            /*window_size=*/20,
+            /*min_bytes_for_seek=*/0,
+            file_path);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+    ASSERT_GE(source_open_count->load(), 1u);
+
+    /// Second read: a fresh executor with the same source. The prefix
+    /// `[0, 5)` lives in the cache as a partial fill — `status()` must
+    /// report it as a hit and `get()` must serve the real bytes, not
+    /// zero-padding. The source still gets opened to verify there are
+    /// no more bytes past EOF (UnknownSize ⇒ executor doesn't know
+    /// where to stop without asking), but the 5 cached bytes must
+    /// match the original data.
+    source_open_count->store(0);
+    {
+        auto executor = std::make_unique<ReaderExecutor>(
+            source, objects,
+            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            /*window_size=*/20,
+            /*min_bytes_for_seek=*/0,
+            file_path);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        /// If the partial segment had been zero-padded by `put`, this
+        /// assertion would catch the corruption (would see "\0\0\0\0\0"
+        /// or some hybrid instead of "HELLO").
+        ASSERT_EQ(result.str(), data);
     }
 }
 

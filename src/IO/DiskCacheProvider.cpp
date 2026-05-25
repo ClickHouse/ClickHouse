@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -128,9 +129,27 @@ CacheLookupResult DiskCacheHandle::status() const
 
         auto state = segment->state();
         if (state == FileSegmentState::DOWNLOADED)
+        {
             result.hit_ranges.push_back(r);
+        }
+        else if (state == FileSegmentState::PARTIALLY_DOWNLOADED
+              || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        {
+            /// A partial segment has a contiguous downloaded prefix
+            /// `[seg.left, current_write_offset)` that is safe to read; the
+            /// tail still needs to be sourced. Honouring this is what
+            /// makes small files (file_size < segment_size) cacheable —
+            /// their last segment is necessarily a partial fill.
+            size_t cwo_file = segment->getCurrentWriteOffset() + object_file_offset;
+            if (cwo_file > r.offset)
+                result.hit_ranges.push_back(ByteRange{r.offset, cwo_file - r.offset});
+            if (cwo_file < r.end())
+                result.miss_ranges.push_back(ByteRange{cwo_file, r.end() - cwo_file});
+        }
         else
+        {
             result.miss_ranges.push_back(r);
+        }
     }
     return result;
 }
@@ -149,17 +168,29 @@ Rope DiskCacheHandle::get(ByteRange range)
 
     for (const auto & segment : *holder)
     {
-        if (segment->state() != FileSegmentState::DOWNLOADED)
+        auto state = segment->state();
+        if (state != FileSegmentState::DOWNLOADED
+            && state != FileSegmentState::PARTIALLY_DOWNLOADED
+            && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
             continue;
 
         const auto & seg_range = segment->range();
         ByteRange seg_r{seg_range.left, seg_range.size()};
 
-        if (seg_r.end() <= range_in_object.offset || seg_r.offset >= range_in_object.end())
+        /// For a fully downloaded segment, the readable end is `seg_r.end()`.
+        /// For a partial segment, only `[seg_r.offset, current_write_offset)`
+        /// is committed — bytes past that point are not on disk yet.
+        size_t downloaded_end = (state == FileSegmentState::DOWNLOADED)
+            ? seg_r.end()
+            : segment->getCurrentWriteOffset();
+
+        if (downloaded_end <= range_in_object.offset || seg_r.offset >= range_in_object.end())
             continue;
 
         size_t overlap_start = std::max(seg_r.offset, range_in_object.offset);
-        size_t overlap_end = std::min(seg_r.end(), range_in_object.end());
+        size_t overlap_end = std::min(downloaded_end, range_in_object.end());
+        if (overlap_end <= overlap_start)
+            continue;
         size_t overlap_size = overlap_end - overlap_start;
 
         /// Read from local file. The segment is pinned by the holder, so the
@@ -256,14 +287,47 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
             continue;
         }
 
-        size_t overlap_start = std::max(seg_r.offset, range_in_object.offset);
-        size_t overlap_end = std::min(seg_r.end(), range_in_object.end());
-        size_t write_size = overlap_end - overlap_start;
+        /// `FileSegment::write` is append-only: bytes must be written at
+        /// `getCurrentWriteOffset()`. For EMPTY this equals `seg_r.offset`;
+        /// for PARTIALLY_DOWNLOADED it is where the previous downloader
+        /// stopped. We can only contribute when our data starts at or
+        /// before that point — otherwise we would have to leave a hole,
+        /// which the segment does not allow.
+        size_t write_offset = segment->getCurrentWriteOffset();
+        size_t write_end_max = std::min(seg_r.end(), range_in_object.end());
 
-        /// Reserve space.
+        if (write_offset >= write_end_max || write_offset < range_in_object.offset)
+        {
+            segment->completePartAndResetDownloader();
+            continue;
+        }
+
+        /// Find the contiguous prefix of `data` starting at `write_offset`.
+        /// If `data` has a gap right at `write_offset`, nothing to do.
+        /// If `data` skips a tail (e.g. boundary segment at EOF, or a
+        /// hole in the middle of the read window), write only the prefix
+        /// and leave the segment PARTIALLY_DOWNLOADED for later continuation.
+        ByteRange target{write_offset, write_end_max - write_offset};
+        size_t contiguous = target.size;
+        auto data_gaps = data.gaps(target);
+        if (!data_gaps.empty())
+        {
+            size_t first_gap_offset = data_gaps.front().offset;
+            contiguous = (first_gap_offset > write_offset) ? (first_gap_offset - write_offset) : 0;
+        }
+
+        if (contiguous == 0)
+        {
+            segment->completePartAndResetDownloader();
+            continue;
+        }
+
+        /// Reserve only the bytes we will actually write — partial fills
+        /// are recoverable via `status`/`get` honouring the downloaded
+        /// prefix.
         std::string failure_reason;
         bool reserved = segment->reserve(
-            write_size,
+            contiguous,
             cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
             failure_reason);
 
@@ -275,19 +339,34 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
             continue;
         }
 
-        /// Flatten the relevant slice of `data` (now in object-local coords)
-        /// directly into a contiguous buffer for `segment->write()`.
-        std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(write_size);
-        data.copyTo(flat_buf.data(), ByteRange{overlap_start, write_size});
+        /// Flatten the contiguous slice of `data` (now in object-local
+        /// coords) directly into a buffer for `segment->write()`.
+        ///
+        /// Hard-check the contiguity invariant before writing: a violation
+        /// here would mean we are about to commit uninitialized (zero) bytes
+        /// to the cache file. `Rope::copyTo` chasserts the same property,
+        /// but chassert is a no-op in release builds — this throw fires
+        /// regardless and turns a silent cache-poisoning into a clean
+        /// `LOGICAL_ERROR` that the executor can surface.
+        ByteRange write_range{write_offset, contiguous};
+        if (!data.covers(write_range))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "DiskCacheHandle::put: data does not contiguously cover the range being written: "
+                "write_range=[{}, {}), data intervals={}",
+                write_range.offset, write_range.end(), data.getIntervals().size());
 
-        segment->write(flat_buf.data(), write_size, overlap_start);
+        std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(contiguous);
+        data.copyTo(flat_buf.data(), write_range);
 
-        /// Release downloader role. The holder's destructor will finalize.
+        segment->write(flat_buf.data(), contiguous, write_offset);
+
+        /// Release downloader role. If we did not reach `seg_r.end()`,
+        /// the segment is left PARTIALLY_DOWNLOADED for later continuation.
         segment->completePartAndResetDownloader();
-        bytes_written += write_size;
+        bytes_written += contiguous;
 
-        LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}]",
-            write_size, seg_range.left, seg_range.right);
+        LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}] at offset {}",
+            contiguous, seg_range.left, seg_range.right, write_offset);
 
         if (cache_log)
             appendCacheLogEntry(

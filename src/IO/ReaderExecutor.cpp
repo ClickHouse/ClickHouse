@@ -58,6 +58,7 @@ namespace HistogramMetrics
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 #if USE_SSL
@@ -1143,7 +1144,27 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     }
 
     /// Trim to the originally requested physical window.
-    return result.slice(physical_window);
+    auto sliced = result.slice(physical_window);
+
+    /// Hard-check the contiguity invariant on what we hand back to the
+    /// caller. Bytes returned by `readPhysicalWindow` must form a single
+    /// contiguous run starting at `physical_window.offset` — anything else
+    /// would mean a hole in the data the caller is about to interpret as
+    /// consecutive file content. Under known-size reads the run covers
+    /// the full window; under unknown-size with EOF, it may end early
+    /// (still contiguous from the front). This catches any regression
+    /// where a cache layer, source short-read, or merge logic leaves the
+    /// assembled rope with a gap.
+    const auto & ivs = sliced.getIntervals();
+    if (ivs.size() > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ReaderExecutor::readPhysicalWindow: assembled result has {} disjoint intervals in window [{}, {}) - expected at most one contiguous run",
+            ivs.size(), physical_window.offset, physical_window.end());
+    if (!ivs.empty() && ivs[0].offset != physical_window.offset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ReaderExecutor::readPhysicalWindow: assembled result starts at {} but window begins at {} - missing prefix bytes",
+            ivs[0].offset, physical_window.offset);
+    return sliced;
 }
 
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position) const
