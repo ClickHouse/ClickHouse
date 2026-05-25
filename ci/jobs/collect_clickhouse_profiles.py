@@ -245,6 +245,20 @@ def stop_server(proc, log_fd):
         log_fd.close()
 
 
+def install_perf_python_deps():
+    """Install Python packages required by `tests/performance/scripts/perf.py`.
+
+    The `clickhouse/binary-builder` Docker image used by this job inherits
+    `scipy` from `clickhouse/fasttest` but does not bundle `clickhouse-driver`
+    (it is only needed for running perf tests, not for builds). Install it on
+    demand so `perf.py` can `import clickhouse_driver`.
+    """
+    Shell.check(
+        "pip3 install --no-cache-dir 'clickhouse-driver==0.2.7'",
+        verbose=True,
+    )
+
+
 def run_performance_tests(server_dir, port=9000, runs=7, max_queries=10):
     """Run all performance tests against a single server to exercise code paths."""
     test_files = sorted(
@@ -437,6 +451,7 @@ def main():
 
         def collect_pgo():
             install_clickhouse(pgo_binary, pgo_server_dir)
+            install_perf_python_deps()
             if not download_datasets():
                 return False
             if not configure_datasets(pgo_server_dir, port=9000):
