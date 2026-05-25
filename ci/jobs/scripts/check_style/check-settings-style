@@ -29,6 +29,7 @@ ALL_DECLARATION_FILES=(
     "$ROOT_PATH/src/Interpreters/FileCache/FileCacheSettings.cpp"
     "$ROOT_PATH/src/Processors/QueryPlan/QueryPlanSerializationSettings.cpp"
     "$ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp"
+    "$ROOT_PATH/src/Storages/Elasticsearch/ElasticsearchQueueSettings.cpp"
     "$ROOT_PATH/src/Storages/ExecutableSettings.cpp"
     "$ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp"
     "$ROOT_PATH/src/Storages/Hive/HiveSettings.cpp"

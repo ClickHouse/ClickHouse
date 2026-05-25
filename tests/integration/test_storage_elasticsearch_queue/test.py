@@ -206,6 +206,29 @@ def test_user_query_cannot_override_internal_cursor_or_pit(started_cluster, data
     )
 
 
+def test_direct_select_is_rejected_while_materialized_view_is_attached(started_cluster, database):
+    index = f"direct_select_{database}"
+    put_elasticsearch_documents(index, [{"seq": 1, "message": "value-1"}])
+
+    create_target_and_queue(node1, database, index, "")
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT seq FROM {database}.dst ORDER BY seq",
+        "1\n",
+        retry_count=80,
+        sleep_time=0.5,
+    )
+
+    with pytest.raises(QueryRuntimeException) as exc:
+        node1.query(
+            f"SELECT * FROM {database}.queue",
+            settings={"stream_like_engine_allow_direct_select": 1},
+        )
+
+    assert "attached materialized views" in str(exc.value)
+
+
 def test_experimental_setting_is_required(started_cluster, database):
     with pytest.raises(QueryRuntimeException) as exc:
         node1.query(

@@ -217,7 +217,7 @@ private:
         if (elasticsearch_storage.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        if (elasticsearch_storage.mv_attached)
+        if (elasticsearch_storage.getTableDependentCount() > 0)
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageElasticsearchQueue with attached materialized views");
 
         Pipes pipes;

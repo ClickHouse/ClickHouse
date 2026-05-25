@@ -44,6 +44,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_suspicious_ttl_expressions", 1);
     context->setSetting("allow_suspicious_variant_types", 1);
     context->setSetting("allow_create_index_without_type", 1);
+    context->setSetting("allow_experimental_elasticsearch_queue", 1);
     context->setSetting("allow_experimental_s3queue", 1);
     context->setSetting("allow_experimental_database_iceberg", 1);
     context->setSetting("allow_experimental_database_hms_catalog", 1);
