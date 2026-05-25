@@ -1861,9 +1861,9 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
     /// committed descendants would otherwise be silently treated as outdated).
     auto evict_rolled_back_and_reinsert = [&](auto victim_iter)
     {
-        LOG_WARNING(
+        LOG_INFO(
             getLogger("MergeTreeData"),
-            "Removing rolled-back part {} from loading tree; committed part {} will be used instead",
+            "Removing rolled-back part {} from loading tree (its descendants and incoming part {} will be re-inserted)",
             victim_iter->second->name,
             name);
         std::vector<std::tuple<MergeTreePartInfo, String, DiskPtr>> to_reinsert;
@@ -1922,7 +1922,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 {
                     /// The incoming part is from a rolled-back transaction; skip it regardless of the
                     /// existing part's status (covers both the committed-existing and both-rolled-back cases).
-                    LOG_WARNING(
+                    LOG_INFO(
                         getLogger("MergeTreeData"),
                         "Skipping rolled-back part {} (intersects part {})",
                         name,
@@ -1982,7 +1982,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
 
                 if (incoming_status == RollbackStatus::RolledBack)
                 {
-                    LOG_WARNING(
+                    LOG_INFO(
                         getLogger("MergeTreeData"),
                         "Skipping rolled-back part {} (intersects part {})",
                         name,
