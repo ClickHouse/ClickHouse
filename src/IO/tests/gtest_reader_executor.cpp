@@ -523,6 +523,183 @@ TEST(ReaderExecutor, TotalSizeSaturatesOnUndersizedEncryptedFile)
 
     EXPECT_EQ(executor.totalSize(), 0u);
 }
+
+#include <IO/FileEncryptionCommon.h>
+#include <IO/WriteBufferFromString.h>
+
+namespace
+{
+    /// Encrypt `plaintext` with the given key/iv at stream offset 0 using
+    /// AES_128_CTR. CTR is symmetric — encryption and decryption are the
+    /// same operation.
+    String aesCtrEncrypt(const String & key, FileEncryption::InitVector iv, const String & plaintext)
+    {
+        FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
+        enc.setOffset(0);
+        String out(plaintext.size(), '\0');
+        enc.decrypt(plaintext.data(), plaintext.size(), out.data());
+        return out;
+    }
+
+    /// Build the on-disk encrypted byte stream:
+    ///   Header(64 bytes) + ciphertext
+    String makeEncryptedFile(const String & key, FileEncryption::InitVector iv, const String & plaintext)
+    {
+        String file_bytes;
+        {
+            WriteBufferFromString wb(file_bytes);
+            FileEncryption::Header header;
+            header.algorithm = FileEncryption::Algorithm::AES_128_CTR;
+            header.key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
+            header.init_vector = iv;
+            header.write(wb);
+            wb.finalize();
+        }
+        file_bytes += aesCtrEncrypt(key, iv, plaintext);
+        return file_bytes;
+    }
+}
+
+TEST(ReaderExecutor, DecryptRopeStreamsBlockByBlock)
+{
+    /// End-to-end exercise of the block-by-block iteration in `decryptRope`.
+    /// Plaintext is intentionally larger than ROPE_BLOCK_SIZE so the
+    /// function must allocate and decrypt multiple output blocks. A
+    /// non-multiple total ensures the final partial block is handled.
+
+    String key(16, 'k');
+    FileEncryption::InitVector iv(UInt128{0x0123456789abcdefULL});
+
+    const size_t plaintext_size = ReaderExecutor::ROPE_BLOCK_SIZE * 3 + 12345;
+    String plaintext(plaintext_size, '\0');
+    for (size_t i = 0; i < plaintext_size; ++i)
+        plaintext[i] = static_cast<char>((i * 31 + 7) & 0xFF);  /// distinguishable
+
+    String file_bytes = makeEncryptedFile(key, iv, plaintext);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    /// Window larger than the plaintext so the entire file is read in one
+    /// readNextWindow call — decryptRope sees a rope of >3 MiB and must
+    /// produce 4 output blocks (3 full + 1 partial).
+    ReaderExecutor executor(source, objects, {},
+        /*window_size=*/plaintext_size + ReaderExecutor::ROPE_BLOCK_SIZE);
+    executor.addDecryptionLayer(
+        "/test", 0,
+        [&](UInt128 got_fp, const String &)
+        {
+            EXPECT_EQ(got_fp, FileEncryption::calculateKeyFingerprint(key));
+            return key;
+        });
+    executor.initDecryption();
+
+    String result;
+    while (true)
+    {
+        auto w = executor.readNextWindow();
+        if (w.empty())
+            break;
+        for (const auto & n : w.getNodes())
+            result.append(n.data(), n.size);
+    }
+
+    ASSERT_EQ(result.size(), plaintext.size());
+    EXPECT_EQ(result, plaintext);
+}
+
+TEST(ReaderExecutor, DecryptRopeRoundtripsSmallPayload)
+{
+    /// Same path but payload smaller than ROPE_BLOCK_SIZE — exercises the
+    /// single-iteration loop.
+
+    String key(16, 'q');
+    FileEncryption::InitVector iv(UInt128{42});
+    const String plaintext = "Hello, encrypted world!";
+    String file_bytes = makeEncryptedFile(key, iv, plaintext);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/4096);
+    executor.addDecryptionLayer("/t", 0,
+        [&](UInt128, const String &) { return key; });
+    executor.initDecryption();
+
+    auto w = executor.readNextWindow();
+    String result;
+    for (const auto & n : w.getNodes())
+        result.append(n.data(), n.size);
+    EXPECT_EQ(result, plaintext);
+}
+
+TEST(ReaderExecutor, DecryptRopeMultiLayer)
+{
+    /// Two encryption layers stacked: outer header + inner header +
+    /// double-encrypted ciphertext. `decryptRope` must apply both layers
+    /// (in declaration order) to recover the plaintext.
+
+    String key_inner(16, 'i');
+    String key_outer(16, 'o');
+    FileEncryption::InitVector iv_inner(UInt128{1});
+    FileEncryption::InitVector iv_outer(UInt128{2});
+
+    const String plaintext(ReaderExecutor::ROPE_BLOCK_SIZE + 500, 'X');
+
+    /// First encrypt with inner key, then with outer key — that's what a
+    /// stacked encrypted-disk-over-encrypted-disk produces on write.
+    String once = aesCtrEncrypt(key_inner, iv_inner, plaintext);
+    String twice = aesCtrEncrypt(key_outer, iv_outer, once);
+
+    String file_bytes;
+    {
+        WriteBufferFromString wb(file_bytes);
+        FileEncryption::Header outer_h;
+        outer_h.algorithm = FileEncryption::Algorithm::AES_128_CTR;
+        outer_h.key_fingerprint = FileEncryption::calculateKeyFingerprint(key_outer);
+        outer_h.init_vector = iv_outer;
+        outer_h.write(wb);
+        FileEncryption::Header inner_h;
+        inner_h.algorithm = FileEncryption::Algorithm::AES_128_CTR;
+        inner_h.key_fingerprint = FileEncryption::calculateKeyFingerprint(key_inner);
+        inner_h.init_vector = iv_inner;
+        inner_h.write(wb);
+        wb.finalize();
+    }
+    file_bytes += twice;
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    ReaderExecutor executor(source, objects, {},
+        /*window_size=*/plaintext.size() + 2048);
+    /// Layers are applied in addDecryptionLayer order — outer first, inner
+    /// second — which mirrors how the read path peels them off.
+    executor.addDecryptionLayer("/outer", 0,
+        [&](UInt128, const String &) { return key_outer; });
+    executor.addDecryptionLayer("/inner", 0,
+        [&](UInt128, const String &) { return key_inner; });
+    executor.initDecryption();
+
+    String result;
+    while (true)
+    {
+        auto w = executor.readNextWindow();
+        if (w.empty())
+            break;
+        for (const auto & n : w.getNodes())
+            result.append(n.data(), n.size);
+    }
+    ASSERT_EQ(result.size(), plaintext.size());
+    EXPECT_EQ(result, plaintext);
+}
+
 #endif
 
 TEST(ReaderExecutor, MergeRangesOverlapping)

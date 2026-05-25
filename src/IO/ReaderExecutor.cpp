@@ -485,66 +485,65 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
     if (decryption_layers.empty())
         return rope;
 
-    size_t total = rope.totalBytes();
+    const size_t total = rope.totalBytes();
     if (total == 0)
         return {};
 
-    /// Allocate destination blocks (≤ ROPE_BLOCK_SIZE each) and copy the
-    /// (still-encrypted) input rope into them. Input nodes may reference
-    /// shared memory (e.g. page cache cells), so in-place decryption is not
-    /// safe in general — but the destination blocks are private, so decrypting
-    /// them in place is fine.
-    auto blocks = allocateBlocks(total);
+    /// Mirror the reading-side iteration pattern: one block at a time.
+    ///
+    /// The naive shape — allocate all destination blocks, copy the whole input
+    /// rope into them, decrypt across all blocks — doubles peak memory for the
+    /// duration of this call. We instead stream block-by-block:
+    ///   1. Allocate one output block.
+    ///   2. Copy this block's encrypted bytes out of the front of `rope`.
+    ///   3. Decrypt in place across all layers.
+    ///   4. Append to result and `advance` the input rope so its
+    ///      `OwnedRopeBuffer`s can be released if we hold the only reference.
+    ///
+    /// CTR mode is fully position-addressable, so `setOffset(logical_offset +
+    /// pos)` gives the same keystream as decrypting the whole range at once.
 
-    {
-        size_t out_idx = 0;
-        size_t out_pos = 0;
-        for (const auto & in_node : rope.getNodes())
-        {
-            size_t in_pos = 0;
-            while (in_pos < in_node.size)
-            {
-                auto & out_block = *blocks[out_idx];
-                size_t space = out_block.size() - out_pos;
-                size_t chunk = std::min(in_node.size - in_pos, space);
-                std::memcpy(out_block.data() + out_pos, in_node.data() + in_pos, chunk);
-                in_pos += chunk;
-                out_pos += chunk;
-                if (out_pos == out_block.size())
-                {
-                    ++out_idx;
-                    out_pos = 0;
-                }
-            }
-        }
-    }
-
-    /// Apply each decryption layer to each block. CTR mode is fully position-
-    /// addressable, so setOffset(logical_offset + block_start) gives the same
-    /// keystream as decrypting the whole range in one call.
+    /// Encryptors are reused across blocks — cheaper than constructing one
+    /// per block per layer.
+    std::vector<FileEncryption::Encryptor> encryptors;
+    encryptors.reserve(decryption_layers.size());
     for (size_t i = 0; i < decryption_layers.size(); ++i)
-    {
-        FileEncryption::Encryptor encryptor(
+        encryptors.emplace_back(
             decryption_headers[i].algorithm,
             decryption_layers[i].key,
             decryption_headers[i].init_vector);
 
-        size_t block_start = 0;
-        for (auto & block : blocks)
-        {
-            encryptor.setOffset(logical_offset + block_start);
-            encryptor.decrypt(block->data(), block->size(), block->data());
-            block_start += block->size();
-        }
-    }
-
     Rope result;
     size_t pos = 0;
-    for (auto & block : blocks)
+    while (pos < total)
     {
-        size_t sz = block->size();
-        result.append(RopeNode{block, 0, sz, logical_offset + pos});
-        pos += sz;
+        const size_t chunk = std::min(ROPE_BLOCK_SIZE, total - pos);
+        auto buf = std::make_shared<OwnedRopeBuffer>(chunk);
+
+        /// Drain `chunk` bytes from the front of `rope` via peek/advance.
+        /// This avoids reasoning about the physical-vs-logical offset gap
+        /// (the encryption header at `data_start_offset`) — the cursor
+        /// just walks the encrypted bytes in order, regardless of which
+        /// absolute file offset they happen to live at.
+        size_t out_pos = 0;
+        while (out_pos < chunk)
+        {
+            auto span = rope.peek();
+            chassert(span.size > 0);
+            const size_t take = std::min(span.size, chunk - out_pos);
+            std::memcpy(buf->data() + out_pos, span.data, take);
+            rope.advance(take);
+            out_pos += take;
+        }
+
+        for (auto & enc : encryptors)
+        {
+            enc.setOffset(logical_offset + pos);
+            enc.decrypt(buf->data(), chunk, buf->data());
+        }
+
+        result.append(RopeNode{buf, 0, chunk, logical_offset + pos});
+        pos += chunk;
     }
     return result;
 #else
