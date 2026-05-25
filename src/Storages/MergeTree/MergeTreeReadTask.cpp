@@ -320,9 +320,8 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
         index_read_result = index_build_context->getPreparedIndexReadResult(*this);
 
     /// `getPreparedIndexReadResult` is what triggers `MergeTreeSparsityReader::read`,
-    /// which populates the offsets share. By the time we get here the share is filled
-    /// (or remained empty if the analyzer was bypassed for this part). Hand it to every
-    /// reader so the column scan can serve sparse-offsets reads from memory.
+    /// which populates the offsets share. Hand it to every reader so the column scan
+    /// can serve sparse-offsets reads from memory.
     if (index_build_context)
     {
         if (auto share = index_build_context->index_reader_pool->getSparseOffsetsShare())

@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/SparseOffsetsShare.h>
 
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 
 
@@ -25,7 +25,8 @@ SparseOffsetsShare::slice(
     const std::string & part_name,
     const std::string & column_name,
     size_t abs_row_start,
-    size_t num_rows,
+    size_t rows_offset,
+    size_t limit,
     size_t frame_prev_size) const
 {
     std::lock_guard lock(mutex);
@@ -39,12 +40,13 @@ SparseOffsetsShare::slice(
         return nullptr;
 
     const auto & ranges = col_it->second.ranges;
-    const size_t abs_row_end = abs_row_start + num_rows;
+    const size_t total_rows = rows_offset + limit;
+    const size_t abs_row_end = abs_row_start + total_rows;
 
     /// We do not span multiple stored ranges in one slice. Scan `readRows` calls stay
     /// within one `MarkRange` (the analyzer's storage unit), so the contains-relation
     /// is the common case. A request crossing two stored ranges returns nullptr and
-    /// the scan falls back to a normal disk read for that call.
+    /// the consumer falls back to a normal disk read for that call.
     const SparseOffsetsRange * found = nullptr;
     for (const auto & r : ranges)
     {
@@ -58,14 +60,14 @@ SparseOffsetsShare::slice(
     if (!found)
         return nullptr;
 
-    const size_t relative_start = abs_row_start - found->start_row_in_part;
-    const size_t relative_end = relative_start + num_rows;
+    /// Translate the call's row window into positions relative to the stored range.
+    /// `[skip_start_rel, skip_end_rel)` is the rows_offset zone (non-defaults here
+    /// count as skipped_values_rows). `[skip_end_rel, produce_end_rel)` is the
+    /// produce zone (non-defaults here are emitted to the offsets column).
+    const size_t skip_start_rel = abs_row_start - found->start_row_in_part;
+    const size_t skip_end_rel = skip_start_rel + rows_offset;
+    const size_t produce_end_rel = skip_end_rel + limit;
 
-    /// Stored offsets are positions in [0, range.total_rows) relative to
-    /// `found->start_row_in_part`. The consumer (`readOrGetCachedSparseOffsets`) reads
-    /// positions from the cached column verbatim into its result column, so we emit
-    /// positions in [frame_prev_size, frame_prev_size + num_rows) to land in the
-    /// consumer's accumulating frame.
     const auto & src_offsets = assert_cast<const ColumnUInt64 &>(*found->offsets).getData();
 
     auto sliced_column = ColumnUInt64::create();
@@ -75,20 +77,27 @@ SparseOffsetsShare::slice(
     size_t skipped = 0;
     for (UInt64 pos : src_offsets)
     {
-        if (pos < relative_start)
+        if (pos < skip_start_rel)
+            continue;
+        if (pos < skip_end_rel)
         {
             ++skipped;
             continue;
         }
-        if (pos >= relative_end)
+        if (pos >= produce_end_rel)
             break;
-        sliced_data.push_back(pos - relative_start + frame_prev_size);
+        /// `deserializeOffsets` writes produce-zone positions starting from `start` (the
+        /// caller's `prev_size`) using `start_of_group + group_size - tmp_offset`. The
+        /// first produced position can be `>= start`, but with multiple deserialization
+        /// runs the value grows with `start`. We reproduce the same final positions:
+        /// shift each produce-zone position into `[frame_prev_size, frame_prev_size + limit)`.
+        sliced_data.push_back(pos - skip_end_rel + frame_prev_size);
     }
 
     return std::make_unique<SubstreamsCacheSparseOffsetsElement>(
         std::move(sliced_column),
         /*old_size_=*/0,
-        /*read_rows_=*/num_rows,
+        /*read_rows_=*/limit,
         /*skipped_values_rows_=*/skipped);
 }
 

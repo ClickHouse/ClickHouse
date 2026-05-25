@@ -519,7 +519,8 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
     const String & column_name_in_storage,
     size_t from_mark,
-    size_t num_rows,
+    size_t rows_offset,
+    size_t limit,
     size_t frame_prev_size,
     ISerialization::SubstreamsCache & cache) const
 {
@@ -533,7 +534,8 @@ void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
         data_part_info_for_read->getPartName(),
         column_name_in_storage,
         abs_row_start,
-        num_rows,
+        rows_offset,
+        limit,
         frame_prev_size);
     if (!element)
         return;

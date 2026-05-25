@@ -199,6 +199,7 @@ size_t MergeTreeReaderWide::readRows(
                 seedSparseOffsetsCacheForColumn(
                     column_to_read.getNameInStorage(),
                     from_mark,
+                    rows_offset,
                     max_rows_to_read,
                     column_size_before_reading,
                     cache);

@@ -116,14 +116,16 @@ protected:
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
 
     /// Seed `cache` with a pre-computed `SparseOffsets` entry sliced out of
-    /// `sparse_offsets_share` for the absolute row range starting at `from_mark`.
-    /// Subsequent deserialization of `column_name`'s `SparseOffsets` substream within
-    /// this `readRows` call serves from the cache instead of decompressing the substream.
+    /// `sparse_offsets_share` for the rows the current `readRows` call will scan:
+    /// `[getMarkStartingRow(from_mark), +rows_offset + limit)`. Subsequent
+    /// deserialization of `column_name`'s `SparseOffsets` substream within this
+    /// `readRows` serves from the cache instead of decompressing the substream.
     /// A miss in the share is silently ignored: the reader falls back to a normal disk read.
     void seedSparseOffsetsCacheForColumn(
         const String & column_name_in_storage,
         size_t from_mark,
-        size_t num_rows,
+        size_t rows_offset,
+        size_t limit,
         size_t frame_prev_size,
         ISerialization::SubstreamsCache & cache) const;
 

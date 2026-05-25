@@ -47,17 +47,21 @@ public:
         size_t total_rows,
         ColumnPtr offsets);
 
-    /// Build a cache element that serves rows `[abs_row_start, abs_row_start + num_rows)`
-    /// for `(part_name, column_name)`. The cached positions are emitted in
-    /// `[frame_prev_size, frame_prev_size + num_rows)` so they line up with the consumer's
-    /// growing result column. Pass `frame_prev_size = 0` for a fresh `readRows`.
+    /// Build a cache element matching `readOrGetCachedSparseOffsets`'s call semantics for
+    /// a scan that reads `rows_offset + limit` rows starting at `abs_row_start` (in
+    /// part-row units, i.e. matching `getMarkStartingRow(from_mark)`):
+    ///   - The first `rows_offset` rows are the "skip" zone; their non-defaults contribute
+    ///     to `skipped_values_rows` but are not emitted in the offsets column.
+    ///   - The next `limit` rows are the "produce" zone; their non-default positions are
+    ///     emitted, shifted into the consumer's frame `[frame_prev_size, frame_prev_size + limit)`.
     /// Returns `nullptr` when the request isn't covered by a single stored range, in which
-    /// case the scan falls back to a normal disk read.
+    /// case the consumer falls back to a normal disk read.
     std::unique_ptr<SubstreamsCacheSparseOffsetsElement> slice(
         const std::string & part_name,
         const std::string & column_name,
         size_t abs_row_start,
-        size_t num_rows,
+        size_t rows_offset,
+        size_t limit,
         size_t frame_prev_size = 0) const;
 
 private:
