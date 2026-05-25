@@ -19,8 +19,6 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
-    extern const Event TextIndexUseHint;
-    extern const Event TextIndexDiscardHint;
 }
 
 namespace DB
@@ -28,7 +26,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsFloat text_index_hint_max_selectivity;
     extern const SettingsBool allow_experimental_text_index_lazy_apply;
     extern const SettingsTextIndexPostingListApplyMode text_index_posting_list_apply_mode;
     extern const SettingsFloat text_index_density_threshold;
@@ -248,13 +245,13 @@ void MergeTreeReaderTextIndex::readGranule()
     setIndexGranule(std::move(granule_ptr));
 }
 
-void MergeTreeReaderTextIndex::analyzeTokensCardinality()
+void MergeTreeReaderTextIndex::classifyVirtualColumns()
 {
     is_always_true.resize(columns_to_read.size(), false);
     use_fallback.resize(columns_to_read.size(), false);
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+
     const auto & analyzer = granule->getAnalyzer();
-    const auto & token_infos = analyzer.getTokenInfos();
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
@@ -270,41 +267,24 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         else if (query_builder.is_failed)
         {
             /// Query is definitely false (e.g. a required token in All mode is missing).
-            /// Don't mark as always_true; buildPostingsForQuery will return empty postings.
+            /// Don't mark as always-true; `buildPostingsForQuery` will return empty postings.
             continue;
         }
         else if (query_builder.is_bypassed)
         {
-            if (!fallback_reader || !fallback_expressions.contains(column.name))
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "The fallback reader or expression for pattern virtual column '{}' is not initialized",
-                    column.name);
-
-            use_fallback[i] = true;
-        }
-        else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
-        {
-            for (const auto & [token, _] : query_builder.tokens)
-                useful_tokens.insert(token);
-        }
-        else if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
-        {
-            const auto & settings = condition_text.getContext()->getSettingsRef();
-            double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
-            size_t num_rows_in_part = data_part_info_for_read->getRowCount();
-            double cardinality = estimateCardinality(*search_query, token_infos, num_rows_in_part);
-
-            if (cardinality <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
+            if (search_query->patterns.empty())
             {
-                for (const auto & [token, _] : query_builder.tokens)
-                    useful_tokens.insert(token);
-
-                ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
+                is_always_true[i] = true;
             }
             else
             {
-                is_always_true[i] = true;
-                ProfileEvents::increment(ProfileEvents::TextIndexDiscardHint);
+                if (!fallback_reader || !fallback_expressions.contains(column.name))
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The fallback reader or expression for pattern virtual column '{}' is not initialized", column.name);
+                }
+
+                use_fallback[i] = true;
             }
         }
     }
@@ -320,7 +300,7 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
     for (const auto & [token, token_info] : token_infos)
     {
-        if (useful_tokens.contains(token) && !analyzer.hasReadPostings(token))
+        if (analyzer.isTokenNeeded(token) && !analyzer.hasReadPostings(token))
             large_postings_streams.emplace(token, makeTextIndexStream(substream));
     }
 }
@@ -396,7 +376,7 @@ size_t MergeTreeReaderTextIndex::readRows(
             readGranule();
 
         is_initialized = true;
-        analyzeTokensCardinality();
+        classifyVirtualColumns();
         initializePostingStreams();
     }
 
@@ -490,69 +470,6 @@ std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexSt
         index.index->getFileName() + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));
-}
-
-double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
-{
-    chassert(!query.tokens.empty());
-
-    /// Here we assume that tokens are independent and their distribution is uniform.
-    /// Below universe E stands for the set of documents in the index granule.
-    /// N stands for the size of the index granule in rows.
-    /// Sets Ai stand for the posting lists of the searched tokens.
-    switch (query.search_mode)
-    {
-        case TextSearchMode::All:
-        {
-            /// Estimate the cardinality of the intersection of the sets.
-            /// Assume each set Ai has known size |Ai|, and all sets are chosen
-            /// independently and uniformly at random from the universe E of size N.
-            /// Then, for any particular element, the probability that it appears in set Ai is pi = |Ai|/N.
-            /// The probability that a particular element is in all n sets is pn = p1 * p2 * ... * pn.
-            /// The the expected cardinality of the intersection is:
-            /// N * pn = N * (|A1| * |A2| * ... * |An| / N) = |A1| * |A2| * ... * |An| / N^(n-1).
-
-            /// Compute in log-space to avoid double overflow when many tokens
-            /// have large cardinalities: log(N * p1 * p2 * ... * pn) =
-            /// sum(log(|Ai|)) - (n-1) * log(N).
-            double log_cardinality = 0.0;
-
-            for (const auto & token : query.tokens)
-            {
-                auto it = remaining_tokens.find(token);
-                if (it == remaining_tokens.end())
-                    return 0;
-
-                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
-            }
-
-            log_cardinality -= static_cast<double>(query.tokens.size() - 1) * std::log(static_cast<double>(total_rows));
-            return std::exp(log_cardinality);
-        }
-        case TextSearchMode::Any:
-        {
-            /// Estimate the cardinality of the union of the sets.
-            /// The same as above the probability that a particular element appears in set Ai is pi = |Ai|/N
-            /// The probability that element is not in set Ai is 1 - pi
-            /// The probability that element is in none of the n sets is (1 - p1) * (1 - p2) * ... * (1 - pn).
-            /// The probability that element is at least in one of the n sets is 1 - (1 - p1) * (1 - p2) * ... * (1 - pn).
-            /// Then, the expected cardinality of the union is:
-            /// N * (1 - (1 - |A1|/N) * (1 - |A2|/N) * ... * (1 - |An|/N))
-
-            double cardinality = 1.0;
-
-            for (const auto & token : query.tokens)
-            {
-                auto it = remaining_tokens.find(token);
-                /// Same reasoning as above: absent from sparse index ⟹ too common ⟹ treat as all rows.
-                double token_cardinality = it == remaining_tokens.end() ? static_cast<double>(total_rows) : it->second->cardinality;
-                cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
-            }
-
-            cardinality = static_cast<double>(total_rows) * (1.0 - cardinality);
-            return cardinality;
-        }
-    }
 }
 
 std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t mark) const

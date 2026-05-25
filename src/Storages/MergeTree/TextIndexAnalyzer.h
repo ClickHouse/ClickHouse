@@ -49,6 +49,12 @@ public:
     bool addTokenToPatterns(std::string_view token);
     void bypassPatternQueries();
 
+    /// For each `Hint`-mode query that is still active, estimate the resulting cardinality
+    /// from already-read postings combined with `cardinality` estimates for tokens whose
+    /// posting lists are still unread (multi-block tokens). Queries whose estimate exceeds
+    /// `selectivity_threshold * total_rows` are marked discarded.
+    void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
+
     size_t memoryUsageBytes() const;
 
 private:
@@ -56,6 +62,8 @@ private:
 
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
+
+    double estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const;
 
     TextSearchMode global_search_mode;
     bool always_false = false;

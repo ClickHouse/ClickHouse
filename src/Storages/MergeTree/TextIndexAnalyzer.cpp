@@ -1,6 +1,15 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+
+#include <cmath>
+
+namespace ProfileEvents
+{
+    extern const Event TextIndexUseHint;
+    extern const Event TextIndexDiscardHint;
+}
 
 namespace DB
 {
@@ -20,8 +29,8 @@ void TextIndexAnalyzer::QueryBuilder::markFailed()
 void TextIndexAnalyzer::QueryBuilder::markBypassed()
 {
     is_bypassed = true;
-    rows_range.reset();
-    postings.reset();
+    /// Intentionally keep `postings`/`rows_range`: after full analysis the granule filter still
+    /// uses them, and for mid-flight pattern bypass the filter short-circuits via `query.patterns`.
 }
 
 void TextIndexAnalyzer::QueryBuilder::addMissingToken()
@@ -190,6 +199,122 @@ void TextIndexAnalyzer::bypassPatternQueries()
 
         for (const auto & [query_token, _] : query_builder.tokens)
             queries_by_token[query_token].erase(query_hash);
+    }
+}
+
+double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_builder, size_t total_rows) const
+{
+    const auto & query = *query_builder.query;
+    chassert(!query.tokens.empty());
+    const double n = static_cast<double>(total_rows);
+
+    switch (query.search_mode)
+    {
+        case TextSearchMode::All:
+        {
+            /// |intersection| ≈ |C_read| * prod(|Ai|/n) over tokens whose postings are still unread.
+            /// When no postings have been read yet, treat the read intersection as the universe (n).
+            /// In log-space: log = log(|C_read|) + sum(log(|Ai|)) - num_unread * log(n).
+            double log_cardinality = query_builder.postings
+                ? std::log(static_cast<double>(query_builder.postings->cardinality()))
+                : std::log(n);
+
+            size_t num_unread = 0;
+            for (const auto & token : query.tokens)
+            {
+                auto it = query_builder.tokens.find(token);
+                if (it == query_builder.tokens.end())
+                {
+                    /// In `All` mode a missing token would have failed the query via `addMissingToken`,
+                    /// so this is unreachable for active queries — but stay defensive.
+                    return 0;
+                }
+
+                if (hasReadPostings(token))
+                    continue;
+
+                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
+                ++num_unread;
+            }
+
+            log_cardinality -= static_cast<double>(num_unread) * std::log(n);
+            return std::exp(log_cardinality);
+        }
+        case TextSearchMode::Any:
+        {
+            /// |union| ≈ n * (1 - (1 - |C_read|/n) * prod(1 - |Ai|/n)) over tokens whose postings are still unread.
+            double not_in_any = query_builder.postings
+                ? 1.0 - static_cast<double>(query_builder.postings->cardinality()) / n
+                : 1.0;
+
+            for (const auto & token : query.tokens)
+            {
+                auto it = query_builder.tokens.find(token);
+                if (it != query_builder.tokens.end() && hasReadPostings(token))
+                    continue;
+
+                /// Same reasoning as the prior reader-side estimate: a token absent from the
+                /// sparse index was filtered as too common at build time ⟹ treat it as covering
+                /// all rows, which makes the union saturate at n.
+                double token_cardinality = (it == query_builder.tokens.end())
+                    ? n
+                    : static_cast<double>(it->second->cardinality);
+
+                not_in_any *= (1.0 - token_cardinality / n);
+            }
+
+            return n * (1.0 - not_in_any);
+        }
+    }
+}
+
+void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows)
+{
+    if (total_rows == 0)
+        return;
+
+    const double cardinality_threshold = static_cast<double>(total_rows) * selectivity_threshold;
+
+    for (auto & [_, query_builder] : query_builders)
+    {
+        if (query_builder.is_failed || query_builder.is_bypassed)
+            continue;
+
+        const auto & query = *query_builder.query;
+        if (query.direct_read_mode != TextIndexDirectReadMode::Hint)
+            continue;
+
+        /// Pure-pattern queries have no declared tokens at parse time; their tokens are
+        /// discovered dynamically during dictionary scan. Skip the cardinality check in
+        /// that case — it would have no inputs to work with.
+        if (query.tokens.empty())
+            continue;
+
+        double estimated_cardinality = estimateQueryCardinality(query_builder, total_rows);
+
+        if (estimated_cardinality <= cardinality_threshold)
+        {
+            ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
+        }
+        else
+        {
+            /// Discarded `Hint` queries are inert from now on for further token processing.
+            /// Drop them from the per-token query lookup so subsequent token-driven analysis
+            /// (e.g. pattern token discovery) doesn't reactivate them, and so the reader's
+            /// `isTokenNeeded` check stops requesting their tokens. The granule-level filter
+            /// in `mayBeTrueOnGranule` distinguishes this case (token-only bypass) from
+            /// pattern bypass via `query.patterns.empty()` and still consults the preserved
+            /// `postings`/`rows_range`.
+            query_builder.markBypassed();
+            ProfileEvents::increment(ProfileEvents::TextIndexDiscardHint);
+
+            auto hash = query.getHash().get128();
+            for (const auto & query_token : query.tokens)
+                queries_by_token[query_token].erase(hash);
+
+            for (const auto & [query_token, _] : query_builder.tokens)
+                queries_by_token[query_token].erase(hash);
+        }
     }
 }
 

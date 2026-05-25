@@ -84,15 +84,13 @@ private:
     MergeTreeDataPartPtr getDataPart() const;
 
     void readGranule();
-    void analyzeTokensCardinality();
+    /// Sets per-column flags from the analyzer's verdict and collects tokens to materialize.
+    void classifyVirtualColumns();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
-    /// Lazy-mode counterpart of `fillColumn`. Builds `PostingListCursor`s on the fly
-    /// from `granule->getAnalyzer().getTokenInfos()` and runs the leapfrog / brute-force
-    /// kernels — never materializes the per-mark `PostingList`. Used when `use_lazy_mode` is set.
+    /// Lazy-mode counterpart of `fillColumn`: runs cursor kernels without materializing the per-mark `PostingList`.
     void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows);
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
-    double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
@@ -126,8 +124,6 @@ private:
     bool is_initialized = false;
     /// Virtual columns that are always true.
     std::vector<bool> is_always_true;
-    /// Tokens that are useful for analysis and filling virtual columns.
-    absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
     std::optional<PostingsSerialization> postings_serialization;
 

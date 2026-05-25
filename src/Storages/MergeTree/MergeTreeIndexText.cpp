@@ -66,6 +66,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
+    extern const SettingsFloat text_index_hint_max_selectivity;
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
@@ -375,6 +376,7 @@ MergeTreeIndexGranuleText::~MergeTreeIndexGranuleText() = default;
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReadGranulesMicroseconds);
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
 
     auto * index_stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
     auto * dictionary_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
@@ -390,7 +392,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     }
 
     is_empty = false;
-    analyzer = std::make_unique<TextIndexAnalyzer>(typeid_cast<const MergeTreeIndexConditionText &>(*state.condition));
+    analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
 
     auto text_index_header = loadHeader(*index_stream, state);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
@@ -400,6 +402,9 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzePostings(postings_serialization, *postings_stream, state);
+
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    analyzer->analyzeCardinalitiesAndBypassHints(settings[Setting::text_index_hint_max_selectivity], state.part.rows_count);
 
     /// Capture the codec after the analysis — for Pre-WithCodec parts the
     /// codec may have been lazily installed while decoding an IsCompressed posting list.
@@ -719,7 +724,8 @@ bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & quer
 bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) const
 {
     const auto & query_builder = analyzer->getQueryBuilder(query);
-    if (query_builder.is_bypassed)
+    /// Pattern bypass means analysis is incomplete, so conservatively return true.
+    if (query_builder.is_bypassed && !query.patterns.empty())
         return true;
 
     if (!current_range.has_value())
@@ -758,7 +764,8 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return true;
 
     const auto & query_builder = analyzer->getQueryBuilder(query);
-    if (query_builder.is_bypassed)
+    /// See `hasAnyTokensImpl` for the rationale behind this asymmetric bypass check.
+    if (query_builder.is_bypassed && !query.patterns.empty())
         return true;
 
     if (!current_range.has_value())
