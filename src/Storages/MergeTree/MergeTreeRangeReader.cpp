@@ -1,4 +1,3 @@
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -23,8 +22,6 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
-
-#include <cmath>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
