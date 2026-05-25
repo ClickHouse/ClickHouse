@@ -434,7 +434,7 @@ public:
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/false);
     }
 
-    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, bool dry_run) const
+    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
     {
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
