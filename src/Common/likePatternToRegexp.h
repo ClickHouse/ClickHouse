@@ -14,4 +14,8 @@ String likePatternToRegexp(std::string_view pattern);
 /// and writes the extracted substring to 'res'.
 bool likePatternIsSubstring(std::string_view pattern, String & res);
 
+/// Rewrites a LIKE pattern with custom escape character into a LIKE pattern with standard escape character (backslash).
+/// Example: with escape_char='#': "50#%off" -> "50\%off"
+String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char);
+
 }

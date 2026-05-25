@@ -41,9 +41,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
+            {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
+            {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
             {"optimize_or_like_chain", false, true, "Enable by default: optimize OR chains of LIKE/ILIKE/match into multiSearchAny (substring patterns), multiMatchAny (when Hyperscan/Vectorscan is permitted), or combined match (otherwise)."},
             {"optimize_or_like_chain_min_patterns", 0, 5, "New setting controlling the minimum number of LIKE/ILIKE/match branches (sharing the same LHS expression) required for optimize_or_like_chain to rewrite a chain. Shorter chains are kept as-is to avoid regressing queries where the fixed setup cost of multiSearchAny / Hyperscan outweighs short-circuit OR evaluation."},
+            {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
