@@ -23,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Distance : public IFunction
+class FunctionH3Distance final : public IFunction
 {
 public:
     static constexpr auto name = "h3Distance";

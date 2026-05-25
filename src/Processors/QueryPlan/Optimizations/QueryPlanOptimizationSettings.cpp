@@ -14,6 +14,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_aggregate_partitions_independently;
+    extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -52,6 +53,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
+    extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
@@ -179,8 +181,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
+    optimize_prewhere_after_pushdown = optimize_prewhere && from[Setting::optimize_prewhere_after_pushdown];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
+    limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     topn_aggregation = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_topn_aggregation];
