@@ -1,5 +1,6 @@
 #include <Processors/Transforms/LimitByTransform.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
@@ -241,10 +242,15 @@ void LimitByTransform::transform(Chunk & chunk)
     }
     else
     {
+        Columns normalized_grouping_key_columns;
+        normalized_grouping_key_columns.reserve(grouping_key_positions.size());
         ColumnRawPtrs grouping_key_columns;
         grouping_key_columns.reserve(grouping_key_positions.size());
         for (size_t position : grouping_key_positions)
-            grouping_key_columns.push_back(chunk_columns[position].get());
+        {
+            normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position]));
+            grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
+        }
 
         /// `consumeImpl` maps rows to groups and splits the chunk into runs.
         switch (data.type)
