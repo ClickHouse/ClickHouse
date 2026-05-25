@@ -31,7 +31,7 @@ SELECT count() AS rows_after_failed_insert FROM t_insert_returning;
 
 -- SETTINGS on the RETURNING subquery apply to the result (max_result_rows)
 SELECT 'returning subquery settings';
-INSERT INTO t_insert_returning (id, name) RETURNING (SELECT number FROM numbers(100) SETTINGS max_result_rows=5) VALUES (50, 'limits');
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT number FROM numbers(100) SETTINGS max_result_rows=5, result_overflow_mode='break') VALUES (50, 'limits');
 
 -- async_insert is rejected
 SELECT 'async insert rejection';
