@@ -180,7 +180,7 @@
             position: sticky;
             top: 0;
             z-index: 1;
-            height: 100vh;
+            height: calc(100vh - var(--terminal-height, 0px));
             align-self: start;
             background: var(--table-header-color);
             border-right: 1px solid var(--border-color);
@@ -891,7 +891,7 @@
     <div id="main">
         <form id="controls">
             <div id="inputs">
-                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
+                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
             <div id="query_div"><div id="query-backdrop"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="query-params"></div>
@@ -929,6 +929,7 @@
                     <label for="download-format">Format:</label>
                     <select id="download-format">
                         <option value="CSV">CSV</option>
+                        <option value="CSVWithNames">CSVWithNames</option>
                         <option value="TSV">TSV</option>
                         <option value="JSON">JSON</option>
                         <option value="NDJSON" selected>JSONLines</option>
@@ -3007,16 +3008,23 @@ async function postSingle(posted_request_num, query, history_query_text)
 
         const user = user_elem.value;
         const server_address = url_elem.value;
-        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+        const history_params = [];
+        if (user) {
+            history_params.push('user=' + encodeURIComponent(user));
+        }
         if (run_immediately) {
-            history_url += "&run=1";
+            history_params.push('run=1');
         }
         if (server_address != location.origin) {
-            history_url += '&url=' + encodeURIComponent(server_address);
+            history_params.push('url=' + encodeURIComponent(server_address));
         }
         for (const [name, value] of Object.entries(paramValuesSnapshot))
         {
-            history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
+        }
+        let history_url = window.location.pathname;
+        if (history_params.length > 0) {
+            history_url += '?' + history_params.join('&');
         }
         history_url += '#' + toBase64(saved_query);
 
@@ -3180,16 +3188,23 @@ async function postMulti(posted_request_num, parsed)
 
         const user = user_elem.value;
         const server_address = url_elem.value;
-        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+        const history_params = [];
+        if (user) {
+            history_params.push('user=' + encodeURIComponent(user));
+        }
         if (run_immediately) {
-            history_url += "&run=1";
+            history_params.push('run=1');
         }
         if (server_address != location.origin) {
-            history_url += '&url=' + encodeURIComponent(server_address);
+            history_params.push('url=' + encodeURIComponent(server_address));
         }
         for (const [name, value] of Object.entries(paramValuesSnapshot))
         {
-            history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
+        }
+        let history_url = window.location.pathname;
+        if (history_params.length > 0) {
+            history_url += '?' + history_params.join('&');
         }
         history_url += '#' + toBase64(all_queries_text);
 
@@ -4385,6 +4400,13 @@ document.getElementById('download-format').addEventListener('change', function()
     }
 });
 
+const formatExtensions = {
+  CSVWithNames: "csv",
+  NDJSON: "jsonl",
+  JSONEachRow: "jsonl",
+  Markdown: "md"
+};
+
 // Handle download button click
 document.getElementById('download-button').addEventListener('click', async function() {
     const formatSelect = document.getElementById('download-format');
@@ -4398,6 +4420,8 @@ document.getElementById('download-button').addEventListener('click', async funct
             return;
         }
     }
+
+    const extension = formatExtensions[format] || format.toLowerCase();
 
     // Get current values
     const user = user_elem.value;
@@ -4417,7 +4441,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&enable_http_compression=1' +
         '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
         '&default_format=' + encodeURIComponent(format) +
-        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
+        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
@@ -4458,30 +4482,58 @@ document.getElementById('download-button').addEventListener('click', async funct
     let terminalIframe = null;
     let terminalActive = false;
     let terminalHiddenByResize = false;
+    /// Origin the iframe was loaded from, used as the target origin for `postMessage`.
+    /// Captured once when the iframe is created so it stays in sync with `iframe.src`
+    /// even if the user later edits the server URL field.
+    let terminalOrigin = null;
     const MIN_TERMINAL_HEIGHT = 20;
 
-    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal)
-    terminalIcon.style.display = 'none';
-    fetch('/webterminal', {method: 'HEAD'}).then(function(resp) {
-        if (resp.ok) terminalIcon.style.display = '';
-    }).catch(function() {});
-
+    /// The `/webterminal` endpoint lives on the ClickHouse server addressed by `url_elem.value`,
+    /// which may differ from the page's own origin when the page is opened locally with `?url=...`.
+    /// Resolve both the availability probe and the iframe `src` against the same configured server URL.
+    /// Returns `null` if the configured URL cannot be parsed, so the caller can treat the terminal
+    /// as unavailable instead of letting the exception abort `play.html` initialization.
     function getTerminalURL() {
-        return '/webterminal';
+        try {
+            return new URL('/webterminal', url_elem.value).href;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal).
+    terminalIcon.style.display = 'none';
+    const terminalProbeURL = getTerminalURL();
+    if (terminalProbeURL) {
+        fetch(terminalProbeURL, {method: 'HEAD'}).then(function(resp) {
+            if (resp.ok) terminalIcon.style.display = '';
+        }).catch(function() {});
     }
 
     function sendCredentialsToTerminal() {
-        if (terminalIframe && terminalIframe.contentWindow) {
+        if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
             terminalIframe.contentWindow.postMessage({
                 type: 'webterminal-credentials',
-                user: user_elem.value || 'default',
+                user: user_elem.value,
                 password: password_elem.value || ''
-            }, window.location.origin);
+            }, terminalOrigin);
         }
+    }
+
+    /// Keep the `--terminal-height` CSS variable in sync so the side menu can
+    /// size itself as `100vh - terminal_height` and its bottom icons stay visible.
+    function updateTerminalHeightVar() {
+        const h = terminalActive ? terminalPanel.offsetHeight : 0;
+        document.documentElement.style.setProperty('--terminal-height', h + 'px');
     }
 
     function activateTerminal() {
         if (terminalActive) return;
+        /// Bail out before mutating any state if the configured server URL is currently invalid.
+        /// The icon is only shown when the initial probe succeeded, so this can happen only if the
+        /// user edited `url_elem.value` to something unparsable between page load and this click.
+        const terminalSrc = terminalIframe ? null : getTerminalURL();
+        if (!terminalIframe && !terminalSrc) return;
         terminalActive = true;
         terminalIcon.classList.add('active');
         terminalPanel.classList.add('active');
@@ -4490,17 +4542,19 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
             terminalIframe = document.createElement('iframe');
             terminalIframe.id = 'terminal-iframe';
-            terminalIframe.src = getTerminalURL();
+            terminalOrigin = new URL(terminalSrc).origin;
+            terminalIframe.src = terminalSrc;
             terminalIframe.addEventListener('load', sendCredentialsToTerminal);
             terminalPanel.insertBefore(terminalIframe, terminalResizer);
         } else if (terminalHiddenByResize) {
             terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
         }
         terminalHiddenByResize = false;
+        updateTerminalHeightVar();
 
         // Tell the iframe to refit the terminal after becoming visible again, and focus it
-        if (terminalIframe && terminalIframe.contentWindow) {
-            terminalIframe.contentWindow.postMessage({type: 'webterminal-refit'}, window.location.origin);
+        if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
+            terminalIframe.contentWindow.postMessage({type: 'webterminal-refit'}, terminalOrigin);
             terminalIframe.focus();
         }
     }
@@ -4511,6 +4565,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         terminalActive = false;
         terminalIcon.classList.remove('active');
         terminalPanel.classList.remove('active');
+        updateTerminalHeightVar();
     }
 
     /// Destroy the terminal: remove the iframe and hide the panel.
@@ -4519,6 +4574,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         if (terminalIframe) {
             terminalIframe.remove();
             terminalIframe = null;
+            terminalOrigin = null;
         }
     }
 
@@ -4582,6 +4638,7 @@ document.getElementById('download-button').addEventListener('click', async funct
             return;
         }
         terminalPanel.style.height = newHeight + 'px';
+        updateTerminalHeightVar();
     }
 
     function termStop() {
