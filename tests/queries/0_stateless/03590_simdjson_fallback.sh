@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64, no-llvm-coverage
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest, no-cpu-aarch64, no-llvm-coverage, no-parallel
 # Tag no-fasttest: avoid dependency on qemu -- inconvenient when running locally
+# Tag no-parallel: `qemu-x86_64-static` is CPU-bound interpretation; under host load
+#                  the run can exceed the 600s test timeout.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
