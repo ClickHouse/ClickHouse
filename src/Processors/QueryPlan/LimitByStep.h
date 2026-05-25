@@ -35,8 +35,6 @@ public:
     /// partition sets so no `LIMIT BY` group spans two streams.
     void skipStreamMerging() { skip_stream_merging = true; }
 
-    const Names & getColumns() const { return columns; }
-
 private:
     void updateOutputHeader() override
     {
