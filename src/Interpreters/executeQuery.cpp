@@ -2146,25 +2146,35 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
 
-            auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
-
-            if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pushing())
+                /// Inner scope so `result`'s `finish_callbacks`/`exception_callbacks`
+                /// are destroyed BEFORE the oracle runs. Those callbacks captured
+                /// shared_ptrs (context, implicit_tcl_executor, query_span, ...) that
+                /// the oracle's nested `executeQuery` may release/transfer ownership of.
+                /// Letting them outlive the inner execution caused UAFs in `~$_2` /
+                /// `~$_3` lambda destructors (#105741). The callbacks are never invoked
+                /// by `executeASTFuzzerQueries` itself, so destroying them earlier loses
+                /// nothing.
+                auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
+
+                if (result.second.pipeline.initialized())
                 {
-                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
-                    result.second.pipeline.cancel();
-                }
-                else
-                {
-                    if (result.second.pipeline.pulling())
+                    if (result.second.pipeline.pushing())
                     {
-                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                        /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                        result.second.pipeline.cancel();
                     }
-                    CompletedPipelineExecutor executor(result.second.pipeline);
-                    executor.execute();
+                    else
+                    {
+                        if (result.second.pipeline.pulling())
+                        {
+                            result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                        }
+                        CompletedPipelineExecutor executor(result.second.pipeline);
+                        executor.execute();
+                    }
                 }
-            }
+            } /// ~result here — inner BlockIO callbacks released before oracle runs.
 
             /// Run oracle checks on the successfully-executed fuzzed query.
             if (context->getSettingsRef()[Setting::ast_fuzzer_oracle])
