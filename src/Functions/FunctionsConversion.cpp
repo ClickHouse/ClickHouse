@@ -470,6 +470,10 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
     WhichDataType which(type_index);
     bool ok = which.isNativeInt() || which.isNativeUInt() || which.isDecimal() || which.isFloat() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
         || which.isTime() || which.isTime64() || which.isStringOrFixedString();
+    /// Wide integers (Int128, Int256, UInt128, UInt256) are accepted as sources for `DateTime64` / `Time64`
+    /// targets so that `date_time_overflow_behavior` is honored uniformly across integer widths.
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
+        ok = ok || which.isInt() || which.isUInt();
     if (!ok)
     {
         if (cast_type == CastType::accurateOrNull)
