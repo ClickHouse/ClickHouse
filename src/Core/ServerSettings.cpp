@@ -2138,31 +2138,38 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 Poco::AutoPtr<Poco::XML::Document> doc = ConfigProcessor::parseConfig(p.string(), dom_parser);
                 if (!doc)
                     return;
+                /// Align with `ConfigProcessor::merge`: it merges only files whose root matches
+                /// the main config root (`clickhouse` and `yandex` are treated as equivalent and
+                /// other roots are silently skipped). Walking a file that the merger would skip
+                /// would inject bogus `incl` references and mask real typos in the merged config.
+                auto * root = doc->documentElement();
+                if (!root)
+                    return;
+                const String root_name = root->nodeName();
+                if (root_name != "clickhouse" && root_name != "yandex")
+                    return;
                 walk_xml(doc.get(), walk_xml);
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
                 /// Also resolve `from_env="VAR"` substitutions, which leave `innerText()` empty
                 /// in the raw XML (the value lives in the environment, not the document).
-                if (auto * root = doc->documentElement())
+                for (auto * child = root->firstChild(); child; child = child->nextSibling())
                 {
-                    for (auto * child = root->firstChild(); child; child = child->nextSibling())
+                    if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE
+                        && child->nodeName() == "include_from")
                     {
-                        if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE
-                            && child->nodeName() == "include_from")
+                        String src = child->innerText();
+                        if (src.empty())
                         {
-                            String src = child->innerText();
-                            if (src.empty())
+                            auto * elem = static_cast<Poco::XML::Element *>(child);
+                            if (elem->hasAttribute("from_env"))
                             {
-                                auto * elem = static_cast<Poco::XML::Element *>(child);
-                                if (elem->hasAttribute("from_env"))
-                                {
-                                    const String env_name = elem->getAttribute("from_env");
-                                    if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
-                                        src = env_val;
-                                }
+                                const String env_name = elem->getAttribute("from_env");
+                                if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
+                                    src = env_val;
                             }
-                            if (!src.empty())
-                                include_from_paths.insert(std::move(src));
                         }
+                        if (!src.empty())
+                            include_from_paths.insert(std::move(src));
                     }
                 }
             }
