@@ -343,6 +343,7 @@ public:
     void registerSubsetOfColumnsSupportChecker(const String & name, SubsetOfColumnsSupportChecker subset_of_columns_support_checker);
     bool checkIfFormatSupportsSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
     void markFormatSupportsSubsetOfColumnsByPosition(const String & name);
+    void registerSubsetOfColumnsByPositionSupportChecker(const String & name, SubsetOfColumnsByPositionSupportChecker subset_of_columns_by_position_support_checker);
     bool checkIfFormatSupportsSubsetOfColumnsByPosition(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
     bool checkIfFormatSupportsReadingSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_ = std::nullopt) const;
 

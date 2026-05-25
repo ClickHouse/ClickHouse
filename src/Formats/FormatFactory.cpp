@@ -1052,6 +1052,14 @@ void FormatFactory::markFormatSupportsSubsetOfColumnsByPosition(const String & n
     target = [](const FormatSettings &){ return true; };
 }
 
+void FormatFactory::registerSubsetOfColumnsByPositionSupportChecker(const String & name, SubsetOfColumnsByPositionSupportChecker subset_of_columns_by_position_support_checker)
+{
+    auto & target = getOrCreateCreators(name).subset_of_columns_by_position_support_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of columns by position", name);
+    target = std::move(subset_of_columns_by_position_support_checker);
+}
+
 void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
 {
     auto & target = getOrCreateCreators(name).prefers_large_blocks;
