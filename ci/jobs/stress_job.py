@@ -1,7 +1,6 @@
 import csv
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -14,61 +13,121 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 
-class SensitiveFormatter(logging.Formatter):
-    @staticmethod
-    def _filter(s):
-        return re.sub(
-            r"(.*)(AZURE_CONNECTION_STRING.*\')(.*)", r"\1AZURE_CONNECTION_STRING\3", s
-        )
-
-    def format(self, record):
-        original = logging.Formatter.format(self, record)
-        return self._filter(original)
+def sanitize_test_result_line(line: str) -> str:
+    # Drop bare CR in addition to escaping NUL. The writer escapes
+    # `\0\t\n` into backslash forms (`escape_tsv_info`) but not `\r`,
+    # and the apt-get / dpkg progress frames captured into the
+    # `Hung check failed` info field by `_ensure_lldb_installed` use
+    # bare CR to overwrite the previous "(Reading database ... N%)"
+    # frame. Left in place, those CRs are translated to LF by
+    # universal-newlines mode and fragment the row.
+    return line.replace("\0", "\\0").replace("\r", "")
 
 
 def read_test_results(results_path: Path, with_raw_logs: bool = True):
-    results = []
-    with open(results_path, "r", encoding="utf-8") as descriptor:
-        reader = csv.reader(descriptor, delimiter="\t")
-        for line in reader:
-            name = line[0]
-            status = line[1]
-            time = None
-            if len(line) >= 3 and line[2] and line[2] != "\\N":
-                # The value can be empty, but when it's not,
-                # it's the time spent on the test
-                try:
-                    time = float(line[2])
-                except ValueError:
-                    pass
+    """Parse the stress-job `test_results.tsv` file.
 
-            result = Result(name, status, duration=time)
-            assert (
-                result.is_ok() or result.is_failure or result.is_error
-            ), f"Unexpected status [{result.status}]"
-            if len(line) == 4 and line[3]:
-                # The value can be empty, but when it's not,
-                # the 4th value is a pythonic list, e.g. ['file1', 'file2']
-                if with_raw_logs:
-                    # Python does not support TSV, so we unescape manually
-                    result.set_info(line[3].replace("\\t", "\t").replace("\\n", "\n"))
-                else:
-                    result.set_info(line[3])
-            results.append(result)
-    return results
+    Returns `(results, malformed)`:
+      - `results`: valid `Result` rows.
+      - `malformed`: list of `(line_number, raw_first_cell)` tuples for
+        rows that had fewer than 2 tab-separated cells.
+
+    Malformed rows are skipped rather than fatal. They commonly appear
+    when something writes stray output into the file (e.g. an
+    `apt-get install` log line leaking into the result directory), and
+    raising on the first one would discard every valid row above and
+    below it — including the real failure that triggered the job.
+    Callers should surface the count back to investigators via a
+    separate `Result` entry so the corruption is still noticed.
+    """
+    results = []
+    malformed = []
+    # Split on LF only (not on CR or CRLF) so bare CR bytes that the
+    # writer failed to escape stay inside their row instead of
+    # fragmenting it. `sanitize_test_result_line` then strips those
+    # CRs before csv parsing. Python's default text-mode `open` would
+    # turn every bare CR into LF (universal-newlines), and `newline=""`
+    # still splits lines on CR — both behaviours produce the "row
+    # exploded into many fragments" failure observed on PR #105243
+    # Stress test (arm_debug).
+    with open(results_path, "rb") as descriptor:
+        raw = descriptor.read().decode("utf-8", errors="replace")
+    lines = raw.split("\n")
+    reader = csv.reader(
+        (sanitize_test_result_line(line) for line in lines),
+        delimiter="\t",
+    )
+    for line_number, line in enumerate(reader, start=1):
+        # Blank lines (typically a trailing newline at end of file, or
+        # a separator artifact between writes) carry no information —
+        # skip them silently.
+        if not line:
+            continue
+        if len(line) < 2:
+            malformed.append((line_number, line[0]))
+            continue
+        name = line[0]
+        status = line[1]
+        time = None
+        if len(line) >= 3 and line[2] and line[2] != "\\N":
+            # The value can be empty, but when it's not,
+            # it's the time spent on the test
+            try:
+                time = float(line[2])
+            except ValueError:
+                pass
+
+        result = Result(name, status, duration=time)
+        if not (result.is_ok() or result.is_failure() or result.is_error()):
+            # Unknown status — treat as a malformed row rather than
+            # aborting the whole file. Aborting would re-introduce the
+            # `Unknown job error` failure mode this parser is here to
+            # eliminate: a single unexpected-status row would discard
+            # every valid neighbour, including the real failure that
+            # triggered the job. (The pre-existing assert referenced
+            # `is_failure`/`is_error` as attributes — unbound method
+            # objects, always truthy — so it never fired and let any
+            # status through silently. Fix to call the methods.)
+            malformed.append((line_number, line[0]))
+            continue
+        if len(line) == 4 and line[3]:
+            # The value can be empty, but when it's not,
+            # the 4th value is a pythonic list, e.g. ['file1', 'file2']
+            if with_raw_logs:
+                # Python does not support TSV, so we unescape manually.
+                # The writer (`escape_tsv_info`) emits `\\r` for CR, so
+                # unescape it here too. Without this, dpkg/apt-get
+                # progress markers in the info field would leak the
+                # literal two-character `\r` sequence into the displayed
+                # log.
+                result.set_info(
+                    line[3]
+                    .replace("\\t", "\t")
+                    .replace("\\r", "\r")
+                    .replace("\\n", "\n")
+                )
+            else:
+                result.set_info(line[3])
+        results.append(result)
+    return results, malformed
+
+
+def _format_malformed_summary(
+    results_path: Path,
+    malformed: List[Tuple[int, str]],
+) -> str:
+    sample = malformed[0]
+    preview = sample[1][:200]
+    return (
+        f"{len(malformed)} malformed row(s) in {results_path} skipped; "
+        f"first at line {sample[0]}: {preview!r}"
+    )
 
 
 def get_additional_envs(info, check_name: str) -> List[str]:
     from ci.jobs.ci_utils import is_extended_run
 
     result = []
-    if not info.is_local_run:
-        azure_connection_string = Shell.get_output(
-            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-            verbose=True,
-            strict=True,
-        )
-        result.append(f"AZURE_CONNECTION_STRING='{azure_connection_string}'")
     # some cloud-specific features require feature flags enabled
     # so we need this ENV to be able to disable the randomization
     # of feature flags
@@ -111,6 +170,8 @@ def get_run_command(
         "docker run --cap-add=SYS_PTRACE "
         # For dmesg and sysctl
         "--privileged "
+        # azurite-rs (in-process Azure Blob Storage emulator) needs many fds under parallel load
+        "--ulimit nofile=1048576:1048576 "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
         "--tmpfs /tmp/clickhouse:mode=1777 "
@@ -141,10 +202,11 @@ def process_results(
             p for p in server_log_path.iterdir() if p.is_file()
         ]
 
+    results_path = result_directory / "test_results.tsv"
+    malformed: List[Tuple[int, str]] = []
     try:
-        results_path = result_directory / "test_results.tsv"
-        test_results = read_test_results(results_path, True)
-        if len(test_results) == 0:
+        test_results, malformed = read_test_results(results_path, True)
+        if len(test_results) == 0 and not malformed:
             raise ValueError("Empty results")
     except Exception as e:
         test_results = [
@@ -156,15 +218,39 @@ def process_results(
         ]
         return test_results, additional_files
 
+    if not test_results:
+        # The file existed and had content, but every row was malformed.
+        # Surface the corruption directly instead of "Unknown job error".
+        test_results = [
+            Result(
+                name="Corrupt test_results.tsv",
+                status=Result.Status.ERROR,
+                info=_format_malformed_summary(results_path, malformed),
+            )
+        ]
+        return test_results, additional_files
+
+    if malformed:
+        # Some rows were unreadable but valid rows survived. Add a
+        # FAIL entry so investigators see the corruption without
+        # losing the real test results (in particular, the
+        # `Hung check failed, possible deadlock found` row that
+        # otherwise gets swallowed when the file is polluted by
+        # stray output such as `apt-get install` logs).
+        test_results.append(
+            Result(
+                name="Corrupt test_results.tsv",
+                status=Result.Status.FAIL,
+                info=_format_malformed_summary(results_path, malformed),
+            )
+        )
+
     return test_results, additional_files
 
 
 def run_stress_test(upgrade_check: bool = False) -> None:
     info = Info()
     logging.basicConfig(level=logging.INFO)
-    for handler in logging.root.handlers:
-        # pylint: disable=protected-access
-        handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Utils.Stopwatch()
     temp_path = Path(Utils.cwd()) / "ci/tmp"

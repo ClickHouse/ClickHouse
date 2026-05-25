@@ -237,7 +237,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
 
-    if (settings[Setting::max_execution_time_leaf].value > 0)
+    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
         /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
         /// with 'timeout_overflow_mode_leaf'
@@ -378,6 +378,21 @@ void executeQuery(
     const size_t shards = cluster->getShardCount();
     ProfileEvents::increment(ProfileEvents::Shards, shards);
 
+    /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
+    /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
+    /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
+    {
+        const auto & new_settings_ref = new_context->getSettingsRef();
+        if (new_settings_ref[Setting::skip_unavailable_shards])
+        {
+            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
+            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
+            if (max_num > 0 || max_ratio > 0)
+                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+        }
+    }
+
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
@@ -413,7 +428,8 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
-                shard_filter_generator);
+                shard_filter_generator,
+                unavailable_shard_tracker);
         }
     }
     else
@@ -452,7 +468,8 @@ void executeQuery(
                 remote_shards,
                 static_cast<UInt32>(shards),
                 parallel_replicas_enabled,
-                shard_filter_generator);
+                shard_filter_generator,
+                unavailable_shard_tracker);
         }
     }
 
@@ -462,16 +479,6 @@ void executeQuery(
         scalars.emplace(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
-
-        UnavailableShardTrackerPtr unavailable_shard_tracker;
-        const auto & new_settings_ref = new_context->getSettingsRef();
-        if (new_settings_ref[Setting::skip_unavailable_shards])
-        {
-            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
-            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
-        }
 
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(

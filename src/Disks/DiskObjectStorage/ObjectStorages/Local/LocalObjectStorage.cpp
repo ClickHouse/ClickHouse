@@ -226,7 +226,9 @@ private:
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    bool /* use_external_buffer */,
+    bool /* restrict_seek */) const
 {
     LOG_TEST(log, "Read object: {}", object.remote_path);
     auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
@@ -408,13 +410,10 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 
-    for (const auto & entry : fs::directory_iterator(path))
+    for (const auto & entry : fs::recursive_directory_iterator(path))
     {
         if (entry.is_directory())
-        {
-            listObjects(entry.path(), children, 0);
             continue;
-        }
 
         children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
     }
