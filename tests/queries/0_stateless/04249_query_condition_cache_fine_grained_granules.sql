@@ -29,7 +29,8 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a
-SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1000, index_granularity_bytes = 0;
+SETTINGS add_minmax_index_for_numeric_columns = 0, index_granularity = 1000, index_granularity_bytes = 0,
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 -- 100 granules; only granule 1 (rows 1000-1999) has b = 1.
 INSERT INTO tab SELECT number, if(number >= 1000 AND number < 2000, 1, 0) FROM numbers(100_000);
