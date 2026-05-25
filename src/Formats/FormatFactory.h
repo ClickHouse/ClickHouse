@@ -163,6 +163,7 @@ private:
     /// Some formats can support reading subset of columns depending on settings.
     /// The checker should return true if format supports reading subset of columns.
     using SubsetOfColumnsSupportChecker = std::function<bool(const FormatSettings & settings)>;
+    using SubsetOfColumnsByPositionSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
     using PrewhereSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
@@ -186,7 +187,7 @@ private:
         AppendSupportChecker append_support_checker;
         AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
         SubsetOfColumnsSupportChecker subset_of_columns_support_checker;
-        SubsetOfColumnsSupportChecker subset_of_columns_by_position_support_checker;
+        SubsetOfColumnsByPositionSupportChecker subset_of_columns_by_position_support_checker;
         PrewhereSupportChecker prewhere_support_checker;
     };
 
