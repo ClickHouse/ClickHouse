@@ -33,8 +33,11 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <Interpreters/castColumn.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
+#include <IO/WriteBufferForWasmMemory.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -253,6 +256,12 @@ public:
         return compartment->getMemory(ptr, size);
     }
 
+    WasmPtr reallocBuffer(WasmPtr handle, WasmSizeT new_size) const override
+    {
+        return compartment->invoke<WasmPtr>(
+            "clickhouse_reallocate_buffer", {handle, static_cast<WasmSizeT>(new_size)}, stop_token);
+    }
+
 private:
     WasmCompartment * compartment;
     StopToken stop_token;
@@ -265,6 +274,14 @@ public:
     explicit UserDefinedWebAssemblyFunctionBufferedV1(Args &&... args) : UserDefinedWebAssemblyFunction(std::forward<Args>(args)...)
     {
         checkSignature();
+        serialization_format = settings.getValue("serialization_format").safeGet<String>();
+        Block input_header;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            String col_name = !argument_names[i].empty() ? argument_names[i] : fmt::format("arg{}", i);
+            input_header.insert(ColumnWithTypeAndName(arguments[i], col_name));
+        }
+        probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(serialization_format, probe_null_wb, input_header);
     }
 
     void checkFunction(const WasmFunctionDeclaration & expected) const
@@ -310,8 +327,6 @@ public:
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
-        String format_name = settings.getValue("serialization_format").safeGet<String>();
-
         if (num_rows == 0)
             return result_type->createColumn();
         if (num_rows >= std::numeric_limits<WasmSizeT>::max())
@@ -324,17 +339,14 @@ public:
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
 
-            StringWithMemoryTracking dummy_buf;
-            WriteBufferFromStringWithMemoryTracking dummy_writer(dummy_buf);
-            auto probe = context->getOutputFormat(format_name, dummy_writer, block.cloneEmpty());
-            auto precomputed = probe->precomputeSerializedSize(block, num_rows);
+            std::optional<uint64_t> precomputed = probe_format->precomputeSerializedSize(block, num_rows);
 
             if (precomputed)
             {
                 wasm_data = allocateInWasmMemory(wmm.get(), *precomputed);
                 auto wasm_mem = wasm_data.getMemoryView();
                 WriteBufferFromPointer wb(reinterpret_cast<char *>(wasm_mem.data()), *precomputed);
-                auto out = context->getOutputFormat(format_name, wb, block.cloneEmpty());
+                auto out = context->getOutputFormat(serialization_format, wb, block.cloneEmpty());
                 // write()+finalize() instead of formatBlock(): formatBlock calls flush()
                 // which triggers out.next() — fatal for WriteBufferFromPointer.
                 // auto_flush defaults to false so neither write() nor finalize() flush.
@@ -344,20 +356,12 @@ public:
             }
             else
             {
-                StringWithMemoryTracking input_data;
-                {
-                    WriteBufferFromStringWithMemoryTracking buf(input_data);
-                    auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
-                    formatBlock(out, block);
-                }
-                wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
-                auto wasm_mem = wasm_data.getMemoryView();
-                if (wasm_mem.size() != input_data.size())
-                    throw Exception(ErrorCodes::WASM_ERROR,
-                        "Cannot allocate buffer of size {}, got {} "
-                        "Maybe '{}' function implementation in WebAssembly module is incorrect",
-                        input_data.size(), wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
-                std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
+                auto wb = std::make_unique<WriteBufferForWasmMemory>(wmm.get(), stop_token, 0);
+                auto out = context->getOutputFormat(serialization_format, *wb, block.cloneEmpty());
+                out->write(block);
+                out->finalize();
+                wb->cancel();
+                wasm_data.reset(wb->getHandle());
             }
         }
 
@@ -374,7 +378,7 @@ public:
         Block result_header({ColumnWithTypeAndName(result_type->createColumn(), result_type, "result")});
 
         auto pipeline = QueryPipeline(
-            Pipe(context->getInputFormat(format_name, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
+            Pipe(context->getInputFormat(serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
         readSingleBlock(std::make_unique<PullingPipelineExecutor>(pipeline), result_header);
 
         if (result_header.columns() != 1 || result_header.rows() != num_rows)
@@ -387,6 +391,11 @@ public:
         auto result_columns = result_header.mutateColumns();
         return std::move(result_columns[0]);
     }
+
+private:
+    String serialization_format;
+    NullWriteBuffer probe_null_wb;
+    OutputFormatPtr probe_format;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
