@@ -12,6 +12,9 @@ namespace DB
 
 class ASTInsertQuery;
 
+/// Context with SETTINGS from the RETURNING subquery applied (for interpreters and result limits).
+ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, ContextPtr context);
+
 /// Wrap a completed INSERT pipeline so that the RETURNING SELECT runs after the INSERT finishes.
 QueryPipeline buildInsertReturningPipeline(
     QueryPipeline insert_pipeline,
@@ -24,7 +27,8 @@ QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, Cont
 void setupPullingQueryPipeline(
     QueryPipeline & pipeline,
     ContextPtr context,
-    QueryProcessingStage::Enum stage);
+    QueryProcessingStage::Enum stage,
+    const ASTPtr & returning_select = nullptr);
 
 /// After a native-protocol push INSERT finishes, replace the pipeline with the RETURNING SELECT.
 bool replacePipelineWithInsertReturningAfterPush(

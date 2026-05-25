@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -21,6 +22,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, ContextPtr context)
+{
+    auto returning_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
+    return returning_context;
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
@@ -31,28 +39,31 @@ namespace Setting
 
 QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
 {
+    auto returning_context = makeReturningSelectContext(returning_select, context);
     const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (returning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        InterpreterSelectQueryAnalyzer interpreter(returning_select, context, select_query_options);
+        InterpreterSelectQueryAnalyzer interpreter(returning_select, returning_context, select_query_options);
         return QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
     }
 
-    InterpreterSelectWithUnionQuery interpreter(returning_select, context, select_query_options);
+    InterpreterSelectWithUnionQuery interpreter(returning_select, returning_context, select_query_options);
     return QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
 }
 
 void setupPullingQueryPipeline(
     QueryPipeline & pipeline,
     ContextPtr context,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    const ASTPtr & returning_select)
 {
     pipeline.setProgressCallback(context->getProgressCallback());
     pipeline.setProcessListElement(context->getProcessListElement());
 
     if (stage == QueryProcessingStage::Complete && pipeline.pulling())
     {
-        const auto & settings = context->getSettingsRef();
+        const auto limits_context = returning_select ? makeReturningSelectContext(returning_select, context) : context;
+        const auto & settings = limits_context->getSettingsRef();
         StreamLocalLimits limits;
         limits.mode = LimitsMode::LIMITS_CURRENT;
         limits.size_limits = SizeLimits(
@@ -74,7 +85,7 @@ bool replacePipelineWithInsertReturningAfterPush(
 
     io.pipeline.reset();
     io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context);
-    setupPullingQueryPipeline(io.pipeline, context, stage);
+    setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select);
     if (io.finish_callback_state)
         io.finish_callback_state->insert_returning_result_as_select = true;
     return true;
@@ -88,35 +99,36 @@ QueryPipeline buildInsertReturningPipeline(
     if (insert_pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT pipeline must be completed before wrapping with RETURNING");
 
+    auto returning_context = makeReturningSelectContext(returning_select, context);
     auto insert_pipeline_holder = std::make_shared<QueryPipeline>(std::move(insert_pipeline));
 
     SharedHeader returning_header;
     {
         const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            returning_header = InterpreterSelectQueryAnalyzer::getSampleBlock(returning_select, context, select_query_options);
+        if (returning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            returning_header = InterpreterSelectQueryAnalyzer::getSampleBlock(returning_select, returning_context, select_query_options);
         else
-            returning_header = InterpreterSelectWithUnionQuery::getSampleBlock(returning_select, context);
+            returning_header = InterpreterSelectWithUnionQuery::getSampleBlock(returning_select, returning_context);
     }
 
-    DelayedSource::Creator creator = [insert_pipeline_holder, returning_select, context]() -> QueryPipelineBuilder
+    DelayedSource::Creator creator = [insert_pipeline_holder, returning_select, returning_context]() -> QueryPipelineBuilder
     {
         /// The INSERT pipeline is captured before executeQueryImpl wires process list / progress
         /// onto the outer RETURNING pipeline; attach them here so timeout/cancel work during INSERT.
-        insert_pipeline_holder->setProcessListElement(context->getProcessListElement());
-        insert_pipeline_holder->setProgressCallback(context->getProgressCallback());
+        insert_pipeline_holder->setProcessListElement(returning_context->getProcessListElement());
+        insert_pipeline_holder->setProgressCallback(returning_context->getProgressCallback());
 
         CompletedPipelineExecutor insert_executor(*insert_pipeline_holder);
         insert_executor.execute();
 
         const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (returning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(returning_select, context, select_query_options);
+            InterpreterSelectQueryAnalyzer interpreter(returning_select, returning_context, select_query_options);
             return interpreter.buildQueryPipeline();
         }
 
-        InterpreterSelectWithUnionQuery interpreter(returning_select, context, select_query_options);
+        InterpreterSelectWithUnionQuery interpreter(returning_select, returning_context, select_query_options);
         return interpreter.buildQueryPipeline();
     };
 

@@ -29,6 +29,10 @@ INSERT INTO t_insert_returning (id, bad_col) RETURNING (SELECT 1 AS x) VALUES (1
 
 SELECT count() AS rows_after_failed_insert FROM t_insert_returning;
 
+-- SETTINGS on the RETURNING subquery apply to the result (max_result_rows)
+SELECT 'returning subquery settings';
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT number FROM numbers(100) SETTINGS max_result_rows=5) VALUES (50, 'limits');
+
 -- async_insert is rejected
 SELECT 'async insert rejection';
 SET async_insert = 1;

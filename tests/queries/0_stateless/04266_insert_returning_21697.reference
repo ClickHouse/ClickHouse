@@ -7,4 +7,10 @@ table after select returning
 10
 insert failure
 2
+returning subquery settings
+0
+1
+2
+3
+4
 async insert rejection
