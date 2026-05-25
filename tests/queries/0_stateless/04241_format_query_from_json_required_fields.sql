@@ -6,6 +6,13 @@
 -- AlterQuery: `command_list` is required.
 SELECT formatQueryFromJSON('{"type":"AlterQuery","alter_object":"TABLE","table":"t"}'); -- { serverError BAD_ARGUMENTS }
 
+-- AlterQuery: `alter_object` is required (otherwise we silently accept structurally invalid input).
+SELECT formatQueryFromJSON('{"type":"AlterQuery","table":"t","command_list":{"type":"ExpressionList","children":[]}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"AlterQuery","alter_object":"BOGUS","table":"t","command_list":{"type":"ExpressionList","children":[]}}'); -- { serverError BAD_ARGUMENTS }
+
+-- AlterCommand: `command_type` is required (a missing key would otherwise be silently deserialized as ADD_COLUMN).
+SELECT formatQueryFromJSON('{"type":"AlterQuery","alter_object":"TABLE","table":"t","command_list":{"type":"ExpressionList","children":[{"type":"AlterCommand"}]}}'); -- { serverError BAD_ARGUMENTS }
+
 -- DropQuery: at least one of database/table/database_and_tables is required.
 SELECT formatQueryFromJSON('{"type":"DropQuery","kind":"Drop"}'); -- { serverError BAD_ARGUMENTS }
 

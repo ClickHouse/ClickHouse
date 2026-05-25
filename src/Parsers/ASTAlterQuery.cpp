@@ -146,6 +146,8 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
+    if (!r.has("command_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_type' field in `AlterCommand` during AST JSON deserialization");
     Int64 command_type_value = r.getInt("command_type");
     auto command_type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(command_type_value));
     if (!command_type_opt || static_cast<Int64>(*command_type_opt) != command_type_value)
@@ -881,13 +883,15 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
 
     cluster = r.getString("cluster");
 
+    if (!r.has("alter_object"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'alter_object' field in `AlterQuery` during AST JSON deserialization");
     String obj_type = r.getString("alter_object");
     if (obj_type == "TABLE")
         alter_object = AlterObjectType::TABLE;
     else if (obj_type == "DATABASE")
         alter_object = AlterObjectType::DATABASE;
     else
-        alter_object = AlterObjectType::UNKNOWN;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown alter_object value: '{}'", obj_type);
 
     auto child = r.readChild("command_list");
     if (!child)
