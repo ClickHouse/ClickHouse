@@ -223,9 +223,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    bool use_external_buffer,
-    bool restrict_seek) const
+    std::optional<size_t>) const
 {
     auto settings_ptr = settings.get();
 
@@ -243,8 +241,8 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         patchSettings(read_settings),
         settings_ptr->max_single_read_retries,
         settings_ptr->max_single_download_retries,
-        use_external_buffer,
-        restrict_seek,
+        read_settings.remote_read_buffer_use_external_buffer,
+        read_settings.remote_read_buffer_restrict_seek,
         /* read_until_position */0,
         std::move(blob_storage_log),
         connection_params.getContainer());

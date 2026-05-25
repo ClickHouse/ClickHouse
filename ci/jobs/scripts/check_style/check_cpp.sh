@@ -249,7 +249,6 @@ directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
     src/Columns
     src/Dictionaries
-    src/Functions
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do

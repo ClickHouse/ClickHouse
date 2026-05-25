@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class DataTypeObject final : public IDataType
+class DataTypeObject : public IDataType
 {
 public:
     enum class SchemaFormat

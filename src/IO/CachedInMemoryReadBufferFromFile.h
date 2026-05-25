@@ -46,7 +46,7 @@ private:
     PageCacheByteRange cache_range; // offset is offset of `chunk` start
     SipHash cache_key_base_hash;
     PageCachePtr cache;
-    PageCacheSettings settings;
+    ReadSettings settings;
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     size_t file_offset_of_buffer_end = 0;
