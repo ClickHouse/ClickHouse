@@ -1031,10 +1031,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
     ///
-    /// When HEAD didn't return Content-Length we don't know the real size. Use
+    /// When HEAD didn't return Content-Length we don't know the real size. Pass
     /// `UnknownSize` as a sentinel — `bytes_size = 0` would conflate with "really
-    /// empty file". The executor / `OffsetMap` recognise the sentinel and stream
-    /// the source to EOF instead of treating it as empty.
+    /// empty file". All consumers (`OffsetMap`, `S3ObjectStorage::readObject`,
+    /// `HDFSObjectStorage::readObject`, `WebObjectStorage::readObject`,
+    /// `PipelineReadBuffer::tryGetFileSize`, `getTotalSize`) explicitly compare
+    /// against `UnknownSize` and route to the unknown-size / EOF-streaming path.
     const UInt64 stored_bytes = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_bytes);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);

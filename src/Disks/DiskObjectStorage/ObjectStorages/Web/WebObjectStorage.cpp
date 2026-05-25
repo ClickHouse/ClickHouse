@@ -236,7 +236,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     return std::make_unique<ReadBufferFromWebServer>(
         fs::path(url) / object.remote_path,
         getContext(),
-        object.bytes_size,
+        object.bytes_size != StoredObject::UnknownSize ? object.bytes_size : 0,
         read_settings,
         use_external_buffer);
 }

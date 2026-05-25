@@ -426,7 +426,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     size_t total_objects_size = getTotalSize(source->objects);
     size_t effective_buffer_size = settings.remote_fs_buffer_size;
     size_t buffer_size = use_external_buffer ? 0 : effective_buffer_size;
-    if (!use_external_buffer && total_objects_size > 0)
+    if (!use_external_buffer && total_objects_size > 0 && total_objects_size != StoredObject::UnknownSize)
         buffer_size = std::min(buffer_size, total_objects_size);
 
     /// -- Stage 3.5: Distributed cache --
@@ -734,7 +734,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
 
     size_t total_size = getTotalSize(source->objects);
     size_t async_buffer_size = settings.remote_fs_buffer_size;
-    if (total_size > 0)
+    if (total_size > 0 && total_size != StoredObject::UnknownSize)
         async_buffer_size = std::min(async_buffer_size, total_size);
 
     /// When distributed cache is active, use its min_bytes_for_seek

@@ -107,6 +107,13 @@ public:
         return physical > data_start_offset ? physical - data_start_offset : 0;
     }
 
+    /// True iff the underlying object had `StoredObject::UnknownSize` (e.g. S3
+    /// HEAD without Content-Length). Callers that need to convert
+    /// `totalSize()` into an `optional<size_t> file_size` MUST consult this
+    /// first — `totalSize()` returns `~uint64_t::max()` in that case, which
+    /// is meaningless as a literal byte count.
+    bool hasUnknownSize() const { return offset_map.hasUnknownSize(); }
+
     /// Merge close-together ranges to reduce source request count.
     /// Ranges separated by less than min_gap are combined.
     static std::vector<ByteRange> mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap);

@@ -104,6 +104,15 @@ off_t PipelineReadBuffer::getPosition()
 
 std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
 {
+    /// Unknown-size sources (S3 HEAD without Content-Length) must surface as
+    /// `nullopt`, not as `executor->totalSize()` (which returns
+    /// `UnknownSize - data_start_offset ≈ uint64_t::max`). The downstream
+    /// `FormatFactory::wrapReadBufferIfNeeded` compares this to
+    /// `max_download_buffer_size` to decide whether to wrap with
+    /// `ParallelReadBuffer`; a max-valued size enables parallel reads that
+    /// can't be satisfied and trip `UNEXPECTED_END_OF_FILE`.
+    if (executor->hasUnknownSize())
+        return std::nullopt;
     return executor->totalSize();
 }
 

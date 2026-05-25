@@ -150,3 +150,26 @@ TEST(PipelineReadBuffer, TryGetFileSize)
     ASSERT_TRUE(size.has_value());
     EXPECT_EQ(*size, 500);
 }
+
+TEST(PipelineReadBuffer, TryGetFileSizeReturnsNulloptForUnknownSize)
+{
+    /// When the underlying object has `StoredObject::UnknownSize` (e.g. S3
+    /// HEAD without `Content-Length`), `tryGetFileSize` must surface as
+    /// `nullopt`, not as `~uint64_t::max`. Downstream
+    /// `FormatFactory::wrapReadBufferIfNeeded` reads this to decide whether
+    /// to wrap with `ParallelReadBuffer`; a max-valued size would enable
+    /// parallel reads that can't be satisfied and trip
+    /// `UNEXPECTED_END_OF_FILE`.
+    String content = "small payload, real bytes unknown to the caller";
+    auto source = std::make_shared<MemorySourceReader>(content);
+
+    StoredObjects objects;
+    objects.emplace_back("test", "", StoredObject::UnknownSize);
+
+    auto executor = std::make_unique<ReaderExecutor>(
+        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 100);
+
+    PipelineReadBuffer buf(std::move(executor));
+
+    EXPECT_EQ(buf.tryGetFileSize(), std::nullopt);
+}

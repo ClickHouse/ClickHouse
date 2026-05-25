@@ -251,7 +251,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* offset */0,
         /* read_until_position */0,
         restrict_seek,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        object.bytes_size != StoredObject::UnknownSize ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         credentials_refresh_callback,
         std::move(blob_storage_log));
 }
