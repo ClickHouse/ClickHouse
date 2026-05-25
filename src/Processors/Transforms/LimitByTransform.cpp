@@ -290,9 +290,6 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
 {
-    previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
-    for (size_t position : grouping_key_positions)
-        previous_chunk_last_grouping_key_columns.emplace_back(header->getByPosition(position).type->createColumn());
 }
 
 bool LimitBySortedStreamTransform::firstRowContinuesPreviousChunkGroup(const Columns & chunk_columns) const
@@ -318,6 +315,16 @@ bool LimitBySortedStreamTransform::hasSameGroupingKeyAsPreviousRow(const Columns
 
 void LimitBySortedStreamTransform::rememberLastGroupingKey(const Columns & chunk_columns, UInt64 row_idx)
 {
+    if (grouping_key_positions.empty())
+        return;
+
+    if (previous_chunk_last_grouping_key_columns.empty())
+    {
+        previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
+        for (size_t position : grouping_key_positions)
+            previous_chunk_last_grouping_key_columns.emplace_back(chunk_columns[position]->cloneEmpty());
+    }
+
     for (size_t key_idx = 0; key_idx < grouping_key_positions.size(); ++key_idx)
     {
         auto & previous_chunk_last_grouping_key_column = previous_chunk_last_grouping_key_columns[key_idx];
@@ -351,11 +358,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 
     /// Row 0 can continue a group from the previous chunk. If its grouping
     /// key changed across the chunk boundary, start a fresh count for this group.
-    /// Skip the comparison on the very first chunk (no key stored yet) and when
-    /// all keys are constant (vector is empty).
-    if (!previous_chunk_last_grouping_key_columns.empty()
-        && !previous_chunk_last_grouping_key_columns[0]->empty()
-        && !firstRowContinuesPreviousChunkGroup(chunk_columns))
+    if (!previous_chunk_last_grouping_key_columns.empty() && !firstRowContinuesPreviousChunkGroup(chunk_columns))
         current_group_rows_seen = 0;
 
     UInt64 current_run_start_row = 0;
