@@ -19,6 +19,10 @@ SELECT * FROM tab FINAL ORDER BY x;
 CREATE ROW POLICY pol1 ON tab USING y != 'ccc' TO ALL;
 
 SELECT '= with row policy (default behavior - filter before FINAL) =';
+-- The default of apply_row_policy_after_final is `true` on 26.1 after #97279 was
+-- finally backported. Pin to `0` here so this section continues to exercise the
+-- pre-#97279 filter-before-FINAL behavior it was designed to test.
+SET apply_row_policy_after_final = 0;
 SELECT '--- raw';
 SELECT * FROM tab ORDER BY x, version;
 SELECT '--- final';
