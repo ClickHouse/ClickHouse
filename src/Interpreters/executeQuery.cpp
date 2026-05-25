@@ -28,6 +28,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -1439,15 +1440,30 @@ static BlockIO executeQueryImpl(
                 /// Skip auto-fill when the target is a `Replicated` database: such databases
                 /// already coordinate DDL replication at the database level, so adding
                 /// `ON CLUSTER` would be redundant and would conflict with their machinery.
+                auto is_replicated_database = [&](String database_name)
+                {
+                    if (database_name.empty())
+                        database_name = context->getCurrentDatabase();
+                    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                    return database && database->getEngineName() == "Replicated";
+                };
+
                 bool target_is_replicated_database = false;
                 if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
                 {
-                    String database_name = query_with_table->getDatabase();
-                    if (database_name.empty())
-                        database_name = context->getCurrentDatabase();
-                    if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-                        database && database->getEngineName() == "Replicated")
-                        target_is_replicated_database = true;
+                    target_is_replicated_database = is_replicated_database(query_with_table->getDatabase());
+                }
+                else if (const auto * rename_query = out_ast->as<ASTRenameQuery>())
+                {
+                    for (const auto & element : rename_query->getElements())
+                    {
+                        if (is_replicated_database(element.from.getDatabase())
+                            || is_replicated_database(element.to.getDatabase()))
+                        {
+                            target_is_replicated_database = true;
+                            break;
+                        }
+                    }
                 }
 
                 if (!target_is_replicated_database)

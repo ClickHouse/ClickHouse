@@ -4,6 +4,9 @@ Test 1 verification: CREATE TABLE does NOT contain ON CLUSTER
 Test 2: ALTER TABLE in Replicated DB with auto-fill succeeds
 Test 2 verification: ALTER TABLE does NOT contain ON CLUSTER
 1
-Test 3: DROP TABLE in Replicated DB with auto-fill succeeds
-Test 3 verification: DROP TABLE does NOT contain ON CLUSTER
+Test 3: RENAME TABLE in Replicated DB with auto-fill succeeds
+Test 3 verification: RENAME TABLE does NOT contain ON CLUSTER
+1
+Test 4: DROP TABLE in Replicated DB with auto-fill succeeds
+Test 4 verification: DROP TABLE does NOT contain ON CLUSTER
 1

@@ -38,11 +38,21 @@ SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabas
   AND query LIKE '%ALTER TABLE test_repl_auto%'
   AND query LIKE '%ON CLUSTER%';
 
-SELECT 'Test 3: DROP TABLE in Replicated DB with auto-fill succeeds';
-DROP TABLE test_repl_auto;
+SELECT 'Test 3: RENAME TABLE in Replicated DB with auto-fill succeeds';
+RENAME TABLE test_repl_auto TO test_repl_auto_renamed;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 3 verification: DROP TABLE does NOT contain ON CLUSTER';
+SELECT 'Test 3 verification: RENAME TABLE does NOT contain ON CLUSTER';
+SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND query LIKE '%RENAME TABLE test_repl_auto%'
+  AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 4: DROP TABLE in Replicated DB with auto-fill succeeds';
+DROP TABLE test_repl_auto_renamed;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 4 verification: DROP TABLE does NOT contain ON CLUSTER';
 SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query LIKE '%DROP TABLE test_repl_auto%'
