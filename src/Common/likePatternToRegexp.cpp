@@ -132,6 +132,13 @@ String similarToPatternToRegexp(std::string_view pattern)
                         /// [ bracket open
                         default:
                         {
+                            /// If we are already inside a bracket expression, `[` is a literal
+                            /// member (POSIX/RE2 syntax), not a new bracket open. Do not run the
+                            /// leading-`]` lookahead here — that would incorrectly consume the
+                            /// outer bracket's closing `]` (e.g. `[[]` would become an unterminated
+                            /// character class).
+                            if (in_bracket)
+                                break;
                             in_bracket = true;
                             /// POSIX rule: an `]` immediately after `[` or `[^` is a literal member,
                             /// not the bracket terminator. Emit it as `\]` so re2 keeps the bracket open.

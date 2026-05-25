@@ -150,3 +150,12 @@ SELECT '%' SIMILAR TO '[]_%]';                     -- Returns: 1
 SELECT 'a' SIMILAR TO '[]_%]';                     -- Returns: 0
 SELECT ']' SIMILAR TO '[^]_%]';                    -- Returns: 0
 SELECT 'a' SIMILAR TO '[^]_%]';                    -- Returns: 1
+
+SELECT '-- Literal [ inside bracket (no spurious lookahead)';
+SELECT '['  SIMILAR TO '[[]';                      -- Returns: 1
+SELECT 'a'  SIMILAR TO '[[]';                      -- Returns: 0
+SELECT '['  SIMILAR TO '[^[]';                     -- Returns: 0
+SELECT 'a'  SIMILAR TO '[^[]';                     -- Returns: 1
+SELECT '[a' SIMILAR TO '[[a]_';                    -- Returns: 1
+SELECT 'aa' SIMILAR TO '[[a]_';                    -- Returns: 1
+SELECT 'xb' SIMILAR TO '[[a]_';                    -- Returns: 0

@@ -120,3 +120,11 @@
 0
 0
 1
+-- Literal [ inside bracket (no spurious lookahead)
+1
+0
+0
+1
+1
+1
+0
