@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.1",
         {
+            {"apply_row_policy_after_final", true, true, "Re-enable apply_row_policy_after_final by default on 26.1. #97279 restored this default on master / 25.12 / 26.2+; the 26.1 backport (#97403) was previously closed without merging, leaving 26.1 with the buggy `false` default from #87303."},
             {"http_max_fields", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
             {"http_max_field_name_size", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
             {"http_max_request_header_size", 0, 10485760, "New setting to limit total HTTP request header size before authentication."},
@@ -109,7 +110,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
-            {"apply_row_policy_after_final", false, false, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
+            {"apply_row_policy_after_final", true, true, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
             {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
