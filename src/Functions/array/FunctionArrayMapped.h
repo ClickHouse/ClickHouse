@@ -424,7 +424,17 @@ public:
             Impl::getReturnType(return_type, first_array_type->getNestedType()), arguments, 1 + num_fixed_params);
     }
 
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/true);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/false);
+    }
+
+    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, bool dry_run) const
     {
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -572,7 +582,7 @@ public:
             auto & replicated_column_function = typeid_cast<ColumnFunction &>(*replicated_column_function_ptr);
             replicated_column_function.appendArguments(arrays);
 
-            auto lambda_result = replicated_column_function.reduce();
+            auto lambda_result = replicated_column_function.reduce(dry_run);
 
             /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
             /// because we removed LowCardinality from return type of lambda expression.
