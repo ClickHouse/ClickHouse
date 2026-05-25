@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <base/getPageSize.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>

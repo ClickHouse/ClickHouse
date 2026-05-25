@@ -31,6 +31,9 @@ String LimitByTransform::getName() const
 
 void LimitByTransform::transform(Chunk & chunk)
 {
+    if (chunk.getNumRows() == 0)
+        return;
+
     if (in_order)
         transformInOrder(chunk);
     else

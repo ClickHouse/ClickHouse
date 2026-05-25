@@ -8,7 +8,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
-#include "config.h"
 
 namespace DB
 {

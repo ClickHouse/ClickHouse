@@ -547,18 +547,6 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 }
 
 template <Fn<size_t(size_t)> Sharder>
-static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
-{
-    const auto & hashes = hash.getData();
-    size_t num_rows = hashes.size();
-
-    IColumn::Selector selector(num_rows);
-    for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(intHashCRC32(hashes[i]));
-    return selector;
-}
-
-template <Fn<size_t(size_t)> Sharder>
 static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
 {
     size_t num_rows = block.rows();

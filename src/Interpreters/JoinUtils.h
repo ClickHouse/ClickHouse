@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
+#include <base/FnTraits.h>
 
 namespace DB
 {
@@ -111,6 +115,18 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name);
 void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
+
+template <Fn<size_t(size_t)> Sharder>
+IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
+{
+    const auto & hashes = hash.getData();
+    size_t num_rows = hashes.size();
+
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = sharder(intHashCRC32(hashes[i]));
+    return selector;
+}
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);
