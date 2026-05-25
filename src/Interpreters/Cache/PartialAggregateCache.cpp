@@ -1,4 +1,6 @@
 #include <Interpreters/Cache/PartialAggregateCache.h>
+#include <Interpreters/Cache/PartialAggregatePlanHitInfo.h>
+#include <Storages/MergeTree/MergeTreePartialAggregateInfo.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
