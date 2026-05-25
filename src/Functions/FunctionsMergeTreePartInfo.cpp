@@ -120,11 +120,6 @@ UnpackedPartSegments unpackPartName(std::string_view data)
     return unpacked;
 }
 
-bool isAnyStringType(const IDataType & data_type)
-{
-    return isStringOrFixedString(removeLowCardinality(data_type.getPtr()));
-}
-
 class FunctionMergeTreePartCoverage final : public IFunction
 {
     static MergeTreePartInfo constructCoveringPart(const ColumnPtr & covering_column, size_t row_number)
