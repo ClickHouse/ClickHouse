@@ -638,6 +638,10 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
                 continue;
             }
         }
+        else
+        {
+            chassert(columns[j] != nullptr);
+        }
 
         if (const auto * source_replicated = columns[j]->replicated_columns[source_column_index_in_block])
             col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_numbers[j]));
