@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -65,17 +66,25 @@ T NaNOrZero()
     return {};
 }
 
-/// Canonical positive quiet NaN for a floating-point type. For BFloat16 we
-/// construct it from the Float32 canonical NaN; for the other floats we use the
-/// implementation-defined `std::numeric_limits<T>::quiet_NaN()`.
+/// Canonical positive quiet NaN for a floating-point type.
+///
+/// Uses explicit IEEE 754 bit patterns rather than `std::numeric_limits<T>::quiet_NaN`,
+/// which is implementation-defined and could pick a different encoding on a different
+/// libc++/libstdc++ build. `uniqExact` and similar set aggregates serialize and
+/// deserialize keys byte-wise without re-canonicalizing on read, so distributed merges
+/// across mixed architectures need a guaranteed-stable canonical form. See issue #105748.
 template <typename T>
 inline T canonicalNaN()
 {
     static_assert(is_floating_point<T>, "canonicalNaN is only defined for floating-point types");
     if constexpr (std::is_same_v<T, BFloat16>)
-        return BFloat16(std::numeric_limits<Float32>::quiet_NaN());
+        return BFloat16::fromBits(0x7FC0);
+    else if constexpr (std::is_same_v<T, Float32>)
+        return std::bit_cast<Float32>(UInt32{0x7FC00000});
+    else if constexpr (std::is_same_v<T, Float64>)
+        return std::bit_cast<Float64>(UInt64{0x7FF8000000000000});
     else
-        return std::numeric_limits<T>::quiet_NaN();
+        static_assert(sizeof(T) == 0, "canonicalNaN: unsupported floating-point type");
 }
 
 /// If `x` is a NaN, return the canonical NaN for type `T`. Otherwise return `x`
