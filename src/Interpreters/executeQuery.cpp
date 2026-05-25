@@ -2158,6 +2158,12 @@ static BlockIO executeQueryImpl(
                                     if (max_levels > 0 && candidates.size() > max_levels)
                                         candidates.resize(max_levels);
 
+                                    /// Precompute prefix hashes before any plan mutations (insertStep below
+                                    /// adds synthetic nodes that would pollute the hash).
+                                    std::unordered_map<QueryPlan::Node *, IASTHash> candidate_hashes;
+                                    for (const auto & c : candidates)
+                                        candidate_hashes[c.node] = compute_prefix_hash(c.node);
+
                                     /// Process deepest nodes first so that insertStep doesn't invalidate
                                     /// parent pointers for shallower nodes.
                                     std::sort(candidates.begin(), candidates.end(),
@@ -2186,7 +2192,7 @@ static BlockIO executeQueryImpl(
                                         if (!cache_target || cache_target->children.empty())
                                             continue;
 
-                                        auto prefix_hash = compute_prefix_hash(cache_target);
+                                        auto prefix_hash = candidate_hashes.at(cache_target);
                                         auto target_header = cache_target->step->getOutputHeader();
                                         auto shared_header = std::make_shared<const Block>(*target_header);
 

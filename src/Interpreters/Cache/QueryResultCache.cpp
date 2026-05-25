@@ -1228,12 +1228,24 @@ void QueryResultCache::saveSnapshot(const std::string & path) const
 
     auto logger = getLogger("QueryResultCache");
 
+    size_t non_stale = 0;
+    for (const auto & entry : entries)
+        if (!IsStale()(entry.key))
+            ++non_stale;
+
+    if (non_stale == 0)
+    {
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        return;
+    }
+
     std::string tmp_path = path + ".tmp";
     WriteBufferFromFile buf(tmp_path);
 
     writeString(SNAPSHOT_MAGIC, buf);
     writeBinaryLittleEndian(SNAPSHOT_VERSION, buf);
-    writeBinaryLittleEndian(static_cast<UInt64>(entries.size()), buf);
+    writeBinaryLittleEndian(static_cast<UInt64>(non_stale), buf);
 
     size_t written = 0;
     for (const auto & [entry_key, entry_mapped] : entries)
