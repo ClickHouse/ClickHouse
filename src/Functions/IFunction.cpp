@@ -835,7 +835,7 @@ namespace
     DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments)
     {
         static std::mutex cache_mutex;
-        static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache;
+        static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         std::shared_ptr<FunctionSignature> sig;
         {
