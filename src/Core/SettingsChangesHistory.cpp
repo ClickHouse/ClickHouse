@@ -48,6 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
+            {"min_rows_per_stream_for_gradual_resize", 0, 1000, "New setting enabled by default that starts `GROUP BY` aggregation with a single stream and switches to all `max_threads` streams once cumulative input crosses the threshold, improving performance on small data volumes."},
+            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all streams."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -78,8 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
             {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
-            {"min_rows_per_stream_for_gradual_resize", 0, 1000, "New setting enabled by default that starts `GROUP BY` aggregation with a single stream and switches to all `max_threads` streams once cumulative input crosses the threshold, improving performance on small data volumes."},
-            {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all streams."},
             {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
             {"dynamic_disk_allow_include", false, false, "New setting to allow `include` in dynamic disk configuration (the `disk()` function). Disabled by default."},
             {"dynamic_disk_allow_from_zk", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."},
