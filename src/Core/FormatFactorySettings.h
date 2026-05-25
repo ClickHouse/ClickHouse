@@ -1239,7 +1239,7 @@ Disabled by default.
 When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
 When 0 (the default), use the shortest round-trip representation.
 
-Values whose shortest representation is in scientific notation (very large or very small magnitudes) are emitted as-is to avoid silently rounding away significant digits. In such cases, the mantissa may carry more than the requested number of fractional digits.
+Values too large for fixed notation, and values whose magnitude is so small that rounding to the requested precision would lose all significant digits (the mantissa would become `±0`), are emitted in scientific notation instead. In these fallback cases the mantissa may carry more than the requested number of fractional digits.
 
 Valid range: 0 to 100.
 )", 0) \
