@@ -5,7 +5,6 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
-#include "config.h"
 
 namespace Poco { class Logger; }
 
