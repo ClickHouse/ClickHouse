@@ -1220,7 +1220,11 @@ void QueryResultCache::saveSnapshot(const std::string & path) const
 {
     auto entries = cache.dump();
     if (entries.empty())
+    {
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
         return;
+    }
 
     auto logger = getLogger("QueryResultCache");
 
