@@ -192,6 +192,37 @@ FROM
 WHERE t = tuple(0.0)
 ORDER BY reinterpretAsUInt64(dynamicElement(tupleElement(t, 1), 'Float64'));
 
+DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_variant;
+
+SET allow_suspicious_variant_types = 1;
+
+CREATE TABLE 04259_filter_constant_column_after_where_variant
+(
+    v Variant(Int8, UInt8)
+)
+ENGINE = Memory;
+
+INSERT INTO 04259_filter_constant_column_after_where_variant VALUES
+    (CAST(1::Int8, 'Variant(Int8, UInt8)')),
+    (CAST(1::UInt8, 'Variant(Int8, UInt8)')),
+    (CAST(2::UInt8, 'Variant(Int8, UInt8)'));
+
+SELECT variantType(v), count()
+FROM 04259_filter_constant_column_after_where_variant
+WHERE v = 1
+GROUP BY ALL
+ORDER BY ALL;
+
+SELECT variantType(tupleElement(t, 1)), count()
+FROM
+(
+    SELECT tuple(v) AS t
+    FROM 04259_filter_constant_column_after_where_variant
+)
+WHERE t = tuple(1)
+GROUP BY ALL
+ORDER BY ALL;
+
 DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_fixed_string;
 
 CREATE TABLE 04259_filter_constant_column_after_where_fixed_string
@@ -223,4 +254,5 @@ ORDER BY length(tupleElement(t, 1)), hex(tupleElement(t, 1));
 DROP TABLE 04259_filter_constant_column_after_where;
 DROP TABLE 04259_filter_constant_column_after_where_decimal;
 DROP TABLE 04259_filter_constant_column_after_where_dynamic;
+DROP TABLE 04259_filter_constant_column_after_where_variant;
 DROP TABLE 04259_filter_constant_column_after_where_fixed_string;

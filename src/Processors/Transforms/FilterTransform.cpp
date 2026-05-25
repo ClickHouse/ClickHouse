@@ -93,6 +93,11 @@ bool containsFixedString(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isFixedString);
 }
 
+bool containsVariant(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isVariant);
+}
+
 std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
@@ -127,6 +132,8 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
 
     const auto & result_column = transformed_header.getByPosition(*position);
     if (hasDynamicType(result_column.type))
+        return {};
+    if (containsVariant(result_column.type))
         return {};
     if (containsFloat(result_column.type))
         return {};
