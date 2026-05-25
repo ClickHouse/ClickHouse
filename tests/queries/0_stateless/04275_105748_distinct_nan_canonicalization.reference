@@ -3,13 +3,18 @@ countDistinct(div0, nan)	1
 countDistinct(div0, nan, log(-1))	1
 uniqExact Float64	1
 uniqExact Float32	1
+uniqExact BFloat16	1
 uniq Float64	1
 SELECT DISTINCT Float64	1
 SELECT DISTINCT Float32	1
+SELECT DISTINCT BFloat16	1
 GROUP BY Float64	1
 GROUP BY Float32	1
+GROUP BY BFloat16	1
 uniqExact Nullable(Float64)	1
 GROUP BY Nullable(Float64)	1
+uniqExact Nullable(BFloat16)	1
+GROUP BY Nullable(BFloat16)	1
 rows in table	4
 distinct NaNs in table	1
 count rows after DISTINCT	1

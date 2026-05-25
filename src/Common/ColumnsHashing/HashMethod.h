@@ -46,11 +46,13 @@ inline bool needsFloatNaNCanonicalization(const IColumn * actual_column)
         return typeid_cast<const ColumnFloat32 *>(actual_column) != nullptr;
     else if constexpr (sizeof(FieldType) == sizeof(Float64))
         return typeid_cast<const ColumnFloat64 *>(actual_column) != nullptr;
+    else if constexpr (sizeof(FieldType) == sizeof(BFloat16))
+        return typeid_cast<const ColumnBFloat16 *>(actual_column) != nullptr;
     else
         return false;
 }
 
-/// Reinterpret the `FieldType` bytes as `Float32`/`Float64`, canonicalize the
+/// Reinterpret the `FieldType` bytes as `Float32`/`Float64`/`BFloat16`, canonicalize the
 /// NaN bit pattern, and return the resulting bytes back as `FieldType`. For
 /// `FieldType` widths that do not correspond to a floating-point type this is
 /// a compile-time no-op.
@@ -69,6 +71,13 @@ inline FieldType canonicalizeFloatBitsAsField(FieldType bits)
         Float64 f = std::bit_cast<Float64>(bits);
         if (isNaN(f))
             return std::bit_cast<FieldType>(canonicalNaN<Float64>());
+        return bits;
+    }
+    else if constexpr (sizeof(FieldType) == sizeof(BFloat16))
+    {
+        BFloat16 f = std::bit_cast<BFloat16>(bits);
+        if (isNaN(f))
+            return std::bit_cast<FieldType>(canonicalNaN<BFloat16>());
         return bits;
     }
     else
@@ -96,14 +105,15 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     static constexpr bool has_cheap_key_calculation = true;
     static constexpr bool has_pre_computed_hashes = false;
 
-    /// `FieldType` widths 4 and 8 correspond to `Float32` and `Float64`. For
-    /// smaller widths there is no matching floating-point type so we never
-    /// need a runtime check and the branch is pruned at compile time.
+    /// `FieldType` widths 2, 4 and 8 correspond to `BFloat16`, `Float32` and `Float64`.
+    /// For other widths there is no matching floating-point type so we never need a
+    /// runtime check and the branch is pruned at compile time.
     static constexpr bool may_canonicalize_nan
-        = (sizeof(FieldType) == sizeof(Float32)) || (sizeof(FieldType) == sizeof(Float64));
+        = (sizeof(FieldType) == sizeof(Float32)) || (sizeof(FieldType) == sizeof(Float64))
+          || (sizeof(FieldType) == sizeof(BFloat16));
 
     const char * vec;
-    /// Set in the constructor when the underlying column is `ColumnFloat32`/`ColumnFloat64`.
+    /// Set in the constructor when the underlying column is `ColumnFloat32`/`ColumnFloat64`/`ColumnBFloat16`.
     /// Used by `getKeyHolder` to fold every NaN bit pattern onto the canonical one so that
     /// `DISTINCT`/`GROUP BY`/`uniqExact` hash-based set semantics treat all NaNs as a single
     /// value regardless of where the NaN was produced (see issue #105748).
