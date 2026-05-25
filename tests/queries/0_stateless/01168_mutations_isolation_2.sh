@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-ordinary-database, no-encrypted-storage, no-random-detach
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database, no-random-detach
 # no-random-detach: test checks mutation state
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
