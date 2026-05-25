@@ -75,6 +75,7 @@ bool replacePipelineWithInsertReturningAfterPush(
     io.pipeline.reset();
     io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context);
     setupPullingQueryPipeline(io.pipeline, context, stage);
+    io.insert_returning_result_as_select = true;
     return true;
 }
 

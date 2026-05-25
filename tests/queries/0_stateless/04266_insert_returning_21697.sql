@@ -25,7 +25,7 @@ INSERT INTO t_insert_returning (id, name) RETURNING (SELECT id FROM t_insert_ret
 
 -- INSERT failure prevents RETURNING SELECT from running
 SELECT 'insert failure';
-INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 AS x) VALUES ('bad', 'x'); -- { serverError TYPE_MISMATCH }
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 AS x) VALUES ('bad', 'x'); -- { serverError CANNOT_PARSE_TEXT }
 
 SELECT count() AS rows_after_failed_insert FROM t_insert_returning;
 

@@ -49,6 +49,10 @@ struct BlockIO
 
     QueryPipeline pipeline;
 
+    /// Native-protocol INSERT ... RETURNING runs INSERT as push, then swaps to a pulling SELECT.
+    /// Query-finish logging must treat the final pipeline as a SELECT result, not written_rows.
+    bool insert_returning_result_as_select = false;
+
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
     std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;

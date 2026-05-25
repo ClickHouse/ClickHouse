@@ -1961,26 +1961,29 @@ static BlockIO executeQueryImpl(
 
             /// Also make possible for caller to log successful query finish and exception during execution.
 
+            BlockIO * block_io = &res;
+
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
-                                     query_result_cache_usage,
-                                     // Need to be cached, since will be changed after complete()
-                                     pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
+                                     block_io,
+                                     query_result_cache_usage](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
+                const bool pulling_pipeline = query_pipeline.pulling() || block_io->insert_returning_result_as_select;
                 return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
             };
 
             /// The finish callback logs the query result
             auto finish_callback = [elem,
+                                    block_io,
                                     context,
                                     out_ast,
                                     query_result_cache_usage,
                                     internal,
                                     implicit_tcl_executor,
-                                    // Need to be cached, since will be changed after complete()
-                                    pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
+                const bool pulling_pipeline = query_pipeline_finalized_info.result_progress.has_value()
+                    || block_io->insert_returning_result_as_select;
                 logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
