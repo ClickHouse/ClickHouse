@@ -572,6 +572,17 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
                     tryLogCurrentException(log, "Cannot read cgroup memory limit/current");
             }
         }
+        /// Fail-close on any per-level read failure. If even one ancestor's
+        /// `memory.max`/`memory.current` could not be read, the omitted level may
+        /// have been more restrictive than the levels we observed, so `min_available`
+        /// over only the successful subset can overestimate the real headroom.
+        /// Falling through to host-wide `/proc/meminfo` would compound the problem
+        /// on containerized deployments, where the host's free memory can be far
+        /// above the cgroup budget, and using it as the headroom estimate can let
+        /// `total_memory_tracker` grow past the cgroup limit and trigger a cgroup
+        /// OOM kill. Skip the adjustment this tick; the worker will retry next tick.
+        if (any_read_failure)
+            return std::nullopt;
         if (any_finite)
         {
             /// `min_available == 0` is a real "at or over the binding limit" signal,
@@ -580,15 +591,6 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
             /// shrinking the budget at the highest-pressure point.
             return min_available;
         }
-        /// Fail-close: if every level's read failed and none parsed as either "no limit"
-        /// or a finite value, we have no idea whether the cgroup has a binding limit.
-        /// Falling through to host-wide `/proc/meminfo` would be fail-open — on a
-        /// containerized deployment the host's free memory can be far above the cgroup
-        /// budget, and using it as the headroom estimate can let `total_memory_tracker`
-        /// grow past the cgroup limit and trigger a cgroup OOM kill. Skip the adjustment
-        /// this tick instead; the worker will retry on the next tick.
-        if (any_read_failure)
-            return std::nullopt;
     }
 #endif
     return readSystemAvailableMemory();
