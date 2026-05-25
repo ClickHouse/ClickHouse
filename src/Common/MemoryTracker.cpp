@@ -6,8 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
@@ -15,6 +13,7 @@
 #include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TraceSender.h>
 #include <Common/VariableContext.h>
 #include <Common/formatReadable.h>
@@ -369,12 +368,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (level == VariableContext::Global && (jemalloc_flush_profile_on_memory_exceeded_interval_s || jemalloc_flush_profile_on_memory_exceeded))
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-            bool prof_active = false;
-            if (DB::Jemalloc::tryGetValue("prof.active", prof_active) && prof_active)
+            if (DB::Jemalloc::getValue<bool>("prof.active"))
             {
-                char * flush_prefix = nullptr;
-                if (!DB::Jemalloc::tryGetValue("opt.prof_prefix", flush_prefix))
-                    flush_prefix = nullptr;
+                auto * flush_prefix = DB::Jemalloc::getValue<char *>("opt.prof_prefix");
                 if (!flush_prefix)
                 {
                     if (throw_if_memory_exceeded)
@@ -554,13 +550,10 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
             )
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-            bool prof_active = false;
-            if (DB::Jemalloc::tryGetValue("prof.active", prof_active) && prof_active)
+            if (DB::Jemalloc::getValue<bool>("prof.active"))
             {
                 static std::atomic<uint64_t> previous_flushed_peak = 0;
-                char * flush_prefix = nullptr;
-                if (!DB::Jemalloc::tryGetValue("opt.prof_prefix", flush_prefix))
-                    flush_prefix = nullptr;
+                auto * flush_prefix = DB::Jemalloc::getValue<char *>("opt.prof_prefix");
                 if (!flush_prefix)
                 {
                     if (log_memory_usage)

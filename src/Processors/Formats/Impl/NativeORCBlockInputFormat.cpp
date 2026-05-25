@@ -62,12 +62,9 @@ extern const int ARGUMENT_OUT_OF_BOUND;
 
 
 ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool use_prefetch)
-    : in(in_)
-    , file_size(file_size_)
-    , use_offset_based_read(in_.supportsReadAt())
-    , use_async_prefetch(use_prefetch && use_offset_based_read)
+    : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
-    if (use_async_prefetch)
+    if (supports_read_at)
         async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::ORC_FILE);
 }
 
@@ -83,21 +80,13 @@ UInt64 ORCInputStream::getNaturalReadSize() const
 
 void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 {
-    if (use_offset_based_read)
+    if (supports_read_at)
     {
         size_t bytes_read = 0;
         while (bytes_read < length)
         {
             size_t bytes_to_read = length - bytes_read;
             size_t n = in.readBigAt(reinterpret_cast<char *>(buf) + bytes_read, bytes_to_read, offset + bytes_read, nullptr);
-            if (n == 0)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Truncated or corrupted ORC input: readBigAt returned 0 bytes at offset {} ({} bytes remaining of {} requested from base offset {})",
-                    offset + bytes_read,
-                    bytes_to_read,
-                    length,
-                    offset);
             bytes_read += n;
         }
     }
@@ -111,7 +100,7 @@ void ORCInputStream::read(void * buf, UInt64 length, UInt64 offset)
 
 std::future<void> ORCInputStream::readAsync(void * buf, uint64_t length, uint64_t offset)
 {
-    if (use_async_prefetch)
+    if (supports_read_at)
     {
         return async_runner(
             [this, buf, length, offset]
