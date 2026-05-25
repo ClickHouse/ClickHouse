@@ -44,8 +44,8 @@ public:
     bool producesFilterOnly() const override { return true; }
     bool mustApplyFilter() const override
     {
-        // If Bernoulli sampling filter is set, we MUST apply it immediate
-        // to ensure correct sampling semantics. Don't defer it.
+        /// Bernoulli filter is the only filter for rows that pass PREWHERE;
+        /// deferring it would emit unsampled rows to downstream steps.
         if (bernoulli_filter)
             return true;
         return lazy_materializing_rows != nullptr;

@@ -102,7 +102,8 @@ BernoulliGranuleFilter::build(const MergeTreeIndexGranularity & index_granularit
         if (mark % CHECKPOINT_STRIDE == 0)
             filter->checkpoints.emplace_back(cumulative_row, remaining_skip, rng);
 
-        size_t rows_in_mark = index_granularity.getMarkRows(mark);
+        const size_t original_rows_in_mark = index_granularity.getMarkRows(mark);
+        size_t rows_in_mark = original_rows_in_mark;
         /// Clamp the last granule to actual row count.
         if (cumulative_row + rows_in_mark > total_rows)
             rows_in_mark = total_rows - cumulative_row;
@@ -121,7 +122,7 @@ BernoulliGranuleFilter::build(const MergeTreeIndexGranularity & index_granularit
         /// The next hit lies past the end of this mark; carry the leftover
         /// skip distance over into the next mark.
         remaining_skip -= rows_in_mark;
-        cumulative_row += index_granularity.getMarkRows(mark);
+        cumulative_row += original_rows_in_mark;
         cumulative_row = std::min(cumulative_row, total_rows);
     }
 

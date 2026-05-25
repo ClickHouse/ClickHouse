@@ -79,7 +79,12 @@ size_t MergeTreeReaderIndex::readRows(
         max_rows_to_read = 0;
 
     ColumnPtr & filter_column = res_columns.front();
-    size_t filter_size_before = filter_column ? static_cast<const ColumnUInt8 &>(*filter_column).getData().size() : 0;
+    size_t filter_size_before = 0;
+    if (filter_column)
+    {
+        if (const auto * col = typeid_cast<const ColumnUInt8 *>(filter_column.get()))
+            filter_size_before = col->getData().size();
+    }
 
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result && index_read_result->projection_index_read_result)
