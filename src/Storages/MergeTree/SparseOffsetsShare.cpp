@@ -80,13 +80,25 @@ SparseOffsetsShare::sliceFromBucket(
     const auto * begin = src_offsets.data();
     const auto * end = begin + src_offsets.size();
 
-    const auto * skip_zone_begin = std::lower_bound(begin, end, skip_start_rel);
-    const auto * produce_zone_begin = std::lower_bound(skip_zone_begin, end, skip_end_rel);
+    /// Fast path for the common `rows_offset == 0` case: `skip_end_rel == skip_start_rel`,
+    /// so the second `lower_bound` would return the first's iterator and `skipped` is 0.
+    /// Skip the redundant search.
+    const auto * produce_zone_begin = std::lower_bound(begin, end, skip_end_rel);
+    size_t skipped = 0;
+    if (rows_offset != 0)
+    {
+        const auto * skip_zone_begin = std::lower_bound(begin, produce_zone_begin, skip_start_rel);
+        skipped = produce_zone_begin - skip_zone_begin;
+    }
     const auto * produce_zone_end = std::lower_bound(produce_zone_begin, end, produce_end_rel);
 
-    const size_t skipped = produce_zone_begin - skip_zone_begin;
     const size_t produce_count = produce_zone_end - produce_zone_begin;
 
+    /// Use `create()` + `resize` rather than `create(N)`: when the constructor's `N` is
+    /// passed by const-reference through `COW::create`, the compiler stashes it on the
+    /// stack and reloads the loop bound on every iteration, dropping the SSE2 paddq
+    /// vectorisation of the shifted copy. The resize-then-loop pattern keeps the size
+    /// visible enough to stay vectorised.
     auto sliced_column = ColumnUInt64::create();
     auto & sliced_data = sliced_column->getData();
     sliced_data.resize(produce_count);

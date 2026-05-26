@@ -529,21 +529,21 @@ void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
     size_t rows_offset,
     size_t limit,
     size_t frame_prev_size,
-    ISerialization::SubstreamsCache & cache) const
+    ISerialization::SubstreamsCache & cache)
 {
     if (!sparse_offsets_share)
         return;
 
     /// Resolve the share's bucket once per column on this reader and remember it.
-    /// Subsequent slice calls go straight to `sliceFromBucket` and never touch the
-    /// share's `SharedMutex`. `unordered_map` guarantees pointer stability under
-    /// rehash, so the cached pointer remains valid for the share's lifetime.
-    if (!cached_share_bucket.cached || cached_share_bucket.column_name != column_name_in_storage)
+    /// `column_name_in_storage` is `NameAndTypePair::getNameInStorage()` on a stable
+    /// `NameAndTypePair` in `columns_to_read`, so its address is constant for the
+    /// reader's lifetime -- pointer-equality is enough as a cache key and avoids a
+    /// per-call string compare.
+    if (cached_share_bucket.column_name_key != &column_name_in_storage)
     {
-        cached_share_bucket.column_name = column_name_in_storage;
+        cached_share_bucket.column_name_key = &column_name_in_storage;
         cached_share_bucket.bucket = sparse_offsets_share->findBucket(
             data_part_info_for_read->getPartName(), column_name_in_storage);
-        cached_share_bucket.cached = true;
     }
 
     if (!cached_share_bucket.bucket)
