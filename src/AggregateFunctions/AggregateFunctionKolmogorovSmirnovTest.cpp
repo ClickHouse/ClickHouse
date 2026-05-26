@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <numeric>
+
 namespace DB
 {
 
@@ -97,7 +99,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         else if (alternative == Alternative::Greater)
             d = max_s;
 
-        UInt64 g = std::__gcd(n1, n2);
+        UInt64 g = std::gcd(n1, n2);
         UInt64 nx_g = n1 / g;
         UInt64 ny_g = n2 / g;
 
@@ -227,6 +229,7 @@ private:
     String method = "auto";
 
 public:
+    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionKolmogorovSmirnov(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<KolmogorovSmirnov, AggregateFunctionKolmogorovSmirnov> ({arguments}, {}, createResultType())
     {

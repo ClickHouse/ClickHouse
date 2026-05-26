@@ -1,13 +1,15 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 
 #include <IO/BoundedReadBuffer.h>
+#include <IO/ReadPipeline.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
 
@@ -57,42 +59,43 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    bool use_external_buffer,
+    bool restrict_seek) const
 {
+    /// Filesystem cache is handled as a pipeline stage by DiskObjectStorage::prepareRead
+    /// and StorageObjectStorageSource. This method delegates directly to the underlying storage.
+    /// Callers that need caching should use ReadPipeline with needFilesystemCache().
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint, use_external_buffer, restrict_seek);
+}
+
+void CachedObjectStorage::prepareRead(
+    ObjectStoragePtr /* storage */,
+    const StoredObjects & objects,
+    const ReadSettings & read_settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    /// Delegate to the underlying storage to set the source. Patch the settings
+    /// first — the inner storage's `patchSettings` may apply mandatory tweaks
+    /// (e.g. `LocalObjectStorage` forces `local_fs_method = pread` and disables
+    /// `direct_io`). Those tweaks must be in effect when the inner storage builds
+    /// the source, so we patch before delegating.
+    object_storage->prepareRead(object_storage, objects, patchSettings(read_settings), read_hint, pipeline);
+
+    /// Add the filesystem cache stage if filesystem cache is enabled.
     if (read_settings.enable_filesystem_cache)
     {
         if (cache->isInitialized())
         {
-            auto cache_key = FileCacheKey::fromPath(object.remote_path);
             auto global_context = Context::getGlobalContextInstance();
-            auto modified_read_settings = read_settings.withNestedBuffer();
-
-            auto read_buffer_creator = [this, object, read_settings, read_hint]()
-            {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint);
-            };
-
-            return std::make_unique<CachedOnDiskReadBufferFromFile>(
-                object.remote_path,
-                cache_key,
-                cache,
-                cache->getCommonOriginWithSegmentKeyType(object.local_path),
-                read_buffer_creator,
-                modified_read_settings,
-                std::string(CurrentThread::getQueryId()),
-                object.bytes_size,
-                /* allow_seeks */!read_settings.remote_read_buffer_restrict_seek,
-                /* use_external_buffer */read_settings.remote_read_buffer_use_external_buffer,
-                /* read_until_position */std::nullopt,
-                global_context->getFilesystemCacheLog());
+            pipeline.needFilesystemCache(cache, read_settings.getFilesystemCacheSettings(), global_context->getFilesystemCacheLog());
         }
         else
         {
             cache->throwInitExceptionIfNeeded();
         }
     }
-
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT
@@ -121,7 +124,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
             cache,
             implementation_buffer->getFileName(),
             key,
-            CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
+            CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() ? std::string(CurrentThread::getQueryId()) : "",
             modified_write_settings,
             cache->getCommonOriginWithSegmentKeyType(object.local_path),
             Context::getGlobalContextInstance()->getFilesystemCacheLog(),

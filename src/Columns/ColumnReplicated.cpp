@@ -1,7 +1,9 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/WeakHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -296,7 +298,6 @@ void ColumnReplicated::insertManyDefaults(size_t length)
 void ColumnReplicated::popBack(size_t n)
 {
     indexes.popBack(n);
-    nested_column = indexes.removeUnusedRowsInIndexedData(std::move(nested_column));
 }
 
 ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint) const
@@ -305,8 +306,7 @@ ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
 
     auto filtered_indexes = ColumnIndex(indexes.getIndexes()->filter(filt, result_size_hint));
-    auto filtered_nested_column = filtered_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(filtered_indexes));
+    return create(nested_column, std::move(filtered_indexes));
 }
 
 void ColumnReplicated::filter(const Filter & filt)
@@ -315,8 +315,6 @@ void ColumnReplicated::filter(const Filter & filt)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
 
     indexes.getIndexesPtr()->filter(filt);
-    auto mutable_nested = nested_column->assumeMutable();
-    indexes.removeUnusedRowsInIndexedData(mutable_nested);
     insertion_cache.clear();
 }
 
@@ -331,15 +329,13 @@ ColumnPtr ColumnReplicated::permute(const Permutation & perm, size_t limit) cons
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), size());
 
     auto permuted_indexes = ColumnIndex(indexes.getIndexes()->permute(perm, limit));
-    auto filtered_nested_column = permuted_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(permuted_indexes));
+    return create(nested_column, std::move(permuted_indexes));
 }
 
 ColumnPtr ColumnReplicated::index(const IColumn & res_indexes, size_t limit) const
 {
     auto indexed_indexes = ColumnIndex(indexes.getIndexes()->index(res_indexes, limit));
-    auto filtered_nested_column = indexed_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(indexed_indexes));
+    return create(nested_column, std::move(indexed_indexes));
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -512,8 +508,7 @@ void ColumnReplicated::protect()
 ColumnPtr ColumnReplicated::replicate(const Offsets & offsets) const
 {
     auto replicated_indexes = ColumnIndex(indexes.getIndexes()->replicate(offsets));
-    auto filtered_nested_column = replicated_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(replicated_indexes));
+    return create(nested_column, std::move(replicated_indexes));
 }
 
 void ColumnReplicated::updateHashWithValue(size_t n, SipHash & hash) const
@@ -552,7 +547,7 @@ void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size
 
 UInt64 ColumnReplicated::getNumberOfDefaultRows() const
 {
-    std::unordered_set<size_t> indexes_of_default_values;
+    UnorderedSetWithMemoryTracking<size_t> indexes_of_default_values;
     for (size_t i = 0; i != nested_column->size(); ++i)
     {
         if (nested_column->isDefaultAt(i))
@@ -596,10 +591,10 @@ void ColumnReplicated::updateCheckpoint(ColumnCheckpoint & checkpoint) const
 
 void ColumnReplicated::rollback(const ColumnCheckpoint & checkpoint)
 {
-    const auto & nested = *assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested;
+    const auto & with_nested = assert_cast<const ColumnCheckpointWithNested &>(checkpoint);
 
-    nested_column->rollback(nested);
-    indexes.resizeAssumeReserve(nested.size);
+    nested_column->rollback(*with_nested.nested);
+    indexes.resizeAssumeReserve(with_nested.size);
 }
 
 void ColumnReplicated::forEachMutableSubcolumn(MutableColumnCallback callback)
@@ -637,9 +632,9 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnReplicated::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns source_nested_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_nested_columns;
     source_nested_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
@@ -649,15 +644,30 @@ void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & sou
             source_nested_columns.emplace_back(source_column);
     }
 
-    nested_column->takeDynamicStructureFromSourceColumns(source_nested_columns, max_dynamic_subcolumns);
+    nested_column->chooseDynamicStructureForMerge(source_nested_columns, max_dynamic_subcolumns);
 }
 
-void ColumnReplicated::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
-        nested_column->takeDynamicStructureFromColumn(rhs_replicated->nested_column);
+    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&source))
+        nested_column->takeExactDynamicStructureFrom(*rhs_replicated->nested_column);
     else
-        nested_column->takeDynamicStructureFromColumn(source_column);
+        nested_column->takeExactDynamicStructureFrom(source);
+}
+
+
+void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        if (const auto * replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
+            nested_source_columns.push_back(replicated->getNestedColumn());
+        else
+            nested_source_columns.push_back(source_column);
+    }
+    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
 namespace
@@ -693,5 +703,63 @@ bool isLazyReplicationUseful(const ColumnPtr & column)
     return !column->isConst() && !column->isReplicated() && !column->lowCardinality() && (!column->isFixedAndContiguous() || column->sizeOfValueIfFixed() > 8);
 }
 
+void transformColumnsWithSharedIndex(
+    Columns & columns,
+    std::function<ColumnPtr(const ColumnPtr &)> index_transform,
+    std::function<void(ColumnPtr &)> non_replicated_transform,
+    std::span<size_t> positions)
+{
+    ColumnPtr shared_src_index;
+    ColumnPtr shared_result_index;
 
+    auto transform = [&](size_t pos)
+    {
+        auto & col = columns[pos];
+        if (col->isReplicated())
+        {
+            const auto & replicated_col = typeid_cast<const ColumnReplicated &>(*col);
+            const auto & src_index = replicated_col.getIndexesColumn();
+            if (src_index.get() != shared_src_index.get())
+            {
+                shared_src_index = src_index;
+                shared_result_index = index_transform(src_index);
+            }
+            col = ColumnReplicated::create(replicated_col.getNestedColumn(), shared_result_index);
+        }
+        else
+            non_replicated_transform(col);
+    };
+
+    if (positions.empty())
+        for (size_t pos = 0; pos < columns.size(); ++pos)
+            transform(pos);
+    else
+        for (size_t pos : positions)
+            transform(pos);
+}
+
+void transformColumnsWithSharedIndex(
+    Columns & columns,
+    std::function<ColumnPtr(const ColumnPtr &)> transform,
+    std::span<size_t> positions)
+{
+    transformColumnsWithSharedIndex(
+        columns,
+        transform,
+        [&](ColumnPtr & col) { col = transform(col); },
+        positions);
+}
+
+ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)
+{
+    if (!column->isReplicated())
+        return column;
+
+    const auto & replicated = typeid_cast<const ColumnReplicated &>(*column);
+    /// Materialize if the type doesn't benefit from lazy replication, or if nested data isn't smaller than output.
+    if (!isLazyReplicationUseful(replicated.getNestedColumn()) || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size()))
+        return replicated.convertToFullColumnIfReplicated();
+
+    return column;
+}
 }

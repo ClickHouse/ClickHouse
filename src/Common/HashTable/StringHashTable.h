@@ -142,6 +142,8 @@ struct StringHashTableEmpty
 public:
     bool hasZero() const { return has_zero; }
 
+    void prefetchByHash(size_t) const {} /// No-op: empty key storage is trivially small
+
     void setHasZero()
     {
         has_zero = true;
@@ -275,7 +277,22 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs) noexcept { *this = std::move(rhs); }
+    void reserve(size_t num_elements)
+    {
+        m1.reserve(num_elements / 4);
+        m2.reserve(num_elements / 4);
+        m3.reserve(num_elements / 4);
+        ms.reserve(num_elements / 4);
+    }
+
+    StringHashTable(StringHashTable && rhs) noexcept
+        : m0(std::move(rhs.m0))
+        , m1(std::move(rhs.m1))
+        , m2(std::move(rhs.m2))
+        , m3(std::move(rhs.m3))
+        , ms(std::move(rhs.ms))
+    {
+    }
 
     StringHashTable & operator=(StringHashTable && rhs) noexcept
     {
@@ -407,6 +424,27 @@ public:
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         this->dispatch(*this, key_holder, EmplaceCallable(it, inserted));
+    }
+
+    struct PrefetchCallable
+    {
+        template <typename Map, typename KeyHolder>
+        void ALWAYS_INLINE operator()(Map & map, KeyHolder && key_holder, size_t hash)
+        {
+            map.prefetchByHash(hash);
+            /// Release any temporary key memory held by the holder. Needed for the `ms` (long string) and
+            /// trailing-zero dispatch paths where `dispatch` forwards the holder without discarding.
+            /// For the short-string dispatch paths the holder was already discarded inside `dispatch`,
+            /// and the parameter received here is a `StringKey8`/`StringKey16`/`StringKey24`/`VoidKey`
+            /// for which `keyHolderDiscardKey` is a no-op.
+            keyHolderDiscardKey(key_holder);
+        }
+    };
+
+    template <typename KeyHolder>
+    void ALWAYS_INLINE prefetch(KeyHolder && key_holder)
+    {
+        this->dispatch(*this, std::forward<KeyHolder>(key_holder), PrefetchCallable{});
     }
 
     struct FindCallable

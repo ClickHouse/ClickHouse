@@ -15,6 +15,7 @@
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -60,7 +61,9 @@ void PrettyBlockOutputFormat::calculateWidths(
 
     /// len(num_rows + total_rows) + len(". ")
     prev_row_number_width = row_number_width;
-    row_number_width = static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3;
+    row_number_width = num_rows + total_rows > 0
+        ? static_cast<size_t>(std::floor(std::log10(num_rows + total_rows))) + 3
+        : 3;
 
     size_t num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();

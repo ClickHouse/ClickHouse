@@ -12,6 +12,9 @@
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/transformTypesRecursively.h>
+#include <Common/FieldVisitorToCastedLiteral.h>
+#include <Parsers/parseFieldFromCastedLiteral.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -29,7 +32,6 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -103,11 +105,25 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0, size = parameters.size(); i < size; ++i)
+        if (function->shouldPrintParametersWithTypes())
         {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            FieldVisitorToCastedLiteral visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
+        }
+        else
+        {
+            FieldVisitorToString visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
         }
         stream << ')';
     }
@@ -153,12 +169,15 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
-bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant)
 {
     const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
     const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
 
     if (!lhs_state || !rhs_state)
+        return false;
+
+    if (!ignore_variant && lhs_state->function->getStateVariant() != rhs_state->function->getStateVariant())
         return false;
 
     if (lhs_state->function->getName() != rhs_state->function->getName())
@@ -192,6 +211,18 @@ void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
         arg_type->updateHash(hash);
     if (version)
         hash.update(*version);
+    hash.update(static_cast<UInt8>(function->getStateVariant()));
+}
+
+bool DataTypeAggregateFunction::equalsIgnoringVariant(const IDataType & rhs) const
+{
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    auto lhs_state_type = function->getNormalizedStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
+
+    return strictEquals(lhs_state_type, rhs_state_type, /*ignore_variant=*/ true);
 }
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
@@ -208,9 +239,28 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
+    return SerializationAggregateFunction::create(function, getName(), getVersion());
 }
 
+
+namespace
+{
+
+/// Extract a single AggregateFunction parameter value from its AST node.
+Field parseAggregateFunctionParameter(const ASTPtr & param_ast, const String & function_name)
+{
+    try
+    {
+        return parseFieldFromCastedLiteral(param_ast);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while parsing aggregate function '{}'", function_name);
+        throw;
+    }
+}
+
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -256,17 +306,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row.resize(parameters.size());
 
             for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const auto * literal = parameters[i]->as<ASTLiteral>();
-                if (!literal)
-                    throw Exception(
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-                        "Parameters to aggregate functions must be literals. "
-                        "Got parameter '{}' for function '{}'",
-                        parameters[i]->formatForErrorMessage(), function_name);
-
-                params_row[i] = literal->value;
-            }
+                params_row[i] = parseAggregateFunctionParameter(parameters[i], function_name);
         }
     }
     else if (auto opt_name = tryGetIdentifierName(data_type_ast))

@@ -178,7 +178,10 @@ Cluster::Address::Address(
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     bind_host = params.bind_host;
     priority = params.priority;
-    is_local = can_be_local && isLocal(params.clickhouse_port);
+    if (info.is_local.has_value())
+        is_local = *info.is_local;
+    else
+        is_local = can_be_local && isLocal(params.clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
     cluster = params.cluster_name;
@@ -563,7 +566,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
 Cluster::Cluster(
     const Settings & settings,
-    const std::vector<std::vector<String>> & names,
+    const HostsByShard & names,
     const ClusterConnectionParameters & params)
 {
     UInt32 current_shard_num = 1;
@@ -578,7 +581,7 @@ Cluster::Cluster(
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
-                DatabaseReplicaInfo{replica, "", ""},
+                DatabaseReplicaInfo{replica, "", "", {}},
                 params,
                 current_shard_num,
                 current.size() + 1);

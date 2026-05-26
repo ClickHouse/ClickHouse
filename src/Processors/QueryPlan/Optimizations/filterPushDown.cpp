@@ -118,6 +118,26 @@ void materializeFilterColumnIfNeededAfterPushDown(FilterStep & filter, const boo
     const auto & non_const_filter_node = expression.materializeNode(filter_node, false);
     expression.addOrReplaceInOutputs(non_const_filter_node);
 }
+
+/// When the filter column was const before push-down (e.g., `and(const_false, ..., aggregate)` short-circuits to 0)
+/// but the remaining expression after extracting the constant parts is non-const, we must constify it back.
+/// Otherwise, parent steps that cached the original (const) output header will see a non-const column, causing
+/// a "Block structure mismatch" exception or "non constant in source stream but must be constant in result" error.
+bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & filter_column_name, const ColumnPtr & original_const_column)
+{
+    auto * filter_node = const_cast<ActionsDAG::Node *>(expression.tryFindInOutputs(filter_column_name));
+    if (!filter_node || filter_node->type == ActionsDAG::ActionType::INPUT)
+        return false;
+
+    ActionsDAG::Node const_node;
+    const_node.type = ActionsDAG::ActionType::COLUMN;
+    const_node.result_name = filter_node->result_name;
+    const_node.result_type = filter_node->result_type;
+    const_node.column = filter_node->result_type->createColumnConst(0, (*original_const_column)[0]);
+
+    *filter_node = std::move(const_node);
+    return true;
+}
 }
 
 static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
@@ -136,10 +156,45 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
     const auto & all_inputs = child->getInputHeaders()[child_idx]->getColumnsWithTypeAndName();
     const bool allow_deterministic_functions = !step_changes_the_number_of_rows;
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
+
+    /// Capture the original constant column value before push-down modifies the expression DAG.
+    ColumnPtr original_filter_const_column;
+    if (is_filter_column_const_before)
+        original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
+
     auto result = expression.splitActionsForFilterPushDown(
         filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
     if (result)
-        materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, result->is_filter_const_after_push_down);
+    {
+        if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
+        {
+            /// The filter column was const before push-down (e.g., AND short-circuits to constant false)
+            /// but became non-const after extracting the constant parts. Restore constness.
+            result->is_filter_const_after_push_down
+                = constifyFilterColumnAfterPushDown(expression, filter_column_name, original_filter_const_column);
+        }
+        else
+        {
+            bool is_filter_const_after = result->is_filter_const_after_push_down;
+
+            /// After push-down, the remaining expression may produce a Const filter column
+            /// even though `is_filter_const_after_push_down` is false (that flag is only set
+            /// when ALL conjunctions are pushed down). This happens when the remaining expression
+            /// contains a NULL constant argument — `defaultImplementationForNulls` short-circuits
+            /// to a ColumnConst, e.g. `plus(count(), NULL)` becomes Const(NULL).
+            /// If uncorrected, the Const output header propagates to parent steps (e.g. UnionStep)
+            /// causing a "Block structure mismatch" exception.
+            if (!is_filter_column_const_before && !is_filter_const_after && !removes_filter)
+            {
+                auto test_header = expression.updateHeader(*filter->getInputHeaders().front());
+                const auto * filter_col = test_header.findByName(filter_column_name);
+                if (filter_col && filter_col->column && isColumnConst(*filter_col->column))
+                    is_filter_const_after = true;
+            }
+
+            materializeFilterColumnIfNeededAfterPushDown(*filter, is_filter_column_const_before, is_filter_const_after);
+        }
+    }
     return result;
 }
 
@@ -653,6 +708,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
 
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
+
+    /// Capture the original constant column value before push-down modifies the expression DAG.
+    ColumnPtr original_filter_const_column;
+    if (is_filter_column_const_before)
+        original_filter_const_column = filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column;
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -664,8 +725,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column);
 
-    materializeFilterColumnIfNeededAfterPushDown(
-        *filter, is_filter_column_const_before, join_filter_push_down_actions.is_filter_const_after_all_push_downs);
+    if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
+    {
+        join_filter_push_down_actions.is_filter_const_after_all_push_downs
+            = constifyFilterColumnAfterPushDown(filter->getExpression(), filter->getFilterColumnName(), original_filter_const_column);
+    }
+    else
+    {
+        materializeFilterColumnIfNeededAfterPushDown(
+            *filter, is_filter_column_const_before, join_filter_push_down_actions.is_filter_const_after_all_push_downs);
+    }
 
     size_t updated_steps = 0;
 
@@ -1044,7 +1113,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Filter - Union - Something
         ///                - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isSQLUnion());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);

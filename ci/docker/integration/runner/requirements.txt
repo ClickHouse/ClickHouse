@@ -1,3 +1,5 @@
+# Python >= 3.13 required
+legacy-cgi==2.6.4
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 PyHDFS==0.4.0
@@ -39,12 +41,12 @@ geopandas==1.1.2
 grpcio-tools==1.78.0
 grpcio==1.78.0
 httplib2==0.31.2
-idna==3.11
+idna==3.15
 iniconfig==2.3.0
 jwcrypto==1.5.6
 kafka-python-ng==2.2.3
 krb5==0.9.0
-lxml==5.3.0
+lxml==6.1.0
 lz4==4.4.5
 markdown-it-py==3.0.0
 mdurl==0.1.2
@@ -77,6 +79,7 @@ pyiceberg[sql-sqlite]==0.11.1
 pymongo==4.16.0
 pyspark==3.5.5
 pyspnego==0.12.1
+pytest==9.0.3
 pytest-order==1.3.0
 pytest-random-order==1.2.0
 pytest-repeat==0.9.4
@@ -103,4 +106,6 @@ tzlocal==2.1
 websocket-client==1.9.0
 wheel==0.46.3
 filelock==3.25.0
-kazoo @ git+https://github.com/ClickHouse/kazoo.git
+kazoo @ git+https://github.com/ClickHouse/kazoo.git@879e0b0e4ae367a289847b43a531938f68770125
+apache-sedona==1.6.1
+shapely==2.1.0

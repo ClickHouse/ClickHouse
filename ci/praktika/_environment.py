@@ -39,7 +39,7 @@ class _Environment(MetaClasses.Serializable):
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
-    REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
+    REPORT_MESSAGES: List[Dict[str, str]] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -47,6 +47,16 @@ class _Environment(MetaClasses.Serializable):
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
     name = "environment"
+
+    @classmethod
+    def _load_workflow_job_data(cls) -> dict:
+        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
+            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
+                return json.load(f)
+        print(
+            f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
+        )
+        return {}
 
     @classmethod
     def from_env(cls) -> "_Environment":
@@ -71,14 +81,7 @@ class _Environment(MetaClasses.Serializable):
         EVENT_TIME = ""
         COMMIT_MESSAGE = ""
 
-        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
-            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
-                WORKFLOW_JOB_DATA = json.load(f)
-        else:
-            print(
-                f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
-            )
-            WORKFLOW_JOB_DATA = {}
+        WORKFLOW_JOB_DATA = cls._load_workflow_job_data()
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -223,7 +226,7 @@ class _Environment(MetaClasses.Serializable):
             COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
-            REPORT_INFO=[],
+            REPORT_MESSAGES=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
             # TODO: Find a better way to store and pass commit authors data through workflow
             JOB_KV_DATA={
@@ -282,11 +285,36 @@ class _Environment(MetaClasses.Serializable):
             or ""
         )
 
+        # Override WORKFLOW_JOB_DATA with the current job's data so that
+        # check_run_id refers to this job rather than to the config job whose
+        # serialised environment we loaded above.
+        env_dict["WORKFLOW_JOB_DATA"] = cls._load_workflow_job_data()
+
         return cls.from_dict(env_dict)
 
-    def add_info(self, info):
-        self.REPORT_INFO.append(info)
+    def _add_report_message(self, message, kind, source=""):
+        """
+        Accumulate a structured report message in the environment.
+
+        Messages are collected during job execution and later written to both
+        the job and workflow ``Result.ext`` as ``{"message": str, "from": str}``
+        entries.  Grouping of duplicate messages is done at the rendering level
+        in ``json.html``.
+        Prefer the typed wrappers ``add_workflow_warning/error/note``.
+        """
+        self.REPORT_MESSAGES.append(
+            {"message": message, "kind": kind, "from": source or self.JOB_NAME}
+        )
         self.dump()
+
+    def add_workflow_warning(self, message, source=""):
+        self._add_report_message(message, kind="warning", source=source)
+
+    def add_workflow_error(self, message, source=""):
+        self._add_report_message(message, kind="error", source=source)
+
+    def add_workflow_note(self, message, source=""):
+        self._add_report_message(message, kind="note", source=source)
 
     @classmethod
     def get(cls):
@@ -310,6 +338,25 @@ class _Environment(MetaClasses.Serializable):
         self.JOB_NAME = job_name
         self.dump()
         return self
+
+    def set_pr_labels(self, labels: List[str], reset: bool = False) -> None:
+        if reset:
+            self.PR_LABELS = list(labels)
+        else:
+            for label in labels:
+                if label not in self.PR_LABELS:
+                    self.PR_LABELS.append(label)
+        self.dump()
+
+    def add_pr_label(self, label: str) -> None:
+        if label not in self.PR_LABELS:
+            self.PR_LABELS.append(label)
+            self.dump()
+
+    def remove_pr_label(self, label: str) -> None:
+        if label in self.PR_LABELS:
+            self.PR_LABELS.remove(label)
+            self.dump()
 
     @staticmethod
     def get_needs_statuses():

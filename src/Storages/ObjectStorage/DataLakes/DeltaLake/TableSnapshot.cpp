@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/CurrentThread.h>
 
 #if USE_DELTA_KERNEL_RS
 
@@ -16,6 +17,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 

@@ -291,7 +291,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setDDLOrOnClusterInternal(true);
 
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
     if (preserve_user && !entry.initiator_user.empty())
@@ -318,7 +318,16 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     }
 
     if (entry.settings)
-        query_context->applySettingsChanges(*entry.settings);
+    {
+        /// Clamp settings to the constraints of the local node, similar to how
+        /// TCPHandler handles secondary queries. Without this, settings from the
+        /// initiator node could bypass stricter constraints on worker nodes.
+        /// Work on a copy to avoid mutating the entry, which may be read later
+        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
+        auto settings_changes = *entry.settings;
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     return query_context;
 }
@@ -653,7 +662,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setDDLOrOnClusterInternal(true);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 

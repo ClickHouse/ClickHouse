@@ -117,13 +117,11 @@ Settings:
 
 Examples:
 
-```sql
+```sql title="Query"
 EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-Output:
-
-```sql
+```sql title="Response"
 SELECT *
 FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
 WHERE (a.number = b.number) AND (b.number = c.number)
@@ -131,13 +129,11 @@ WHERE (a.number = b.number) AND (b.number = c.number)
 
 With `run_query_tree_passes`:
 
-```sql
+```sql title="Query"
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-Output:
-
-```sql
+```sql title="Response"
 SELECT
     __table1.number AS `a.number`,
     __table2.number AS `b.number`,
@@ -190,9 +186,11 @@ Settings:
 - `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
 - `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
-- `input_headers` - Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `column_structure` - Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
+- `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
+- `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
+- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when actions = 1. Default: 0.
+- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 0.
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 
@@ -307,7 +305,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
+With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` or `Skip`) and optional keys:
 
 - `Name` — The index name (currently only used for `Skip` indexes).
 - `Keys` — The array of columns used by the index.
@@ -323,7 +321,7 @@ Example:
 "Node Type": "ReadFromMergeTree",
 "Indexes": [
   {
-    "Type": "MinMax",
+    "Type": "Partition Min-Max",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
     "Parts": 4/5,
@@ -461,6 +459,23 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
+With `compact = 1`, each `Expression` step is removed. Along with that, if `actions = 1` is set, then `Actions` and `Positions` lines are hidden, leaving only the step descriptions:
+
+```sql
+EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Aggregating
+Keys: modulo(__table1.number, 4_UInt8)
+Aggregates:
+    sum(__table1.number)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.number
+Skip merging: 0
+  ReadFromSystemNumbers
+```
+
 With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
 
 Example with distributed table:
@@ -505,6 +520,80 @@ Expression ((Project names + Projection))
 
 In both examples, the query plan shows the complete execution flow including local and remote steps.
 
+With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation, and additional information is shown for key steps:
+
+- **Query output columns** are printed at the top of the plan.
+- **Expressions** in filters, aggregation keys, sort descriptions, and window functions are displayed in human-readable SQL-like notation (e.g., `a + 1 > 5` instead of `greater(plus(a, 1), 5)`). Internal column identifier prefixes (such as `__table1.`) are removed for clarity.
+- **Source steps** (such as `ReadFromMergeTree`) display their output columns.
+- **Filter steps** display the filter condition in SQL notation. When runtime join filters are present, they are shown separately.
+- **Aggregation steps** display keys and aggregate functions with their arguments (e.g., `sum(c)`, `count()`).
+- **IN sets** from tuple literals show their values (truncated for large sets), subquery-based sets are labeled `subquery1`, `subquery2`, etc., and sets from `Set` engine tables show the table name.
+- **Join steps** display the join relation using mathematical notation, estimated result row count,
+  and which output columns come from the left vs. right side. The following symbols are used to
+  represent different join types:
+
+| Symbol | Join Type |
+|--------|-----------|
+| `⋈` | Inner Join |
+| `⟕` | Left Join |
+| `⟖` | Right Join |
+| `⟗` | Full Join |
+| `⋉` | Left Semi Join |
+| `⋊` | Right Semi Join |
+| `⋉` with strikethrough | Left Anti Join |
+| `⋊` with strikethrough | Right Anti Join |
+| `×` | Cross Join |
+
+For example, `t1 ⟕ t2` means a left join between tables `t1` and `t2`.
+The number in brackets after the table name (e.g., `t1[100]`) indicates the estimated row count
+when table statistics are available.
+
+The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
+
+```sql
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Expression ((Project names + Projection))
+└──Aggregating
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      └──ReadFromSystemNumbers
+```
+
+A more detailed example with joins:
+
+```sql
+CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
+INSERT INTO t2 SELECT number, toString(number) FROM numbers(100);
+
+EXPLAIN actions = 1, compact = 1, pretty = 1
+SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
+```
+
+```text
+Output: id, value, t2.id, t2.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Output:
+│    Left:  id, value
+│    Right: id, value
+│  Join conditions: id = id
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
+```
+
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
@@ -544,21 +633,17 @@ Shows the estimated number of rows, marks and parts to be read from the tables w
 
 Creating a table:
 
-```sql
+```sql title="Query"
 CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
 INSERT INTO ttt SELECT number FROM numbers(128);
 OPTIMIZE TABLE ttt;
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 EXPLAIN ESTIMATE SELECT * FROM ttt;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
@@ -573,21 +658,19 @@ Also does some validation, throwing an exception if the override would have caus
 
 Assume you have a remote MySQL table like this:
 
-```sql
+```sql title="Query"
 CREATE TABLE db.tbl (
     id INT PRIMARY KEY,
     created DATETIME DEFAULT now()
 )
 ```
 
-```sql
+```sql title="Query"
 EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
 PARTITION BY toYYYYMM(assumeNotNull(created))
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─explain─────────────────────────────────────────────────┐
 │ PARTITION BY uses columns: `created` Nullable(DateTime) │
 └─────────────────────────────────────────────────────────┘
