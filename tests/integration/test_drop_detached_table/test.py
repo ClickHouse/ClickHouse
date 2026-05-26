@@ -264,3 +264,26 @@ def test_drop_distributed_table(start_cluster):
     )
 
     replica1.query("DROP TABLE aux_table_for_dist SYNC")
+
+
+def test_invalid_syntax_corner_cases(start_cluster):
+    table_name = "test_table_reject"
+    create_table(replica1, table_name)
+
+    replica1.query(f"DETACH TABLE {table_name}")
+
+    def do_query(q):
+        try:
+            replica1.query(f"SET allow_experimental_drop_detached_table=1; {q}")
+            assert False, f"Got no error for {q}"
+        except AssertionError:
+            raise
+        except Exception as e:
+            assert "Syntax error" in str(e) or "SYNTAX_ERROR" in str(
+                e
+            ), f"Expected syntax error, got: {e}"
+
+    do_query(f"DETACH DETACHED TABLE {table_name}")
+    do_query(f"TRUNCATE DETACHED TABLE {table_name}")
+
+    replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")

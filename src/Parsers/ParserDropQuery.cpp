@@ -111,6 +111,10 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     {
         if (s_detached.ignore(pos, expected))
         {
+            if (kind != ASTDropQuery::Kind::Drop)
+            {
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is only supported with DROP queries");
+            }
             detached = true;
         }
 
