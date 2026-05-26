@@ -3,6 +3,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 
+#include <algorithm>
+#include <mutex>
+#include <shared_mutex>
+
 
 namespace DB
 {
@@ -15,7 +19,7 @@ void SparseOffsetsShare::insert(
     size_t total_rows,
     ColumnPtr offsets)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
     auto & bucket = store[part_name][column_name];
     bucket.ranges.push_back(SparseOffsetsRange{range, start_row_in_part, total_rows, std::move(offsets)});
 }
@@ -29,7 +33,7 @@ SparseOffsetsShare::slice(
     size_t limit,
     size_t frame_prev_size) const
 {
-    std::lock_guard lock(mutex);
+    std::shared_lock lock(mutex);
 
     auto part_it = store.find(part_name);
     if (part_it == store.end())
@@ -60,7 +64,6 @@ SparseOffsetsShare::slice(
     if (!found)
         return nullptr;
 
-    /// Translate the call's row window into positions relative to the stored range.
     /// `[skip_start_rel, skip_end_rel)` is the rows_offset zone (non-defaults here
     /// count as skipped_values_rows). `[skip_end_rel, produce_end_rel)` is the
     /// produce zone (non-defaults here are emitted to the offsets column).
@@ -68,31 +71,26 @@ SparseOffsetsShare::slice(
     const size_t skip_end_rel = skip_start_rel + rows_offset;
     const size_t produce_end_rel = skip_end_rel + limit;
 
+    /// Stored offsets are sorted ascending, so `lower_bound` finds the boundaries in
+    /// log time. This is the hot path: with one analyzer-range per part holding ~M
+    /// offsets and ~K scan calls per query, the previous linear walk was O(K*M); the
+    /// binary searches plus a tight copy reduce that to O(K * (log M + produce_count)).
     const auto & src_offsets = assert_cast<const ColumnUInt64 &>(*found->offsets).getData();
+    const auto * begin = src_offsets.data();
+    const auto * end = begin + src_offsets.size();
+
+    const auto * skip_zone_begin = std::lower_bound(begin, end, skip_start_rel);
+    const auto * produce_zone_begin = std::lower_bound(skip_zone_begin, end, skip_end_rel);
+    const auto * produce_zone_end = std::lower_bound(produce_zone_begin, end, produce_end_rel);
+
+    const size_t skipped = produce_zone_begin - skip_zone_begin;
+    const size_t produce_count = produce_zone_end - produce_zone_begin;
 
     auto sliced_column = ColumnUInt64::create();
     auto & sliced_data = sliced_column->getData();
-    sliced_data.reserve(src_offsets.size());
-
-    size_t skipped = 0;
-    for (UInt64 pos : src_offsets)
-    {
-        if (pos < skip_start_rel)
-            continue;
-        if (pos < skip_end_rel)
-        {
-            ++skipped;
-            continue;
-        }
-        if (pos >= produce_end_rel)
-            break;
-        /// `deserializeOffsets` writes produce-zone positions starting from `start` (the
-        /// caller's `prev_size`) using `start_of_group + group_size - tmp_offset`. The
-        /// first produced position can be `>= start`, but with multiple deserialization
-        /// runs the value grows with `start`. We reproduce the same final positions:
-        /// shift each produce-zone position into `[frame_prev_size, frame_prev_size + limit)`.
-        sliced_data.push_back(pos - skip_end_rel + frame_prev_size);
-    }
+    sliced_data.resize(produce_count);
+    for (size_t i = 0; i < produce_count; ++i)
+        sliced_data[i] = produce_zone_begin[i] - skip_end_rel + frame_prev_size;
 
     return std::make_unique<SubstreamsCacheSparseOffsetsElement>(
         std::move(sliced_column),

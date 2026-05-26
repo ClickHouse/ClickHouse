@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/SharedMutex.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <memory>
-#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -70,7 +70,10 @@ private:
         std::vector<SparseOffsetsRange> ranges;
     };
 
-    mutable std::mutex mutex;
+    /// `insert` happens during the planning-phase analyzer pass; `slice` is called
+    /// concurrently from scan threads once the analyzer is done. Reads dominate, so
+    /// use a shared mutex with shared_lock on reads.
+    mutable SharedMutex mutex;
     std::unordered_map<std::string, std::unordered_map<std::string, Bucket>> store;
 };
 
