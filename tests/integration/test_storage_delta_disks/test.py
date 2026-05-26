@@ -66,9 +66,11 @@ def get_spark(log_dir=None):
 
 
 def generate_cluster_def(common_path, port, azure_container):
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/named_collections.xml",
+        f"./_gen/named_collections{suffix}.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
