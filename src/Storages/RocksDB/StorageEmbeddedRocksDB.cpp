@@ -344,7 +344,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
         Block block;
         while (executor.pull(block))
         {
-            std::vector<ColumnPtr> columns;
+            Columns columns;
             DataTypes types;
             columns.reserve(primary_key_pos.size());
             types.reserve(primary_key_pos.size());

@@ -578,7 +578,7 @@ BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & 
 
 IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
-    std::vector<ColumnPtr> key_column_holders;
+    Columns key_column_holders;
     ColumnRawPtrs key_columns;
     key_columns.reserve(key_columns_names.size());
     for (const auto & key_name : key_columns_names)

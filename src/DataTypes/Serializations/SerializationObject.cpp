@@ -1003,7 +1003,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
-        std::vector<ColumnPtr> flattened_paths_columns;
+        Columns flattened_paths_columns;
         flattened_paths_columns.reserve(structure_state->flattened_paths.size());
         for (const auto & path : structure_state->flattened_paths)
         {

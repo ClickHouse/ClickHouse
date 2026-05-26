@@ -128,7 +128,7 @@ using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
-                     Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_number)
+                     Row & row, Columns & row_columns, const ColumnRawPtrs & raw_columns, size_t row_number)
 {
     /// Strongly non-optimal.
     Row & left = row;
@@ -576,7 +576,7 @@ static void postprocessChunk(
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num,
+static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num,
                    const Names & column_names, const std::vector<bool> & columns_need_exact_copy)
 {
     size_t num_columns = row.size();

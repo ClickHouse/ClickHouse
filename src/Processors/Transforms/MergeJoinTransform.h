@@ -44,7 +44,7 @@ struct JoinKeyRow
 
     void reset();
 
-    std::vector<ColumnPtr> row;
+    Columns row;
 };
 
 /// Remembers previous key if it was joined in previous block

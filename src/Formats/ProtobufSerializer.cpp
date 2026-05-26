@@ -2532,7 +2532,7 @@ namespace
             if (!num_columns_)
                 wrongNumberOfColumns(num_columns_, ">0");
 
-            std::vector<ColumnPtr> field_columns;
+            Columns field_columns;
             for (const FieldInfo & info : field_infos)
             {
                 if (info.field_serializer)

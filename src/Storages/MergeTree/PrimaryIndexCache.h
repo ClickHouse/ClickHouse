@@ -13,7 +13,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-using PrimaryIndex = std::vector<ColumnPtr>;
+using PrimaryIndex = VectorWithMemoryTracking<ColumnPtr>;
 
 /// Estimate of number of bytes in cache for primary index.
 struct PrimaryIndexWeightFunction

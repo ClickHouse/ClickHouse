@@ -1763,7 +1763,7 @@ struct FunctionsStressTestThread
 
         /// Execute on each row separately.
 
-        std::vector<MutableColumnPtr> mutable_valid_args;
+        MutableColumns mutable_valid_args;
         MutableColumnPtr mutable_result;
         std::optional<size_t> any_failed_row;
         for (size_t row_idx = 0; row_idx < options.rows_per_batch; ++row_idx)

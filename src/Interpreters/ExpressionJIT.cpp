@@ -79,7 +79,7 @@ public:
         if (input_rows_count)
         {
             std::vector<ColumnData> columns(arguments.size() + 1);
-            std::vector<ColumnPtr> columns_backup;
+            Columns columns_backup;
 
             for (size_t i = 0; i < arguments.size(); ++i)
             {
