@@ -294,25 +294,22 @@ void UDFProcessSubtreeSampler::recordReleased()
     if (root_pid <= 0)
         return;
 
-    /// Post-snapshot: re-walk because the subtree may have grown (e.g. python
-    /// launching a helper). Only pids that have a pre-snapshot contribute to
-    /// the CPU delta — pids that appear after the pre-walk are ignored. This
-    /// slightly under-attributes a borrow that spawns brand-new descendants,
-    /// but avoids the catastrophic over-attribution that would otherwise
-    /// happen if `readStat` failed during the pre-walk for a warm worker:
-    /// the worker's lifetime-cumulative `utime/stime` would land in the post
-    /// sum with no baseline to subtract. Conservative under-attribution is
-    /// always preferable to silent over-attribution.
+    /// For peak memory we take the max `VmHWM` observed across the subtree
+    /// rather than a sum. We can't claim anything about whether descendants
+    /// run serially or concurrently — that's entirely up to the UDF — so
+    /// summing per-pid peaks would only be meaningful if peaks coincided in
+    /// time, and we have no way to know that. The max is a real number on
+    /// its own: it bounds the largest resident set the borrow ever pinned
+    /// on any single pid. Trade-off: when a UDF runs descendants truly
+    /// concurrently with non-overlapping peaks, this under-reports the
+    /// aggregate residency.
     ///
-    /// For peak memory we take the max VmHWM observed across the subtree
-    /// because pids run mostly serially inside one borrow (a parent process
-    /// hands off to a child) so peak resident set per pid is a better
-    /// estimate than a sum.
-    /// Sum pre values over the FULL pre_snapshot map, not just over pids that
-    /// are still alive at post-walk time. A descendant present at pre-walk and
-    /// reaped during the borrow leaves its CPU in the reaper's `c{u,s}time`
-    /// delta; without subtracting that descendant's pre baseline, all of its
-    /// pre-window CPU would leak into the borrow's reported delta.
+    /// Sum pre CPU values over the FULL pre_snapshot map, not just over pids
+    /// that are still alive at post-walk time. A descendant present at
+    /// pre-walk and reaped during the borrow leaves its CPU in the reaper's
+    /// `c{u,s}time` delta; without subtracting that descendant's pre
+    /// baseline, all of its pre-window CPU would leak into the borrow's
+    /// reported delta.
     UInt64 pre_utime_sum = 0;
     UInt64 pre_stime_sum = 0;
     for (const auto & [_, snap] : pre_snapshot)
