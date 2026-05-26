@@ -57,18 +57,8 @@ namespace CurrentMetrics
 
 namespace ProfileEvents
 {
-    extern const Event KeeperCommitWaitElapsedMicroseconds;
-    extern const Event KeeperBatchMaxCount;
-    extern const Event KeeperBatchMaxTotalSize;
-    extern const Event KeeperReadBatchCount;
-    extern const Event KeeperReadBatchTotalRequests;
-    extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
-    extern const Event KeeperStaleRequestsSkipped;
-    extern const Event KeeperLiveSessionsLockWaitMicroseconds;
     extern const Event KeeperTTLRemoveRequestsEnqueued;
     extern const Event KeeperTTLRemoveRequestsDropped;
-    extern const Event KeeperSessionCallbackLockWaitMicroseconds;
-    extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
 }
 
 namespace HistogramMetrics
