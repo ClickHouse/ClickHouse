@@ -475,15 +475,18 @@ void MergeTreeProjectionIndexReader::cancel() noexcept
 MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(
     MergeTreeSkipIndexReaderPtr skip_index_reader_,
     MergeTreeProjectionIndexReaderPtr projection_index_reader_,
-    MergeTreeSparsityReaderPtr sparsity_reader_)
+    MergeTreeSparsityReaderPtr sparsity_reader_,
+    SparseOffsetsSharePtr sparse_offsets_share_)
     : skip_index_reader(std::move(skip_index_reader_))
     , projection_index_reader(std::move(projection_index_reader_))
     , sparsity_reader(std::move(sparsity_reader_))
+    , sparse_offsets_share(std::move(sparse_offsets_share_))
 {
-    chassert(skip_index_reader || projection_index_reader || sparsity_reader);
+    chassert(skip_index_reader || projection_index_reader || sparsity_reader || sparse_offsets_share);
     if (sparsity_reader)
     {
-        sparse_offsets_share = std::make_shared<SparseOffsetsShare>();
+        if (!sparse_offsets_share)
+            sparse_offsets_share = std::make_shared<SparseOffsetsShare>();
         sparsity_reader->setSparseOffsetsShare(sparse_offsets_share);
     }
 }

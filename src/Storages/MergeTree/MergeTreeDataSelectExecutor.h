@@ -241,6 +241,7 @@ public:
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context,
+        SparseOffsetsShare * offsets_share,
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 

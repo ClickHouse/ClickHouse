@@ -185,7 +185,8 @@ public:
     MergeTreeIndexReadResultPool(
         MergeTreeSkipIndexReaderPtr skip_index_reader_,
         MergeTreeProjectionIndexReaderPtr projection_index_reader_,
-        MergeTreeSparsityReaderPtr sparsity_reader_ = nullptr);
+        MergeTreeSparsityReaderPtr sparsity_reader_ = nullptr,
+        SparseOffsetsSharePtr sparse_offsets_share_ = nullptr);
 
     /// Holds a shared future to a lazily built MergeTreeIndexReadResult.
     /// This enables concurrent consumers to wait on a single computation.

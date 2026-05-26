@@ -916,6 +916,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
     const MergeTreeData & data,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
+    SparseOffsetsShare * offsets_share,
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
@@ -971,7 +972,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
         for (const auto & pred : conjuncts)
         {
             auto analysis = analyzeSparseColumnGranules(
-                part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, /*offsets_share=*/nullptr, log);
+                part.data_part, pred.column_name, part.ranges, data, storage_snapshot, context, offsets_share, log);
             if (!analysis)
                 continue;
 

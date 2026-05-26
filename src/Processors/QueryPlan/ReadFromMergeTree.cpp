@@ -2613,8 +2613,14 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, res_parts, result.index_stats);
 
+            /// Lazily create the share so the planning-mode analyzer (`filterMarkRangesBySparsityInfo`)
+            /// can persist its decompressed offsets here, and the scan-side `MergeTreeReader`s can
+            /// then serve their sparse-column reads from memory.
+            if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Planning && !result.sparse_offsets_share)
+                result.sparse_offsets_share = std::make_shared<SparseOffsetsShare>();
+
             result.parts_with_ranges = MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
-                result.parts_with_ranges, query_info_, mutations_snapshot, data, metadata_snapshot, context_, log, result.index_stats);
+                result.parts_with_ranges, query_info_, mutations_snapshot, data, metadata_snapshot, context_, result.sparse_offsets_share.get(), log, result.index_stats);
 
             if (final_second_pass)
             {
@@ -3705,11 +3711,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         }
     }
 
-    if (skip_index_reader || projection_index_reader || sparsity_reader)
+    /// Planning-mode pruning may have already populated the offsets share; if so we must
+    /// still create the pool so the scan-side readers can pick it up via
+    /// `MergeTreeReadTask::initializeIndexReader`.
+    if (skip_index_reader || projection_index_reader || sparsity_reader || result.sparse_offsets_share)
     {
         MergeTreeIndexReadResultPoolPtr index_read_result_pool
             = std::make_shared<MergeTreeIndexReadResultPool>(
-                std::move(skip_index_reader), std::move(projection_index_reader), std::move(sparsity_reader));
+                std::move(skip_index_reader), std::move(projection_index_reader), std::move(sparsity_reader),
+                result.sparse_offsets_share);
 
         RangesByIndex read_ranges;
         PartRemainingMarks part_remaining_marks;
