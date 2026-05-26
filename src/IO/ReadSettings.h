@@ -5,7 +5,6 @@
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -30,7 +29,10 @@ struct RemoteFSReadSettings
     /// Enable async prefetching for remote reads.
     bool prefetch = false;
 
-    /// Retry policy for transient remote read errors.
+    /// TODO: `max_backoff_ms` / `max_retries` are dead — assigned from public
+    /// Settings `remote_fs_read_max_backoff_ms` / `remote_fs_read_backoff_max_tries`
+    /// but no internal read path actually consumes them. Either wire them into
+    /// a real retry policy or remove both the fields and the Settings together.
     size_t max_backoff_ms = 10000;
     size_t max_retries = 4;
 
@@ -110,8 +112,6 @@ struct FilesystemCacheSettings
     size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
-    /// Request-origin metadata (user_id, client_weight) passed to FileCache::getOrSet.
-    std::optional<FileCacheOriginInfo> request_origin_info;
 };
 
 struct ReadSettings
