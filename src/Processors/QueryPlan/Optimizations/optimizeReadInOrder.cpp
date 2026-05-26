@@ -1916,24 +1916,35 @@ void optimizeStreamingWindowFunctions(
     if (full_key_size == 0)
         return;
 
-    /// The merge sort key must cover the window ORDER BY columns in addition to the
-    /// prefix partition columns so that per-partition ORDER BY order is respected within
-    /// each prefix group.  Build it from `prefix_description` + `window.order_by` —
-    /// both already carry the plan-time column names (e.g. `__table2.MetricName`).
-    /// The existing `tryReuseStorageOrderingForWindowFunctions` pass already verified
-    /// that the window ORDER BY is compatible with the storage key, so no further
-    /// column-name validation is needed here.
     const auto & window_order_by = window->getWindowDescription().order_by;
-    const size_t merge_prefix_size = std::min(prefix_description.size() + window_order_by.size(), full_key_size);
+
+    /// The storage key must fully cover prefix + window ORDER BY columns.
+    if (prefix_description.size() + window_order_by.size() > full_key_size)
+        return;
+
+    /// Each window ORDER BY column must match the corresponding storage key column.
+    /// Plan-time names carry a table-qualifier prefix (e.g. `__table1.TimeUnix`); strip it.
+    const auto & storage_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKey().column_names;
+    for (size_t i = 0; i < window_order_by.size(); ++i)
+    {
+        const std::string & plan_name = window_order_by[i].column_name;
+        const std::string & raw_name = storage_key_columns[prefix_description.size() + i];
+        const auto dot = plan_name.rfind('.');
+        const std::string base_name = (dot != std::string::npos) ? plan_name.substr(dot + 1) : plan_name;
+        if (base_name != raw_name)
+            return;
+    }
+
+    const size_t merge_prefix_size = prefix_description.size() + window_order_by.size();
 
     /// Expand the read-in-order prefix so per-layer internal merges also use the extended key.
     if (!read_from_merge_tree->requestReadingInOrder(merge_prefix_size, input_order->direction, /*read_limit=*/0))
         return;
 
-    /// Concatenate prefix + window ORDER BY (plan-time names throughout).
+    /// Build merge sort description: prefix columns + window ORDER BY columns.
     SortDescription merge_sort_description = prefix_description;
-    for (size_t i = 0; i < window_order_by.size() && merge_sort_description.size() < merge_prefix_size; ++i)
-        merge_sort_description.push_back(window_order_by[i]);
+    for (const auto & col : window_order_by)
+        merge_sort_description.push_back(col);
 
     /// Apply the transformation.
     sorting->convertToMergeOnly(std::move(merge_sort_description));
