@@ -43,7 +43,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
-    extern const SettingsBool analyzer_compatibility_resolve_alias_prefix_over_subcolumn;
+    extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
 }
 
 namespace ErrorCodes
@@ -765,7 +765,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
       * `id` column even when the table also has a same-named subcolumn or when a
       * sibling subquery exposes an asterisk-renamed `b.id` column.
       */
-    if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_resolve_alias_prefix_over_subcolumn]
+    if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]
         && identifier.getPartsSize() > 1)
     {
         const auto & table_name_compat = table_expression_data.table_name;
@@ -1103,7 +1103,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
       * Without this check both sides resolve successfully and the query fails with `AMBIGUOUS_IDENTIFIER`.
       * With setting enabled we prefer alias prefix, so try resolve `b.id` only from the right side.
       */
-    bool prefer_alias = scope.context->getSettingsRef()[Setting::analyzer_compatibility_resolve_alias_prefix_over_subcolumn];
+    bool prefer_alias = scope.context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn];
     bool binds_left = true;
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)

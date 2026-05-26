@@ -1542,7 +1542,7 @@ class SettingsRandomizer:
         "allow_calculating_subcolumns_sizes_for_merge_tree_reading": lambda: random.random() > 0.05,
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
-        "analyzer_compatibility_resolve_alias_prefix_over_subcolumn": lambda: random.randint(0, 1),
+        "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
     }
 
     dependent_settings = {
@@ -1562,7 +1562,7 @@ class SettingsRandomizer:
 
     stress_test_only_settings = {
         "query_plan_optimize_join_order_randomize",
-        "analyzer_compatibility_resolve_alias_prefix_over_subcolumn",
+        "analyzer_compatibility_prefer_alias_over_subcolumn",
     }
 
     @staticmethod

@@ -28,7 +28,7 @@ SELECT n.x FROM (SELECT n.x FROM t_nested_dot_col_leak);
 -- aliased `b` resolves to the Tuple subcolumn `b.b.id` (= 2); with the setting,
 -- the alias-prefix interpretation wins and resolves to the table's `id` (= 1).
 SELECT b.id FROM t2_compat b;
-SELECT b.id FROM t2_compat b SETTINGS analyzer_compatibility_resolve_alias_prefix_over_subcolumn = 1;
+SELECT b.id FROM t2_compat b SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
 -- ---------------------------------------------------------------------------
 -- CTE / subquery leak: a `SELECT *` over an inner JOIN exposes columns like
@@ -56,7 +56,7 @@ SELECT *
 FROM a
 LEFT JOIN c ON c.id = a.id
 LEFT JOIN b ON b.id = a.id
-SETTINGS analyzer_compatibility_resolve_alias_prefix_over_subcolumn = 1;
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
 SELECT '-- inline subquery, no subcolumn (default fails) --';
 SELECT *
@@ -69,7 +69,7 @@ SELECT *
 FROM t_dot_col_leak a
 LEFT JOIN (SELECT * FROM t_dot_col_leak a INNER JOIN t_dot_col_leak b ON a.id = b.id) c ON c.id = a.id
 LEFT JOIN t_dot_col_leak b ON b.id = a.id
-SETTINGS analyzer_compatibility_resolve_alias_prefix_over_subcolumn = 1;
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
 -- Same shape, but the table also has a Tuple subcolumn `b.id`, so multiple
 -- resolutions exist for `b.id`. Default still fails; compat picks the outer alias.
@@ -84,7 +84,7 @@ SELECT *
 FROM t2_compat a
 LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) c ON c.id = a.id
 LEFT JOIN t2_compat b ON b.id = a.id
-SETTINGS analyzer_compatibility_resolve_alias_prefix_over_subcolumn = 1;
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
 -- Inline subquery aliased `b` (same name as the inner JOIN's right table) with
 -- a subcolumn: at the outer JOIN, `b.id` could come from the alias `b` or from
@@ -99,7 +99,7 @@ SELECT '-- inline subquery aliased b, with subcolumn (compat) --';
 SELECT *
 FROM t2_compat a
 LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) b ON a.id = b.id
-SETTINGS analyzer_compatibility_resolve_alias_prefix_over_subcolumn = 1;
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
 DROP TABLE t_dot_col_leak;
 DROP TABLE t2_compat;
