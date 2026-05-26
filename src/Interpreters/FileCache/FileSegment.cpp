@@ -1176,14 +1176,20 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             bool in_rocksdb = index->exists(file_key, offset());
 
             if (reserved_size == 0)
+            {
+                chassert(!added_to_rocksdb);
                 chassert(!in_rocksdb);
+            }
             else if (added_to_rocksdb)
                 chassert(in_rocksdb);
             else
                 chassert(!in_rocksdb);
 
             if (download_state == State::DETACHED)
+            {
+                chassert(!added_to_rocksdb);
                 chassert(!in_rocksdb);
+            }
         }
     }
 #endif
@@ -1287,7 +1293,10 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
         try
         {
             if (auto index = cache->getRocksDBIndex())
+            {
                 index->remove(file_key, offset());
+                added_to_rocksdb = false;
+            }
         }
         catch (...)
         {
