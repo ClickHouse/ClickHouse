@@ -23,6 +23,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/ASTNonDeterministicFunctions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -4077,14 +4078,14 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
+    ContextPtr context,
     const String & current_database,
     bool apply_deleted_mask,
     bool has_row_level_filter,
     bool has_additional_table_filters)
 {
-    /// TODO: queries with non-deterministic functions (e.g. rand(), now()) are not yet excluded.
-    /// This can produce incorrect cached results if such functions appear in aggregation keys or expressions.
-    /// A proper fix would check the AST for non-deterministic functions before enabling the cache.
+    if (astContainsNonDeterministicFunctions(select_query, context))
+        return 0;
 
     if (has_row_level_filter || has_additional_table_filters)
         return 0;

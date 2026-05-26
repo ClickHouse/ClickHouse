@@ -2923,6 +2923,7 @@ static Aggregator::Params getAggregatorParams(
     const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
         query_ptr,
+        context.getGlobalContext(),
         context.getCurrentDatabase(),
         apply_deleted_mask_value,
         has_row_level_filter,

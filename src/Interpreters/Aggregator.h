@@ -22,6 +22,8 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <Interpreters/Context_fwd.h>
+
 #include <Interpreters/AggregatedData.h>
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Interpreters/AggregationMethod.h>
@@ -718,9 +720,11 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 /// `apply_deleted_mask` affects which rows are visible for MergeTree reads; `has_row_level_filter` disables
 /// caching because row policies are not represented in the AST hash. Non-empty `additional_table_filters`
 /// is applied outside that AST and also disables the semantic key. Predicate subqueries in `PREWHERE`/`WHERE`
-/// also disable the key because external source freshness is not tracked.
+/// also disable the key because external source freshness is not tracked. Queries with non-deterministic
+/// functions in the AST also disable the key (fail-close).
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
+    ContextPtr context,
     const String & current_database,
     bool apply_deleted_mask,
     bool has_row_level_filter,

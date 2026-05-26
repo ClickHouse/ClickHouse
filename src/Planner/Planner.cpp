@@ -622,6 +622,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
     const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
         select_query_info.query,
+        query_context->getGlobalContext(),
         query_context->getCurrentDatabase(),
         apply_deleted_mask_value,
         has_row_level_filter,
