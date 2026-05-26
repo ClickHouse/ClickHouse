@@ -63,8 +63,6 @@ public:
     /// and not with individual variant alternatives. So, don't use default implementation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
