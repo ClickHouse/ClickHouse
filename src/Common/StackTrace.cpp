@@ -476,12 +476,54 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     /// This variable from signal handler is not instrumented by Memory Sanitizer.
     __msan_unpoison(&signal_context, sizeof(signal_context));
 
-    /// Always use libunwind here, not tryCapture() which uses abseil under TSan.
-    /// This constructor is called from the crash signal handler (SIGSEGV, SIGABRT) where
-    /// libunwind is needed to bridge through the kernel signal frame via DWARF unwinding.
-    /// Abseil's frame-pointer walker cannot do that.
-    /// Libunwind is safe in this context because crash signals are synchronous — there is
-    /// no concurrent sanitizer unwinding to interfere with.
+    /// Capture via libunwind directly, NOT via `tryCapture()`. Under TSan
+    /// `tryCapture()` would route through abseil's frame-pointer walker,
+    /// and the rbp chain inside a crash signal handler cannot cross glibc's
+    /// `__restore_rt` signal trampoline. As observed under TSan:
+    ///
+    ///   Stack trace: 0x... 0x... 0x... 0x... 0x...   <-- abseil, 5 frames total
+    ///   0. src/Common/StackTrace.cpp: StackTrace::StackTrace(ucontext_t const&)
+    ///   1. src/Common/SignalHandlers.cpp: signalHandler(int, siginfo_t*, void*)
+    ///   2. __tsan::CallUserSignalHandler(...)
+    ///   3. sighandler(int, __sanitizer::__sanitizer_siginfo*, void*)
+    ///   4. ? @ 0x42520                                <-- __restore_rt, FP walk dies here
+    ///
+    /// Address `0x42520` in glibc 2.35 (Ubuntu) disassembles to exactly two
+    /// instructions:
+    ///   mov $0xf, %rax        ; syscall 15 = rt_sigreturn
+    ///   syscall
+    /// — i.e. `__restore_rt`, the signal trampoline the kernel installs as
+    /// the handler's "return address". It is a hand-written asm stub with no
+    /// frame-pointer prologue, so abseil's `[rbp]`/`[rbp+8]` walk reaches it
+    /// (the kernel preserves `rbp` across signal delivery, and TSan's
+    /// `sighandler`/`CallUserSignalHandler` were compiled with frame
+    /// pointers) but cannot continue past it. `executeQuery` and everything
+    /// below it are missing entirely — exactly the part of the stack the
+    /// `arrayExists(x -> x LIKE '%executeQuery%', trace_full)` predicate in
+    /// `test_crash_log_extra_fields` is asserting against.
+    ///
+    /// Libunwind walks `.eh_frame` CFI rather than the rbp chain, and glibc
+    /// ships a CFI entry for `__restore_rt` that says "the previous frame's
+    /// register state lives in the saved `ucontext_t` on the stack at this
+    /// known offset". With that, libunwind crosses the trampoline and
+    /// continues unwinding from the interrupted PC back through the user
+    /// frames (`raise` → `abort` → `terminate_handler` → throw site →
+    /// `DB::executeQueryImpl` → ... → TCPHandler), giving the full trace
+    /// the crash log is supposed to capture.
+    ///
+    /// Why this doesn't matter for SIGPROF in `tryCapture()`: the profiler
+    /// timer interrupts user code (ClickHouse, built with
+    /// `-fno-omit-frame-pointer`), so the saved `rbp` at signal time points
+    /// into a frame whose chain abseil can follow without ever needing to
+    /// cross the trampoline. SIGABRT delivered from `abort()` interrupts
+    /// libc's `tgkill` syscall stub — built without frame pointers — so the
+    /// FP chain on the interrupted-code side is already broken by the time
+    /// the handler runs.
+    ///
+    /// And the async-unwinder safety concern that motivated using abseil in
+    /// `tryCapture()` (a SIGPROF storm fighting TSan over libunwind's
+    /// internal `dl_iterate_phdr` lock) does not apply here: crash signals
+    /// fire synchronously, exactly once, on the thread that crashed.
 #if defined(OS_DARWIN)
     size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #else
