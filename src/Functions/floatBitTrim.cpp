@@ -354,7 +354,7 @@ The exponent and sign are preserved; `n` is clamped to the mantissa width
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns `value` with the lowest `n` mantissa bits zeroed, of the same type as `value`.", {"BFloat16", "Float32", "Float64"}};
     FunctionDocumentation::Examples examples = {{"Trim 20 mantissa bits", "SELECT floatBitTrim(1.234::Float64, 20)", "1.2339999999385327"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 5};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
