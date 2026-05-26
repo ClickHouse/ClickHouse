@@ -11,6 +11,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -270,6 +271,28 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
+void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
+{
+    limit_by_columns = std::move(limit_by_columns_);
+    limit_by_group_length = limit_by_group_length_;
+}
+
+void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
+{
+    if (limit_by_columns.empty() || pipeline.getNumStreams() <= 1)
+        return;
+    if (!stream_sort_desc.hasPrefix(limit_by_columns))
+        return;
+
+    pipeline.addSimpleTransform(
+        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                return nullptr;
+            return std::make_shared<LimitByTransform>(header, limit_by_group_length, 0, true, limit_by_columns);
+        });
+}
+
 void SortingStep::updateLimit(size_t limit_)
 {
     if (limit_ && (limit == 0 || limit_ < limit))
@@ -312,7 +335,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             key_columns.push_back(stream_header->getPositionByName(col.column_name));
         }
 
-        pipeline.transform([&](OutputPortRawPtrs ports)
+        pipeline.transform([&](const OutputPortRawPtrs & ports)
         {
             Processors processors;
             for (auto * port : ports)
@@ -326,7 +349,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 
         if (streams > 1)
         {
-            pipeline.transform([&](OutputPortRawPtrs ports)
+            pipeline.transform([&](const OutputPortRawPtrs & ports)
             {
                 Processors processors;
                 for (size_t i = 0; i < threads; ++i)
@@ -506,6 +529,8 @@ void SortingStep::fullSort(
 
     fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort, threshold_tracker);
 
+    addPerStreamLimitByIfNeeded(pipeline, result_sort_desc);
+
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
@@ -536,6 +561,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::MergingSorted)
     {
+        addPerStreamLimitByIfNeeded(pipeline, result_description);
+
         mergingSorted(pipeline, result_description, limit);
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -546,6 +573,12 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (type == Type::FinishSorting)
     {
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
+
+        /// Do not apply `LIMIT BY` before the final sort order is known. Suffix sort
+        /// keys can change which rows are first inside a `LIMIT BY` group.
+        if (!need_finish_sorting)
+            addPerStreamLimitByIfNeeded(pipeline, result_description);
+
         mergingSorted(pipeline, prefix_description, (need_finish_sorting ? 0 : limit));
 
         if (need_finish_sorting)
@@ -562,6 +595,8 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
+
+        addPerStreamLimitByIfNeeded(pipeline, result_description);
 
         if (dataflow_cache_updater)
             pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -598,6 +633,24 @@ void SortingStep::describeActions(FormatSettings & settings) const
 
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
+
+    if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
+    {
+        settings.out << prefix << "Per-stream LIMIT BY columns: ";
+
+        bool first = true;
+        for (const auto & column : limit_by_columns)
+        {
+            if (!first)
+                settings.out << ", ";
+            first = false;
+
+            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+        }
+        settings.out << '\n';
+
+        settings.out << prefix << "Per-stream LIMIT BY length " << limit_by_group_length << '\n';
+    }
 }
 
 void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -612,6 +665,16 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 
     if (limit)
         map.add("Limit", limit);
+
+    if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
+    {
+        auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & column : limit_by_columns)
+            columns_array->add(column);
+
+        map.add("Per-stream LIMIT BY Columns", std::move(columns_array));
+        map.add("Per-stream LIMIT BY Length", limit_by_group_length);
+    }
 }
 
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const

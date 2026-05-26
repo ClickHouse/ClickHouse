@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
@@ -222,8 +223,14 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     return serialize_settings;
 }
 
-void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation, Block * /*permuted_columns_cache*/)
 {
+    /// The permuted columns cache is intentionally ignored in the Compact writer:
+    /// `permuteBlockIfNeeded` below permutes the whole block once, and the subsequent
+    /// `getIndexBlockAndPermute` calls in `writeDataBlockPrimaryIndexAndSkipIndices`
+    /// pass `permutation = nullptr` (they only re-pick columns by name from the
+    /// already-permuted block). So the cache would only ever be written to, never
+    /// read from — pure overhead.
     Block result_block = block;
 
     /// For some columns the set of streams may depend on the actual column data.
@@ -245,7 +252,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
         fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
 
-    result_block = permuteBlockIfNeeded(result_block, permutation);
+    result_block = permuteBlockIfNeeded(result_block, permutation, nullptr);
 
     if (header.empty())
         header = result_block.cloneEmpty();
@@ -276,6 +283,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 {
     writeDataBlock(block, granules_to_write);
 
+    /// `block` here is already fully permuted by `permuteBlockIfNeeded` in `write`,
+    /// so we pass `permutation = nullptr` and no cache — only Wide writer benefits
+    /// from the permuted columns cache (see comment in `MergeTreeDataPartWriterCompact::write`).
     if (settings.rewrite_primary_key)
     {
         Block primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
@@ -435,10 +445,7 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 {
     if (sync)
-    {
-        plain_file->sync();
-        marks_file->sync();
-    }
+        parallelSyncFiles({plain_file.get(), marks_file.get()});
 
     plain_file->finalize();
     marks_file->finalize();

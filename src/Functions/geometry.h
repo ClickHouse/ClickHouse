@@ -72,7 +72,6 @@ Polygon<Point> getPolygonFromField(const Field & field)
 {
     Polygon<Point> polygon;
     const auto & array = field.safeGet<Array>();
-
     for (size_t i = 0; i < array.size(); ++i)
     {
         const auto & ring = array.at(i);
@@ -177,7 +176,7 @@ namespace DB
 {
 
 template <typename Point, typename FunctionToCalculate>
-class FunctionGeometry : public IFunction
+class FunctionGeometry final : public IFunction
 {
 public:
     static const char * name;

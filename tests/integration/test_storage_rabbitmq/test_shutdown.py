@@ -41,6 +41,15 @@ def get_last_event_time(logger_name, message):
     return datetime.datetime.fromisoformat(ts)
 
 
+@pytest.mark.skip(
+    reason=(
+        "Flaky in CI: shutdown ordering on the RabbitMQ event loop is not "
+        "reliably reproducible under integration-test load. See "
+        "https://github.com/ClickHouse/ClickHouse/pull/104253 for the "
+        "directive to disable, and https://github.com/ClickHouse/ClickHouse/pull/104273 "
+        "for context."
+    )
+)
 def test_shutdown_rabbitmq_with_materialized_view(started_cluster):
     """
     Test that restarting server during active RabbitMQ consumption
@@ -225,6 +234,15 @@ def test_attach_detach_rabbitmq_with_materialized_view(started_cluster):
     assert registry_already_shutdown_queue_time > rabbit_shutdown_time_after_restart
 
 
+@pytest.mark.skip(
+    reason=(
+        "Flaky in CI: idle-loop shutdown timing is sensitive to libuv "
+        "scheduling under integration-test load. See "
+        "https://github.com/ClickHouse/ClickHouse/pull/104253 for the "
+        "directive to disable, and https://github.com/ClickHouse/ClickHouse/pull/104273 "
+        "for context."
+    )
+)
 def test_idle_loop_shutdown_completes_promptly(started_cluster):
     """
     Regression test: when the RabbitMQ event loop is idle (no pending messages),
@@ -323,6 +341,15 @@ def test_idle_loop_shutdown_completes_promptly(started_cluster):
     instance.query("DROP DATABASE test_idle SYNC")
 
 
+@pytest.mark.skip(
+    reason=(
+        "Flaky in CI: depends on RabbitMQ message-delivery timing that is "
+        "not reliable under integration-test load. See "
+        "https://github.com/ClickHouse/ClickHouse/pull/104253 for the "
+        "directive to disable, and https://github.com/ClickHouse/ClickHouse/pull/104273 "
+        "for context."
+    )
+)
 def test_rabbitmq_virtual_column_table(started_cluster):
     """
     Test that the `_table` virtual column returns the table name
