@@ -488,21 +488,41 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
 
 MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
 {
-    if (rows_per_granule.empty() || started_ranges.empty())
+    if (rows_per_granule.empty())
         return {};
 
-    /// started_ranges does not include the range that was already in progress when
-    /// startReadingChain began (see field comment). The first
-    /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule
-    /// are the continued-read prefix from that in-progress range; their absolute mark
-    /// numbers cannot be derived from started_ranges alone.
-    /// Skipping them is safe: we lose a few potential cache writes for those granules,
-    /// but we never produce an underflowing (invalid) mark number.
-    const size_t i_start = started_ranges[0].num_granules_read_before_start;
+    /// The first i_start entries in rows_per_granule come from the in-progress range that was
+    /// already being read when startReadingChain began. Their mark numbers are derived from
+    /// in_progress_start_mark (set iff the stream was unfinished at entry). The remaining
+    /// entries belong to freshly started ranges recorded in started_ranges.
+    const size_t i_start = started_ranges.empty() ? rows_per_granule.size()
+                                                   : started_ranges[0].num_granules_read_before_start;
 
     MarkRanges result;
-    size_t range_idx = 0;
 
+    auto emit = [&](size_t mark)
+    {
+        if (!result.empty() && result.back().end == mark)
+            ++result.back().end;
+        else
+            result.emplace_back(mark, mark + 1);
+    };
+
+    /// In-progress prefix: granules 0 .. i_start-1.
+    /// Their marks are in_progress_start_mark, in_progress_start_mark+1, ...
+    /// Each entry in rows_per_granule corresponds to exactly one mark advance
+    /// (stream.read or stream.toNextMark), so the simple offset holds.
+    if (in_progress_start_mark.has_value())
+    {
+        for (size_t i = 0; i < i_start; ++i)
+        {
+            if (rows_per_granule[i] == 0)
+                emit(*in_progress_start_mark + i);
+        }
+    }
+
+    /// New-range suffix: granules i_start .. rows_per_granule.size()-1.
+    size_t range_idx = 0;
     for (size_t i = i_start; i < rows_per_granule.size(); ++i)
     {
         /// Advance to the started_range that contains granule i.
@@ -516,14 +536,7 @@ MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
         if (rows_per_granule[i] == 0)
         {
             size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
-            size_t mark = started_ranges[range_idx].range.begin + offset;
-
-            /// Merge with the previous entry when marks are consecutive to keep the
-            /// MarkRanges compact (fewer cache lock acquisitions on write).
-            if (!result.empty() && result.back().end == mark)
-                ++result.back().end;
-            else
-                result.emplace_back(mark, mark + 1);
+            emit(started_ranges[range_idx].range.begin + offset);
         }
     }
 
@@ -1097,7 +1110,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// to properly fill ReadRange for query condition cache.
     std::optional<size_t> current_mark;
     if (!stream.isFinished())
+    {
         current_mark = stream.current_mark;
+        result.in_progress_start_mark = stream.current_mark;
+    }
 
     /// There should be no delayed rows from the previous read request.
     /// (If it's so then the previous read request didn't call stream.finalize().)

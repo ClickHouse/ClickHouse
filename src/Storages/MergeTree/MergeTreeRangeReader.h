@@ -375,6 +375,13 @@ public:
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
 
+        /// When startReadingChain begins with an unfinished stream (a continued read), this holds
+        /// the stream's current mark at that point. The first
+        /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule come
+        /// from that in-progress range; their marks are in_progress_start_mark + i. Set only
+        /// when the stream was unfinished at entry; absent when the stream was already done.
+        std::optional<size_t> in_progress_start_mark;
+
         /// Number of rows intended to be read per granule during the reading chain.
         ///
         /// Filled in `startReadingChain` based on initial granule layout and expected row counts.
