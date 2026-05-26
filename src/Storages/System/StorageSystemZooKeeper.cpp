@@ -524,9 +524,8 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!isString(removeNullable(removeLowCardinality(value->result_type))))
             return;
 
-        if (value->column->size() != 1)
-            return;
-
+        /// `ActionsDAG::addColumn` normalizes ColumnConst nodes to size 0; the underlying
+        /// data column still holds the literal, so read it directly without a size guard.
         String pattern{value->column->getDataAt(0)};
         bool has_metasymbol = false;
         String prefix{}; // pattern prefix before the first metasymbol occurrence
