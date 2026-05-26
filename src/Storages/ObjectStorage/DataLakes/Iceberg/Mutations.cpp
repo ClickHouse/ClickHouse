@@ -562,11 +562,11 @@ static bool writeMetadataFiles(
 
 void validateMutationWriteFormat(const String & write_format)
 {
-    /// Position delete files are written using the table's data file format (see `writeDataFiles`).
-    /// Only Parquet is supported on the read side (see `IcebergDataObjectInfo::addPositionDeleteObject`),
-    /// and ORC/Avro writers fail or produce data that cannot be read back. Reject mutations on
-    /// non-Parquet tables to avoid corrupting the table or aborting the server. See issue #102508.
-    if (Poco::toUpper(write_format) != "PARQUET")
+    /// Fast early-reject for tables whose configured `write_format` is not Parquet.
+    /// The deeper per-data-file check lives in `IcebergMetadata::mutate` and also
+    /// handles mixed-format tables where `write_format` is Parquet but existing
+    /// data files are not. See issue #102508.
+    if (Poco::toLower(write_format) != "parquet")
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Iceberg DELETE and UPDATE are only supported for tables with Parquet data file format, but got {}",
