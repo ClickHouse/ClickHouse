@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
@@ -2011,7 +2012,14 @@ static BlockIO executeQueryImpl(
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer()
 {
     static std::mutex mutex;
+#if WITH_COVERAGE
+    /// Under LLVM coverage builds we use a fixed seed so that the set of AST mutations
+    /// (and therefore the set of branches taken inside `QueryFuzzer`) is stable run-to-run.
+    /// Without this, coverage of `QueryFuzzer.cpp` and friends flickers between coverage runs.
+    static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(pcg64(0xC0FFEEULL));
+#else
     static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(randomSeed());
+#endif
     return {fuzzer, std::unique_lock(mutex)};
 }
 
