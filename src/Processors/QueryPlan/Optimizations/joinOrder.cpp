@@ -600,8 +600,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 {
     /// Discard any partial state left by an earlier algorithm in the fallback chain
     /// (e.g. `dphyp,greedy`) so cost-model lookups via `getColumnStats` only see
-    /// entries built by this run.
+    /// entries built by this run. `expression_selectivity` is cleared along with
+    /// `dp_table` because multi-relation predicates resolve NDV through it.
     dp_table.clear();
+    expression_selectivity.clear();
 
     std::deque<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
@@ -736,8 +738,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     /// Components by size (index 0 is not used that why the size is N+1)
     std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
-    /// Populate DP table for components of size=1
+    /// Populate DP table for components of size=1.
+    /// Also reset the per-edge selectivity cache so an earlier algorithm in the
+    /// fallback chain cannot leak cached `1.0` defaults from a partial `dp_table`.
     dp_table.clear();
+    expression_selectivity.clear();
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -1233,7 +1238,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
     dphyp_unsupported_predicate = false;
 
     /// Initialize dp_table with a leaf entry for each base relation.
+    /// Also reset the per-edge selectivity cache so this run is independent of any
+    /// earlier algorithm in the fallback chain.
     dp_table.clear();
+    expression_selectivity.clear();
     for (size_t i = 0; i < num_relations; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
