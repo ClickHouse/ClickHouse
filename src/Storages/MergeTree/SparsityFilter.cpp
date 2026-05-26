@@ -235,11 +235,28 @@ collectSparsityConjuncts(const QueryTreeNodePtr & predicate, const QueryTreeNode
             auto child = collectSparsityConjuncts(arg, table_expression_node);
             out.insert(out.end(), child.begin(), child.end());
         }
-        return out;
+    }
+    else if (auto classified = classifySparsityPredicate(predicate, table_expression_node))
+    {
+        out.push_back(*classified);
     }
 
-    if (auto classified = classifySparsityPredicate(predicate, table_expression_node))
-        out.push_back(*classified);
+    /// Drop duplicates: the analyzer would otherwise re-run the same `(part, column,
+    /// class)` classification once per duplicate, and on a cold query the duplicates
+    /// race the `QueryConditionCache` slot rather than waiting on the first call.
+    /// We sort+unique at every recursion level so the top-level result is deduped even
+    /// when the duplicates appear in sibling subtrees of the AND tree.
+    std::sort(out.begin(), out.end(),
+        [](const RecognisedSparsityPredicate & a, const RecognisedSparsityPredicate & b)
+        {
+            return std::tie(a.column_name, a.predicate_class)
+                 < std::tie(b.column_name, b.predicate_class);
+        });
+    out.erase(std::unique(out.begin(), out.end(),
+        [](const RecognisedSparsityPredicate & a, const RecognisedSparsityPredicate & b)
+        {
+            return a.column_name == b.column_name && a.predicate_class == b.predicate_class;
+        }), out.end());
     return out;
 }
 
