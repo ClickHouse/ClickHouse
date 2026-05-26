@@ -1,0 +1,23 @@
+Two-argument LIKE: primary key narrows to range [abc, abd)
+Condition: (s in [\'abc\', \'abd\'))
+Parts: 1/1
+Granules: 1/1
+Three-argument LIKE with ESCAPE: literal % folded into prefix, range becomes [abc%, abc&)
+Condition: (s in [\'abc%\', \'abc&\'))
+Parts: 1/1
+Granules: 1/1
+Functional 3-argument form like(col, pattern, escape) is equivalent to the operator form
+Condition: (s in [\'abc%\', \'abc&\'))
+Parts: 1/1
+Granules: 1/1
+Three-argument NOT LIKE with ESCAPE and a trailing wildcard: primary key narrows to not(in [abc%done, abc%donf))
+Condition: (s not in [\'abc%done\', \'abc%donf\'))
+Parts: 1/1
+Granules: 1/1
+Correctness check: LIKE ... ESCAPE returns rows whose value starts with the literal abc%
+abc%
+Correctness check: NOT LIKE ... ESCAPE excludes rows starting with abc% followed by done
+abc
+abc%
+abcd
+xyz
