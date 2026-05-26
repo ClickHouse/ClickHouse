@@ -784,7 +784,7 @@ template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = 
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeAddInterval : public IFunction
+class FunctionDateOrDateTimeAddInterval final : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
