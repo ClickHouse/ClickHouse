@@ -31,6 +31,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/SingleDiskVolume.h>

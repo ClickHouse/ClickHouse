@@ -9,6 +9,7 @@
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/IDatabase.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>

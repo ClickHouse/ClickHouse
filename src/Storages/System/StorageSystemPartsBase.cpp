@@ -1,6 +1,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>

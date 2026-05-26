@@ -17,6 +17,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Core/UUID.h>
 
 
 namespace DB

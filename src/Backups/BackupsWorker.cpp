@@ -16,6 +16,7 @@
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/getBackupDataFileName.h>
+#include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif

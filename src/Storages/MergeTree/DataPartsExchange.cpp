@@ -30,6 +30,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
+#include <Core/UUID.h>
 
 namespace fs = std::filesystem;
 

@@ -81,6 +81,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
+#include <Core/UUID.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>

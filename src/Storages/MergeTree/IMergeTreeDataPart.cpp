@@ -10,6 +10,7 @@
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
