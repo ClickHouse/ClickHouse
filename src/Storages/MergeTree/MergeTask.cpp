@@ -953,6 +953,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// to finalize an empty rows_sources file, and ensures finalizePart takes
         /// the correct code path.
         global_ctx->chosen_merge_algorithm = MergeAlgorithm::Horizontal;
+        global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
     }
     else
     {
