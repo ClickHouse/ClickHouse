@@ -3,6 +3,7 @@ from praktika import Workflow
 from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
+from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
 workflow = Workflow.Config(
     name="BackportPR",
@@ -54,6 +55,7 @@ workflow = Workflow.Config(
     enable_commit_status_on_failure=True,
     enable_gh_summary_comment=True,
     pre_hooks=[
+        can_be_tested,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/check_backport_branch.py",
