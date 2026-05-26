@@ -3327,15 +3327,17 @@ When enabled, ClickHouse will provide exact value for rows_before_limit_at_least
 When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
 )", 0) \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
-Limits the number of rows in the hash table that is used when joining tables.
+Limits the number of rows in the right-side data structure (typically a hash
+table) used when joining tables.
 
-This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join](/engines/table-engines/special/join) table engine.
 
-If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use the
-[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
+If a query contains multiple joins, ClickHouse checks this setting for every
+intermediate result. When the limit is reached, the action depends on the
+chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+that setting for the per-algorithm behavior (spill, re-partition, switch, or
+throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
 
 Possible values:
 
@@ -3343,15 +3345,17 @@ Possible values:
 - `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-The maximum size in number of bytes of the hash table used when joining tables.
+The maximum size in bytes of the right-side data structure (typically a hash
+table) used when joining tables.
 
 This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join table engine](/engines/table-engines/special/join).
 
-If the query contains joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use
-the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
+If a query contains multiple joins, ClickHouse checks this setting for every
+intermediate result. When the limit is reached, the action depends on the
+chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+that setting for the per-algorithm behavior (spill, re-partition, switch, or
+throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
 
 Possible values:
 
@@ -3359,15 +3363,22 @@ Possible values:
 - 0 — Memory control is disabled.
 )", 0) \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-Defines what action ClickHouse performs when any of the following join limits is reached:
+Defines what action ClickHouse performs when a join reaches any of the following limits:
 
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
+This setting is honored only by the `hash` and `parallel_hash`
+[`join_algorithm`](/operations/settings/settings#join_algorithm) values. Other
+algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
+limits differently — by spilling to disk, re-partitioning, or switching
+strategy — see
+[`join_algorithm`](/operations/settings/settings#join_algorithm).
+
 Possible values:
 
-- `THROW` — ClickHouse throws an exception and breaks operation.
-- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+- `THROW` — ClickHouse throws an exception and stops the query.
+- `BREAK` — ClickHouse stops the query and does not throw an exception.
 
 Default value: `THROW`.
 
@@ -6221,6 +6232,11 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
+Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.

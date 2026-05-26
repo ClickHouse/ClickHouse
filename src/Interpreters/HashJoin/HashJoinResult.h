@@ -25,6 +25,7 @@ public:
         bool joined_block_split_single_row = false;
 
         bool enable_lazy_columns_replication = false;
+        bool enable_lazy_columns_indexing = false;
     };
 
     HashJoinResult(

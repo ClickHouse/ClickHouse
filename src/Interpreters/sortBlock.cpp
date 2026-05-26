@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
@@ -358,15 +359,12 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
     if (is_identity_permutation && limit == 0)
         return;
 
-    size_t columns = block.columns();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        auto & column_to_sort = block.getByPosition(i).column;
-        if (is_identity_permutation)
-            column_to_sort = column_to_sort->cut(0, std::min(static_cast<size_t>(limit), permutation.size()));
-        else
-            column_to_sort = column_to_sort->permute(permutation, limit);
-    }
+    size_t output_rows = limit ? std::min(static_cast<size_t>(limit), permutation.size()) : permutation.size();
+    Columns columns = block.getColumns();
+    transformColumnsWithSharedIndex(
+        columns,
+        [&](const ColumnPtr & col) { return is_identity_permutation ? col->cut(0, output_rows) : col->permute(permutation, limit); });
+    block.setColumns(columns);
 }
 
 void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation)

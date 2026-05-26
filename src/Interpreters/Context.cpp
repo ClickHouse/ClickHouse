@@ -382,6 +382,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
@@ -5730,6 +5731,18 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
 {
     std::lock_guard lock(shared->mutex);
     shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
+}
+
+bool Context::getMessageQueueDisableInsertion() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::message_queue_disable_insertion];
+}
+
+void Context::setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("message_queue_disable_insertion", message_queue_disable_insertion);
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
