@@ -16,95 +16,6 @@
 
 namespace DB::QueryPlanOptimizations
 {
-namespace
-{
-
-bool doesSelectOutputContainVectorColumn(const ActionsDAG & expression, const String & search_column)
-{
-    for (const auto * output : expression.getOutputs())
-    {
-        if (output->result_name == search_column
-            || (output->type == ActionsDAG::ActionType::ALIAS && !output->children.empty() && output->children.front()->result_name == search_column)
-            || (output->result_name.contains('.') && output->result_name.ends_with("." + search_column)))
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool hasVectorSearchResultsByPart(const ReadFromMergeTree::AnalysisResultPtr & analyzed_result, bool require_distances)
-{
-    bool saw_nonempty_part = false;
-    for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
-    {
-        if (part_with_ranges.ranges.empty())
-            continue;
-
-        saw_nonempty_part = true;
-        if (!part_with_ranges.read_hints.vector_search_results.has_value())
-            return false;
-
-        if (require_distances && !part_with_ranges.read_hints.vector_search_results.value().distances.has_value())
-            return false;
-    }
-
-    return saw_nonempty_part;
-}
-
-void enableVectorSearchRowFilter(const ReadFromMergeTree::AnalysisResultPtr & analyzed_result)
-{
-    for (auto & part_with_ranges : analyzed_result->parts_with_ranges)
-    {
-        if (part_with_ranges.ranges.empty())
-            continue;
-
-        part_with_ranges.read_hints.use_vector_search_result_filter = true;
-    }
-}
-
-void updateFilterOrPrewhereStep(
-    QueryPlan::Node * filter_or_prewhere_node,
-    FilterStep * filter_step,
-    ExpressionStep * prewhere_expression_step,
-    const String & search_column,
-    const SharedHeader & input_header)
-{
-    if (!filter_or_prewhere_node)
-        return;
-
-    ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
-    String output_result_to_delete;
-    for (const auto * output_node : filter_expression.getOutputs())
-    {
-        if (output_node->type == ActionsDAG::ActionType::ALIAS
-            && !output_node->children.empty()
-            && output_node->children.front()->result_name == search_column)
-        {
-            output_result_to_delete = output_node->result_name;
-            break;
-        }
-    }
-    if (output_result_to_delete.empty())
-        output_result_to_delete = search_column;
-
-    filter_expression.removeUnusedResult(output_result_to_delete);
-    filter_expression.removeUnusedActions();
-
-    QueryPlanStepPtr new_step;
-    if (prewhere_expression_step)
-        new_step = std::make_unique<ExpressionStep>(input_header, std::move(filter_expression));
-    else
-        new_step = std::make_unique<FilterStep>(
-            input_header,
-            std::move(filter_expression),
-            filter_step->getFilterColumnName(),
-            filter_step->removesFilterColumn());
-    new_step->setStepDescription(*filter_or_prewhere_node->step);
-    filter_or_prewhere_node->step = std::move(new_step);
-}
-}
 
 /// Vector search queries have this form:
 ///     SELECT [...]
@@ -206,7 +117,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     /// Read ORDER BY clause
     const auto & sort_description = sorting_step->getSortDescription();
-    if (sort_description.size() != 1)
+    if (sort_description.size() > 1)
         return no_layers_updated;
     const String & sort_column = sort_description.front().column_name;
 
@@ -427,75 +338,65 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
 
     /// Read ORDER BY clause
     const auto & sort_description = sorting_step->getSortDescription();
-    if (sort_description.size() != 1)
+    if (sort_description.size() > 1)
         return false;
     const String & sort_column = sort_description.front().column_name;
 
-    /// The `USearch` index calculates and returns the row IDs and optionally distances for the top-N most similar
-    /// matches to the given reference vector. This creates a mismatch with the granule-based interface of skip indexes
-    /// in ClickHouse. To bridge this gap, MergeTreeVectorSimilarityIndex historically expanded the USearch result to
-    /// granules, then ClickHouse loaded the returned granules from disk and applied the distance function to all rows
-    /// in these granules. For selective vector search results this evaluates many rows that were not returned by the
-    /// vector index.
+    /// The Usearch index calculates and returns (at index granule level) the row ID(s) + corresponding distances for the top-N most similar
+    /// matches to the given reference vector. This creates a mismatch to the granule-based interface of skip indexes in ClickHouse.
+    /// To bridge this gap, MergeTreeVectorSimilarityIndex historically extrapolated the result from USearch to granule level. This caused
+    /// vector search queries to slow down as ClickHouse subsequently loaded the returned granules from disk and applied the distance
+    /// function to _all_ contained rows (e.g. 8191 out of 8192 rows). This is maximally silly but we decided to give this mode the fancy
+    /// name "rescoring mode" and turn a weakness into a strength (in terms of feature completeness).
     ///
-    /// Exact row-positioning avoids that extra work. In the non-rescoring mode it also rewrites the distance
-    /// expression to the virtual `_distance` column populated from `USearch` distances. In the rescoring mode
-    /// it keeps the original distance expression and uses only the returned row IDs as a read-time filter, so
-    /// the regular `ExpressionStep` reranks only candidate rows returned by the vector index.
+    /// A more natural way (called "optimized plan" below) goes like this: We rewrite the query plan and
+    /// - remove the vector_column from the read list in ReadFromMergeTreeStep,
+    /// - remove the L2Distance(...) function OUTPUT node from the expressions ActionsDAG,
+    /// - adds back the L2Distance(...) as ALIAS to a "_distance" INPUT node.
+    /// "_distance" node is a virtual column.
+    /// The row IDs + distances returned from Usearch are bundled as RangesInDataPartHints and reach the MergeTreeRangeReader.
+    /// MergeTreeRangeReader::executeActionsForReadHints() is the key - it creates and populates a filter that is True only for the exact
+    /// row IDs/part offsets returned by vector search and the routine populates a virtual column named _distance for distance corresponding
+    /// to the exact Row ID. The filter is then applied on the columns in the read list.
 
     ActionsDAG & expression = expression_step->getExpression();
 
-    /// Two mutually exclusive row-positioning modes:
-    ///   - rescoring = 0: drop the vector column entirely from the read list and wire
-    ///     `_distance` (populated from USearch's quantized distances) into the sort.
-    ///   - rescoring = 1: keep the vector column and the original distance expression,
-    ///     but let the range reader apply the exact row-position filter before the
-    ///     downstream ExpressionStep reranks the candidates.
     bool optimize_plan = !settings.vector_search_with_rescoring;
     bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring;
-    bool optimization_applied = false;
-
-    if (optimize_plan || apply_row_filter_for_rescoring)
+    if (optimize_plan)
     {
-        const auto & search_column = vector_search_parameters.value().column;
-        if (optimize_plan && doesSelectOutputContainVectorColumn(expression, search_column))
+        auto search_column = vector_search_parameters.value().column;
+        for (const auto & output : expression.getOutputs())
         {
-            optimize_plan = false;
-        }
-
-        if (!optimize_plan && !apply_row_filter_for_rescoring)
-            return false;
-
-        const bool read_distance_column = read_from_mergetree_step->isVectorColumnReplaced();
-
-        auto parameters_for_index = vector_search_parameters.value();
-        parameters_for_index.return_distances = optimize_plan || read_distance_column;
-        read_from_mergetree_step->setVectorSearchParameters(std::move(parameters_for_index));
-
-        auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
-        analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
-
-        /// Only if full parts were candidates and vector index was used, we can proceed.
-        /// The `_distance` rewrite additionally requires distances from USearch, while
-        /// exact rescoring only needs row IDs because the SQL pipeline computes distance.
-        if (!analyzed_result || !hasVectorSearchResultsByPart(analyzed_result, optimize_plan || read_distance_column))
-        {
-            optimize_plan = false;
-            apply_row_filter_for_rescoring = false;
-        }
-        else if (apply_row_filter_for_rescoring)
-        {
-            enableVectorSearchRowFilter(analyzed_result);
-            optimization_applied = true;
-        }
-
-        const ActionsDAG::Node * sort_column_node = nullptr;
-        if (optimize_plan)
-        {
-            sort_column_node = expression.tryFindInOutputs(sort_column);
-            if (!sort_column_node)
+            /// If the SELECT clause contains the vector column (rare situation), skip the optimization.
+            /// Multiple forms of analyzer nodes to handle.
+            if (output->result_name == search_column ||
+                (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == search_column) ||
+                (output->result_name.contains('.') && output->result_name.ends_with("." + search_column)))
             {
                 optimize_plan = false;
+                break;
+            }
+        }
+
+        if (optimize_plan)
+        {
+            auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
+            analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+            /// Only if full parts were candidates and vector index was used to fetch
+            /// distances, we can proceed with the optimization.
+            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty())
+                {
+                    if (!part_with_ranges.read_hints.vector_search_results.has_value() ||
+                        !part_with_ranges.read_hints.vector_search_results.value().distances.has_value())
+                    {
+                        optimize_plan = false;
+                        break;
+                    }
+                }
             }
         }
 
@@ -503,21 +404,19 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
         {
             /// Remove the physical vector column from ReadFromMergeTreeStep, add virtual "_distance" column
             read_from_mergetree_step->replaceVectorColumnWithDistanceColumn(search_column);
-        }
 
-        if (optimize_plan)
-        {
             /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
             /// input types but the "_distance" column is always of type Float32. Add a CAST if needed.
             ///
             /// The sort column node will be removed first from the DAG, hence remember if a CAST is needed.
+            const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
             const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
             const auto result_type = sort_column_node->result_type;
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
             expression.removeUnusedResult(sort_column); /// Removes the OUTPUT cosineDistance(...) FUNCTION Node
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
-            const auto * distance_node = &expression.addInput("_distance", std::make_shared<DataTypeFloat32>());
+            const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
             if (need_cast)
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
@@ -527,30 +426,77 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
 
             /// Need to do same removal of the vector column from the Filter step
             if (filter_or_prewhere_node)
-                updateFilterOrPrewhereStep(
-                    filter_or_prewhere_node,
-                    filter_step,
-                    prewhere_expression_step,
-                    search_column,
-                    read_from_mergetree_step->getOutputHeader());
+            {
+                ActionsDAG & filter_expression = prewhere_expression_step ? prewhere_expression_step->getExpression() : filter_step->getExpression();
+                String output_result_to_delete;
+                for (const auto * output_node : filter_expression.getOutputs())
+                {
+                    if (output_node->type == ActionsDAG::ActionType::ALIAS && output_node->children.at(0)->result_name == search_column)
+                    {
+                        output_result_to_delete = output_node->result_name;
+                        break;
+                    }
+                }
+                if (output_result_to_delete.empty())
+                    output_result_to_delete = search_column; /// old analyzer
+                filter_expression.removeUnusedResult(output_result_to_delete);
+                filter_expression.removeUnusedActions();
 
-            /// Update the node with new Step
-            auto new_step = std::make_unique<ExpressionStep>(
-                filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
-            new_step->setStepDescription(*expression_node->step);
-            expression_node->step = std::move(new_step);
+                /// Update the node with new Step
+                QueryPlanStepPtr new_step;
+                if (prewhere_expression_step)
+                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
+                else
+                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                new_step->setStepDescription(*filter_or_prewhere_node->step);
+               filter_or_prewhere_node->step = std::move(new_step);
+            }
+        }
 
-            /// The SortingStep's input header must reflect the new ExpressionStep output header
-            /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
-            sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
-            optimization_applied = true;
+        /// Update the node with new Step
+        auto new_step = std::make_unique<ExpressionStep>(
+            filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
+        new_step->setStepDescription(*expression_node->step);
+        expression_node->step = std::move(new_step);
+
+        /// The SortingStep's input header must reflect the new ExpressionStep output header
+        /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
+        sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
+    }
+
+    if (apply_row_filter_for_rescoring)
+    {
+        auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+        bool can_apply_row_filter = analyzed_result != nullptr;
+        if (can_apply_row_filter)
+        {
+            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
+                {
+                    can_apply_row_filter = false;
+                    break;
+                }
+            }
+        }
+
+        if (can_apply_row_filter)
+        {
+            for (auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty())
+                    part_with_ranges.read_hints.use_vector_search_result_filter = true;
+            }
+        }
+        else
+        {
+            apply_row_filter_for_rescoring = false;
         }
     }
 
-    /// Stop the second-pass walk only after an actual optimization. A matched
-    /// vector-search shape can still fall back to the regular granule-level
-    /// path, and that should not prevent the DFS from checking later nodes.
-    return optimization_applied;
+    return optimize_plan || apply_row_filter_for_rescoring;
 }
 
 }

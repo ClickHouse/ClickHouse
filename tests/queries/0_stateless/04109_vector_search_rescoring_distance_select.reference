@@ -1,7 +1,0 @@
-distance expression in select list under exact rescoring
-2	0	Float32
-3	0.1	Float32
-4	0.2	Float32
--- Do not expect "_distance" rewrite for exact rescoring.
-explicit _distance under exact rescoring remains readable
-3	3

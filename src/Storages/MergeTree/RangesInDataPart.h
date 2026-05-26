@@ -93,9 +93,9 @@ struct RangesInDataPartReadHints
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
-    /// Apply a row-level filter from vector_search_results.rows even when `_distance`
-    /// is not requested. Used by exact rescoring so the regular ExpressionStep
-    /// reranks only rows returned by the vector index instead of all rows in the mark.
+    /// `vector_search_results` can be used only for mark pruning, or also as
+    /// an exact row-position filter. Keep the latter opt-in because some plans
+    /// intentionally disable the row-level optimization.
     bool use_vector_search_result_filter = false;
     /// Pre-computed index granules for indexes that are
     /// created for the whole part. For example, text indexes.

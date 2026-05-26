@@ -1244,9 +1244,9 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)
 {
-    /// Populate the `_distance` virtual column from the distances we got from vector index,
-    /// if the optimized non-rescoring plan requested it. Exact rescoring only needs the row
-    /// filter below; the regular ExpressionStep computes the distance after filtering.
+    /// Populate the `_distance` virtual column from the distances we got from vector index
+    /// only when the query plan requested it. Rescoring queries still use the row filter
+    /// below, while the SQL pipeline computes the exact distance expression.
     const bool fill_distance = read_sample_block.has("_distance");
     MutableColumnPtr distance_column;
     Float32 * distances = nullptr;
@@ -1263,18 +1263,28 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
     const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
     const auto & offsets_and_distances = read_hints.vector_search_results.value();
-    const auto & row_offsets_from_index = offsets_and_distances.rows;
-    if (fill_distance && !offsets_and_distances.distances.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must contain distances");
-    const auto * distances_from_index = offsets_and_distances.distances ? &offsets_and_distances.distances.value() : nullptr;
-    if (distances_from_index && row_offsets_from_index.size() != distances_from_index->size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Vector search read hints size mismatch: {} row offsets and {} distances",
-            row_offsets_from_index.size(),
-            distances_from_index->size());
-    if (!std::is_sorted(row_offsets_from_index.begin(), row_offsets_from_index.end()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must be sorted by row offset");
+    auto row_offsets_from_index = offsets_and_distances.rows;
+
+    /// Stash the distance for an offset before sorting the offsets
+    std::unordered_map<UInt64, Float32> offset_to_distance;
+    if (fill_distance)
+    {
+        if (!offsets_and_distances.distances.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must contain distances");
+
+        const auto & distances_from_index = offsets_and_distances.distances.value();
+        if (row_offsets_from_index.size() != distances_from_index.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Vector search read hints size mismatch: {} row offsets and {} distances",
+                row_offsets_from_index.size(),
+                distances_from_index.size());
+
+        for (size_t i = 0; i < distances_from_index.size(); ++i)
+            offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
+    }
+
+    std::sort(row_offsets_from_index.begin(), row_offsets_from_index.end());
 
     const auto & offsets  = typeid_cast<const ColumnUInt64&>(*part_offsets_auto_column).getData();
     size_t j = 0;
@@ -1290,7 +1300,13 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
         {
             filter[i] = true;
             if (fill_distance)
-                distances[i] = (*distances_from_index)[j];
+            {
+                auto distance_it = offset_to_distance.find(offsets[i]);
+                if (distance_it == offset_to_distance.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints do not contain distance for row offset {}", offsets[i]);
+
+                distances[i] = distance_it->second;
+            }
             j++;
         }
     }
@@ -1606,9 +1622,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     /// The vector index has returned the exact row offsets of the nearest neighbours. We use the saved Filter
     /// to only output those rows from this reader to the next Sorting step.
-    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
-    bool is_vector_search = read_hints.vector_search_results.has_value()
-        && (read_sample_block.has("_distance") || read_hints.use_vector_search_result_filter);
+    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
     if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
         result.optimize(part_offsets_filter_for_vector_search, can_read_incomplete_granules, false);
 

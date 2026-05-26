@@ -1,5 +1,0 @@
-dotProduct rescoring keeps ExpressionStep path
-4	9	Float32
-2	6	Float32
-3	5	Float32
--- Do not expect "_distance" rewrite for dotProduct.

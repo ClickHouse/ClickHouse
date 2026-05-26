@@ -415,10 +415,8 @@ void optimizeTreeSecondPass(
         optimizeExchanges(root);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
-    /// In the 2nd pass, we optimize further. Two modes, both handled by optimizeVectorSearchSecondPass:
-    ///   - rescoring = 0: index-only scan (drops the vector column).
-    ///   - rescoring = 1: exact row-positioning scan (keeps the vector column and lets the
-    ///     downstream ExpressionStep rerank only rows returned by the vector index).
+    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan"
+    /// or by applying the exact row-positioning filter for rescoring queries.
     if (optimization_settings.try_use_vector_search)
     {
         chassert(stack.empty());
