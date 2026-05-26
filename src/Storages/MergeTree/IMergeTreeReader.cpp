@@ -525,7 +525,7 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 
 void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
     const String & column_name_in_storage,
-    size_t from_mark,
+    size_t scan_row_start,
     size_t rows_offset,
     size_t limit,
     size_t frame_prev_size,
@@ -534,13 +534,10 @@ void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
     if (!sparse_offsets_share)
         return;
 
-    const auto & granularity = data_part_info_for_read->getIndexGranularity();
-    const size_t abs_row_start = granularity.getMarkStartingRow(from_mark);
-
     auto element = sparse_offsets_share->slice(
         data_part_info_for_read->getPartName(),
         column_name_in_storage,
-        abs_row_start,
+        scan_row_start,
         rows_offset,
         limit,
         frame_prev_size);

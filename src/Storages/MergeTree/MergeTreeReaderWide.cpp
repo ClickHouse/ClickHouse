@@ -173,6 +173,14 @@ size_t MergeTreeReaderWide::readRows(
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
 
+        /// Establish the absolute row position the call starts at. For `continue_reading=true`
+        /// the reader is wherever the previous call left off (tracked in `current_scan_row`).
+        /// For `continue_reading=false` it seeks to `from_mark` and consumes `rows_offset`
+        /// rows from there as a per-call skip-zone before producing `max_rows_to_read` rows.
+        const size_t scan_row_start_for_this_call = continue_reading
+            ? current_scan_row
+            : data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
@@ -198,7 +206,7 @@ size_t MergeTreeReaderWide::readRows(
 
                 seedSparseOffsetsCacheForColumn(
                     column_to_read.getNameInStorage(),
-                    from_mark,
+                    scan_row_start_for_this_call,
                     rows_offset,
                     max_rows_to_read,
                     column_size_before_reading,
@@ -234,6 +242,11 @@ size_t MergeTreeReaderWide::readRows(
 
         prefetched_streams.clear();
         caches.clear();
+
+        /// Advance the next-row tracker by what was actually consumed (rows_offset rows
+        /// skipped + read_rows produced). The next `continue_reading=true` call uses this
+        /// to compute its `scan_row_start_for_this_call`.
+        current_scan_row = scan_row_start_for_this_call + rows_offset + read_rows;
 
         /// NOTE: positions for all streams must be kept in sync.
         /// In particular, even if for some streams there are no rows to be read,

@@ -3,6 +3,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Core/Settings.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -16,6 +17,11 @@
 #include <Storages/StorageSnapshot.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <future>
+#include <vector>
 
 
 namespace DB
@@ -148,45 +154,78 @@ analyzeSparseColumnGranules(
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, alter_conversions);
 
-    auto reader = createMergeTreeReader(
-        part_info,
-        cols,
-        storage_snapshot,
-        storage.getSettings(),
-        ranges,
-        /*virtual_fields=*/{},
-        /*uncompressed_cache=*/nullptr,
-        storage.getContext()->getMarkCache().get(),
-        /*deserialization_prefixes_cache=*/nullptr,
-        MergeTreeReaderSettings::createFromSettings(),
-        /*avg_value_size_hints=*/{},
-        /*profile_callback=*/{});
-
-    /// Read each `MarkRange` in one `readRows` call. Each call has fixed per-invocation
-    /// overhead (mark seek, decompression block setup); doing it granule-by-granule was
-    /// ~100x slower on 100M-row parts. After reading, we bucket the offsets array into
-    /// per-granule non-default counts with a single linear sweep.
-    SparseGranuleAnalysis analysis;
-    analysis.granule_has_only_defaults.assign(total_marks, false);
-    analysis.granule_has_only_non_defaults.assign(total_marks, false);
-
+    /// Split big MarkRanges into ~ANALYZER_CHUNK_MARKS chunks so the per-chunk reads
+    /// (LZ4 + varint over the offsets substream) can run in parallel on the global
+    /// I/O thread pool. The serial analyzer pass would otherwise add wall-time on
+    /// the planning thread that the parallel scan can't amortize.
+    constexpr size_t ANALYZER_CHUNK_MARKS = 1024;
+    std::vector<MarkRange> chunks;
     for (const auto & range : ranges)
     {
         if (range.begin >= range.end)
             continue;
+        const size_t span = range.end - range.begin;
+        if (span <= ANALYZER_CHUNK_MARKS)
+        {
+            chunks.push_back(range);
+        }
+        else
+        {
+            for (size_t b = range.begin; b < range.end; b += ANALYZER_CHUNK_MARKS)
+                chunks.push_back(MarkRange{b, std::min(b + ANALYZER_CHUNK_MARKS, range.end)});
+        }
+    }
 
-        const size_t rows_in_range = part->index_granularity->getRowsCountInRange(range);
+    struct ChunkResult
+    {
+        MarkRange range;
+        size_t rows_in_chunk = 0;
+        /// The chunk's offsets column with positions in `[0, rows_in_chunk)`. After all
+        /// chunks complete, these get concatenated per original `MarkRange` (with each
+        /// chunk's positions shifted by the cumulative row count of preceding chunks in
+        /// the same range) and stored as a single entry in the share. Storing per-chunk
+        /// would cause `slice()` to miss when a scan call straddles a chunk boundary,
+        /// and the disk fallback would read with stale state.
+        ColumnPtr offsets;
+        std::vector<char> has_only_defaults;
+        std::vector<char> has_only_non_defaults;
+        bool ok = false;
+    };
+
+    auto process_chunk = [&](const MarkRange & chunk) -> ChunkResult
+    {
+        ChunkResult r;
+        r.range = chunk;
+        r.has_only_defaults.assign(chunk.end - chunk.begin, 0);
+        r.has_only_non_defaults.assign(chunk.end - chunk.begin, 0);
+
+        auto chunk_reader = createMergeTreeReader(
+            part_info,
+            cols,
+            storage_snapshot,
+            storage.getSettings(),
+            MarkRanges{chunk},
+            /*virtual_fields=*/{},
+            /*uncompressed_cache=*/nullptr,
+            storage.getContext()->getMarkCache().get(),
+            /*deserialization_prefixes_cache=*/nullptr,
+            MergeTreeReaderSettings::createFromSettings(),
+            /*avg_value_size_hints=*/{},
+            /*profile_callback=*/{});
+
+        const size_t rows_in_chunk = part->index_granularity->getRowsCountInRange(chunk);
+        r.rows_in_chunk = rows_in_chunk;
 
         Columns result(1);
         try
         {
-            const size_t rows_read = reader->readRows(
-                range.begin, range.end, /*continue_reading=*/false, rows_in_range, /*rows_offset=*/0, result);
-            if (rows_read != rows_in_range)
+            const size_t rows_read = chunk_reader->readRows(
+                chunk.begin, chunk.end, /*continue_reading=*/false, rows_in_chunk, /*rows_offset=*/0, result);
+            if (rows_read != rows_in_chunk)
             {
                 LOG_DEBUG(log, "Short read on range [{}, {}) of part {} ({} rows instead of {}); skipping sparsity classification for this part",
-                    range.begin, range.end, part->name, rows_read, rows_in_range);
-                return std::nullopt;
+                    chunk.begin, chunk.end, part->name, rows_read, rows_in_chunk);
+                return r;
             }
         }
         catch (...)
@@ -194,59 +233,150 @@ analyzeSparseColumnGranules(
             tryLogCurrentException(log, fmt::format(
                 "Failed to read sparse offsets for column {} of part {}; skipping sparsity classification for this part",
                 column_name, part->name));
-            return std::nullopt;
+            return r;
         }
 
         const auto * sparse = result[0] ? typeid_cast<const ColumnSparse *>(result[0].get()) : nullptr;
         if (!sparse)
         {
-            /// The reader returned a dense column (e.g. the column was materialised as dense
-            /// during this read), so the offsets stream needed for cheap classification is
-            /// not available.
             LOG_DEBUG(log, "Sparse-encoded column {} read as dense for part {}; skipping sparsity classification",
                 column_name, part->name);
-            return std::nullopt;
+            return r;
         }
 
-        /// Two-pointer walk: offsets are sorted absolute positions within the read
-        /// sequence; advance the offset cursor over each granule's row range.
         const auto & offsets_column = assert_cast<const ColumnUInt64 &>(sparse->getOffsetsColumn());
         const auto & offsets_data = offsets_column.getData();
-
-        if (offsets_share)
-        {
-            /// Persist the decompressed offsets so the data-scan reader can reuse them
-            /// rather than re-reading the substream from disk.
-            offsets_share->insert(
-                part->name,
-                column_name,
-                range,
-                /*start_row_in_part=*/part->index_granularity->getMarkStartingRow(range.begin),
-                /*total_rows=*/rows_in_range,
-                sparse->getOffsetsPtr());
-        }
+        r.offsets = sparse->getOffsetsPtr();
 
         size_t offset_idx = 0;
         size_t cursor_row = 0;
-
-        for (size_t mark = range.begin; mark < range.end; ++mark)
+        for (size_t mark = chunk.begin; mark < chunk.end; ++mark)
         {
             const size_t rows_in_granule = part->index_granularity->getMarkRows(mark);
             const size_t end_row = cursor_row + rows_in_granule;
             size_t non_defaults = 0;
-
             while (offset_idx < offsets_data.size() && offsets_data[offset_idx] < end_row)
             {
                 ++non_defaults;
                 ++offset_idx;
             }
-
             if (non_defaults == 0)
-                analysis.granule_has_only_defaults[mark] = true;
+                r.has_only_defaults[mark - chunk.begin] = 1;
             else if (non_defaults == rows_in_granule)
-                analysis.granule_has_only_non_defaults[mark] = true;
-
+                r.has_only_non_defaults[mark - chunk.begin] = 1;
             cursor_row = end_row;
+        }
+
+        r.ok = true;
+        return r;
+    };
+
+    std::vector<ChunkResult> results(chunks.size());
+    if (chunks.size() <= 1)
+    {
+        if (!chunks.empty())
+            results[0] = process_chunk(chunks[0]);
+    }
+    else
+    {
+        auto & pool = getIOThreadPool().get();
+        std::vector<std::future<ChunkResult>> futures;
+        futures.reserve(chunks.size());
+        for (const auto & chunk : chunks)
+        {
+            futures.push_back(scheduleFromThreadPoolUnsafe<ChunkResult>(
+                [&, chunk]() { return process_chunk(chunk); },
+                pool, ThreadName::MERGETREE_READ));
+        }
+        /// `f.get()` rethrows any worker exception; treat that as "abandon analysis"
+        /// rather than letting it escape, same as the synchronous catch-all above.
+        for (size_t i = 0; i < futures.size(); ++i)
+        {
+            try
+            {
+                results[i] = futures[i].get();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format(
+                    "Analyzer chunk for column {} of part {} threw; skipping sparsity classification",
+                    column_name, part->name));
+                results[i].ok = false;
+            }
+        }
+    }
+
+    for (const auto & r : results)
+        if (!r.ok)
+            return std::nullopt;
+
+    /// Concatenate per-chunk offsets back into one entry per original `MarkRange` for
+    /// the share, with each chunk's positions shifted by the cumulative row count of
+    /// preceding chunks within the same range. Storing per-chunk would force the slicer
+    /// to span multiple entries when a scan call straddles a chunk boundary; the disk
+    /// fallback on a miss would then read with stale `DeserializeStateSparse` and
+    /// produce wrong counts.
+    if (offsets_share)
+    {
+        size_t chunk_idx = 0;
+        for (const auto & range : ranges)
+        {
+            if (range.begin >= range.end)
+                continue;
+
+            const size_t first_chunk = chunk_idx;
+            while (chunk_idx < chunks.size() && chunks[chunk_idx].end <= range.end)
+                ++chunk_idx;
+            const size_t last_chunk = chunk_idx;
+            if (first_chunk == last_chunk)
+                continue;
+
+            size_t total_offsets = 0;
+            size_t total_rows = 0;
+            for (size_t j = first_chunk; j < last_chunk; ++j)
+            {
+                if (results[j].offsets)
+                    total_offsets += results[j].offsets->size();
+                total_rows += results[j].rows_in_chunk;
+            }
+
+            auto combined = ColumnUInt64::create();
+            auto & combined_data = combined->getData();
+            combined_data.reserve(total_offsets);
+            size_t row_shift = 0;
+            for (size_t j = first_chunk; j < last_chunk; ++j)
+            {
+                if (results[j].offsets)
+                {
+                    const auto & chunk_offsets
+                        = assert_cast<const ColumnUInt64 &>(*results[j].offsets).getData();
+                    for (UInt64 pos : chunk_offsets)
+                        combined_data.push_back(pos + row_shift);
+                }
+                row_shift += results[j].rows_in_chunk;
+            }
+
+            offsets_share->insert(
+                part->name,
+                column_name,
+                range,
+                part->index_granularity->getMarkStartingRow(range.begin),
+                total_rows,
+                std::move(combined));
+        }
+    }
+
+    SparseGranuleAnalysis analysis;
+    analysis.granule_has_only_defaults.assign(total_marks, false);
+    analysis.granule_has_only_non_defaults.assign(total_marks, false);
+    for (const auto & r : results)
+    {
+        for (size_t i = 0; i < r.has_only_defaults.size(); ++i)
+        {
+            if (r.has_only_defaults[i])
+                analysis.granule_has_only_defaults[r.range.begin + i] = true;
+            if (r.has_only_non_defaults[i])
+                analysis.granule_has_only_non_defaults[r.range.begin + i] = true;
         }
     }
 

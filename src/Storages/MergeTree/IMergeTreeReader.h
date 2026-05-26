@@ -116,14 +116,16 @@ protected:
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
 
     /// Seed `cache` with a pre-computed `SparseOffsets` entry sliced out of
-    /// `sparse_offsets_share` for the rows the current `readRows` call will scan:
-    /// `[getMarkStartingRow(from_mark), +rows_offset + limit)`. Subsequent
-    /// deserialization of `column_name`'s `SparseOffsets` substream within this
-    /// `readRows` serves from the cache instead of decompressing the substream.
+    /// `sparse_offsets_share` for the row window `[scan_row_start, +rows_offset + limit)`.
+    /// The caller is responsible for translating `from_mark`/`continue_reading` into
+    /// `scan_row_start`: with `continue_reading=false` it's `getMarkStartingRow(from_mark)`;
+    /// with `continue_reading=true` it's wherever the reader's internal state left off
+    /// from the previous call. Passing `from_mark` blindly would be wrong because the
+    /// reader doesn't seek when continuing.
     /// A miss in the share is silently ignored: the reader falls back to a normal disk read.
     void seedSparseOffsetsCacheForColumn(
         const String & column_name_in_storage,
-        size_t from_mark,
+        size_t scan_row_start,
         size_t rows_offset,
         size_t limit,
         size_t frame_prev_size,
@@ -153,6 +155,13 @@ protected:
 
     /// Optional. See `setSparseOffsetsShare`.
     SparseOffsetsSharePtr sparse_offsets_share;
+
+    /// Next part-row position the reader will read at when `continue_reading=true`.
+    /// Maintained by the concrete reader's `readRows` (set at the start of each call
+    /// based on the seek target, then incremented by the rows actually consumed).
+    /// Used by `seedSparseOffsetsCacheForColumn`'s caller to feed the right row window
+    /// when the call doesn't seek to `from_mark`.
+    size_t current_scan_row = 0;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
