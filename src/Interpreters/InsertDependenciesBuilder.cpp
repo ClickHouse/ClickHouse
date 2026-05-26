@@ -313,7 +313,7 @@ public:
 
 class FinalizingViewsTransform final : public IProcessor
 {
-    static InputPorts initPorts(std::vector<Block> headers)
+    static InputPorts initPorts(Blocks headers)
     {
         InputPorts res;
         for (auto & header : headers)
@@ -322,7 +322,7 @@ class FinalizingViewsTransform final : public IProcessor
     }
 
 public:
-    FinalizingViewsTransform(std::vector<Block> headers, std::vector<StorageID> views, InsertDependenciesBuilder::ConstPtr insert_dependencies_, ViewErrorsRegistryPtr views_error_registry_)
+    FinalizingViewsTransform(Blocks headers, std::vector<StorageID> views, InsertDependenciesBuilder::ConstPtr insert_dependencies_, ViewErrorsRegistryPtr views_error_registry_)
         : IProcessor(initPorts(std::move(headers)), {Block()})
         , output(outputs.front())
         , insert_dependencies(insert_dependencies_)
@@ -1485,7 +1485,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     VectorWithMemoryTracking<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
-    std::vector<Block> output_view_chains_headers;
+    Blocks output_view_chains_headers;
     output_view_chains_headers.reserve(dependent_views_ids.size());
 
     for (const auto & child_view_id : dependent_views_ids)

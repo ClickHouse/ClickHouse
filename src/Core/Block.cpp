@@ -996,7 +996,7 @@ void materializeBlockInplace(Block & block, bool remove_special_column_represent
     }
 }
 
-Block concatenateBlocks(const std::vector<Block> & blocks)
+Block concatenateBlocks(const Blocks & blocks)
 {
     if (blocks.empty())
         return {};

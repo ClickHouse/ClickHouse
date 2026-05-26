@@ -13,7 +13,7 @@ class Block;
 
 using BlockPtr = std::shared_ptr<Block>;
 using ConstBlockPtr =  std::shared_ptr<const Block>;
-using Blocks = std::vector<Block>;
+using Blocks = VectorWithMemoryTracking<Block>;
 using BlocksList = ListWithMemoryTracking<Block>;
 using BlocksPtr = std::shared_ptr<Blocks>;
 

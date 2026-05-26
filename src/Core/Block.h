@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BlockInfo.h>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -219,7 +220,7 @@ void removeSpecialColumnRepresentations(Block & block);
 Block materializeBlock(const Block & block, bool remove_special_column_representations = true);
 void materializeBlockInplace(Block & block, bool remove_special_column_representations = true);
 
-Block concatenateBlocks(const std::vector<Block> & blocks);
+Block concatenateBlocks(const Blocks & blocks);
 
 /// If the block has no columns, adds a dummy column with given number of rows.
 /// Without it, things like ExpressionActions can't tell many rows to output.

@@ -96,7 +96,7 @@ private:
 
     PatchesToApply patches;
     /// Flattened blocks from all patches.
-    std::vector<Block> all_patch_blocks;
+    Blocks all_patch_blocks;
     /// Index of block in the flattened patch blocks.
     IColumn::Offsets src_block_indices;
     /// Index of row in the patch block.
@@ -273,7 +273,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
 
 Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
 {
-    std::vector<Block> headers;
+    Blocks headers;
 
     for (const auto & patch : patches)
     {
