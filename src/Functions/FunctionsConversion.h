@@ -2298,7 +2298,7 @@ struct ConvertImpl
 
                 bool cut_trailing_zeros_align_to_groups_of_thousands = settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 
-                if (arguments.size() > 1)
+                if (arguments.size() > 1 && arguments[1].type->isNullable())
                 {
                     if (auto tz_null_map = copyNullMap(arguments[1].column->convertToFullColumnIfConst()))
                     {
