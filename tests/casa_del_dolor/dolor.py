@@ -504,9 +504,7 @@ for i in range(0, len(args.replica_values)):
 server_versions = {}
 for server in servers:
     server_versions[server.name] = first_server
-if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1":
-    os.environ["KEEPER_CONNECT_TIMEOUT_SEC"] = "300"
-cluster.start()
+cluster.start(300)
 logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
