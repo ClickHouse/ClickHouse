@@ -1646,7 +1646,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         result,
         projection,
         ctx->new_data_part.get(),
-        ++projection_block_num);
+        ++projection_block_num,
+        ctx->context);
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -2460,7 +2461,8 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->txn);
+        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(
+            part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
         ctx->new_data_part = std::move(mutable_empty_part);
     }
 };
@@ -2827,6 +2829,7 @@ bool MutateTask::prepare()
                 ctx->future_part->part_info,
                 ctx->source_part->partition,
                 ctx->future_part->name,
+                ctx->source_part->getMetadataSnapshot(),
                 ctx->txn);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);

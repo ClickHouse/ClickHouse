@@ -161,7 +161,7 @@ namespace ErrorCodes
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
-class BuildStatisticsTransform : public ISimpleTransform
+class BuildStatisticsTransform final : public ISimpleTransform
 {
 public:
     BuildStatisticsTransform(
@@ -377,7 +377,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     if (!global_ctx->merging_params.version_column.empty())
         key_columns.emplace(global_ctx->merging_params.version_column);
 
-    /// Force all columns params of Graphite mode
+    /// Force configured `GraphiteMergeTree` rollup columns.
+    /// Generic key/minmax/dedup columns are collected separately.
     if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
         key_columns.emplace(global_ctx->merging_params.graphite_params.path_column_name);
@@ -396,8 +397,28 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
 
-    /// Key columns required for merge, must not be expired early.
-    global_ctx->merge_required_key_columns = key_columns;
+    switch (global_ctx->merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Summing:
+        case MergeTreeData::MergingParams::Aggregating:
+        case MergeTreeData::MergingParams::Coalescing:
+            for (const auto & column : global_ctx->storage_columns)
+                key_columns.emplace(column.name);
+            break;
+        default:
+            /// Other modes either need only key/sign/version columns already collected above,
+            /// or, for `GraphiteMergeTree`, only configured rollup columns beyond
+            /// the generic columns collected above.
+            break;
+    }
+
+    /// Snapshot columns required by merge semantics before adding columns used only
+    /// to rebuild skip indexes, projections, or TTL filters. This covers defaults
+    /// for `SummingMergeTree`, `CoalescingMergeTree`, and `AggregatingMergeTree`,
+    /// and configured rollup columns for `GraphiteMergeTree`.
+    /// Expired required columns may later be removed from Wide parts; Compact
+    /// parts keep them because per-column file removal is not applicable.
+    global_ctx->merge_required_columns = key_columns;
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
     for (const auto & index : skip_indexes)
@@ -436,8 +457,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     for (const auto * projection : global_ctx->projections_to_rebuild)
         for (const auto & column : projection->getRequiredColumns())
             key_columns.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
-
-    /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
     /// For vertical merge with TTL delete optimization, include columns needed by
     /// TTL expressions in the horizontal phase so the TTL filter can be evaluated.
@@ -665,7 +684,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             for (const auto & column : input)
             {
                 bool is_expired = expired_columns.contains(column.name);
-                bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+                bool is_required_for_merge = global_ctx->merge_required_columns.contains(column.name);
 
                 if (is_expired)
                     expired_out.push_back(column);
@@ -1207,7 +1226,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
             tmp_part->finalize();
             tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1232,7 +1251,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();

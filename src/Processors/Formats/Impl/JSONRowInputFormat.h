@@ -40,7 +40,7 @@ private:
     std::exception_ptr reading_metadata_exception;
 };
 
-class JSONRowSchemaReader : public JSONEachRowSchemaReader
+class JSONRowSchemaReader final : public JSONEachRowSchemaReader
 {
 public:
     JSONRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool fallback_to_json_each_row_);
