@@ -132,7 +132,8 @@ void TaskTracker::add(Callback && func)
                 DENY_ALLOCATIONS_IN_SCOPE;
                 std::lock_guard lock(mutex);
                 finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
-                if (final_task && finished_futures.size() == tasks_added)
+                ++tasks_finished;
+                if (final_task && tasks_finished == tasks_added)
                 {
                     maybe_final_task = std::move(final_task);
                 }
@@ -170,7 +171,7 @@ void TaskTracker::addFinal(Callback && func)
     {
         std::lock_guard lock(mutex);
         chassert(!final_task && "addFinal must be called at most once");
-        if (finished_futures.size() == tasks_added)
+        if (tasks_finished == tasks_added)
         {
             /// Every previously added task has already finished.
             /// There will be no SCOPE_EXIT to trigger the final callback, so run it here.
