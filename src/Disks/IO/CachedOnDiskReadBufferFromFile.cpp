@@ -288,7 +288,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     ///     path or pipeline stages above us; do not apply to local cache file I/O.
     ReadSettings local_read_settings;
     local_read_settings.local_fs_settings.local_fs_method = LocalFSReadMethod::pread;
-    local_read_settings.local_fs_settings.local_fs_buffer_size = info.use_external_buffer ? 0 : info.local_fs_settings.local_fs_buffer_size;
+    local_read_settings.local_fs_settings.local_fs_buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
     local_read_settings.local_throttler = info.local_throttler;
 
     info.cache_file_reader
@@ -1092,8 +1092,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     {
         /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
         /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        if (info.local_fs_settings.local_fs_buffer_size && info.local_fs_settings.local_fs_buffer_size < internal_buffer.size())
-            internal_buffer.resize(info.local_fs_settings.local_fs_buffer_size);
+        if (info.local_fs_buffer_size && info.local_fs_buffer_size < internal_buffer.size())
+            internal_buffer.resize(info.local_fs_buffer_size);
 
         /// It would make sense to reduce buffer size to what is left to read
         /// (when we read the last segment) regardless of the read_type.
@@ -1454,7 +1454,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 {
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
-        info.use_external_buffer, info.cache_settings, info.local_fs_settings.local_fs_buffer_size,
+        info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
         /* read_until_position */range_begin + n, info.local_throttler);
 
     if (info.cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
