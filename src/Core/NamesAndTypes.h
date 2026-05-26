@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <initializer_list>
 #include <list>
@@ -14,7 +15,7 @@ namespace DB
 {
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 class ReadBuffer;
 class WriteBuffer;

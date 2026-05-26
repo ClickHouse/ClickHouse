@@ -458,7 +458,7 @@ static bool writeMetadataFiles(
                     metadata,
                     chunk_partitioner ? chunk_partitioner->getColumns() : std::vector<String>{},
                     partition_key,
-                    chunk_partitioner ? chunk_partitioner->getResultTypes() : std::vector<DataTypePtr>{},
+                    chunk_partitioner ? chunk_partitioner->getResultTypes() : DataTypes{},
                     {delete_filename.path},
                     {static_cast<UInt64>(delete_filename.total_rows)},
                     {static_cast<UInt64>(delete_filename.total_bytes)},

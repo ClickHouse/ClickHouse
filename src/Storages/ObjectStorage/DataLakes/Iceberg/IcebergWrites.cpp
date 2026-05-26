@@ -222,7 +222,7 @@ String removeEscapedSlashes(const String & json_str)
 void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
-    const std::vector<DataTypePtr> & partition_types)
+    const DataTypes & partition_types)
 {
     Poco::JSON::Array::Ptr partition_fields = new Poco::JSON::Array;
     for (size_t i = 0; i < partition_columns.size(); ++i)
@@ -251,7 +251,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const std::vector<DataTypePtr> & partition_types,
+    const DataTypes & partition_types,
     const std::vector<IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
     const std::vector<UInt64> & data_file_byte_counts,
@@ -978,7 +978,7 @@ bool IcebergStorageSink::initializeMetadata()
                     metadata,
                     partitioner ? partitioner->getColumns() : std::vector<String>{},
                     partition_key,
-                    partitioner ? partitioner->getResultTypes() : std::vector<DataTypePtr>{},
+                    partitioner ? partitioner->getResultTypes() : DataTypes{},
                     writer.getDataFiles(),
                     writer.getDataFileRowCounts(),
                     writer.getDataFileByteCounts(),

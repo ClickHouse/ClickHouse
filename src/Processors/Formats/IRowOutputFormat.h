@@ -8,7 +8,7 @@ namespace DB
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
