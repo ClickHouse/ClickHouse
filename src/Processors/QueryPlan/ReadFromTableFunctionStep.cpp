@@ -45,51 +45,6 @@ static TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
     return val;
 }
 
-static void serializeStreamSettings(const TableExpressionModifiers::StreamSettings & stream_settings, WriteBuffer & out)
-{
-    UInt8 has_cursor = stream_settings.cursor_tree ? 1 : 0;
-    writeIntBinary(has_cursor, out);
-
-    if (!has_cursor)
-        return;
-
-    const auto cursor_map = cursorTreeToMap(stream_settings.cursor_tree);
-    writeVarUInt(cursor_map.size(), out);
-    for (const auto & entry : cursor_map)
-    {
-        const auto & tuple = entry.safeGet<Tuple>();
-        writeStringBinary(tuple.at(0).safeGet<String>(), out);
-        writeIntBinary(tuple.at(1).safeGet<Int64>(), out);
-    }
-}
-
-static TableExpressionModifiers::StreamSettings deserializeStreamSettings(ReadBuffer & in)
-{
-    TableExpressionModifiers::StreamSettings stream_settings;
-
-    UInt8 has_cursor = 0;
-    readIntBinary(has_cursor, in);
-
-    if (!has_cursor)
-        return stream_settings;
-
-    UInt64 size = 0;
-    readVarUInt(size, in);
-
-    Map cursor_map;
-    cursor_map.reserve(size);
-    for (UInt64 i = 0; i < size; ++i)
-    {
-        String path;
-        Int64 value = 0;
-        readStringBinary(path, in);
-        readIntBinary(value, in);
-        cursor_map.push_back(Tuple{path, value});
-    }
-    stream_settings.cursor_tree = buildCursorTree(cursor_map);
-    return stream_settings;
-}
-
 enum class TableFunctionSerializationKind : UInt8
 {
     AST = 0,
@@ -117,9 +72,6 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
 
     if (table_expression_modifiers.hasSampleOffsetRatio())
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
-
-    if (table_expression_modifiers.hasStream())
-        serializeStreamSettings(*table_expression_modifiers.getStreamSettings(), ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
@@ -149,9 +101,6 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
 
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
-
-    if (flags & 16)
-        stream_settings = deserializeStreamSettings(ctx.in);
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
     return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
