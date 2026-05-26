@@ -46,6 +46,11 @@ public:
         return logical_to_id;
     }
 
+    UInt64 getNextColumnIdCounter() const
+    {
+        return next_column_id;
+    }
+
     /// Throws if `logical_name` is not in the mapping.
     String getColumnId(const String & logical_name) const;
 

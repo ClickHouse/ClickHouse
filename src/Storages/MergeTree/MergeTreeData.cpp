@@ -7249,8 +7249,41 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
             skipWhitespaceIfAny(*read_buf);
             assertEOF(*read_buf);
         }
-        setColumnIdMapping(std::move(restored));
-        writeColumnIdMappingToDisk();
+
+        /// Restoring into a non-empty table (`allow_non_empty_tables = 1`) must not
+        /// silently overwrite an existing active mapping: destination parts written
+        /// under the current mapping would then resolve through the backup's mapping
+        /// and read the wrong physical files.  Require the active `logical_to_id`
+        /// to match, and preserve the higher counter.
+        ///
+        /// Counter bump: backup parts may carry orphan column files at IDs the
+        /// destination's counter has not yet handed out.  Without the bump, a
+        /// later `ADD COLUMN` would reuse one of those IDs and read stale orphan
+        /// bytes from the restored parts.
+        if (getTotalActiveSizeInBytes() > 0)
+        {
+            auto current = getColumnIdMapping();
+            const bool same_mapping = current && current->isActive()
+                && current->getLogicalToId() == restored.getLogicalToId();
+            if (!same_mapping)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "RESTORE: backup's `{}` differs from destination's active "
+                    "column-ID mapping; existing parts would be read with the "
+                    "wrong physical column names.  Restore into an empty table.",
+                    COLUMN_IDS_FILE_NAME);
+
+            if (restored.getNextColumnIdCounter() > current->getNextColumnIdCounter())
+            {
+                setColumnIdMapping(std::move(restored));
+                writeColumnIdMappingToDisk();
+            }
+            /// Else: destination's counter is at least as high — leave it alone.
+        }
+        else
+        {
+            setColumnIdMapping(std::move(restored));
+            writeColumnIdMappingToDisk();
+        }
     }
 
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);

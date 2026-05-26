@@ -1,0 +1,8 @@
+== restore with diverged mapping ==
+throws_on_mismatch
+1	x	0
+2	y	0
+3	z	3.3
+== counter-bump scenario ==
+1	x	1.5	99
+10	y	99	99
