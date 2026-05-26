@@ -302,6 +302,18 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     auto actions_chain = getMutationActions(part_info, read_columns, metadata_snapshot, context);
     auto settings = ExpressionActionsSettings(context);
 
+    /// Collect the columns the on-fly chain actually overwrites — i.e. UPDATE/DELETE
+    /// targets. (`all_updated_columns` also tracks `MODIFY COLUMN` targets, but those
+    /// `READ_COLUMN` commands are NOT applied on-fly — they only set the fence; their
+    /// columns must still go through `performRequiredConversions`.)
+    NameSet overwritten_by_chain;
+    for (const auto & command : mutation_commands)
+    {
+        if (command.type == MutationCommand::UPDATE || command.type == MutationCommand::DELETE)
+            for (const auto & [column, _] : command.column_to_update_expression)
+                overwritten_by_chain.insert(column);
+    }
+
     PrewhereExprSteps steps;
     for (auto & actions : actions_chain)
     {
@@ -315,7 +327,7 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
         /// `MergeTreeReadersChain::executeActionsBeforePrewhere` for the rationale.
         NameSet columns_overwritten_by_chain;
         if (!perform_alter_conversions)
-            columns_overwritten_by_chain = all_updated_columns;
+            columns_overwritten_by_chain = overwritten_by_chain;
 
         PrewhereExprStep step
         {
