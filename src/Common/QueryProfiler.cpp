@@ -15,6 +15,9 @@
 #include <Common/thread_local_rng.h>
 #include <csignal>
 
+#include "config.h"
+
+
 namespace CurrentMetrics
 {
     extern const Metric CreatedTimersInQueryProfiler;
