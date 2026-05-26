@@ -133,7 +133,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         cache_range.offset = file_offset_of_buffer_end / block_size * block_size;
         cache_range.size = std::min(block_size, file_size.value() - cache_range.offset);
 
-        chunk = cache->getOrSet(cache_file, cache_range, settings.read_if_exists_otherwise_bypass, settings.inject_eviction, [&](auto cell)
+        chunk = cache->getOrSet(cache_file, cache_range, settings.read_if_exists_otherwise_bypass, settings.random_eviction_for_tests, [&](auto cell)
         {
             Buffer prev_in_buffer = in->internalBuffer();
             SCOPE_EXIT({ in->set(prev_in_buffer.begin(), prev_in_buffer.size()); });
@@ -171,7 +171,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                         while (probe.offset < lookahead_block_end
                             && !cache->contains(
                                 probe.hash(cache_key_base_hash),
-                                settings.inject_eviction));
+                                settings.random_eviction_for_tests));
                         inner_read_until_position = probe.offset;
                         in->setReadUntilPosition(inner_read_until_position);
                     }
@@ -233,7 +233,7 @@ std::vector<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBloc
     size_t num_blocks = (end_offset - first_block_start + block_size - 1) / block_size;
 
     bool detached_if_missing = settings.read_if_exists_otherwise_bypass;
-    bool inject_eviction = settings.inject_eviction;
+    bool inject_eviction = settings.random_eviction_for_tests;
 
     /// Phase 1: probe cache for all blocks, record hits.
     std::vector<PageCache::MappedPtr> cells(num_blocks);
@@ -413,7 +413,7 @@ bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*s
     /// Use get() instead of contains() to populate `chunk`, so the subsequent nextImpl() call
     /// can reuse it without a second cache lookup.
     UInt128 key_hash = cache_range.hash(cache_key_base_hash);
-    chunk = cache->get(key_hash, settings.inject_eviction);
+    chunk = cache->get(key_hash, settings.random_eviction_for_tests);
 
     return chunk != nullptr;
 }

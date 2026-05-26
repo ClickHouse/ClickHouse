@@ -2560,7 +2560,7 @@ bool FileCache::doDynamicResizeImpl(
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     const String & query_id, const FilesystemCacheSettings & cache_settings)
 {
-    if (!query_limit || cache_settings.max_download_size == 0)
+    if (!query_limit || cache_settings.max_download_size_per_query == 0)
         return {};
 
     auto lock = cache_guard.writeLock();

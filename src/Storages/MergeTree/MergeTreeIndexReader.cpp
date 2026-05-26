@@ -198,7 +198,7 @@ MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSetti
     if (substream == TextIndexDictionary || substream == TextIndexPostings)
     {
         settings.read_settings.local_fs_settings.buffer_size = 16 * 1024;
-        settings.read_settings.remote_fs_buffer_size = 16 * 1024;
+        settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;
     }
 
     return settings;

@@ -404,7 +404,7 @@ void DiskLocal::prepareRead(
     ///     throws `CANNOT_SEEK_THROUGH_FILE`;
     ///   - O_DIRECT when `page_cache_block_size` is not aligned to the direct
     ///     IO sector size (additional check below).
-    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache
+    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache_settings.cache
         && settings.local_fs_settings.method != LocalFSReadMethod::io_uring
         && settings.local_fs_settings.method != LocalFSReadMethod::pread_fake_async
         && settings.local_fs_settings.method != LocalFSReadMethod::pread_threadpool
@@ -422,7 +422,7 @@ void DiskLocal::prepareRead(
     }
 
     if (use_page_cache)
-        pipeline.needMemoryCache(settings.page_cache, "local:", settings.page_cache_settings);
+        pipeline.needMemoryCache(settings.page_cache_settings.cache, "local:", settings.page_cache_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

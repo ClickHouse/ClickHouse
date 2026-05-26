@@ -191,7 +191,7 @@ public:
             buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
 
         auto local_read_settings = read_settings;
-        local_read_settings.remote_fs_buffer_size = buffer_size_;
+        local_read_settings.remote_fs_settings.buffer_size = buffer_size_;
         return std::make_unique<ReadBufferFromDistributedCache>(
             file_key,
             bytes_written,
@@ -284,8 +284,8 @@ public:
     {
         ReadSettings settings;
         settings.local_fs_settings.buffer_size = buffer_size_;
-        settings.remote_fs_buffer_size = buffer_size_;
-        settings.prefetch_buffer_size = buffer_size_;
+        settings.remote_fs_settings.buffer_size = buffer_size_;
+        settings.remote_fs_settings.large_buffer_size = buffer_size_;
 
         return disk->readFile(path_to_file, settings);
     }

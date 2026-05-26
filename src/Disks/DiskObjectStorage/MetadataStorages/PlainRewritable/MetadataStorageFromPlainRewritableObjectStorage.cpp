@@ -66,9 +66,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
     auto settings = getReadSettings();
     settings.enable_filesystem_cache = false;
-    settings.remote_fs_method = RemoteFSReadMethod::threadpool;
-    settings.remote_fs_prefetch = false;
-    settings.remote_fs_buffer_size = 1024;  /// These files are small.
+    settings.remote_fs_settings.method = RemoteFSReadMethod::threadpool;
+    settings.remote_fs_settings.prefetch = false;
+    settings.remote_fs_settings.buffer_size = 1024;  /// These files are small.
 
     LOG_DEBUG(log, "Loading metadata");
 

@@ -257,7 +257,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 origin,
                 std::move(impl_creator),
                 fs_cache_settings,
-                captured_settings.remote_fs_buffer_size,
+                captured_settings.remote_fs_settings.buffer_size,
                 captured_settings.local_fs_settings.buffer_size,
                 query_id,
                 object.bytes_size,
@@ -276,7 +276,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     bool use_external_buffer = memory_cache.has_value() || async_prefetch.has_value();
 
     size_t total_objects_size = getTotalSize(source->objects);
-    size_t effective_buffer_size = settings.remote_fs_buffer_size;
+    size_t effective_buffer_size = settings.remote_fs_settings.buffer_size;
     size_t buffer_size = use_external_buffer ? 0 : effective_buffer_size;
     if (!use_external_buffer && total_objects_size > 0)
         buffer_size = std::min(buffer_size, total_objects_size);
@@ -306,7 +306,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
             return std::make_unique<ReadBufferFromRemoteFSGather>(
                 std::move(creator_copy),
                 objects,
-                captured_settings.remote_read_min_bytes_for_seek,
+                captured_settings.remote_fs_settings.min_bytes_for_seek,
                 /* use_external_buffer */ true,
                 /* buffer_size */ 0);
         };
@@ -327,7 +327,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     return std::make_unique<ReadBufferFromRemoteFSGather>(
         std::move(gather_creator),
         source->objects,
-        settings.remote_read_min_bytes_for_seek,
+        settings.remote_fs_settings.min_bytes_for_seek,
         use_external_buffer,
         buffer_size);
 }
@@ -466,7 +466,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 path = object.remote_path,
                 cache_key, cache = dc.cache, origin,
                 fs_cache_settings,
-                remote_buf_size = settings.remote_fs_buffer_size,
+                remote_buf_size = settings.remote_fs_settings.buffer_size,
                 local_buf_size = settings.local_fs_settings.buffer_size,
                 object_size = object.bytes_size,
                 cache_log = dc.cache_log,
@@ -505,7 +505,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             origin,
             std::move(impl_creator),
             fs_cache_settings,
-            settings.remote_fs_buffer_size,
+            settings.remote_fs_settings.buffer_size,
             settings.local_fs_settings.buffer_size,
             query_id,
             object.bytes_size,
@@ -576,7 +576,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     const auto & settings = source->read_settings;
 
     size_t total_size = getTotalSize(source->objects);
-    size_t async_buffer_size = settings.remote_fs_buffer_size;
+    size_t async_buffer_size = settings.remote_fs_settings.buffer_size;
     if (total_size > 0)
         async_buffer_size = std::min(async_buffer_size, total_size);
 
@@ -584,7 +584,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     /// (typically larger, since seeks within the cache are cheaper).
     size_t min_bytes_for_seek = distributed_cache
         ? settings.distributed_cache_settings.min_bytes_for_seek
-        : settings.remote_read_min_bytes_for_seek;
+        : settings.remote_fs_settings.min_bytes_for_seek;
 
     /// When the memory-cache stage is enabled, `AsynchronousBoundedReadBuffer`
     /// detects its `CachedInMemoryReadBufferFromFile` inner buffer and uses

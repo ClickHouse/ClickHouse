@@ -17,6 +17,37 @@ class MMappedFileCache;
 class PageCache;
 class Context;
 
+/// Settings controlling reads from a remote filesystem (S3, Azure, HDFS, GCS, …).
+/// Used by the transport-level read buffers (`ReadBufferFromS3`, `ReadBufferFromHDFS`, …).
+struct RemoteFSReadSettings
+{
+    /// Method to use reading from remote filesystem (read | threadpool).
+    RemoteFSReadMethod method = RemoteFSReadMethod::threadpool;
+
+    /// Buffer size for remote filesystem reads.
+    size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// Enable async prefetching for remote reads.
+    bool prefetch = false;
+
+    /// Retry policy for transient remote read errors.
+    size_t max_backoff_ms = 10000;
+    size_t max_retries = 4;
+
+    /// Minimum bytes between successive reads before a seek becomes a new request.
+    size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// Floor for `buffer_size` when filesystem cache is active, to reduce cache fragmentation.
+    /// Backed by the public Setting `prefetch_buffer_size` (name preserved for compatibility).
+    size_t large_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// HDFS-specific: use pread for non-async reads.
+    bool enable_hdfs_pread = true;
+
+    /// Log every blob storage read operation to system.blob_storage_log.
+    bool enable_blob_storage_log = false;
+};
+
 /// Settings controlling reads from the local filesystem.
 /// Used by `createReadBufferFromFileBase` to pick a read method and buffer size.
 struct LocalFSReadSettings
@@ -53,10 +84,13 @@ struct HTTPReadSettings
 struct PageCacheSettings
 {
     bool read_if_exists_otherwise_bypass = false;
-    bool inject_eviction = false;
+    /// Test-only: randomly evict cache entries to exercise the eviction path.
+    bool random_eviction_for_tests = false;
     size_t block_size = 1 << 20;
     size_t lookahead_blocks = 16;
     size_t max_coalesced_bytes = 16 << 20;
+    /// The page-cache instance (shared global cache). Null when the stage is disabled.
+    std::shared_ptr<PageCache> cache;
 };
 
 /// Settings controlling the filesystem (disk) cache behavior.
@@ -69,12 +103,15 @@ struct FilesystemCacheSettings
     bool allow_background_download = true;
     bool allow_background_download_for_metadata_files_in_packed_storage = true;
     bool allow_background_download_during_fetch = true;
-    bool prefer_bigger_buffer_size = true;
+    /// Hint to callers (DiskObjectStorage / StorageObjectStorageSource) to enlarge the remote-FS
+    /// read buffer when this cache is active — reduces cache fragmentation. Not the cache's own buffer.
+    bool prefer_large_caller_buffer = true;
     size_t reserve_space_wait_lock_timeout_milliseconds = 1000;
-    size_t max_download_size = (128UL * 1024 * 1024 * 1024);
+    size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
-    std::optional<FileCacheOriginInfo> origin_info;
+    /// Request-origin metadata (user_id, client_weight) passed to FileCache::getOrSet.
+    std::optional<FileCacheOriginInfo> request_origin_info;
 };
 
 struct ReadSettings
@@ -82,19 +119,11 @@ struct ReadSettings
     /// Local filesystem source parameters (read method, buffer size, mmap/direct-io thresholds).
     LocalFSReadSettings local_fs_settings;
 
-    /// Method to use reading from remote filesystem.
-    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::threadpool;
-
-    size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-    size_t prefetch_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-
-    bool remote_fs_prefetch = false;
+    /// Remote filesystem source parameters (S3/Azure/HDFS/GCS read method, buffer size, retry policy).
+    RemoteFSReadSettings remote_fs_settings;
 
     /// For 'pread_threadpool'/'io_uring' method and async prefetch. Lower value is higher priority.
     Priority priority;
-
-    size_t remote_fs_read_max_backoff_ms = 10000;
-    size_t remote_fs_read_backoff_max_tries = 4;
 
     bool enable_filesystem_read_prefetches_log = false;
 
@@ -105,13 +134,10 @@ struct ReadSettings
     /// Toggles for the page cache stage (decided per-disk before composing the pipeline).
     /// The stage parameters live in `page_cache_settings`.
     bool use_page_cache_for_disks_without_file_cache = false;
-    [[maybe_unused]] bool use_page_cache_with_distributed_cache = false;
+    bool use_page_cache_with_distributed_cache = false;
     bool use_page_cache_for_local_disks = false;
     bool use_page_cache_for_object_storage = false;
-    std::shared_ptr<PageCache> page_cache;
     PageCacheSettings page_cache_settings;
-
-    size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
@@ -124,8 +150,6 @@ struct ReadSettings
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
-    bool enable_hdfs_pread = true;
-    bool enable_blob_storage_log_for_read_operations = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 };

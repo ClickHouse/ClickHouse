@@ -484,9 +484,9 @@ IMergeTreeDataPart::Checksums checkDataPart(
         read_settings.enable_filesystem_cache = false;
         read_settings.filesystem_cache_settings.enable_log = false;
         read_settings.enable_filesystem_read_prefetches_log = false;
-        read_settings.page_cache = nullptr;
-        read_settings.remote_fs_prefetch = false;
-        read_settings.page_cache_settings.inject_eviction = false;
+        read_settings.page_cache_settings.cache = nullptr;
+        read_settings.remote_fs_settings.prefetch = false;
+        read_settings.page_cache_settings.random_eviction_for_tests = false;
         read_settings.use_page_cache_for_disks_without_file_cache = false;
         read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
 

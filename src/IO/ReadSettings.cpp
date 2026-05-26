@@ -27,12 +27,12 @@ ReadSettings getReadSettingsForMetadata()
 {
     ReadSettings read_settings = getReadSettings();
     read_settings.local_fs_settings.method = LocalFSReadMethod::read;
-    read_settings.remote_fs_method = RemoteFSReadMethod::threadpool;
-    read_settings.remote_fs_prefetch = false;
+    read_settings.remote_fs_settings.method = RemoteFSReadMethod::threadpool;
+    read_settings.remote_fs_settings.prefetch = false;
     read_settings.enable_filesystem_cache = false;
     read_settings.read_through_distributed_cache = false;
     read_settings.local_fs_settings.buffer_size = METADATA_FILE_BUFFER_SIZE;
-    read_settings.remote_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+    read_settings.remote_fs_settings.buffer_size = METADATA_FILE_BUFFER_SIZE;
 
     return read_settings;
 }
@@ -41,8 +41,8 @@ ReadSettings ReadSettings::adjustBufferSize(size_t file_size) const
 {
     ReadSettings res = *this;
     res.local_fs_settings.buffer_size = std::min(std::max(1ul, file_size), local_fs_settings.buffer_size);
-    res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
-    /// Note, we do not touch prefetch_buffer_size since in case of filesystem_cache_prefer_bigger_buffer_size
+    res.remote_fs_settings.buffer_size = std::min(std::max(1ul, file_size), remote_fs_settings.buffer_size);
+    /// Note, we do not touch prefetch_buffer_size since in case of filesystem_cache prefer_bigger_buffer_size
     /// the buffer may exceed the limit up to prefetch_buffer_size, but it will not exceed total file size.
     return res;
 }

@@ -616,7 +616,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
         if (offset_ >= position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_read_min_bytes_for_seek)
+            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;

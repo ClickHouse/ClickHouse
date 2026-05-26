@@ -233,7 +233,7 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     LOG_TEST(log, "Read object: {}", object.remote_path);
     auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
 
-    if (read_settings.enable_blob_storage_log_for_read_operations)
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
     {
         auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
         if (blob_storage_log)
