@@ -21,6 +21,9 @@
 #include <Common/escapeString.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
+#if USE_RAPIDJSON
+#include <Common/JSONParsers/RapidJSONParser.h>
+#endif
 
 namespace DB
 {
