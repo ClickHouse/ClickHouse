@@ -470,13 +470,14 @@ bool explainQueryTree(
         format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
 
         ConvertToASTOptions ast_options;
-        ast_options.use_source_expression_for_constants = true;
+        /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form, so constants are
+        /// rendered as their source expressions and operators are preferred over function calls.
+        /// `EXPLAIN QUERY TREE` (dump_ast) must show the query as it actually is after the query tree passes,
+        /// so neither source-expression rendering nor operator-to-function conversion is applied there.
+        ast_options.use_source_expression_for_constants = format_ast_as_syntax;
 
         IAST::FormatState format_state;
         IAST::FormatStateStacked format_frame;
-        /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form.
-        /// `EXPLAIN QUERY TREE` (dump_ast) must show the query as it actually is after the query tree passes,
-        /// so operator-to-function conversion is intentionally not applied there.
         format_frame.allow_operators = !format_ast_as_syntax;
         query_tree->toAST(ast_options)->format(buf, format_settings, format_state, format_frame);
     }
