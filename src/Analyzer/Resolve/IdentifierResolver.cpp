@@ -1089,19 +1089,32 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         return std::move(res.resolved_identifier);
     };
 
-    /// If the leading part of a compound identifier binds as a qualifier (alias / table_name)
-    /// to exactly one side, restrict resolution to that side; otherwise try both.
+    /** When analyzer_compatibility_resolve_alias_prefix_over_subcolumn is enabled,
+      * if the leading part of a compound identifier binds as a qualifier (alias / table name)
+      * to exactly one side of the JOIN, restrict resolution to that side, otherwise try both.
+      *
+      * For example (table `t2` has columns `id Int, b Tuple(id Int)`):
+      * `SELECT * FROM t2 a LEFT JOIN (SELECT * FROM t2 a) b ON a.id = b.id;`
+      *
+      * Here `b.id` in the ON condition is ambiguous:
+      * it can be the `id` column of the right subquery aliased as `b`,
+      * or it can be the Tuple subcolumn `b.id` of column `b` from the left table `t2 a`.
+      *
+      * Without this check both sides resolve successfully and the query fails with `AMBIGUOUS_IDENTIFIER`.
+      * With setting enabled we prefer alias prefix, so try resolve `b.id` only from the right side.
+      */
+    bool prefer_alias = scope.context->getSettingsRef()[Setting::analyzer_compatibility_resolve_alias_prefix_over_subcolumn];
     bool binds_left = true;
     bool binds_right = true;
-    if (identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
+    if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
         const auto & path_start = identifier_lookup.identifier.front();
         binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope);
         binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope);
     }
 
-    QueryTreeNodePtr left_resolved_identifier;
-    QueryTreeNodePtr right_resolved_identifier;
+    QueryTreeNodePtr left_resolved_identifier = nullptr;
+    QueryTreeNodePtr right_resolved_identifier = nullptr;
     if (binds_left || !binds_right)
         left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right);
     if (!binds_left || binds_right)
