@@ -1038,6 +1038,11 @@ void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const Padded
     getNestedColumn().fillFromRowStorePtrsWithNullMap(removeNullable(type), row_store_ptrs, field_offset, field_size, getNullMapData());
 }
 
+void ColumnNullable::fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size)
+{
+    getNestedColumn().fillFromRowStorePtrsWithNullMap(row_store_ptrs, field_offset, field_size, getNullMapData());
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))

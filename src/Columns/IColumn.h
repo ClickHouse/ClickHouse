@@ -715,13 +715,23 @@ public:
     virtual void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, PaddedPODArray<UInt8> & null_map);
 
     /// Fills column values from list of blocks and row numbers
+    /// A nullptr in the list is interpreted as a default value
     virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
+
+    /// Same as above but assumes every entry in the list is non-null
+    virtual void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
     /// Fills column values from pre-resolved row-store pointers
     virtual void fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size);
 
+    /// Fills column values from pre-resolved row-store pointers
+    virtual void fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size);
+
     /// Nullable variant of fillFromRowStorePtrsWithNullMap: the null byte is written into `null_map` and the value bytes are inserted into the nested column
     virtual void fillFromRowStorePtrsWithNullMap(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map);
+
+    /// Nullable variant of fillFromRowStorePtrsWithNullMap: the null byte is written into `null_map` and the value bytes are inserted into the nested column
+    virtual void fillFromRowStorePtrsWithNullMap(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -1000,13 +1010,23 @@ private:
     void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, PaddedPODArray<UInt8> & null_map) override;
 
     /// Fills column values from list of columns and row numbers
+    /// A nullptr in the list is interpreted as a default value
     void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
+
+    /// Same as above but assumes every entry in the list is non-null
+    void fillFromBlocksAndRowNumbers(size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
     /// Fills column values from pre-resolved row-store pointers
     void fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size) override;
 
+    /// Fills column values from pre-resolved row-store pointers
+    void fillFromRowStorePtrs(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size) override;
+
     /// Nullable variant of fillFromRowStorePtrsWithNullMap: the null byte is written into `null_map` and the value bytes are inserted into the nested column
     void fillFromRowStorePtrsWithNullMap(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map) override;
+
+    /// Nullable variant of fillFromRowStorePtrsWithNullMap: the null byte is written into `null_map` and the value bytes are inserted into the nested column
+    void fillFromRowStorePtrsWithNullMap(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
