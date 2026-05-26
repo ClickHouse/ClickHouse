@@ -177,13 +177,19 @@ private:
         }
         const auto * lower_bound_it = upper_bound_it - 1;
 
-        Float64 histogram_bucket_lower_bound = static_cast<Float64>(lower_bound_it->first);
-        Float64 histogram_bucket_lower_value = static_cast<Float64>(lower_bound_it->second);
-        Float64 histogram_bucket_upper_bound = static_cast<Float64>(upper_bound_it->first);
-        Float64 histogram_bucket_upper_value = static_cast<Float64>(upper_bound_it->second);
+        UnderlyingType histogram_bucket_lower_bound = lower_bound_it->first;
+        CumulativeHistogramValue histogram_bucket_lower_value = lower_bound_it->second;
+        UnderlyingType histogram_bucket_upper_bound = upper_bound_it->first;
+        CumulativeHistogramValue histogram_bucket_upper_value = upper_bound_it->second;
+
+        /// Subtract in the original integer types and cast the difference to `Float64`,
+        /// so we don't lose 1-count resolution above `2^53` for `UInt64` cumulative counts.
+        Float64 bucket_bound_width = static_cast<Float64>(histogram_bucket_upper_bound - histogram_bucket_lower_bound);
+        Float64 bucket_value_width = static_cast<Float64>(histogram_bucket_upper_value - histogram_bucket_lower_value);
+        Float64 position_offset = position - static_cast<Float64>(histogram_bucket_lower_value);
 
         // Interpolate between the lower and upper bounds of the bucket that the position is in.
-        return static_cast<Value>(histogram_bucket_lower_bound + (histogram_bucket_upper_bound - histogram_bucket_lower_bound) * (position - histogram_bucket_lower_value) / (histogram_bucket_upper_value - histogram_bucket_lower_value));
+        return static_cast<Value>(static_cast<Float64>(histogram_bucket_lower_bound) + bucket_bound_width * position_offset / bucket_value_width);
     }
 };
 
