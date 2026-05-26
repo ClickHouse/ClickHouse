@@ -147,6 +147,11 @@ void StorageObjectStorageConfiguration::initialize(
                 "format-specific setting (for example, `output_format_parquet_compression_method`) instead.",
                 configuration_to_initialize.compression_method);
         }
+        /// Canonicalize: downstream `chooseCompressionMethod` callers compare `hint` to
+        /// the lowercase literals `auto`/`none` case-sensitively. Without this assignment,
+        /// inputs like `AUTO`/`None` would pass this CREATE TIME check but later throw
+        /// `Unknown compression method` from read/write paths.
+        configuration_to_initialize.compression_method = compression_method_lower;
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {

@@ -15,7 +15,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE_PREFIX="t_${CLICKHOUSE_DATABASE}_${RANDOM}"
 
-for table in "${TABLE_PREFIX}_lzma" "${TABLE_PREFIX}_gzip" "${TABLE_PREFIX}_default" "${TABLE_PREFIX}_none" "${TABLE_PREFIX}_auto"; do
+TABLES=(
+    "${TABLE_PREFIX}_lzma"
+    "${TABLE_PREFIX}_gzip"
+    "${TABLE_PREFIX}_default"
+    "${TABLE_PREFIX}_none"
+    "${TABLE_PREFIX}_auto"
+    "${TABLE_PREFIX}_auto_upper"
+    "${TABLE_PREFIX}_none_mixed"
+)
+
+for table in "${TABLES[@]}"; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${table}"
 done
 
@@ -52,8 +62,24 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_auto"
 
+# 6. `AUTO` (upper case) is accepted: validation is case-insensitive and the stored
+#    value is canonicalized to lowercase so downstream chooseCompressionMethod calls
+#    do not later throw `Unknown compression method`.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_auto_upper (c0 Int)
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_auto_upper', 'Parquet', 'AUTO')
+"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_auto_upper"
+
+# 7. `None` (mixed case) is accepted with the same canonicalization.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_none_mixed (c0 Int)
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_none_mixed', 'Parquet', 'None')
+"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_none_mixed"
+
 # Cleanup.
-for table in "${TABLE_PREFIX}_lzma" "${TABLE_PREFIX}_gzip" "${TABLE_PREFIX}_default" "${TABLE_PREFIX}_none" "${TABLE_PREFIX}_auto"; do
+for table in "${TABLES[@]}"; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${table}"
     rm -rf "${USER_FILES_PATH:?}/${table}"
 done
