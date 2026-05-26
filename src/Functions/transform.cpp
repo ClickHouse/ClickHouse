@@ -85,10 +85,12 @@ namespace
         if (const auto * array = checkAndGetColumnConstData<ColumnArray>(column.get()))
             return array;
 
-        const IColumn * data_column = column.get();
-        if (const auto * col_const = checkAndGetColumn<ColumnConst>(column.get()))
-            data_column = &col_const->getDataColumn();
+        /// ColumnConst(Nullable(Array(...))) — const data is not always a bare ColumnArray.
+        const auto * col_const = checkAndGetColumn<ColumnConst>(column.get());
+        if (!col_const)
+            return nullptr;
 
+        const IColumn * data_column = &col_const->getDataColumn();
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_column))
             data_column = &nullable->getNestedColumn();
 
