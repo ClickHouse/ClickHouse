@@ -217,10 +217,28 @@ size_t readOrGetCachedSparseOffsets(
     {
         /// Reuse cached offsets info
         const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
-        num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
         read_rows = cached_offsets_element.read_rows;
         skipped_values_rows = cached_offsets_element.skipped_values_rows;
-        ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
+        if (cached_offsets_element.offsets)
+        {
+            num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
+            ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
+        }
+        else
+        {
+            /// Deferred slice path: append `src[i] + shift` directly into `offsets_column`.
+            /// Avoids the intermediate ColumnUInt64 alloc + insertRangeFrom copy that the
+            /// materialised path would do.
+            auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column->assumeMutableRef()).getData();
+            const size_t old_data_size = offsets_data.size();
+            num_read_offsets = cached_offsets_element.slice_count;
+            offsets_data.resize(old_data_size + num_read_offsets);
+            UInt64 * __restrict__ dst = offsets_data.data() + old_data_size;
+            const UInt64 * __restrict__ src = cached_offsets_element.slice_source_begin;
+            const UInt64 shift = cached_offsets_element.slice_shift;
+            for (size_t i = 0; i < num_read_offsets; ++i)
+                dst[i] = src[i] + shift;
+        }
         ProfileEvents::increment(ProfileEvents::SparseOffsetsShareConsumed);
     }
     else if (auto * stream = settings.getter(settings.path))

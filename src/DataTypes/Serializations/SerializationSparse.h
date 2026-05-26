@@ -190,6 +190,12 @@ private:
     static void assertSettings(const SerializeBinaryBulkSettings & settings);
 };
 
+/// Two modes:
+///   - "materialised": `offsets` holds a column whose tail `[old_size, end)` contains
+///     the newly-read non-default positions. Used by the on-disk read path.
+///   - "deferred slice": `offsets` is null and `slice_*` describes a range of source
+///     `UInt64`s that the consumer should append shifted by `slice_shift`. Used by the
+///     analyzer-share path to skip materialising an intermediate column.
 struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsCacheElement
 {
     explicit SubstreamsCacheSparseOffsetsElement(
@@ -204,7 +210,28 @@ struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsC
     {
     }
 
+    SubstreamsCacheSparseOffsetsElement(
+        const UInt64 * slice_source_begin_,
+        size_t slice_count_,
+        UInt64 slice_shift_,
+        size_t read_rows_,
+        size_t skipped_values_rows_)
+        : slice_source_begin(slice_source_begin_)
+        , slice_count(slice_count_)
+        , slice_shift(slice_shift_)
+        , read_rows(read_rows_)
+        , skipped_values_rows(skipped_values_rows_)
+    {
+    }
+
     ColumnPtr offsets;
+    /// Deferred slice descriptor. Source range is `[slice_source_begin, slice_source_begin + slice_count)`;
+    /// the consumer appends `src[i] + slice_shift` for each position. `slice_shift` uses UInt64
+    /// wrap-around arithmetic and is set so that the sum is the absolute position the consumer
+    /// expects, even when the conceptual shift is negative.
+    const UInt64 * slice_source_begin = nullptr;
+    size_t slice_count = 0;
+    UInt64 slice_shift = 0;
     size_t old_size = 0;
     size_t read_rows = 0;
     size_t skipped_values_rows = 0;

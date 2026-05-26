@@ -20,7 +20,6 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
-#include <cstring>
 #include <future>
 #include <vector>
 
@@ -389,76 +388,27 @@ analyzeSparseColumnGranules(
         if (!r.ok)
             return std::nullopt;
 
-    /// Concatenate per-chunk offsets back into one entry per original `MarkRange` for
-    /// the share, with each chunk's positions shifted by the cumulative row count of
-    /// preceding chunks within the same range. Storing per-chunk would force the slicer
-    /// to span multiple entries when a scan call straddles a chunk boundary; the disk
-    /// fallback on a miss would then read with stale `DeserializeStateSparse` and
-    /// produce wrong counts.
+    /// Store each chunk as its own entry in the share. Scan `readRows` calls are
+    /// `max_block_size` rows wide (typically a small multiple of one mark) while
+    /// analyzer chunks span hundreds of marks, so a scan window almost always lands
+    /// fully within one chunk and the slicer's fast path returns it without further
+    /// work. The slicer handles the rare straddle by stitching adjacent chunks into a
+    /// fresh column on its own; the disk-fallback path is not safe here because the
+    /// scan never seeked the disk stream (all previous calls were cache hits) and
+    /// `DeserializeStateSparse` would be stale.
     if (offsets_share)
     {
-        size_t chunk_idx = 0;
-        for (const auto & range : ranges)
+        for (size_t j = 0; j < chunks.size(); ++j)
         {
-            if (range.begin >= range.end)
+            if (!results[j].offsets)
                 continue;
-
-            const size_t first_chunk = chunk_idx;
-            while (chunk_idx < chunks.size() && chunks[chunk_idx].end <= range.end)
-                ++chunk_idx;
-            const size_t last_chunk = chunk_idx;
-            if (first_chunk == last_chunk)
-                continue;
-
-            size_t total_offsets = 0;
-            size_t total_rows = 0;
-            for (size_t j = first_chunk; j < last_chunk; ++j)
-            {
-                if (results[j].offsets)
-                    total_offsets += results[j].offsets->size();
-                total_rows += results[j].rows_in_chunk;
-            }
-
-            /// Pre-size and write by index so the per-element shift compiles to SSE2 paddq
-            /// (same shape as the slicer's copy loop). `push_back` would force a bounds
-            /// check + grow path per element and the compiler can't vectorise it.
-            auto combined = ColumnUInt64::create();
-            auto & combined_data = combined->getData();
-            combined_data.resize(total_offsets);
-            size_t out_pos = 0;
-            size_t row_shift = 0;
-            for (size_t j = first_chunk; j < last_chunk; ++j)
-            {
-                if (results[j].offsets)
-                {
-                    const auto & chunk_offsets
-                        = assert_cast<const ColumnUInt64 &>(*results[j].offsets).getData();
-                    const size_t n = chunk_offsets.size();
-                    if (row_shift == 0)
-                    {
-                        /// First chunk in the range: no shift, plain memcpy.
-                        std::memcpy(combined_data.data() + out_pos, chunk_offsets.data(), n * sizeof(UInt64));
-                    }
-                    else
-                    {
-                        UInt64 * __restrict__ dst = combined_data.data() + out_pos;
-                        const UInt64 * __restrict__ src = chunk_offsets.data();
-                        const UInt64 shift = row_shift;
-                        for (size_t i = 0; i < n; ++i)
-                            dst[i] = src[i] + shift;
-                    }
-                    out_pos += n;
-                }
-                row_shift += results[j].rows_in_chunk;
-            }
-
             offsets_share->insert(
                 part->name,
                 column_name,
-                range,
-                part->index_granularity->getMarkStartingRow(range.begin),
-                total_rows,
-                std::move(combined));
+                chunks[j],
+                part->index_granularity->getMarkStartingRow(chunks[j].begin),
+                results[j].rows_in_chunk,
+                results[j].offsets);
         }
     }
 
