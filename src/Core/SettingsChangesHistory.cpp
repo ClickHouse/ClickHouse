@@ -41,8 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.6",
         {
-            {"optimize_trivial_count_with_sparsity_filter", false, true, "New setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
-            {"use_sparsity_info_for_pruning", "off", "data_read", "New setting controlling sparsity-based pruning of parts (always at plan time) and granules. `data_read` defers granule classification to scan time and is enabled by default."},
+            {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
+            {"use_sparsity_info_for_pruning", "off", "off", "New (experimental) setting controlling sparsity-based pruning of parts (always at plan time) and granules (at plan or scan time)."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {

@@ -4476,7 +4476,7 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
-    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, true, R"(
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
 Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
 queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
 exactly partitions rows into defaults and non-defaults of `col`. The count is then
@@ -4496,8 +4496,8 @@ See also:
 
 - [optimize_trivial_count_query](#optimize_trivial_count_query)
 - [use_sparsity_info_for_pruning](#use_sparsity_info_for_pruning)
-)", 0) \
-    DECLARE(SparsityPruningMode, use_sparsity_info_for_pruning, SparsityPruningMode::DataRead, R"(
+)", EXPERIMENTAL) \
+    DECLARE(SparsityPruningMode, use_sparsity_info_for_pruning, SparsityPruningMode::Off, R"(
 When and how to prune parts and granules whose `WHERE` predicate is provably false
 on every row, based on the per-column `num_defaults` / `num_rows` counters in
 `serialization.json` (part level) and on the offsets-stream marks of sparse-encoded
@@ -4533,7 +4533,7 @@ by older servers), so it never produces wrong answers.
 See also:
 
 - [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter)
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
