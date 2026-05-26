@@ -53,6 +53,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
+    bool is_table = false;
     bool sync = false;
     bool permanently = false;
     bool detached = false;
@@ -110,26 +111,20 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     else
     {
         if (s_detached.ignore(pos, expected))
-        {
-            if (kind != ASTDropQuery::Kind::Drop)
-            {
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is only supported with DROP queries");
-            }
             detached = true;
-        }
 
         if (s_temporary.ignore(pos, expected))
-        {
             temporary = true;
-        }
 
         if (s_view.ignore(pos, expected))
             is_view = true;
         else if (s_dictionary.ignore(pos, expected))
             is_dictionary = true;
+        else if (s_table.ignore(pos, expected))
+            is_table = true;
 
         /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
-        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind != ASTDropQuery::Kind::Truncate))
+        if (!is_view && !is_dictionary && !is_table && kind != ASTDropQuery::Kind::Truncate)
         {
             return false;
         }
@@ -160,6 +155,18 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     /// actually for TRUNCATE NO DELAY / SYNC means nothing
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
+
+    if (detached)
+    {
+        if (kind != ASTDropQuery::Kind::Drop)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is only supported with DROP queries");
+        if (if_empty)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is not supported with IF EMPTY");
+        if (!is_table)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DROP DETACHED supports only tables");
+        if (temporary)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "TEMPORARY keyword is meaningless here, since you can't detach temporary tables");
+    }
 
     auto query = make_intrusive<ASTDropQuery>();
     node = query;

@@ -285,6 +285,9 @@ def test_invalid_syntax_corner_cases(start_cluster):
 
     do_query(f"DETACH DETACHED TABLE {table_name}")
     do_query(f"TRUNCATE DETACHED TABLE {table_name}")
+    do_query(f"DROP DETACHED TABLE IF EMPTY {table_name}")
+    do_query(f"DROP DETACHED VIEW {table_name}")
+    do_query(f"DROP DETACHED TABLE TEMPORARY {table_name}")
 
     replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
