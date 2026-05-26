@@ -315,6 +315,8 @@ def test_no_secrets_in_logs(started_cluster):
         "warehouse": "test",
         "storage_endpoint": "http://minio1:9001/warehouse-glue",
         "region": "us-east-1",
+        "aws_access_key_id": minio_access_key,
+        "aws_secret_access_key": minio_secret_key,
     }
 
     qid_db = uuid.uuid4().hex
