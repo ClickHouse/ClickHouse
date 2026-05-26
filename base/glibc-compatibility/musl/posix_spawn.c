@@ -71,6 +71,8 @@ static int child(void *args_vp)
 		for (i=1; i<_NSIG; i++) {
 			if (sigismember(&attr->__sd, i) == 1) {
 				sa.sa_handler = SIG_DFL;
+				/* Safe only because sa is all-zero (SIG_DFL is 0): glibc's struct sigaction and the kernel rt_sigaction ABI have different field layouts. */
+				_Static_assert(SIG_DFL == 0, "Not compatible with kernel struct sigaction");
 				ret = __syscall(SYS_rt_sigaction, i, &sa, 0, _NSIG/8);
 				if (ret) goto fail;
 			}
