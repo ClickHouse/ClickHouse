@@ -916,8 +916,49 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
-    /// Merged stream will be created and available as merged_stream variable
-    createMergedStream();
+    /// For TTLDrop merges, all source parts are fully expired.
+    /// Skip creating the read pipeline to avoid opening source parts
+    /// and allocating read/prefetch buffers.
+    ///
+    /// We must also verify the rows TTL has no WHERE clause. TTLPartDropMergeSelector
+    /// assigns MergeType::TTLDrop based solely on part_max_ttl without checking for
+    /// WHERE conditions. A WHERE clause can prevent some expired rows from being
+    /// deleted, so we must fall through to the normal pipeline in that case.
+    const bool can_short_circuit_ttl_drop =
+        global_ctx->future_part->merge_type == MergeType::TTLDrop
+        && global_ctx->metadata_snapshot->hasRowsTTL()
+        && !global_ctx->metadata_snapshot->getRowsTTL().where_expression_ast;
+
+    if (can_short_circuit_ttl_drop)
+    {
+        LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
+            "all {} source parts are fully expired", global_ctx->future_part->parts.size());
+
+        global_ctx->ttl_drop_short_circuit = true;
+
+        /// Zero TTL infos since all data is dropped.
+        /// Normally done by TTLTransform::finalize.
+        global_ctx->new_data_part->ttl_infos = {};
+
+        /// Clear projections — no rows means no projection data to merge or rebuild.
+        global_ctx->projections_to_rebuild.clear();
+        global_ctx->projections_to_merge.clear();
+        global_ctx->projections_to_merge_parts.clear();
+
+        /// Clear text indexes to avoid the text index stage trying to look up
+        /// build transforms that were never created (since we skip createMergedStream).
+        global_ctx->text_indexes_to_merge.clear();
+
+        /// Force Horizontal algorithm. This prevents the Vertical stage from trying
+        /// to finalize an empty rows_sources file, and ensures finalizePart takes
+        /// the correct code path.
+        global_ctx->chosen_merge_algorithm = MergeAlgorithm::Horizontal;
+    }
+    else
+    {
+        /// Merged stream will be created and available as merged_stream variable
+        createMergedStream();
+    }
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
@@ -1327,6 +1368,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
+    /// TTLDrop short-circuit: no pipeline was created, skip directly to finalize.
+    if (global_ctx->ttl_drop_short_circuit)
+    {
+        finalize();
+        return false;
+    }
+
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms
         = (*global_ctx->data_settings)[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
