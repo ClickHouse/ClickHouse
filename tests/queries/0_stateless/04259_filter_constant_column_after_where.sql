@@ -154,6 +154,12 @@ WHERE d = 1.0
 GROUP BY ALL
 ORDER BY ALL;
 
+SELECT d, count()
+FROM 04259_filter_constant_column_after_where_decimal
+WHERE d = CAST(1.0, 'Dynamic')
+GROUP BY ALL
+ORDER BY ALL;
+
 SELECT tupleElement(t, 1), count()
 FROM
 (

@@ -98,6 +98,30 @@ bool containsVariant(const DataTypePtr & type)
     return containsType(*type, &WhichDataType::isVariant);
 }
 
+bool isFloatingPointField(const Field & field)
+{
+    return field.getType() == Field::Types::Float64;
+}
+
+bool canReplaceColumnWithConstantAfterFilter(
+    const DataTypePtr & result_type,
+    const DataTypePtr & constant_type,
+    const Field & constant_field)
+{
+    if (hasDynamicType(result_type) || containsVariant(result_type) || containsFloat(result_type))
+        return false;
+
+    if (containsDecimal(result_type)
+        && (containsFloat(constant_type)
+            || (hasDynamicType(constant_type) && isFloatingPointField(constant_field))))
+        return false;
+
+    if (containsString(result_type) && containsFixedString(constant_type))
+        return false;
+
+    return true;
+}
+
 std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
     const ActionsDAG::Node * column_node,
     const ActionsDAG::Node * constant_node,
@@ -131,15 +155,7 @@ std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
         return {};
 
     const auto & result_column = transformed_header.getByPosition(*position);
-    if (hasDynamicType(result_column.type))
-        return {};
-    if (containsVariant(result_column.type))
-        return {};
-    if (containsFloat(result_column.type))
-        return {};
-    if (containsDecimal(result_column.type) && containsFloat(constant_node->result_type))
-        return {};
-    if (containsString(result_column.type) && containsFixedString(constant_node->result_type))
+    if (!canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type, *constant_field))
         return {};
 
     try
