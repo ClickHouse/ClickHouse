@@ -52,6 +52,14 @@ namespace
         }
         return true;
     }
+
+    ColumnMappingPtr createColumnMappingByHeaderWithInputFields(const Names & input_column_names, const Block & header)
+    {
+        auto mapping = std::make_shared<ColumnMapping>();
+        mapping->setupByHeaderWithInputFields(input_column_names, header);
+        mapping->is_set = true;
+        return mapping;
+    }
 }
 
 template <typename FormatReaderImpl>
@@ -114,7 +122,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
         if (format_settings.with_names_use_header)
         {
             if (column_mapping->is_set)
-                column_mapping->setupByHeaderWithInputFields(column_names, getPort().getHeader());
+                column_mapping = createColumnMappingByHeaderWithInputFields(column_names, getPort().getHeader());
             else
                 column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
         }
@@ -360,9 +368,9 @@ template <typename FormatReaderImpl>
 void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
-    column_mapping->column_indexes_for_input_fields.clear();
-    column_mapping->not_presented_columns.clear();
-    column_mapping->names_of_columns.clear();
+    const auto is_set = column_mapping->is_set;
+    column_mapping = std::make_shared<ColumnMapping>();
+    column_mapping->is_set = is_set;
     end_of_stream = false;
 }
 
