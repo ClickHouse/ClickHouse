@@ -598,6 +598,38 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
     auto mapping = getColumnIdMapping();
     auto metadata_columns = getInMemoryMetadataPtr(nullptr, false)->getColumns().getAllPhysical();
 
+    /// Fail loud if metadata names a column the mapping does not cover.
+    /// This is the mapping-behind-schema window: `column_ids.json` was
+    /// not updated while `metadata.sql` already added the column.  We
+    /// cannot recover by scanning disk because DROP + re-ADD of the
+    /// same column name makes on-disk files indistinguishable from the
+    /// column ID alone — silent rebuild could mix the new column with
+    /// orphaned data from a previously-dropped column.
+    Names missing_from_mapping;
+    for (const auto & col : metadata_columns)
+    {
+        if (!mapping->hasLogicalName(col.name))
+            missing_from_mapping.push_back(col.name);
+    }
+    if (!missing_from_mapping.empty())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Column ID mapping for table {} is missing entries for column(s): {}. "
+            "This indicates a torn write of `column_ids.json` (mapping not "
+            "updated while `metadata.sql` already committed the schema change). "
+            "The mapping cannot be rebuilt safely because DROP + re-ADD of the "
+            "same column name makes on-disk files indistinguishable from their "
+            "column ID alone. Restore the table from backup or fix "
+            "`column_ids.json` manually.",
+            getStorageID().getNameForLogs(),
+            fmt::join(missing_from_mapping, ", "));
+
+    /// Trim mapping entries whose logical name is no longer in metadata
+    /// (mapping-ahead-of-schema window from a crash between the mapping
+    /// write and the `metadata.sql` truncation).  Safe to recover from
+    /// because the dropped/renamed column already lost its on-disk
+    /// authority via the schema commit; the mapping entry is just dead
+    /// weight.
     ColumnIdMapping reconciled = *mapping;
     bool changed = false;
     for (const auto & col_name : mapping->logicalNames())

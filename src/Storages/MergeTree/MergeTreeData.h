@@ -670,10 +670,15 @@ public:
     void writeColumnIdMappingToDisk() const;
     void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const;
 
-    /// Remove mapping entries whose logical name no longer exists in table
-    /// metadata. Called after loading the mapping from disk to handle stale
-    /// entries left by: (a) a crash between mapping persist and metadata commit,
-    /// (b) completed DROPs, (c) incomplete two-phase renames.
+    /// Reconcile the on-disk mapping with table metadata after load.
+    /// Throws `CORRUPTED_DATA` if any column in metadata has no entry in the
+    /// mapping (the mapping-behind-schema window — unrecoverable, because
+    /// DROP + re-ADD of the same column name makes on-disk files
+    /// indistinguishable from their column ID alone). Otherwise removes
+    /// mapping entries whose logical name no longer exists in metadata
+    /// (mapping-ahead-of-schema window from: a crash between mapping
+    /// persist and metadata commit, completed DROPs, or incomplete two-phase
+    /// renames).
     void reconcileColumnIdMappingWithMetadata();
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
