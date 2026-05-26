@@ -200,6 +200,11 @@ class ClickHouseProc:
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
         for _ in range(60):
+            if self.kafka_proc.poll() is not None:
+                print(
+                    f"setup_kafka.sh exited with code {self.kafka_proc.returncode} before Kafka became reachable"
+                )
+                return False
             res = Shell.check(
                 "rpk topic list --brokers 127.0.0.1:9092",
                 verbose=True,
