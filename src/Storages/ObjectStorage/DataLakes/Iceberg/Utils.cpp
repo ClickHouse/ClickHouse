@@ -617,8 +617,14 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             return "string";
         case TypeIndex::Nullable:
         {
+            /// Iceberg manifest partition fields backed by ClickHouse `Nullable(T)`
+            /// must be encoded as an Avro `["null", T]` union so the manifest can
+            /// distinguish NULL from the inner type's default value (issue #105852).
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            return getAvroType(type_nullable->getNestedType());
+            Poco::JSON::Array::Ptr union_array = new Poco::JSON::Array;
+            union_array->add("null");
+            union_array->add(getAvroType(type_nullable->getNestedType()));
+            return union_array;
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
