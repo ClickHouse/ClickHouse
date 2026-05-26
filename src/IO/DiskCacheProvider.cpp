@@ -250,7 +250,14 @@ Rope DiskCacheHandle::get(ByteRange range)
         /// the segments just inserted around it (matches the LRU-update
         /// order of a streaming reader; see `02944` for a regression).
 
-        if (cache_log)
+        /// Only emit a cache_log entry for fully `DOWNLOADED` segments. For
+        /// `PARTIALLY_DOWNLOADED*`, the subsequent `put` that fills the tail
+        /// emits a `READ_FROM_FS_AND_DOWNLOADED_TO_CACHE` entry — emitting a
+        /// second `READ_FROM_CACHE` here would double-count under the same
+        /// `file_segment_range`, which `02242_system_filesystem_cache_log_table`
+        /// detects. Legacy `CachedOnDiskReadBufferFromFile` emits one entry
+        /// per segment with a single `ReadType`; we mirror that ordering.
+        if (cache_log && state == FileSegmentState::DOWNLOADED)
             appendCacheLogEntry(
                 *cache_log, *segment, origin,
                 FilesystemCacheLogElement::CacheType::READ_FROM_CACHE,
