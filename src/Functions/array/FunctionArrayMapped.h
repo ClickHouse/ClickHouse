@@ -172,8 +172,8 @@ inline ColumnPtr wrapNullableArrayResultIfNeeded(
         if (!array_null_map)
             return result;
 
-        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(
-            *materializeNullMapToRowCount(array_null_map, input_rows_count));
+        ColumnPtr materialized_null_map = materializeNullMapToRowCount(array_null_map, input_rows_count);
+        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(*materialized_null_map);
         if (!nullMapHasAnyNull(source_null_map.getData()))
             return result;
 
