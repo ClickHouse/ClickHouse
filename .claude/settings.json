@@ -11,7 +11,6 @@
       "Bash(gh repo view:*)",
       "Bash(gh search:*)",
       "Bash(gh run view:*)",
-      "Bash(gh auth status:*)",
       "Bash(git log:*)",
       "Bash(git show:*)",
       "Bash(git status)",
