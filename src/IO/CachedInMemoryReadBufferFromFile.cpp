@@ -20,12 +20,12 @@ namespace ErrorCodes
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
-    PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
+    PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const PageCacheSettings & settings_)
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize())
     , cache_file(std::move(cache_file_))
     , cache_key_base_hash(cache_file.baseHash())
     , cache(cache_)
-    , settings(settings_.getPageCacheSettings())
+    , settings(settings_)
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {

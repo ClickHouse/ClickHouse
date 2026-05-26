@@ -417,12 +417,12 @@ void DiskLocal::prepareRead(
         size_t estimated_size = read_hint.value_or(file_size);
         if (use_page_cache && settings.direct_io_threshold
             && estimated_size >= settings.direct_io_threshold
-            && settings.page_cache_block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
+            && settings.page_cache_settings.page_cache_block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
             use_page_cache = false;
     }
 
     if (use_page_cache)
-        pipeline.needMemoryCache(settings.page_cache, "local:", settings.getPageCacheSettings());
+        pipeline.needMemoryCache(settings.page_cache, "local:", settings.page_cache_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

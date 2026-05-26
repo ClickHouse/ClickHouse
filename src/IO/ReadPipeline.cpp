@@ -557,17 +557,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::uniqu
         cache_file.path = memory_cache->cache_path_prefix + first_object.remote_path;
     }
 
-    /// Apply stage-level page cache settings over the source ReadSettings.
-    auto page_cache_read_settings = source->read_settings;
-    const auto & pcs = memory_cache->page_cache_settings;
-    page_cache_read_settings.read_from_page_cache_if_exists_otherwise_bypass_cache = pcs.read_from_page_cache_if_exists_otherwise_bypass_cache;
-    page_cache_read_settings.page_cache_inject_eviction = pcs.page_cache_inject_eviction;
-    page_cache_read_settings.page_cache_block_size = pcs.page_cache_block_size;
-    page_cache_read_settings.page_cache_lookahead_blocks = pcs.page_cache_lookahead_blocks;
-    page_cache_read_settings.page_cache_max_coalesced_bytes = pcs.page_cache_max_coalesced_bytes;
-
     return std::make_unique<CachedInMemoryReadBufferFromFile>(
-        cache_file, memory_cache->cache, std::move(impl), page_cache_read_settings);
+        cache_file, memory_cache->cache, std::move(impl), memory_cache->page_cache_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const
@@ -602,7 +593,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     /// otherwise prefetches don't line up with cache blocks.
     size_t async_page_cache_block_size = memory_cache
         ? memory_cache->page_cache_settings.page_cache_block_size
-        : settings.page_cache_block_size;
+        : settings.page_cache_settings.page_cache_block_size;
 
     return std::make_unique<AsynchronousBoundedReadBuffer>(
         std::move(impl),

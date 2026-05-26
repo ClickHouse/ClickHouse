@@ -47,29 +47,4 @@ ReadSettings ReadSettings::adjustBufferSize(size_t file_size) const
     return res;
 }
 
-FilesystemCacheSettings ReadSettings::getFilesystemCacheSettings() const
-{
-    return FilesystemCacheSettings{
-        .read_from_filesystem_cache_if_exists_otherwise_bypass_cache = read_from_filesystem_cache_if_exists_otherwise_bypass_cache,
-        .filesystem_cache_segments_batch_size = filesystem_cache_segments_batch_size,
-        .filesystem_cache_boundary_alignment = filesystem_cache_boundary_alignment,
-        .filesystem_cache_allow_background_download = filesystem_cache_allow_background_download,
-        .filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
-        .filesystem_cache_max_download_size = filesystem_cache_max_download_size,
-        .filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit,
-        .enable_filesystem_cache_log = enable_filesystem_cache_log,
-    };
-}
-
-PageCacheSettings ReadSettings::getPageCacheSettings() const
-{
-    return PageCacheSettings{
-        .read_from_page_cache_if_exists_otherwise_bypass_cache = read_from_page_cache_if_exists_otherwise_bypass_cache,
-        .page_cache_inject_eviction = page_cache_inject_eviction,
-        .page_cache_block_size = page_cache_block_size,
-        .page_cache_lookahead_blocks = page_cache_lookahead_blocks,
-        .page_cache_max_coalesced_bytes = page_cache_max_coalesced_bytes,
-    };
-}
-
 }

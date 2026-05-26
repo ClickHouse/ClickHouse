@@ -3,6 +3,8 @@
 #include <Core/Settings.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <filesystem>
 #include <boost/algorithm/string/join.hpp>
@@ -308,15 +310,23 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
 
     for (const auto & command : commands)
     {
-        auto query_tree = buildQueryTree(command.predicate, context);
+        auto alter = command.ast();
+        if (!alter)
+            continue;
+
+        auto query_tree = buildQueryTree(ASTPtr(alter->predicate), context);
         auto identifiers = collectIdentifiersFullNames(query_tree);
         std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
 
-        for (const auto & [name, ast] : command.column_to_update_expression)
-        {
-            res.updated.insert(name);
+        if (!alter->update_assignments)
+            continue;
 
-            query_tree = buildQueryTree(ast, context);
+        for (const auto & child : alter->update_assignments->children)
+        {
+            const auto & assignment = child->as<ASTAssignment &>();
+            res.updated.insert(assignment.column_name);
+
+            query_tree = buildQueryTree(assignment.expression(), context);
             identifiers = collectIdentifiersFullNames(query_tree);
             std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
         }
