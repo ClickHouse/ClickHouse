@@ -208,6 +208,33 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
     ASSERT_TRUE(children1_set == children2_set);
 }
 
+TYPED_TEST(CoordinationTest, TestApplyUncommittedStateRejectsZeroLogIndex)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage source{500, "", this->keeper_context};
+    Storage target{500, "", this->keeper_context};
+
+    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/bad_log_idx";
+    source.preprocessRequest(
+        create_request,
+        1,
+        0,
+        1,
+        /*check_acl=*/true,
+        /*digest=*/std::nullopt,
+        /*log_idx=*/0);
+
+    EXPECT_THROW(source.applyUncommittedState(target, 0), DB::Exception);
+}
+
 TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
 {
     using namespace DB;

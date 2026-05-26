@@ -279,6 +279,10 @@ static_assert(sizeof(KeeperMemNode) <= 160);
 
 struct KeeperStorageStats
 {
+    KeeperStorageStats() = default;
+    KeeperStorageStats(const KeeperStorageStats & other);
+    KeeperStorageStats & operator=(const KeeperStorageStats & other);
+
     std::atomic<uint64_t> nodes_count = 0;
     std::atomic<uint64_t> approximate_data_size = 0;
     std::atomic<uint64_t> total_watches_count = 0;
@@ -593,10 +597,42 @@ public:
 
     UncommittedState uncommitted_state{*this};
 
-    // Apply uncommitted state to another storage using only transactions
-    // with zxid > last_zxid
+    struct UncommittedStateForSnapshot
+    {
+        UncommittedStateForSnapshot();
+        ~UncommittedStateForSnapshot();
+        UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot & operator=(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot(const UncommittedStateForSnapshot &) = delete;
+        UncommittedStateForSnapshot & operator=(const UncommittedStateForSnapshot &) = delete;
+
+        struct Transaction
+        {
+            int64_t zxid;
+            KeeperDigest nodes_digest;
+            int64_t log_idx = 0;
+        };
+
+        std::vector<Transaction> transactions;
+        std::list<Delta> deltas;
+
+        bool empty() const { return transactions.empty(); }
+    };
+
+    UncommittedStateForSnapshot copyUncommittedStateAfter(int64_t last_log_idx) const;
+    UncommittedStateForSnapshot detachUncommittedStateAfter(int64_t last_log_idx);
+    void applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot);
+
+    // Compatibility wrapper for the non-low-memory snapshot apply path.
     void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
 
+private:
+    void collectUncommittedTransactionsAfter(
+        int64_t last_log_idx,
+        UncommittedStateForSnapshot & result,
+        std::unordered_set<int64_t> & zxids_to_apply) const;
+
+public:
     Coordination::Error commit(DeltaRange deltas);
 
     // Create node in the storage
