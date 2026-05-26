@@ -226,9 +226,7 @@ private:
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    bool /* use_external_buffer */,
-    bool /* restrict_seek */) const
+    std::optional<size_t> read_hint) const
 {
     LOG_TEST(log, "Read object: {}", object.remote_path);
     auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);

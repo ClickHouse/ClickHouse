@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-class FunctionSynonyms final : public IFunction
+class FunctionSynonyms : public IFunction
 {
 public:
     static constexpr auto name = "synonyms";
