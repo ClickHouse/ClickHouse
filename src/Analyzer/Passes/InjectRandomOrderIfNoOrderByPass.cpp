@@ -39,20 +39,39 @@ void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
 {
     auto * query_node = query_root->as<QueryNode>();
 
-    /// Re-resolve query_node columns setting the unique alias
-    String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
+    /// Original projection columns (with the user-visible names like `number`).
     auto subquery_projection_columns = query_node->getProjectionColumns();
+
+    /// Internal unique aliases used to reference the inner columns from the wrapper.
+    /// One alias per projection column so multi-column SELECTs work, and aliases are
+    /// kept internal so output names (CTAS, VIEW, JSONEachRow, etc.) stay intact.
+    Names unique_column_names;
+    unique_column_names.reserve(subquery_projection_columns.size());
+    const String uuid_suffix = toString(UUIDHelpers::generateV4());
+    for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
+        unique_column_names.push_back("__subquery_column_" + std::to_string(i) + "_" + uuid_suffix);
+
+    /// Re-resolve inner query columns with the unique internal aliases.
     query_node->clearProjectionColumns();
-    query_node->setProjectionAliasesToOverride({unique_column_name});
+    query_node->setProjectionAliasesToOverride(unique_column_names);
     query_node->resolveProjectionColumns(subquery_projection_columns);
     query_node->setIsSubquery(true);
 
-    /// SELECT unique_column_name FROM query_node order by rand()
+    /// Wrapper: SELECT <inner columns referenced by UUID alias> FROM (inner) ORDER BY rand().
+    /// The wrapper's projection columns keep the ORIGINAL names so CTAS/VIEW and named
+    /// output formats produce user-expected column names.
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
     new_root->getJoinTree() = query_root;
-    NameAndTypePair column{unique_column_name, subquery_projection_columns[0].type};
-    new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, query_root));
-    new_root->resolveProjectionColumns({column});
+
+    NamesAndTypes outer_projection_columns;
+    outer_projection_columns.reserve(subquery_projection_columns.size());
+    for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
+    {
+        NameAndTypePair inner_ref{unique_column_names[i], subquery_projection_columns[i].type};
+        new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(inner_ref, query_root));
+        outer_projection_columns.emplace_back(subquery_projection_columns[i].name, subquery_projection_columns[i].type);
+    }
+    new_root->resolveProjectionColumns(std::move(outer_projection_columns));
     addRandomOrderBy(new_root->getOrderBy(), context);
 
     /// Replace old root with new wrapping query node
