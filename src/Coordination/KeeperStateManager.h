@@ -34,6 +34,23 @@ public:
 
     void loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep);
 
+    enum class StartupConfigSource
+    {
+        None,
+        BoundedLogStore,
+        LegacyBootstrapLogStore,
+    };
+
+    struct StartupConfigLookupResult
+    {
+        ClusterConfigPtr config;
+        StartupConfigSource source = StartupConfigSource::None;
+        uint64_t log_term = 0;
+    };
+
+    /// Startup-only helper. Must be called before NuRaft starts appending logs.
+    StartupConfigLookupResult getLatestConfigFromLogStoreForStartup(uint64_t authoritative_boundary) const;
+
     /// Flush logstore and call shutdown of background thread
     void flushAndShutDownLogStore();
 
@@ -87,9 +104,6 @@ public:
         std::lock_guard lock(configuration_wrapper_mutex);
         return configuration_wrapper.cluster_config->get_servers().size();
     }
-
-    /// Read latest config entry at or before the supplied cutoff from the log store.
-    ClusterConfigPtr getLatestConfigFromLogStore(uint64_t up_to_log_index) const;
 
     // TODO (myrrc) This should be removed once "reconfig" is stabilized
     ClusterUpdateActions getRaftConfigurationDiff(const Poco::Util::AbstractConfiguration & config, const CoordinationSettings & coordination_settings) const;

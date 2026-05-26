@@ -234,6 +234,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogLatestConfigChangeCutoff)
     EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(3)));
     EXPECT_EQ(4, config_index(changelog.getLatestConfigChange(4)));
     EXPECT_EQ(5, config_index(changelog.getLatestConfigChange(100)));
+    EXPECT_EQ(5, config_index(changelog.getLatestConfigChangeUnbounded()));
 
     auto app_log_4 = getLogEntry("rewritten-app4", 2);
     changelog.write_at(4, app_log_4);
@@ -244,6 +245,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogLatestConfigChangeCutoff)
     EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(2)));
     EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(4)));
     EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(100)));
+    EXPECT_EQ(2, config_index(changelog.getLatestConfigChangeUnbounded()));
 }
 
 

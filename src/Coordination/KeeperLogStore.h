@@ -76,6 +76,10 @@ public:
     /// Get latest config entry at or before the supplied cutoff.
     nuraft::ptr<nuraft::log_entry> getLatestConfigChange(uint64_t up_to_log_index) const;
 
+    /// Startup legacy bootstrap only. Returns a cached log entry; callers deserialize by mutating buffer position,
+    /// so do not call concurrently with log appends or other log-entry readers.
+    nuraft::ptr<nuraft::log_entry> getLatestConfigChangeUnbounded() const;
+
     void setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server);
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;

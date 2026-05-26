@@ -201,6 +201,9 @@ struct LogEntryStorage
     LogEntryPtr getEntry(uint64_t index) const;
     void clear();
     LogEntryPtr getLatestConfigChange(uint64_t up_to_log_index) const;
+    /// Startup legacy bootstrap only. Returns a cached log entry; callers deserialize by mutating buffer position,
+    /// so do not call concurrently with log appends or other log-entry readers.
+    LogEntryPtr getLatestConfigChangeUnbounded() const;
     uint64_t termAt(uint64_t index) const;
 
     using IndexWithLogLocation = std::pair<uint64_t, LogLocation>;
@@ -368,6 +371,10 @@ public:
 
     /// Get latest config entry at or before the supplied cutoff.
     LogEntryPtr getLatestConfigChange(uint64_t up_to_log_index) const;
+
+    /// Startup legacy bootstrap only. Returns a cached log entry; callers deserialize by mutating buffer position,
+    /// so do not call concurrently with log appends or other log-entry readers.
+    LogEntryPtr getLatestConfigChangeUnbounded() const;
 
     /// Return log entries between [start, end) with optional byte size limit
     LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);

@@ -138,6 +138,12 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange(uint64_t up
     return changelog.getLatestConfigChange(up_to_log_index);
 }
 
+nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChangeUnbounded() const
+{
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    return changelog.getLatestConfigChangeUnbounded();
+}
+
 void KeeperLogStore::shutdownChangelog()
 {
     ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);

@@ -140,12 +140,73 @@ namespace
 
 ClusterConfigPtr loadCommittedConfig(const KeeperContextPtr & keeper_context, const LoggerPtr & log);
 
+SnapshotMetadataPtr cloneSnapshotMetaWithConfig(const SnapshotMetadata & snapshot_meta, const ClusterConfigPtr & cluster_config)
+{
+    return std::make_shared<SnapshotMetadata>(
+        snapshot_meta.get_last_log_idx(),
+        snapshot_meta.get_last_log_term(),
+        cluster_config,
+        snapshot_meta.size(),
+        snapshot_meta.get_type());
+}
+
+ClusterConfigPtr makeEmptySnapshotConfig()
+{
+    return std::make_shared<nuraft::cluster_config>();
+}
+
+ClusterConfigPtr getValidSnapshotConfigOrNull(
+    const ClusterConfigPtr & snapshot_config,
+    uint64_t snapshot_last_log_idx,
+    const LoggerPtr & log,
+    const char * context)
+{
+    if (!snapshot_config)
+        return nullptr;
+
+    if (snapshot_config->get_servers().empty())
+    {
+        LOG_WARNING(
+            log,
+            "Ignoring Keeper config from {} with log index {} because it has an empty server list. "
+            "The snapshot itself is accepted as legacy on-disk state",
+            context,
+            snapshot_config->get_log_idx());
+        return nullptr;
+    }
+
+    if (snapshot_config->get_log_idx() <= snapshot_last_log_idx)
+        return snapshot_config;
+
+    LOG_WARNING(
+        log,
+        "Ignoring Keeper config from {} with log index {} because it is newer than snapshot last log index {}. "
+        "The snapshot itself is accepted as legacy on-disk state",
+        context,
+        snapshot_config->get_log_idx(),
+        snapshot_last_log_idx);
+    return nullptr;
+}
+
+SnapshotMetadataPtr cloneSnapshotMetaWithValidConfigOrDefault(
+    const SnapshotMetadata & snapshot_meta,
+    const LoggerPtr & log,
+    const char * context)
+{
+    auto valid_snapshot_config = getValidSnapshotConfigOrNull(
+        snapshot_meta.get_last_config(),
+        snapshot_meta.get_last_log_idx(),
+        log,
+        context);
+    return cloneSnapshotMetaWithConfig(snapshot_meta, valid_snapshot_config ? valid_snapshot_config : makeEmptySnapshotConfig());
+}
+
 }
 
 template<typename Storage>
 void KeeperStateMachine<Storage>::init()
 {
-    /// Do everything without mutexes, no other threads exist.
+    /// Startup runs before worker threads; still use `cluster_config_lock` for `cluster_config`.
     LOG_DEBUG(log, "Totally have {} snapshots", snapshot_manager.totalSnapshots());
     bool has_snapshots = snapshot_manager.totalSnapshots() != 0;
     /// Deserialize latest snapshot from disk
@@ -175,8 +236,20 @@ void KeeperStateMachine<Storage>::init()
             }
 
             storage = std::move(snapshot_deserialization_result.storage);
-            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-            cluster_config = snapshot_deserialization_result.cluster_config;
+            auto snapshot_last_log_idx = snapshot_deserialization_result.snapshot_meta->get_last_log_idx();
+            auto valid_snapshot_config = getValidSnapshotConfigOrNull(
+                snapshot_deserialization_result.cluster_config,
+                snapshot_last_log_idx,
+                log,
+                "startup snapshot payload");
+            latest_snapshot_meta = cloneSnapshotMetaWithValidConfigOrDefault(
+                *snapshot_deserialization_result.snapshot_meta,
+                log,
+                "startup snapshot metadata");
+            {
+                std::lock_guard cluster_config_guard(cluster_config_lock);
+                cluster_config = valid_snapshot_config;
+            }
             keeper_context->setLastCommitIndex(latest_snapshot_meta->get_last_log_idx());
         }
         catch (...)
@@ -197,14 +270,26 @@ void KeeperStateMachine<Storage>::init()
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
 
     auto committed_config = loadCommittedConfig(keeper_context, log);
-    if (committed_config && (!cluster_config || committed_config->get_log_idx() > cluster_config->get_log_idx()))
+    if (committed_config)
     {
-        LOG_INFO(
-            log,
-            "Using committed Keeper config with log index {} newer than snapshot config index {}",
-            committed_config->get_log_idx(),
-            cluster_config ? cluster_config->get_log_idx() : 0);
-        cluster_config = committed_config;
+        std::lock_guard lock(cluster_config_lock);
+        if (!cluster_config)
+        {
+            LOG_INFO(
+                log,
+                "Using committed Keeper config with log index {} because no valid snapshot Keeper config was loaded",
+                committed_config->get_log_idx());
+            cluster_config = committed_config;
+        }
+        else if (committed_config->get_log_idx() > cluster_config->get_log_idx())
+        {
+            LOG_INFO(
+                log,
+                "Using committed Keeper config with log index {} newer than snapshot config index {}",
+                committed_config->get_log_idx(),
+                cluster_config->get_log_idx());
+            cluster_config = committed_config;
+        }
     }
 
     if (!storage)
@@ -239,6 +324,9 @@ void saveCommittedConfig(
     const LoggerPtr & log)
 {
     auto disk = keeper_context->getStateFileDisk();
+    if (!disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper state-file disk is not configured, cannot save committed Keeper config sidecar");
+
     auto config_buf = config->serialize();
     auto version = static_cast<uint8_t>(current_committed_config_version);
 
@@ -261,6 +349,9 @@ void saveCommittedConfig(
 ClusterConfigPtr loadCommittedConfig(const KeeperContextPtr & keeper_context, const LoggerPtr & log)
 {
     auto disk = keeper_context->getStateFileDisk();
+    if (!disk)
+        return nullptr;
+
     if (!disk->existsFile(std::string(committed_config_file_name)))
         return nullptr;
 
@@ -887,8 +978,34 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         /// we have to apply them to the new storage
         storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
         storage = std::move(snapshot_deserialization_result.storage);
-        latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-        cluster_config = snapshot_deserialization_result.cluster_config;
+        auto snapshot_last_log_idx = snapshot_deserialization_result.snapshot_meta->get_last_log_idx();
+        auto valid_snapshot_config = getValidSnapshotConfigOrNull(
+            snapshot_deserialization_result.cluster_config,
+            snapshot_last_log_idx,
+            log,
+            "applied snapshot payload");
+        latest_snapshot_meta = cloneSnapshotMetaWithValidConfigOrDefault(
+            *snapshot_deserialization_result.snapshot_meta,
+            log,
+            "applied snapshot metadata");
+        {
+            std::lock_guard cluster_config_guard(cluster_config_lock);
+            if (valid_snapshot_config)
+            {
+                cluster_config = valid_snapshot_config;
+            }
+            else if (cluster_config)
+            {
+                LOG_INFO(
+                    log,
+                    "No valid Keeper config loaded from applied snapshot, keeping previous config with log index {}",
+                    cluster_config->get_log_idx());
+            }
+            else
+            {
+                LOG_INFO(log, "No valid Keeper config loaded from applied snapshot and no previous config is available");
+            }
+        }
 
         snapshot_loader_info.reset();
         snapshot_loader_info_log_idx = 0;
@@ -1163,7 +1280,7 @@ void KeeperStateMachine<Storage>::save_logical_snp_obj(
         ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshotObject);
         if (is_last_obj)
         {
-            latest_snapshot_meta = cloneSnapshotMeta(s);
+            latest_snapshot_meta = cloneSnapshotMetaWithValidConfigOrDefault(s, log, "received snapshot metadata");
             snapshot_receive_ctx.reset();
 
             uint64_t snp_size = 0;

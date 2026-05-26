@@ -1451,6 +1451,11 @@ LogEntryPtr LogEntryStorage::getLatestConfigChange(uint64_t up_to_log_index) con
     return getEntry(best_index);
 }
 
+LogEntryPtr LogEntryStorage::getLatestConfigChangeUnbounded() const
+{
+    return latest_config;
+}
+
 uint64_t LogEntryStorage::termAt(uint64_t index) const
 {
     if (log_term_infos.empty())
@@ -2547,6 +2552,11 @@ LogEntryPtr Changelog::entryAt(uint64_t index) const
 LogEntryPtr Changelog::getLatestConfigChange(uint64_t up_to_log_index) const
 {
     return entry_storage.getLatestConfigChange(up_to_log_index);
+}
+
+LogEntryPtr Changelog::getLatestConfigChangeUnbounded() const
+{
+    return entry_storage.getLatestConfigChangeUnbounded();
 }
 
 nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, int32_t count)

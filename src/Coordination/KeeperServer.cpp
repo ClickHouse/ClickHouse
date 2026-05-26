@@ -463,21 +463,39 @@ void KeeperServer::loadLatestConfig()
     }
     else
     {
-        const auto committed_index = state_machine->last_commit_index();
-        auto latest_log_store_config = state_manager->getLatestConfigFromLogStore(committed_index);
-        if (latest_log_store_config)
+        const auto authoritative_boundary = state_machine->last_commit_index();
+        /// Reaching this branch means the state machine selected no valid snapshot or sidecar config.
+        /// A valid sidecar would already be state-machine config; a corrupt sidecar would have thrown during init.
+        auto startup_config = state_manager->getLatestConfigFromLogStoreForStartup(authoritative_boundary);
+        switch (startup_config.source)
         {
+        case KeeperStateManager::StartupConfigSource::BoundedLogStore:
             LOG_INFO(
                 log,
-                "No config in state machine, will use committed config from log store with log index {} at or before committed index {}",
-                latest_log_store_config->get_log_idx(),
-                committed_index);
-            latest_log_store_config->set_async_replication(async_replication);
-            state_manager->save_config(*latest_log_store_config);
-        }
-        else
-        {
-            LOG_INFO(log, "No config in state machine or log store, probably it's initial run. Will use config from .xml on disk");
+                "No config in state machine, will use authoritative config from log store with log index {}, log term {}, at or before boundary {}",
+                startup_config.config->get_log_idx(),
+                startup_config.log_term,
+                authoritative_boundary);
+            startup_config.config->set_async_replication(async_replication);
+            state_manager->save_config(*startup_config.config);
+            break;
+        case KeeperStateManager::StartupConfigSource::LegacyBootstrapLogStore:
+            LOG_WARNING(
+                log,
+                "No authoritative config found in state machine, sidecar, or bounded log store. Will use unverified legacy bootstrap "
+                "config from local log store with log index {}, log term {}, and boundary {}. It will not be written to committed_config "
+                "until NuRaft commits or replays it through commit_config",
+                startup_config.config->get_log_idx(),
+                startup_config.log_term,
+                authoritative_boundary);
+            startup_config.config->set_async_replication(async_replication);
+            state_manager->save_config(*startup_config.config);
+            break;
+        case KeeperStateManager::StartupConfigSource::None:
+            LOG_INFO(
+                log,
+                "No config in state machine, sidecar, bounded log store, or legacy bootstrap logs. Will use config from .xml on disk");
+            break;
         }
     }
 }
