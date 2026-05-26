@@ -1463,6 +1463,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
     waitDatabaseStarted();
 
     is_recovering = true;
@@ -1787,7 +1788,6 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 const auto & create_query_string = metadata_it->second;
                 if (isTableExist(table_name, getContext()))
                 {
-                    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
                     chassert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
                     return;
                 }
