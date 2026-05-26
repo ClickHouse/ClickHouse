@@ -68,6 +68,7 @@ result	String
 -- aiExtract: JSON schema mode accepted
 0
 -- aiExtract: malformed JSON schema
+-- aiExtract: malformed JSON schema on empty input
 -- aiExtract: JSON schema with non-string value
 -- aiExtract: schema mode detection ignores leading whitespace
 -- aiExtract: with temperature
@@ -98,6 +99,7 @@ result	Array(Float32)
 0
 -- aiEmbed: empty input with dimensions
 0
+-- aiEmbed: out-of-range dimensions on empty input
 -- aiEmbed: nonexistent named collection
 -- aiEmbed: batch size setting default
 100

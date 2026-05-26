@@ -160,6 +160,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
+    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
+    auto response_format = buildResponseFormat(arguments);
 
     if (input_rows_count == 0)
         return result_type->createColumn();
@@ -193,9 +195,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
-
-    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
-    auto response_format = buildResponseFormat(arguments);
 
     auto result_col = ColumnString::create();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;

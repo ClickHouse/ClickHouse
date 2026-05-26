@@ -305,6 +305,11 @@ SELECT count() FROM (SELECT aiExtract('ai_credentials', x, '{"topic":"main topic
 SELECT '-- aiExtract: malformed JSON schema';
 SELECT aiExtract('ai_credentials', 'hi', '{invalid'); -- { serverError BAD_ARGUMENTS }
 
+-- `instruction_or_schema` is a row-independent constant, so a malformed schema must fail
+-- the query even when the source has zero rows.
+SELECT '-- aiExtract: malformed JSON schema on empty input';
+SELECT aiExtract('ai_credentials', x, '{invalid') FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+
 SELECT '-- aiExtract: JSON schema with non-string value';
 SELECT aiExtract('ai_credentials', 'hi', '{"a":null}'); -- { serverError BAD_ARGUMENTS }
 
@@ -395,6 +400,11 @@ SELECT count() FROM (SELECT aiEmbed('ai_credentials', x) AS result FROM tab);
 
 SELECT '-- aiEmbed: empty input with dimensions';
 SELECT count() FROM (SELECT aiEmbed('ai_credentials', x, 128) AS result FROM tab);
+
+-- `dimensions` is a row-independent constant, so an out-of-range value must fail
+-- the query even when the source has zero rows.
+SELECT '-- aiEmbed: out-of-range dimensions on empty input';
+SELECT aiEmbed('ai_credentials', x, 18446744073709551615) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- aiEmbed: nonexistent named collection';
 SELECT aiEmbed('nonexistent_collection_xyz', 'hello'); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }

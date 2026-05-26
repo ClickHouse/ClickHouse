@@ -112,9 +112,6 @@ public:
     {
         auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column);
 
-        if (input_rows_count == 0)
-            return result_type->createColumn();
-
         UInt64 dimensions = 0;
         if (arguments.size() > 2)
         {
@@ -128,6 +125,9 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiEmbed: 'dimensions' exceeds maximum ({})",
                     std::numeric_limits<Int64>::max());
         }
+
+        if (input_rows_count == 0)
+            return result_type->createColumn();
 
         const auto & settings = getContext()->getSettingsRef();
         UInt64 timeout_sec = settings[Setting::ai_function_request_timeout_sec].value;
