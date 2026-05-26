@@ -824,24 +824,28 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             if (table_expression_modifiers->hasStream())
             {
-                if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
+                #ifndef OS_LINUX
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux.");
+                #else
+                    if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
 
-                if (storage->isSystemStorage())
-                    throw Exception(ErrorCodes::ILLEGAL_STREAM,
-                        "STREAM is not supported for system tables");
+                    if (storage->isSystemStorage())
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                            "STREAM is not supported for system tables");
 
-                if (!storage->supportsStreaming())
-                    throw Exception(ErrorCodes::ILLEGAL_STREAM,
-                        "Storage {} doesn't support STREAM",
-                        storage->getName());
+                    if (!storage->supportsStreaming())
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                            "Storage {} doesn't support STREAM",
+                            storage->getName());
 
-                if (table_expression_modifiers->hasFinal()
-                    || table_expression_modifiers->hasSampleSizeRatio()
-                    || table_expression_modifiers->hasSampleOffsetRatio())
-                    throw Exception(ErrorCodes::SYNTAX_ERROR,
-                        "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
+                    if (table_expression_modifiers->hasFinal()
+                        || table_expression_modifiers->hasSampleSizeRatio()
+                        || table_expression_modifiers->hasSampleOffsetRatio())
+                        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
+                #endif
             }
         }
     }
