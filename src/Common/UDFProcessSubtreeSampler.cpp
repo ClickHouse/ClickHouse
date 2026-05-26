@@ -302,12 +302,23 @@ void UDFProcessSubtreeSampler::recordReleased()
     /// because pids run mostly serially inside one borrow (a parent process
     /// hands off to a child) so peak resident set per pid is a better
     /// estimate than a sum.
-    auto pids = UDFProcfs::walkSubtree(root_pid);
-
-    UInt64 post_utime_sum_in_baseline = 0;
-    UInt64 post_stime_sum_in_baseline = 0;
+    /// Sum pre values over the FULL pre_snapshot map, not just over pids that
+    /// are still alive at post-walk time. A descendant present at pre-walk and
+    /// reaped during the borrow leaves its CPU in the reaper's `c{u,s}time`
+    /// delta; without subtracting that descendant's pre baseline, all of its
+    /// pre-window CPU would leak into the borrow's reported delta.
     UInt64 pre_utime_sum = 0;
     UInt64 pre_stime_sum = 0;
+    for (const auto & [_, snap] : pre_snapshot)
+    {
+        pre_utime_sum += snap.utime_us;
+        pre_stime_sum += snap.stime_us;
+    }
+
+    auto pids = UDFProcfs::walkSubtree(root_pid);
+
+    UInt64 post_utime_sum = 0;
+    UInt64 post_stime_sum = 0;
     UInt64 peak_rss = 0;
 
     for (pid_t pid : pids)
@@ -319,10 +330,8 @@ void UDFProcessSubtreeSampler::recordReleased()
             UInt64 stime_us = 0;
             if (UDFProcfs::readStat(pid, utime_us, stime_us))
             {
-                post_utime_sum_in_baseline += utime_us;
-                post_stime_sum_in_baseline += stime_us;
-                pre_utime_sum += it->second.utime_us;
-                pre_stime_sum += it->second.stime_us;
+                post_utime_sum += utime_us;
+                post_stime_sum += stime_us;
             }
         }
 
@@ -331,10 +340,10 @@ void UDFProcessSubtreeSampler::recordReleased()
             peak_rss = std::max(peak_rss, hwm_bytes);
     }
 
-    if (post_utime_sum_in_baseline >= pre_utime_sum)
-        user_time_us = post_utime_sum_in_baseline - pre_utime_sum;
-    if (post_stime_sum_in_baseline >= pre_stime_sum)
-        system_time_us = post_stime_sum_in_baseline - pre_stime_sum;
+    if (post_utime_sum >= pre_utime_sum)
+        user_time_us = post_utime_sum - pre_utime_sum;
+    if (post_stime_sum >= pre_stime_sum)
+        system_time_us = post_stime_sum - pre_stime_sum;
 
     /// PeakMemoryByteSeconds = peak_rss × borrow_wall_seconds. Stored as
     /// integer byte-seconds. 64-bit multiplication is fine for any realistic
