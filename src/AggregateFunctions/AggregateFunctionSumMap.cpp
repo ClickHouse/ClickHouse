@@ -298,16 +298,21 @@ public:
                     Field value = values[col_idx];
 
                     /// Compatibility with previous versions.
-                    WhichDataType value_type(values_types[col_idx]);
-                    if (value_type.isDecimal32())
+                    /// Peel off `Nullable` so the underlying `Decimal32`/`Decimal64` is recognised.
+                    /// Null values pass through unchanged and are handled by `SerializationNullable`.
+                    if (!value.isNull())
                     {
-                        auto source = value.safeGet<DecimalField<Decimal32>>();
-                        value = DecimalField<Decimal128>(source.getValue(), source.getScale());
-                    }
-                    else if (value_type.isDecimal64())
-                    {
-                        auto source = value.safeGet<DecimalField<Decimal64>>();
-                        value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                        WhichDataType value_type(removeNullable(values_types[col_idx]));
+                        if (value_type.isDecimal32())
+                        {
+                            auto source = value.safeGet<DecimalField<Decimal32>>();
+                            value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                        }
+                        else if (value_type.isDecimal64())
+                        {
+                            auto source = value.safeGet<DecimalField<Decimal64>>();
+                            value = DecimalField<Decimal128>(source.getValue(), source.getScale());
+                        }
                     }
 
                     promoted_values_serializations[col_idx]->serializeBinary(value, buf, {});
@@ -355,10 +360,12 @@ public:
                     promoted_values_serializations[col_idx]->deserializeBinary(value, buf, format_settings);
 
                     /// Compatibility with previous versions.
+                    /// Peel off `Nullable` so the underlying `Decimal32`/`Decimal64` is recognised.
+                    /// Null values come back as `Field::Null` and pass through unchanged.
                     if (value.getType() == Field::Types::Decimal128)
                     {
                         auto source = value.safeGet<DecimalField<Decimal128>>();
-                        WhichDataType value_type(values_types[col_idx]);
+                        WhichDataType value_type(removeNullable(values_types[col_idx]));
                         if (value_type.isDecimal32())
                         {
                             value = DecimalField<Decimal32>(source.getValue(), source.getScale());
