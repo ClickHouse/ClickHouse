@@ -8,17 +8,12 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
-#include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-
-#include <optional>
 
 #include <mongocxx/instance.hpp>
 #include <mongocxx/client.hpp>
-
-extern "C" void mongoc_cleanup(void);
 
 namespace DB
 {
@@ -39,25 +34,9 @@ public:
         static MongoDBInstanceHolder instance;
         return instance;
     }
-
-    ~MongoDBInstanceHolder()
-    {
-        /// Destroy the `mongocxx::instance` first so that its internal `~impl` runs
-        /// (nullifies the log handler, etc.) while the C driver globals are still alive.
-        inst.reset();
-
-        /// The mongocxx driver deliberately skips calling `mongoc_cleanup` under ASan
-        /// to avoid issues with dynamically loaded libraries becoming unloaded.
-        /// In ClickHouse all libraries (including OpenSSL) are statically linked,
-        /// so that concern does not apply. Calling `mongoc_cleanup` explicitly prevents
-        /// LeakSanitizer from reporting global allocations (handshake data, etc.)
-        /// made by libmongoc as memory leaks.
-        /// This is safe because `mongoc_cleanup` is idempotent (`bson_once`-guarded).
-        mongoc_cleanup();
-    }
 private:
     MongoDBInstanceHolder() = default;
-    std::optional<mongocxx::instance> inst{std::in_place};
+    mongocxx::instance inst;
 };
 
 struct MongoDBConfiguration
@@ -67,7 +46,6 @@ struct MongoDBConfiguration
     std::unordered_set<String> oid_fields = {"_id"};
 
     void checkHosts(const ContextPtr & context) const;
-    void checkCollection() const;
 
     bool isOidColumn(const std::string & name) const
     {
@@ -81,11 +59,10 @@ struct MongoDBConfiguration
  *  Read only.
  *  One stream only.
  */
-class StorageMongoDB final : public StorageWithCommonVirtualColumns
+class StorageMongoDB final : public IStorage
 {
 public:
     static MongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
-    static MongoDBConfiguration getConfigurationFromCollection(MutableNamedCollectionPtr named_collection, ContextPtr context);
 
     StorageMongoDB(
         const StorageID & table_id_,
@@ -96,11 +73,6 @@ public:
 
     std::string getName() const override { return "MongoDB"; }
     bool isRemote() const override { return true; }
-    bool isExternalDatabase() const override { return true; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,

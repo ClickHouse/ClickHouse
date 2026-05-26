@@ -1,15 +1,14 @@
 #pragma once
 
-#include <filesystem>
-#include <queue>
 #include <Backups/BackupSettings.h>
-#include <Core/QualifiedTableName.h>
 #include <Databases/DDLRenamingVisitor.h>
-#include <Interpreters/StorageID.h>
+#include <Core/QualifiedTableName.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <filesystem>
+#include <queue>
 
 
 namespace DB
@@ -21,6 +20,7 @@ using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
+struct StorageID;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class QueryStatus;
@@ -31,14 +31,12 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class BackupEntriesCollector : private boost::noncopyable
 {
 public:
-    BackupEntriesCollector(
-        const ASTBackupQuery::Elements & backup_query_elements_,
-        const BackupSettings & backup_settings_,
-        const String & backup_id_,
-        std::shared_ptr<IBackupCoordination> backup_coordination_,
-        const ReadSettings & read_settings_,
-        const ContextPtr & context_,
-        ThreadPool & threadpool_);
+    BackupEntriesCollector(const ASTBackupQuery::Elements & backup_query_elements_,
+                           const BackupSettings & backup_settings_,
+                           std::shared_ptr<IBackupCoordination> backup_coordination_,
+                           const ReadSettings & read_settings_,
+                           const ContextPtr & context_,
+                           ThreadPool & threadpool_);
     ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
@@ -47,7 +45,6 @@ public:
     BackupEntries run();
 
     const BackupSettings & getBackupSettings() const { return backup_settings; }
-    const String & getBackupId() const { return backup_id; }
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
@@ -97,10 +94,6 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
-    bool shouldBackupTableData(
-        const QualifiedTableName & table_name,
-        const StoragePtr & storage,
-        const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const;
 
     void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
 
@@ -113,7 +106,6 @@ private:
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
-    const String backup_id;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     const ReadSettings read_settings;
     ContextPtr context;
@@ -171,7 +163,6 @@ private:
         std::filesystem::path data_path_in_backup;
         std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
-        bool should_backup_data = true;
     };
 
     String current_stage;

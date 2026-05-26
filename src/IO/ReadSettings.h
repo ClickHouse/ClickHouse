@@ -4,8 +4,8 @@
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/UserInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -16,31 +16,6 @@ namespace DB
 class MMappedFileCache;
 class PageCache;
 class Context;
-
-/// Settings controlling the in-memory page cache behavior.
-/// Used by CachedInMemoryReadBufferFromFile and the ReadPipeline memory cache stage.
-struct PageCacheSettings
-{
-    bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
-    bool page_cache_inject_eviction = false;
-    size_t page_cache_block_size = 1 << 20;
-    size_t page_cache_lookahead_blocks = 16;
-    size_t page_cache_max_coalesced_bytes = 16 << 20;
-};
-
-/// Settings controlling the filesystem (disk) cache behavior.
-/// Used by CachedOnDiskReadBufferFromFile and the ReadPipeline disk cache stage.
-struct FilesystemCacheSettings
-{
-    bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
-    size_t filesystem_cache_segments_batch_size = 20;
-    std::optional<size_t> filesystem_cache_boundary_alignment;
-    bool filesystem_cache_allow_background_download = true;
-    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
-    size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
-    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
-    bool enable_filesystem_cache_log = false;
-};
 
 struct ReadSettings
 {
@@ -68,6 +43,8 @@ struct ReadSettings
     /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
     Priority priority;
 
+    bool load_marks_asynchronously = true;
+
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
@@ -86,19 +63,19 @@ struct ReadSettings
 
     bool use_page_cache_for_disks_without_file_cache = false;
     [[maybe_unused]] bool use_page_cache_with_distributed_cache = false;
-    bool use_page_cache_for_local_disks = false;
-    bool use_page_cache_for_object_storage = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
     bool page_cache_inject_eviction = false;
     size_t page_cache_block_size = 1 << 20;
     size_t page_cache_lookahead_blocks = 16;
-    size_t page_cache_max_coalesced_bytes = 16 << 20;
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
     bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    bool remote_read_buffer_restrict_seek = false;
+    bool remote_read_buffer_use_external_buffer = false;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
@@ -114,17 +91,11 @@ struct ReadSettings
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
-    std::optional<FileCacheOriginInfo> filecache_origin_info;
+    std::optional<FileCacheUserInfo> filecache_user_info;
     bool enable_hdfs_pread = true;
-    bool enable_blob_storage_log_for_read_operations = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
-
-    /// Extract filesystem cache settings into a dedicated struct.
-    FilesystemCacheSettings getFilesystemCacheSettings() const;
-
-    /// Extract page cache settings into a dedicated struct.
-    PageCacheSettings getPageCacheSettings() const;
+    ReadSettings withNestedBuffer() const;
 };
 
 ReadSettings getReadSettings();

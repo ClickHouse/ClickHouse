@@ -1,5 +1,4 @@
 #include <limits>
-#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
 #include <Functions/hilbertDecode2DLUT.h>
@@ -8,7 +7,7 @@
 namespace DB
 {
 
-class FunctionHilbertDecode final : public FunctionSpaceFillingCurveDecode<2, 0, 32>
+class FunctionHilbertDecode : public FunctionSpaceFillingCurveDecode<2, 0, 32>
 {
 public:
     static constexpr auto name = "hilbertDecode";
@@ -137,7 +136,7 @@ CREATE TABLE hilbert_numbers(
     n2 UInt32
 )
 ENGINE=MergeTree()
-ORDER BY n1 SETTINGS index_granularity_bytes = '10Mi';
+ORDER BY n1 SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 
 -- Use column names instead of constants as function arguments
@@ -148,7 +147,7 @@ SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHilbertDecode>(documentation);
 }
