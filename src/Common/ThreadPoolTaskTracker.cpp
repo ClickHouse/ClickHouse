@@ -107,6 +107,7 @@ void TaskTracker::add(Callback && func)
     {
         std::lock_guard lock(mutex);
         chassert(!final_task && "add must not be called after addFinal");
+        ++tasks_added;
     }
 
     /// All this fuzz is about 2 things. This is the most critical place of TaskTracker.
@@ -131,8 +132,7 @@ void TaskTracker::add(Callback && func)
                 DENY_ALLOCATIONS_IN_SCOPE;
                 std::lock_guard lock(mutex);
                 finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
-                /// "+ 1" accounts for final task: it has a futures entry but no finished_futures entry.
-                if (final_task && finished_futures.size() + 1 == futures.size())
+                if (final_task && finished_futures.size() == tasks_added)
                 {
                     maybe_final_task = std::move(final_task);
                 }
@@ -170,7 +170,7 @@ void TaskTracker::addFinal(Callback && func)
     {
         std::lock_guard lock(mutex);
         chassert(!final_task && "addFinal must be called at most once");
-        if (finished_futures.size() + 1 == futures.size())
+        if (finished_futures.size() == tasks_added)
         {
             /// Every previously added task has already finished.
             /// There will be no SCOPE_EXIT to trigger the final callback, so run it here.

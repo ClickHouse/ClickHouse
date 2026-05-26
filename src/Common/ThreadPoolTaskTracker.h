@@ -63,6 +63,11 @@ private:
     using FinishedList = std::list<FutureList::iterator>;
     FinishedList finished_futures TSA_GUARDED_BY(mutex);
 
+    /// Count of regular tasks submitted via add (excludes the final task).
+    /// Worker threads compare this with finished_futures.size() to decide when
+    /// the final task is ready, so they never need to read `futures`.
+    size_t tasks_added TSA_GUARDED_BY(mutex) = 0;
+
     /// A packaged task for the callback added by addFinal. A non-null value means
     /// the callback has been added, but not yet run.
     std::shared_ptr<std::packaged_task<void()>> final_task TSA_GUARDED_BY(mutex);
