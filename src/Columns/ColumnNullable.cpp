@@ -39,9 +39,8 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     {
         /// `Nullable(Array)` columns are allowed when `allow_experimental_nullable_array_type` is enabled;
         /// type-level checks happen in context-aware validation, not via `IColumn::canBeInsideNullable()`.
-        if (checkAndGetColumn<ColumnArray>(&getNestedColumn()))
-            return;
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
+        if (!checkAndGetColumn<ColumnArray>(&getNestedColumn()))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
     }
 
     if (isColumnConst(*null_map))
