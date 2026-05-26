@@ -156,6 +156,18 @@ protected:
     /// Optional. See `setSparseOffsetsShare`.
     SparseOffsetsSharePtr sparse_offsets_share;
 
+    /// Per-reader cache of the share's `(part, column)` lookup result. The reader is
+    /// scoped to one part and re-reads the same column thousands of times, so resolving
+    /// the bucket pointer once and reusing it skips the share's `SharedMutex` on every
+    /// slice call. `nullptr` means "looked up and not present" once `cached`; until
+    /// `cached` is true we haven't asked the share yet.
+    mutable struct SharedBucketCacheEntry
+    {
+        String column_name;
+        const SparseOffsetsShare::Bucket * bucket = nullptr;
+        bool cached = false;
+    } cached_share_bucket;
+
     /// Next part-row position the reader will read at when `continue_reading=true`.
     /// Maintained by the concrete reader's `readRows` (set at the start of each call
     /// based on the seek target, then incremented by the rows actually consumed).

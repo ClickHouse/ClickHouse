@@ -534,9 +534,26 @@ void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
     if (!sparse_offsets_share)
         return;
 
-    auto element = sparse_offsets_share->slice(
-        data_part_info_for_read->getPartName(),
-        column_name_in_storage,
+    /// Resolve the share's bucket once per column on this reader and remember it.
+    /// Subsequent slice calls go straight to `sliceFromBucket` and never touch the
+    /// share's `SharedMutex`. `unordered_map` guarantees pointer stability under
+    /// rehash, so the cached pointer remains valid for the share's lifetime.
+    if (!cached_share_bucket.cached || cached_share_bucket.column_name != column_name_in_storage)
+    {
+        cached_share_bucket.column_name = column_name_in_storage;
+        cached_share_bucket.bucket = sparse_offsets_share->findBucket(
+            data_part_info_for_read->getPartName(), column_name_in_storage);
+        cached_share_bucket.cached = true;
+    }
+
+    if (!cached_share_bucket.bucket)
+    {
+        ProfileEvents::increment(ProfileEvents::SparseOffsetsShareSeedMisses);
+        return;
+    }
+
+    auto element = SparseOffsetsShare::sliceFromBucket(
+        *cached_share_bucket.bucket,
         scan_row_start,
         rows_offset,
         limit,
