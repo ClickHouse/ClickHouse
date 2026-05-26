@@ -190,6 +190,8 @@ The parenthesized subquery is required. The client receives a single result set:
 
 The `INSERT` runs first using the normal insert pipeline. If the `INSERT` fails, the `RETURNING` subquery is not executed. If the `INSERT` succeeds, the subquery runs in the same session with the same settings. The subquery can reference any table and use the full `SELECT` grammar.
 
+Planning and executing the `RETURNING` subquery happens only after the `INSERT` pipeline has finished successfully, for all transports (including inlined `VALUES`/`FORMAT`). If planning the subquery fails (for example unknown column name), inserted rows remain — the insert is **not rolled back**.
+
 This feature is **not atomic**. Concurrent writers can insert rows between the `INSERT` and the `RETURNING` subquery. Unlike PostgreSQL `RETURNING`, ClickHouse does not infer which rows were inserted by the current statement; the user must provide a subquery with filters that identify the desired rows (for example, a unique id or batch identifier).
 
 Limitations:

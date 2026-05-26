@@ -33,6 +33,12 @@ SELECT count() AS rows_after_failed_insert FROM t_insert_returning;
 SELECT 'returning subquery settings';
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT number FROM numbers(100) SETTINGS max_block_size=1, max_result_rows=5, result_overflow_mode='break') VALUES (50, 'limits');
 
+-- RETURNING subquery is planned only after INSERT finishes (consistent with native push inserts)
+SELECT 'returning analysis after insert';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT no_such_col FROM t_insert_returning) VALUES (101, 'late_analysis'); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count() AS inserted_after_bad_returning FROM t_insert_returning WHERE id = 101;
+
 -- async_insert is rejected
 SELECT 'async insert rejection';
 SET async_insert = 1;

@@ -9,7 +9,6 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sources/DelayedSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
@@ -99,46 +98,16 @@ QueryPipeline buildInsertReturningPipeline(
     if (insert_pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT pipeline must be completed before wrapping with RETURNING");
 
-    auto returning_context = makeReturningSelectContext(returning_select, context);
-    auto insert_pipeline_holder = std::make_shared<QueryPipeline>(std::move(insert_pipeline));
+    /// Run INSERT to completion before building the RETURNING `SELECT` pipeline, so semantic errors during
+    /// subquery planning (unknown identifiers, etc.) do not happen before persisted insert side effects — same ordering
+    /// as the native-protocol push path (`replacePipelineWithInsertReturningAfterPush`).
+    insert_pipeline.setProcessListElement(context->getProcessListElement());
+    insert_pipeline.setProgressCallback(context->getProgressCallback());
 
-    SharedHeader returning_header;
-    {
-        const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
-        if (returning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            returning_header = InterpreterSelectQueryAnalyzer::getSampleBlock(returning_select, returning_context, select_query_options);
-        else
-            returning_header = InterpreterSelectWithUnionQuery::getSampleBlock(returning_select, returning_context);
-    }
+    CompletedPipelineExecutor insert_executor(insert_pipeline);
+    insert_executor.execute();
 
-    DelayedSource::Creator creator = [insert_pipeline_holder, returning_select, returning_context]() -> QueryPipelineBuilder
-    {
-        /// The INSERT pipeline is captured before executeQueryImpl wires process list / progress
-        /// onto the outer RETURNING pipeline; attach them here so timeout/cancel work during INSERT.
-        insert_pipeline_holder->setProcessListElement(returning_context->getProcessListElement());
-        insert_pipeline_holder->setProgressCallback(returning_context->getProgressCallback());
-
-        CompletedPipelineExecutor insert_executor(*insert_pipeline_holder);
-        insert_executor.execute();
-
-        const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
-        if (returning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            InterpreterSelectQueryAnalyzer interpreter(returning_select, returning_context, select_query_options);
-            return interpreter.buildQueryPipeline();
-        }
-
-        InterpreterSelectWithUnionQuery interpreter(returning_select, returning_context, select_query_options);
-        return interpreter.buildQueryPipeline();
-    };
-
-    /// Preserve totals/extremes streams from the trailing SELECT. If DelayedSource
-    /// omits a port that the inner pipeline produces, synchronizePorts drops it into NullSink.
-    const bool add_totals_port = true;
-    const bool add_extremes_port = true;
-
-    Pipe pipe = createDelayedPipe(returning_header, std::move(creator), add_totals_port, add_extremes_port);
-    return QueryPipeline(std::move(pipe));
+    return buildReturningSelectPipeline(returning_select, context);
 }
 
 }

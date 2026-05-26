@@ -15,7 +15,7 @@ class ASTInsertQuery;
 /// Context with SETTINGS from the RETURNING subquery applied (for interpreters and result limits).
 ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, ContextPtr context);
 
-/// Wrap a completed INSERT pipeline so that the RETURNING SELECT runs after the INSERT finishes.
+/// Run the completed INSERT pipeline to finish, then return a pulling pipeline for the `RETURNING` subquery.
 QueryPipeline buildInsertReturningPipeline(
     QueryPipeline insert_pipeline,
     const ASTPtr & returning_select,
