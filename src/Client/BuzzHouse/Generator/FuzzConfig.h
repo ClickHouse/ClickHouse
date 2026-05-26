@@ -312,6 +312,7 @@ public:
     std::vector<CHFunction> nondet_funcs;
     std::vector<CHFunction> common_funcs;
     std::vector<CHAggregate> det_aggrs;
+    std::vector<CHAggregate> simple_det_aggrs;
     std::vector<CHAggregate> nondet_aggrs;
 
     std::optional<ServerCredentials> clickhouse_server;

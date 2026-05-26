@@ -41,6 +41,7 @@ StatementGenerator::StatementGenerator(
     , nondet_funcs(fc.nondet_funcs)
     , common_funcs(fc.common_funcs)
     , det_aggrs(fc.det_aggrs)
+    , simple_det_aggrs(fc.simple_det_aggrs)
     , nondet_aggrs(fc.nondet_aggrs)
     , SQLGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),

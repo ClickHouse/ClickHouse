@@ -739,6 +739,7 @@ ORDER BY f.name)sql";
         nondet_funcs.clear();
         common_funcs.clear();
         det_aggrs.clear();
+        simple_det_aggrs.clear();
         nondet_aggrs.clear();
         while (std::getline(infile, buf))
         {
@@ -844,6 +845,36 @@ ORDER BY f.name)sql";
     {
         LOG_WARNING(log, "Failed to load functions from system.functions, keeping previous catalog");
     }
+    static const std::unordered_set<String> simple_aggregate_allowlist = {
+        "any",
+        "any_respect_nulls",
+        "anyLast",
+        "anyLast_respect_nulls",
+        "min",
+        "max",
+        "sum",
+        "sumWithOverflow",
+        "groupBitAnd",
+        "groupBitOr",
+        "groupBitXor",
+        "sumMap",
+        "minMap",
+        "maxMap",
+        "groupArrayArray",
+        "groupArrayLastArray",
+        "groupUniqArrayArray",
+        "groupUniqArrayArrayMap",
+        "sumMappedArrays",
+        "minMappedArrays",
+        "maxMappedArrays",
+    };
+    simple_det_aggrs.clear();
+    for (const auto & agg : det_aggrs)
+    {
+        if (simple_aggregate_allowlist.contains(agg.fname))
+            simple_det_aggrs.push_back(agg);
+    }
+
     if (det_funcs.empty())
     {
         det_funcs.emplace_back("abs", LambdaKind::None, 1, 1);
@@ -851,6 +882,8 @@ ORDER BY f.name)sql";
     }
     if (det_aggrs.empty())
         det_aggrs.emplace_back("count", 0, 0, 0, 1, false);
+    if (simple_det_aggrs.empty())
+        simple_det_aggrs.emplace_back("any", 0, 0, 1, 1, false);
 }
 
 void FuzzConfig::loadServerConfigurations()

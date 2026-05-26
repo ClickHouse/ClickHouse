@@ -171,6 +171,7 @@ private:
     const std::vector<CHFunction> & nondet_funcs;
     const std::vector<CHFunction> & common_funcs;
     const std::vector<CHAggregate> & det_aggrs;
+    const std::vector<CHAggregate> & simple_det_aggrs;
     const std::vector<CHAggregate> & nondet_aggrs;
     PeerQuery peer_query = PeerQuery::None;
 

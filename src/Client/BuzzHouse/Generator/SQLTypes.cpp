@@ -1889,7 +1889,7 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     std::vector<AggregateParam> params;
     std::vector<std::unique_ptr<SQLType>> subtypes;
     AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
-    const CHAggregate & agg = rg.pickRandomly(det_aggrs);
+    const CHAggregate & agg = rg.pickRandomly(simple ? simple_det_aggrs : det_aggrs);
     std::string aggr = agg.fname;
     uint32_t nargs = agg.min_args == agg.max_args ? agg.min_args : rg.randomInt<uint32_t>(agg.min_args, agg.max_args);
 
