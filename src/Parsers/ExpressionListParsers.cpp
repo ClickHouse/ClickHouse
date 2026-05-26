@@ -1732,7 +1732,7 @@ static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, 
 static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
 {
     extract_unit = ExtractUnit::None;
-    IntervalKind::Kind kind;
+    IntervalKind::Kind kind{};
     if (tryParseIntervalKindFromLowerString(unit_lower, kind))
     {
         interval_kind = IntervalKind{kind};
