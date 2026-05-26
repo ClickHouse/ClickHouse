@@ -28,6 +28,7 @@
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -3281,6 +3282,53 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        /// `LIKE pattern ESCAPE 'c'`, `ILIKE pattern ESCAPE 'c'`, `NOT LIKE pattern ESCAPE 'c'`
+        /// and `NOT ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument function call
+        /// `like(col, pattern, escape_char)` (or the `i`/`not`/`notI` variants). Fold the escape
+        /// character into the pattern (rewrite to standard backslash escapes) so the existing
+        /// 2-argument handler can build a key range; otherwise the call falls through to the
+        /// else branch and returns false, and the primary key cannot be used to prune the scan.
+        Field rewritten_like_pattern;
+        DataTypePtr rewritten_like_pattern_type;
+        bool rewritten_like = false;
+        if (num_args == 3
+            && (func_name == "like" || func_name == "ilike"
+                || func_name == "notLike" || func_name == "notILike"))
+        {
+            Field pattern_field;
+            DataTypePtr pattern_type;
+            Field escape_field;
+            DataTypePtr escape_type;
+            if (func.getArgumentAt(1).tryGetConstant(pattern_field, pattern_type)
+                && func.getArgumentAt(2).tryGetConstant(escape_field, escape_type)
+                && pattern_field.getType() == Field::Types::String
+                && escape_field.getType() == Field::Types::String)
+            {
+                const String & escape_str = escape_field.safeGet<String>();
+                if (escape_str.size() == 1)
+                {
+                    try
+                    {
+                        String rewritten = likePatternWithCustomEscapeToLikePattern(
+                            pattern_field.safeGet<String>(), escape_str[0]);
+                        rewritten_like_pattern = Field(std::move(rewritten));
+                        rewritten_like_pattern_type = pattern_type;
+                        rewritten_like = true;
+                        num_args = 2;
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Invalid escape sequence in the pattern: bail out so the key
+                        /// is not used and let row-level evaluation throw the same error.
+                        return false;
+                    }
+                }
+            }
+
+            if (!rewritten_like)
+                return false;
+        }
+
         auto analyze_point_in_polygon = [&, this]() -> bool
         {
             /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
@@ -3390,7 +3438,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             /// Looking for func(key, const) or func(const, key).
             size_t const_arg_pos;
-            if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+            if (rewritten_like)
+            {
+                /// `like(col, pattern, escape)` rewritten to `like(col, rewritten_pattern)`
+                /// above: the key is at position 0, the rewritten pattern is the constant.
+                const_value = rewritten_like_pattern;
+                const_type = rewritten_like_pattern_type;
+                const_arg_pos = 1;
+            }
+            else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 const_arg_pos = 1;
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
                 const_arg_pos = 0;
