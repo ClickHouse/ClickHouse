@@ -1756,14 +1756,11 @@ enum SQLTableFunc {
     TFvalues = 73;
     TFview = 74;
     TFytsaurus = 75;
+    TFfilesystem = 76;
 }
 
-message Database {
-    required string database = 1;
-}
-
-message Table {
-    required string table = 1;
+message SQLIdentifier {
+    required string value = 1;
 }
 
 message Column {
@@ -1773,30 +1770,6 @@ message Column {
 message ColumnPath {
     required Column col = 1;
     repeated Column sub_cols = 2;
-}
-
-message Index {
-    required string index = 1;
-}
-
-message Projection {
-    required string projection = 1;
-}
-
-message Constraint {
-    required string constraint = 1;
-}
-
-message Function {
-    required string function = 1;
-}
-
-message Policy {
-    required string policy = 1;
-}
-
-message Role {
-    required string role = 1;
 }
 
 message Cluster {
@@ -1970,6 +1943,7 @@ message JSONColumn {
     oneof jcol_oneof {
         bool jcol = 2;
         uint32 jarray = 3;
+        bool jcombined = 4;
     }
 }
 
@@ -1998,8 +1972,8 @@ message ExprColumn {
 }
 
 message ExprSchemaTableColumn {
-    optional Database database = 1;
-    optional Table table = 2;
+    optional SQLIdentifier database = 1;
+    optional SQLIdentifier table = 2;
     required ExprColumn col = 3;
 }
 
@@ -2076,10 +2050,16 @@ message ExprIn {
     }
 }
 
+enum AnyAllSome {
+    AAS_ANY = 1;
+    AAS_ALL = 2;
+    AAS_SOME = 3;
+}
+
 message ExprAny {
     required Expr expr = 1;
     required BinaryOperator op = 2;
-    required bool anyall = 3;
+    required AnyAllSome anyall = 3;
     required ExplainQuery sel = 4;
 }
 
@@ -2145,7 +2125,7 @@ enum FuncNulls {
 message SQLFuncName {
     oneof func_arg_oneof {
         SQLFunc catalog_func = 1;
-        Function function = 2;
+        SQLIdentifier function = 2;
     }
 }
 
@@ -2303,6 +2283,14 @@ message IntervalExpr {
         MONTH = 9;
         QUARTER = 10;
         YEAR = 11;
+        EPOCH = 12;
+        DOW = 13;
+        DOY = 14;
+        ISODOW = 15;
+        ISOYEAR = 16;
+        CENTURY = 17;
+        DECADE = 18;
+        MILLENNIUM = 19;
     }
     required Interval interval = 1;
     required Expr expr = 2;
@@ -2331,7 +2319,7 @@ message ComplicatedExpr {
         string columns = 18;
         ExprList array = 19;
         ExprList tuple = 20;
-        Table table = 21;
+        SQLIdentifier table = 21;
         LambdaExpr lambda = 22;
     }
 }
@@ -2358,8 +2346,8 @@ message ResultColumn {
 }
 
 message ExprSchemaTable {
-    optional Database database = 1;
-    required Table table = 2;
+    optional SQLIdentifier database = 1;
+    required SQLIdentifier table = 2;
 }
 
 enum InFormat {
@@ -2381,54 +2369,52 @@ enum InFormat {
     IN_CustomSeparatedWithNamesAndTypes = 16;
     IN_DWARF = 17;
     IN_Form = 18;
-    IN_JSON = 19;
-    IN_JSONAsObject = 20;
-    IN_JSONAsString = 21;
-    IN_JSONColumns = 22;
-    IN_JSONColumnsWithMetadata = 23;
-    IN_JSONCompact = 24;
-    IN_JSONCompactColumns = 25;
-    IN_JSONCompactEachRow = 26;
-    IN_JSONCompactEachRowWithNames = 27;
-    IN_JSONCompactEachRowWithNamesAndTypes = 28;
-    IN_JSONCompactStringsEachRow = 29;
-    IN_JSONCompactStringsEachRowWithNames = 30;
-    IN_JSONCompactStringsEachRowWithNamesAndTypes = 31;
-    IN_JSONEachRow = 32;
-    IN_JSONLines = 33;
-    IN_JSONObjectEachRow = 34;
-    IN_JSONStrings = 35;
+    IN_HiveText = 19;
+    IN_JSON = 20;
+    IN_JSONAsObject = 21;
+    IN_JSONAsString = 22;
+    IN_JSONColumns = 23;
+    IN_JSONColumnsWithMetadata = 24;
+    IN_JSONCompact = 25;
+    IN_JSONCompactColumns = 26;
+    IN_JSONCompactEachRow = 27;
+    IN_JSONCompactEachRowWithNames = 28;
+    IN_JSONCompactEachRowWithNamesAndTypes = 29;
+    IN_JSONCompactStringsEachRow = 30;
+    IN_JSONCompactStringsEachRowWithNames = 31;
+    IN_JSONCompactStringsEachRowWithNamesAndTypes = 32;
+    IN_JSONEachRow = 33;
+    IN_JSONLines = 34;
+    IN_JSONObjectEachRow = 35;
     IN_JSONStringsEachRow = 36;
     IN_LineAsString = 37;
     IN_MsgPack = 38;
     IN_MySQLDump = 39;
-    IN_MySQLWire = 40;
-    IN_Native = 41;
-    IN_Npy = 42;
-    IN_One = 43;
-    IN_ORC = 44;
-    IN_Parquet = 45;
-    IN_ParquetMetadata = 46;
-    IN_PostgreSQLWire = 47;
-    IN_Protobuf = 48;
-    IN_ProtobufList = 49;
-    IN_ProtobufSingle = 50;
-    IN_RawBLOB = 51;
-    IN_Regexp = 52;
-    IN_RowBinary = 53;
-    IN_RowBinaryWithDefaults = 54;
-    IN_RowBinaryWithNames = 55;
-    IN_RowBinaryWithNamesAndTypes = 56;
-    IN_TabSeparated = 57;
-    IN_TabSeparatedRaw = 58;
-    IN_TabSeparatedRawWithNames = 59;
-    IN_TabSeparatedRawWithNamesAndTypes = 60;
-    IN_TabSeparatedWithNames = 61;
-    IN_TabSeparatedWithNamesAndTypes = 62;
-    IN_Template = 63;
-    IN_TemplateIgnoreSpaces = 64;
-    IN_TSKV = 65;
-    IN_Values = 66;
+    IN_Native = 40;
+    IN_Npy = 41;
+    IN_One = 42;
+    IN_ORC = 43;
+    IN_Parquet = 44;
+    IN_ParquetMetadata = 45;
+    IN_Protobuf = 46;
+    IN_ProtobufList = 47;
+    IN_ProtobufSingle = 48;
+    IN_RawBLOB = 49;
+    IN_Regexp = 50;
+    IN_RowBinary = 51;
+    IN_RowBinaryWithDefaults = 52;
+    IN_RowBinaryWithNames = 53;
+    IN_RowBinaryWithNamesAndTypes = 54;
+    IN_TabSeparated = 55;
+    IN_TabSeparatedRaw = 56;
+    IN_TabSeparatedRawWithNames = 57;
+    IN_TabSeparatedRawWithNamesAndTypes = 58;
+    IN_TabSeparatedWithNames = 59;
+    IN_TabSeparatedWithNamesAndTypes = 60;
+    IN_Template = 61;
+    IN_TemplateIgnoreSpaces = 62;
+    IN_TSKV = 63;
+    IN_Values = 64;
 }
 
 enum OutFormat {
@@ -2453,61 +2439,62 @@ enum OutFormat {
     OUT_JSONCompactEachRow = 19;
     OUT_JSONCompactEachRowWithNames = 20;
     OUT_JSONCompactEachRowWithNamesAndTypes = 21;
-    OUT_JSONCompactStrings = 22;
-    OUT_JSONCompactStringsEachRow = 23;
-    OUT_JSONCompactStringsEachRowWithNames = 24;
-    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 25;
-    OUT_JSONEachRow = 26;
-    OUT_JSONEachRowWithProgress = 27;
-    OUT_JSONLines = 28;
-    OUT_JSONObjectEachRow = 29;
-    OUT_JSONStrings = 30;
-    OUT_JSONStringsEachRow = 31;
-    OUT_JSONStringsEachRowWithProgress = 32;
-    OUT_LineAsString = 33;
-    OUT_LineAsStringWithNames = 34;
-    OUT_LineAsStringWithNamesAndTypes = 35;
-    OUT_Markdown = 36;
-    OUT_MsgPack = 37;
+    OUT_JSONCompactEachRowWithProgress = 22;
+    OUT_JSONCompactStrings = 23;
+    OUT_JSONCompactStringsEachRow = 24;
+    OUT_JSONCompactStringsEachRowWithNames = 25;
+    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 26;
+    OUT_JSONCompactStringsEachRowWithProgress = 27;
+    OUT_JSONEachRow = 28;
+    OUT_JSONEachRowWithProgress = 29;
+    OUT_JSONLines = 30;
+    OUT_JSONObjectEachRow = 31;
+    OUT_JSONStrings = 32;
+    OUT_JSONStringsEachRow = 33;
+    OUT_JSONStringsEachRowWithProgress = 34;
+    OUT_Markdown = 35;
+    OUT_MsgPack = 36;
+    OUT_MySQLWire = 37;
     OUT_Native = 38;
     OUT_Npy = 39;
     OUT_Null = 40;
     OUT_ODBCDriver2 = 41;
     OUT_ORC = 42;
     OUT_Parquet = 43;
-    OUT_Pretty = 44;
-    OUT_PrettyCompact = 45;
-    OUT_PrettyCompactMonoBlock = 46;
-    OUT_PrettyCompactNoEscapes = 47;
-    OUT_PrettyCompactNoEscapesMonoBlock = 48;
-    OUT_PrettyJSONEachRow = 49;
-    OUT_PrettyMonoBlock = 50;
-    OUT_PrettyNoEscapes = 51;
-    OUT_PrettyNoEscapesMonoBlock = 52;
-    OUT_PrettySpace = 53;
-    OUT_PrettySpaceMonoBlock = 54;
-    OUT_PrettySpaceNoEscapes = 55;
-    OUT_PrettySpaceNoEscapesMonoBlock = 56;
-    OUT_Prometheus = 57;
-    OUT_Protobuf = 58;
-    OUT_ProtobufList = 59;
-    OUT_ProtobufSingle = 60;
-    OUT_RawBLOB = 61;
-    OUT_RowBinary = 62;
-    OUT_RowBinaryWithNames = 63;
-    OUT_RowBinaryWithNamesAndTypes = 64;
-    OUT_SQLInsert = 65;
-    OUT_TabSeparated = 66;
-    OUT_TabSeparatedRaw = 67;
-    OUT_TabSeparatedRawWithNames = 68;
-    OUT_TabSeparatedRawWithNamesAndTypes = 69;
-    OUT_TabSeparatedWithNames = 70;
-    OUT_TabSeparatedWithNamesAndTypes = 71;
-    OUT_Template = 72;
-    OUT_TSKV = 73;
-    OUT_Values = 74;
-    OUT_Vertical = 75;
-    OUT_XML = 76;
+    OUT_PostgreSQLWire = 44;
+    OUT_Pretty = 45;
+    OUT_PrettyCompact = 46;
+    OUT_PrettyCompactMonoBlock = 47;
+    OUT_PrettyCompactNoEscapes = 48;
+    OUT_PrettyCompactNoEscapesMonoBlock = 49;
+    OUT_PrettyJSONEachRow = 50;
+    OUT_PrettyMonoBlock = 51;
+    OUT_PrettyNoEscapes = 52;
+    OUT_PrettyNoEscapesMonoBlock = 53;
+    OUT_PrettySpace = 54;
+    OUT_PrettySpaceMonoBlock = 55;
+    OUT_PrettySpaceNoEscapes = 56;
+    OUT_PrettySpaceNoEscapesMonoBlock = 57;
+    OUT_Prometheus = 58;
+    OUT_Protobuf = 59;
+    OUT_ProtobufList = 60;
+    OUT_ProtobufSingle = 61;
+    OUT_RawBLOB = 62;
+    OUT_RowBinary = 63;
+    OUT_RowBinaryWithNames = 64;
+    OUT_RowBinaryWithNamesAndTypes = 65;
+    OUT_SQLInsert = 66;
+    OUT_TabSeparated = 67;
+    OUT_TabSeparatedRaw = 68;
+    OUT_TabSeparatedRawWithNames = 69;
+    OUT_TabSeparatedRawWithNamesAndTypes = 70;
+    OUT_TabSeparatedWithNames = 71;
+    OUT_TabSeparatedWithNamesAndTypes = 72;
+    OUT_Template = 73;
+    OUT_TSKV = 74;
+    OUT_Values = 75;
+    OUT_Vertical = 76;
+    OUT_XML = 77;
 }
 
 enum InOutFormat {
@@ -2516,28 +2503,28 @@ enum InOutFormat {
     INOUT_Avro = 3;
     INOUT_BSONEachRow = 4;
     INOUT_Buffers = 5;
-    INOUT_CSV = 6;
-    INOUT_CSVWithNames = 7;
-    INOUT_CSVWithNamesAndTypes = 8;
-    INOUT_CustomSeparated = 9;
-    INOUT_CustomSeparatedWithNames = 10;
-    INOUT_CustomSeparatedWithNamesAndTypes = 11;
-    INOUT_JSON = 12;
-    INOUT_JSONColumns = 13;
-    INOUT_JSONColumnsWithMetadata = 14;
-    INOUT_JSONCompact = 15;
-    INOUT_JSONCompactColumns = 16;
-    INOUT_JSONCompactEachRow = 17;
-    INOUT_JSONCompactEachRowWithNames = 18;
-    INOUT_JSONCompactEachRowWithNamesAndTypes = 19;
-    INOUT_JSONCompactStringsEachRow = 20;
-    INOUT_JSONCompactStringsEachRowWithNames = 21;
-    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 22;
-    INOUT_JSONEachRow = 23;
-    INOUT_JSONLines = 24;
-    INOUT_JSONObjectEachRow = 25;
-    INOUT_JSONStringsEachRow = 26;
-    INOUT_LineAsString = 27;
+    INOUT_CapnProto = 6;
+    INOUT_CSV = 7;
+    INOUT_CSVWithNames = 8;
+    INOUT_CSVWithNamesAndTypes = 9;
+    INOUT_CustomSeparated = 10;
+    INOUT_CustomSeparatedWithNames = 11;
+    INOUT_CustomSeparatedWithNamesAndTypes = 12;
+    INOUT_JSON = 13;
+    INOUT_JSONColumns = 14;
+    INOUT_JSONColumnsWithMetadata = 15;
+    INOUT_JSONCompact = 16;
+    INOUT_JSONCompactColumns = 17;
+    INOUT_JSONCompactEachRow = 18;
+    INOUT_JSONCompactEachRowWithNames = 19;
+    INOUT_JSONCompactEachRowWithNamesAndTypes = 20;
+    INOUT_JSONCompactStringsEachRow = 21;
+    INOUT_JSONCompactStringsEachRowWithNames = 22;
+    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 23;
+    INOUT_JSONEachRow = 24;
+    INOUT_JSONLines = 25;
+    INOUT_JSONObjectEachRow = 26;
+    INOUT_JSONStringsEachRow = 27;
     INOUT_MsgPack = 28;
     INOUT_Native = 29;
     INOUT_Npy = 30;
@@ -2623,6 +2610,11 @@ message KeyValuePair {
     required string value = 2;
 }
 
+message HTTPHeader {
+    required string name = 1;
+    required string value = 2;
+}
+
 message SetValue {
     required string property = 1;
     required string value = 2;
@@ -2675,6 +2667,7 @@ message TableOrFunction {
         ExprSchemaTable est = 1;
         TableFunction tfunc = 2;
         ExplainQuery select = 3;
+        ValuesStatement values_standard = 4;
     }
 }
 
@@ -2684,28 +2677,31 @@ message RemoteFunc {
         remoteSecure = 2;
     }
     required RName rname = 1;
-    required string address = 2;
-    required TableOrFunction tof = 3;
-    optional string user = 4;
-    optional string password = 5;
-    optional Expr sharding_key = 6;
+    optional string named_collection = 2;
+    optional string address = 3;
+    required TableOrFunction tof = 4;
+    optional string user = 5;
+    optional string password = 6;
+    optional Expr sharding_key = 7;
 }
 
 message MySQLFunc {
-    required string address = 1;
-    required string rdatabase = 2;
-    required string rtable = 3;
-    required string user = 4;
-    required string password = 5;
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rtable = 3;
+    optional string address = 4;
+    optional string user = 5;
+    optional string password = 6;
 }
 
 message PostgreSQLFunc {
-    required string address = 1;
-    required string rdatabase = 2;
-    required string rtable = 3;
-    required string user = 4;
-    required string password = 5;
-    optional string rschema = 6;
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rschema = 3;
+    optional string rtable = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
 }
 
 message SQLiteFunc {
@@ -2723,12 +2719,13 @@ message RedisFunc {
 }
 
 message MongoDBFunc {
-    required string address = 1;
-    required string database = 2;
-    required string collection = 3;
-    required string user = 4;
-    required string password = 5;
-    optional Expr structure = 6;
+    optional string named_collection = 1;
+    optional string database = 2;
+    optional string collection = 3;
+    optional Expr structure = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
 }
 
 message ObjectStoreFunc {
@@ -2756,6 +2753,7 @@ message ObjectStoreFunc {
     required string credential = 4;
     repeated KeyValuePair params = 5;
     optional SettingValues setting_values = 6;
+    repeated HTTPHeader http_headers = 7;
 }
 
 message URLFunc {
@@ -2772,6 +2770,7 @@ message URLFunc {
         InOutFormat inoutformat = 6;
     }
     optional Expr structure = 7;
+    repeated HTTPHeader http_headers = 8;
 }
 
 message SQLTableFuncCall {
@@ -2799,12 +2798,12 @@ message MergeTreeIndexFunc {
 
 message MergeTreeProjectionFunc {
     required ExprSchemaTable est = 1;
-    required Projection proj = 2;
+    required SQLIdentifier proj = 2;
 }
 
 message MergeTreeTextIndexFunc {
     required ExprSchemaTable est = 1;
-    required Index idx = 2;
+    required SQLIdentifier idx = 2;
 }
 
 message PartsList {
@@ -2876,7 +2875,7 @@ message SampleClause {
 
 message JoinedTableOrFunction {
     required TableOrFunction tof = 1;
-    optional Table table_alias = 2;
+    optional SQLIdentifier table_alias = 2;
     repeated Column col_aliases = 3;
     optional bool final = 4;
     optional SampleClause sample = 5;
@@ -3019,8 +3018,9 @@ message SetQuery {
 
 message CTEquery {
     optional bool recursive = 1;
-    required Table table = 2;
+    required SQLIdentifier table = 2;
     required Select query = 3;
+    optional bool is_materialized = 4;
 }
 
 message CTEexpr {
@@ -3101,7 +3101,7 @@ message DatabaseEngine {
 
 message CreateDatabase {
     optional bool if_not_exists = 1;
-    required Database database = 2;
+    required SQLIdentifier database = 2;
     optional string uuid = 3;
     optional Cluster cluster = 4;
     required DatabaseEngine dengine = 5;
@@ -3110,7 +3110,7 @@ message CreateDatabase {
 
 message CreateFunction {
     required CreateReplaceOption create_opt = 1;
-    required Function function = 2;
+    required SQLIdentifier function = 2;
     optional Cluster cluster = 3;
     required LambdaExpr lexpr = 4;
 }
@@ -3275,6 +3275,7 @@ enum ColumnStat {
     STAT_TDigest = 2;
     STAT_Uniq = 3;
     STAT_CountMin = 4;
+    STAT_NullCount = 5;
 }
 
 message ColumnStatistics {
@@ -3330,11 +3331,13 @@ enum IndexType {
     IDX_ngrambf_v1 = 5;
     IDX_tokenbf_v1 = 6;
     IDX_text = 7;
+    /// Indexes for projections
     IDX_basic = 8;
+    IDX_commit_order = 9;
 }
 
 message IndexDef {
-    optional Index idx = 1;
+    optional SQLIdentifier idx = 1;
     required Expr expr = 2;
     required IndexType type = 3;
     repeated IndexParam params = 4;
@@ -3347,7 +3350,7 @@ message ProjectionSelectDef {
 }
 
 message ProjectionDef {
-    required Projection proj = 1;
+    required SQLIdentifier proj = 1;
     oneof projection_oneof {
         ProjectionSelectDef sel_def = 2;
         IndexDef idx_def = 3;
@@ -3359,7 +3362,7 @@ message ConstraintDef {
         CHECK = 1;
         ASSUME = 2;
     }
-    required Constraint constr = 1;
+    required SQLIdentifier constr = 1;
     required ConstraintType ctype = 2;
     required Expr expr = 3;
 }
@@ -3448,6 +3451,9 @@ enum TableEngineValues {
     Executable = 54;
     ExecutablePool = 55;
     FileLog = 56;
+    PaimonS3 = 57;
+    PaimonAzure = 58;
+    PaimonLocal = 59;
 }
 
 enum TableEngineOption {
@@ -3463,8 +3469,8 @@ message TableEngineParam {
         InOutFormat in_out = 4;
         JoinType join_op = 5;
         JoinConst join_const = 6;
-        Database database = 7;
-        Table table = 8;
+        SQLIdentifier database = 7;
+        SQLIdentifier table = 8;
         uint32 num = 9;
         string svalue = 10;
         ColumnPathList col_list = 11;
@@ -3520,9 +3526,10 @@ message TableEngine {
     optional TableKey order = 4;
     optional TableKey partition_by = 5;
     optional TableKey primary_key = 6;
-    optional TableKey sample_by = 7;
-    optional TTLExpr ttl_expr = 8;
-    optional SettingValues setting_values = 9;
+    optional TableKey unique_key = 7;
+    optional TableKey sample_by = 8;
+    optional TTLExpr ttl_expr = 9;
+    optional SettingValues setting_values = 10;
 }
 
 message CreateTableAs {
@@ -3572,9 +3579,9 @@ enum SQLObject {
 message SQLObjectName {
     oneof objn_oneof {
         ExprSchemaTable est = 1;
-        Database database = 2;
-        Function function = 3;
-        Policy policy = 4;
+        SQLIdentifier database = 2;
+        SQLIdentifier function = 3;
+        SQLIdentifier policy = 4;
     }
 }
 
@@ -3663,8 +3670,8 @@ message LightUpdate {
 message Truncate {
     oneof truncate_oneof {
         ExprSchemaTable est = 1;
-        Database all_tables = 2;
-        Database database = 3;
+        SQLIdentifier all_tables = 2;
+        SQLIdentifier database = 3;
     }
     optional Cluster cluster = 4;
     optional bool sync = 5;
@@ -3706,6 +3713,9 @@ message DescribeStatement {
     }
     optional SettingValues setting_values = 5;
     optional OutFormat format = 6;
+    /// When set with a `tof` target, emits `DESCRIBE TEMPORARY TABLE ...`. Only valid for
+    /// targets that are actual temporary tables.
+    optional bool temporary = 7;
 }
 
 message DeduplicateExpr {
@@ -3740,7 +3750,7 @@ message Exchange {
 message AddWhere {
     oneof add_where_oneof {
         ColumnPath col = 1;
-        Index idx = 2;
+        SQLIdentifier idx = 2;
         bool first = 3;
     }
 }
@@ -3783,12 +3793,12 @@ message AddIndex {
 }
 
 message IdxInPartition {
-    required Index idx = 1;
+    required SQLIdentifier idx = 1;
     optional SinglePartitionExpr single_partition = 2;
 }
 
 message ProjectionInPartition {
-    required Projection proj = 1;
+    required SQLIdentifier proj = 1;
     optional SinglePartitionExpr single_partition = 2;
 }
 
@@ -3892,18 +3902,28 @@ message DictionarySourceDetails {
         POSTGRESQL = 3;
         MONGODB = 4;
         REDIS = 5;
+        HTTP = 6;
+        FILE = 7;
+        YAMLRegExpTree = 8;
     }
     enum RedisStorageType {
         simple = 1;
         hash_map = 2;
     }
     required DictionarySourceType source = 1;
-    optional ExprSchemaTable est = 2;
-    optional string host = 3;
-    optional string port = 4;
-    optional string user = 5;
-    optional string password = 6;
-    optional RedisStorageType redis_storage = 7;
+    optional string named_collection = 2;
+    optional ExprSchemaTable est = 3;
+    optional string host = 4;
+    optional string port = 5;
+    optional string user = 6;
+    optional string password = 7;
+    optional RedisStorageType redis_storage = 8;
+    optional string invalidate_query = 9;
+    optional ColumnPath update_field = 10;
+    optional uint32 update_lag = 11;
+    optional string url = 12;
+    optional string path = 13;
+    optional string format = 14;
 }
 
 message DictionarySource {
@@ -3930,6 +3950,7 @@ enum DictionaryLayouts {
     RANGE_HASHED = 14;
     SPARSE_HASHED = 15;
     SSD_CACHE = 16;
+    REGEXP_TREE = 17;
 }
 
 message DictionaryLayout {
@@ -3980,11 +4001,11 @@ message ClearColumnInPartition {
 
 message FreezePartition {
     optional SinglePartitionExpr single_partition = 1;
-    required uint32 fname = 2;
+    required string fname = 2;
 }
 
 message ClearIndexInPartition {
-    required Index idx = 1;
+    required SQLIdentifier idx = 1;
     required SinglePartitionExpr single_partition = 2;
 }
 
@@ -4002,9 +4023,16 @@ message ExpireSnapshots {
     optional bool dry_run = 6;
 }
 
+message RemoveOrphanFiles {
+    optional string older_than = 1;
+    optional string location = 2;
+    optional bool dry_run = 3;
+}
+
 message ExecuteCommand {
     oneof command {
         ExpireSnapshots expire_snapshots = 1;
+        RemoveOrphanFiles remove_orphan_files = 2;
     }
 }
 
@@ -4022,12 +4050,12 @@ message CreateMaskingPolicy {
 message AlterPolicyContent {
     required ExprSchemaTable target = 1;
     optional WhereStatement where_expr = 2;
-    optional Role role = 3;
+    optional SQLIdentifier role = 3;
     oneof create_policy_oneof {
         CreateRowPolicy row = 4;
         CreateMaskingPolicy masking = 5;
     }
-    optional Policy rename_to = 6;
+    optional SQLIdentifier rename_to = 6;
 }
 
 message AlterItem {
@@ -4052,7 +4080,7 @@ message AlterItem {
         MaterializeStatistics mat_stats = 17;
         AddIndex add_index = 18;
         IdxInPartition materialize_index = 19;
-        Index drop_index = 20;
+        SQLIdentifier drop_index = 20;
         IdxInPartition clear_index = 21;
         RemoveColumnProperty column_remove_property = 22;
         ModifyColumnSetting column_modify_setting = 23;
@@ -4060,11 +4088,11 @@ message AlterItem {
         SettingValues table_modify_setting = 25;
         SettingList table_remove_setting = 26;
         ProjectionDef add_projection = 27;
-        Projection remove_projection = 28;
+        SQLIdentifier remove_projection = 28;
         ProjectionInPartition materialize_projection = 29;
         ProjectionInPartition clear_projection = 30;
         ConstraintDef add_constraint = 31;
-        Constraint remove_constraint = 32;
+        SQLIdentifier remove_constraint = 32;
         SinglePartitionExpr detach_partition = 33;
         SinglePartitionExpr drop_partition = 34;
         SinglePartitionExpr drop_detached_partition = 35;
@@ -4139,14 +4167,14 @@ message DropReplica {
     required string replica = 1;
     oneof drop_oneof {
         ExprSchemaTable est = 2;
-        Database database = 3;
+        SQLIdentifier database = 3;
     }
 }
 
 message DropDatabaseReplica {
     required string replica = 1;
     optional string shard = 2;
-    optional Database database = 3;
+    optional SQLIdentifier database = 3;
 }
 
 enum DeltaKernelTraceLevel {
@@ -4157,6 +4185,11 @@ enum DeltaKernelTraceLevel {
     TRACE = 5;
 }
 
+message UnlockSnapshot {
+    required string name = 1;
+    optional BackupOut from = 2;
+}
+
 message SystemCommand {
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
@@ -4164,7 +4197,7 @@ message SystemCommand {
         bool reload_dictionaries = 3;
         bool reload_models = 4;
         bool reload_functions = 5;
-        Function reload_function = 6;
+        SQLIdentifier reload_function = 6;
         bool reload_asynchronous_metrics = 7;
         bool drop_dns_cache = 8;
         bool drop_mark_cache = 9;
@@ -4192,7 +4225,7 @@ message SystemCommand {
         ExprSchemaTable stop_pulling_replication_log = 30;
         ExprSchemaTable start_pulling_replication_log = 31;
         SyncReplica sync_replica = 32;
-        Database sync_replicated_database = 33;
+        SQLIdentifier sync_replicated_database = 33;
         ExprSchemaTable restart_replica = 34;
         ExprSchemaTable restore_replica = 35;
         bool restart_replicas = 36;
@@ -4240,10 +4273,10 @@ message SystemCommand {
         string wait_failpoint = 78;
         string notify_failpoint = 79;
         DeltaKernelTraceLevel reload_delta_kernel_tracing = 80;
-        Database restore_database_replica = 81;
+        SQLIdentifier restore_database_replica = 81;
         ExprSchemaTable stop_replicated_view = 82;
         ExprSchemaTable start_replicated_view = 83;
-        uint32 unfreeze = 84;
+        string unfreeze = 84;
         DropReplica drop_replica = 85;
         DropDatabaseReplica drop_database_replica = 86;
         ExprSchemaTable stop_cleanup = 87;
@@ -4258,8 +4291,21 @@ message SystemCommand {
         bool start_thread_fuzzer = 96;
         bool stop_thread_fuzzer = 97;
         bool drop_distributed_cache = 98;
-        string unlock_snapshot = 99;
+        UnlockSnapshot unlock_snapshot = 99;
+        FlushObjectStorageQueue flush_object_storage_queue = 100;
+        ExprSchemaTable stop_virtual_parts_update = 101;
+        ExprSchemaTable start_virtual_parts_update = 102;
+        ExprSchemaTable stop_reduce_blocking_parts = 103;
+        ExprSchemaTable start_reduce_blocking_parts = 104;
+        string wait_blobs_cleanup = 105;
+        ExprSchemaTable pause_view = 106;
+        bool pause_views = 107;
     }
+}
+
+message FlushObjectStorageQueue {
+    required ExprSchemaTable table = 1;
+    required string path = 2;
 }
 
 message BackupRestoreObject {
@@ -4284,20 +4330,29 @@ message BackupRestore {
         RESTORE = 2;
     }
     required BackupCommand command = 1;
-    required BackupRestoreElement backup_element = 2;
-    repeated BackupRestoreElement other_elements = 3;
-    optional Cluster cluster = 4;
-    required BackupOut out = 5;
-    optional SettingValues setting_values = 6;
+    oneof backup_source {
+        BackupRestoreElement backup_element = 2;
+        /// BACKUP FROM SNAPSHOT {snapshot_source} TO {out}
+        BackupOut from_snapshot = 3;
+    }
+    repeated BackupRestoreElement other_elements = 4;
+    optional Cluster cluster = 5;
+    required BackupOut out = 6;
+    optional SettingValues setting_values = 7;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 7;
+    optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
-        InFormat informat = 8;
-        OutFormat outformat = 9;
+        InFormat informat = 9;
+        OutFormat outformat = 10;
     }
+}
+
+message SnapshotQuery {
+    required BackupRestoreElement element = 1;
+    required BackupOut out = 2;
 }
 
 message Rename {
@@ -4339,11 +4394,11 @@ message ShowObject {
 message ShowTables {
     optional bool full = 1;
     optional bool is_temp = 2;
-    optional Database database = 3;
+    optional SQLIdentifier database = 3;
 }
 
 message ShowDictionaries {
-    optional Database database = 1;
+    optional SQLIdentifier database = 1;
 }
 
 message ShowColumns {
@@ -4396,11 +4451,11 @@ message ShowStatement {
 message CreatePolicy {
     required CreateReplaceOption create_opt = 1;
     optional bool if_not_exists = 2;
-    required Policy policy = 3;
+    required SQLIdentifier policy = 3;
     required ExprSchemaTable target = 4;
     optional Cluster cluster = 5;
     optional WhereStatement where_expr = 6;
-    optional Role role = 7;
+    optional SQLIdentifier role = 7;
     oneof create_policy_oneof {
         CreateRowPolicy row = 8;
         CreateMaskingPolicy masking = 9;
@@ -4434,6 +4489,7 @@ message SQLQueryInner {
         Kill kill = 23;
         ShowStatement show = 24;
         CreatePolicy create_policy = 25;
+        SnapshotQuery snapshot_query = 26;
     }
 }
 

@@ -16,6 +16,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 namespace DB
 {
@@ -156,6 +157,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObject>(data.deserialize_state) : nullptr;
     const auto * structure_state = deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(deserialize_state->structure_state) : nullptr;
+
     settings.path.push_back(Substream::ObjectData);
 
     /// First, iterate over typed paths in sorted order, we will always serialize them.
@@ -551,6 +553,16 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         };
 
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths->size() / num_tasks, 1ul);
+
+        /// Ensure all already-scheduled tasks are drained on any exit path (including exceptions),
+        /// so pool threads do not dereference dangling references to stack locals.
+        SCOPE_EXIT(
+            for (const auto & task : tasks)
+                task->tryExecute();
+            for (const auto & task : tasks)
+                task->wait();
+        );
+
         for (size_t i = 0; i != num_tasks; ++i)
         {
             auto cache_copy = cache ? std::make_unique<SubstreamsDeserializeStatesCache>(*cache) : nullptr;

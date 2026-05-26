@@ -1,6 +1,7 @@
 #include <ctime>
 #include <optional>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -294,6 +295,10 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
     bytes_to_ignore = 0;
+
+    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
+    /// Reset so the next read cycle can proceed normally after rewind.
+    canceled = false;
 }
 
 std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()

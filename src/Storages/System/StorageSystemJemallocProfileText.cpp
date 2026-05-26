@@ -1,11 +1,12 @@
 #include "config.h"
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
 
 #if USE_JEMALLOC
 #    include <Core/Settings.h>
-#    include <DataTypes/DataTypeString.h>
 #    include <Interpreters/Context.h>
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
@@ -29,11 +30,20 @@ namespace ErrorCodes
 }
 
 StorageSystemJemallocProfileText::StorageSystemJemallocProfileText(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemJemallocProfileText::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 ColumnsDescription StorageSystemJemallocProfileText::getColumnsDescription()
@@ -56,7 +66,7 @@ Pipe StorageSystemJemallocProfileText::read(
 #if USE_JEMALLOC
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     /// Get the last flushed profile filename
     auto last_profile = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));

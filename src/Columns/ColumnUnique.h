@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
@@ -637,7 +636,7 @@ static void checkIndexes(const ColumnVector<IndexType> & indexes, size_t max_dic
     {
         if (data[i] >= max_dictionary_size)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is grated or equal "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is greater or equal "
                             "than dictionary size {}", toString(data[i]), toString(i), toString(max_dictionary_size));
         }
     }

@@ -584,7 +584,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-        /// Created Failed node.
+        /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
     }

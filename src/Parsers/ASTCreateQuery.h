@@ -28,6 +28,7 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
+    IAST * unique_key = nullptr;
     ASTSetQuery * settings = nullptr;
 
     String getID(char) const override { return "Storage definition"; }
@@ -48,6 +49,7 @@ public:
         f(&order_by, nullptr);
         f(&sample_by, nullptr);
         f(&ttl_table, nullptr);
+        f(&unique_key, nullptr);
         f(reinterpret_cast<IAST **>(&settings), nullptr);
     }
 
@@ -136,7 +138,9 @@ public:
     bool is_create_empty : 1 = false;      /// CREATE TABLE ... EMPTY AS SELECT ...
     bool is_clone_as : 1 = false;          /// CREATE TABLE ... CLONE AS ...
     bool replace_view : 1 = false;         /// CREATE OR REPLACE VIEW
-    bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...'
+    bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...' with a non-`Nil` value (see `has_uuid_clause` for clause-presence tracking)
+    bool has_uuid_clause : 1 = false;      /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`
+    bool has_inner_uuid_clause : 1 = false; /// Parser saw an explicit `TO INNER UUID '...'` clause
     bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
     bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
     bool is_watermark_ascending : 1 = false;          /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
