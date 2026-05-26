@@ -2,6 +2,7 @@
 
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -480,6 +481,46 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
+
+        /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
+        /// function call `like(col, pattern, escape_char)`. Fold the escape character into the
+        /// pattern (rewrite to standard backslash escapes) and dispatch as a 2-argument call,
+        /// so the text index can still be used.
+        if (function_arguments_size == 3 && (function_name == "like" || function_name == "ilike"))
+        {
+            auto lhs_argument = function.getArgumentAt(0);
+            auto pattern_argument = function.getArgumentAt(1);
+            auto escape_argument = function.getArgumentAt(2);
+
+            Field pattern_field;
+            DataTypePtr pattern_type;
+            Field escape_field;
+            DataTypePtr escape_type;
+            if (pattern_argument.tryGetConstant(pattern_field, pattern_type)
+                && escape_argument.tryGetConstant(escape_field, escape_type)
+                && pattern_field.getType() == Field::Types::String
+                && escape_field.getType() == Field::Types::String)
+            {
+                const String & escape_str = escape_field.safeGet<String>();
+                if (escape_str.size() == 1)
+                {
+                    try
+                    {
+                        String rewritten = likePatternWithCustomEscapeToLikePattern(
+                            pattern_field.safeGet<String>(), escape_str[0]);
+                        Field rewritten_field(std::move(rewritten));
+                        if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
+                            return true;
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Invalid escape sequence in the pattern: bail out so the index is not used,
+                        /// and let row-level evaluation throw the same error.
+                    }
+                }
+            }
+            return false;
+        }
 
         if (function_arguments_size != 2)
             return false;
