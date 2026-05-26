@@ -26,10 +26,11 @@ public:
     std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
