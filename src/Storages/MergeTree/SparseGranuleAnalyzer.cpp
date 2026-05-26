@@ -154,25 +154,38 @@ analyzeSparseColumnGranules(
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, alter_conversions);
 
-    /// Split big MarkRanges into ~ANALYZER_CHUNK_MARKS chunks so the per-chunk reads
-    /// (LZ4 + varint over the offsets substream) can run in parallel on the global
-    /// I/O thread pool. The serial analyzer pass would otherwise add wall-time on
-    /// the planning thread that the parallel scan can't amortize.
+    /// Two-phase plan.
+    ///   Phase 1 (sample): read a small leading chunk and classify it. If the sample
+    ///     contains no extreme granule (all-default / all-non-default), the column is
+    ///     too evenly distributed for pruning to ever fire and we abandon the analysis
+    ///     before paying the full pass. Bounds the worst-case overhead on
+    ///     uniformly-distributed sparse columns.
+    ///   Phase 2 (full): split the remaining ranges into ~ANALYZER_CHUNK_MARKS chunks
+    ///     and run on the global IO thread pool to keep the serial wall-time small.
+    constexpr size_t ANALYZER_SAMPLE_MARKS = 32;
     constexpr size_t ANALYZER_CHUNK_MARKS = 1024;
     std::vector<MarkRange> chunks;
+    bool first_chunk_is_sample = false;
     for (const auto & range : ranges)
     {
         if (range.begin >= range.end)
             continue;
-        const size_t span = range.end - range.begin;
-        if (span <= ANALYZER_CHUNK_MARKS)
+
+        size_t cursor = range.begin;
+        if (chunks.empty())
         {
-            chunks.push_back(range);
+            /// The very first chunk we emit is the sample.
+            const size_t sample_end = std::min(cursor + ANALYZER_SAMPLE_MARKS, range.end);
+            chunks.push_back(MarkRange{cursor, sample_end});
+            first_chunk_is_sample = true;
+            cursor = sample_end;
         }
-        else
+
+        while (cursor < range.end)
         {
-            for (size_t b = range.begin; b < range.end; b += ANALYZER_CHUNK_MARKS)
-                chunks.push_back(MarkRange{b, std::min(b + ANALYZER_CHUNK_MARKS, range.end)});
+            const size_t end = std::min(cursor + ANALYZER_CHUNK_MARKS, range.end);
+            chunks.push_back(MarkRange{cursor, end});
+            cursor = end;
         }
     }
 
@@ -272,36 +285,70 @@ analyzeSparseColumnGranules(
     };
 
     std::vector<ChunkResult> results(chunks.size());
-    if (chunks.size() <= 1)
+
+    if (first_chunk_is_sample && !chunks.empty())
     {
-        if (!chunks.empty())
+        /// Process the sample synchronously, then decide whether to continue.
+        results[0] = process_chunk(chunks[0]);
+        if (!results[0].ok)
+            return std::nullopt;
+
+        bool found_extreme = false;
+        for (size_t i = 0; i < results[0].has_only_defaults.size(); ++i)
+        {
+            if (results[0].has_only_defaults[i] || results[0].has_only_non_defaults[i])
+            {
+                found_extreme = true;
+                break;
+            }
+        }
+        if (!found_extreme)
+        {
+            LOG_DEBUG(log,
+                "No extreme granule found in the first {} marks of part {} column {}; "
+                "abandoning sparsity classification (column is too evenly distributed for pruning).",
+                ANALYZER_SAMPLE_MARKS, part->name, column_name);
+            return std::nullopt;
+        }
+    }
+
+    /// Sample-only case (single chunk == the sample): we already have its result.
+    /// Otherwise run the remaining chunks in parallel; the sample chunk already
+    /// produced its result and we skip it here.
+    const size_t parallel_first = first_chunk_is_sample ? 1 : 0;
+    if (chunks.size() <= 1 + parallel_first)
+    {
+        if (chunks.size() == 1 && !first_chunk_is_sample)
             results[0] = process_chunk(chunks[0]);
     }
     else
     {
         auto & pool = getIOThreadPool().get();
         std::vector<std::future<ChunkResult>> futures;
-        futures.reserve(chunks.size());
-        for (const auto & chunk : chunks)
+        futures.reserve(chunks.size() - parallel_first);
+        for (size_t i = parallel_first; i < chunks.size(); ++i)
         {
+            const auto chunk = chunks[i];
             futures.push_back(scheduleFromThreadPoolUnsafe<ChunkResult>(
                 [&, chunk]() { return process_chunk(chunk); },
                 pool, ThreadName::MERGETREE_READ));
         }
         /// `f.get()` rethrows any worker exception; treat that as "abandon analysis"
         /// rather than letting it escape, same as the synchronous catch-all above.
+        /// Futures index 0..N-1 corresponds to chunks[parallel_first..chunks.size()),
+        /// so write into results at the matching offset.
         for (size_t i = 0; i < futures.size(); ++i)
         {
             try
             {
-                results[i] = futures[i].get();
+                results[parallel_first + i] = futures[i].get();
             }
             catch (...)
             {
                 tryLogCurrentException(log, fmt::format(
                     "Analyzer chunk for column {} of part {} threw; skipping sparsity classification",
                     column_name, part->name));
-                results[i].ok = false;
+                results[parallel_first + i].ok = false;
             }
         }
     }
