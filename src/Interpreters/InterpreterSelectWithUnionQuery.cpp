@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -41,6 +42,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_distinct_in_order;
 }
@@ -343,8 +345,9 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             headers[i] = plans[i]->getCurrentHeader();
         }
 
-        auto max_threads = settings[Setting::max_threads];
-        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads);
+        auto max_threads = getMaxThreadsForAvailableMemory(
+            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* is_sql_union = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 

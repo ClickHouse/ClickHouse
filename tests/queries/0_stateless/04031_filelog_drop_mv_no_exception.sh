@@ -36,9 +36,18 @@ for iteration in {1..5}; do
     ${CLICKHOUSE_CLIENT} --query "
         CREATE TABLE ${CLICKHOUSE_DATABASE}.filelog_dst (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
     "
+    # `FileLog` polls the directory using exponential backoff. The default
+    # `poll_directory_watch_events_backoff_max` is 32s, and under sanitizer
+    # builds (especially `MSan` and `ASan`+azure) with `BackgroundSchedulePool`
+    # contention the polling cycle can drift to that upper bound, so the
+    # 150s warm-up loop below occasionally times out before the file is
+    # picked up. Cap the backoff at 1s to bound the worst-case polling
+    # cycle to ~1s plus scheduling jitter — same pattern as in
+    # `02968_file_log_multiple_read`.
     ${CLICKHOUSE_CLIENT} --query "
         CREATE TABLE ${CLICKHOUSE_DATABASE}.filelog_src (k UInt64, v UInt64)
         ENGINE = FileLog('${DATA_DIR}/', 'CSV')
+        SETTINGS poll_directory_watch_events_backoff_max = 1000
     "
     ${CLICKHOUSE_CLIENT} --query "
         CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.filelog_mv TO ${CLICKHOUSE_DATABASE}.filelog_dst
