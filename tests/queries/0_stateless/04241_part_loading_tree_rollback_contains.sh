@@ -57,10 +57,13 @@ $CLICKHOUSE_CLIENT -q "DETACH TABLE ${TABLE}"
 SOURCE="${DATA_PATH}/all_1_1_0"
 
 # all_1_4_2_1: rolled-back ancestor (level 2, mut 1, blocks 1-4).
-# `creation_csn = Tx::RolledBackCSN` makes `read_txn_status` return `RolledBack` from the
-# on-disk metadata alone, without needing `TransactionLog` to resolve anything.
+# `creation_csn = Tx::RolledBackCSN` is the rolled-back marker on disk.
+# `creation_tid` must use a `local_tid` outside the reserved range (>`Tx::MaxReservedLocalTID=32`)
+# so `wasInvolvedInTransaction()` returns true — otherwise `loadDataPart` treats the part as
+# non-transactional, skips the `creation_csn == Tx::RolledBackCSN` check, leaves the part as
+# `Active`, and never promotes the committed descendants below.
 cp -r "${SOURCE}" "${DATA_PATH}/all_1_4_2_1"
-printf 'version: 1\nstoring_version: 0\ncreation_tid: (2, 1, 00000000-0000-0000-0000-000000000000)\ncreation_csn: 18446744073709551615\nremoval_tid: (0, 0, 00000000-0000-0000-0000-000000000000)\nremoval_csn: 0' \
+printf 'version: 1\nstoring_version: 0\ncreation_tid: (2, 33, 00000000-0000-0000-0000-000000000000)\ncreation_csn: 18446744073709551615\nremoval_tid: (0, 0, 00000000-0000-0000-0000-000000000000)\nremoval_csn: 0' \
     > "${DATA_PATH}/all_1_4_2_1/txn_version.txt.tmp"
 mv "${DATA_PATH}/all_1_4_2_1/txn_version.txt.tmp" "${DATA_PATH}/all_1_4_2_1/txn_version.txt"
 
