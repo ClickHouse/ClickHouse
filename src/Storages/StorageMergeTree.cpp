@@ -4,6 +4,7 @@
 #include <ranges>
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
@@ -3321,6 +3322,11 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
+    /// Snapshot in-memory at parts-snapshot time: a lazy
+    /// `BackupEntryFromSmallFile` would otherwise let a concurrent ALTER
+    /// drift the mapping bytes materialized into the backup.
+    auto column_ids_mapping_snapshot = getColumnIdMapping();
+
     Int64 min_data_version = std::numeric_limits<Int64>::max();
     for (const auto & data_part : data_parts)
         min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
@@ -3330,6 +3336,15 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
+
+    /// Without the mapping, restored parts cannot resolve any non-identity
+    /// column ID (DROP+ADD or RENAME).
+    if (column_ids_mapping_snapshot)
+    {
+        backup_entries_collector.addBackupEntry(
+            fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME,
+            std::make_shared<BackupEntryFromMemory>(column_ids_mapping_snapshot->toString()));
+    }
 }
 
 

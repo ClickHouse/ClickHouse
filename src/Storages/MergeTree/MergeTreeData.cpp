@@ -7198,6 +7198,23 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
+    /// Restore the mapping before parts attach so the reader can resolve
+    /// non-identity column IDs.  Older backups predating this fix have no
+    /// `column_ids.json`; they fall through to the legacy logical-name path.
+    auto column_ids_in_backup = fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME;
+    if (backup->fileExists(column_ids_in_backup))
+    {
+        ColumnIdMapping restored;
+        {
+            auto read_buf = backup->readFile(column_ids_in_backup);
+            restored = ColumnIdMapping::deserialize(*read_buf);
+            skipWhitespaceIfAny(*read_buf);
+            assertEOF(*read_buf);
+        }
+        setColumnIdMapping(std::move(restored));
+        writeColumnIdMappingToDisk();
+    }
+
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
@@ -7286,6 +7303,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     std::erase(part_names, "mutations");
+    std::erase(part_names, COLUMN_IDS_FILE_NAME); /// Already restored by restoreDataFromBackup before parts attach.
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
@@ -9688,6 +9706,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getVisibleDataPartsVector(local_context);
 
+    /// Snapshot with the parts so a concurrent ALTER cannot pair frozen
+    /// files with a newer mapping (e.g. DROP+ADD mid-freeze).
+    auto column_ids_mapping_snapshot = getColumnIdMapping();
+
     bool has_zero_copy_part = false;
     for (const auto & part : data_parts)
     {
@@ -9772,6 +9794,24 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the
+    /// mapping alongside the frozen parts to resolve non-identity IDs.
+    if (column_ids_mapping_snapshot && !result.empty())
+    {
+        const auto column_ids_in_freeze = fs::path(backup_path) / relative_data_path / COLUMN_IDS_FILE_NAME;
+        for (const auto & disk : getStoragePolicy()->getDisks())
+        {
+            if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+                continue;
+
+            disk->createDirectories(fs::path(column_ids_in_freeze).parent_path());
+            auto buf = disk->writeFile(column_ids_in_freeze, 4096, WriteMode::Rewrite, local_context->getWriteSettings());
+            column_ids_mapping_snapshot->serialize(*buf);
+            buf->finalize();
+            break;
+        }
+    }
 
     LOG_DEBUG(log, "Froze {} parts", result.size());
     return result;

@@ -1,0 +1,8 @@
+== before backup ==
+1	x	0
+2	y	9.9
+== after restore ==
+1	x	0
+2	y	9.9
+price	1
+freeze_mapping_present
