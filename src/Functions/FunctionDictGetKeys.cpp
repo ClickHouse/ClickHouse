@@ -33,10 +33,12 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 
 namespace DB
 {
@@ -67,23 +69,24 @@ inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
 }
 
 /// Consumes one `dict->read()` output stream, filters rows by the constant attribute value and
-/// accumulates matching key columns for the constant-path implementation
+/// accumulates matching key columns for the constant-path implementation.
 class DictGetKeysMatchingRowsSink final : public ISink
 {
 public:
-    DictGetKeysMatchingRowsSink(SharedHeader header, const DataTypes & key_types_, ColumnPtr value_column_, size_t num_keys_)
+    DictGetKeysMatchingRowsSink(
+        SharedHeader header, FunctionBasePtr equals_function_, ColumnPtr value_column_, DataTypePtr attr_type_, size_t num_keys_)
         : ISink(std::move(header))
+        , equals_function(std::move(equals_function_))
         , value_column(std::move(value_column_))
+        , attr_type(std::move(attr_type_))
         , num_keys(num_keys_)
     {
-        columns.reserve(num_keys);
-        for (const auto & key_type : key_types_)
-            columns.emplace_back(key_type->createColumn());
     }
 
     String getName() const override { return "DictGetKeysMatchingRowsSink"; }
 
-    const MutableColumns & getColumns() const { return columns; }
+    /// One entry per consumed chunk that had matches; each entry holds `num_keys` filtered key columns.
+    const std::vector<Columns> & getMatchedChunks() const { return matched_chunks; }
     size_t getMatchedRows() const { return matched_rows; }
 
 protected:
@@ -100,39 +103,49 @@ protected:
         ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[num_keys]);
         chassert(attr_col != nullptr);
 
-        VectorWithMemoryTracking<ColumnPtr> key_columns(num_keys);
-        for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-        {
-            key_columns[key_pos] = removeSpecialRepresentations(chunk_columns[key_pos]);
-            chassert(key_columns[key_pos] != nullptr);
-        }
-
         const size_t rows_in_chunk = attr_col->size();
 
-        IColumn::Filter filter(rows_in_chunk);
-        for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
-            filter[row_id] = (attr_col->compareAt(row_id, 0, *value_column, 1) == 0);
+        ColumnsWithTypeAndName equals_args
+            = {{attr_col, attr_type, "attr"}, {ColumnConst::create(value_column, rows_in_chunk), attr_type, "value"}};
+        ColumnPtr filter_column
+            = equals_function->execute(equals_args, equals_function->getResultType(), rows_in_chunk, false)->convertToFullColumnIfConst();
 
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(filter_column.get()))
+        {
+            auto materialized = ColumnUInt8::create(rows_in_chunk);
+            auto & out = materialized->getData();
+            const auto & data = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
+            const auto & nullmap = nullable->getNullMapData();
+            for (size_t i = 0; i < rows_in_chunk; ++i)
+                out[i] = data[i] & ~nullmap[i];
+            filter_column = std::move(materialized);
+        }
+
+        const auto & filter = assert_cast<const ColumnUInt8 &>(*filter_column).getData();
         const size_t matched_in_chunk = countBytesInFilter(filter);
         if (matched_in_chunk == 0)
             return;
 
+        Columns filtered_keys(num_keys);
         for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
         {
-            auto filtered = key_columns[key_pos]->filter(filter, matched_in_chunk);
-            columns[key_pos]->insertRangeFrom(*filtered, 0, filtered->size());
+            ColumnPtr key_col = removeSpecialRepresentations(chunk_columns[key_pos]);
+            chassert(key_col != nullptr);
+            filtered_keys[key_pos] = key_col->filter(filter, matched_in_chunk);
         }
 
+        matched_chunks.emplace_back(std::move(filtered_keys));
         matched_rows += matched_in_chunk;
     }
 
 private:
+    FunctionBasePtr equals_function;
     ColumnPtr value_column;
+    DataTypePtr attr_type;
     size_t num_keys = 0;
-    MutableColumns columns;
+    std::vector<Columns> matched_chunks;
     size_t matched_rows = 0;
 };
-
 }
 
 class FunctionDictGetKeys final : public IFunction
@@ -263,12 +276,14 @@ private:
 
         const size_t max_threads = settings[Setting::max_threads];
 
+        /// Build the `equals` function once per query (shared across all sinks); each sink uses
+        /// it to compare the attribute column against the constant value.
+        auto equals_resolver = FunctionFactory::instance().get("equals", helper.context);
+        ColumnsWithTypeAndName equals_signature = {{nullptr, attribute_column_type, "attr"}, {nullptr, attribute_column_type, "value"}};
+        auto equals_function = equals_resolver->build(equals_signature);
+
         /// Read the dictionary as a pipeline and attach sinks to collect matching keys per stream
         auto pipe = dict->read(column_names, settings[Setting::max_block_size], max_threads);
-
-        /// We do not need totals and extremes
-        pipe.dropTotals();
-        pipe.dropExtremes();
 
         const size_t num_threads = std::max<size_t>(1, std::min(max_threads, pipe.maxParallelStreams()));
         const size_t num_streams = pipe.numOutputPorts();
@@ -281,7 +296,7 @@ private:
         for (size_t stream = 0; stream < num_streams; ++stream)
         {
             auto sink = std::make_shared<DictGetKeysMatchingRowsSink>(
-                pipe.getOutputPort(stream)->getSharedHeader(), key_types, values_column, num_keys);
+                pipe.getOutputPort(stream)->getSharedHeader(), equals_function, values_column, attribute_column_type, num_keys);
             connect(*pipe.getOutputPort(stream), sink->getPort());
             processors->emplace_back(sink);
             sinks.emplace_back(std::move(sink));
@@ -313,9 +328,11 @@ private:
 
         for (const auto & sink : sinks)
         {
-            const auto & cols = sink->getColumns(); /// already filtered matching rows
-            for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                result_cols[key_pos]->insertRangeFrom(*cols[key_pos], 0, cols[key_pos]->size());
+            for (const auto & chunk_keys : sink->getMatchedChunks())
+            {
+                for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                    result_cols[key_pos]->insertRangeFrom(*chunk_keys[key_pos], 0, chunk_keys[key_pos]->size());
+            }
         }
 
         auto offsets_col = ColumnArray::ColumnOffsets::create();
