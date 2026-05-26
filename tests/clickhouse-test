@@ -76,6 +76,13 @@ def write_text_atomic(path: Path, text: str) -> None:
     except Exception as e:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
+# Exit code returned by `clickhouse-test` when the run was aborted early via
+# `stop_testing` (typically: server died / health check failed). Distinct from
+# the generic failure code 1 so the job side can populate the synthetic
+# "Server died" leaf without fragile log-line matching. Kept in sync with
+# `STOP_TESTING_EXIT_CODE` in `ci/jobs/scripts/functional_tests_results.py`.
+STOP_TESTING_EXIT_CODE = 2
+
 USE_JINJA = True
 try:
     import jinja2
@@ -132,7 +139,7 @@ CGROUP_VERSION = detect_cgroup_version()
 
 BASH = "/bin/bash"
 
-def shell_get_output(cmd: str) -> str:
+def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
     try:
         res = subprocess.run(
             cmd,
@@ -144,6 +151,7 @@ def shell_get_output(cmd: str) -> str:
             encoding="utf-8",
             errors="replace",
             check=True,
+            timeout=timeout,
         )
         return res.stdout.strip()
     except Exception as e:
@@ -647,7 +655,7 @@ def kill_process_group(pgid, fatal_log):
             print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
             sleep(stacktrace_delay)
 
-            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
+            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with lldb
             client_printed_stacktrace = False
             try:
                 if fatal_log and os.path.exists(fatal_log):
@@ -663,7 +671,7 @@ def kill_process_group(pgid, fatal_log):
             if not client_printed_stacktrace:
                 processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
-                    print(get_stacktraces_from_gdb(child))
+                    print(get_stacktraces_from_lldb(child))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -940,13 +948,66 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-# collect server stacktraces using gdb
-def get_stacktraces_from_gdb(pid):
-    return shell_get_output(f"gdb -batch -ex 'thread apply all backtrace' -p {pid}")
+_LLDB_INSTALL_ATTEMPTED = False
+
+
+def _ensure_lldb_installed():
+    """Make sure `lldb` is on PATH, installing it on the fly if not.
+
+    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
+    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
+    flight, install it at runtime so `print_c_stacktraces` keeps working.
+    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
+    install `lldb` permanently, this helper and its single call site below
+    should be removed.
+
+    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
+    install fails (no sudo, no network, no `brew`, ...), let
+    `shell_get_output` return "" so the surrounding diagnostic flow keeps
+    going instead of crashing during an already-broken run.
+
+    Bounded and idempotent: each subprocess call has a hard timeout so a
+    stalled package mirror cannot wedge stacktrace collection for minutes,
+    and a process-wide flag ensures only the first call attempts the
+    install — `print_c_stacktraces` iterates over every server PID, and we
+    must not pay the install cost (or timeout) for each one if the first
+    attempt already failed.
+    """
+    global _LLDB_INSTALL_ATTEMPTED
+    if shutil.which("lldb"):
+        return
+    if _LLDB_INSTALL_ATTEMPTED:
+        return
+    _LLDB_INSTALL_ATTEMPTED = True
+    try:
+        if platform.system() == "Darwin":
+            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
+        else:
+            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
+            subprocess.run(
+                ["apt-get", "install", "-y", "lldb"],
+                check=True, env=env, timeout=120,
+            )
+    except Exception as e:
+        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
+
+
+# collect server stacktraces using lldb (used uniformly on Linux and macOS)
+def get_stacktraces_from_lldb(pid):
+    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
+    # debug build with many threads; anything beyond that means lldb itself
+    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
+    # leaves the server process untouched.
+    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
+    return shell_get_output(
+        f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
+        timeout=30,
+    )
 
 
 # collect server stacktraces from system.stack_trace table
-def get_stacktraces_from_clickhouse(args):
+def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
@@ -984,10 +1045,17 @@ def get_stacktraces_from_clickhouse(args):
             'FROM system.stack_trace FORMAT Vertical"'
         )
 
-    return shell_get_output(msg)
+    # Bound the dump so timeout_handler / hung-check callers cannot wedge
+    # forever if clickhouse-client itself blocks (e.g. the server accepted
+    # the connection but is not making progress on system.stack_trace).
+    return shell_get_output(msg, timeout=timeout)
 
 def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
-    ps = shell_get_output("ps -eo pid,ppid,pgid,command").splitlines()[1:]
+    # -ww disables line-width truncation of the command column.  Without it,
+    # ps cuts the cmdline at 80 chars when stdout is not a TTY, which can hide
+    # the "clickhouse-server" substring when the binary lives deep in the
+    # filesystem (e.g. /home/ubuntu/actions-runner/_work/.../ci/tmp/...).
+    ps = shell_get_output("ps -ww -eo pid,ppid,pgid,command").splitlines()[1:]
     ps = [p.split(None, 3) for p in ps]
     ps = [[int(p[0]), int(p[1]), int(p[2]), p[3]] for p in ps]
 
@@ -1000,14 +1068,19 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
     return ps
 
 def get_all_server_pids():
-    """Get PIDs of clickhouse-server processes belonging to the current process group.
+    """Get PIDs of all clickhouse-server processes visible to the current user.
+
+    No pgid scoping: in every real scenario where this helper is useful the
+    server lives outside `clickhouse-test`'s process group (CI harnesses,
+    Docker, systemd, and the `ClickHouseService` test fixture all spawn the
+    server with `start_new_session=True` or equivalent).  A pgid filter
+    silently filters out everything we are meant to find.
     """
-    pgid = os.getpgrp()
-    return [p[0] for p in pgrep(pgid=pgid, command="clickhouse-server")]
+    return [p[0] for p in pgrep(command="clickhouse-server")]
 
 
-def is_asan_build():
-    """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
+def is_asan_build(args):
+    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections."""
     try:
         result = clickhouse_execute(
             args,
@@ -1019,65 +1092,85 @@ def is_asan_build():
         return bool(os.environ.get("ASAN_OPTIONS"))
 
 
-def print_stacktraces() -> None:
-    server_pid = get_server_pid()
+def print_c_stacktraces(args) -> None:
+    """C++-side backtraces via lldb.  Works whenever the server process
+    exists and is debuggable, independent of whether SQL is reachable.
 
-    bt = None
+    Every call site is one of two situations: we're aborting the whole
+    run (SERVER_DIED, hung-check, check_server_started) or terminating
+    the one wedged test (timeout_handler).  lldb's "thread backtrace all"
+    pause is on the order of seconds — acceptable in both cases against
+    the diagnostic value.
 
-    # Collect gdb stacktraces from all server processes (main + replicas).
-    # Skip gdb under ASan — it disables LeakSanitizer detections.
-    if not is_asan_build():
-        all_pids = get_all_server_pids()
-        if all_pids:
-            parts = []
-            for pid in all_pids:
-                label = "main server" if pid == server_pid else "replica"
-                print(f"\nCollecting stacktraces from {label} process {pid} with gdb:")
-                one_bt = get_stacktraces_from_gdb(pid)
-                if one_bt and len(one_bt) >= 1000:
-                    parts.append(f"=== PID {pid} ({label}) ===\n{one_bt}")
-                else:
-                    print(f"Got suspiciously small stacktraces from {pid}: {one_bt}")
-            if parts:
-                bt = "\n\n".join(parts)
-
-    if bt is None:
-        print("\nCollecting stacktraces from system.stacktraces table:")
-
-        bt = get_stacktraces_from_clickhouse(args)
-
-    if bt is not None:
-        print(bt)
+    Skipped under ASan, where attaching a debugger disables
+    LeakSanitizer detections.
+    """
+    if is_asan_build(args):
+        print(
+            colored(
+                "\nCannot collect C stacktraces under ASan: debugger attach is disabled.",
+                args,
+                "red",
+                attrs=["bold"],
+            )
+        )
         return
 
-    print(
-        colored(
-            f"\nUnable to locate ClickHouse server process listening at TCP port "
-            f"{args.tcp_port}. It must have crashed or exited prematurely!",
-            args,
-            "red",
-            attrs=["bold"],
+    server_pid = get_server_pid()
+    all_pids = get_all_server_pids()
+    if not all_pids:
+        print(
+            colored(
+                "\nUnable to locate any ClickHouse server process. "
+                "It must have crashed or exited prematurely!",
+                args,
+                "red",
+                attrs=["bold"],
+            )
         )
-    )
+        return
+
+    for pid in all_pids:
+        label = "main server" if pid == server_pid else "replica"
+        print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
+        bt = get_stacktraces_from_lldb(pid)
+        if bt and len(bt) >= 1000:
+            print(f"=== PID {pid} ({label}) ===\n{bt}")
+        else:
+            print(f"Got suspiciously small stacktraces from {pid}: {bt}")
+
+
+def print_sql_stacktraces(args) -> None:
+    """ClickHouse-internal stack view from system.stack_trace.
+
+    Adds thread_name and query_id to the C-side picture, which is the
+    only way to map a stuck thread to the query it was running.
+
+    Self-skips when the server is not answering queries — the SQL dump
+    would hit the same dead socket as the liveness check.  This keeps
+    callers honest: they can invoke this from any context (per-test
+    timeout, end-of-run hung-check) without first checking whether the
+    server still responds.
+    """
+    if not check_server_liveness(args, max_retries=1):
+        print("Skipping system.stack_trace query: server is unreachable.")
+        return
+    print("\nCollecting stacktraces from system.stack_trace table:")
+    bt = get_stacktraces_from_clickhouse(args)
+    if bt:
+        print(bt)
 
 
 def get_server_pid():
-    # lsof does not work in stress tests for some reason
-    cmd_lsof = f"lsof -i tcp:{args.tcp_port} -s tcp:LISTEN -Fp | sed 's/^p//p;d'"
-    cmd_pidof = "pidof -s clickhouse-server"
-
-    commands = [cmd_lsof, cmd_pidof]
-    output = None
-
-    for cmd in commands:
-        try:
-            output = shell_get_output(cmd)
-            if output:
-                return int(output)
-        except Exception as e:
-            print(f"Cannot get server pid with {cmd}, got {output}: {e}")
-
-    return None  # most likely server is dead
+    # Use the portable pgrep helper (built on `ps -eo pid,ppid,pgid,command`)
+    # so this works on both Linux and macOS — `pidof` does not exist on
+    # macOS, and `lsof -i tcp:PORT` would require knowing the port (only
+    # available on `args`, which is undefined in multiprocessing children
+    # spawned with the `spawn` start method).
+    procs = pgrep(command="clickhouse-server")
+    if not procs:
+        return None  # most likely server is dead
+    return procs[0][0]
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -1142,6 +1235,7 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
+    OLD_ANALYZER = "old-analyzer"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
     LINUX_ONLY = "supported only on Linux"
 
@@ -1174,7 +1268,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'nullcount']
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1438,6 +1532,16 @@ class SettingsRandomizer:
         "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
         "query_plan_max_limit_for_lazy_materialization": lambda: random.choice([0, 1, 10, 100, 1000, 10000, 100000]),
         "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
+        "query_plan_direct_read_from_text_index": lambda: random.random() > 0.05,
+        "query_plan_text_index_add_hint": lambda: random.random() > 0.05,
+        "optimize_truncate_order_by_after_group_by_keys": lambda: random.random() > 0.05,
+        "enable_automatic_decision_for_merging_across_partitions_for_final": lambda: random.random() > 0.05,
+        "parallel_non_joined_rows_processing": lambda: random.random() > 0.05,
+        "use_skip_indexes_for_disjunctions": lambda: random.random() > 0.05,
+        "use_hash_table_stats_for_join_reordering": lambda: random.random() > 0.05,
+        "allow_calculating_subcolumns_sizes_for_merge_tree_reading": lambda: random.random() > 0.05,
+        "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
+        "enable_join_transitive_predicates": lambda: random.random() < 0.3,
     }
 
     dependent_settings = {
@@ -1575,6 +1679,8 @@ class MergeTreeSettingsRandomizer:
         "max_buckets_in_map": lambda: random.randint(1, 100),
         "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
         "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
+        "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
+        "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
     }
 
@@ -1970,10 +2076,13 @@ class TestCase:
         if self.effective_merge_tree_settings:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
 
+        # Put randomized settings BEFORE base_client_options / client_options so
+        # that user-supplied --client-option values win over them: with
+        # --allow_repeated_settings, the last occurrence is what takes effect.
         if new_options != "":
             new_options += " --allow_repeated_settings"
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                self.base_client_options + new_options + " "
+                new_options + " " + self.base_client_options + " "
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
@@ -1984,7 +2093,7 @@ class TestCase:
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
 
-        return client_options + new_options
+        return new_options + " " + client_options
 
     def remove_settings_from_env(self):
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
@@ -2478,6 +2587,9 @@ class TestCase:
 
         if "no-parallel-replicas" in tags and args.no_parallel_replicas:
             return FailureReason.NO_PARALLEL_REPLICAS
+
+        if "no-old-analyzer" in tags and is_old_analyzer_used(args):
+            return FailureReason.OLD_ANALYZER
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
@@ -3531,7 +3643,25 @@ class TestCase:
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
         timeout = max(args.timeout - time_passed, 20)
 
-        self._cleanup_database(args, timeout)
+        try:
+            self._cleanup_database(args, timeout)
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            # Cleanup is best-effort only when the server is actually dead.
+            # If the server is still alive, this was a real cleanup failure
+            # (leftover state, unfinished DROP) and must propagate so the
+            # outer handler in run() classifies it as CONNECTION_ERROR — a
+            # silent swallow would let a test stay OK while leaving its
+            # database behind, hiding the bug.
+            if check_server_liveness(args):
+                raise
+            # Server died between the test finishing and cleanup running.
+            # The test's database is moot; the hung-check or the next test
+            # will detect the dead server and stop the run.
+            print(
+                f"WARNING: cleanup skipped for {self.name}: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
         shutil.rmtree(args.test_tmp_dir)
 
     def _cleanup_database(self, args, timeout):
@@ -3994,11 +4124,17 @@ class TestSuite:
         return TestSuite(args, suite_path, suite_tmp_path, suite)
 
 
-class ServerDied(Exception):
-    pass
+class StopTesting(Exception):
+    """Raised to abort the whole test run (server crash, hung-check
+    timeout, --max-failures limit, global time limit, etc.). Mirrors
+    `StopIteration` in role: a control-flow exception unwound to a
+    known outer handler.
 
-
-class GlobalTimeout(Exception):
+    The reason is in the message — the catch handler prefixes it with
+    "Test run aborted:" so it stands out in the log, and exits with
+    `STOP_TESTING_EXIT_CODE` so the job side treats the run as
+    catastrophically interrupted.
+    """
     pass
 
 
@@ -4229,12 +4365,13 @@ def run_tests_array(
 
         if stop_testing.is_set():
             stop_tests()
-            raise ServerDied("Server died")
+            raise StopTesting(
+                "another component requested stop (see earlier output for the cause)"
+            )
 
         if args.stop_time and time() > args.stop_time:
-            print("\nStop tests run because global time limit is exceeded.\n")
             stop_tests()
-            raise GlobalTimeout("Stop tests run because global time limit is exceeded")
+            raise StopTesting("global time limit exceeded (--stop-time)")
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
@@ -4256,9 +4393,19 @@ def run_tests_array(
 
             while True:
                 # This is the upper level timeout
-                # It helps with completely frozen processes, like in case of gdb errors
+                # It helps with completely frozen processes, like in case of lldb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
+                        # Dump stacktraces *before* stop_tests() kills the
+                        # client connections.  This is the only moment
+                        # the offending user query is still wedged on the
+                        # server with its query_id — once the TCP
+                        # connection drops, the server typically cancels
+                        # the query and its threads go away.  BG threads
+                        # stay around either way and can be captured at
+                        # end-of-run.
+                        print_sql_stacktraces(args)
+                        print_c_stacktraces(args)
                         stop_tests()
                     raise TimeoutError("Test execution timed out")
 
@@ -4312,17 +4459,21 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
-                    print_stacktraces()
+                    print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
-                    raise ServerDied("Server died")
+                    raise StopTesting(
+                        f"ClickHouse server died during test '{test_case.name}'"
+                    )
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
                             stop_testing.set()
-                            raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
+                            raise StopTesting(
+                                f"reached --max-failures limit ({args.max_failures})"
+                            )
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -4334,7 +4485,9 @@ def run_tests_array(
         if failures_chain >= args.max_failures_chain:
             stop_tests()
             stop_testing.set()
-            raise ServerDied("Max failures chain")
+            raise StopTesting(
+                f"reached --max-failures-chain limit ({args.max_failures_chain})"
+            )
 
     if failures_total > 0:
         print(
@@ -4772,7 +4925,7 @@ def do_run_tests(
             if args.hung_check:
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
-                    print_stacktraces()
+                    print_c_stacktraces(args)
                     stop_testing.set()
 
             if stop_testing.is_set():
@@ -4790,7 +4943,9 @@ def do_run_tests(
                         p.kill()
                 for p in processes:
                     p.join(timeout=5)
-                break
+                raise StopTesting(
+                    "test run was stopped (see earlier output for the cause)"
+                )
 
             for p in processes[:]:
                 if not p.is_alive():
@@ -5075,9 +5230,7 @@ def main(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
-            pid = get_server_pid()
-            print("Got server pid", pid)
-            print_stacktraces()
+            print_c_stacktraces(args)
         raise TestException(msg)
 
     if args.cloud:
@@ -5212,7 +5365,7 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         stop_testing.set()
-        raise
+        raise StopTesting(f"Failed to create databases for tests: {e}") from e
 
     if (
         args.collect_per_test_coverage
@@ -5411,9 +5564,6 @@ ORDER BY (test_name, callee_offset)
                 runner_process_killed,
             )
 
-    if stop_testing.is_set():
-        exit_code.value = 1
-
     if runner_process_killed.is_set():
         exit_code.value = 1
 
@@ -5480,7 +5630,15 @@ ORDER BY (test_name, callee_offset)
             print(processlist.decode())
             print(get_transactions_list(args))
 
-            print_stacktraces()
+            # `processlist` above already shows per-thread stacks for
+            # every user query still running (system.processes JOIN
+            # system.stack_trace by query_id).  print_sql_stacktraces
+            # here dumps the rest of system.stack_trace — BG threads
+            # with no query_id (merges, replication, schedule pool),
+            # which are the typical lock-holders when a user query is
+            # wedged but looks idle.
+            print_sql_stacktraces(args)
+            print_c_stacktraces(args)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -6444,10 +6602,10 @@ if __name__ == "__main__":
 
     try:
         main(args)
-    except ServerDied as e:
-        print(f"{e}", file=sys.stderr)
+    except StopTesting as e:
+        print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
-        sys.exit(1)
+        sys.exit(STOP_TESTING_EXIT_CODE)
     except Terminated as e:
         print(f"Terminated with {e.signal} signal", file=sys.stderr)
         sys.exit(128 + e.signal)

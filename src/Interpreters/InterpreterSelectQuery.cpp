@@ -178,6 +178,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_uniq_to_count;
@@ -1301,7 +1302,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (context->getSettingsRef()[Setting::group_by_use_nulls] && analysis_result.use_grouping_set_key)
         {
             for (const auto & key : query_analyzer->aggregationKeys())
-                res.insert({nullptr, makeNullableSafe(header.getByName(key.name).type), key.name});
+                res.insert({nullptr, makeNullableOrLowCardinalityNullableSafe(header.getByName(key.name).type), key.name});
         }
         else
         {
@@ -3013,7 +3014,8 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        !group_by_info && settings[Setting::force_aggregation_in_order]);
+        !group_by_info && settings[Setting::force_aggregation_in_order],
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 

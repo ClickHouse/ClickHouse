@@ -350,12 +350,20 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
-${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
+${CMAKE_SOURCE_DIR}/programs/server/schema.html")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
+
+set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/webterminal.html")
 
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
@@ -583,7 +591,8 @@ target_link_libraries(
     dbms
     PUBLIC
         boost::circular_buffer
-        boost::heap)
+        boost::heap
+        boost::iostreams)
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect

@@ -51,6 +51,14 @@ struct Optimization
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
         bool read_in_order;
+        bool read_in_order_through_join;
+
+        /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
+        /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
+        /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
+        /// the second-pass read-in-order would silently disable both optimizations if the
+        /// join is swapped from `LEFT` to `RIGHT` after we returned.
+        std::optional<bool> join_swap_table;
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
@@ -119,8 +127,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 ///                      - Something -                    - Expression - Something -
 size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
-size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
-
 /// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
 /// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into
 /// the JOIN condition, then the column may become unused in the plan.
@@ -142,6 +148,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
+/// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
+/// the preserved-side input must produce before joining.
+size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
     static const std::array<Optimization, 18> optimizations = {{
@@ -155,7 +166,6 @@ inline const auto & getOptimizations()
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
-        {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearch, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
@@ -163,6 +173,7 @@ inline const auto & getOptimizations()
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
+        {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
     }};
 
     return optimizations;
@@ -187,6 +198,9 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void pushLimitByIntoSort(QueryPlan::Node & node);
+void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);

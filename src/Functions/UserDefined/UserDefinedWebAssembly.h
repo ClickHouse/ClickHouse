@@ -10,6 +10,9 @@
 
 #include <Common/SharedMutex.h>
 #include <Common/StopToken.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -21,6 +24,7 @@ enum class WasmAbiVersion : uint8_t
 {
     RowDirect,
     BufferedV1,
+    AssemblyScript,
 };
 
 String toString(WasmAbiVersion abi_type);
@@ -33,7 +37,7 @@ public:
     Field getValue(const String & name) const;
 
 private:
-    std::unordered_map<String, Field> settings;
+    UnorderedMapWithMemoryTracking<String, Field> settings;
 };
 
 class UserDefinedWebAssemblyFunction
@@ -99,12 +103,14 @@ public:
 
     bool has(const String & function_name) const;
     FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
+    /// Returns nullptr if the function is not registered. Useful for non-throwing rewrite-candidate checks.
+    FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
 
     /// Returns true if function was removed
     bool dropIfExists(const String & function_name);
 
     /// Returns all registered WASM functions with their metadata for introspection (e.g. system.functions).
-    std::vector<RegisteredFunction> getAllFunctions() const;
+    VectorWithMemoryTracking<RegisteredFunction> getAllFunctions() const;
 
     static UserDefinedWebAssemblyFunctionFactory & instance();
 private:
@@ -115,7 +121,7 @@ private:
     };
 
     mutable DB::SharedMutex registry_mutex;
-    std::unordered_map<String, RegistryEntry> registry;
+    UnorderedMapWithMemoryTracking<String, RegistryEntry> registry;
 };
 
 }

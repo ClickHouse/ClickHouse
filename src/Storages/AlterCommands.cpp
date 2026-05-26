@@ -84,6 +84,13 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 namespace
@@ -712,8 +719,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
 
-        auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-            || metadata.add_minmax_index_for_temporal_columns;
+        auto using_auto_minmax_index =
+               metadata.add_minmax_index_for_numeric_columns
+            || metadata.add_minmax_index_for_string_columns
+            || metadata.add_minmax_index_for_temporal_columns
+            || metadata.add_minmax_index_for_block_number_column
+            || metadata.add_minmax_index_for_block_offset_column;
         if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX) && using_auto_minmax_index)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
@@ -868,7 +879,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_PROJECTION)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, &metadata.partition_key, context);
+        auto projection = ProjectionDescription::getProjectionFromAST(
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == DROP_PROJECTION)
@@ -938,6 +950,33 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
+        }
+
+        MergeTreeSettings effective_settings;
+        bool any_mt_setting = false;
+        for (const auto & change : settings_from_storage)
+        {
+            if (MergeTreeSettings::hasBuiltin(change.name))
+            {
+                effective_settings.applyChange(change);
+                any_mt_setting = true;
+            }
+        }
+        if (any_mt_setting)
+        {
+            metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+            metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+            metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+            metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+            metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+            for (const auto & column : metadata.columns)
+            {
+                metadata.dropImplicitIndicesForColumn(column.name);
+                metadata.addImplicitIndicesForColumn(column, context);
+            }
+            metadata.dropImplicitIndicesForVirtualColumns();
+            metadata.addImplicitIndicesForVirtualColumns(context);
         }
     }
     else if (type == RESET_SETTING)

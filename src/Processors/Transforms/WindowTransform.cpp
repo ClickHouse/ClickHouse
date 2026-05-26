@@ -20,6 +20,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -55,7 +56,10 @@ struct fmt::formatter<DB::RowNumber>
 namespace DB
 {
 
-struct Settings;
+namespace Setting
+{
+    extern const SettingsBool allow_rank_dense_rank_arguments;
+}
 
 namespace ErrorCodes
 {
@@ -2810,15 +2814,31 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         .is_window_function = true};
 
     factory.registerFunction("rank", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
+            const DataTypes & argument_types, const Array & parameters, const Settings * settings)
         {
+            // The `RANK` window function takes no arguments per SQL standard.
+            // ClickHouse historically accepted and silently ignored arbitrary arguments,
+            // which caused user confusion (issue #49526). Reject them by default; the
+            // legacy permissive behavior is gated behind `allow_rank_dense_rank_arguments`.
+            if (!argument_types.empty() && (settings == nullptr || !(*settings)[Setting::allow_rank_dense_rank_arguments]))
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
+                    "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
+                    name, argument_types.size());
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
         }, {}, properties}, AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction("denseRank", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
+            const DataTypes & argument_types, const Array & parameters, const Settings * settings)
         {
+            // The `DENSE_RANK` window function takes no arguments per SQL standard.
+            // See `rank` registration above for the rationale.
+            if (!argument_types.empty() && (settings == nullptr || !(*settings)[Setting::allow_rank_dense_rank_arguments]))
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for window function {} doesn't match: passed {}, should be 0. "
+                    "Set `allow_rank_dense_rank_arguments = 1` to restore the legacy behavior of silently ignoring arguments.",
+                    name, argument_types.size());
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
         }, {}, properties});
