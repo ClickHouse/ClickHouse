@@ -59,7 +59,7 @@ bool canConstructReadingPipeline(const std::map<String, Int64> & safe_block_numb
     return !getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions).empty();
 }
 
-std::string explainPlan(QueryPlan & plan)
+std::string explainPlan(const QueryPlan & plan)
 {
     WriteBufferFromOwnString plan_buffer;
     ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
@@ -67,7 +67,7 @@ std::string explainPlan(QueryPlan & plan)
     return plan_buffer.str();
 }
 
-std::string explainPipeline(Pipe pipe)
+std::string explainPipeline(const Pipe & pipe)
 {
     WriteBufferFromOwnString pipeline_buffer;
     printPipeline(pipe.getProcessors(), pipeline_buffer);
