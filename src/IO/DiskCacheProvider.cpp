@@ -171,6 +171,12 @@ Rope DiskCacheHandle::get(ByteRange range)
     if (!holder)
         return result;
 
+    /// Record the file-level range for the destructor's deferred LRU bump.
+    /// Records BEFORE we read so a partial pread failure (which throws) still
+    /// leaves a coherent record — though the dtor will simply re-fetch and no-op
+    /// for any range whose cached segments are gone by then.
+    hits_to_touch.push_back(range);
+
     /// `range` is file-level; segments are object-local. Translate the
     /// caller's range into object-local for the overlap math, then attach
     /// file-level `logical_offset` to the returned nodes.
@@ -238,11 +244,11 @@ Rope DiskCacheHandle::get(ByteRange range)
         result.append(RopeNode{
             std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
-        /// Bump per-segment LRU position + hits_count. Mirrors what the legacy
-        /// `CachedOnDiskReadBufferFromFile` does on every cache hit; without
-        /// it, `system.filesystem_cache.cache_hits` stays at zero and segments
-        /// don't move to the protected queue under SLRU.
-        segment->increasePriority();
+        /// LRU bump intentionally deferred to `touch()`. `ReaderExecutor`
+        /// calls `touch` for every hit AFTER all `put`s complete, so a hit
+        /// that sits adjacent to fresh inserts does not become "older" than
+        /// the segments just inserted around it (matches the LRU-update
+        /// order of a streaming reader; see `02944` for a regression).
 
         if (cache_log)
             appendCacheLogEntry(
@@ -253,17 +259,69 @@ Rope DiskCacheHandle::get(ByteRange range)
     return result;
 }
 
+DiskCacheHandle::~DiskCacheHandle()
+{
+    /// Deferred LRU bump. For each range that was successfully `get`-ed via
+    /// this handle, re-fetch the matching segments and call
+    /// `increasePriority`. This happens here — at destruction — rather than
+    /// inside `get` so the bump lands AFTER any `put` the executor issued
+    /// on this handle (or on another handle for the same file). A hit that
+    /// sits next to fresh inserts therefore does not become "older" than
+    /// the segments just inserted around it.
+    if (hits_to_touch.empty())
+        return;
+
+    for (const auto & range : hits_to_touch)
+    {
+        chassert(range.offset >= object_file_offset);
+        const ByteRange range_in_object{range.offset - object_file_offset, range.size};
+
+        /// `cache->get` is read-only — never creates new segments. We use it
+        /// here (rather than the ctor's `holder`, which `put` may have
+        /// dropped) to find currently-cached segments overlapping `range`.
+        /// `file_segments_limit = 0`: every overlap, not the user's batch hint.
+        auto touch_holder = cache->get(
+            cache_key,
+            range_in_object.offset,
+            range_in_object.size,
+            /*file_segments_limit=*/0,
+            origin.user_id);
+
+        if (!touch_holder)
+            continue;
+
+        for (const auto & segment : *touch_holder)
+        {
+            const auto state = segment->state();
+            if (state != FileSegmentState::DOWNLOADED
+                && state != FileSegmentState::PARTIALLY_DOWNLOADED
+                && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+                continue;
+
+            /// `increasePriority` is the canonical hit-bump entry point —
+            /// updates `cache_hits` and moves the segment to the protected
+            /// queue under SLRU, mirroring `CachedOnDiskReadBufferFromFile`.
+            segment->increasePriority();
+        }
+    }
+}
+
 
 size_t DiskCacheHandle::put(ByteRange range, Rope data)
 {
-    if (!holder)
-        return 0;
-
     /// In bypass mode the ctor used `cache->get` so EMPTY segments don't exist
     /// here, but be explicit: never populate the cache when the caller asked
     /// us to leave it alone.
     if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         return 0;
+
+    /// Release the ctor holder (used by `status` / `get` to enumerate the
+    /// full range's segments). While we hold it, those segments count as
+    /// "non-releasable" in `FileCache::reserve`, so the cache cannot evict
+    /// any of them to make room for our writes. By the time `put` runs, all
+    /// `status` / `get` work for this handle is complete — releasing is
+    /// safe. Idempotent across multiple `put` calls per handle.
+    holder.reset();
 
     /// `range` and `data`'s nodes are in file-level coordinates;
     /// `FileCache::FileSegment::range()` is object-local. Translate the
@@ -275,23 +333,57 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
 
     size_t bytes_written = 0;
 
-    for (auto & segment : *holder)
+    /// Re-fetch segments in batches of `filesystem_cache_segments_batch_size`
+    /// inside `put`, processing one batch at a time. Each batch's
+    /// `FileSegmentsHolderPtr` is destroyed at the end of the inner loop
+    /// iteration — `FileCache::reserve` for a later batch can then evict
+    /// segments from earlier batches when it hits `max_size` /
+    /// `max_elements`. If we used the ctor's `holder` (which contains
+    /// segments overlapping the full `requested` range), the cache could
+    /// never make room. This mirrors `CachedOnDiskReadBufferFromFile`'s
+    /// streaming pattern: download a batch, release, download the next.
+    ///
+    /// The ctor's `holder` is left alone — it is still referenced by
+    /// `status` / `get` callers that may have not yet completed.
+
+    const size_t end_in_object = range_in_object.end();
+    size_t cursor_in_object = range_in_object.offset;
+
+    while (cursor_in_object < end_in_object)
     {
-        auto state = segment->state();
+        auto batch = cache->getOrSet(
+            cache_key,
+            cursor_in_object,
+            end_in_object - cursor_in_object,
+            object_size,
+            CreateFileSegmentSettings{},
+            cache_settings.filesystem_cache_segments_batch_size,
+            origin,
+            cache_settings.filesystem_cache_boundary_alignment);
+
+        if (!batch || batch->empty())
+            break;
+
+        const size_t batch_end_in_object = batch->back().range().right + 1;
+
+        for (auto & segment_ref : *batch)
+        {
+            auto & segment = *segment_ref;
+            auto state = segment.state();
 
         /// Only write to EMPTY or PARTIALLY_DOWNLOADED segments.
         if (state != FileSegmentState::EMPTY && state != FileSegmentState::PARTIALLY_DOWNLOADED)
             continue;
 
-        const auto & seg_range = segment->range();
+        const auto & seg_range = segment.range();
         ByteRange seg_r{seg_range.left, seg_range.size()};
 
         if (seg_r.end() <= range_in_object.offset || seg_r.offset >= range_in_object.end())
             continue;
 
         /// Try to become the downloader.
-        auto downloader_id = segment->getOrSetDownloader();
-        if (!segment->isDownloader())
+        auto downloader_id = segment.getOrSetDownloader();
+        if (!segment.isDownloader())
         {
             LOG_TRACE(log, "DiskCacheHandle::put: not downloader for [{}, {}], downloader={}",
                 seg_range.left, seg_range.right, downloader_id);
@@ -304,12 +396,12 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         /// stopped. We can only contribute when our data starts at or
         /// before that point — otherwise we would have to leave a hole,
         /// which the segment does not allow.
-        size_t write_offset = segment->getCurrentWriteOffset();
+        size_t write_offset = segment.getCurrentWriteOffset();
         size_t write_end_max = std::min(seg_r.end(), range_in_object.end());
 
         if (write_offset >= write_end_max || write_offset < range_in_object.offset)
         {
-            segment->completePartAndResetDownloader();
+            segment.completePartAndResetDownloader();
             continue;
         }
 
@@ -329,7 +421,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
 
         if (contiguous == 0)
         {
-            segment->completePartAndResetDownloader();
+            segment.completePartAndResetDownloader();
             continue;
         }
 
@@ -337,7 +429,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         /// are recoverable via `status`/`get` honouring the downloaded
         /// prefix.
         std::string failure_reason;
-        bool reserved = segment->reserve(
+        bool reserved = segment.reserve(
             contiguous,
             cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
             failure_reason);
@@ -346,7 +438,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         {
             LOG_TRACE(log, "DiskCacheHandle::put: reserve failed for [{}, {}]: {}",
                 seg_range.left, seg_range.right, failure_reason);
-            segment->completePartAndResetDownloader();
+            segment.completePartAndResetDownloader();
             continue;
         }
 
@@ -369,11 +461,11 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(contiguous);
         data.copyTo(flat_buf.data(), write_range);
 
-        segment->write(flat_buf.data(), contiguous, write_offset);
+        segment.write(flat_buf.data(), contiguous, write_offset);
 
         /// Release downloader role. If we did not reach `seg_r.end()`,
         /// the segment is left PARTIALLY_DOWNLOADED for later continuation.
-        segment->completePartAndResetDownloader();
+        segment.completePartAndResetDownloader();
         bytes_written += contiguous;
 
         LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}] at offset {}",
@@ -381,10 +473,16 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
 
         if (cache_log)
             appendCacheLogEntry(
-                *cache_log, *segment, origin,
+                *cache_log, segment, origin,
                 FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
                 source_file_path, requested_range);
-    }
+        } // end for segment_ref : *batch
+
+        /// `batch` (the local `FileSegmentsHolderPtr`) goes out of scope here,
+        /// releasing all segments in it. The cache can now evict them when
+        /// processing the next batch's `reserve` calls.
+        cursor_in_object = batch_end_in_object;
+    } // end while cursor_in_object < end_in_object
 
     return bytes_written;
 }

@@ -48,6 +48,14 @@ public:
     /// can be less than `range.size` when we lost the downloader race
     /// on some segments, reservation failed (cache full), or the
     /// handle is in bypass mode (returns 0).
+    ///
+    /// LRU update ordering: implementations MUST defer the LRU-bump for
+    /// every hit `get`-ed via this handle until destruction. The executor
+    /// keeps the handle alive until after every `put` it intends to issue,
+    /// so the bumps run AFTER the inserts — a hit that sits next to fresh
+    /// inserts does not become "older" than them under LRU eviction. See
+    /// `02944_dynamically_change_filesystem_cache_size` for the regression
+    /// this ordering prevents.
     virtual size_t put(ByteRange range, Rope data) = 0;
 };
 

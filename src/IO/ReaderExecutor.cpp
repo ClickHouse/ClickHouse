@@ -918,7 +918,14 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
     Rope result;
     IntervalSet covered;   /// disjoint logical bytes already materialised in `result`
+    /// Both vectors hold cache handles until the end of this function so
+    /// `~ICacheHandle` (which does the deferred LRU bump for hits) runs
+    /// AFTER every `put` below. Splitting on whether the handle has misses
+    /// (so we know which to iterate for `put`) is a layout detail — both
+    /// are destroyed together in scope exit. See `~DiskCacheHandle` for the
+    /// deferred-bump rationale.
     std::vector<std::unique_ptr<ICacheHandle>> miss_handles;
+    std::vector<std::unique_ptr<ICacheHandle>> hit_only_handles;
 
     /// Over-read pre-check: bytes the previous `readPhysicalWindow` source-read
     /// just past its requested window (with `live_buffer` advancing through
@@ -985,6 +992,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
                 auto handle = cache->lookup(pr.object, object_file_offset, piece_range);
                 auto status = handle->status();
+                bool any_hit_done = false;
 
                 for (const auto & hit : status.hit_ranges)
                 {
@@ -1020,6 +1028,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                         covered.add(sub);
                         stats.cache_hit_bytes += sub.size;
                     }
+                    any_hit_done = true;
                 }
 
                 for (const auto & miss : status.miss_ranges)
@@ -1029,8 +1038,16 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                     still_missing.push_back(miss);
                 }
 
+                /// Keep the handle alive until the end of `readPhysicalWindow`
+                /// — `~DiskCacheHandle` does the deferred LRU bump for each
+                /// hit served by `get`, and we want that to fire AFTER every
+                /// `put` below. If the handle has neither hits nor misses we
+                /// could drop it now, but keeping all handles together costs
+                /// nothing.
                 if (!status.miss_ranges.empty())
                     miss_handles.push_back(std::move(handle));
+                else if (any_hit_done)
+                    hit_only_handles.push_back(std::move(handle));
 
                 piece_file_start += pr.size;
             }

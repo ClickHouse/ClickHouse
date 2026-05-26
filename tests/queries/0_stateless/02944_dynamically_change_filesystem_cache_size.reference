@@ -1,3 +1,4 @@
+no-reader-executor
 100	10
 0
 10
@@ -14,6 +15,27 @@ set max_elements from 10 to 2
 100	2
 2
 18
+set max_elements from 2 to 10
+100	10
+10
+98
+reader-executor
+100	10
+0
+10
+98
+set max_size from 100 to 10
+10	10
+1
+8
+set max_size from 10 to 100
+100	10
+10
+100
+set max_elements from 10 to 2
+100	2
+2
+20
 set max_elements from 2 to 10
 100	10
 10

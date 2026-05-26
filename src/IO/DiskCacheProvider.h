@@ -27,6 +27,8 @@ public:
         std::shared_ptr<FilesystemCacheLog> cache_log,
         String source_file_path);
 
+    ~DiskCacheHandle() override;
+
     CacheLookupResult status() const override;
     Rope get(ByteRange range) override;
     size_t put(ByteRange range, Rope data) override;
@@ -47,6 +49,11 @@ private:
     String source_file_path;
     ByteRange requested_range;
     FileSegmentsHolderPtr holder;
+    /// File-level ranges returned by successful `get` calls. The destructor
+    /// re-fetches the matching segments and calls `increasePriority` on each
+    /// — the executor keeps the handle alive until after every `put` so the
+    /// bump always lands AFTER the inserts. See `~DiskCacheHandle`.
+    std::vector<ByteRange> hits_to_touch;
     LoggerPtr log = getLogger("DiskCacheHandle");
 };
 
