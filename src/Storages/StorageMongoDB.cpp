@@ -49,6 +49,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
@@ -66,6 +67,15 @@ void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
     // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
     for (const auto & host : uri->hosts())
         context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
+}
+
+void MongoDBConfiguration::checkCollection() const
+{
+    /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
+    /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
+    /// effectively empty collection name, which aborts the process inside the driver.
+    if (collection.empty() || collection.find('\0') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -223,6 +233,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
     }
 
     configuration.checkHosts(context);
+    configuration.checkCollection();
 
     return configuration;
 }
