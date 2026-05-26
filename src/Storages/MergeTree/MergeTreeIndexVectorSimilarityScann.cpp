@@ -18,7 +18,6 @@
 
 #include <cmath>
 #include <numeric>
-#include <sstream>
 
 /// ScaNN headers — included only in this translation unit.
 #pragma GCC diagnostic push
@@ -55,7 +54,6 @@ extern const int INCORRECT_QUERY;
 extern const int INCORRECT_DATA;
 extern const int ILLEGAL_COLUMN;
 extern const int LOGICAL_ERROR;
-extern const int INCORRECT_NUMBER_OF_COLUMNS;
 extern const int INVALID_SETTING_VALUE;
 }
 
@@ -86,28 +84,34 @@ static std::string buildScannConfigString(
     size_t num_blocks,
     bool use_residual)
 {
-    std::ostringstream oss;
-    oss << "num_neighbors: 100\n"
-        << "distance_measure { distance_measure: \"" << distance_measure << "\" }\n"
-        << "partitioning {\n"
-        << "  num_children: " << num_leaves << "\n"
-        << "  min_cluster_size: 50\n"
-        << "  max_clustering_iterations: 12\n"
-        << "  single_machine_center_initialization: DEFAULT_KMEANS_PLUS_PLUS\n"
-        << "  partitioning_distance { distance_measure: \"SquaredL2Distance\" }\n"
-        << "  query_spilling { spilling_type: FIXED_NUMBER_OF_CENTERS max_spill_centers: " << num_leaves_to_search << " }\n"
-        << "  expected_sample_size: " << training_sample_size << "\n"
-        << "  query_tokenization_distance_override { distance_measure: \"" << distance_measure << "\" }\n"
-        << "}\n"
-        << "hash {\n"
-        << "  asymmetric_hash {\n"
-        << "    lookup_type: INT8_LUT16\n"
-        << "    use_residual_quantization: " << (use_residual ? "true" : "false") << "\n"
-        << "    projection { projection_type: CHUNK num_blocks: " << num_blocks << " num_dims_per_block: 2 }\n"
-        << "  }\n"
-        << "}\n"
-        << "exact_reordering { approx_num_neighbors: 100 }\n";
-    return oss.str();
+    return fmt::format(
+        "num_neighbors: 100\n"
+        "distance_measure {{ distance_measure: \"{}\" }}\n"
+        "partitioning {{\n"
+        "  num_children: {}\n"
+        "  min_cluster_size: 50\n"
+        "  max_clustering_iterations: 12\n"
+        "  single_machine_center_initialization: DEFAULT_KMEANS_PLUS_PLUS\n"
+        "  partitioning_distance {{ distance_measure: \"SquaredL2Distance\" }}\n"
+        "  query_spilling {{ spilling_type: FIXED_NUMBER_OF_CENTERS max_spill_centers: {} }}\n"
+        "  expected_sample_size: {}\n"
+        "  query_tokenization_distance_override {{ distance_measure: \"{}\" }}\n"
+        "}}\n"
+        "hash {{\n"
+        "  asymmetric_hash {{\n"
+        "    lookup_type: INT8_LUT16\n"
+        "    use_residual_quantization: {}\n"
+        "    projection {{ projection_type: CHUNK num_blocks: {} num_dims_per_block: 2 }}\n"
+        "  }}\n"
+        "}}\n"
+        "exact_reordering {{ approx_num_neighbors: 100 }}\n",
+        distance_measure,
+        num_leaves,
+        num_leaves_to_search,
+        training_sample_size,
+        distance_measure,
+        use_residual ? "true" : "false",
+        num_blocks);
 }
 
 // ---------------------------------------------------------------------------
