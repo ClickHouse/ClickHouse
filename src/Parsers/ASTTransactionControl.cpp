@@ -64,6 +64,8 @@ void ASTTransactionControl::writeJSON(WriteBuffer & out) const
 void ASTTransactionControl::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    if (!r.has("action"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'action' field in `TransactionControl` during AST JSON deserialization");
     Int64 action_value = r.getInt("action");
     auto action_opt = magic_enum::enum_cast<QueryType>(static_cast<std::underlying_type_t<QueryType>>(action_value));
     if (!action_opt || static_cast<Int64>(*action_opt) != action_value)

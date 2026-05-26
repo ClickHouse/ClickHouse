@@ -52,6 +52,18 @@ SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":98,"table":{"type
 -- SystemQuery (REFRESH VIEW): requires `table`.
 SELECT formatQueryFromJSON('{"type":"SystemQuery","query_type":102}'); -- { serverError BAD_ARGUMENTS }
 
+-- SystemQuery: `query_type` is required (otherwise a missing key would silently deserialize as `Type::UNKNOWN`).
+SELECT formatQueryFromJSON('{"type":"SystemQuery"}'); -- { serverError BAD_ARGUMENTS }
+
+-- TransactionControl: `action` is required (a missing key would otherwise be silently deserialized as `BEGIN`).
+SELECT formatQueryFromJSON('{"type":"TransactionControl"}'); -- { serverError BAD_ARGUMENTS }
+
+-- BackupQuery: `kind` is required (a missing key would otherwise be silently deserialized as `BACKUP`).
+SELECT formatQueryFromJSON('{"type":"BackupQuery"}'); -- { serverError BAD_ARGUMENTS }
+
+-- Partition: requires one of 'value', 'id', or 'all' = true (otherwise `formatImpl` dereferences a null `id`).
+SELECT formatQueryFromJSON('{"type":"Partition"}'); -- { serverError BAD_ARGUMENTS }
+
 -- Well-formed payloads still work.
 SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DROP TABLE t'));

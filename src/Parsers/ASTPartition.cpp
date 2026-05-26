@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -92,6 +93,13 @@ void ASTPartition::readJSON(const Poco::JSON::Object & json)
         if (id_child)
             setPartitionID(id_child);
     }
+
+    /// `formatImpl` unconditionally dereferences `id` when neither `value` nor `all` is set.
+    /// Reject malformed JSON like `{"type":"Partition"}` instead of producing an AST that
+    /// crashes during formatting.
+    if (!value && !all && !id)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`Partition` AST requires one of 'value', 'id', or 'all' = true during AST JSON deserialization");
 }
 
 void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

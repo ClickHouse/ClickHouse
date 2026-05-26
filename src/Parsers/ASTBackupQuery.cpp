@@ -517,6 +517,8 @@ void ASTBackupQuery::writeJSON(WriteBuffer & out) const
 void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    if (!r.has("kind"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'kind' field in `BackupQuery` during AST JSON deserialization");
     Int64 kind_value = r.getInt("kind");
     auto kind_opt = magic_enum::enum_cast<Kind>(static_cast<std::underlying_type_t<Kind>>(kind_value));
     if (!kind_opt || static_cast<Int64>(*kind_opt) != kind_value)

@@ -804,6 +804,8 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
 void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    if (!r.has("query_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'query_type' field in `SystemQuery` during AST JSON deserialization");
     Int64 query_type_value = r.getInt("query_type");
     auto query_type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(query_type_value));
     if (!query_type_opt || static_cast<Int64>(*query_type_opt) != query_type_value)
