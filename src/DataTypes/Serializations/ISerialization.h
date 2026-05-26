@@ -496,6 +496,16 @@ public:
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
 
+        /// When set, `SerializationSparse::deserializeBinaryBulkWithMultipleStreams` skips
+        /// reading the `SparseElements` substream and pads the values column with defaults
+        /// to keep the `offsets.size() + 1 == values.size()` invariant. The values won't
+        /// reflect the on-disk data, so this is safe only for one-shot reads that discard
+        /// the column without inspecting its values - the sparsity analyzer is the only
+        /// caller (it counts non-defaults per granule using offsets alone). The nested
+        /// state for the values stream is left un-advanced, so this flag must not be used
+        /// for a reader that will be reused across calls.
+        bool skip_sparse_values_substream = false;
+
         /// Returns true if all marks for the given substream have at most
         /// `max_transitions` distinct consecutive positions.
         /// Used by SerializationLowCardinality to detect single-dictionary parts.

@@ -219,6 +219,7 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+        deserialize_settings.skip_sparse_values_substream = only_read_sparse_offsets;
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {

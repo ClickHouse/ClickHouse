@@ -447,15 +447,27 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     auto & values_column = column_sparse.getValuesPtr();
 
     settings.path.push_back(Substream::SparseElements);
-    /// We cannot use column from substream cache during deserialization of sparse values column, because
-    /// sparse values column must always contain default value at the first row that is added during ColumnSparse
-    /// creation. Using column from substream cache will lead to loss of this value and unexpected column size.
-    /// So, we should set insert_only_rows_in_current_range_from_substreams_cache flag to true
-    /// to insert only rows in current range from substream cache instead of using the whole cached column if any.
-    auto values_settings = settings;
-    values_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
-    nested->deserializeBinaryBulkWithMultipleStreams(
-        values_column, skipped_values_rows, num_read_offsets, values_settings, state_sparse->nested, cache);
+    if (settings.skip_sparse_values_substream)
+    {
+        /// Caller (e.g. the sparsity analyzer) does not inspect the values; pad the
+        /// column with defaults so the `offsets.size() + 1 == values.size()` invariant
+        /// holds and the nested state is left untouched.
+        auto values_mut = values_column->assumeMutable();
+        values_mut->insertManyDefaults(num_read_offsets);
+        values_column = std::move(values_mut);
+    }
+    else
+    {
+        /// We cannot use column from substream cache during deserialization of sparse values column, because
+        /// sparse values column must always contain default value at the first row that is added during ColumnSparse
+        /// creation. Using column from substream cache will lead to loss of this value and unexpected column size.
+        /// So, we should set insert_only_rows_in_current_range_from_substreams_cache flag to true
+        /// to insert only rows in current range from substream cache instead of using the whole cached column if any.
+        auto values_settings = settings;
+        values_settings.insert_only_rows_in_current_range_from_substreams_cache = true;
+        nested->deserializeBinaryBulkWithMultipleStreams(
+            values_column, skipped_values_rows, num_read_offsets, values_settings, state_sparse->nested, cache);
+    }
     settings.path.pop_back();
 
     if (offsets_column->size() + 1 != values_column->size())

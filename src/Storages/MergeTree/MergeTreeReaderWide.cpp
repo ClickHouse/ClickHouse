@@ -658,6 +658,7 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
+    deserialize_settings.skip_sparse_values_substream = only_read_sparse_offsets;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(

@@ -262,6 +262,11 @@ analyzeSparseColumnGranules(
             /*avg_value_size_hints=*/{},
             /*profile_callback=*/{});
 
+        /// Analyzer only inspects the offsets column for non-default counts per granule;
+        /// reading the values stream is pure overhead. The reader is discarded right
+        /// after one `readRows`, so the un-advanced nested-values state is harmless.
+        chunk_reader->setOnlyReadSparseOffsets(true);
+
         const size_t rows_in_chunk = part->index_granularity->getRowsCountInRange(chunk);
         r.rows_in_chunk = rows_in_chunk;
 

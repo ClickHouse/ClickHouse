@@ -98,6 +98,12 @@ public:
     /// independently of the reader.
     void setSparseOffsetsShare(SparseOffsetsSharePtr share) { sparse_offsets_share = std::move(share); }
 
+    /// When enabled, the reader skips reading the `SparseElements` substream of any
+    /// sparse-serialised column it touches. Used by the sparsity analyzer, which only
+    /// inspects the offsets column and discards the read result. See the analogous flag
+    /// in `ISerialization::DeserializeBinaryBulkSettings` for safety constraints.
+    void setOnlyReadSparseOffsets(bool value) { only_read_sparse_offsets = value; }
+
 protected:
     /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
     /// propagated. Used when compiling default or virtual-column expressions at read time.
@@ -175,6 +181,9 @@ protected:
     /// Used by `seedSparseOffsetsCacheForColumn`'s caller to feed the right row window
     /// when the call doesn't seek to `from_mark`.
     size_t current_scan_row = 0;
+
+    /// See `setOnlyReadSparseOffsets`.
+    bool only_read_sparse_offsets = false;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
