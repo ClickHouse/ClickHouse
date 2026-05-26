@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <sys/types.h>
@@ -87,6 +88,11 @@ private:
         UInt64 stime_us = 0;
     };
     std::unordered_map<pid_t, PreSnapshot> pre_snapshot;
+    /// Every pid we observed during the pre-walk, regardless of whether
+    /// `readStat` succeeded for it. Used at post-walk to distinguish a
+    /// pid that the pre-walk failed to baseline (skip — no delta possible)
+    /// from a pid spawned during the borrow (count the entire post value).
+    std::unordered_set<pid_t> pre_walk_pids;
 };
 
 

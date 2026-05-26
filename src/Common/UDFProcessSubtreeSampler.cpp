@@ -241,6 +241,7 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
     root_pid = root_pid_;
     borrow_acquired = true;
     pre_snapshot.clear();
+    pre_walk_pids.clear();
 
     if (root_pid <= 0)
         return;
@@ -253,6 +254,7 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
     auto pids = UDFProcfs::walkSubtree(root_pid);
     for (pid_t pid : pids)
     {
+        pre_walk_pids.insert(pid);
         UDFProcfs::clearRefs(pid);
         UInt64 utime_us = 0;
         UInt64 stime_us = 0;
@@ -321,14 +323,31 @@ void UDFProcessSubtreeSampler::recordReleased()
     UInt64 post_stime_sum = 0;
     UInt64 peak_rss = 0;
 
+    /// Three-bucket dispatch over post-walk pids:
+    ///   1. pid ∈ pre_snapshot  →  delta = post − pre. Common case for the
+    ///      root and any persistent descendants.
+    ///   2. pid ∈ pre_walk_pids \ pre_snapshot  →  skip. We saw this pid at
+    ///      pre-walk but `readStat` failed for it, so we have no baseline to
+    ///      subtract; counting the post value would attribute the pid's
+    ///      entire lifetime CPU to this borrow.
+    ///   3. pid ∉ pre_walk_pids  →  truly new (spawned during the borrow,
+    ///      e.g. a lazily initialised `multiprocessing.Pool` worker). The
+    ///      pid's pre-borrow CPU is zero by definition, so the entire post
+    ///      value counts.
     for (pid_t pid : pids)
     {
-        auto it = pre_snapshot.find(pid);
-        if (it != pre_snapshot.end())
+        UInt64 utime_us = 0;
+        UInt64 stime_us = 0;
+        bool stat_ok = UDFProcfs::readStat(pid, utime_us, stime_us);
+
+        if (stat_ok)
         {
-            UInt64 utime_us = 0;
-            UInt64 stime_us = 0;
-            if (UDFProcfs::readStat(pid, utime_us, stime_us))
+            if (pre_snapshot.contains(pid))
+            {
+                post_utime_sum += utime_us;
+                post_stime_sum += stime_us;
+            }
+            else if (!pre_walk_pids.contains(pid))
             {
                 post_utime_sum += utime_us;
                 post_stime_sum += stime_us;
