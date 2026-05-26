@@ -22,6 +22,7 @@ public:
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_,
+        bool is_loading_from_existing_metadata_,
         UUID uuid);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
@@ -83,7 +84,7 @@ private:
 
     mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
 
-    void validateSettings();
+    void validateSettings(bool is_loading_from_existing_metadata);
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,

@@ -125,6 +125,7 @@ DatabaseDataLake::DatabaseDataLake(
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
     ASTPtr table_engine_definition_,
+    bool is_loading_from_existing_metadata_,
     UUID uuid)
     : IDatabase(database_name_)
     , url(url_)
@@ -134,10 +135,10 @@ DatabaseDataLake::DatabaseDataLake(
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
     , db_uuid(uuid)
 {
-    validateSettings();
+    validateSettings(is_loading_from_existing_metadata_);
 }
 
-void DatabaseDataLake::validateSettings()
+void DatabaseDataLake::validateSettings(bool is_loading_from_existing_metadata)
 {
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::GLUE)
     {
@@ -149,11 +150,12 @@ void DatabaseDataLake::validateSettings()
         /// `GlueCatalog` configures the AWS client with `use_environment_credentials = true`, so
         /// when no explicit keys are supplied the credential chain falls back to the server's
         /// environment / IMDS / IRSA / STS credentials. That is a user-controlled credential
-        /// inheritance path, which is exactly what this hardening forbids. Require both keys
-        /// here so the chain is constrained to user-supplied static credentials. This subsumes
+        /// inheritance path, which is exactly what this hardening forbids for new metadata.
+        /// Require both keys here so the chain is constrained to user-supplied static credentials. This subsumes
         /// the previous `aws_role_arn`-specific check (which is left as a more descriptive
         /// error when only `aws_role_arn` is provided).
-        if (!settings[DatabaseDataLakeSetting::aws_role_arn].value.empty()
+        if (!is_loading_from_existing_metadata
+            && !settings[DatabaseDataLakeSetting::aws_role_arn].value.empty()
             && (settings[DatabaseDataLakeSetting::aws_access_key_id].value.empty()
                 || settings[DatabaseDataLakeSetting::aws_secret_access_key].value.empty()))
         {
@@ -163,8 +165,9 @@ void DatabaseDataLake::validateSettings()
                 "in Glue catalog settings is not allowed");
         }
 
-        if (settings[DatabaseDataLakeSetting::aws_access_key_id].value.empty()
-            || settings[DatabaseDataLakeSetting::aws_secret_access_key].value.empty())
+        if (!is_loading_from_existing_metadata
+            && (settings[DatabaseDataLakeSetting::aws_access_key_id].value.empty()
+                || settings[DatabaseDataLakeSetting::aws_secret_access_key].value.empty()))
         {
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
@@ -1113,6 +1116,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings,
             database_engine_define->clone(),
             std::move(engine_for_tables),
+            isLoadingFromExistingMetadata(args.mode),
             args.uuid);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
