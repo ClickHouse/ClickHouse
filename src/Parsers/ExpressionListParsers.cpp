@@ -2996,6 +2996,19 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
     /// OVERLAY(x PLACING y FROM a FOR b)
 
     String function_name = getIdentifierName(identifier);
+
+    /// A function-name position cannot be a query parameter substitution (e.g.
+    /// `{F:Identifier}(args)` or `{db:Identifier}.tbl.fn(args)`): such an identifier
+    /// has `ASTIdentifier::name()` empty because `full_name` is never populated when
+    /// `name_parts` contains parameter holes. If we accepted it we would build an
+    /// `ASTFunction` with empty `name`, whose formatter emits just `(args)` (see
+    /// `ASTFunction::formatImplWithoutAlias`), and re-parsing yields a different
+    /// AST (just the parenthesized expression). That breaks the AST round-trip
+    /// check in `executeQueryImpl` (`STID: 1941-1bfa`). Reject with a clear error.
+    if (function_name.empty())
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Function name cannot be empty or a query parameter substitution");
+
     String function_name_lowercase = Poco::toLower(function_name);
 
     if (is_table_function)
