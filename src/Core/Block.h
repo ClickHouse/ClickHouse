@@ -20,7 +20,7 @@ namespace DB
 class ISerialization;
 class SerializationInfoByName;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
+using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 
 /** Container for set of columns for bunch of rows in memory.
   * This is unit of data processing.

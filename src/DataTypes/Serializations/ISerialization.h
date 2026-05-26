@@ -7,6 +7,7 @@
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
@@ -739,7 +740,7 @@ protected:
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
+using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
 using SubstreamType = ISerialization::Substream::Type;
 

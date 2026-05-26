@@ -70,7 +70,7 @@ public:
         Value value;
     };
 
-    using VariantSerializations = std::vector<SerializationPtr>;
+    using VariantSerializations = VectorWithMemoryTracking<SerializationPtr>;
 
 private:
     explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -11,7 +12,7 @@ using DataTypes = std::vector<DataTypePtr>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
+using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 
 class WriteBuffer;
 
