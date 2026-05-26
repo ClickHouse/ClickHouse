@@ -281,7 +281,8 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// Some rows survived PREWHERE, but individual granules within this batch may
             /// still have been fully filtered out. Record those granules immediately so that
             /// future queries can skip them without waiting for an entire batch to be zero.
-            if (prewhere_info && !res.unmatched_mark_ranges.empty())
+            if (prewhere_info && !res.unmatched_mark_ranges.empty()
+                && !current_task.readersChainCanSkipMarksBeforePrewhere())
                 current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
         }
 
