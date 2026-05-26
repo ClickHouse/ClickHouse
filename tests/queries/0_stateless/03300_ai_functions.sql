@@ -152,6 +152,10 @@ CREATE NAMED COLLECTION ai_bad_provider AS
 SELECT '-- Unknown provider name';
 SELECT aiGenerate('ai_bad_provider', 'hi'); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Unknown provider name on empty input';
+SELECT aiGenerate('ai_bad_provider', x) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+SELECT aiEmbed('ai_bad_provider', x) FROM (SELECT '' AS x WHERE 0); -- { serverError BAD_ARGUMENTS }
+
 DROP NAMED COLLECTION ai_bad_provider;
 
 -- =============================================================================
@@ -167,6 +171,10 @@ CREATE NAMED COLLECTION ai_anthropic AS
 
 SELECT '-- Anthropic provider resolves';
 SELECT count() FROM (SELECT aiGenerate('ai_anthropic', x) AS result FROM tab);
+
+SELECT '-- aiEmbed rejects anthropic provider';
+SELECT aiEmbed('ai_anthropic', 'hi'); -- { serverError NOT_IMPLEMENTED }
+SELECT aiEmbed('ai_anthropic', x) FROM (SELECT '' AS x WHERE 0); -- { serverError NOT_IMPLEMENTED }
 
 DROP NAMED COLLECTION ai_anthropic;
 

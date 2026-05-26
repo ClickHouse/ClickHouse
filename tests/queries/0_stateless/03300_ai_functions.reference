@@ -15,8 +15,10 @@ result	String
 -- Empty string input accepted
 0
 -- Unknown provider name
+-- Unknown provider name on empty input
 -- Anthropic provider resolves
 0
+-- aiEmbed rejects anthropic provider
 -- Custom system prompt accepted
 0
 -- Temperature: Float32

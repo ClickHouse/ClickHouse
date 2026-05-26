@@ -54,6 +54,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -126,6 +127,11 @@ public:
                     std::numeric_limits<Int64>::max());
         }
 
+        auto provider = createAIProvider(nc.provider, nc.endpoint, nc.api_key, nc.api_version);
+        if (!provider->supportsEmbeddings())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "AI provider '{}' does not support embeddings", nc.provider);
+
         if (input_rows_count == 0)
             return result_type->createColumn();
 
@@ -141,8 +147,6 @@ public:
             settings[Setting::ai_function_max_output_tokens_per_query].value,
             settings[Setting::ai_function_max_api_calls_per_query].value,
             settings[Setting::ai_function_throw_on_quota_exceeded].value);
-
-        auto provider = createAIProvider(nc.provider, nc.endpoint, nc.api_key, nc.api_version);
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);

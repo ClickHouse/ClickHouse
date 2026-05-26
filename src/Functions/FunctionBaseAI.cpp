@@ -162,6 +162,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
     String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments));
     auto response_format = buildResponseFormat(arguments);
+    auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
 
     if (input_rows_count == 0)
         return result_type->createColumn();
@@ -177,7 +178,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
         prompt_nullable = typeid_cast<const ColumnNullable *>(prompt_column.get());
     }
 
-    auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
     float temperature = resolveTemperature(arguments, config);
 
     const auto & settings = getContext()->getSettingsRef();
