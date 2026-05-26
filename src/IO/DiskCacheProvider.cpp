@@ -316,19 +316,14 @@ DiskCacheHandle::~DiskCacheHandle()
 
 size_t DiskCacheHandle::put(ByteRange range, Rope data)
 {
+    if (!holder)
+        return 0;
+
     /// In bypass mode the ctor used `cache->get` so EMPTY segments don't exist
     /// here, but be explicit: never populate the cache when the caller asked
     /// us to leave it alone.
     if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
         return 0;
-
-    /// Release the ctor holder (used by `status` / `get` to enumerate the
-    /// full range's segments). While we hold it, those segments count as
-    /// "non-releasable" in `FileCache::reserve`, so the cache cannot evict
-    /// any of them to make room for our writes. By the time `put` runs, all
-    /// `status` / `get` work for this handle is complete — releasing is
-    /// safe. Idempotent across multiple `put` calls per handle.
-    holder.reset();
 
     /// `range` and `data`'s nodes are in file-level coordinates;
     /// `FileCache::FileSegment::range()` is object-local. Translate the
@@ -340,53 +335,51 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
 
     size_t bytes_written = 0;
 
-    /// Re-fetch segments in batches of `filesystem_cache_segments_batch_size`
-    /// inside `put`, processing one batch at a time. Each batch's
-    /// `FileSegmentsHolderPtr` is destroyed at the end of the inner loop
-    /// iteration — `FileCache::reserve` for a later batch can then evict
-    /// segments from earlier batches when it hits `max_size` /
-    /// `max_elements`. If we used the ctor's `holder` (which contains
-    /// segments overlapping the full `requested` range), the cache could
-    /// never make room. This mirrors `CachedOnDiskReadBufferFromFile`'s
-    /// streaming pattern: download a batch, release, download the next.
+    /// Walk the ctor `holder` front-to-back. Segments are stored in
+    /// ascending-offset order, and `ReaderExecutor` issues `put` calls in
+    /// the same order (one per `status().miss_ranges` element, also sorted).
+    /// So the segment we want to write to is always at `holder->front()`.
     ///
-    /// The ctor's `holder` is left alone — it is still referenced by
-    /// `status` / `get` callers that may have not yet completed.
-
-    const size_t end_in_object = range_in_object.end();
-    size_t cursor_in_object = range_in_object.offset;
-
-    while (cursor_in_object < end_in_object)
+    /// `completeAndPopFront` after each processed segment is the load-bearing
+    /// detail: without it, the cache holds every segment overlapping the
+    /// originally-requested range as "non-releasable", so
+    /// `FileCache::reserve` for a later segment can't evict any earlier
+    /// segment to make room (`max_size` / `max_elements` would block).
+    /// Popping releases the segment from `holder` — the cache is still the
+    /// owner via its metadata map; eviction can take it whenever it needs to.
+    /// See `02944_dynamically_change_filesystem_cache_size` for the
+    /// regression this fixes when 13 segments must fit into a 10-element cache.
+    while (!holder->empty())
     {
-        auto batch = cache->getOrSet(
-            cache_key,
-            cursor_in_object,
-            end_in_object - cursor_in_object,
-            object_size,
-            CreateFileSegmentSettings{},
-            cache_settings.filesystem_cache_segments_batch_size,
-            origin,
-            cache_settings.filesystem_cache_boundary_alignment);
+        auto & segment = holder->front();
+        const auto & seg_range = segment.range();
 
-        if (!batch || batch->empty())
+        /// Segment ends before this `put`'s range starts. Either it was
+        /// already processed by an earlier `put`, or it's a hit `get()`
+        /// has already read from. Either way we are done with it — pop.
+        if (seg_range.right + 1 <= range_in_object.offset)
+        {
+            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+            continue;
+        }
+
+        /// Segment starts at or past this `put`'s range. Leave it in
+        /// `holder` for a later `put` (or for the handle's destructor when
+        /// no more puts come).
+        if (seg_range.left >= range_in_object.end())
             break;
 
-        const size_t batch_end_in_object = batch->back().range().right + 1;
-
-        for (auto & segment_ref : *batch)
-        {
-            auto & segment = *segment_ref;
-            auto state = segment.state();
-
-        /// Only write to EMPTY or PARTIALLY_DOWNLOADED segments.
+        /// Segment overlaps `range`. Only EMPTY / PARTIALLY_DOWNLOADED accept
+        /// writes; everything else (a stray hit in our range, DETACHED, …)
+        /// gets popped without writing.
+        const auto state = segment.state();
         if (state != FileSegmentState::EMPTY && state != FileSegmentState::PARTIALLY_DOWNLOADED)
+        {
+            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             continue;
+        }
 
-        const auto & seg_range = segment.range();
         ByteRange seg_r{seg_range.left, seg_range.size()};
-
-        if (seg_r.end() <= range_in_object.offset || seg_r.offset >= range_in_object.end())
-            continue;
 
         /// Try to become the downloader.
         auto downloader_id = segment.getOrSetDownloader();
@@ -394,6 +387,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         {
             LOG_TRACE(log, "DiskCacheHandle::put: not downloader for [{}, {}], downloader={}",
                 seg_range.left, seg_range.right, downloader_id);
+            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             continue;
         }
 
@@ -409,6 +403,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         if (write_offset >= write_end_max || write_offset < range_in_object.offset)
         {
             segment.completePartAndResetDownloader();
+            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             continue;
         }
 
@@ -429,6 +424,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         if (contiguous == 0)
         {
             segment.completePartAndResetDownloader();
+            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             continue;
         }
 
@@ -446,6 +442,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
             LOG_TRACE(log, "DiskCacheHandle::put: reserve failed for [{}, {}]: {}",
                 seg_range.left, seg_range.right, failure_reason);
             segment.completePartAndResetDownloader();
+            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             continue;
         }
 
@@ -483,13 +480,9 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
                 *cache_log, segment, origin,
                 FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
                 source_file_path, requested_range);
-        } // end for segment_ref : *batch
 
-        /// `batch` (the local `FileSegmentsHolderPtr`) goes out of scope here,
-        /// releasing all segments in it. The cache can now evict them when
-        /// processing the next batch's `reserve` calls.
-        cursor_in_object = batch_end_in_object;
-    } // end while cursor_in_object < end_in_object
+        holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+    }
 
     return bytes_written;
 }
