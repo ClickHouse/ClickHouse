@@ -1,14 +1,12 @@
 #include <Databases/DataLake/HiveCatalog.h>
-
-#if USE_AVRO && USE_HIVE
-
 #include <algorithm>
 #include <cctype>
+#if USE_AVRO && USE_HIVE
 #include <optional>
-
 #include <Common/Exception.h>
 #include <Core/Names.h>
 #include <Databases/DataLake/ICatalog.h>
+
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
@@ -64,11 +62,11 @@ std::pair<String, Int32> parseHostPort(const String & url)
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Port number out of valid range (1-65535): {}", port);
         return {host, port};
     }
-    catch (const std::out_of_range &)
+    catch (const std::out_of_range&)
     {
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number format: {}", port_str);
     }
-    catch (const std::invalid_argument &)
+    catch (const std::invalid_argument&)
     {
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number: '{}'", port_str);
     }
@@ -153,7 +151,6 @@ bool HiveCatalog::empty() const
     std::vector<std::string> result;
 
     executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(result); });
-
     return result.empty();
 }
 
@@ -168,7 +165,6 @@ DB::Names HiveCatalog::getTables() const
     {
         DB::Names current_tables;
         executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, db); });
-
         for (const auto & table : current_tables)
             result.push_back(db + "." + table);
     }
