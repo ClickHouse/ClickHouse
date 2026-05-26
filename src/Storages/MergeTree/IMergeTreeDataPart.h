@@ -150,6 +150,10 @@ public:
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
+    /// True when at least one of this part's columns has a non-empty `column_id`,
+    /// indicating the part was written with the column-IDs feature active.
+    bool hasActiveColumnIds() const;
+
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
     void setMetadataVersion(int32_t metadata_version_) noexcept { metadata_version = metadata_version_; }

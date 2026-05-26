@@ -2311,6 +2311,16 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
+bool IMergeTreeDataPart::hasActiveColumnIds() const
+{
+    /// A part participates in the column-ID feature when at least one of its
+    /// columns carries a non-empty column_id (populated at write/merge time).
+    for (const auto & col : getColumns())
+        if (!col.column_id.empty())
+            return true;
+    return false;
+}
+
 void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
 {
     /// `ColumnsSubstreams::operator=` is one of the heaviest per-part allocators (deep copy of nested
@@ -2318,7 +2328,8 @@ void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_
     /// rationale as `setColumns` above.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    columns_substreams_.validateColumns(getColumns().getNames());
+    if (!hasActiveColumnIds())
+        columns_substreams_.validateColumns(getColumns().getNames());
     columns_substreams = columns_substreams_;
 }
 
@@ -2333,8 +2344,10 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
         /// (fixed in https://github.com/ClickHouse/ClickHouse/pull/102689) where renaming a column
         /// produced wrong substream names in columns_substreams.txt.
         /// For Wide parts this file is not mandatory, so we can safely discard it and proceed
-        /// as if it didn't exist.
-        if (part_type == MergeTreeDataPartType::Wide)
+        /// as if it didn't exist.  Skip for parts written with column IDs active —
+        /// the column key in columns_substreams.txt is the logical name but substreams
+        /// are keyed by column_id, so the prefix check would always false-positive.
+        if (part_type == MergeTreeDataPartType::Wide && !hasActiveColumnIds())
         {
             auto [invalid_substream, invalid_column] = columns_substreams.findInvalidSubstreamName();
             if (!invalid_substream.empty())
@@ -2357,7 +2370,8 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
             }
         }
 
-        columns_substreams.validateColumns(getColumns().getNames());
+        if (!hasActiveColumnIds())
+            columns_substreams.validateColumns(getColumns().getNames());
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
