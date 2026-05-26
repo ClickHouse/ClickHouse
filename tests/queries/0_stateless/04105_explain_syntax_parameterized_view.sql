@@ -49,8 +49,12 @@ EXPLAIN SYNTAX SELECT * FROM numbers(3) SETTINGS allow_experimental_analyzer = 1
 DROP VIEW numbers;
 
 -- FINAL / SAMPLE modifiers are valid on a parameterized view at execution time.
--- The rewrite must skip expansion in this case, otherwise the modifiers would be
--- attached to the synthesized subquery and rejected with UNSUPPORTED_METHOD.
+-- The new analyzer rewrite in `ExpandParameterizedViewsMatcher` must skip expansion
+-- in this case, otherwise the modifiers would be attached to the synthesized
+-- subquery and rejected with UNSUPPORTED_METHOD. The legacy `EXPLAIN SYNTAX` path
+-- (`ExplainAnalyzedSyntaxMatcher` + `StorageView::replaceWithSubquery`) still
+-- inlines the view body and re-attaches the modifier to the outer expression;
+-- that is pre-existing behavior, captured in the `.oldanalyzer.reference`.
 DROP TABLE IF EXISTS 04105_modifiers_t;
 DROP VIEW IF EXISTS 04105_modifiers_pv;
 CREATE TABLE 04105_modifiers_t (x UInt64) ENGINE = MergeTree ORDER BY x SAMPLE BY x;
@@ -63,10 +67,13 @@ DROP TABLE 04105_modifiers_t;
 
 -- A parameterized view declared with SQL SECURITY other than INVOKER is resolved
 -- at execution time under an overridden context (DEFINER or global), so the
--- inner tables may be inaccessible to the invoker. Inlining the view body here
--- would re-analyze it under the invoker's context and fail with ACCESS_DENIED
--- for users who can query the view but not its inner tables. The rewrite must
--- skip such views and leave the original pv(...) call in place.
+-- inner tables may be inaccessible to the invoker. Inlining the view body in the
+-- new analyzer path would re-analyze it under the invoker's context and fail with
+-- ACCESS_DENIED for users who can query the view but not its inner tables. The
+-- guard in `ExpandParameterizedViewsMatcher` leaves the original pv(...) call in
+-- place in that case. The legacy path is unaffected (see `.oldanalyzer.reference`):
+-- it goes through `ExplainAnalyzedSyntaxMatcher`, which uses `InterpreterSelectQuery`
+-- and resolves the view via the SQL security aware storage path.
 DROP TABLE IF EXISTS 04105_security_t;
 DROP VIEW IF EXISTS 04105_pv_security_none;
 DROP VIEW IF EXISTS 04105_pv_security_definer;
