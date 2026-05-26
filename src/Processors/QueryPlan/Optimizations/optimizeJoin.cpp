@@ -842,15 +842,21 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     {
         if (lhs_count != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
-        join_expression_sources.set(0, false);
-        query_graph.join_kinds[0] = std::make_pair(join_expression_sources, join_kind);
+        BitSet dep = join_expression_sources;
+        dep.set(0, false);
+        if (dep.none())
+            dep = right_mask;
+        query_graph.join_kinds[0] = std::make_pair(std::move(dep), join_kind);
     }
     if (isLeftOrFull(join_kind))
     {
         if (rhs_count != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
-        join_expression_sources.set(total_inputs - 1, false);
-        query_graph.join_kinds[total_inputs - 1] = std::make_pair(join_expression_sources, join_kind);
+        BitSet dep = join_expression_sources;
+        dep.set(total_inputs - 1, false);
+        if (dep.none())
+            dep = left_mask;
+        query_graph.join_kinds[total_inputs - 1] = std::make_pair(std::move(dep), join_kind);
     }
 
     if (!residual_filter.empty())
