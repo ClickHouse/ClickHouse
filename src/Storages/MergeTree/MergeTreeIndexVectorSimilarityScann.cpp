@@ -652,20 +652,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has unexpected type");
 
     /// Fallback: return all rows if index was not built (too few vectors).
-    /// ClickHouse will compute the actual distance on these rows via ORDER BY.
+    /// Do not set distances so the executor treats this as a non-optimized granule and
+    /// computes exact distances for every returned row.
     if (!granule->searcher || !granule->searcher->inner)
     {
         NearestNeighbours result;
         result.rows.resize(granule->num_vectors);
         std::iota(result.rows.begin(), result.rows.end(), UInt64(0));
-        if (parameters->return_distances)
-        {
-            /// Use a sentinel that sorts last so fallback rows are ranked after real index results.
-            const float sentinel = (index_params.distance_name == "dotProduct")
-                ? -std::numeric_limits<float>::infinity()
-                : std::numeric_limits<float>::infinity();
-            result.distances = std::vector<float>(granule->num_vectors, sentinel);
-        }
         return result;
     }
 
