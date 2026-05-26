@@ -1,6 +1,7 @@
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
-#include <Interpreters/Context.h>
 
 #include <filesystem>
 #include <unistd.h>
@@ -8,6 +9,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool allow_experimental_drop_detached_table;
+};
 
 size_t computeMaxTableNameLength(const String & database_name, ContextPtr context)
 {
@@ -31,12 +37,15 @@ size_t computeMaxTableNameLength(const String & database_name, ContextPtr contex
     const size_t uuid_length = 36; // Standard UUID length
     const size_t extension_length = strlen(".sql");
 
-    // Possibly only with allow_experimental_drop_detached_table flag
-    const size_t detached_length = strlen(".detached");
-
     // Adjust for database name and UUID in dropped table filenames
     // Max path will look like this: ./metadata_dropped/{db_name}.{table_name}.{uuid}.{extension}.{detached}
-    size_t max_to_drop = max_dropped_length - dot - escaped_db_name_length - dot - uuid_length - extension_length - detached_length;
+    size_t max_to_drop = max_dropped_length - dot - escaped_db_name_length - dot - uuid_length - extension_length;
+
+    if (context->getSettingsRef()[Setting::allow_experimental_drop_detached_table])
+    {
+        const size_t detached_length = strlen(".detached");
+        max_to_drop -= detached_length;
+    }
 
     // Return the minimum of the two calculated lengths
     return std::min(max_create_length, max_to_drop);
