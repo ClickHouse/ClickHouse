@@ -97,7 +97,11 @@ class GHAuth:
             access_token = cls._get_access_token(app_key, app_id, installation_id)
         else:
             access_token = cls._get_access_token_deprecated(app_key, app_id, installation_id)
-        Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
+        Shell.check(
+            "gh auth login --with-token",
+            stdin_str=f"{access_token}\n",
+            strict=True,
+        )
 
     @classmethod
     def auth_from_settings(cls) -> None:
@@ -109,7 +113,9 @@ class GHAuth:
                 Settings.GH_AUTH_LAMBDA_NAME, Settings.GH_AUTH_LAMBDA_REGION
             )
             Shell.check(
-                f"echo {access_token} | gh auth login --with-token", strict=True
+                "gh auth login --with-token",
+                stdin_str=f"{access_token}\n",
+                strict=True,
             )
             return
 
