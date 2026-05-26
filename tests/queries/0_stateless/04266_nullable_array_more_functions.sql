@@ -35,6 +35,72 @@ FROM
 )
 FORMAT Null;
 
+SELECT throwIf(groupArray(ifNull(arrayMap(x -> x + 1, a), [])) != [[2, 3], [], []])
+FROM
+(
+    SELECT arrayJoin([
+        CAST([1, 2] AS Nullable(Array(Int32))),
+        CAST(NULL AS Nullable(Array(Int32))),
+        CAST([] AS Nullable(Array(Int32)))
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(groupArray(ifNull(arrayFilter(x -> x > 1, a), [])) != [[2, 3], [], []])
+FROM
+(
+    SELECT arrayJoin([
+        CAST([1, 2, 3] AS Nullable(Array(Int32))),
+        CAST(NULL AS Nullable(Array(Int32))),
+        CAST([] AS Nullable(Array(Int32)))
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(groupArray(ifNull(arrayExists(x -> x = 2, a), 99)) != [1, 99, 0])
+FROM
+(
+    SELECT arrayJoin([
+        CAST([1, 2] AS Nullable(Array(Int32))),
+        CAST(NULL AS Nullable(Array(Int32))),
+        CAST([] AS Nullable(Array(Int32)))
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(groupArray(ifNull(arrayAll(x -> x > 0, a), 99)) != [1, 99, 1])
+FROM
+(
+    SELECT arrayJoin([
+        CAST([1, 2] AS Nullable(Array(Int32))),
+        CAST(NULL AS Nullable(Array(Int32))),
+        CAST([] AS Nullable(Array(Int32)))
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(groupArray(ifNull(arrayCount(x -> x > 1, a), 99)) != [2, 99, 0])
+FROM
+(
+    SELECT arrayJoin([
+        CAST([1, 2, 3] AS Nullable(Array(Int32))),
+        CAST(NULL AS Nullable(Array(Int32))),
+        CAST([] AS Nullable(Array(Int32)))
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(groupArray(ifNull(arraySort(a), [])) != [[1, 2, 3], [], []])
+FROM
+(
+    SELECT arrayJoin([
+        CAST([3, 1, 2] AS Nullable(Array(Int32))),
+        CAST(NULL AS Nullable(Array(Int32))),
+        CAST([] AS Nullable(Array(Int32)))
+    ]) AS a
+)
+FORMAT Null;
+
 SELECT throwIf(groupArray(ifNull(arrayEnumerate(a), [])) != [[1, 2], [], []])
 FROM
 (
