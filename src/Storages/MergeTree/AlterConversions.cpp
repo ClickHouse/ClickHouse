@@ -310,6 +310,13 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
         bool perform_alter_conversions = !version_of_alter_mutation || actions.mutation_version > version_of_alter_mutation;
         bool is_filter = !actions.filter_column_name.empty();
 
+        /// Carry the chain's overwritten columns so the reader can apply per-step alter
+        /// conversion to the pass-through ones; see
+        /// `MergeTreeReadersChain::executeActionsBeforePrewhere` for the rationale.
+        NameSet columns_overwritten_by_chain;
+        if (!perform_alter_conversions)
+            columns_overwritten_by_chain = all_updated_columns;
+
         PrewhereExprStep step
         {
             .type = is_filter ? PrewhereExprStep::Filter : PrewhereExprStep::Expression,
@@ -318,6 +325,7 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
             .remove_filter_column = false,
             .need_filter = is_filter,
             .perform_alter_conversions = perform_alter_conversions,
+            .columns_overwritten_by_chain = std::move(columns_overwritten_by_chain),
             .mutation_version = actions.mutation_version,
         };
 
