@@ -172,6 +172,18 @@ WHERE t = tuple(1.0)
 GROUP BY ALL
 ORDER BY ALL;
 
+SELECT dumpColumnStructure(t), tupleElement(t, 1), count()
+FROM
+(
+    SELECT tuple(arrayJoin([
+        toDecimal128('1.000000000000000000', 18),
+        toDecimal128('1.000000000000000001', 18),
+        toDecimal128('2.000000000000000000', 18)])) AS t
+)
+WHERE t = CAST(tuple(1.0), 'Dynamic')
+GROUP BY ALL
+ORDER BY ALL;
+
 DROP TABLE IF EXISTS 04259_filter_constant_column_after_where_dynamic;
 
 CREATE TABLE 04259_filter_constant_column_after_where_dynamic
@@ -255,6 +267,15 @@ FROM
     FROM 04259_filter_constant_column_after_where_fixed_string
 )
 WHERE t = tuple(toFixedString('abc', 5))
+ORDER BY length(tupleElement(t, 1)), hex(tupleElement(t, 1));
+
+SELECT dumpColumnStructure(t), hex(tupleElement(t, 1)), length(tupleElement(t, 1))
+FROM
+(
+    SELECT tuple(s) AS t
+    FROM 04259_filter_constant_column_after_where_fixed_string
+)
+WHERE t = CAST(tuple(toFixedString('abc', 5)), 'Dynamic')
 ORDER BY length(tupleElement(t, 1)), hex(tupleElement(t, 1));
 
 DROP TABLE 04259_filter_constant_column_after_where;

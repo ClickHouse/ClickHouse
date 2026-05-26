@@ -24,6 +24,8 @@ String, Const(size = 1, String(size = 1))	1
 1.000000000000000001	1
 1	1
 1.000000000000000001	1
+Tuple(Decimal(38, 18)), Tuple(size = 2, Decimal128(size = 2))	1	1
+Tuple(Decimal(38, 18)), Tuple(size = 2, Decimal128(size = 2))	1.000000000000000001	1
 0
 9223372036854775808
 0
@@ -38,3 +40,6 @@ UInt8	1
 616263	3
 61626300	4
 6162630000	5
+Tuple(String), Tuple(size = 3, String(size = 3))	616263	3
+Tuple(String), Tuple(size = 3, String(size = 3))	61626300	4
+Tuple(String), Tuple(size = 3, String(size = 3))	6162630000	5
