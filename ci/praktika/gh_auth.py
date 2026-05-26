@@ -33,15 +33,14 @@ class GHAuth:
             Payload=b"{}",
         )
         if response.get("FunctionError"):
-            payload = response["Payload"].read().decode()
             raise RuntimeError(
-                f"Lambda {lambda_name} returned FunctionError: {payload}"
+                f"Lambda {lambda_name} returned FunctionError (payload redacted)"
             )
         result = json.loads(response["Payload"].read())
         status_code = result.get("statusCode")
         if status_code != 200:
             raise RuntimeError(
-                f"Lambda {lambda_name} returned statusCode={status_code}: {result}"
+                f"Lambda {lambda_name} returned statusCode={status_code} (body redacted)"
             )
         body = json.loads(result["body"])
         return body["token"]
