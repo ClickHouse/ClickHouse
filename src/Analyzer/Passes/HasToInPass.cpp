@@ -55,7 +55,7 @@ public:
         const auto & element_type = (typeid_cast<const DataTypeArray *>(first_arg_type.get()))->getNestedType();
         WhichDataType data_type(element_type);
         if (isNullableOrLowCardinalityNullable(element_type) ||
-                data_type.isArray() || data_type.isTuple() || data_type.isObject() || data_type.isDynamic() || data_type.isNothing())
+                data_type.isMap() || data_type.isArray() || data_type.isTuple() || data_type.isObject() || data_type.isDynamic() || data_type.isNothing())
             return;
 
         const auto & array_field = first_arg_constant->getValue();
@@ -75,7 +75,7 @@ public:
         /// node's return type, which breaks parent nodes that were already resolved against UInt8
         /// (e.g. `NOT has(...)` ends up with `NOT in(...)` whose argument is LowCardinality(UInt8)).
         if (isNullableOrLowCardinalityNullable(second_arg_type) || expr_data_type.isLowCardinality() ||
-                expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isNothing())
+                expr_data_type.isMap() || expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isNothing())
             return;
 
         /// has() on a constant array compares raw Field values (FunctionArrayIndex::executeConst uses
