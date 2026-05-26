@@ -22,8 +22,6 @@
 #include <Storages/StorageDictionary.h>
 #include <TableFunctions/ITableFunction.h>
 
-#include <Access/ContextAccess.h>
-#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
@@ -454,12 +452,6 @@ public:
         /// wrong results. Skip optimization for such case.
         if ((getSettings()[Setting::max_rows_in_set] != 0 || getSettings()[Setting::max_bytes_in_set] != 0)
             && getSettings()[Setting::set_overflow_mode] == OverflowMode::BREAK)
-            return;
-
-        /// This rewrite turns `dictGet(...)` predicates into `IN (SELECT ... FROM dictionary(...))`.
-        /// The `dictionary()` table function requires `CREATE TEMPORARY TABLE`; if that grant is missing,
-        /// skip the optimization to avoid `ACCESS_DENIED`.
-        if (!getContext()->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE))
             return;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
