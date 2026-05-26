@@ -407,7 +407,8 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 @pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
-def test_move_after_processing_preserve_path(started_cluster, engine_name, move_to):
+@pytest.mark.parametrize("preserve_move_path", [True, False])
+def test_move_after_processing_preserve_path(started_cluster, engine_name, move_to, preserve_move_path):
     node = started_cluster.instances["instance"]
     token = generate_random_string()
     table_name = f"move_after_processing_preserve_{engine_name}_{token}"
@@ -444,7 +445,7 @@ def test_move_after_processing_preserve_path(started_cluster, engine_name, move_
         after_processing="move",
         move_to_prefix=processed_prefix,
         move_to_bucket=processed_bucket,
-        preserve_move_path=True,
+        preserve_move_path=preserve_move_path,
     )
     create_mv(node, table_name, dst_table_name)
 
@@ -459,7 +460,7 @@ def test_move_after_processing_preserve_path(started_cluster, engine_name, move_
 
     # With preserve_move_path=true, the moved object must live at exactly
     # `<processed_prefix>/<files_path>/<file_name>`.
-    expected_key = f"{processed_prefix}/{files_path}/{file_name}"
+    expected_key = f"{processed_prefix}/{files_path}/{file_name}" if preserve_move_path else f"{processed_prefix}/{file_name}"
 
     if engine_name == "S3Queue":
         src_bucket = started_cluster.minio_bucket

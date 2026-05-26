@@ -185,6 +185,7 @@ static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const Str
         return src;
     }
     const String suffix = preserve_path ? src.remote_path : fileName(src.remote_path);
+    chassert(!suffix.starts_with('/'));
     const String remote_path = fs::path(move_prefix) / suffix;
     return StoredObject(remote_path);
 }
