@@ -200,9 +200,12 @@ class ClickHouseProc:
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
         for _ in range(60):
-            if self.kafka_proc.poll() is not None:
+            returncode = self.kafka_proc.poll()
+            # A 0 exit is the normal success path: setup_kafka.sh returns
+            # once wait_for_redpanda confirms broker + schema registry are up.
+            if returncode is not None and returncode != 0:
                 print(
-                    f"setup_kafka.sh exited with code {self.kafka_proc.returncode} before Kafka became reachable"
+                    f"setup_kafka.sh exited with code {returncode} before Kafka became reachable"
                 )
                 return False
             res = Shell.check(
