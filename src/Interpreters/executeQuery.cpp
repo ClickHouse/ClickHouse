@@ -1821,16 +1821,15 @@ static BlockIO executeQueryImpl(
                     if (!interpreter->ignoreLimits())
                     {
                         limits.mode = LimitsMode::LIMITS_CURRENT;
-                        ContextMutablePtr returning_context_for_limits;
-                        if (insert_query && insert_query->returning_select)
-                            returning_context_for_limits = makeReturningSelectContext(insert_query->returning_select, context);
-                        const Settings & limits_settings = returning_context_for_limits
-                            ? returning_context_for_limits->getSettingsRef()
-                            : settings;
-                        limits.size_limits = SizeLimits(
-                            limits_settings[Setting::max_result_rows],
-                            limits_settings[Setting::max_result_bytes],
-                            limits_settings[Setting::result_overflow_mode]);
+                        /// For INSERT ... RETURNING, apply RETURNING subquery SETTINGS only after INSERT completes
+                        /// (when the pulling pipeline is set up), not here before interpreter->execute().
+                        if (!(insert_query && insert_query->returning_select))
+                        {
+                            limits.size_limits = SizeLimits(
+                                settings[Setting::max_result_rows],
+                                settings[Setting::max_result_bytes],
+                                settings[Setting::result_overflow_mode]);
+                        }
                     }
 
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
@@ -1946,7 +1945,12 @@ static BlockIO executeQueryImpl(
             pipeline.setProgressCallback(context->getProgressCallback());
             pipeline.setProcessListElement(context->getProcessListElement());
             if (stage == QueryProcessingStage::Complete && pipeline.pulling())
-                pipeline.setLimitsAndQuota(limits, quota);
+            {
+                if (insert_query && insert_query->returning_select)
+                    setupPullingQueryPipeline(pipeline, context, stage, insert_query->returning_select);
+                else
+                    pipeline.setLimitsAndQuota(limits, quota);
+            }
         }
         else if (pipeline.pushing())
         {

@@ -41,6 +41,12 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT no_such_col FROM t_insert_returning) VALUES (101, 'late_analysis'); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT count() AS inserted_after_bad_returning FROM t_insert_returning WHERE id = 101;
 
+-- RETURNING SETTINGS are applied only after INSERT (invalid setting must not block insert)
+SELECT 'returning settings after insert';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS no_such_setting=1) VALUES (102, 'settings'); -- { serverError UNKNOWN_SETTING }
+SELECT count() AS inserted_after_bad_returning_settings FROM t_insert_returning WHERE id = 102;
+
 -- async_insert is rejected
 SELECT 'async insert rejection';
 SET async_insert = 1;

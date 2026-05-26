@@ -15,4 +15,6 @@ returning subquery settings
 4
 returning analysis after insert
 1
+returning settings after insert
+1
 async insert rejection
