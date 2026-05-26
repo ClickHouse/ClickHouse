@@ -2974,7 +2974,7 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
-bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
 {
     if (isQueryWithFinal())
         return false;
@@ -3037,6 +3037,28 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
             return false;
         }
     }
+
+    return output_each_partition_through_separate_port = true;
+}
+
+/// The LIMIT BY version is much more lenient than the GROUP BY alternative. The reason being
+/// is that ordinary LIMIT BY merges all incoming streams into one and the transform happens
+/// in a single stream. We only try to optimize simple cases, SELECT * FROM table [WHERE ...] LIMIT .. BY
+/// key; for such cases, the main cost is in LIMIT BY. As a result, if we can get any parallelism
+/// at all in LIMIT BY, it will be a win.
+bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForLimitBy()
+{
+    if (isQueryWithFinal())
+        return false;
+
+    /// With parallel replicas we have to have only a single instance of `MergeTreeReadPoolParallelReplicas` per replica.
+    /// With limit-by by partitions optimisation we might create a separate pool for each partition.
+    if (is_parallel_reading_from_replicas)
+        return false;
+
+    /// This becomes no different from ordinary LIMIT BY which is single stream anyway.
+    if (countPartitions(getParts()) == 1)
+        return false;
 
     return output_each_partition_through_separate_port = true;
 }
@@ -3868,6 +3890,9 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         format_settings.out << (format_settings.pretty ? "" : prefix) << "Granules: " << result.index_stats.back().num_granules_after << '\n';
     }
 
+    if (output_each_partition_through_separate_port)
+        format_settings.out << prefix << "Read each partition through separate port: 1\n";
+
     if (format_settings.pretty)
         QueryPlanFormat::formatOutputColumns(format_settings.pretty_names, format_settings.out, *this, prefix);
 
@@ -3978,6 +4003,10 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Parts", result.index_stats.back().num_parts_after);
         map.add("Granules", result.index_stats.back().num_granules_after);
     }
+
+    if (output_each_partition_through_separate_port)
+        map.add("Read each partition through separate port", true);
+
     std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map;
     if (query_info.prewhere_info || query_info.row_level_filter)
     {
