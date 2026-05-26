@@ -196,34 +196,14 @@ bool tryEstimateEmpirical(
         const auto & part_index_granularity = part->index_granularity;
         const size_t total_marks = part_index_granularity->getMarksCountWithoutFinal();
 
-        /// An index granule spans `skip_index_granularity` data marks. We must feed
-        /// the aggregator every data mark inside any index granule that overlaps
-        /// baseline, otherwise minmax/bloom contents won't match a real index
-        auto align_to_index_granule = [&](const MarkRanges & in) -> MarkRanges
-        {
-            MarkRanges out;
-            for (const auto & r : in)
-            {
-                size_t begin = (r.begin / skip_index_granularity) * skip_index_granularity;
-                size_t end   = ((r.end + skip_index_granularity - 1) / skip_index_granularity) * skip_index_granularity;
-                end = std::min(end, total_marks);
-                if (!out.empty() && begin <= out.back().end)
-                    out.back().end = std::max(out.back().end, end);
-                else
-                    out.push_back({begin, end});
-            }
-            return out;
-        };
-
-        const MarkRanges aligned_ranges = align_to_index_granule(mark_ranges);
-        if (aligned_ranges.empty())
-            continue;
-
         std::vector<bool> in_baseline(part->getMarksCount(), false);
         for (const auto & range : mark_ranges)
             for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
                 in_baseline[m] = true;
 
+        /// Read the whole part: non-zero-start mark_ranges trip a LOGICAL_ERROR
+        /// in MergeTreeSequentialSource on adaptive granularity. TODO: fix that
+        /// and read only baseline-aligned ranges
         RangesInDataPart part_for_read(part);
 
         Pipe pipe = createMergeTreeSequentialSource(
@@ -234,7 +214,7 @@ bool tryEstimateEmpirical(
             std::make_shared<AlterConversions>(),
             nullptr,
             index_columns,
-            aligned_ranges,
+            std::nullopt,
             std::make_shared<std::atomic<size_t>>(0),
             false,
             false,
@@ -244,11 +224,8 @@ bool tryEstimateEmpirical(
         PullingPipelineExecutor executor(pipeline);
 
         auto aggregator = index_helper->createIndexAggregator();
-        size_t range_idx = 0;
-        size_t current_mark = aligned_ranges.front().begin;
-        size_t rows_remaining_in_mark = current_mark < total_marks
-            ? part_index_granularity->getMarkRows(current_mark)
-            : 0;
+        size_t current_mark = 0;
+        size_t rows_remaining_in_mark = total_marks > 0 ? part_index_granularity->getMarkRows(0) : 0;
         size_t data_granules_in_window = 0;
         size_t baseline_marks_in_window = 0;
 
@@ -262,13 +239,6 @@ bool tryEstimateEmpirical(
                 skipped_data_granules += baseline_marks_in_window;
         };
 
-        auto reset_window = [&]
-        {
-            aggregator = index_helper->createIndexAggregator();
-            data_granules_in_window = 0;
-            baseline_marks_in_window = 0;
-        };
-
         auto on_mark_finished = [&]
         {
             ++data_granules_in_window;
@@ -278,26 +248,13 @@ bool tryEstimateEmpirical(
             if (data_granules_in_window >= skip_index_granularity)
             {
                 flush_window();
-                reset_window();
+                aggregator = index_helper->createIndexAggregator();
+                data_granules_in_window = 0;
+                baseline_marks_in_window = 0;
             }
 
             ++current_mark;
-
-            /// Jump over the gap between aligned ranges. Alignment guarantees no
-            /// index granule spans a gap, so any partial window here is safe to flush
-            while (range_idx < aligned_ranges.size() && current_mark >= aligned_ranges[range_idx].end)
-            {
-                if (data_granules_in_window > 0)
-                {
-                    flush_window();
-                    reset_window();
-                }
-                ++range_idx;
-                if (range_idx < aligned_ranges.size())
-                    current_mark = aligned_ranges[range_idx].begin;
-            }
-
-            rows_remaining_in_mark = (range_idx < aligned_ranges.size() && current_mark < total_marks)
+            rows_remaining_in_mark = current_mark < total_marks
                 ? part_index_granularity->getMarkRows(current_mark)
                 : 0;
         };
@@ -316,7 +273,7 @@ bool tryEstimateEmpirical(
             else
                 rows_remaining_in_mark = 0;
 
-            if (rows_remaining_in_mark == 0)
+            if (rows_remaining_in_mark == 0 && current_mark < total_marks)
                 on_mark_finished();
         }
 
