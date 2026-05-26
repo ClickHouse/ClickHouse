@@ -1,5 +1,7 @@
 -- Issue #21697: INSERT ... RETURNING
 
+SET async_insert = 0;
+
 DROP TABLE IF EXISTS t_insert_returning;
 DROP TABLE IF EXISTS t_insert_returning_other;
 
