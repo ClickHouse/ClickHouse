@@ -1414,10 +1414,13 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 namespace
 {
 
-void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command)
+void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command, bool allow_clear = false)
 {
     if (command.type == AlterCommand::DROP_COLUMN)
     {
+        if (allow_clear && command.clear)
+            return;
+
         throw Exception(
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Trying to ALTER DROP {} ({}) column",
@@ -4540,9 +4543,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             checkSpecialColumnWithDataType<DataTypeUInt8>("sign", command);
         }
-        else if (merging_params.columns_to_sum.end() != std::find(merging_params.columns_to_sum.begin(), merging_params.columns_to_sum.end(), command.column_name))
+        else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
         {
-            checkSpecialColumn("columns to sum", command);
+            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
         }
 
         if (command.type == AlterCommand::MODIFY_QUERY)
