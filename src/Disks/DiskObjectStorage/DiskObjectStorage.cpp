@@ -786,7 +786,7 @@ void DiskObjectStorage::prepareRead(
         && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
         && file_cache_enabled;
 #if ENABLE_DISTRIBUTED_CACHE
-    if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_large_caller_buffer)
+    if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_bigger_buffer_size)
         prefer_bigger_buffer_size = false;
 #endif
 
