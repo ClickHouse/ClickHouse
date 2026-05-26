@@ -60,3 +60,7 @@ FINAL
 SELECT count()
 FROM `04105_modifiers_pv`(n = 1)
 SAMPLE 5 / 10
+SELECT *
+FROM `04105_pv_security_none`(n = 1)
+SELECT *
+FROM `04105_pv_security_definer`(n = 1)

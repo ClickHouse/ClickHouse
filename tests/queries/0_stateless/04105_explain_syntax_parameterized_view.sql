@@ -61,6 +61,25 @@ EXPLAIN SYNTAX SELECT count() FROM 04105_modifiers_pv(n = 1) SAMPLE 0.5;
 DROP VIEW 04105_modifiers_pv;
 DROP TABLE 04105_modifiers_t;
 
+-- A parameterized view declared with SQL SECURITY other than INVOKER is resolved
+-- at execution time under an overridden context (DEFINER or global), so the
+-- inner tables may be inaccessible to the invoker. Inlining the view body here
+-- would re-analyze it under the invoker's context and fail with ACCESS_DENIED
+-- for users who can query the view but not its inner tables. The rewrite must
+-- skip such views and leave the original pv(...) call in place.
+DROP TABLE IF EXISTS 04105_security_t;
+DROP VIEW IF EXISTS 04105_pv_security_none;
+DROP VIEW IF EXISTS 04105_pv_security_definer;
+CREATE TABLE 04105_security_t (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO 04105_security_t SELECT number FROM numbers(10);
+CREATE VIEW 04105_pv_security_none SQL SECURITY NONE AS SELECT x FROM 04105_security_t WHERE x > {n:UInt64};
+CREATE VIEW 04105_pv_security_definer DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT x FROM 04105_security_t WHERE x > {n:UInt64};
+EXPLAIN SYNTAX SELECT * FROM 04105_pv_security_none(n = 1);
+EXPLAIN SYNTAX SELECT * FROM 04105_pv_security_definer(n = 1);
+DROP VIEW 04105_pv_security_definer;
+DROP VIEW 04105_pv_security_none;
+DROP TABLE 04105_security_t;
+
 DROP TABLE 04105_join_target;
 DROP VIEW 04105_pv;
 DROP VIEW 04105_pv_multi;

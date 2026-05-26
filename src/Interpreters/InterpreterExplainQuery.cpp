@@ -28,6 +28,7 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -70,8 +71,10 @@ namespace
     /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
     ///
     /// In the analyzer path, without this expansion the query tree would show the unexpanded
-    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` also performs
-    /// this via `InterpreterSelectQuery`, so this visitor is redundant there but harmless.
+    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
+    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
+    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
+    /// parameterized views that appear on the right side of a JOIN as well.
     struct ExpandParameterizedViewsMatcher
     {
         struct Data : public WithContext
@@ -155,8 +158,17 @@ namespace
             if (!storage_view || !storage_view->isParameterizedView())
                 return;
 
-            auto view_query = storage->getInMemoryMetadataPtr(query_context, false)
-                                 ->getSelectQuery().inner_query->clone();
+            auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
+
+            /// For views created with `SQL SECURITY DEFINER` or `NONE`, execution resolves the
+            /// inner tables via `StorageView::getSQLSecurityOverriddenContext`. Inlining the view
+            /// here would instead re-analyze the inner query under the invoker's context, so
+            /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
+            /// tables. Leave the original parameterized call intact in that case.
+            if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
+                return;
+
+            auto view_query = metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr.table_function, query_context);
             StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values);
 

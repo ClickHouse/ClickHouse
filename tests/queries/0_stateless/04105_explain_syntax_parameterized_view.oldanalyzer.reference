@@ -74,3 +74,17 @@ FROM
     WHERE x > _CAST(1, \'UInt64\')
 ) AS `04105_modifiers_pv`
 SAMPLE 5 / 10
+SELECT x
+FROM
+(
+    SELECT x
+    FROM default.`04105_security_t`
+    WHERE x > _CAST(1, \'UInt64\')
+) AS `04105_pv_security_none`
+SELECT x
+FROM
+(
+    SELECT x
+    FROM default.`04105_security_t`
+    WHERE x > _CAST(1, \'UInt64\')
+) AS `04105_pv_security_definer`
