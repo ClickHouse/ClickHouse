@@ -1,4 +1,3 @@
-#include <Common/config.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
