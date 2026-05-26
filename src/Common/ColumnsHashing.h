@@ -632,7 +632,7 @@ struct HashMethodABSerialized
         }
         else
         {
-            row_sizes.assign(rows, fixed_keys_size);
+            row_sizes.assign(rows, static_cast<UInt64>(fixed_keys_size));
         }
 
         size_t total_size = 0;
