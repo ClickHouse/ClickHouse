@@ -9,8 +9,14 @@ TTLDropMerge	0	0
 TTLDropMerge	0	0
 0
 -- Case 4: WHERE-clause TTL is not short-circuited
-TTLDropMerge	0	200000
+TTLDropMerge	0	2000
 0
 -- Case 5: Table works after TTLDrop
 500
 500
+-- Case 6: Rows TTL + column TTL is not short-circuited
+TTLDropMerge	0	2000
+0
+-- Case 7: Rows TTL + GROUP BY TTL is not short-circuited
+TTLDropMerge	1000	2000
+1000

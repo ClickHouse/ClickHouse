@@ -920,14 +920,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Skip creating the read pipeline to avoid opening source parts
     /// and allocating read/prefetch buffers.
     ///
-    /// We must also verify the rows TTL has no WHERE clause. TTLPartDropMergeSelector
-    /// assigns MergeType::TTLDrop based solely on part_max_ttl without checking for
-    /// WHERE conditions. A WHERE clause can prevent some expired rows from being
-    /// deleted, so we must fall through to the normal pipeline in that case.
+    /// We restrict this to tables that have only an unconditional rows TTL
+    /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
+    /// When other TTL families are present, TTLTransform::finalize rebuilds
+    /// their maps from scratch, and replicating that logic here would be
+    /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
     const bool can_short_circuit_ttl_drop =
         global_ctx->future_part->merge_type == MergeType::TTLDrop
-        && global_ctx->metadata_snapshot->hasRowsTTL()
-        && !global_ctx->metadata_snapshot->getRowsTTL().where_expression_ast;
+        && global_ctx->metadata_snapshot->hasOnlyRowsTTL();
 
     if (can_short_circuit_ttl_drop)
     {
@@ -936,12 +936,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         global_ctx->ttl_drop_short_circuit = true;
 
-        /// Mark table TTL as finished with zero min/max, matching what
-        /// TTLDeleteAlgorithm::finalize produces in the normal all_data_dropped
-        /// path. We keep the accumulated part_min_ttl / part_max_ttl from source
-        /// parts (set at line ~592) so that ttl_infos.empty() returns false and
-        /// ttl.txt is written — producing the same checksums as the non-short-circuit
-        /// path.
+        /// Reset all ttl_infos and mark table TTL as finished, matching what
+        /// TTLTransform::finalize produces in the normal all_data_dropped path:
+        /// it clears everything with `data_part->ttl_infos = {}`, then
+        /// TTLDeleteAlgorithm::finalize sets table_ttl = {0, 0, finished}.
+        global_ctx->new_data_part->ttl_infos = {};
         global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
 
         /// Clear projections — no rows means no projection data to merge or rebuild.

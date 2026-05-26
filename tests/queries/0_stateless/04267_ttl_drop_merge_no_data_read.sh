@@ -225,8 +225,8 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_where_no_shortcircuit;
 
-    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(100000);
-    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(100000);
+    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(1000);
+    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(1000);
 
     SYSTEM START MERGES t_ttl_where_no_shortcircuit;
 "
@@ -295,3 +295,99 @@ ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE t_ttl_drop_then_insert FINAL SETTINGS mu
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_then_insert;"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_then_insert;"
+
+# -------------------------------------------------------------------
+# Case 6: Rows TTL + column TTL — not short-circuited
+# hasOnlyRowsTTL is false when column TTL is present, so data IS read.
+# -------------------------------------------------------------------
+echo "-- Case 6: Rows TTL + column TTL is not short-circuited"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_col
+    (
+        id UInt64,
+        value String TTL event_time + INTERVAL 1 HOUR,
+        event_time DateTime DEFAULT now() - INTERVAL 2 DAY
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY
+    SETTINGS
+        ttl_only_drop_parts = 1,
+        merge_with_ttl_timeout = 0,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_col;
+
+    INSERT INTO t_ttl_col (id, value) SELECT number, randomString(10) FROM numbers(1000);
+    INSERT INTO t_ttl_col (id, value) SELECT number, randomString(10) FROM numbers(1000);
+
+    SYSTEM START MERGES t_ttl_col;
+"
+
+wait_for_ttl_merge_and_flush_logs "t_ttl_col"
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT
+        merge_reason,
+        rows,
+        read_rows
+    FROM system.part_log
+    WHERE
+        database = currentDatabase()
+        AND table = 't_ttl_col'
+        AND event_type = 'MergeParts'
+    ORDER BY event_time DESC
+    LIMIT 1;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_col;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_col;"
+
+# -------------------------------------------------------------------
+# Case 7: Rows TTL + GROUP BY TTL — not short-circuited
+# hasOnlyRowsTTL is false when GROUP BY TTL is present, so data IS read.
+# -------------------------------------------------------------------
+echo "-- Case 7: Rows TTL + GROUP BY TTL is not short-circuited"
+
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE t_ttl_groupby
+    (
+        id UInt64,
+        value UInt64,
+        event_time DateTime DEFAULT now() - INTERVAL 2 DAY
+    )
+    ENGINE = MergeTree()
+    ORDER BY id
+    TTL event_time + INTERVAL 1 DAY GROUP BY id SET value = max(value)
+    SETTINGS
+        ttl_only_drop_parts = 1,
+        merge_with_ttl_timeout = 0,
+        min_bytes_for_wide_part = 1;
+
+    SYSTEM STOP MERGES t_ttl_groupby;
+
+    INSERT INTO t_ttl_groupby (id, value) SELECT number, number FROM numbers(1000);
+    INSERT INTO t_ttl_groupby (id, value) SELECT number, number FROM numbers(1000);
+
+    SYSTEM START MERGES t_ttl_groupby;
+"
+
+wait_for_ttl_merge_and_flush_logs "t_ttl_groupby"
+
+${CLICKHOUSE_CLIENT} -q "
+    SELECT
+        merge_reason,
+        rows,
+        read_rows
+    FROM system.part_log
+    WHERE
+        database = currentDatabase()
+        AND table = 't_ttl_groupby'
+        AND event_type = 'MergeParts'
+    ORDER BY event_time DESC
+    LIMIT 1;
+"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_groupby;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_groupby;"
