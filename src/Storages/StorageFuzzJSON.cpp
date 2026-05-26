@@ -21,6 +21,9 @@
 #include <Common/escapeString.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
+#if USE_RAPIDJSON
+#include <Common/JSONParsers/RapidJSONParser.h>
+#endif
 
 namespace DB
 {
@@ -465,7 +468,7 @@ void fuzzJSONObject(std::shared_ptr<JSONNode> n, WriteBuffer & out, const Storag
     fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
 }
 
-class FuzzJSONSource : public ISource
+class FuzzJSONSource final : public ISource
 {
 public:
     FuzzJSONSource(

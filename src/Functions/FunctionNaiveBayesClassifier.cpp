@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ProfileEvents.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace ProfileEvents
@@ -49,7 +50,7 @@ public:
     using TokenNBC = NaiveBayesClassifier<TokenPolicy>;
 
     using Model = std::variant<ByteNBC, CodeNBC, TokenNBC>;
-    using Models = std::unordered_map<String, Model>;
+    using Models = UnorderedMapWithMemoryTracking<String, Model>;
 
     /// Public so `std::optional::emplace` can call it; the singleton is still enforced because
     /// `registry` is private and only reachable through `instance`.
@@ -236,7 +237,7 @@ void NBModelRegistry::load(ContextPtr context)
     }
 }
 
-class FunctionNaiveBayesClassifier : public IFunction
+class FunctionNaiveBayesClassifier final : public IFunction
 {
 private:
     const NBModelRegistry::Models & models;
