@@ -409,6 +409,11 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         interpreter.buildQueryPlan(plan);
     }
 
+    /// Build pipeline to trigger filter pushdown and index analysis
+    auto builder = plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings(plan_context),
+        BuildQueryPipelineSettings(plan_context));
+
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
 
@@ -423,11 +428,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
-
-    /// Build pipeline to trigger filter pushdown and index analysis
-    auto builder = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings(plan_context),
-        BuildQueryPipelineSettings(plan_context));
 
     auto analysis_ptr = read_step->getAnalyzedResult();
     if (!analysis_ptr)
