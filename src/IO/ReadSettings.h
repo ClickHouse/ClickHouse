@@ -152,6 +152,14 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
+
+    /// Verification/metadata-read mode: disable every read-side cache and the
+    /// per-operation logs. Used by checkDataPart, restore, and iceberg metadata reads.
+    void disableCachesAndLogging();
+
+    /// Force a synchronous local-FS read path (`pread`). Used by metadata and
+    /// transaction-log readers that don't benefit from `io_uring` / threadpool / mmap.
+    void forceSyncLocalRead();
 };
 
 ReadSettings getReadSettings();

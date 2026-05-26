@@ -154,7 +154,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.forceSyncLocalRead();
     if (read_with_direct_io)
         read_settings.local_fs_settings.direct_io_threshold = 1;
 

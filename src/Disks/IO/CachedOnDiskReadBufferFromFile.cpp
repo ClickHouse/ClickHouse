@@ -287,7 +287,7 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     ///   - `remote_fs_*`, `page_cache*`, prefetch-related fields: target the remote read
     ///     path or pipeline stages above us; do not apply to local cache file I/O.
     ReadSettings local_read_settings;
-    local_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    local_read_settings.forceSyncLocalRead();
     local_read_settings.local_fs_settings.buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
     local_read_settings.local_throttler = info.local_throttler;
 

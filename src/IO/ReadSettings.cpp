@@ -47,4 +47,23 @@ ReadSettings ReadSettings::adjustBufferSize(size_t file_size) const
     return res;
 }
 
+void ReadSettings::disableCachesAndLogging()
+{
+    enable_filesystem_cache = false;
+    read_through_distributed_cache = false;
+    use_page_cache_for_disks_without_file_cache = false;
+    use_page_cache_with_distributed_cache = false;
+    use_page_cache_for_local_disks = false;
+    use_page_cache_for_object_storage = false;
+    page_cache_settings.cache.reset();
+    filesystem_cache_settings.enable_log = false;
+    enable_filesystem_read_prefetches_log = false;
+    remote_fs_settings.enable_blob_storage_log = false;
+}
+
+void ReadSettings::forceSyncLocalRead()
+{
+    local_fs_settings.method = LocalFSReadMethod::pread;
+}
+
 }

@@ -265,7 +265,7 @@ std::optional<VersionInfo> VersionMetadataOnDisk::readMetadataUnlocked()
     size_t small_file_size = 4096;
     auto read_settings = getReadSettings().adjustBufferSize(small_file_size);
     /// Avoid cannot allocated thread error. No need in threadpool read method here.
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.forceSyncLocalRead();
     auto buf = data_part_storage.readFile(TXN_VERSION_METADATA_FILE_NAME, read_settings, small_file_size);
 
     String content;

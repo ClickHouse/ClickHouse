@@ -1145,7 +1145,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.forceSyncLocalRead();
 
     std::string file_path = fs::current_path() / "test";
     auto read_buffer_creator = [&]()
@@ -1362,7 +1362,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     {
         ReadSettings read_settings;
         read_settings.enable_filesystem_cache = true;
-        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        read_settings.forceSyncLocalRead();
 
         auto write_file = [](const std::string & filename, const std::string & s)
         {
@@ -1465,7 +1465,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.forceSyncLocalRead();
 
     auto write_file = [](const std::string & filename, const std::string & s)
     {
