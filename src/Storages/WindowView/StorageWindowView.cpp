@@ -1,4 +1,5 @@
 #include <numeric>
+#include <thread>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -327,7 +328,7 @@ namespace
         }
     }
 
-    class AddingAggregatedChunkInfoTransform : public ISimpleTransform
+    class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
     {
     public:
         explicit AddingAggregatedChunkInfoTransform(SharedHeader header) : ISimpleTransform(header, header, false) { }
