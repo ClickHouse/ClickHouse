@@ -19,10 +19,15 @@ namespace DB
     }
 
     QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(
-        ContextPtr local_context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo & query_info) const
+        ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const
     {
-        auto storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(local_context, false), local_context);
-        return inner_storage->getQueryProcessingStage(local_context, to_stage, storage_snapshot, query_info);
+        /// `LoopSource` always materialises the inner select with
+        /// `QueryProcessingStage::Complete`, so the chunks it emits are plain column
+        /// data. Delegating to `inner_storage` here could advertise `WithMergeableState`
+        /// (e.g. when the inner storage is `Distributed`) and make the outer planner add
+        /// a `MergingAggregatedStep`, which then trips on the missing chunk info — see
+        /// issue #104863.
+        return QueryProcessingStage::FetchColumns;
     }
 
     void StorageLoop::read(

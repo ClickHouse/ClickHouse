@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadPool.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/noexcept_scope.h>
