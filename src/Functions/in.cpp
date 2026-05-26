@@ -58,18 +58,12 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// Opt into the default constant-folding wrapper: when all arguments are constants,
-    /// `IExecutableFunction::defaultImplementationForConstantArguments` clones them to size 1,
-    /// runs `executeImpl` with `input_rows_count = 1`, and wraps the result as a ColumnConst.
-    /// This is what makes `WHERE 1 IN (1)` fold to `WHERE 1` (and then to `WHERE 1 = 1` in
-    /// `transformQueryForExternalDatabase`) after `ActionsDAG::addColumn` normalizes ColumnConst
-    /// arguments to size 0 — without the default wrapper, `executeImpl` would receive
-    /// `input_rows_count = 0` and short-circuit to an empty non-ColumnConst column that DAG
-    /// constant folding drops.
-    ///
-    /// `-IgnoreSet` variants must NOT fold, because they're used purely for type analysis
-    /// before the set has been built.
-    bool useDefaultImplementationForConstants() const override { return !ignore_set; }
+    /// We can't use the default constant-folding wrapper because it would wrap a
+    /// dry-run result as a ColumnConst, and `FilterTransform`'s header evaluation
+    /// would then see a subquery-IN with an unbuilt set as "always false" (the
+    /// dry-run path returns 0) and skip the filter entirely. Handle the size-0
+    /// ColumnConst arguments produced by `ActionsDAG::addColumn` directly below.
+    bool useDefaultImplementationForConstants() const override { return false; }
 
     bool useDefaultImplementationForDynamic() const override
     {
@@ -127,15 +121,14 @@ public:
         if (set->getTotalRowCount() == 0)
             return ColumnConst::create(ColumnUInt8::create(1, negative), input_rows_count);
 
-        if (input_rows_count == 0)
-            return ColumnUInt8::create();
-
         /// Unwrap ColumnConst for the first argument if needed.
         ColumnWithTypeAndName left_arg = arguments[0];
         bool left_is_const = isColumnConst(*left_arg.column);
 
         if (left_is_const)
             left_arg.column = assert_cast<const ColumnConst &>(*left_arg.column).getDataColumnPtr();
+        else if (input_rows_count == 0)
+            return ColumnUInt8::create();
 
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(left_arg.type.get());
