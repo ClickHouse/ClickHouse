@@ -1,12 +1,8 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/VarInt.h>
-
-#include <Core/Streaming/CursorTree_fwd.h>
 
 namespace DB
 {
@@ -63,8 +59,6 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (table_expression_modifiers.hasSampleOffsetRatio())
         flags |= 4;
-    if (table_expression_modifiers.hasStream())
-        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -91,7 +85,6 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     bool has_final = false;
     std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
     std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
-    std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
 
     if (flags & 1)
         has_final = true;
@@ -102,7 +95,7 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
 
-    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
+    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
     return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
 }
 
