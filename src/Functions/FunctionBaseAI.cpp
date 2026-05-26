@@ -238,10 +238,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.temperature = temperature;
                 ai_request.max_tokens = config.max_tokens;
 
-                auto ai_response = provider->call(ai_request, timeouts);
+                /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
+                quota.recordAttempt();
 
-                quota.recordResponse(ai_response.input_tokens, ai_response.output_tokens);
+                auto ai_response = provider->call(ai_request, timeouts);
+
+                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
                 total_input_tokens += ai_response.input_tokens;
                 total_output_tokens += ai_response.output_tokens;
 

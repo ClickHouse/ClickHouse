@@ -215,10 +215,12 @@ public:
             {
                 try
                 {
-                    ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
+                    /// update api_calls/quotas before call so failed calls are still added to total
                     ++total_api_calls;
+                    quota.recordAttempt();
+                    ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
                     total_input_tokens += ai_embedding_response.input_tokens;
-                    quota.recordResponse(ai_embedding_response.input_tokens, 0);
+                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
                     batch_ok = true;
                     break;
                 }
