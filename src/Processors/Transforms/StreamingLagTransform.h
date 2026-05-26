@@ -2,8 +2,6 @@
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <Common/HashTable/Hash.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
 #include <base/types.h>
 #include <Processors/ISimpleTransform.h>
 #include <optional>
@@ -67,26 +65,6 @@ private:
     /// 128-bit hash key avoids per-row string allocation; collision probability < 2^{-127}.
     std::unordered_map<UInt128, std::vector<Field>, UInt128Hash> state_map_;
 
-    /// Pre-cast view of a Map(LowCardinality(String), String) column for zero-virtual-dispatch
-    /// per-row hashing.  Built once per chunk in transform().
-    struct MapColView
-    {
-        const ColumnArray::Offsets * array_offsets;   ///< Map's array extent per row
-        const ColumnString::Chars * key_chars;         ///< dictionary char data
-        const ColumnString::Offsets * key_str_offsets; ///< dictionary string offsets
-        const ColumnString::Chars * val_chars;         ///< value char data
-        const ColumnString::Offsets * val_str_offsets; ///< value string offsets
-        const UInt8 * idx_u8 = nullptr;
-        const UInt16 * idx_u16 = nullptr;
-        const UInt32 * idx_u32 = nullptr;
-    };
-
-    /// Try to build a MapColView for column at position `col_idx` in `block`.
-    /// Returns nullopt if the column is not Map(LowCardinality(String), String).
-    static std::optional<MapColView> tryGetMapView(const Block & block, size_t col_idx);
-
-    /// Hash one row of a pre-cast Map column into `hash` with no virtual dispatch.
-    static void hashMapRow(const MapColView & view, size_t row, SipHash & hash);
 };
 
 }
