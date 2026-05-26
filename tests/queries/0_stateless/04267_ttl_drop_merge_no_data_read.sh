@@ -30,8 +30,9 @@ function wait_for_ttl_merge_and_flush_logs()
         sleep 0.1
     done
 
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
+
     for _ in $(seq 1 60); do
-        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
         local count
         count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.part_log WHERE database = currentDatabase() AND table = '$table' AND event_type = 'MergeParts'")
         if [ "$count" -gt "0" ]; then
@@ -63,7 +64,6 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_drop_no_read;
 
-    INSERT INTO t_ttl_drop_no_read (id, value) SELECT number, randomString(10000) FROM numbers(1000);
     INSERT INTO t_ttl_drop_no_read (id, value) SELECT number, randomString(10000) FROM numbers(1000);
     INSERT INTO t_ttl_drop_no_read (id, value) SELECT number, randomString(10000) FROM numbers(1000);
 
