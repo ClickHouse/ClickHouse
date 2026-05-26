@@ -10,6 +10,7 @@
 
 #include <IO/WriteBufferFromString.h>
 
+#include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
 
@@ -56,6 +57,21 @@ std::vector<std::string> getPartitionsCanBeRead(const std::map<String, Int64> & 
 bool canConstructReadingPipeline(const std::map<String, Int64> & safe_block_numbers, const MergeTreeCursor & last_emitted_positions)
 {
     return !getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions).empty();
+}
+
+std::string explainPlan(QueryPlan & plan)
+{
+    WriteBufferFromOwnString plan_buffer;
+    ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
+    plan.explainPlan(plan_buffer, explain_options);
+    return plan_buffer.str();
+}
+
+std::string explainPipeline(Pipe pipe)
+{
+    WriteBufferFromOwnString pipeline_buffer;
+    printPipeline(pipe.getProcessors(), pipeline_buffer);
+    return pipeline_buffer.str();
 }
 
 struct PipeWithResources
@@ -139,26 +155,13 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     /// TODO(michicosun): somehow force projection usage here
     QueryPlanOptimizationSettings opt_settings(context);
     plan.optimize(opt_settings);
-
-    if (log->test())
-    {
-        WriteBufferFromOwnString plan_buffer;
-        ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
-        plan.explainPlan(plan_buffer, explain_options);
-        LOG_TEST(log, "Snapshot subplan for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, plan_buffer.str());
-    }
+    LOG_TEST(log, "Snapshot subplan for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, explainPlan(plan));
 
     auto builder = plan.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
 
     PipeWithResources result;
     result.pipe = QueryPipelineBuilder::getPipe(std::move(*builder), result.resources);
-
-    if (log->test())
-    {
-        WriteBufferFromOwnString pipeline_buffer;
-        printPipeline(result.pipe.getProcessors(), pipeline_buffer);
-        LOG_TEST(log, "Snapshot pipeline for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, pipeline_buffer.str());
-    }
+    LOG_TEST(log, "Snapshot pipeline for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, explainPipeline(result.pipe));
 
     return result;
 }
