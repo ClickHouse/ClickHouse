@@ -102,22 +102,23 @@ std::vector<pid_t> walkSubtree(pid_t root_pid)
 }
 
 
-void clearRefs(pid_t pid) noexcept
+bool clearRefs(pid_t pid) noexcept
 {
     if (pid <= 0)
-        return;
+        return false;
 
 #if defined(OS_LINUX)
     const std::string path = "/proc/" + std::to_string(pid) + "/clear_refs";
     int fd = ::open(path.c_str(), O_WRONLY | O_CLOEXEC);
     if (fd == -1)
-        return;
+        return false;
     const char data[] = "5\n";
     ssize_t written = ::write(fd, data, sizeof(data) - 1);
-    (void)written;
     [[maybe_unused]] int close_err = ::close(fd);
+    return written == sizeof(data) - 1;
 #else
     (void)pid;
+    return false;
 #endif
 }
 
@@ -255,11 +256,14 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
     for (pid_t pid : pids)
     {
         pre_walk_pids.insert(pid);
-        UDFProcfs::clearRefs(pid);
+        if (!UDFProcfs::clearRefs(pid))
+            clear_refs_failed_any = true;
         UInt64 utime_us = 0;
         UInt64 stime_us = 0;
         if (UDFProcfs::readStat(pid, utime_us, stime_us))
             pre_snapshot[pid] = PreSnapshot{utime_us, stime_us};
+        else
+            read_stat_failed_any = true;
     }
 }
 
@@ -339,6 +343,8 @@ void UDFProcessSubtreeSampler::recordReleased()
         UInt64 utime_us = 0;
         UInt64 stime_us = 0;
         bool stat_ok = UDFProcfs::readStat(pid, utime_us, stime_us);
+        if (!stat_ok)
+            read_stat_failed_any = true;
 
         if (stat_ok)
         {
@@ -357,6 +363,8 @@ void UDFProcessSubtreeSampler::recordReleased()
         UInt64 hwm_bytes = 0;
         if (UDFProcfs::readPeakRss(pid, hwm_bytes))
             peak_rss = std::max(peak_rss, hwm_bytes);
+        else
+            read_peak_rss_failed_any = true;
     }
 
     if (post_utime_sum >= pre_utime_sum)

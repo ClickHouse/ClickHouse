@@ -65,6 +65,14 @@ public:
     bool poolWaitDone() const noexcept { return pool_wait_done; }
     bool borrowAcquired() const noexcept { return borrow_acquired; }
 
+    /// Whether at least one pid in this borrow's subtree saw the
+    /// corresponding procfs operation fail. Caller-side state can use these
+    /// to log once per UDF on first failure so operators have a signal when
+    /// a sandbox / seccomp profile silently degrades metrics to zero.
+    bool clearRefsFailedAnyPid() const noexcept { return clear_refs_failed_any; }
+    bool readStatFailedAnyPid() const noexcept { return read_stat_failed_any; }
+    bool readPeakRssFailedAnyPid() const noexcept { return read_peak_rss_failed_any; }
+
 private:
     Stopwatch entry_watch;
     Stopwatch borrow_watch;
@@ -78,6 +86,10 @@ private:
     UInt64 user_time_us = 0;
     UInt64 system_time_us = 0;
     UInt64 peak_memory_byte_seconds = 0;
+
+    bool clear_refs_failed_any = false;
+    bool read_stat_failed_any = false;
+    bool read_peak_rss_failed_any = false;
 
     std::atomic<UInt64> input_bytes{0};
     std::atomic<UInt64> output_bytes{0};
@@ -105,9 +117,10 @@ namespace UDFProcfs
     /// procfs is unavailable.
     std::vector<pid_t> walkSubtree(pid_t root_pid);
 
-    /// Write "5\n" to /proc/<pid>/clear_refs to reset VmHWM.
-    /// Silently ignores any error.
-    void clearRefs(pid_t pid) noexcept;
+    /// Write "5\n" to /proc/<pid>/clear_refs to reset VmHWM. Returns
+    /// false on open/write failure (e.g. seccomp denies `open` on
+    /// `/proc`, or the pid disappeared between walkSubtree and here).
+    bool clearRefs(pid_t pid) noexcept;
 
     /// Parse user and system CPU time from /proc/<pid>/stat, converting clock
     /// ticks to microseconds. `utime_us` sums fields 14 (`utime`, this pid's

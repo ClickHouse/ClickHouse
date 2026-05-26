@@ -12,7 +12,13 @@
 #include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -63,6 +69,29 @@ namespace Setting
 
 namespace
 {
+
+/// Per-UDF state for the first-time-per-procfs-op LOG_WARNING that
+/// `UDFProcessSubtreeSampler` raises when /proc reads fail. Keeps
+/// operators aware of a silent metric degradation (e.g. a seccomp
+/// profile that blocks /proc reads) without spamming the log on
+/// every borrow.
+struct UDFProcfsFailureLoggedFlags
+{
+    std::atomic<bool> clear_refs{false};
+    std::atomic<bool> read_stat{false};
+    std::atomic<bool> read_peak_rss{false};
+};
+
+UDFProcfsFailureLoggedFlags & getUDFProcfsFailureFlags(const String & udf_name)
+{
+    static std::mutex mutex;
+    static std::unordered_map<String, std::unique_ptr<UDFProcfsFailureLoggedFlags>> flags_by_udf;
+    std::lock_guard lock(mutex);
+    auto & ptr = flags_by_udf[udf_name];
+    if (!ptr)
+        ptr = std::make_unique<UDFProcfsFailureLoggedFlags>();
+    return *ptr;
+}
 
 class UserDefinedFunction final : public IFunction
 {
@@ -262,6 +291,35 @@ public:
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPeakMemoryByteSeconds, sampler->getPeakMemoryByteSeconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
+                }
+
+                /// If any of the three procfs reads silently failed during
+                /// this borrow, surface it once per UDF + op so an operator
+                /// running under a restrictive seccomp profile (or with /proc
+                /// unmounted) has a visible signal that the resource counters
+                /// they see are degraded.
+                if (sampler->clearRefsFailedAnyPid() || sampler->readStatFailedAnyPid() || sampler->readPeakRssFailedAnyPid())
+                {
+                    const auto & udf_name = getName();
+                    auto & failure_logged = getUDFProcfsFailureFlags(udf_name);
+                    if (sampler->clearRefsFailedAnyPid() && !failure_logged.clear_refs.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': writing to /proc/<pid>/clear_refs failed for at least one subtree pid. "
+                            "PeakMemoryByteSeconds will report the worker's lifetime peak instead of the per-borrow peak. "
+                            "Logged once per UDF.",
+                            udf_name);
+                    if (sampler->readStatFailedAnyPid() && !failure_logged.read_stat.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': reading /proc/<pid>/stat failed for at least one subtree pid. "
+                            "UserTimeMicroseconds and SystemTimeMicroseconds will under-count. "
+                            "Logged once per UDF.",
+                            udf_name);
+                    if (sampler->readPeakRssFailedAnyPid() && !failure_logged.read_peak_rss.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': reading /proc/<pid>/status failed for at least one subtree pid. "
+                            "PeakMemoryByteSeconds will under-count. "
+                            "Logged once per UDF.",
+                            udf_name);
                 }
             });
 
