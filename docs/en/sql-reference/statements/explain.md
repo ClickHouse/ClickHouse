@@ -117,11 +117,13 @@ Settings:
 
 Examples:
 
-```sql title="Query"
+```sql
 EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-```sql title="Response"
+Output:
+
+```sql
 SELECT *
 FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
 WHERE (a.number = b.number) AND (b.number = c.number)
@@ -129,11 +131,13 @@ WHERE (a.number = b.number) AND (b.number = c.number)
 
 With `run_query_tree_passes`:
 
-```sql title="Query"
+```sql
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-```sql title="Response"
+Output:
+
+```sql
 SELECT
     __table1.number AS `a.number`,
     __table2.number AS `b.number`,
@@ -305,7 +309,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` or `Skip`) and optional keys:
+With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
 
 - `Name` — The index name (currently only used for `Skip` indexes).
 - `Keys` — The array of columns used by the index.
@@ -321,7 +325,7 @@ Example:
 "Node Type": "ReadFromMergeTree",
 "Indexes": [
   {
-    "Type": "Partition Min-Max",
+    "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
     "Parts": 4/5,
@@ -520,35 +524,7 @@ Expression ((Project names + Projection))
 
 In both examples, the query plan shows the complete execution flow including local and remote steps.
 
-With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation, and additional information is shown for key steps:
-
-- **Query output columns** are printed at the top of the plan.
-- **Expressions** in filters, aggregation keys, sort descriptions, and window functions are displayed in human-readable SQL-like notation (e.g., `a + 1 > 5` instead of `greater(plus(a, 1), 5)`). Internal column identifier prefixes (such as `__table1.`) are removed for clarity.
-- **Source steps** (such as `ReadFromMergeTree`) display their output columns.
-- **Filter steps** display the filter condition in SQL notation. When runtime join filters are present, they are shown separately.
-- **Aggregation steps** display keys and aggregate functions with their arguments (e.g., `sum(c)`, `count()`).
-- **IN sets** from tuple literals show their values (truncated for large sets), subquery-based sets are labeled `subquery1`, `subquery2`, etc., and sets from `Set` engine tables show the table name.
-- **Join steps** display the join relation using mathematical notation, estimated result row count,
-  and which output columns come from the left vs. right side. The following symbols are used to
-  represent different join types:
-
-| Symbol | Join Type |
-|--------|-----------|
-| `⋈` | Inner Join |
-| `⟕` | Left Join |
-| `⟖` | Right Join |
-| `⟗` | Full Join |
-| `⋉` | Left Semi Join |
-| `⋊` | Right Semi Join |
-| `⋉` with strikethrough | Left Anti Join |
-| `⋊` with strikethrough | Right Anti Join |
-| `×` | Cross Join |
-
-For example, `t1 ⟕ t2` means a left join between tables `t1` and `t2`.
-The number in brackets after the table name (e.g., `t1[100]`) indicates the estimated row count
-when table statistics are available.
-
-The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
+With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation:
 
 ```sql
 EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
@@ -559,39 +535,6 @@ Expression ((Project names + Projection))
 └──Aggregating
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
       └──ReadFromSystemNumbers
-```
-
-A more detailed example with joins:
-
-```sql
-CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
-INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
-INSERT INTO t2 SELECT number, toString(number) FROM numbers(100);
-
-EXPLAIN actions = 1, compact = 1, pretty = 1
-SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
-```
-
-```text
-Output: id, value, t2.id, t2.value
-
-Join (JOIN FillRightFirst)
-│  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
-│  Result rows: 100
-│  Output:
-│    Left:  id, value
-│    Right: id, value
-│  Join conditions: id = id
-├──ReadFromMergeTree (default.t1)
-│     Read type: Default
-│     Parts: 1 | Granules: 1
-│     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
 ```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
@@ -633,17 +576,21 @@ Shows the estimated number of rows, marks and parts to be read from the tables w
 
 Creating a table:
 
-```sql title="Query"
+```sql
 CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
 INSERT INTO ttt SELECT number FROM numbers(128);
 OPTIMIZE TABLE ttt;
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 EXPLAIN ESTIMATE SELECT * FROM ttt;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
@@ -658,19 +605,21 @@ Also does some validation, throwing an exception if the override would have caus
 
 Assume you have a remote MySQL table like this:
 
-```sql title="Query"
+```sql
 CREATE TABLE db.tbl (
     id INT PRIMARY KEY,
     created DATETIME DEFAULT now()
 )
 ```
 
-```sql title="Query"
+```sql
 EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
 PARTITION BY toYYYYMM(assumeNotNull(created))
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─explain─────────────────────────────────────────────────┐
 │ PARTITION BY uses columns: `created` Nullable(DateTime) │
 └─────────────────────────────────────────────────────────┘
