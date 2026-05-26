@@ -191,6 +191,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
         const auto table_name = table_id.getTableName();
 
+        if (query.if_exists)
+        {
+            if (!database->isTableExist(table_name, context_))
+            {
+                return {};
+            }
+        }
+
         if (database->isTableExist(table_name, context_))
         {
             throw Exception(

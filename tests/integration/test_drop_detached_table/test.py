@@ -274,7 +274,7 @@ def test_invalid_syntax_corner_cases(start_cluster):
 
     def do_query(q):
         try:
-            replica1.query(f"SET allow_experimental_drop_detached_table=1; {q}")
+            replica1.query(f"SET allow_experimental_drop_detached_table=1; {q} SYNC")
             assert False, f"Got no error for {q}"
         except AssertionError:
             raise
@@ -285,5 +285,29 @@ def test_invalid_syntax_corner_cases(start_cluster):
 
     do_query(f"DETACH DETACHED TABLE {table_name}")
     do_query(f"TRUNCATE DETACHED TABLE {table_name}")
+
+    replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_if_exists_behaviour(start_cluster):
+    table_name = "test_table_if_exists"
+
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE IF EXISTS {table_name} SYNC"
+    )
+
+    create_table(replica1, table_name)
+
+    try:
+        replica1.query(
+            f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE IF EXISTS {table_name} SYNC"
+        )
+    except Exception as e:
+        assert "must be detached" in str(e)
+
+    replica1.query(f"DETACH TABLE {table_name}")
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE IF EXISTS {table_name} SYNC"
+    )
 
     replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
