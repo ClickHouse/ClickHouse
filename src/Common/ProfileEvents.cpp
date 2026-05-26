@@ -128,6 +128,9 @@
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
+    M(SparseOffsetsShareSeedHits, "Number of scan readRows calls where the sparse-offsets share found a covering range and seeded the per-call cache.", ValueType::Number) \
+    M(SparseOffsetsShareSeedMisses, "Number of scan readRows calls where the sparse-offsets share had no covering range, forcing a disk read of the offsets substream.", ValueType::Number) \
+    M(SparseOffsetsShareConsumed, "Number of times the sparse-offsets deserializer served offsets from a pre-seeded cache element. If much smaller than SparseOffsetsShareSeedHits, the seed is being installed under a different SubstreamPath than the consumer looks up.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.", ValueType::Number) \

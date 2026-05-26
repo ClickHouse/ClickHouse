@@ -13,7 +13,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+
+namespace ProfileEvents
+{
+extern const Event SparseOffsetsShareConsumed;
+}
 
 namespace DB
 {
@@ -215,6 +221,7 @@ size_t readOrGetCachedSparseOffsets(
         read_rows = cached_offsets_element.read_rows;
         skipped_values_rows = cached_offsets_element.skipped_values_rows;
         ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
+        ProfileEvents::increment(ProfileEvents::SparseOffsetsShareConsumed);
     }
     else if (auto * stream = settings.getter(settings.path))
     {

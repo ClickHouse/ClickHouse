@@ -11,9 +11,16 @@
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
+#include <Common/ProfileEvents.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/SparseOffsetsShare.h>
+
+namespace ProfileEvents
+{
+extern const Event SparseOffsetsShareSeedHits;
+extern const Event SparseOffsetsShareSeedMisses;
+}
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -538,11 +545,15 @@ void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
         limit,
         frame_prev_size);
     if (!element)
+    {
+        ProfileEvents::increment(ProfileEvents::SparseOffsetsShareSeedMisses);
         return;
+    }
 
     ISerialization::SubstreamPath path;
     path.push_back(ISerialization::Substream::SparseOffsets);
     ISerialization::addElementToSubstreamsCache(&cache, path, std::move(element));
+    ProfileEvents::increment(ProfileEvents::SparseOffsetsShareSeedHits);
 }
 
 String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
