@@ -106,6 +106,22 @@ def test_named_collection_omission_does_not_inherit_server_credentials():
         node.query("DROP NAMED COLLECTION IF EXISTS nc_omission")
 
 
+def test_s3_storage_refresh_does_not_inherit_server_headers():
+    node.query("DROP TABLE IF EXISTS s3_refresh")
+    node.query(
+        f"""
+        CREATE TABLE s3_refresh (leaked UInt8)
+        ENGINE = S3('{UNTRUSTED_ENDPOINT}', 'CSV')
+        """
+    )
+    try:
+        assert node.query("SELECT * FROM s3_refresh").strip() == "0"
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT * FROM s3_refresh").strip() == "0"
+    finally:
+        node.query("DROP TABLE IF EXISTS s3_refresh")
+
+
 def test_endpoint_scoped_credentials_still_apply():
     result = node.query(
         f"SELECT * FROM s3('{TRUSTED_ENDPOINT}', 'CSV', 'leaked UInt8')"
