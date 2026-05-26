@@ -9577,7 +9577,114 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     String clickhouse_path = fs::canonical(local_context->getPath());
     String default_shadow_path = fs::path(clickhouse_path) / "shadow/";
     fs::create_directories(default_shadow_path);
-    auto increment = Increment(fs::path(default_shadow_path) / "increment.txt").get(true);
+
+    /// If `shadow/increment.txt` was left missing or empty by a previous
+    /// interrupted writer (see `CounterInFile::add`), recovery starts the
+    /// counter back at zero. Without a hint, the next FREEZE without
+    /// `WITH NAME` would then try to create `shadow/1/`, which can collide
+    /// with an already-existing backup directory. Compute the maximum existing
+    /// numeric backup-directory name and pass it as a lower bound so the
+    /// recovered counter does not reuse an allocated `shadow/<N>/`.
+
+    /// Numeric value of a `shadow/` subdirectory name, or nullopt if the name
+    /// is not a non-empty all-digits name that fits in UInt64. Only such names
+    /// can be produced by an unnamed FREEZE (named after the counter), so they
+    /// are the only ones the recovered counter can collide with.
+    auto numeric_dir_value = [](const std::string & name) -> std::optional<UInt64>
+    {
+        /// Skip names above the largest id an unnamed FREEZE can reach: the
+        /// counter is Int64 and the recovered next id is value + 1, so a larger
+        /// name (only creatable by FREEZE WITH NAME) can never be allocated by
+        /// an unnamed FREEZE and so cannot be collided with.
+        static constexpr UInt64 max_reachable_id = static_cast<UInt64>(std::numeric_limits<Int64>::max()) - 1;
+        if (name.empty() || !std::all_of(name.begin(), name.end(), [](char c) { return c >= '0' && c <= '9'; }))
+            return {};
+        try
+        {
+            size_t consumed = 0;
+            UInt64 parsed = static_cast<UInt64>(std::stoull(name, &consumed));
+            if (consumed != name.size() || parsed > max_reachable_id)
+                return {};
+            return parsed;
+        }
+        catch (const std::out_of_range &)
+        {
+            return {};
+        }
+    };
+
+    /// Lower bound for the recovered counter. Computed lazily and ONLY on the
+    /// recovery path (empty or missing counter), under the counter lock, via
+    /// `Increment::get`'s provider argument: a healthy counter ignores the
+    /// bound, so a freshly-started server with a valid counter never pays this
+    /// scan, and a transient per-disk failure never fails an ordinary FREEZE.
+    auto max_existing_id_provider = [this, numeric_dir_value, with_name]() -> UInt64
+    {
+        const String shadow_relative = "shadow";
+        UInt64 max_existing_id = 0;
+
+        /// Each part is frozen onto its OWN disk (see
+        /// `DataPartStorageOnDiskBase::freeze`), so numeric `shadow/<N>`
+        /// directories can exist on any configured disk while the counter file
+        /// lives only on the default disk. The bound must therefore cover every
+        /// disk that can hold a backup, not just the default one. Walk all
+        /// configured disks (the counter is server-global), deduplicating by
+        /// physical path so delegate/cache disks layered over the same storage
+        /// are not scanned twice.
+        std::unordered_set<String> scanned_paths;
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
+            /// A broken disk cannot be scanned now and may hold numeric
+            /// `shadow/<N>` backups, but a broken disk is a routine, possibly
+            /// long-lived state and must not make every FREEZE on the server
+            /// fail. Skip it and log, so an operator can raise the counter
+            /// manually if that disk later returns with hidden backups. An
+            /// unexpected FS error during the scan below still propagates.
+            /// Logged at INFO (not WARNING) because this recovery path runs on
+            /// every empty-or-missing-counter FREEZE and an unrelated broken
+            /// disk is common; at WARNING it would also surface to client
+            /// stderr under `send_logs_level=warning`.
+            if (disk->isBroken())
+            {
+                LOG_INFO(
+                    log,
+                    "Disk '{}' is broken and was skipped while recovering the FREEZE backup "
+                    "counter from an empty or missing shadow/increment.txt. If it holds numeric "
+                    "shadow/<N> backups, set shadow/increment.txt above their maximum once the "
+                    "disk is restored, to avoid a later unnamed FREEZE reusing a directory.",
+                    disk_name);
+                continue;
+            }
+            if (!scanned_paths.insert(disk->getPath()).second)
+                continue;
+            if (!disk->existsDirectory(shadow_relative))
+                continue;
+
+            /// This is collision-avoidance, so the scan must observe EVERY
+            /// existing numeric `shadow/<N>`. A failure that could hide one
+            /// fails the FREEZE rather than silently producing a too-low bound
+            /// that would let the recovered counter reuse an allocated
+            /// directory. Only successfully inspected non-numeric names are
+            /// skipped.
+            for (auto it = disk->iterateDirectory(shadow_relative); it->isValid(); it->next())
+                if (auto value = numeric_dir_value(it->name()))
+                    max_existing_id = std::max(max_existing_id, *value);
+        }
+
+        /// A `FREEZE WITH NAME` whose escaped name is itself a numeric directory
+        /// creates `shadow/<N>` without consulting the counter. Fold it into the
+        /// lower bound so recovering an empty counter does not let a later
+        /// unnamed FREEZE allocate the same `<N>` and collide with the named
+        /// backup.
+        if (!with_name.empty())
+            if (auto value = numeric_dir_value(escapeForFileName(with_name)))
+                max_existing_id = std::max(max_existing_id, *value);
+
+        return max_existing_id;
+    };
+
+    auto increment = Increment(fs::path(default_shadow_path) / "increment.txt")
+        .get(/*create_if_need=*/ true, /*min_initial_value=*/ 0, max_existing_id_provider);
 
     const String shadow_path = "shadow/";
 
