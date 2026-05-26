@@ -1,4 +1,6 @@
 #include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MutateTask.h>
 
@@ -126,8 +128,12 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
                 return true;
         }
 
-        for (const auto & [column_name, _] : command.column_to_update_expression)
+        auto alter = command.ast();
+        if (!alter || !alter->update_assignments)
+            continue;
+        for (const auto & child : alter->update_assignments->children)
         {
+            const auto & column_name = child->as<ASTAssignment &>().column_name;
             auto column = data_part->tryGetColumn(column_name);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
@@ -241,8 +247,11 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
-                for (const auto & [column_name, expr] : command.column_to_update_expression)
-                    mutated_columns.emplace(column_name);
+                if (auto alter = command.ast(); alter && alter->update_assignments)
+                {
+                    for (const auto & child : alter->update_assignments->children)
+                        mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
+                }
 
                 if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
                 {
@@ -533,10 +542,13 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
 
     if (command.type == MutationCommand::UPDATE)
     {
-        return std::ranges::find_if(command.column_to_update_expression, [](const auto & pair)
+        auto alter = command.ast();
+        if (!alter || !alter->update_assignments)
+            return false;
+        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
         {
-            return pair.first == RowExistsColumn::name;
-        }) != command.column_to_update_expression.end();
+            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
+        });
     }
 
     return false;
@@ -2604,9 +2616,9 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (command.partition)
+    if (auto alter = command.ast(); alter && alter->partition)
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
+        auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
