@@ -530,6 +530,7 @@ void MergeTreeData::loadColumnIdMappingFromDisk()
         if (auto buf = disk->readFileIfExists(column_ids_path, getReadSettings()))
         {
             setColumnIdMapping(ColumnIdMapping::deserialize(*buf));
+            skipWhitespaceIfAny(*buf);
             assertEOF(*buf);
             return;
         }
@@ -547,21 +548,43 @@ void MergeTreeData::writeColumnIdMappingToDisk() const
 void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const
 {
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
+    const auto column_ids_tmp_path = fs::path(relative_data_path) / (String(COLUMN_IDS_FILE_NAME) + ".tmp");
 
     for (const auto & disk : getStoragePolicy()->getDisks())
     {
         if (disk->isBroken())
             continue;
 
-        if (!disk->isReadOnly() && !disk->isWriteOnce())
+        if (disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+
+        /// Two-step atomic publish: write to <name>.tmp, fsync, then replace.
+        /// Crash between the two leaves either the previous file intact or only
+        /// the .tmp behind; readers never see a torn final file.
+        try
         {
-            auto buf = disk->writeFile(column_ids_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
-            mapping.serialize(*buf);
-            buf->finalize();
-            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-                buf->sync();
-            return;
+            {
+                auto buf = disk->writeFile(column_ids_tmp_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
+                mapping.serialize(*buf);
+                buf->finalize();
+                if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+                    buf->sync();
+            }
+            disk->replaceFile(column_ids_tmp_path, column_ids_path);
         }
+        catch (...)
+        {
+            try
+            {
+                disk->removeFileIfExists(column_ids_tmp_path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+            throw;
+        }
+        return;
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write `{}` for table {}", COLUMN_IDS_FILE_NAME, getStorageID().getNameForLogs());
