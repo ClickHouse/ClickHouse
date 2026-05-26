@@ -204,6 +204,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
     format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
+    format_settings.max_text_string_size = settings[Setting::output_format_text_max_string_size];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
     format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];
 

@@ -31,6 +31,19 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+namespace
+{
+
+std::string_view truncateTextOutputString(std::string_view value, const FormatSettings & settings)
+{
+    if (!settings.max_text_string_size || value.size() <= settings.max_text_string_size)
+        return value;
+
+    return value.substr(0, settings.max_text_string_size);
+}
+
+}
+
 UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
 {
     SipHash hash;
@@ -386,15 +399,15 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
-void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeString(truncateTextOutputString(assert_cast<const ColumnString &>(column).getDataAt(row_num), settings), ostr);
 }
 
 
-void SerializationString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeEscapedString(truncateTextOutputString(assert_cast<const ColumnString &>(column).getDataAt(row_num), settings), ostr);
 }
 
 
@@ -464,10 +477,11 @@ bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer
 
 void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    auto value = truncateTextOutputString(assert_cast<const ColumnString &>(column).getDataAt(row_num), settings);
     if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+        writeQuotedStringPostgreSQL(value, ostr);
     else
-        writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+        writeQuotedString(value, ostr);
 }
 
 
@@ -484,7 +498,7 @@ bool SerializationString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer 
 
 void SerializationString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
+    writeJSONString(truncateTextOutputString(assert_cast<const ColumnString &>(column).getDataAt(row_num), settings), ostr, settings);
 }
 
 
@@ -578,15 +592,15 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 }
 
 
-void SerializationString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeXMLStringForTextElement(truncateTextOutputString(assert_cast<const ColumnString &>(column).getDataAt(row_num), settings), ostr);
 }
 
 
-void SerializationString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeCSVString<>(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeCSVString<>(truncateTextOutputString(assert_cast<const ColumnString &>(column).getDataAt(row_num), settings), ostr);
 }
 
 
@@ -603,8 +617,9 @@ bool SerializationString::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
 void SerializationString::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
+    auto value = truncateTextOutputString(assert_cast<const ColumnString &>(column).getDataAt(row_num), settings);
     if (settings.markdown.escape_special_characters)
-        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+        writeMarkdownEscapedString(value, ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);
 }
