@@ -168,8 +168,10 @@ void WriteTransaction::create()
             engine.get()),
         "with_engine_info");
 
-    write_context = ffi::get_write_context(transaction.get());
-    write_schema = DeltaLake::getWriteSchema(write_context.get());
+    write_context = DeltaLake::KernelUtils::unwrapResult(
+        ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
+        "get_unpartitioned_write_context");
+    write_schema = DeltaLake::getWriteSchema(write_context.get(), engine.get());
 
     auto * write_path_raw = static_cast<std::string *>(
         ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
@@ -255,7 +257,11 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
-    auto version = DeltaLake::KernelUtils::unwrapResult(ffi::commit(transaction.release(), engine.get()), "commit");
+    ffi::ExclusiveCommittedTransaction * committed = DeltaLake::KernelUtils::unwrapResult(
+        ffi::commit(transaction.release(), engine.get()),
+        "commit");
+    auto version = ffi::committed_transaction_version(&committed);
+    ffi::free_committed_transaction(committed);
 
     LOG_TEST(log, "Commit version: {}", version);
 }

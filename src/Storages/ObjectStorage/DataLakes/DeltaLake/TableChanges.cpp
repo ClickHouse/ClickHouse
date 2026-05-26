@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 
 #if USE_DELTA_KERNEL_RS
+#include <base/scope_guard.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
@@ -76,8 +77,10 @@ DB::NamesAndTypesList TableChanges::getSchemaUnlocked() const
         return schema.value();
 
     using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
-    KernelSharedSchema kernel_schema(ffi::table_changes_schema(getTableChanges().get()));
-    schema = convertToClickHouseSchema(kernel_schema.get());
+    /// getTableChanges() also lazily builds the engine, so it must run before we read engine.
+    auto * tc = getTableChanges().get();
+    KernelSharedSchema kernel_schema(ffi::table_changes_schema(tc));
+    schema = convertToClickHouseSchema(kernel_schema.get(), engine.get());
 
     LOG_TRACE(log, "Table schema: {}, source header: {}", schema->toString(), header.dumpNames());
     return schema.value();
@@ -150,16 +153,22 @@ DB::Chunk TableChanges::next()
 {
     std::lock_guard lock(mutex);
 
-    ffi::ArrowFFIData ffi_arrow_data = KernelUtils::unwrapResult(
+    ffi::ArrowFFIData * ffi_arrow_data = KernelUtils::unwrapResult(
         ffi::scan_table_changes_next(getTableChangesScanIterator().get()),
         "scan_table_changes_next");
 
-    if (ffi_arrow_data.array.length == 0)
+    if (!ffi_arrow_data || ffi_arrow_data->array.length == 0)
+    {
+        if (ffi_arrow_data)
+            ffi::free_arrow_ffi_data(ffi_arrow_data);
         return {};
+    }
+
+    SCOPE_EXIT({ ffi::free_arrow_ffi_data(ffi_arrow_data); });
 
     auto record_batch = arrow::ImportRecordBatch(
-        reinterpret_cast<ArrowArray *>(&ffi_arrow_data.array),
-        reinterpret_cast<ArrowSchema *>(&ffi_arrow_data.schema));
+        reinterpret_cast<ArrowArray *>(&ffi_arrow_data->array),
+        reinterpret_cast<ArrowSchema *>(&ffi_arrow_data->schema));
 
     if (!record_batch.ok())
     {

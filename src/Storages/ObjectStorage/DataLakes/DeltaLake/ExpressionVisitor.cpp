@@ -501,6 +501,8 @@ private:
         MULTIPLY,
         DIVIDE,
         TO_JSON,
+        PARSE_JSON,
+        MAP_TO_STRUCT,
         COALESCE,
     };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
@@ -530,6 +532,8 @@ private:
             .visit_not = &visitFunction<DB::FunctionNot>,
             .visit_is_null = &visitFunction<DB::FunctionIsNull>,
             .visit_to_json = &throwNotImplemented<TO_JSON>,
+            .visit_parse_json = &throwNotImplementedParseJson,
+            .visit_map_to_struct = &throwNotImplemented<MAP_TO_STRUCT>,
             .visit_lt = &throwNotImplemented<LT>,
             .visit_gt = &throwNotImplemented<GT>,
             .visit_eq = &throwNotImplemented<EQ>,
@@ -587,6 +591,25 @@ private:
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Method {} not implemented", magic_enum::enum_name(method));
+        });
+    }
+
+    static void throwNotImplementedParseJson(
+        void * data,
+        uintptr_t sibling_list_id,
+        uintptr_t child_list_id,
+        ffi::SharedSchema * output_schema)
+    {
+        UNUSED(sibling_list_id);
+        UNUSED(child_list_id);
+        ffi::free_schema(output_schema);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method ParseJson not implemented");
         });
     }
 
@@ -819,7 +842,12 @@ private:
         });
     }
 
-    static void visitNullLiteral(void * data, uintptr_t sibling_list_id)
+    static void visitNullLiteral(
+        void * data,
+        uintptr_t sibling_list_id,
+        uint8_t /* type_tag */,
+        uint8_t /* precision */,
+        uint8_t /* scale */)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()

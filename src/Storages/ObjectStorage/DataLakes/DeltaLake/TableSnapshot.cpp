@@ -428,7 +428,14 @@ public:
         void * engine_context,
         ffi::SharedScanMetadata * scan_metadata)
     {
-        ffi::visit_scan_metadata(scan_metadata, engine_context, Iterator::scanCallback);
+        auto * iter = static_cast<Iterator *>(engine_context);
+        KernelUtils::unwrapResult(
+            ffi::visit_scan_metadata(
+                scan_metadata,
+                iter->kernel_snapshot_state->engine.get(),
+                engine_context,
+                Iterator::scanCallback),
+            "visit_scan_metadata");
         ffi::free_scan_metadata(scan_metadata);
     }
 
@@ -644,6 +651,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
     struct StatsVisitor
     {
+        ffi::SharedExternEngine * engine = nullptr;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -680,12 +688,20 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
         static void visitData(void * engine_context, ffi::SharedScanMetadata * scan_metadata)
         {
-            ffi::visit_scan_metadata(scan_metadata, engine_context, StatsVisitor::visit);
+            auto * visitor = static_cast<StatsVisitor *>(engine_context);
+            KernelUtils::unwrapResult(
+                ffi::visit_scan_metadata(
+                    scan_metadata,
+                    visitor->engine,
+                    engine_context,
+                    StatsVisitor::visit),
+                "visit_scan_metadata");
             ffi::free_scan_metadata(scan_metadata);
         }
     };
 
     StatsVisitor visitor;
+    visitor.engine = state->engine.get();
 
     while (true)
     {
@@ -752,23 +768,18 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
 {
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+
+    ffi::MutableFfiSnapshotBuilder * snapshot_builder = KernelUtils::unwrapResult(
+        ffi::get_snapshot_builder(
+            KernelUtils::toDeltaString(helper_.getTableLocation()),
+            engine.get()),
+        "get_snapshot_builder");
     if (snapshot_version_.has_value())
-    {
-        snapshot = KernelUtils::unwrapResult(
-            ffi::snapshot_at_version(
-                KernelUtils::toDeltaString(helper_.getTableLocation()),
-                engine.get(),
-                snapshot_version_.value()),
-            "snapshot");
-    }
-    else
-    {
-        snapshot = KernelUtils::unwrapResult(
-            ffi::snapshot(
-                KernelUtils::toDeltaString(helper_.getTableLocation()),
-                engine.get()),
-            "snapshot");
-    }
+        ffi::snapshot_builder_set_version(&snapshot_builder, snapshot_version_.value());
+    snapshot = KernelUtils::unwrapResult(
+        ffi::snapshot_builder_build(snapshot_builder),
+        "snapshot_builder_build");
+
     snapshot_version = ffi::version(snapshot.get());
     scan = KernelUtils::unwrapResult(
         ffi::scan(snapshot.get(), engine.get(), /* predicate */{}, /* engine_schema */nullptr),
@@ -823,12 +834,12 @@ void TableSnapshot::initOrUpdateSchemaIfChanged() const
     if (!schema.has_value())
     {
         auto state = getKernelSnapshotState();
-        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get());
+        auto [table_schema, physical_names_map] = getTableSchemaFromSnapshot(state->snapshot.get(), state->engine.get());
 
         if (table_schema.empty())
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
 
-        auto read_schema = getReadSchemaFromSnapshot(state->scan.get());
+        auto read_schema = getReadSchemaFromSnapshot(state->scan.get(), state->engine.get());
         auto partition_columns = getPartitionColumnsFromSnapshot(state->snapshot.get());
 
         LOG_TRACE(

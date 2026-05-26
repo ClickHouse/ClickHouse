@@ -89,6 +89,10 @@ public:
     SchemaResult getSchemaResult();
     const DB::Names & getPartitionColumns() const { return partition_columns; }
 
+    /// Engine handle required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
+    /// Public so the free top-level helpers (getTableSchemaFromSnapshot etc.) can set it.
+    ffi::SharedExternEngine * engine = nullptr;
+
 private:
     struct Field;
     DB::NamesAndTypesList getNamesAndTypesFromList(
@@ -241,12 +245,17 @@ private:
         return id;
     }
 
-    static std::unique_ptr<std::string> extractPhysicalName(const ffi::CStringMap * metadata)
+    static std::unique_ptr<std::string> extractPhysicalName(
+        const ffi::CStringMap * metadata,
+        SchemaVisitorData * state)
     {
-        std::string * physical_name = static_cast<std::string *>(ffi::get_from_string_map(
-            metadata,
-            KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
-            KernelUtils::allocateString));
+        std::string * physical_name = static_cast<std::string *>(KernelUtils::unwrapResult(
+            ffi::get_from_string_map(
+                metadata,
+                KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
+                KernelUtils::allocateString,
+                state->engine),
+            "get_from_string_map"));
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
@@ -268,7 +277,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -301,7 +310,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -367,7 +376,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -501,24 +510,28 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
     return names_and_types;
 }
 
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
+    ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data;
+    data.engine = engine;
     SchemaVisitor::visitTableSchema(snapshot, data);
     auto result = data.getSchemaResult();
     return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data;
+    data.engine = engine;
     SchemaVisitor::visitReadSchema(scan, data);
     return data.getSchemaResult().names_and_types;
 }
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context)
+DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data;
+    data.engine = engine;
     SchemaVisitor::visitWriteSchema(write_context, data);
     return data.getSchemaResult().names_and_types;
 }
@@ -530,9 +543,10 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
     return data.getPartitionColumns();
 }
 
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema)
+DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data;
+    data.engine = engine;
     SchemaVisitor::visitSchema(schema, data);
     return data.getSchemaResult().names_and_types;
 }
