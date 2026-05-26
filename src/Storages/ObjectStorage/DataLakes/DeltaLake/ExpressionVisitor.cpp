@@ -609,7 +609,7 @@ private:
         {
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Method ParseJson not implemented");
+                "Method parsejson not implemented");
         });
     }
 
