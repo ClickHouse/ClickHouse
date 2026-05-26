@@ -164,7 +164,7 @@ def test_drop_table_with_detached_flag(start_cluster):
     )
 
 
-def test_drop_replicated_table(start_cluster):
+def test_drop_detached_on_cluster(start_cluster):
     objects_before = list_objects(cluster, "data/")
     table_name = "test_replicated_table"
 
@@ -186,34 +186,71 @@ def test_drop_replicated_table(start_cluster):
         f"/clickhouse/tables/shard1/{table_name}/replicas/{replica2.name}"
     )
 
-    exists_replica = check_exists(
-        zk,
-        zk_path_replica1_node,
+    assert (
+        "1"
+        == replica1.query(
+            f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+        ).rstrip()
     )
+    assert (
+        "1"
+        == replica2.query(
+            f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+        ).rstrip()
+    )
+
+    exists_replica = check_exists(zk, zk_path_replica1_node)
+    assert exists_replica != None
+    exists_replica = check_exists(zk, zk_path_replica2_node)
     assert exists_replica != None
 
     replica1.query(
-        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC;"
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} ON CLUSTER test_cluster SYNC;"
     )
 
     check_no_table_in_detached_table(node=replica1, table_name=table_name)
-    assert_zk_node_not_exists(zk, zk_path_replica1_node)
-
-    exists_replica = check_exists(
-        zk,
-        zk_path_replica2_node,
-    )
-    assert exists_replica != None
-
-    replica2.query(
-        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC;"
-    )
-
     check_no_table_in_detached_table(node=replica2, table_name=table_name)
+    assert_zk_node_not_exists(zk, zk_path_replica1_node)
     assert_zk_node_not_exists(zk, zk_path_replica2_node)
 
     objects_after = list_objects(cluster, "data/")
     assert len(objects_before) == len(objects_after)
+
+
+def test_drop_detached_in_replicated_database(start_cluster):
+    table_name = "test_replicated_db_table"
+
+    replica1.query(
+        "CREATE DATABASE test_r ENGINE=Replicated('/clickhouse/test_r', 'r1')"
+    )
+    replica2.query(
+        "CREATE DATABASE test_r ENGINE=Replicated('/clickhouse/test_r', 'r2')"
+    )
+
+    replica1.query(
+        f"CREATE TABLE test_r.{table_name} (key UInt64) ENGINE=MergeTree ORDER BY key"
+    )
+    replica1.query(
+        f"INSERT INTO test_r.{table_name} SELECT number FROM system.numbers LIMIT 10"
+    )
+
+    replica1.query(f"DETACH TABLE test_r.{table_name} PERMANENTLY")
+
+    assert (
+        "1"
+        == replica1.query(
+            f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+        ).rstrip()
+    )
+
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE test_r.{table_name} SYNC"
+    )
+
+    check_no_table_in_detached_table(node=replica1, table_name=table_name)
+    check_no_table_in_detached_table(node=replica2, table_name=table_name)
+
+    replica1.query("DROP DATABASE test_r SYNC")
 
 
 def test_drop_s3_table(start_cluster):
@@ -287,9 +324,38 @@ def test_invalid_syntax_corner_cases(start_cluster):
     do_query(f"TRUNCATE DETACHED TABLE {table_name}")
     do_query(f"DROP DETACHED TABLE IF EMPTY {table_name}")
     do_query(f"DROP DETACHED VIEW {table_name}")
+    do_query(f"DROP DETACHED DICTIONARY {table_name}")
     do_query(f"DROP DETACHED TABLE TEMPORARY {table_name}")
 
     replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_drop_detached_access_control(start_cluster):
+    """Test DROP DETACHED TABLE with access control"""
+    table_name = "test_access_table"
+
+    create_table(replica1, table_name)
+    replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
+
+    replica1.query("CREATE USER IF NOT EXISTS test_user")
+    replica1.query("GRANT SELECT ON test_db.* TO test_user")
+
+    try:
+        replica1.query(
+            f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC",
+            user="test_user",
+        )
+        assert False, "Expected permission denied error"
+    except Exception as e:
+        assert (
+            "permission" in str(e).lower() or "access" in str(e).lower()
+        ), f"Expected permission error, got: {e}"
+
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name} SYNC"
+    )
+
+    replica1.query("DROP USER IF EXISTS test_user")
 
 
 def test_if_exists_behaviour(start_cluster):

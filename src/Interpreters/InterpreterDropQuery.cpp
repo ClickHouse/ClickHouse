@@ -1,34 +1,35 @@
 #include <Access/Common/AccessRightsElement.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/TablesDependencyGraph.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
-#include <IO/SharedThreadPools.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <base/UUID.h>
 #include <Common/Exception.h>
-#include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
-#include <Common/likePatternToRegexp.h>
 #include <Common/FailPoint.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/escapeForFileName.h>
+#include <Common/likePatternToRegexp.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
 
@@ -205,7 +206,25 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 ErrorCodes::UNKNOWN_TABLE, "Table {} must be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
         }
 
+        auto new_query_ptr = query.clone();
+        if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
+        {
+            DDLQueryOnClusterParams params;
+            params.access_to_check = getRequiredAccessForDDLOnCluster();
+            return executeDDLQueryOnCluster(new_query_ptr, getContext(), params);
+        }
+        if (database->shouldReplicateQuery(getContext(), current_query_ptr))
+        {
+            ddl_guard->releaseTableLock();
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
+        }
+
         database->dropDetachedTable(context_, table_name, query.sync);
+        
+        if (query.sync)
+        {
+            uuid_to_wait = database->tryGetTableUUID(table_id.table_name);
+        }
         return {};
     }
 
