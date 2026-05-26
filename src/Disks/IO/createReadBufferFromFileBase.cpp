@@ -9,11 +9,8 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
-#include <Common/ErrnoException.h>
 #include <Interpreters/Context.h>
 #include "config.h"
-
 
 namespace ProfileEvents
 {
@@ -39,7 +36,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size,
     int flags,
-    char * existing_memory)
+    char * existing_memory,
+    size_t alignment)
 {
     if (file_size.has_value() && !*file_size)
         return std::make_unique<ReadBufferFromEmptyFile>();
@@ -163,8 +161,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (flags == -1)
         flags = O_RDONLY | O_CLOEXEC;
 
-    std::unique_ptr<ReadBufferFromFileBase> res;
-
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
     {
@@ -185,6 +181,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         auto align_up = [=](size_t value) { return (value + min_alignment - 1) / min_alignment * min_alignment; };
 
+        size_t buffer_alignment = alignment == 0 ? min_alignment : align_up(alignment);
         size_t buffer_size = settings.local_fs_buffer_size;
 
         if (buffer_size % min_alignment)
@@ -201,8 +198,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         /// Attempt to open a file with O_DIRECT
         try
         {
-            res = create(buffer_size, min_alignment, flags | O_DIRECT);
+            std::unique_ptr<ReadBufferFromFileBase> res = create(buffer_size, buffer_alignment, flags | O_DIRECT);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferDirectIO);
+            return res;
         }
         catch (const ErrnoException &)
         {
@@ -212,21 +210,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     }
 #endif
 
-    if (!res)
-    {
-        ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
+    ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
 
-        size_t buffer_size = settings.local_fs_buffer_size;
-        /// Check if the buffer can be smaller than default
-        if (read_hint.has_value() && *read_hint > 0 && *read_hint < buffer_size)
-            buffer_size = *read_hint;
-        if (file_size.has_value() && *file_size < buffer_size)
-            buffer_size = *file_size;
+    size_t buffer_size = settings.local_fs_buffer_size;
+    /// Check if the buffer can be smaller than default
+    if (read_hint.has_value() && *read_hint > 0 && *read_hint < buffer_size)
+        buffer_size = *read_hint;
+    if (file_size.has_value() && *file_size < buffer_size)
+        buffer_size = *file_size;
 
-        res = create(buffer_size, /*buffer_alignment*/ 0, flags);
-    }
-
-    return res;
+    return create(buffer_size, alignment, flags);
 }
 
 }
