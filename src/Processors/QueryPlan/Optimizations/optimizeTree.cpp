@@ -391,6 +391,18 @@ void optimizeTreeSecondPass(
                 pushLimitByIntoSort(frame_node);
         });
 
+    /// Bottom-up pass: replace `WindowStep` + `FinishSorting` with `StreamingLagTransform`
+    /// when all lagInFrame functions have offset 1 and storage ordering covers the partition prefix.
+    /// Must run after the read-in-order pass so that `SortingStep` types have been finalised.
+    if (optimization_settings.reuse_storage_ordering_for_window_functions)
+    {
+        traverseQueryPlan(stack, root, NoOp{},
+            [&](auto & frame_node)
+            {
+                optimizeStreamingWindowFunctions(frame_node, nodes, optimization_settings);
+            });
+    }
+
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
     /// Which would cause an exception when force_use_projection is enabled.

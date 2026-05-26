@@ -26,6 +26,11 @@ public:
 
         /// Merges multiple sorted streams into a single sorted output.
         MergingSorted,
+
+        /// Merges K streams into one (by `prefix_description`) without finish-sorting.
+        /// Used when the downstream `WindowStep` runs `StreamingLagTransform`:
+        /// all rows for a given prefix-key group must arrive in a single stream.
+        MergeOnly,
     };
 
     struct Settings
@@ -114,6 +119,17 @@ public:
 
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
+    /// Convert to `MergeOnly`: merges K streams into one ordered by `merge_desc` (the full
+    /// storage ORDER BY) so that `StreamingLagTransform` downstream sees rows in
+    /// the correct per-partition order.
+    void convertToMergeOnly(SortDescription merge_desc)
+    {
+        type = Type::MergeOnly;
+        merge_sort_description = std::move(merge_desc);
+    }
+
+    const SortDescription & getPrefixDescription() const { return prefix_description; }
+
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
@@ -167,6 +183,11 @@ private:
 
     SortDescription prefix_description;
     const SortDescription result_description;
+
+    /// Non-empty only when `type == Type::MergeOnly`. The sort description used for
+    /// `mergingSorted` — typically the full storage ORDER BY, which is a superset of
+    /// `prefix_description` and guarantees correct per-partition ordering downstream.
+    SortDescription merge_sort_description;
 
     SortDescription partition_by_description;
 

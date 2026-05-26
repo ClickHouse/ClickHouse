@@ -604,6 +604,16 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
+    if (type == Type::MergeOnly)
+    {
+        /// Merge K input streams into one ordered stream.  The downstream `WindowStep`
+        /// runs `StreamingLagTransform` which requires all rows for a given prefix-key
+        /// group to arrive in a single stream, sorted by the full storage ORDER BY so that
+        /// per-partition ORDER BY is respected within each prefix group.
+        mergingSorted(pipeline, merge_sort_description, /*limit_=*/0);
+        return;
+    }
+
     fullSort(pipeline, result_description, limit);
     if (dataflow_cache_updater)
         pipeline.addSimpleTransform([&](const SharedHeader & header)

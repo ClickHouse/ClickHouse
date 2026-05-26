@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/StreamingLagTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -60,9 +61,51 @@ WindowStep::WindowStep(
 
 }
 
+void WindowStep::enableStreamingMode(
+    SortDescription prefix_description_,
+    std::vector<std::string> suffix_partition_col_names_,
+    std::vector<std::string> value_col_names_,
+    std::vector<std::optional<Field>> default_values)
+{
+    streaming_mode_ = true;
+    streaming_prefix_description_ = std::move(prefix_description_);
+    streaming_suffix_partition_col_names_ = std::move(suffix_partition_col_names_);
+    streaming_value_col_names_ = std::move(value_col_names_);
+    streaming_default_values_ = std::move(default_values);
+}
+
 void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto num_threads = pipeline.getNumThreads();
+
+    if (streaming_mode_)
+    {
+        /// Build output column names for all window functions.
+        std::vector<std::string> output_col_names;
+        output_col_names.reserve(window_functions.size());
+        for (const auto & func : window_functions)
+            output_col_names.push_back(func.column_name);
+
+        /// Add placeholder output columns with correct types to the pipeline header,
+        /// then let `StreamingLagTransform` fill them in per-block.
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & /*header*/) -> ProcessorPtr
+            {
+                Block out_header = addWindowFunctionResultColumns(*input_headers.front(), window_functions);
+                return std::make_shared<StreamingLagTransform>(
+                    input_headers.front(),
+                    std::make_shared<const Block>(std::move(out_header)),
+                    streaming_prefix_description_,
+                    streaming_suffix_partition_col_names_,
+                    streaming_value_col_names_,
+                    output_col_names,
+                    streaming_default_values_);
+            });
+
+        assertBlocksHaveEqualStructure(pipeline.getHeader(), *output_header,
+            "WindowStep streaming transform for '" + window_description.window_name + "'");
+        return;
+    }
 
     // This resize is needed for cases such as `over ()` when we don't have a
     // sort node, and the input might have multiple streams. The sort node would
