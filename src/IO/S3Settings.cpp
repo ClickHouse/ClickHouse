@@ -113,6 +113,9 @@ void S3Settings::copyCredentialsFrom(const S3Settings & settings)
     auth_settings[S3AuthSetting::google_adc_client_id] = settings.auth_settings[S3AuthSetting::google_adc_client_id];
     auth_settings[S3AuthSetting::google_adc_client_secret] = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
     auth_settings[S3AuthSetting::google_adc_refresh_token] = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
+    auth_settings.headers = settings.auth_settings.headers;
+    auth_settings.access_headers = settings.auth_settings.access_headers;
+    auth_settings.server_side_encryption_kms_config = settings.auth_settings.server_side_encryption_kms_config;
 }
 
 
