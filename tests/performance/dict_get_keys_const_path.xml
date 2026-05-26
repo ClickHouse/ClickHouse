@@ -14,7 +14,8 @@
         CREATE TABLE dict_src_const_path
         (
             id UInt64,
-            value  UInt32
+            value     UInt32,
+            value_str String
         )
         ENGINE = MergeTree
         ORDER BY id;
@@ -24,7 +25,8 @@
         INSERT INTO dict_src_const_path
         SELECT
             number AS id,
-            (number % 10000) AS value
+            (number % 10000) AS value,
+            concat('value_', toString(number % 10000)) AS value_str
         FROM numbers(10000000);
     </create_query>
 
@@ -32,7 +34,8 @@
         CREATE DICTIONARY dict_const_path
         (
             id UInt64,
-            value  UInt32
+            value     UInt32,
+            value_str String
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(TABLE 'dict_src_const_path'))
@@ -48,6 +51,17 @@
         SELECT groupArray(id)
         FROM dict_src_const_path
         WHERE dictGetUInt32('dict_const_path', 'value', id) = 1
+        FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT dictGetKeys('dict_const_path', 'value_str', 'value_1') FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT groupArray(id)
+        FROM dict_src_const_path
+        WHERE dictGetString('dict_const_path', 'value_str', id) = 'value_1'
         FORMAT NULL;
     </query>
 
