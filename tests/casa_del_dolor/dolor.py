@@ -504,8 +504,9 @@ for i in range(0, len(args.replica_values)):
 server_versions = {}
 for server in servers:
     server_versions[server.name] = first_server
-# Connection timeout should be greater than start timeout (300 sec at the moment) to avoid connection issues when server is starting
-cluster.start(300)
+start_timeout = 300
+os.environ["KEEPER_CONNECT_TIMEOUT_SEC"] = str(start_timeout)
+cluster.start(start_timeout)
 logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
