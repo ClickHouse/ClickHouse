@@ -1110,6 +1110,26 @@ bool FileCache::doTryReserve(
     size_t /* lock_wait_timeout_milliseconds */,
     std::string & failure_reason)
 {
+    /// Ensure the on-disk directory for this key exists before we mutate
+    /// any reservation state. `createBaseDirectory` is idempotent
+    /// (`created_base_directory.load()` short-circuits after the first
+    /// success), so calling it early is cheap. Doing it AT THE END — as
+    /// the function originally did — would leave the segment in an
+    /// inconsistent `EMPTY + queue_iterator` state when the create fails:
+    /// `setQueueIterator` and `reserved_size += size` have already run, and
+    /// the false-return path doesn't roll them back. The next holder
+    /// destructor calling `complete()` then trips
+    /// `assertCorrectnessUnlocked`'s `chassert(!queue_iterator)` under
+    /// `State::EMPTY` (because `downloaded_size == 0` → state transitions
+    /// back to EMPTY but `queue_iterator` survives). TSAN catches it; the
+    /// chassert is compiled out of release builds and the inconsistent
+    /// state remains latent.
+    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    {
+        failure_reason = "not enough space on device";
+        return false;
+    }
+
     auto main_priority_iterator = file_segment.getQueueIterator();
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// A file_segment_metadata acquires a priority iterator
@@ -1267,11 +1287,9 @@ bool FileCache::doTryReserve(
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
-    {
-        failure_reason = "not enough space on device";
-        return false;
-    }
+    /// `createBaseDirectory` is now checked at the top of this function — by
+    /// the time we get here, the directory is guaranteed to exist (or we
+    /// returned false before mutating any reservation state).
 
     return true;
 }
