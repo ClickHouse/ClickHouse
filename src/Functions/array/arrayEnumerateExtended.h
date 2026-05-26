@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TYPE_MISMATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -52,7 +53,7 @@ public:
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[i]).get());
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
                                 "All arguments for function {} must be arrays but argument {} has type {}.",
                                 getName(), i + 1, arguments[i]->getName());
         }

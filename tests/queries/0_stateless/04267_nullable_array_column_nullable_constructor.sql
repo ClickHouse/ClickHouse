@@ -9,7 +9,7 @@ FORMAT Null;
 SELECT throwIf(length(CAST([1, 2, 3], 'Nullable(Array(UInt8))')) != 3)
 FORMAT Null;
 
-SELECT throwIf(isNull(length(CAST(NULL AS Nullable(Array(UInt8))))))
+SELECT throwIf(NOT isNull(length(CAST(NULL AS Nullable(Array(UInt8))))))
 FORMAT Null;
 
 SELECT throwIf(arrayPopBack(CAST([1, 2, 3], 'Nullable(Array(UInt8))')) != [1, 2])

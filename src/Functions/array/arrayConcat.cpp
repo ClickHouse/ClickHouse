@@ -26,16 +26,34 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
     if (arguments.empty())
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
+    DataTypes array_arguments;
+    array_arguments.reserve(arguments.size());
+    bool has_null_constant = false;
+
     for (auto i : collections::range(0, arguments.size()))
     {
+        if (arguments[i]->onlyNull())
+        {
+            has_null_constant = true;
+            continue;
+        }
+
         const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(arguments[i]).get());
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Argument {} for function {} must be an array but it has type {}.",
                             i, getName(), arguments[i]->getName());
+
+        array_arguments.push_back(arguments[i]);
     }
 
-    return getLeastSupertype(arguments);
+    if (array_arguments.empty())
+        return getLeastSupertype(arguments);
+
+    auto result_type = getLeastSupertype(array_arguments);
+    if (has_null_constant)
+        return makeNullable(result_type);
+    return result_type;
 }
 
 ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
