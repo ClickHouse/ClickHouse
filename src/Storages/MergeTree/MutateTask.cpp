@@ -1329,7 +1329,7 @@ void finalizeMutatedPart(
     {
         /// Write a file with a description of columns.
         auto out_columns = new_data_part->getDataPartStorage().writeFile("columns.txt", 4096, context->getWriteSettings());
-        new_data_part->getColumns().writeText(*out_columns);
+        new_data_part->getColumns().writeText(*out_columns, /*use_column_ids=*/true);
         written_files.push_back(std::move(out_columns));
     }
 
