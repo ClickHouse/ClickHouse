@@ -269,3 +269,53 @@ TEST(SimpleMergeSelector, SmallPartsMinCountReducesWriteAmplification)
     EXPECT_LE(with_small.num_merges, baseline.num_merges)
         << "Small parts restriction should reduce or maintain merge count";
 }
+
+
+/// Regression test: right-tail trimming must not bypass small_parts_min_count.
+///
+/// The `enable_heuristic_to_remove_small_parts_at_right` heuristic in `Estimator::consider`
+/// trims small parts from the right end of a candidate range. Without an explicit re-check,
+/// a candidate that passes `allow` with size == small_parts_min_count can be shortened to a
+/// merge of fewer parts, violating the user's batching contract.
+///
+/// Scenario: one larger fresh small part on the left followed by a tail of tiny fresh parts.
+/// `allow` accepts the full range because size == small_parts_min_count, but trimming would
+/// reduce it to 2-3 parts. With the fix in place, the candidate must be rejected.
+TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesRightTailTrim)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 5;
+    settings.small_parts_threshold = 10 * 1024 * 1024;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+    settings.enable_heuristic_to_remove_small_parts_at_right = true;
+
+    PartsRange parts;
+    auto add_part = [&](int64_t block, size_t size, time_t age)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", block);
+        auto info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = info,
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    };
+
+    /// 8 fresh small parts: [9 MiB, 7 x 64 KiB]. All under `small_parts_threshold` (10 MiB).
+    /// The 64 KiB tail is < 1% of the 9.4 MiB sum, so it would be trimmed.
+    add_part(0, 9 * 1024 * 1024, 1);
+    for (int64_t i = 1; i < 8; ++i)
+        add_part(i, 64 * 1024, 1);
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    /// The full range satisfies `allow` (size == min_count), but trimming would shorten it
+    /// below min_count. The fix rejects such candidates, and no other allowed range exists.
+    ASSERT_TRUE(selected.empty())
+        << "small_parts_min_count must be enforced after right-tail trimming";
+}

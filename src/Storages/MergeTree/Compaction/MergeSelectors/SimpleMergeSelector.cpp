@@ -27,7 +27,7 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t max_size, size_t max_age, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
         if (settings.enable_heuristic_to_remove_small_parts_at_right)
         {
@@ -43,6 +43,17 @@ public:
             sum_size -= size_delta;
             sum_rows -= rows_delta;
         }
+
+        /// Re-check the small-parts batching gate after trimming. The right-tail trimming
+        /// heuristic removes small parts at the right end, which can reduce the count
+        /// below `small_parts_min_count` and violate the user's batching contract.
+        /// Trimming removes only small parts and keeps the leftmost ones, so the trimmed
+        /// range's `max_size` and `max_age` cannot exceed the original ones.
+        if (settings.small_parts_min_count
+            && max_size < settings.small_parts_threshold
+            && max_age < settings.small_parts_max_age
+            && static_cast<size_t>(end - begin) < settings.small_parts_min_count)
+            return;
 
         double current_score = score(static_cast<double>(end - begin), static_cast<double>(sum_size), static_cast<double>(settings.size_fixed_cost_to_add));
 
@@ -332,6 +343,8 @@ void selectWithinPartsRange(
                     range_end,
                     sum_size,
                     sum_rows,
+                    max_size,
+                    max_age,
                     begin == 0 ? 0 : parts[begin - 1].size,
                     settings);
         }
