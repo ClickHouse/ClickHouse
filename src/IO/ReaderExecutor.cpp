@@ -313,6 +313,32 @@ void ReaderExecutor::ensurePreAcquiredSlot()
     }
 }
 
+namespace
+{
+
+/// Level → (window, block) table. Lives with the reader (the only consumer
+/// of these sizes) — the monitor itself is size-agnostic. Indexed by
+/// `static_cast<size_t>(MemoryPressureLevel)`.
+struct WindowAndBlock
+{
+    size_t window_bytes;
+    size_t block_bytes;
+};
+
+constexpr WindowAndBlock LEVEL_SIZES[memoryPressureLevelCount()] = {
+    {8ULL << 20,   1ULL << 20  },  // Normal
+    {2ULL << 20,   512ULL << 10},  // Elevated
+    {512ULL << 10, 512ULL << 10},  // High
+    {128ULL << 10, 128ULL << 10},  // Critical
+};
+
+WindowAndBlock sizesAtCurrentPressure()
+{
+    return LEVEL_SIZES[static_cast<size_t>(memoryPressureMonitor().currentLevel())];
+}
+
+}
+
 size_t ReaderExecutor::effectiveWindowSize() const
 {
     /// Live path streams one block at a time via the live buffer's next() — a
@@ -322,10 +348,10 @@ size_t ReaderExecutor::effectiveWindowSize() const
     /// Stateless path benefits from the larger batch read to amortise the
     /// HTTP setup cost of a fresh underlying buffer.
     ///
-    /// Both paths additionally clamp against the current
-    /// `MemoryPressureMonitor` window — under memory pressure the executor
-    /// shrinks per-call allocations before the server's hard limit fires.
-    const size_t pressure_window = MemoryPressureMonitor::instance().effective().window_bytes;
+    /// Both paths additionally clamp against the current memory-pressure
+    /// level — under memory pressure the executor shrinks per-call
+    /// allocations before the server's hard limit fires.
+    const size_t pressure_window = sizesAtCurrentPressure().window_bytes;
     if (live_buffer || pre_acquired_slot)
         return std::min({window_size, effectiveBlockSize(), pressure_window});
     return std::min(window_size, pressure_window);
@@ -333,7 +359,7 @@ size_t ReaderExecutor::effectiveWindowSize() const
 
 size_t ReaderExecutor::effectiveBlockSize() const
 {
-    const size_t pressure_block = MemoryPressureMonitor::instance().effective().block_bytes;
+    const size_t pressure_block = sizesAtCurrentPressure().block_bytes;
     return std::min(ROPE_BLOCK_SIZE, pressure_block);
 }
 

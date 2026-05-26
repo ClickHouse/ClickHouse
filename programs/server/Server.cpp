@@ -2506,7 +2506,7 @@ try
             global_context->getSourceBufferLimit()->setCapacity(
                 new_server_settings[ServerSetting::max_remote_read_connections]);
 
-            MemoryPressureMonitor::instance().setThresholds(
+            memoryPressureMonitor().setThresholds(
                 static_cast<uint8_t>(new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct]),
                 static_cast<uint8_t>(new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct]),
                 static_cast<uint8_t>(new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]));
