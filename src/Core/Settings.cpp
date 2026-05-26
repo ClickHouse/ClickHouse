@@ -3988,6 +3988,16 @@ Possible values:
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
+    DECLARE(Bool, enable_sharding_aggregator, false, R"(
+Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
+
+This is efficient for high-cardinality keys with evenly distributed data, but may suffer from highly skewed key distributions or queries with very few distinct keys.
+
+Possible values:
+
+- 0 — Sharded aggregation optimization is disabled.
+- 1 — Sharded aggregation optimization is enabled.
+)", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 )", 0) \
@@ -5753,6 +5763,9 @@ Enable independent aggregation of partitions on separate threads when partition 
     DECLARE(Bool, force_aggregate_partitions_independently, false, R"(
 Force the use of optimization when it is applicable, but heuristics decided not to use it
 )", 0) \
+    DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
+Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
 Maximal number of partitions in table to apply optimization
 )", 0) \
@@ -6048,6 +6061,16 @@ Possible values:
     DECLARE(Bool, query_plan_merge_filters, true, R"(
 Allow to merge filters in the query plan.
 )", 0) \
+    DECLARE(Bool, query_plan_push_limit_by_into_sort, true, R"(
+Toggles a query-plan-level optimization for `ORDER BY ... LIMIT BY` queries. When `LIMIT BY` columns are a prefix of the `ORDER BY` clause, each parallel sorted stream applies `LIMIT BY` before the streams are merged into one, reducing rows processed by the final merge and later pipeline stages. Speeds up queries where `LIMIT BY` discards a large fraction of rows.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -6075,6 +6098,12 @@ Allow to convert `JOIN` to subquery with `IN` if output columns tied to only lef
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
+)", 0) \
+    DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
+Run a second `PREWHERE` promotion pass after later query plan optimizations may have
+deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
+`JOIN`, projection rewrites). When an existing `PREWHERE` is already present, the new
+filter is `AND`-merged into it instead of staying as a separate filter step.
 )", 0) \
     DECLARE(Bool, query_plan_execute_functions_after_sorting, true, R"(
 Toggles a query-plan-level optimization which moves expressions after sorting steps.
@@ -6203,6 +6232,11 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
+Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
@@ -7936,6 +7970,18 @@ Using the text index header cache can significantly reduce latency and increase 
     DECLARE(Bool, use_text_index_postings_cache, false, R"(
 Whether to use a cache of deserialized text index posting lists.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
+    DECLARE(Bool, allow_experimental_text_index_lazy_apply, false, R"(
+If set to true, allow using the lazy posting list apply mode for text index queries.
+)", EXPERIMENTAL) \
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
+Controls how posting lists are applied during text index queries.
+'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
+'lazy' uses cursor-based on-demand decoding (requires V2 index format and allow_experimental_text_index_lazy_apply).
+)", 0) \
+    DECLARE(Float, text_index_density_threshold, 0.2f, R"(
+Density threshold for algorithm selection in lazy posting list mode.
+Below threshold: leapfrog intersection. At or above: brute-force bitmap.
 )", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.

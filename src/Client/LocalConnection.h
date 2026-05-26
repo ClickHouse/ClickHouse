@@ -8,6 +8,7 @@
 #include <Common/QueryScope.h>
 #include <future>
 #include <memory>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
