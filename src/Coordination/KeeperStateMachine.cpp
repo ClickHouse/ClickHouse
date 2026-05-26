@@ -1102,8 +1102,6 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                     }
                     else
                     {
-                        latest_snapshot_meta = snapshot->snapshot_meta;
-
                         /// Drop the cached loader before retiring snapshots; transfer
                         /// contexts keep their own loaders alive.
                         snapshot_loader_info.reset();
@@ -1120,6 +1118,8 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
                             snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(
                                 *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
                         }
+
+                        latest_snapshot_meta = snapshot->snapshot_meta;
                         cancelIfHasUnfinishedSnapshotReceive();
 
                         ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
