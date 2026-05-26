@@ -44,6 +44,7 @@ static struct InitFiu
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
     ONCE(smt_commit_write_zk_fail_before_op) \
+    ONCE(smt_restore_attach_retry) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     ONCE(smt_commit_merge_change_version_before_op) \
@@ -61,13 +62,18 @@ static struct InitFiu
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(s3_read_buffer_throw_expired_token) \
+    ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_cancel_in_generate) \
+    ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(cache_filesystem_failure) \
+    REGULAR(file_segment_range_writer_partial_write_then_network_error) \
+    REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     ONCE(distributed_cache_simulate_stale_connection) \
@@ -83,14 +89,17 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
@@ -151,6 +160,7 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
+    REGULAR(merge_tree_load_statistics_throw) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(smt_merge_selecting_task_reach_memory_limit) \
@@ -163,6 +173,7 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
+    REGULAR(smt_part_update_duplicated_part) \
     REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
@@ -171,7 +182,10 @@ static struct InitFiu
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
-    REGULAR(wide_part_writer_fail_in_add_streams)
+    REGULAR(wide_part_writer_fail_in_add_streams) \
+    REGULAR(compact_part_writer_fail_in_add_streams) \
+    REGULAR(transaction_force_unknown_state_after_commit) \
+    PAUSEABLE(transaction_after_commit_pause)
 
 namespace FailPoints
 {
@@ -193,9 +207,6 @@ struct FailPointChannel
     /// Condition variable for target threads to wait for resume notification
     std::condition_variable resume_cv;
 
-    /// Number of threads currently paused at this failpoint
-    size_t pause_count = 0;
-
     /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
     /// Threads record the epoch when they start waiting, and only wake up
     /// if the current epoch is greater than their recorded epoch.
@@ -215,6 +226,11 @@ struct FailPointChannel
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 {
     fiu_do_on(fail_point_name.c_str(), FailPointInjection::notifyPauseAndWaitForResume(fail_point_name););
+}
+
+bool FailPointInjection::hasAnyFailPointBeenRegistered()
+{
+    return atomic_load_explicit(&has_any_failpoint_been_registered, memory_order_relaxed) != 0;
 }
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
@@ -286,7 +302,6 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     size_t my_resume_epoch = channel->resume_epoch;
 
     /// Signal that a thread has reached and paused at this failpoint
-    ++channel->pause_count;
     ++channel->pause_epoch;
     channel->pause_cv.notify_all();
 
@@ -294,9 +309,6 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     channel->resume_cv.wait(lock, [&] {
         return channel->resume_epoch > my_resume_epoch;
     });
-
-    --channel->pause_count;
-
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -309,9 +321,6 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     auto channel = iter->second;
 
     /// Wait until a thread has paused at this failpoint after the most recent resume.
-    /// Using pause_epoch > resume_epoch instead of pause_count > 0 avoids a race:
-    /// after NOTIFY, the task thread may not have decremented pause_count yet,
-    /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
         return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });
@@ -337,12 +346,12 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 {
     std::vector<FailPointInfo> result;
 
-#define SUB_M(NAME, TP)                                 \
-    result.push_back(                                   \
-        FailPointInfo{                                  \
-            .name = FailPoints::NAME,                   \
-            .type = FailPointType::TP,                  \
-            .enabled = fiu_fail(FailPoints::NAME) != 0, \
+#define SUB_M(NAME, TP)                                   \
+    result.push_back(                                     \
+        FailPointInfo{                                    \
+            .name = FailPoints::NAME,                     \
+            .type = FailPointType::TP,                    \
+            .enabled = fiu_status(FailPoints::NAME) != 0, \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)
@@ -362,6 +371,11 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 void FailPointInjection::pauseFailPoint(const String &)
 {
+}
+
+bool FailPointInjection::hasAnyFailPointBeenRegistered()
+{
+    return false;
 }
 
 void FailPointInjection::enableFailPoint(const String &)
