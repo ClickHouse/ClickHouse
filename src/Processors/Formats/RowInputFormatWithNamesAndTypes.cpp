@@ -112,8 +112,13 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     if (!column_names.empty())
     {
         if (format_settings.with_names_use_header)
-            column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
-        else
+        {
+            if (column_mapping->is_set)
+                column_mapping->setupByHeaderWithInputFields(column_names, getPort().getHeader());
+            else
+                column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);
+        }
+        else if (!column_mapping->is_set)
             column_mapping->setupByHeader(getPort().getHeader());
     }
     else if (!column_mapping->is_set)
