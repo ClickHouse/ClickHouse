@@ -938,7 +938,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         /// Mark table TTL as finished with zero min/max, matching what
         /// TTLDeleteAlgorithm::finalize produces in the normal all_data_dropped
-        /// path.  We keep the accumulated part_min_ttl / part_max_ttl from
+        /// path. We keep the accumulated part_min_ttl / part_max_ttl from
         /// source parts (set at line ~592) so that ttl_infos.empty() returns
         /// false and ttl.txt is written — producing the same checksums as the
         /// non-short-circuit path.
@@ -949,15 +949,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->projections_to_merge.clear();
         global_ctx->projections_to_merge_parts.clear();
 
-        /// Clear text indexes to avoid the text index stage trying to look up
-        /// build transforms that were never created (since we skip createMergedStream).
-        global_ctx->text_indexes_to_merge.clear();
-
         /// Force Horizontal algorithm. This prevents the Vertical stage from trying
         /// to finalize an empty rows_sources file, and ensures finalizePart takes
-        /// the correct code path.
+        /// the correct code path.  Reinitialize the column/index state to match the
+        /// Horizontal branch of the switch above — if chooseMergeAlgorithm picked
+        /// Vertical, merging_columns would be key-only and gathering_columns non-empty,
+        /// which would leave MergedBlockOutputStream with incomplete column metadata.
         global_ctx->chosen_merge_algorithm = MergeAlgorithm::Horizontal;
         global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
+
+        global_ctx->merging_columns = global_ctx->storage_columns;
+        global_ctx->merging_columns_expired_by_ttl = global_ctx->storage_columns_expired_by_ttl;
+        global_ctx->gathering_columns.clear();
+        global_ctx->merging_skip_indexes.clear();
+        global_ctx->skip_indexes_by_column.clear();
+        global_ctx->text_indexes_to_merge.clear();
     }
     else
     {
