@@ -96,11 +96,7 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
-=======
 void ColumnSparse::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     values->getValueNameImpl(name_buf, getValueIndex(n), options);
 }

@@ -563,33 +563,6 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-<<<<<<< HEAD
-| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | full_text |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|-----------|
-| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notequals)             | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [like](/sql-reference/functions/string-search-functions.md/#like)                                  | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notlike)                            | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
-| [match](/sql-reference/functions/string-search-functions.md/#match)                                | ✗           | ✗      | ✔          | ✔          | ✗            | ✔         |
-| [startsWith](/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
-| [endsWith](/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            | ✔         |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multisearchany)              | ✗           | ✗      | ✔          | ✗          | ✗            | ✔         |
-| [in](/sql-reference/functions/in-functions)                                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [notIn](/sql-reference/functions/in-functions)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [empty](/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [notEmpty](/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [has](/sql-reference/functions/array-functions#hasarr-elem)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
-| [hasAny](/sql-reference/functions/array-functions#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
-| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
-| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
-| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
-| hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
-| hasTokenCaseInsensitiveOrNull (*)                                                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
-=======
 | Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
 |--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
 | [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
@@ -622,7 +595,6 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
->>>>>>> origin/master
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 

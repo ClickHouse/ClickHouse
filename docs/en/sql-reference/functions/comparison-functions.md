@@ -6,11 +6,6 @@ title: 'Comparison Functions'
 doc_type: 'reference'
 ---
 
-# Comparison functions
-
-<<<<<<< HEAD
-The comparison functions below return `0` or `1` with type [UInt8](/sql-reference/data-types/int-uint). Only values within the same group can be compared (e.g. `UInt16` and `UInt64`) but not across groups (e.g. `UInt16` and `DateTime`). Comparison of numbers and strings are possible, as is comparison of strings with dates and dates with times. For tuples and arrays, the comparison is lexicographic meaning that the comparison is made for each corresponding element of the left side and right side tuple/array. 
-=======
 ## Comparison rules {#comparison-rules}
 
 The comparison functions below return `0` or `1` with type [UInt8](/sql-reference/data-types/int-uint). Only values within the same group can be 
@@ -18,7 +13,6 @@ compared (e.g. `UInt16` and `UInt64`) but not across groups (e.g. `UInt16` and `
 Comparison of numbers and strings are possible, as is comparison of strings with dates and dates with times. 
 For tuples and arrays, the comparison is lexicographic meaning that the comparison is made for each corresponding 
 element of the left side and right side tuple/array. 
->>>>>>> origin/master
 
 The following types can be compared:
 - numbers and decimals

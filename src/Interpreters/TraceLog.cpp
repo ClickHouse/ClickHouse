@@ -1,15 +1,8 @@
-<<<<<<< HEAD
-#include <base/getFQDNOrHostName.h>
-#include <base/demangle.h>
-#include <Common/DateLUTImpl.h>
-#include <Interpreters/TraceLog.h>
-=======
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
->>>>>>> origin/master
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -20,8 +13,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromArena.h>
-<<<<<<< HEAD
-=======
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/TraceLog.h>
 #include <base/demangle.h>
@@ -31,7 +22,6 @@
 #include <Common/Dwarf.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
->>>>>>> origin/master
 
 #include <filesystem>
 

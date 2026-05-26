@@ -1,10 +1,5 @@
-<<<<<<< HEAD
-#include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
-=======
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypeDynamic.h>
->>>>>>> origin/master
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
 #include <IO/Operators.h>
@@ -275,11 +270,7 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
-=======
 void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     if (options.notFull(name_buf))
         name_buf << '{';

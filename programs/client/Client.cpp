@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-#include "Client.h"
-=======
 #include <Client.h>
->>>>>>> origin/master
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -37,11 +33,7 @@
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
-<<<<<<< HEAD
-#include <Parsers/ASTAlterQuery.h>
-=======
 #include <Storages/MergeTree/MergeTreeSettings.h>
->>>>>>> origin/master
 
 #include <Poco/Util/Application.h>
 #include <Poco/URI.h>
@@ -999,11 +991,7 @@ void Client::processOptions(
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
-<<<<<<< HEAD
-    buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
-=======
     buzz_house_options_path = options.contains("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
->>>>>>> origin/master
     buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
     if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {

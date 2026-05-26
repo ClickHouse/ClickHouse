@@ -48,10 +48,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
-<<<<<<< HEAD
-    extern const SettingsUInt64 output_format_compression_level;
-=======
->>>>>>> origin/master
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
@@ -281,10 +277,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
     format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
     format_settings.pretty.fallback_to_vertical_min_columns = settings[Setting::output_format_pretty_fallback_to_vertical_min_columns];
-<<<<<<< HEAD
-=======
     format_settings.pretty.named_tuples_as_json = settings[Setting::output_format_pretty_named_tuples_as_json];
->>>>>>> origin/master
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];

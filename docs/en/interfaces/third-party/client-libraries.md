@@ -79,21 +79,12 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
 - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
 ### Elixir {#elixir}
-<<<<<<< HEAD
- - [clickhousex](https://github.com/appodeal/clickhousex/)
- - [pillar](https://github.com/sofakingworld/pillar)
- - [ecto_ch](https://github.com/plausible/ecto_ch)
- - [req_ch](https://github.com/livebook-dev/req_ch)
-### Nim {#nim}
- - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
-=======
 - [clickhousex](https://github.com/appodeal/clickhousex/)
 - [pillar](https://github.com/sofakingworld/pillar)
 - [ecto_ch](https://github.com/plausible/ecto_ch)
 - [req_ch](https://github.com/livebook-dev/req_ch)
 ### Nim {#nim}
 - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
->>>>>>> origin/master
 ### Haskell {#haskell}
 - [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 - [ClickHaskell](https://clickhaskell.dev/)

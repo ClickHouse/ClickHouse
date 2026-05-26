@@ -683,12 +683,6 @@ public:
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
-<<<<<<< HEAD
-    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
-
-    /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
-    static bool hasPrefix(const SubstreamPath & path);
-=======
     static bool isMetadataStream(const SubstreamPath & path);
 
     /// Returns true if stream with specified path corresponds to Variant subcolumn.
@@ -721,7 +715,6 @@ public:
     /// Set by pooled() or manually for non-pooled objects.
     /// Throws LOGICAL_ERROR if the hash has not been set.
     UInt128 getHash() const;
->>>>>>> origin/master
 
 protected:
     std::optional<UInt128> cached_hash;

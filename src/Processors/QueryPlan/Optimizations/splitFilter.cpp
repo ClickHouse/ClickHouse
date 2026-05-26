@@ -8,11 +8,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-<<<<<<< HEAD
-QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes);
-
-=======
->>>>>>> origin/master
 size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node->step.get());

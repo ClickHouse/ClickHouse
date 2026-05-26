@@ -200,27 +200,17 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
-<<<<<<< HEAD
-        joined_pipeline->addSimpleTransform([&](const Block & header)
-                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
-=======
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
             { return std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes); });
->>>>>>> origin/master
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
     const auto & expected_output_header = getOutputHeader();
     if (!isCompatibleHeader(pipeline_output_header, *expected_output_header))
     {
-<<<<<<< HEAD
-        assertBlocksHaveEqualStructure(pipeline_output_header, expected_output_header,
-            fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header.dumpNames()));
-=======
         assertBlocksHaveEqualStructure(pipeline_output_header, *expected_output_header,
             fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header->dumpNames()));
->>>>>>> origin/master
     }
 
     return joined_pipeline;

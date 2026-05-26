@@ -19,6 +19,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_fuzz_query_functions", 1);
     context->setSetting("allow_experimental_hash_functions", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
+    context->setSetting("allow_experimental_text_index_lazy_apply", 1);
     context->setSetting("allow_experimental_window_functions", 1);
     context->setSetting("allow_experimental_geo_types", 1);
     context->setSetting("allow_experimental_map_type", 1);
@@ -45,12 +46,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_create_index_without_type", 1);
     context->setSetting("allow_experimental_s3queue", 1);
     context->setSetting("allow_experimental_database_iceberg", 1);
-<<<<<<< HEAD
-    context->setSetting("allow_not_comparable_types_in_comparison_functions", 1);
-    context->setSetting("allow_not_comparable_types_in_order_by", 1);
-    context->setSetting("allow_experimental_database_unity_catalog", 1);
-    context->setSetting("allow_experimental_database_glue_catalog", 1);
-=======
     context->setSetting("allow_experimental_database_hms_catalog", 1);
     context->setSetting("allow_experimental_database_unity_catalog", 1);
     context->setSetting("allow_experimental_database_glue_catalog", 1);
@@ -75,7 +70,9 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
->>>>>>> origin/master
+    context->setSetting("allow_experimental_full_text_index", 1);
+
+    context->setSetting("allow_experimental_ai_functions", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);

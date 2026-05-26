@@ -66,17 +66,13 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
-<<<<<<< HEAD
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
-    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
-=======
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
->>>>>>> origin/master
+    extern const SettingsUInt64 max_bytes_before_external_join;
+    extern const SettingsDouble max_bytes_ratio_before_external_join;
 }
 
 namespace ServerSetting

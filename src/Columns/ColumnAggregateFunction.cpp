@@ -528,11 +528,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
-=======
 void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     if (options.notFull(name_buf))
     {
@@ -542,11 +538,7 @@ void ColumnAggregateFunction::getValueNameImpl(WriteBufferFromOwnString & name_b
     }
 }
 
-<<<<<<< HEAD
-StringRef ColumnAggregateFunction::getDataAt(size_t n) const
-=======
 std::string_view ColumnAggregateFunction::getDataAt(size_t n) const
->>>>>>> origin/master
 {
     return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
 }

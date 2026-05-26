@@ -25,16 +25,10 @@
 namespace DB
 {
 
-<<<<<<< HEAD
-ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_)
-    : IQueryTreeNode(children_size)
-    , constant_value(std::move(constant_value_))
-=======
     ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
     , is_deterministic(is_deterministic_)
->>>>>>> origin/master
 {
     source_expression = std::move(source_expression_);
 }
@@ -61,57 +55,6 @@ ConstantNode::ConstantNode(Field value_)
 
 String ConstantNode::getValueStringRepresentation() const
 {
-<<<<<<< HEAD
-    return applyVisitor(FieldVisitorToString(), getValue());
-}
-
-bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type)
-{
-    bool need_to_add_cast_function = false;
-    WhichDataType constant_value_type(data_type);
-
-    switch (type)
-    {
-        case Field::Types::String:
-        {
-            need_to_add_cast_function = !constant_value_type.isString();
-            break;
-        }
-        case Field::Types::UInt64:
-        case Field::Types::Int64:
-        case Field::Types::Float64:
-        {
-            WhichDataType constant_value_field_type(field_type);
-            need_to_add_cast_function = constant_value_field_type.idx != constant_value_type.idx;
-            break;
-        }
-        case Field::Types::Int128:
-        case Field::Types::UInt128:
-        case Field::Types::Int256:
-        case Field::Types::UInt256:
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-        case Field::Types::AggregateFunctionState:
-        case Field::Types::Array:
-        case Field::Types::Tuple:
-        case Field::Types::Map:
-        case Field::Types::UUID:
-        case Field::Types::Bool:
-        case Field::Types::Object:
-        case Field::Types::IPv4:
-        case Field::Types::IPv6:
-        case Field::Types::Null:
-        case Field::Types::CustomType:
-        {
-            need_to_add_cast_function = true;
-            break;
-        }
-    }
-
-    return need_to_add_cast_function;
-=======
     // Special handling for Bool literals that are stored as UInt64 internally
     // Check if this is a Bool constant based on the data type
     if (isBool(getResultType()) && isInt64OrUInt64FieldType(getValue().getType()))
@@ -122,7 +65,6 @@ bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr 
     }
 
     return applyVisitor(FieldVisitorToString(), getValue());
->>>>>>> origin/master
 }
 
 bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
@@ -207,15 +149,7 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
 {
     constant_value.getColumn()->updateHashFast(hash_state);
     if (compare_options.compare_types)
-<<<<<<< HEAD
-    {
-        auto type_name = constant_value.getType()->getName();
-        hash_state.update(type_name.size());
-        hash_state.update(type_name);
-    }
-=======
         constant_value.getType()->updateHash(hash_state);
->>>>>>> origin/master
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
@@ -243,22 +177,14 @@ boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generat
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-<<<<<<< HEAD
-    const auto & constant_value_type = constant_value.getType();
-    auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
-=======
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
->>>>>>> origin/master
 
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
 
-<<<<<<< HEAD
-=======
     const auto & constant_value_type = constant_value.getType();
 
->>>>>>> origin/master
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
     // may have a different type.
@@ -282,15 +208,9 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
-<<<<<<< HEAD
-        /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
-        constant_value_ast = std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
-        auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
-=======
         /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
         auto constant_value_ast = getCachedAST(from_column);
         auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
->>>>>>> origin/master
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 

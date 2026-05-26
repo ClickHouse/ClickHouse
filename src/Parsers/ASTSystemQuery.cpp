@@ -589,22 +589,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         case Type::KILL:
         case Type::SHUTDOWN:
-<<<<<<< HEAD
-        case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
-        case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
-        case Type::DROP_QUERY_CACHE:
-        case Type::DROP_MARK_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
-        case Type::DROP_S3_CLIENT_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
-=======
         case Type::CLEAR_DNS_CACHE:
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MMAP_CACHE:
@@ -623,7 +607,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
->>>>>>> origin/master
+        case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:

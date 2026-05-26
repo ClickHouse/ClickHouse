@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
@@ -201,10 +200,6 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-<<<<<<< HEAD
-        const std::string & exception_message = {},
-        int error_code = 0);
-=======
         PartitionLastProcessedFileInfoMap & file_map,
         LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
@@ -219,7 +214,6 @@ public:
     /// Called when a commit may have succeeded in ZK but the connection was lost before
     /// we received the response ("failed after operation").
     void setUncertainCommit();
->>>>>>> origin/master
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(

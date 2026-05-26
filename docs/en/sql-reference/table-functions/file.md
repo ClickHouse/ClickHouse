@@ -251,11 +251,7 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ```sql
-<<<<<<< HEAD
-SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
-=======
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
->>>>>>> origin/master
 ```
 
 ## Settings {#settings}

@@ -1,9 +1,6 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageInMemoryMetadata.h>
-<<<<<<< HEAD
-=======
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
->>>>>>> origin/master
 
 namespace DB
 {

@@ -573,34 +573,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             metadata.columns.add(column, after_column, first);
         }
 
-<<<<<<< HEAD
-        /// Try to add "implicit" minmax index for new column
-        if (metadata.settings_changes
-            && ((isNumber(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
-                || (isString(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
-        {
-            bool minmax_index_exists = false;
-            for (const auto & index: metadata.secondary_indices)
-            {
-                if (index.column_names.front() == column.name && index.type == "minmax")
-                {
-                    minmax_index_exists = true;
-                    break;
-                }
-            }
-
-            if (!minmax_index_exists)
-            {
-                auto index_type = makeASTFunction("minmax");
-                auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                auto new_index = IndexDescription::getIndexFromAST(index_ast, metadata.columns, context);
-                metadata.secondary_indices.push_back(new_index);
-            }
-        }
-=======
         metadata.addImplicitIndicesForColumn(column, context);
->>>>>>> origin/master
     }
     else if (type == DROP_COLUMN)
     {

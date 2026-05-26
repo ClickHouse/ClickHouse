@@ -705,11 +705,7 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
 }
 
-<<<<<<< HEAD
-bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path)
-=======
 bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
->>>>>>> origin/master
 {
     if (path.empty())
         return false;

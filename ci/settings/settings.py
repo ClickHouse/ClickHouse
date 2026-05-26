@@ -60,8 +60,6 @@ DISABLED_WORKFLOWS = [
 
 DEFAULT_LOCAL_TEST_WORKFLOW = "pull_request.py"
 READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
-<<<<<<< HEAD
-=======
 
 CI_DB_READ_USER = "play"
 CI_DB_READ_URL = "https://play.clickhouse.com"
@@ -130,4 +128,3 @@ TEST_FAILURE_PATTERNS = [
     "Client Error",
     "Errno",
 ]
->>>>>>> origin/master

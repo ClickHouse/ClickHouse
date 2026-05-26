@@ -901,8 +901,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
 
-<<<<<<< HEAD
-=======
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
         if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
@@ -910,7 +908,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             addImplicitStatistics(metadata.columns, statistics_types_str);
         }
 
->>>>>>> origin/master
         if (args.query.columns_list && args.query.columns_list->projections)
         {
             for (auto & projection_ast : args.query.columns_list->projections->children)

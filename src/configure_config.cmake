@@ -200,18 +200,12 @@ endif()
 if (TARGET ch_contrib::numactl)
     set(USE_NUMACTL 1)
 endif()
-<<<<<<< HEAD
-if (TARGET ch_contrib::delta_kernel_rs)
-    set(USE_DELTA_KERNEL_RS 1)
-endif()
-=======
 if (TARGET ch_rust::delta_kernel_rs)
     set(USE_DELTA_KERNEL_RS 1)
 endif()
 if (TARGET ch_rust::chdig)
     set(USE_CHDIG 1)
 endif()
->>>>>>> origin/master
 if (ENABLE_FUZZING)
     set (USE_FUZZING_MODE 1)
 endif()
@@ -226,8 +220,6 @@ if (TARGET ch_contrib::stemmer)
 endif()
 if (TARGET ch_contrib::sha3iuf)
     set(USE_SHA3IUF 1)
-<<<<<<< HEAD
-=======
 endif()
 if (TARGET ch_contrib::simdcomp)
     set(USE_SIMDCOMP 1)
@@ -240,7 +232,6 @@ if (TARGET ch_contrib::wasmedge)
 endif()
 if (TARGET ch_rust::wasmtime)
     set(USE_WASMTIME 1)
->>>>>>> origin/master
 endif()
 
 set (USE_YTSAURUS 1)

@@ -29,11 +29,7 @@ public:
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
-<<<<<<< HEAD
-    bool processWithFuzzing(std::string_view full_query) override;
-=======
     bool processWithASTFuzzer(std::string_view full_query) override;
->>>>>>> origin/master
     bool buzzHouse() override;
     bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
 
@@ -77,10 +73,7 @@ private:
 
     bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
     bool processBuzzHouseQuery(const String & full_query);
-<<<<<<< HEAD
-=======
     bool fuzzLoopReconnect();
->>>>>>> origin/master
 #endif
     std::vector<String> loadWarningMessages();
 

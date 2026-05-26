@@ -13,11 +13,7 @@
     Prewhere info
       Prewhere filter
       Prewhere filter column: less(multiply(2, b), 100)
-<<<<<<< HEAD
-  Filter column: and(indexHint(greater(plus(i, 40), 0)), equals(a, 0)) (removed)
-=======
   Filter column: and(equals(a, 0), indexHint(greater(plus(i, 40), 0))) (removed)
->>>>>>> origin/master
     Prewhere info
       Prewhere filter
       Prewhere filter column: equals(a, 0)

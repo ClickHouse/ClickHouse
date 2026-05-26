@@ -64,9 +64,6 @@ namespace
 
 // clang-format off
 
-<<<<<<< HEAD
-#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
-=======
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
     DECLARE(InsertDeduplicationVersions, insert_deduplication_version, InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES, R"(
@@ -78,7 +75,6 @@ namespace
         Finally the value `new_unified_hash` means that ClickHouse will use the new deduplication hash for sync and async inserts. This value could be enabled on new instances of ClickHouse or on instances which already used `compatible_double_hashes` value for some time.
         The default would be set to `compatible_double_hashes` and then later to `new_unified_hash` in future versions of ClickHouse in order to complete the migration in a safe way in two reases.
     )", 0) \
->>>>>>> origin/master
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -542,8 +538,6 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
-<<<<<<< HEAD
-=======
     DECLARE(String, text_index_tokens_cache_policy, DEFAULT_TEXT_INDEX_TOKENS_CACHE_POLICY, "Text index tokens cache policy name.", 0) \
     DECLARE(UInt64, text_index_tokens_cache_size, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE, R"(Size of cache for text index tokens. Zero means disabled.
 
@@ -568,7 +562,6 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, text_index_postings_cache_max_entries, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES, "Size of cache for text index posting list in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
->>>>>>> origin/master
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.
@@ -592,10 +585,7 @@ namespace
     :::
     )", 0) \
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
-<<<<<<< HEAD
-=======
     DECLARE(Double, index_mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of index mark cache to fill during prewarm.)", 0) \
->>>>>>> origin/master
     DECLARE(UInt64, page_cache_history_window_ms, 1000, "Delay before freed memory can be used by userspace page cache.", 0) \
     DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache policy name.", 0) \
     DECLARE(Double, page_cache_size_ratio, DEFAULT_PAGE_CACHE_SIZE_RATIO, "The size of the protected queue in the userspace page cache relative to the cache's total size.", 0) \
@@ -1282,10 +1272,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
     DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
-<<<<<<< HEAD
-    DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 10.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
-    DECLARE(Float, max_os_cpu_wait_time_ratio_to_drop_connection, 20.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
-=======
     DECLARE(Bool, os_collect_psi_metrics, true, "Enable accounting PSI metrics from /proc/pressure/ files.", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
     Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.
@@ -1325,7 +1311,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
     Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
->>>>>>> origin/master
 
     Requires CAP_SYS_NICE capability, otherwise no-op.
 

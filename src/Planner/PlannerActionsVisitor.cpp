@@ -69,10 +69,6 @@ namespace
  */
 String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node, Int64 optimize_const_name_size)
 {
-<<<<<<< HEAD
-    const auto & [name, type] = constant_node.getValueNameAndType();
-    bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
-=======
     const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
     bool requires_cast_call = constant_node.hasSourceExpression();
     if (!requires_cast_call)
@@ -80,7 +76,6 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
         auto field_type = applyVisitor(FieldToDataType(), constant_node.getValue());
         requires_cast_call = ConstantNode::requiresCastCall(field_type, constant_node.getResultType());
     }
->>>>>>> origin/master
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
@@ -184,11 +179,7 @@ public:
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
                     else
-<<<<<<< HEAD
-                        result = calculateConstantActionNodeName(constant_node);
-=======
                         result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
->>>>>>> origin/master
                 }
                 break;
             }
@@ -410,11 +401,7 @@ public:
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
     }
 
-<<<<<<< HEAD
-    static String calculateConstantActionNodeName(const ConstantNode & constant_node)
-=======
     static String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
->>>>>>> origin/master
     {
         const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
         return name + "_" + constant_node.getResultType()->getName();
@@ -970,11 +957,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
-<<<<<<< HEAD
-        return calculateConstantActionNodeName(constant_node);
-=======
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
->>>>>>> origin/master
     }();
 
     ColumnWithTypeAndName column;
@@ -1411,11 +1394,7 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal, constant_type);
 }
 
-<<<<<<< HEAD
-String calculateConstantActionNodeName(const ConstantNode & constant_node)
-=======
 String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
->>>>>>> origin/master
 {
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_node, optimize_const_name_size);
 }

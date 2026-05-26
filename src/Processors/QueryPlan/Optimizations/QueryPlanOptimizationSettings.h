@@ -20,11 +20,7 @@ class QueryPlan;
 
 struct QueryPlanOptimizationSettings
 {
-<<<<<<< HEAD
-    explicit QueryPlanOptimizationSettings(
-=======
     QueryPlanOptimizationSettings(
->>>>>>> origin/master
         const Settings & from,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
@@ -60,6 +56,7 @@ struct QueryPlanOptimizationSettings
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
+    bool limit_by_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -93,6 +90,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
+    bool push_limit_by_into_sort;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -128,9 +126,12 @@ struct QueryPlanOptimizationSettings
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
 
-<<<<<<< HEAD
-    size_t max_limit_for_ann_queries;
-=======
+    /// If lazy FINAL optimization for ReplacingMergeTree is enabled
+    bool optimize_lazy_final = false;
+    size_t max_rows_for_lazy_final = 0;
+    size_t max_bytes_for_lazy_final = 0;
+    float min_filtered_ratio_for_lazy_final = 0;
+
     /// Vector-search-related settings
     size_t max_limit_for_vector_search_queries;
     bool vector_search_with_rescoring;
@@ -145,7 +146,6 @@ struct QueryPlanOptimizationSettings
     bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
->>>>>>> origin/master
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
@@ -191,13 +191,10 @@ struct QueryPlanOptimizationSettings
     bool keep_logical_steps;
 
     bool is_explain;
-<<<<<<< HEAD
-=======
 
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
->>>>>>> origin/master
 };
 
 }

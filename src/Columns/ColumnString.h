@@ -2,10 +2,6 @@
 
 #include <cstring>
 
-<<<<<<< HEAD
-#include <DataTypes/DataTypeString.h>
-=======
->>>>>>> origin/master
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
@@ -113,21 +109,13 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-=======
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
->>>>>>> origin/master
     {
         if (options.notFull(name_buf))
             writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
     }
 
-<<<<<<< HEAD
-    StringRef getDataAt(size_t n) const override
-=======
     std::string_view getDataAt(size_t n) const override
->>>>>>> origin/master
     {
         chassert(n < size());
         return std::string_view(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));

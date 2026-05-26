@@ -423,24 +423,8 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
     if (Coordination::isHardwareError(code))
     {
-<<<<<<< HEAD
-        LOG_TRACE(log, "Keeper session expired, processing will be automatically reset");
-        return;
-    }
-
-    if (responses[0]->error == Coordination::Error::ZBADVERSION
-        || responses[0]->error == Coordination::Error::ZNONODE
-        || responses[1]->error == Coordination::Error::ZNONODE)
-    {
-        LOG_TRACE(
-            log, "Processing node no longer exists ({}) "
-            "while resetting processing state. "
-            "This could be as a result of expired keeper session. ",
-            processing_node_path);
-=======
         LOG_WARNING(log, "Keeper session expired and retries did not help. "
                     "Will rely on automatic processing node cleanup");
->>>>>>> origin/master
         return;
     }
 
@@ -523,9 +507,6 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
         file_status->onProcessed();
         created_processing_node = false;
 
-<<<<<<< HEAD
-    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
-=======
         LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
     });
 
@@ -565,20 +546,11 @@ void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
             fmt::format("Expected path {} not to exist after reset for {}", processing_node_path, path));
     });
 #endif
->>>>>>> origin/master
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
-<<<<<<< HEAD
-    file_status->onFailed(exception_message);
-
-    processing_id.reset();
-    processing_id_version.reset();
-
-    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
-=======
 
     SCOPE_EXIT({
         file_status->onFailed(exception_message);
@@ -600,31 +572,16 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
 
     });
 #endif
->>>>>>> origin/master
 }
 
 void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     Coordination::Requests & requests,
     bool retriable)
 {
-<<<<<<< HEAD
-    if (!processing_id_version.has_value())
-    {
-        chassert(false);
-        return;
-    }
-
-=======
->>>>>>> origin/master
     if (!retriable)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
-<<<<<<< HEAD
-        /// Check Processing node id and remove processing_node_id node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
-=======
->>>>>>> origin/master
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Create Failed node.

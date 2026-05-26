@@ -176,11 +176,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
-=======
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
->>>>>>> origin/master
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;

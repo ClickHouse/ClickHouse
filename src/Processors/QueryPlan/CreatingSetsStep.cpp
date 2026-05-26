@@ -217,10 +217,6 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
             continue;
 
         plan->optimize(optimization_settings);
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/master
         plans.emplace_back(std::move(plan));
     }
 

@@ -4,11 +4,8 @@
 #include <IO/WriteBufferDecorator.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
-<<<<<<< HEAD
-=======
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
->>>>>>> origin/master
 
 
 namespace DB
@@ -238,12 +235,9 @@ void IOutputFormat::setProgress(Progress progress)
     statistics.progress = std::move(progress);
 }
 
-<<<<<<< HEAD
-=======
 InputPort & IOutputFormat::getPort(PortKind kind)
 {
     return *std::next(inputs.begin(), kind);
 }
 
->>>>>>> origin/master
 }

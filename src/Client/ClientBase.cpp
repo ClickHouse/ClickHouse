@@ -108,14 +108,6 @@
 #include <Common/config_version.h>
 #include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
-<<<<<<< HEAD
-#include "config.h"
-
-#if USE_GWP_ASAN
-#    include <Common/GWPAsan.h>
-#endif
-=======
->>>>>>> origin/master
 
 
 namespace fs = std::filesystem;
@@ -176,11 +168,8 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
-<<<<<<< HEAD
-=======
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int TIMEOUT_EXCEEDED;
->>>>>>> origin/master
 }
 
 }
@@ -1029,55 +1018,9 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     /// This size is usually greater than the window size.
     static constexpr size_t buf_size = 1024;
 
-<<<<<<< HEAD
-    // If we are embedded into server, there is no need to access terminal device via opening a file.
-    // Actually we need to pass tty's name, if we don't want this condition statement,
-    // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
-    // So it's easier to just pass a descriptor, without the terminal name.
-    if (isEmbeeddedClient())
-    {
-        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
-        return;
-    }
-
-    static constexpr auto tty_file_name = "/dev/tty";
-
-    if (is_interactive || progress == ProgressOption::TTY)
-    {
-        std::error_code ec;
-        std::filesystem::file_status tty = std::filesystem::status(tty_file_name, ec);
-
-        if (!ec && exists(tty) && is_character_file(tty)
-            && (tty.permissions() & std::filesystem::perms::others_write) != std::filesystem::perms::none)
-        {
-            try
-            {
-                tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(tty_file_name, buf_size);
-
-                /// It is possible that the terminal file has writeable permissions
-                /// but we cannot write anything there. Check it with invisible character.
-                tty_buf->write('\0');
-                tty_buf->next();
-
-                return;
-            }
-            catch (const Exception & e)
-            {
-                tty_buf.reset();
-
-                if (e.code() != ErrorCodes::CANNOT_OPEN_FILE)
-                    throw;
-
-                /// It is normal if file exists, indicated as writeable but still cannot be opened.
-                /// Fallback to other options.
-            }
-        }
-    }
-=======
     /// Prefer to use an existing fd for the tty, from stdin/stdout/stderr, to allow redirecting
     /// progress indication to a different terminal.
     int tty_fd = -1;
->>>>>>> origin/master
 
     if (stderr_is_a_tty || progress == ProgressOption::ERR)
     {
@@ -3512,21 +3455,13 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setString("database", options["database"].as<std::string>());
     if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
-<<<<<<< HEAD
-    if (options.count("queries-file"))
-=======
     if (options.contains("queries-file"))
->>>>>>> origin/master
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not allowed, because the client runs in an embedded mode");
         queries_files = options["queries-file"].as<std::vector<std::string>>();
     }
-<<<<<<< HEAD
-    if (options.count("multiline"))
-=======
     if (options.contains("multiline"))
->>>>>>> origin/master
         getClientConfiguration().setBool("multiline", true);
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
@@ -3593,40 +3528,24 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     if (options.contains("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
-<<<<<<< HEAD
-    if (options.count("history_file"))
-=======
     if (options.contains("history_file"))
->>>>>>> origin/master
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
     }
-<<<<<<< HEAD
-    if (options.count("history_max_entries"))
-=======
     if (options.contains("history_max_entries"))
->>>>>>> origin/master
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.contains("interactive"))
         getClientConfiguration().setBool("interactive", true);
-<<<<<<< HEAD
-    if (options.count("pager"))
-=======
     if (options.contains("pager"))
->>>>>>> origin/master
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom pager is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
     }
 
-<<<<<<< HEAD
-    if (options.count("prompt"))
-=======
     if (options.contains("prompt"))
->>>>>>> origin/master
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
     if (options.contains("oauth-url"))
@@ -3636,11 +3555,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
 
     if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
-<<<<<<< HEAD
-    if (options.count("server_logs_file"))
-=======
     if (options.contains("server_logs_file"))
->>>>>>> origin/master
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
@@ -3838,8 +3753,6 @@ void ClientBase::runInteractive()
             /// (Alternatively, we could make the password input ignore the control sequences.)
             lr->enableBracketedPaste();
             SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
-<<<<<<< HEAD
-=======
 
             // Check if we have a prepopulated query to show
             if (!next_query_to_prepopulate.empty())
@@ -3847,7 +3760,6 @@ void ClientBase::runInteractive()
                 lr->setInitialText(next_query_to_prepopulate);
                 next_query_to_prepopulate.clear();
             }
->>>>>>> origin/master
 
             input = lr->readLine(getPrompt(), ":-] ");
         }

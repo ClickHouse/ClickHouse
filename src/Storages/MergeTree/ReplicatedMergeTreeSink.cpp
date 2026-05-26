@@ -340,37 +340,12 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         auto hash = temp_part->part->getPartBlockIDHash();
         current_deduplication_info->setPartWriterHashForPartition(hash, current_block.block->rows());
 
-<<<<<<< HEAD
-        if constexpr (async_insert)
-        {
-            auto get_block_id = [&](BlockWithPartition & block_)
-            {
-                block_id = AsyncInsertBlockInfo::getHashesForBlocks(block_, temp_part->part->info.partition_id);
-                LOG_TRACE(log, "async insert part, part id {}, block id {}, offsets {}, size {}", temp_part->part->info.partition_id, toString(block_id), toString(block_.offsets), block_.offsets.size());
-            };
-            get_block_id(unmerged_block ? *unmerged_block : current_block);
-        }
-        else
-        {
-            if (deduplicate)
-            {
-                /// We add the hash from the data and partition identifier to deduplication ID.
-                /// That is, do not insert the same data to the same partition twice.
-                block_id = temp_part->part->getNewPartBlockID(block_dedup_token);
-                LOG_DEBUG(log, "Wrote block with ID '{}', {} rows{}", block_id, current_block.block.rows(), quorumLogMessage(replicas_num));
-            }
-            else
-            {
-                LOG_DEBUG(log, "Wrote block with {} rows{}", current_block.block.rows(), quorumLogMessage(replicas_num));
-            }
-=======
         LOG_DEBUG(
             log,
             "Wrote block with {} rows{} and deduplication blocks: {}, deduplication info: {}",
             current_block.block->rows(), quorumLogMessage(),
             fmt::join(getDeduplicationBlockIds(current_deduplication_info->getDeduplicationHashes(current_block.partition_id, deduplicate)), ", "),
             current_deduplication_info->debug());
->>>>>>> origin/master
 
         all_partitions_block_ids.push_back(hash);
 

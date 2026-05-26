@@ -1,11 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
-<<<<<<< HEAD
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-=======
->>>>>>> origin/master
 #include <Common/PODArray.h>
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
@@ -93,20 +87,9 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t index) const override
-    {
-        WriteBufferFromOwnString buf;
-        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, buf);
-        return {buf.str(), std::make_shared<DataTypeString>()};
-    }
-
-    StringRef getDataAt(size_t index) const override
-=======
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override;
 
     std::string_view getDataAt(size_t index) const override
->>>>>>> origin/master
     {
         return {reinterpret_cast<const char *>(&chars[n * index]), n};
     }

@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
-=======
->>>>>>> origin/master
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -127,11 +122,7 @@ void ColumnNullable::get(size_t n, Field & res) const
         getNestedColumn().get(n, res);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
-=======
 void ColumnNullable::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     if (isNullAt(n))
     {

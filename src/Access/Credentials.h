@@ -1,10 +1,7 @@
 #pragma once
 
-<<<<<<< HEAD
-=======
 #include "config.h"
 
->>>>>>> origin/master
 #include <Common/SSHWrapper.h>
 
 #if USE_SSL

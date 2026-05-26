@@ -494,11 +494,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
-<<<<<<< HEAD
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-=======
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
->>>>>>> origin/master
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
@@ -2397,24 +2393,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-<<<<<<< HEAD
-        case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
-        case Type::DROP_MARK_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
-        case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
-        case Type::DROP_QUERY_CACHE:
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
-        case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
-        case Type::DROP_DISTRIBUTED_CACHE:
-=======
         case Type::CLEAR_DNS_CACHE:
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
@@ -2436,7 +2414,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_TEXT_INDEX_CACHES:
         case Type::CLEAR_FILESYSTEM_CACHE:
         case Type::CLEAR_DISTRIBUTED_CACHE:
->>>>>>> origin/master
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::CLEAR_PAGE_CACHE:
         case Type::CLEAR_SCHEMA_CACHE:

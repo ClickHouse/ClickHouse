@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeArray.h>
-=======
->>>>>>> origin/master
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
@@ -152,11 +147,7 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
-=======
 void ColumnArray::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);

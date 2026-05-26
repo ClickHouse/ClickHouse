@@ -55,17 +55,8 @@ int SSHEvent::poll(int timeout)
 {
     int rc = ssh_event_dopoll(event.get(), timeout);
 
-<<<<<<< HEAD
-        if (rc == SSH_AGAIN)
-            continue;
-        if (rc == SSH_ERROR)
-            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event. {}", errnoToString());
-        if (rc != SSH_OK)
-            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "The failure happened with no reason provided by the libssh");
-=======
     if (rc == SSH_ERROR)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event. {}", errnoToString());
->>>>>>> origin/master
 
     return rc;
 }

@@ -13,11 +13,7 @@ from typing import Iterable, List, Optional, Sequence, Union
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
 from kazoo.handlers.threading import KazooTimeoutError
-<<<<<<< HEAD
-from kazoo.client import KazooClient
-=======
 from kazoo.client import EventType, KazooClient
->>>>>>> origin/master
 
 from helpers.client import CommandRequest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance

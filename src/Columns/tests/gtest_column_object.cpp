@@ -1,10 +1,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
-<<<<<<< HEAD
-=======
 #include <DataTypes/DataTypeDynamic.h>
->>>>>>> origin/master
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 

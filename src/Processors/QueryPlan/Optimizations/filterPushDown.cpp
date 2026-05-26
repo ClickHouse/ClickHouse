@@ -23,13 +23,8 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-<<<<<<< HEAD
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
-=======
 #include <Processors/Transforms/ExpressionTransform.h>
 
->>>>>>> origin/master
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>

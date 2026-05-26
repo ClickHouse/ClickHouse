@@ -172,9 +172,6 @@ def main():
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
 
-<<<<<<< HEAD
-    Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
-=======
     for path in [
         Path(temp_dir) / "clickhouse",
         clickhouse_bin_path,
@@ -206,6 +203,10 @@ def main():
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
     info = Info()
+    # PR builds must not pollute the shared sccache bucket; only master/release
+    # builds (pr_number == 0) are allowed to write entries.
+    if info.pr_number > 0:
+        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
@@ -225,7 +226,6 @@ def main():
     Utils.add_to_PATH(
         f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
     )
->>>>>>> origin/master
 
     res = True
     results = []

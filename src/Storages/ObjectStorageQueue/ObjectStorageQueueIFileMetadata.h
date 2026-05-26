@@ -159,12 +159,9 @@ public:
         Coordination::Requests & requests,
         const std::string & exception_message,
         bool reduce_retry_count);
-<<<<<<< HEAD
-=======
 
     /// Prepare keeper requests to save partition last processed files (for HIVE or REGEX partitioning modes).
     virtual void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & /* file_map */) {}
->>>>>>> origin/master
 
     struct SetProcessingResponseIndexes
     {
@@ -172,25 +169,17 @@ public:
         size_t failed_path_doesnt_exist_idx = 0;
         size_t create_processing_node_idx = 0;
     };
-<<<<<<< HEAD
-    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(Coordination::Requests & requests);
-=======
     /// Prepare requests, required to set file as processing.
     std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(
         Coordination::Requests & requests,
         const std::string & processing_id);
     /// Prepare requests, required to reset file's processing state.
->>>>>>> origin/master
     void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
-<<<<<<< HEAD
-    /// Do some work after prepared requests to set file as Processing succeeded.
-    void finalizeProcessing(int processing_id_version_);
-=======
     /// Do some work after prepared requests reset processing without marking as failed.
     void finalizeResetProcessing();
     /// Whether prepareFailedRequests just reset processing
@@ -200,7 +189,6 @@ public:
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
     void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
->>>>>>> origin/master
 
     void setUncertainCommit() { uncertain_commit = true; }
 
@@ -223,12 +211,8 @@ protected:
     static std::string getNodeName(const std::string & path);
 
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
-<<<<<<< HEAD
-    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
-=======
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) = 0;
->>>>>>> origin/master
 
     virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &,
         const std::string &)

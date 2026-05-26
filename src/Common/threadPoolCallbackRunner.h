@@ -219,11 +219,7 @@ public:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state {} when finishing a task in {}", expected, thread_name);
             });
 
-<<<<<<< HEAD
-            executeCallback(*promise, std::move(my_callback));
-=======
             executeCallback(*promise, std::move(my_callback), std::move(thread_group), thread_name);
->>>>>>> origin/master
         };
 
         try

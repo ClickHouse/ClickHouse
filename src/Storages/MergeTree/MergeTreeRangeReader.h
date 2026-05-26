@@ -444,14 +444,9 @@ public:
     static void filterBlock(Block & block, const FilterWithCachedCount & filter);
 
 private:
-<<<<<<< HEAD
-    void fillVirtualColumns(Columns & columns, ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-    ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-=======
     void fillVirtualColumns(Columns & columns, ReadResult & result);
     ColumnPtr createPartOffsetColumn(ReadResult & result);
     ColumnPtr createPartGranuleOffsetColumn(ReadResult & result);
->>>>>>> origin/master
 
     void updatePerformanceCounters(size_t num_rows_read);
 

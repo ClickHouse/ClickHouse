@@ -26,18 +26,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
-<<<<<<< HEAD
-
-#include <Core/AccurateComparison.h>
-#include <Core/DecimalComparison.h>
-#include <Core/Settings.h>
-#include <Core/callOnTypeIndex.h>
-
-=======
->>>>>>> origin/master
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/ComparisonNames.h>
@@ -52,18 +41,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-<<<<<<< HEAD
-    extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
-    extern const SettingsBool validate_enum_literals_in_operators;
-=======
-    extern const SettingsBool validate_enum_literals_in_operators;
-    extern const SettingsBool use_variant_default_implementation_for_comparisons;
-    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
->>>>>>> origin/master
-}
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 

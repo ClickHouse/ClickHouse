@@ -71,20 +71,12 @@ public:
         data->get(0, res);
     }
 
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
-=======
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
->>>>>>> origin/master
     {
         data->getValueNameImpl(name_buf, 0, options);
     }
 
-<<<<<<< HEAD
-    StringRef getDataAt(size_t) const override
-=======
     std::string_view getDataAt(size_t) const override
->>>>>>> origin/master
     {
         return data->getDataAt(0);
     }

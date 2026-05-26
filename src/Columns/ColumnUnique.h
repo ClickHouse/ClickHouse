@@ -77,11 +77,7 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-=======
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override
->>>>>>> origin/master
     {
         getNestedColumn()->getValueNameImpl(name_buf, n, options);
     }

@@ -228,12 +228,6 @@ void MergeTreeSink::finishDelayedChunk()
         Stopwatch watch;
         auto profile_events_scope = std::make_unique<ProfileEventsScope>(&partition.part_counters);
 
-<<<<<<< HEAD
-        partition.temp_part->finalize();
-
-        auto & part = partition.temp_part->part;
-        bool added = commitPart(part, partition.block_dedup_token);
-=======
         auto retry_times = 0;
         while (true)
         {
@@ -263,7 +257,6 @@ void MergeTreeSink::finishDelayedChunk()
             }
 
             ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks, conflicts.size());
->>>>>>> origin/master
 
             auto result = partition.deduplication_info->deduplicateBlock(
                 conflicts,

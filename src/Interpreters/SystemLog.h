@@ -184,10 +184,6 @@ struct SystemLogSettings
 
     String engine;
     bool symbolize_traces = false;
-<<<<<<< HEAD
-    std::string view_name_for_transposed_metric_log;
-=======
->>>>>>> origin/master
 };
 
 template <typename LogElement>

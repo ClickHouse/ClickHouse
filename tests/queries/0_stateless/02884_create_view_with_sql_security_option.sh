@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-<<<<<<< HEAD
-# Tags: no-replicated-database
-=======
 # Tags: long, no-replicated-database, no-async-insert
->>>>>>> origin/master
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

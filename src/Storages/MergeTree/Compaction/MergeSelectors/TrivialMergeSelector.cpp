@@ -58,13 +58,9 @@ PartsRanges TrivialMergeSelector::select(
             const auto range_begin = partition.begin() + left;
             const auto range_end = partition.begin() + right;
 
-<<<<<<< HEAD
-            if (total_size <= max_total_size_to_merge && (!range_filter || range_filter({range_begin, range_end})))
-=======
             if (total_size <= max_total_size_to_merge
                 && total_rows <= max_rows_in_part
                 && (!range_filter || range_filter({range_begin, range_end})))
->>>>>>> origin/master
             {
                 candidates.emplace_back(range_begin, range_end);
                 if (candidates.size() == settings.num_ranges_to_choose)

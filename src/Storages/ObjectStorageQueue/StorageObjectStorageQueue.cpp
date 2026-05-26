@@ -941,14 +941,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         }
         catch (...)
         {
-<<<<<<< HEAD
-            commit(/*insert_succeeded=*/ false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
-            file_iterator->releaseFinishedBuckets();
-            throw;
-        }
-
-        commit(/*insert_succeeded=*/ true, rows, sources);
-=======
             std::string message = getCurrentExceptionMessage(true);
             try
             {
@@ -991,7 +983,6 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         });
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
->>>>>>> origin/master
         file_iterator->releaseFinishedBuckets();
         max_files_override = 0;
         total_rows += rows;
@@ -1039,9 +1030,6 @@ void StorageObjectStorageQueue::commit(
     PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
-<<<<<<< HEAD
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message, error_code);
-=======
     {
         source->prepareCommitRequests(
             requests, insert_succeeded, successful_objects,
@@ -1054,7 +1042,6 @@ void StorageObjectStorageQueue::commit(
         ObjectStorageQueueSource::preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
     else
         chassert(last_processed_file_per_partition.empty());
->>>>>>> origin/master
 
     if (requests.empty())
     {
@@ -1067,24 +1054,13 @@ void StorageObjectStorageQueue::commit(
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-<<<<<<< HEAD
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
-=======
         postProcess(successful_objects);
->>>>>>> origin/master
     }
 
     auto context = getContext();
     const auto & settings = context->getSettingsRef();
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
-<<<<<<< HEAD
-    fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to commit processed files");
-=======
     std::optional<Coordination::Error> code;
     Coordination::Responses responses;
     size_t try_num = 0;
@@ -1113,7 +1089,6 @@ void StorageObjectStorageQueue::commit(
                     Coordination::Error::ZCONNECTIONLOSS,
                     "Simulated connection loss after successful commit");
         });
->>>>>>> origin/master
     });
 
     if (!code.has_value())
@@ -1164,17 +1139,11 @@ void StorageObjectStorageQueue::commit(
     if (finalize_exception)
         std::rethrow_exception(finalize_exception);
 
-<<<<<<< HEAD
-    LOG_TRACE(
-        log, "Successfully committed {} requests for {} sources (inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), inserted_rows, successful_objects.size());
-=======
     LOG_DEBUG(
         log, "Successfully committed {} files with {} requests for {} sources with commit id {} "
         "(inserted rows: {}, files: {})",
         successful_objects.size(), requests.size(), sources.size(), commit_id, inserted_rows,
         collectRemotePaths(successful_objects));
->>>>>>> origin/master
 }
 
 UInt64 StorageObjectStorageQueue::generateCommitID()
@@ -1200,8 +1169,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "max_processing_time_sec_before_commit",
     "enable_hash_ring_filtering",
     "list_objects_batch_size",
-<<<<<<< HEAD
-=======
     "min_insert_block_size_rows_for_materialized_views",
     "min_insert_block_size_bytes_for_materialized_views",
     "cleanup_interval_max_ms",
@@ -1221,7 +1188,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "deduplication_v2",
     "metadata_cache_size_bytes",
     "metadata_cache_size_elements",
->>>>>>> origin/master
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode{

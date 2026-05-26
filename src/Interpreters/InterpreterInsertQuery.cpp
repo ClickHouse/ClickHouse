@@ -350,79 +350,7 @@ static bool isTrivialSelect(const ASTPtr & select)
 
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context_)
 {
-<<<<<<< HEAD
-    IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, getContext());
-
-    ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
-    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
-
-    ThreadGroupPtr running_group;
-    if (current_thread)
-        running_group = current_thread->getThreadGroup();
-    if (!running_group)
-        running_group = std::make_shared<ThreadGroup>(getContext());
-
-    auto sample = getSampleBlockImpl(columns, table, metadata_snapshot, no_destination, allow_materialized);
-    if (check_access)
-        getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
-
-    Chain sink = buildSink(table, view_level, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
-    Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample);
-
-    chain.appendChain(std::move(sink));
-    return chain;
-}
-
-Chain InterpreterInsertQuery::buildSink(
-    const StoragePtr & table,
-    size_t view_level,
-    const StorageMetadataPtr & metadata_snapshot,
-    ThreadStatusesHolderPtr thread_status_holder,
-    ThreadGroupPtr running_group,
-    std::atomic_uint64_t * elapsed_counter_ms)
-{
-    ThreadStatus * thread_status = current_thread;
-
-    if (!thread_status_holder)
-        thread_status = nullptr;
-
-    auto context_ptr = getContext();
-
-    Chain out;
-
-    /// Keep a reference to the context to make sure it stays alive until the chain is executed and destroyed
-    out.addInterpreterContext(context_ptr);
-
-    /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
-    ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
-    if (table->noPushingToViews() && !no_destination)
-    {
-        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
-        sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        out.addSource(std::move(sink));
-    }
-    else
-    {
-        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
-            query_ptr, view_level, no_destination,
-            thread_status_holder, running_group, elapsed_counter_ms, async_insert);
-    }
-
-    return out;
-}
-
-void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
-{
-    owned_buffers.push_back(std::move(buffer));
-}
-
-bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table) const
-{
-    auto context_ptr = getContext();
-    const Settings & settings = context_ptr->getSettingsRef();
-=======
     const Settings & settings = context_->getSettingsRef();
->>>>>>> origin/master
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
@@ -723,35 +651,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
     ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
-<<<<<<< HEAD
-    ContextPtr context_ptr = getContext();
-
-    const Settings & settings = context_ptr->getSettingsRef();
-
-    /** When doing trivial INSERT INTO ... SELECT ... FROM table,
-     * don't need to process SELECT with more than max_insert_threads
-     * and it's reasonable to set block size for SELECT to the desired block size for INSERT
-     * to avoid unnecessary squashing.
-     */
-
-    Settings new_settings = context_ptr->getSettingsCopy();
-
-    new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads] + 1);
-
-    if (table->prefersLargeBlocks())
-    {
-        if (settings[Setting::min_insert_block_size_rows])
-            new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
-        if (settings[Setting::min_insert_block_size_bytes])
-            new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
-    }
-
-    auto context_for_trivial_select = Context::createCopy(context_ptr);
-    context_for_trivial_select->setSettings(new_settings);
-    context_for_trivial_select->setInsertionTable(context_ptr->getInsertionTable(), context_ptr->getInsertionTableColumnNames());
-=======
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
->>>>>>> origin/master
 
     auto [pipeline_builder, coordinator]
         = getLocalSelectPipelineForInserSelectWithParallelReplicas(query.select, select_context);
@@ -834,19 +734,11 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
         && settings[Setting::parallel_replicas_prefer_local_replica])
     {
-<<<<<<< HEAD
-        auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table);
-        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr, std::move(local_pipeline), coordinator);
-    }
-
-    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr);
-=======
         auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
         return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context, std::move(local_pipeline), coordinator);
     }
 
     return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context);
->>>>>>> origin/master
 }
 
 

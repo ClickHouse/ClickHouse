@@ -200,41 +200,8 @@ ColumnsWithTypeAndName createBlockForSet(
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-<<<<<<< HEAD
-    /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-    if (left_type_depth == right_type_depth)
-    {
-        Array array{right_arg_value};
-        DataTypes value_types{right_arg_type};
-        block = createBlockFromCollection(array, value_types, set_element_types, set_params);
-    }
-    /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
-    else if (left_type_depth + 1 == right_type_depth)
-    {
-        auto type_index = right_arg_type->getTypeId();
-        if (type_index == TypeIndex::Tuple)
-        {
-            const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.safeGet<Tuple>(), value_types, set_element_types, set_params);
-        }
-        else if (type_index == TypeIndex::Array)
-        {
-            const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
-            size_t right_arg_array_size = right_arg_value.safeGet<Array>().size();
-            DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
-            block = createBlockFromCollection(right_arg_value.safeGet<Array>(), value_types, set_element_types, set_params);
-        }
-        else
-            throw_unsupported_type(right_arg_type);
-    }
-    else
-        throw_unsupported_type(right_arg_type);
-
-    return block;
-=======
     /// Reuse the analyzer logic
     return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
->>>>>>> origin/master
 }
 
 /** Create a block for set from literal.

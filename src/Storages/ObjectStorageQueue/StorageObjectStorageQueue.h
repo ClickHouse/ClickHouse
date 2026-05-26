@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <chrono>
 #include <optional>
@@ -207,8 +206,6 @@ private:
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;
-<<<<<<< HEAD
-=======
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
@@ -217,7 +214,6 @@ private:
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
->>>>>>> origin/master
 };
 
 }

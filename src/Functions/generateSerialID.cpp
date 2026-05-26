@@ -14,10 +14,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-<<<<<<< HEAD
-=======
 #include <base/StringViewHash.h>
->>>>>>> origin/master
 
 #include <filesystem>
 

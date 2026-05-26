@@ -1127,17 +1127,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (!result.rows_per_granule.empty())
         result.adjustLastGranule();
 
-<<<<<<< HEAD
-    fillVirtualColumns(result.columns, result, leading_begin_part_offset, leading_end_part_offset);
-    result.num_rows = result.numReadRows();
-=======
     fillVirtualColumns(result.columns, result);
     /// When no columns were physically read (e.g., constant PREWHERE expression),
     /// numReadRows() is 0 but total_rows_per_granule has the correct row count
     /// from the index granularity. Use it so the reading chain can continue
     /// to subsequent readers that read actual data columns.
     result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
->>>>>>> origin/master
 
     updatePerformanceCounters(result.numReadRows());
 
@@ -1163,11 +1158,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     return result;
 }
 
-<<<<<<< HEAD
-void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
-=======
 void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & result)
->>>>>>> origin/master
 {
     ColumnPtr part_offset_column;
 
@@ -1199,14 +1190,8 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has(BlockOffsetColumn::name))
         add_offset_column(BlockOffsetColumn::name);
 
-<<<<<<< HEAD
-ColumnPtr MergeTreeRangeReader::createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset)
-{
-    size_t num_rows = result.numReadRows();
-=======
     if (read_sample_block.has("_part_granule_offset"))
         add_offset_column("_part_granule_offset");
->>>>>>> origin/master
 
     bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
     if (is_vector_search)
@@ -1412,10 +1397,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     fillVirtualColumns(columns, result);
 
     updatePerformanceCounters(num_rows);
-<<<<<<< HEAD
-=======
     result.addNumBytesRead(getTotalBytesInColumns(columns));
->>>>>>> origin/master
 
     return columns;
 }

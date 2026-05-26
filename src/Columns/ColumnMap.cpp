@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeArray.h>
-=======
->>>>>>> origin/master
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -91,11 +86,7 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
-=======
 void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];

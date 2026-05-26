@@ -1,11 +1,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-<<<<<<< HEAD
-=======
 
 #include <fmt/format.h>
->>>>>>> origin/master
 
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
@@ -91,36 +88,6 @@ CONV_FN(SQLIdentifier, ident)
 
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
-<<<<<<< HEAD
-    ret += proj.projection();
-}
-
-CONV_FN(Constraint, constr)
-{
-    ret += constr.constraint();
-}
-
-CONV_FN(Database, db)
-{
-    ret += db.database();
-}
-
-CONV_FN(Table, tab)
-{
-    ret += tab.table();
-}
-
-CONV_FN(Function, func)
-{
-    ret += func.function();
-}
-
-CONV_FN(Cluster, clust)
-{
-    ret += " ON CLUSTER '";
-    ret += clust.cluster();
-    ret += "'";
-=======
     if (cl.has_cluster())
     {
         if (clause)
@@ -133,7 +100,6 @@ CONV_FN(Cluster, clust)
             ret += ", ";
         }
     }
->>>>>>> origin/master
 }
 
 CONV_FN(Window, win)
@@ -773,18 +739,12 @@ CONV_FN(LiteralValue, lit_val)
             NumericLiteralToString(ret, lit_val.numeric_lit());
             break;
         case LitValType::kStringLit:
-<<<<<<< HEAD
-            ret += '\'';
-            ConvertToSQLString(ret, lit_val.string_lit());
-            ret += '\'';
-=======
             ret += "'";
             ConvertToSQLString(ret, lit_val.string_lit());
             ret += "'";
             break;
         case LitValType::kSpecialVal:
             SpecialValToString(ret, lit_val.special_val());
->>>>>>> origin/master
             break;
         default:
             ret += "1";
@@ -838,14 +798,6 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_LEGR:
             ret += " <> ";
             break;
-<<<<<<< HEAD
-        case BINOP_IS_NOT_DISTINCT_FROM:
-            ret += " IS NOT DISTINCT FROM ";
-            break;
-        case BINOP_LEEQGR:
-            ret += " <=> ";
-            break;
-=======
         case BINOP_LEEQGR:
             ret += " <=> ";
             break;
@@ -855,7 +807,6 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_IS_NOT_DISTINCT_FROM:
             ret += " IS NOT DISTINCT FROM ";
             break;
->>>>>>> origin/master
         case BINOP_AND:
             ret += " AND ";
             break;
@@ -1032,8 +983,6 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             }
         }
         break;
-<<<<<<< HEAD
-=======
         case BottomTypeNameType::kQbit: {
             const QBit & qq = btn.qbit();
 
@@ -1061,7 +1010,6 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += ")";
         }
         break;
->>>>>>> origin/master
         default: {
             if (lcard)
             {
@@ -1854,8 +1802,6 @@ CONV_FN(ComplicatedExpr, expr)
             ExprListToString(ret, expr.tuple());
             ret += ")";
             break;
-<<<<<<< HEAD
-=======
         case ExprType::kTable:
             SQLIdentifierToString(ret, expr.table());
             ret += ".*";
@@ -1863,7 +1809,6 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kLambda:
             LambdaExprToString(ret, expr.lambda());
             break;
->>>>>>> origin/master
         default:
             ret += "1";
     }
@@ -2002,8 +1947,6 @@ CONV_FN(JoinClause, jc)
     }
 }
 
-<<<<<<< HEAD
-=======
 CONV_FN(KeyValuePair, kvp)
 {
     ret += kvp.key();
@@ -2053,7 +1996,6 @@ CONV_FN(SettingValues, setv)
     }
 }
 
->>>>>>> origin/master
 CONV_FN(FileFunc, ff)
 {
     ret += FileFunc_FName_Name(ff.fname());
@@ -2078,10 +2020,6 @@ CONV_FN(FileFunc, ff)
         ret += ", ";
         appendSQLStringLiteral(ret, InOutFormat_Name(ff.inoutformat()).substr(6));
     }
-<<<<<<< HEAD
-    ret += "'";
-=======
->>>>>>> origin/master
     if (ff.has_structure())
     {
         ret += ", ";
@@ -2225,21 +2163,7 @@ CONV_FN(RemoteFunc, rfunc)
     }
     if (rfunc.has_user())
     {
-<<<<<<< HEAD
-        if (rfunc.has_user() && !rfunc.user().empty())
-        {
-            ret += ", '";
-            ret += rfunc.user();
-            ret += "'";
-        }
-        if (rfunc.has_password())
-        {
-            ret += ", '";
-            ret += rfunc.password();
-            ret += "'";
-        }
-=======
-        ret += ", ";
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.user());
     }
     if (rfunc.has_password())
@@ -2255,7 +2179,6 @@ CONV_FN(RemoteFunc, rfunc)
             ret += "sharding_key=";
         }
         ExprToString(ret, rfunc.sharding_key());
->>>>>>> origin/master
     }
     ret += ")";
 }
@@ -2378,25 +2301,11 @@ CONV_FN(SQLiteFunc, sfunc)
 
 CONV_FN(RedisFunc, rfunc)
 {
-<<<<<<< HEAD
-    ret += "s3('";
-    ret += sfunc.resource();
-    ret += "', '";
-    ret += sfunc.user();
-    ret += "', '";
-    ret += sfunc.password();
-    ret += "', '";
-    ret += InOutFormat_Name(sfunc.format()).substr(6);
-    ret += "', ";
-    ExprToString(ret, sfunc.structure());
-    if (sfunc.has_fcomp())
-=======
     ret += "redis(";
     appendSQLStringLiteral(ret, rfunc.address());
     ret += ", ";
     ExprToString(ret, rfunc.key());
     if (rfunc.has_structure())
->>>>>>> origin/master
     {
         ret += ", ";
         ExprToString(ret, rfunc.structure());
@@ -2419,8 +2328,6 @@ CONV_FN(RedisFunc, rfunc)
     ret += ")";
 }
 
-<<<<<<< HEAD
-=======
 CONV_FN(MongoDBFunc, mfunc)
 {
     bool has_arg = false;
@@ -2537,7 +2444,6 @@ CONV_FN(URLFunc, url)
     ret += ")";
 }
 
->>>>>>> origin/master
 CONV_FN(SQLTableFuncCall, sfc)
 {
     ret += SQLTableFunc_Name(sfc.func()).substr(2);
@@ -2716,16 +2622,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kSqite:
             SQLiteFuncToString(ret, tf.sqite());
             break;
-<<<<<<< HEAD
-        case TableFunctionType::kS3:
-            S3FuncToString(ret, tf.s3());
-            break;
-        case TableFunctionType::kFunc:
-            SQLTableFuncCallToString(ret, tf.func());
-=======
         case TableFunctionType::kObjectFunc:
             ObjectStoreFuncToString(ret, tf.object_func());
->>>>>>> origin/master
             break;
         case TableFunctionType::kMerge:
             MergeFuncToString(ret, tf.merge());
@@ -2749,8 +2647,6 @@ CONV_FN(TableFunction, tf)
             FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
             ret += ")";
             break;
-<<<<<<< HEAD
-=======
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
             break;
@@ -2783,14 +2679,11 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kFunc:
             SQLTableFuncCallToString(ret, tf.func());
             break;
->>>>>>> origin/master
         default:
             ret += "numbers(10)";
     }
 }
 
-<<<<<<< HEAD
-=======
 CONV_FN(SampleClause, sc)
 {
     ret += " SAMPLE ";
@@ -2819,7 +2712,6 @@ CONV_FN(SampleClause, sc)
     }
 }
 
->>>>>>> origin/master
 CONV_FN(JoinedTableOrFunction, jtf)
 {
     const TableOrFunction & tof = jtf.tof();
@@ -2849,13 +2741,10 @@ CONV_FN(JoinedTableOrFunction, jtf)
     {
         ret += " FINAL";
     }
-<<<<<<< HEAD
-=======
     if (jtf.has_sample())
     {
         SampleClauseToString(ret, jtf.sample());
     }
->>>>>>> origin/master
 }
 
 CONV_FN(TableOrSubquery, tos)
@@ -3160,17 +3049,6 @@ CONV_FN(SelectStatementCore, ssc)
 
 CONV_FN(SetQuery, setq)
 {
-<<<<<<< HEAD
-    ret += "(";
-    ExplainQueryToString(ret, setq.sel1());
-    ret += ") ";
-    ret += SetQuery_SetOp_Name(setq.set_op());
-    ret += " ";
-    ret += AllOrDistinct_Name(setq.s_or_d());
-    ret += " (";
-    ExplainQueryToString(ret, setq.sel2());
-    ret += ")";
-=======
     ret += setq.paren1() ? "(" : "";
     ExplainQueryToString(ret, setq.sel1());
     ret += setq.paren1() ? ")" : "";
@@ -3185,7 +3063,6 @@ CONV_FN(SetQuery, setq)
     ret += setq.paren2() ? "(" : "";
     ExplainQueryToString(ret, setq.sel2());
     ret += setq.paren2() ? ")" : "";
->>>>>>> origin/master
 }
 
 CONV_FN(CTEquery, cteq)
@@ -3373,14 +3250,11 @@ CONV_FN(DatabaseEngine, deng)
             DatabaseEngineParamToString(ret, deng.params(i));
         }
         ret += ")";
-<<<<<<< HEAD
-=======
     }
     if (deng.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, deng.setting_values());
->>>>>>> origin/master
     }
 }
 
@@ -3429,14 +3303,9 @@ static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cr
 
 CONV_FN(CreateFunction, create_function)
 {
-<<<<<<< HEAD
-    ret += "CREATE FUNCTION ";
-    FunctionToString(ret, create_function.function());
-=======
     CreateOrReplaceToString(ret, create_function.create_opt());
     ret += " FUNCTION ";
     SQLIdentifierToString(ret, create_function.function());
->>>>>>> origin/master
     if (create_function.has_cluster())
     {
         ClusterToString(ret, true, create_function.cluster());
@@ -3504,31 +3373,6 @@ CONV_FN(ColumnDef, cdf)
     }
 }
 
-<<<<<<< HEAD
-CONV_FN(IndexParam, ip)
-{
-    if (ip.has_ival())
-    {
-        ret += std::to_string(ip.ival());
-    }
-    else if (ip.has_dval())
-    {
-        ret += std::to_string(ip.dval());
-    }
-    else if (ip.has_sval())
-    {
-        ret += "'";
-        ret += ip.sval();
-        ret += "'";
-    }
-    else
-    {
-        ret += "0";
-    }
-}
-
-=======
->>>>>>> origin/master
 CONV_FN(IndexDef, idef)
 {
     ret += "INDEX ";
@@ -3721,8 +3565,6 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kEst:
             FlatExprSchemaTableToString(ret, tep.est(), ".");
             break;
-<<<<<<< HEAD
-=======
         case TableEngineParamType::kExpr:
             ExprToString(ret, tep.expr());
             break;
@@ -3732,7 +3574,6 @@ CONV_FN(TableEngineParam, tep)
         case TableEngineParamType::kRvalue:
             ret += tep.rvalue();
             break;
->>>>>>> origin/master
         default:
             ret += "c0";
     }
@@ -3889,15 +3730,9 @@ CONV_FN(CreateTableAs, create_table)
     ExprSchemaTableToString(ret, create_table.est());
 }
 
-<<<<<<< HEAD
-static void CreateOrReplaceToString(String & ret, const CreateReplaceOption & cro)
-{
-    switch (cro)
-=======
 CONV_FN(CreateTableSelect, create_table)
 {
     if (create_table.empty())
->>>>>>> origin/master
     {
         ret += " EMPTY";
     }
@@ -3911,11 +3746,7 @@ CONV_FN(CreateTable, create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-<<<<<<< HEAD
-    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
-=======
     if (create_table.is_temp())
->>>>>>> origin/master
     {
         ret += "TEMPORARY ";
     }
@@ -3925,23 +3756,16 @@ CONV_FN(CreateTable, create_table)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_table.est());
-<<<<<<< HEAD
-=======
     if (create_table.has_uuid())
     {
         ret += " UUID '";
         ret += create_table.uuid();
         ret += "'";
     }
->>>>>>> origin/master
     if (create_table.has_cluster())
     {
         ClusterToString(ret, true, create_table.cluster());
     }
-<<<<<<< HEAD
-    ret += " ";
-=======
->>>>>>> origin/master
     if (create_table.has_table_def())
     {
         TableDefToString(ret, create_table.table_def());
@@ -4043,8 +3867,6 @@ CONV_FN(Drop, dt)
     }
 }
 
-<<<<<<< HEAD
-=======
 CONV_FN(SelectParen, sel)
 {
     ret += sel.paren() ? "(" : "";
@@ -4052,7 +3874,6 @@ CONV_FN(SelectParen, sel)
     ret += sel.paren() ? ")" : "";
 }
 
->>>>>>> origin/master
 CONV_FN(Insert, insert)
 {
     if (insert.has_ctes())
@@ -4129,13 +3950,7 @@ CONV_FN(PartitionExpr, pexpr)
     switch (pexpr.partition_oneof_case())
     {
         case PartitionType::kPart:
-<<<<<<< HEAD
-            ret += "'";
-            ret += pexpr.part();
-            ret += "'";
-=======
             appendSQLStringLiteral(ret, pexpr.part());
->>>>>>> origin/master
             break;
         case PartitionType::kPartition:
             ret += "$piddef$";
@@ -4143,14 +3958,8 @@ CONV_FN(PartitionExpr, pexpr)
             ret += "$piddef$";
             break;
         case PartitionType::kPartitionId:
-<<<<<<< HEAD
-            ret += "ID '";
-            ret += pexpr.partition_id();
-            ret += "'";
-=======
             ret += "ID ";
             appendSQLStringLiteral(ret, pexpr.partition_id());
->>>>>>> origin/master
             break;
         case PartitionType::kAll:
             ret += "ALL";
@@ -4173,19 +3982,8 @@ CONV_FN(SinglePartitionExpr, spexpr)
     PartitionExprToString(ret, pexpr);
 }
 
-<<<<<<< HEAD
-CONV_FN(LightDelete, del)
-{
-    ret += "DELETE FROM ";
-    ExprSchemaTableToString(ret, del.est());
-    if (del.has_cluster())
-    {
-        ClusterToString(ret, del.cluster());
-    }
-=======
 CONV_FN(Delete, del)
 {
->>>>>>> origin/master
     if (del.has_single_partition())
     {
         ret += " IN ";
@@ -4211,179 +4009,6 @@ CONV_FN(LightDelete, del)
     }
 }
 
-<<<<<<< HEAD
-CONV_FN(Truncate, trunc)
-{
-    ret += "TRUNCATE ";
-    using TruncateType = Truncate::TruncateOneofCase;
-    switch (trunc.truncate_oneof_case())
-    {
-        case TruncateType::kEst:
-            ExprSchemaTableToString(ret, trunc.est());
-            break;
-        case TruncateType::kAllTables:
-            ret += "ALL TABLES FROM ";
-            DatabaseToString(ret, trunc.all_tables());
-            break;
-        case TruncateType::kDatabase:
-            ret += "DATABASE ";
-            DatabaseToString(ret, trunc.database());
-            break;
-        default:
-            ret += "t0";
-    }
-    if (trunc.has_cluster())
-    {
-        ClusterToString(ret, trunc.cluster());
-    }
-    if (trunc.sync())
-    {
-        ret += " SYNC";
-    }
-    if (trunc.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, trunc.setting_values());
-    }
-}
-
-CONV_FN(CheckTable, ct)
-{
-    ret += "CHECK TABLE ";
-    ExprSchemaTableToString(ret, ct.est());
-    if (ct.has_single_partition())
-    {
-        ret += " ";
-        SinglePartitionExprToString(ret, ct.single_partition());
-    }
-    if (ct.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, ct.setting_values());
-    }
-}
-
-CONV_FN(DescTable, dt)
-{
-    ret += "DESCRIBE ";
-    using DescType = DescTable::DescOneofCase;
-    switch (dt.desc_oneof_case())
-    {
-        case DescType::kEst:
-            ExprSchemaTableToString(ret, dt.est());
-            break;
-        case DescType::kSel:
-            ret += "(";
-            SelectToString(ret, dt.sel());
-            ret += ")";
-            break;
-        case DescType::kStf:
-            SQLTableFuncCallToString(ret, dt.stf());
-            break;
-        default:
-            ret += "t0";
-    }
-    if (dt.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, dt.setting_values());
-    }
-}
-
-CONV_FN(DeduplicateExpr, de)
-{
-    if (de.has_col_list())
-    {
-        ret += " BY ";
-        ColumnPathListToString(ret, 0, de.col_list());
-    }
-    else if (de.has_ded_star())
-    {
-        ret += " BY *";
-    }
-    else if (de.has_ded_star_except())
-    {
-        ret += " BY * EXCEPT (";
-        ColumnPathListToString(ret, 0, de.ded_star_except());
-        ret += ")";
-    }
-}
-
-CONV_FN(OptimizeTable, ot)
-{
-    ret += "OPTIMIZE TABLE ";
-    ExprSchemaTableToString(ret, ot.est());
-    if (ot.has_cluster())
-    {
-        ClusterToString(ret, ot.cluster());
-    }
-    if (ot.has_single_partition())
-    {
-        ret += " ";
-        SinglePartitionExprToString(ret, ot.single_partition());
-    }
-    if (ot.final())
-    {
-        ret += " FINAL";
-    }
-    if (ot.has_dedup())
-    {
-        ret += " DEDUPLICATE";
-        if (ot.cleanup())
-        {
-            ret += " CLEANUP";
-        }
-        DeduplicateExprToString(ret, ot.dedup());
-    }
-    else if (ot.cleanup())
-    {
-        ret += " CLEANUP";
-    }
-    if (ot.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, ot.setting_values());
-    }
-}
-
-CONV_FN(Exchange, et)
-{
-    ret += "EXCHANGE ";
-    switch (et.sobject())
-    {
-        case SQLObject::TABLE:
-            ret += "TABLES";
-            break;
-        case SQLObject::VIEW:
-            ret += "VIEWS";
-            break;
-        case SQLObject::DICTIONARY:
-            ret += "DICTIONARIES";
-            break;
-        case SQLObject::DATABASE:
-            ret += "DATABASES";
-            break;
-        case SQLObject::FUNCTION:
-            ret += "FUNCTIONS";
-            break;
-    }
-    ret += " ";
-    SQLObjectNameToString(ret, et.object1());
-    ret += " AND ";
-    SQLObjectNameToString(ret, et.object2());
-    if (et.has_cluster())
-    {
-        ClusterToString(ret, et.cluster());
-    }
-    if (et.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, et.setting_values());
-    }
-}
-
-=======
->>>>>>> origin/master
 CONV_FN(UpdateSet, upt)
 {
     ColumnPathToString(ret, 0, upt.col());
@@ -5124,13 +4749,6 @@ static void RowPolicyClausesToString(
     const SQLIdentifier * role,
     const bool create)
 {
-<<<<<<< HEAD
-    if (hdel.has_single_partition())
-    {
-        ret += "IN ";
-        SinglePartitionExprToString(ret, hdel.single_partition());
-        ret += " ";
-=======
     if (crp.has_is_restrictive())
     {
         ret += " AS ";
@@ -5149,12 +4767,9 @@ static void RowPolicyClausesToString(
     {
         ret += " TO ";
         SQLIdentifierToString(ret, *role);
->>>>>>> origin/master
     }
 }
 
-<<<<<<< HEAD
-=======
 static void MaskingPolicyClausesToString(
     String & ret, const CreateMaskingPolicy & cmp, const bool has_where_expr, const WhereStatement & where_expr, const SQLIdentifier * role)
 {
@@ -5262,7 +4877,6 @@ CONV_FN(ExecuteCommand, ec)
     }
 }
 
->>>>>>> origin/master
 CONV_FN(AlterItem, alter)
 {
     ret += alter.paren() ? "(" : "";
@@ -5360,11 +4974,7 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kMaterializeIndex:
             ret += "MATERIALIZE INDEX ";
-<<<<<<< HEAD
-            IndexToString(ret, alter.materialize_index().idx());
-=======
             SQLIdentifierToString(ret, alter.materialize_index().idx());
->>>>>>> origin/master
             if (alter.materialize_index().has_single_partition())
             {
                 ret += " IN ";
@@ -5381,11 +4991,7 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kClearIndex:
             ret += "CLEAR INDEX ";
-<<<<<<< HEAD
-            IndexToString(ret, alter.clear_index().idx());
-=======
             SQLIdentifierToString(ret, alter.clear_index().idx());
->>>>>>> origin/master
             if (alter.clear_index().has_single_partition())
             {
                 ret += " IN ";
@@ -5422,11 +5028,7 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kMaterializeProjection:
             ret += "MATERIALIZE PROJECTION ";
-<<<<<<< HEAD
-            ProjectionToString(ret, alter.materialize_projection().proj());
-=======
             SQLIdentifierToString(ret, alter.materialize_projection().proj());
->>>>>>> origin/master
             if (alter.materialize_projection().has_single_partition())
             {
                 ret += " IN ";
@@ -5435,11 +5037,7 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kClearProjection:
             ret += "CLEAR PROJECTION ";
-<<<<<<< HEAD
-            ProjectionToString(ret, alter.clear_projection().proj());
-=======
             SQLIdentifierToString(ret, alter.clear_projection().proj());
->>>>>>> origin/master
             if (alter.clear_projection().has_single_partition())
             {
                 ret += " IN ";
@@ -5753,11 +5351,7 @@ CONV_FN(SystemCommand, cmd)
                 ClusterToString(ret, true, cmd.cluster());
             }
             ret += " ";
-<<<<<<< HEAD
-            FunctionToString(ret, cmd.reload_function());
-=======
             SQLIdentifierToString(ret, cmd.reload_function());
->>>>>>> origin/master
             break;
         case CmdType::kReloadAsynchronousMetrics:
             ret += "RELOAD ASYNCHRONOUS METRICS";
@@ -5847,15 +5441,10 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kStartPullingReplicationLog:
             SystemCommandOnCluster(ret, "START PULLING REPLICATION LOG", cmd, cmd.start_pulling_replication_log());
             break;
-<<<<<<< HEAD
-        case CmdType::kSyncReplica:
-            SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, cmd.sync_replica().est());
-=======
         case CmdType::kSyncReplica: {
             const auto & sr = cmd.sync_replica();
 
             SystemCommandOnCluster(ret, "SYNC REPLICA", cmd, sr.est());
->>>>>>> origin/master
             ret += " ";
             using SyncType = SyncReplica::SyncOneofCase;
             switch (sr.sync_oneof_case())
@@ -5924,12 +5513,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kUnloadPk:
             SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
             break;
-<<<<<<< HEAD
-        case CmdType::kRefreshViews:
-            ret += "REFRESH VIEWS";
-            break;
-=======
->>>>>>> origin/master
         case CmdType::kRefreshView:
             ret += "REFRESH VIEW ";
             ExprSchemaTableToString(ret, cmd.refresh_view());
@@ -6354,8 +5937,6 @@ CONV_FN(Rename, ren)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, ren.setting_values());
-<<<<<<< HEAD
-=======
     }
 }
 
@@ -6595,7 +6176,6 @@ CONV_FN(CreatePolicy, cp)
     else if (cp.has_row())
     {
         RowPolicyClausesToString(ret, cp.row(), cp.has_where_expr(), cp.where_expr(), role, true);
->>>>>>> origin/master
     }
 }
 
@@ -6671,8 +6251,6 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kRename:
             RenameToString(ret, query.rename());
             break;
-<<<<<<< HEAD
-=======
         case QueryType::kKill:
             KillToString(ret, query.kill());
             break;
@@ -6685,7 +6263,6 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kSnapshotQuery:
             SnapshotQueryToString(ret, query.snapshot_query());
             break;
->>>>>>> origin/master
         default:
             ret += "SELECT 1";
     }
@@ -6693,15 +6270,12 @@ CONV_FN(SQLQueryInner, query)
 
 CONV_FN(ExplainQuery, explain)
 {
-<<<<<<< HEAD
-=======
     if (explain.has_execute_as())
     {
         ret += "EXECUTE AS ";
         appendSQLStringLiteral(ret, explain.execute_as());
         ret += " ";
     }
->>>>>>> origin/master
     if (explain.is_explain())
     {
         ret += "EXPLAIN ";
@@ -6730,14 +6304,10 @@ CONV_FN(ExplainQuery, explain)
             ret += " ";
         }
     }
-<<<<<<< HEAD
-    SQLQueryInnerToString(ret, explain.inner_query());
-=======
     if (!explain.has_expl() || explain.expl() != ExplainQuery_ExplainValues_CURRENT_TRANSACTION)
     {
         SQLQueryInnerToString(ret, explain.inner_query());
     }
->>>>>>> origin/master
 }
 
 CONV_FN(SingleSQLQuery, query)
@@ -6772,8 +6342,5 @@ CONV_FN(SQLQuery, query)
     }
     ret += ";";
 }
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/master
 }

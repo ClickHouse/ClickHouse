@@ -28,12 +28,9 @@ private:
 
     std::unique_ptr<ThreadPool> thread_pool;
     std::unique_ptr<ThreadPoolCallbackRunnerLocal<void>> runner;
-<<<<<<< HEAD
-=======
 
     /// Needed to hold query contexts and run onFinish/onException callback.
     std::vector<BlockIO> io_holders;
->>>>>>> origin/master
 };
 
 }

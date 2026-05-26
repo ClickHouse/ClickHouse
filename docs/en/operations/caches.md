@@ -13,13 +13,8 @@ and reduce the need to read from or write to disk.
 
 The main cache types are:
 
-<<<<<<< HEAD
-- `mark_cache` — Cache of marks used by table engines of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family.
-- `uncompressed_cache` — Cache of uncompressed data used by table engines of the [MergeTree](../engines/table-engines/mergetree-family/mergetree.md) family.
-=======
 - `mark_cache` — Cache of [marks](/development/architecture#merge-tree) used by table engines of the [`MergeTree`](../engines/table-engines/mergetree-family/mergetree.md) family.
 - `uncompressed_cache` — Cache of uncompressed data used by table engines of the [`MergeTree`](../engines/table-engines/mergetree-family/mergetree.md) family.
->>>>>>> origin/master
 - Operating system page cache (used indirectly, for files with actual data).
 
 There are also a host of additional cache types:

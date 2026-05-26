@@ -407,17 +407,7 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 <CloudNotSupportedBadge/>
 
-<<<<<<< HEAD
-`ZSTD_QAT[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable level, implemented by [Intel® QATlib](https://github.com/intel/qatlib) and [Intel® QAT ZSTD Plugin](https://github.com/intel/QAT-ZSTD-Plugin). Possible levels: \[1, 12\]. Default level: 1. Recommended level range: \[6, 12\]. Some limitations apply:
-
-- ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
-- For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
-- Decompression is always performed in software.
-
-#### DEFLATE_QPL {#deflate_qpl}
-=======
 #### Obsolete: DEFLATE_QPL {#deflate_qpl}
->>>>>>> origin/master
 
 <CloudNotSupportedBadge/>
 

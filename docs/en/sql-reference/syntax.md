@@ -4,10 +4,7 @@ sidebar_label: 'Syntax'
 sidebar_position: 2
 slug: /sql-reference/syntax
 title: 'Syntax'
-<<<<<<< HEAD
-=======
 doc_type: 'reference'
->>>>>>> origin/master
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -41,10 +38,6 @@ When the aforementioned setting is set to `1`,
 ClickHouse first tries to parse values with the fast stream parser. 
 If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#expressions).
 </details>
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/master
 
 The data can have any format. 
 When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#max_query_size) bytes of the request in RAM 
@@ -139,8 +132,6 @@ If you want to use identifiers the same as keywords or you want to use other sym
 The same rules that apply for escaping in quoted identifiers also apply for string literals. See [String](#string) for more details.
 :::
 
-<<<<<<< HEAD
-=======
 :::tip[Avoid using dots in column names]
 Column names containing dots, columns sharing a common dot-prefix, and columns with the `Array` type can each be interpreted as part of a flattened Nested structure when `flatten_nested = 1` (the default). This can cause unexpected array-length validation on inserts and renaming restrictions. 
 
@@ -148,7 +139,6 @@ Avoid using dots in column names if possible.
 Use underscores (`_`) or another separator instead of dots in column names unless you intentionally need `Nested` semantics.
 :::
 
->>>>>>> origin/master
 ## Literals {#literals}
 
 In ClickHouse, a literal is a value which is directly represented in a query.
@@ -308,18 +298,9 @@ all placeholders are resolved and replaced by the actual query parameter values.
 
 Query parameters can be defined in several ways:
 
-<<<<<<< HEAD
-- `SET param_<name>=<value>`
-- `--param_<name>='<value>'`
-
-When using the second variant, it is passed as an argument to `clickhouse-client` on the command line where:
-- `<name>` is the name of the query parameter.
-- `<value>` is its value.
-=======
 - `SET param_<name>=<value>` — using a `SET` command in a query.
 - `--param_<name>='<value>'` — as an argument to `clickhouse-client` on the command line.
 - `param_<name>=<value>` — as a URL query string parameter for the HTTP interface.
->>>>>>> origin/master
 
 A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
 
@@ -470,11 +451,7 @@ The parts of the syntax above are explained below.
 
 | Part of syntax | Description                                                                                                                                      | Example                                                                 | Notes                                                                                                                                                |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-<<<<<<< HEAD
-| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#cast) function, the `AS` keyword has another meaning. See the description of the function. |
-=======
 | `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#CAST) function, the `AS` keyword has another meaning. See the description of the function. |
->>>>>>> origin/master
 | `expr`         | Any expression supported by ClickHouse.                                                                                                          | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                      |
 | `alias`        | Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.                                                                       | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                      |
 

@@ -312,11 +312,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) const
-=======
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.

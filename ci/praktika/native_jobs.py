@@ -472,12 +472,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Push pending CI report")
         HtmlRunnerHooks.push_pending_ci_report(workflow)
 
-<<<<<<< HEAD
-    print(f"Start [{job_name}], workflow [{workflow.name}]")
-    results = []
-    files = []
-    env = _Environment.get()
-=======
         info = Info()
         report_url_latest_sha = info.get_report_url(latest=True)
         report_url_current_sha = info.get_report_url(latest=False)
@@ -501,7 +495,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
             )
 
->>>>>>> origin/master
     _ = RunConfig(
         name=workflow.name,
         digest_jobs={},
@@ -516,24 +509,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         custom_data={},
     ).dump()
 
-<<<<<<< HEAD
-    if env.PR_NUMBER > 0:
-        # refresh PR data
-        title, body, labels = GH.get_pr_title_body_labels()
-        if title:
-            if title != env.PR_TITLE:
-                print("PR title has been changed")
-                env.PR_TITLE = title
-            if env.PR_BODY != body:
-                print("PR body has been changed")
-                env.PR_BODY = body
-            if env.PR_LABELS != labels:
-                print("PR labels have been changed")
-                env.PR_LABELS = labels
-            env.dump()
-
-=======
->>>>>>> origin/master
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
         res_ = []
@@ -670,6 +645,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         try:
             pr_labels = Info().pr_labels
             skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            if not skip_lookup:
+                # Fail loud on missing S3 read access. Otherwise CacheRunnerHooks
+                # silently treats every fetch as a cache miss, hiding the real
+                # cause (e.g. AccessDenied from a misconfigured runner fleet).
+                S3.assert_read_access(f"{Settings.CACHE_S3_PATH}/_read_probe")
             workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True

@@ -5,10 +5,7 @@
 #include <fstream>
 #include <optional>
 #include <unordered_map>
-<<<<<<< HEAD
-=======
 #include <unordered_set>
->>>>>>> origin/master
 
 #include "config.h"
 
@@ -39,16 +36,6 @@ using JSONParserImpl = DB::DummyJSONParser;
 namespace BuzzHouse
 {
 
-<<<<<<< HEAD
-const constexpr uint32_t allow_bool = (1 << 0), allow_unsigned_int = (1 << 1), allow_int8 = (1 << 2), allow_int64 = (1 << 3),
-                         allow_int128 = (1 << 4), allow_floating_points = (1 << 5), allow_dates = (1 << 6), allow_date32 = (1 << 7),
-                         allow_datetimes = (1 << 8), allow_datetime64 = (1 << 9), allow_strings = (1 << 10), allow_decimals = (1 << 11),
-                         allow_uuid = (1 << 12), allow_enum = (1 << 13), allow_dynamic = (1 << 14), allow_JSON = (1 << 15),
-                         allow_nullable = (1 << 16), allow_low_cardinality = (1 << 17), allow_array = (1 << 18), allow_map = (1 << 19),
-                         allow_tuple = (1 << 20), allow_variant = (1 << 21), allow_nested = (1 << 22), allow_ipv4 = (1 << 23),
-                         allow_ipv6 = (1 << 24), allow_geo = (1 << 25), set_any_datetime_precision = (1 << 26),
-                         set_no_decimal_limit = (1 << 27), allow_fixed_strings = (1 << 28);
-=======
 const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (UINT64_C(1) << 1), allow_int8 = (UINT64_C(1) << 2),
                          allow_int64 = (UINT64_C(1) << 3), allow_int128 = (UINT64_C(1) << 4), allow_float32 = (UINT64_C(1) << 5),
                          allow_dates = (UINT64_C(1) << 6), allow_date32 = (UINT64_C(1) << 7), allow_datetimes = (UINT64_C(1) << 8),
@@ -87,7 +74,6 @@ const constexpr uint64_t allow_replacing_mergetree
 
 extern const DB::Strings compressionMethods;
 extern const DB::Strings codecs;
->>>>>>> origin/master
 
 using JSONObjectType = JSONParserImpl::Element;
 
@@ -244,8 +230,6 @@ public:
     PerformanceResult & operator=(const PerformanceResult & pr) = default;
     PerformanceResult & operator=(PerformanceResult && pr) noexcept = default;
 };
-<<<<<<< HEAD
-=======
 
 class SystemTable
 {
@@ -293,7 +277,6 @@ String escapeSQLString(const String & s, char escape_char = '\'');
 /// Percent-encode a string for use as a URL query parameter value.
 /// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
 String urlEncodeQueryParam(const String & s);
->>>>>>> origin/master
 
 class FuzzConfig
 {
@@ -305,11 +288,6 @@ public:
     static const constexpr String oracleRole = "buzzhouse_oracle_role";
 
     LoggerPtr log;
-<<<<<<< HEAD
-    DB::Strings collations, storage_policies, timezones, disks, clusters;
-    std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
-        minio_server;
-=======
     std::ofstream outf;
     DB::Strings collations;
     DB::Strings storage_policies;
@@ -341,7 +319,6 @@ public:
     std::optional<ServerCredentials> kafka_server;
     std::optional<ServerCredentials> dolor_server;
 
->>>>>>> origin/master
     std::unordered_map<String, PerformanceMetric> metrics;
 
     std::unordered_set<uint32_t> disallowed_error_codes;
@@ -470,11 +447,8 @@ public:
     String tableGetRandomProjection(uint64_t rand_val, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
-<<<<<<< HEAD
-=======
 
     void validateClickHouseHealth();
->>>>>>> origin/master
 };
 
 }

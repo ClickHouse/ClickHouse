@@ -1,22 +1,11 @@
 #pragma once
 
-<<<<<<< HEAD
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/FieldToDataType.h>
-#include <base/sort.h>
-=======
->>>>>>> origin/master
 #include <base/TypeName.h>
 #include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
-<<<<<<< HEAD
-#include <Columns/IColumnImpl.h>
-
-=======
->>>>>>> origin/master
 
 namespace DB
 {
@@ -132,20 +121,13 @@ public:
 
     MutableColumnPtr cloneResized(size_t size) const final;
 
-    Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
-    void get(size_t n, Field & res) const override { res = (*this)[n]; }
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
-    }
-=======
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override;
->>>>>>> origin/master
-    bool getBool(size_t n) const override { return bool(data[n].value); }
-    Int64 getInt(size_t n) const override { return Int64(data[n].value); }
-    UInt64 get64(size_t n) const override;
-    bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
+    Field operator[](size_t n) const final { return DecimalField<ValueType>(data[n], scale); }
+    void get(size_t n, Field & res) const final { res = (*this)[n]; }
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const final;
+    bool getBool(size_t n) const final { return bool(data[n].value); }
+    Int64 getInt(size_t n) const final { return Int64(data[n].value); }
+    UInt64 get64(size_t n) const final;
+    bool isDefaultAt(size_t n) const final { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const final;
     void filter(const IColumn::Filter & filt) final;

@@ -1210,19 +1210,9 @@
                 }
             });
 
-<<<<<<< HEAD
-        drawChart(null); // Initial draw
-
-        // Color utility
-        function stringToColor(str) {
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                hash = str.charCodeAt(i) + ((hash << 5) - hash);
-=======
             // Show details for hovered segment
             if (hoveredSegment) {
                 showSegmentDetails(hoveredSegment);
->>>>>>> origin/master
             }
         }
 
@@ -1778,21 +1768,10 @@
             const newETag = response.headers.get('ETag');
             const jsonData = await response.json();
 
-<<<<<<< HEAD
-            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
-        } catch (error) {
-            console.error('Error loading Results:', error);
-            if (infoElement) {
-                infoElement.textContent = 'Error loading data';
-                infoElement.style.display = 'block';
-            }
-            return { data: null, lastModifiedTime: null, eTag: null, updated: true };
-=======
             return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true, status: 200 };
         } catch (error) {
             console.error('Error loading Results:', error);
             return { data: null, lastModifiedTime: null, eTag: null, updated: true, status: 0 };
->>>>>>> origin/master
         }
     }
 

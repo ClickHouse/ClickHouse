@@ -7,10 +7,6 @@ from typing import Optional
 
 from .settings import Settings
 
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/master
 class Info:
 
     def __init__(self):
@@ -323,8 +319,6 @@ class Info:
                 print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
                 return False
         return True
-<<<<<<< HEAD
-=======
 
     def docker_tag(self, image_name):
         if self.env.WORKFLOW_CONFIG:
@@ -332,4 +326,3 @@ class Info:
             if digest_dockers:
                 return digest_dockers.get(image_name, None)
         return None
->>>>>>> origin/master

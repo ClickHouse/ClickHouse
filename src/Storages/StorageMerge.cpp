@@ -97,10 +97,8 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
-<<<<<<< HEAD
-=======
 extern const int UNKNOWN_DATABASE;
->>>>>>> origin/master
+extern const int UNKNOWN_TABLE;
 }
 
 namespace
@@ -232,11 +230,8 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         if (!access->isGranted(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name))
             return false;
 
-<<<<<<< HEAD
-=======
         access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
->>>>>>> origin/master
-        auto structure = t->getInMemoryMetadataPtr()->getColumns();
+        auto structure = t->getInMemoryMetadataPtr(query_context, false)->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {

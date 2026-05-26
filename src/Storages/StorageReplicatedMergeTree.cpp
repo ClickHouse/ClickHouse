@@ -9824,11 +9824,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         /// (in particular the list of virtual parts).
         queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::MERGE_PREDICATE);
 
-<<<<<<< HEAD
-        auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.partition_id});
-=======
         auto merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{part_info.getPartitionId()});
->>>>>>> origin/master
 
         auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
 

@@ -581,17 +581,6 @@ SELECT HEX(SHA512_256('abc'));
 
 #    if USE_BLAKE3
     using FunctionBLAKE3 = FunctionStringHashFixedString<GenericProvider<ImplBLAKE3>>;
-<<<<<<< HEAD
-    factory.registerFunction<FunctionBLAKE3>(FunctionDocumentation{
-        .description = R"(
-    Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
-    This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
-    The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
-    It returns a BLAKE3 hash as a byte array with type FixedString(32).
-    )",
-        .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-        .category{"Hash"}});
-=======
 
 
     FunctionDocumentation::Description description_BLAKE3  = R"(
@@ -625,7 +614,6 @@ SELECT hex(BLAKE3('ABC'))
     FunctionDocumentation documentation_BLAKE3 = {description_BLAKE3, syntax_BLAKE3, arguments_BLAKE3, {}, returned_value_BLAKE3, example_BLAKE3, introduced_in_BLAKE3, category_BLAKE3};
 
     factory.registerFunction<FunctionBLAKE3>(documentation_BLAKE3);
->>>>>>> origin/master
 #    endif
 
 #   if USE_SHA3IUF
@@ -652,9 +640,6 @@ SELECT hex(keccak256('hello'))
 ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
 │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
 └──────────────────────────────────────────────────────────────────┘
-<<<<<<< HEAD
-        )"}}});
-=======
         )"
     }
     };
@@ -663,7 +648,6 @@ SELECT hex(keccak256('hello'))
     FunctionDocumentation documentation_keccak256 = {description_keccak256, syntax_keccak256, arguments_keccak256, {}, returned_value_keccak256, example_keccak256, introduced_in_keccak256, category_keccak256};
 
     factory.registerFunction<FunctionKeccak256>(documentation_keccak256);
->>>>>>> origin/master
 #    endif
 }
 #endif

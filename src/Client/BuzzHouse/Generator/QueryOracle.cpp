@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-#include <cstdio>
-
-=======
->>>>>>> origin/master
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -245,15 +240,10 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-<<<<<<< HEAD
-    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.explain().inner_query().select().sel().select_core());
-    SelectStatementCore * ssc2 = ts->mutable_sel()->mutable_select_core();
-=======
     Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
     SelectStatementCore & ssc1 = *sel1.mutable_select_core();
     Select * sel2 = ts->mutable_sel();
     SelectStatementCore * ssc2 = sel2->mutable_select_core();
->>>>>>> origin/master
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
@@ -265,11 +255,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     ssc2->set_allocated_from(ssc1.release_from());
     if (ssc1.has_groupby())
     {
-<<<<<<< HEAD
-        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.groupby().having_expr().expr());
-=======
         ExprComparisonHighProbability & expr = *ssc1.mutable_groupby()->mutable_having_expr()->mutable_expr();
->>>>>>> origin/master
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
         ssc2->set_allocated_groupby(ssc1.release_groupby());
@@ -282,10 +268,6 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
-<<<<<<< HEAD
-    ts->set_format(sq1.explain().inner_query().select().format());
-    sif->set_path(qfile.generic_string());
-=======
     sel2->set_allocated_setting_values(sel1.release_setting_values());
     ts->set_format(sq1.single_query().explain().inner_query().select().format());
     const auto err = std::filesystem::remove(qcfile);
@@ -594,7 +576,6 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
->>>>>>> origin/master
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
@@ -701,14 +682,7 @@ void QueryOracle::dumpTableContent(
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
     jtf->set_final(t.supportsFinal());
-<<<<<<< HEAD
-
-    gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    const uint32_t ncols = static_cast<uint32_t>(gen.entries.size());
-    for (const auto & entry : gen.entries)
-=======
     switch (strategy)
->>>>>>> origin/master
     {
         case DumpOracleStrategy::DUMP_TABLE:
         case DumpOracleStrategy::OPTIMIZE:
@@ -761,14 +735,6 @@ void QueryOracle::dumpTableContent(
         }
         break;
     }
-<<<<<<< HEAD
-    gen.entries.clear();
-
-    addLimitOrOffset(rg, gen, ncols, sel);
-    ts->set_format(rg.pickRandomly(outIn));
-    sif->set_path(qfile.generic_string());
-    sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-=======
     if (test_content)
     {
         finishSettings(sel->mutable_setting_values());
@@ -809,7 +775,6 @@ void QueryOracle::dumpTableContent(
         }
         break;
     }
->>>>>>> origin/master
 }
 
 void QueryOracle::generateExportQuery(
@@ -861,11 +826,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-<<<<<<< HEAD
-    ff->set_outformat(outf);
-=======
     ff->set_outformat(rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : outFormats)));
->>>>>>> origin/master
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -1133,11 +1094,7 @@ void QueryOracle::generateImportQuery(
         iff->set_fcomp(ff.fcomp());
     }
 
-<<<<<<< HEAD
-    if (!can_test_query_success && rg.nextSmallNumber() < 10)
-=======
     if (!can_test_oracle_result && rg.nextSmallNumber() < 10)
->>>>>>> origin/master
     {
         /// If can't test success, swap settings sometimes
         gen.generateSettingValues(rg, formatSettings, nins->mutable_setting_values());
@@ -1401,12 +1358,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 }
 
-<<<<<<< HEAD
-void QueryOracle::findTablesWithPeersAndReplace(
-    RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, const bool replace)
-=======
 void QueryOracle::iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules)
->>>>>>> origin/master
 {
     bool handled = false;
     const google::protobuf::Descriptor * desc = message.GetDescriptor();
@@ -1434,87 +1386,16 @@ void QueryOracle::iterateQuery(google::protobuf::Message & message, const std::v
 
         if (field->is_repeated())
         {
-<<<<<<< HEAD
-            findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen, replace);
-        }
-        else if (sel.has_set_query())
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen, replace);
-        }
-        if (sel.has_ctes())
-        {
-            if (sel.ctes().cte().has_cte_query())
-            {
-                findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()), gen, replace);
-            }
-            for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
-            {
-                if (sel.ctes().other_ctes(i).has_cte_query())
-=======
             if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
             {
                 const int n = refl->FieldSize(message, field);
                 for (int idx = 0; idx < n; ++idx)
->>>>>>> origin/master
                 {
                     google::protobuf::Message * sub = refl->MutableRepeatedMessage(&message, field, idx);
                     iterateQuery(*sub, rules);
                 }
             }
         }
-<<<<<<< HEAD
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SetQuery")
-    {
-        auto & setq = static_cast<SetQuery &>(mes);
-
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()), gen, replace);
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()), gen, replace);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
-    {
-        auto & ssc = static_cast<SelectStatementCore &>(mes);
-
-        if (ssc.has_from())
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen, replace);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
-    {
-        auto & jquery = static_cast<JoinedQuery &>(mes);
-
-        for (int i = 0; i < jquery.tos_list_size(); i++)
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen, replace);
-        }
-        findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen, replace);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
-    {
-        auto & jclause = static_cast<JoinClause &>(mes);
-
-        for (int i = 0; i < jclause.clauses_size(); i++)
-        {
-            if (jclause.clauses(i).has_core())
-            {
-                findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen, replace);
-            }
-        }
-        findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen, replace);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
-    {
-        auto & tos = static_cast<TableOrSubquery &>(mes);
-
-        if (tos.has_joined_table())
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tos.joined_table().tof()), gen, replace);
-        }
-        else if (tos.has_joined_query())
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
-=======
         else if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
         {
             if (!refl->HasField(message, field))
@@ -1523,7 +1404,6 @@ void QueryOracle::iterateQuery(google::protobuf::Message & message, const std::v
             }
             google::protobuf::Message * sub = refl->MutableMessage(&message, field);
             iterateQuery(*sub, rules);
->>>>>>> origin/master
         }
     }
 }
@@ -1541,52 +1421,22 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
             = *(measure_performance ? sq2inner->mutable_select()->mutable_sel()
                                     : sq2inner->mutable_insert()->mutable_select()->mutable_select());
 
-<<<<<<< HEAD
-        if (tfunc.has_loop())
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tfunc.loop()), gen, replace);
-        }
-        else if (tfunc.has_remote() || tfunc.has_cluster())
-        {
-            findTablesWithPeersAndReplace(
-                rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()), gen, replace);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
-    {
-        auto & torfunc = static_cast<TableOrFunction &>(mes);
-
-        if (torfunc.has_est())
-        {
-            const ExprSchemaTable & est = torfunc.est();
-
-            if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
-            {
-                const uint32_t tname = static_cast<uint32_t>(std::stoul(est.table().table().substr(1)));
-
-                if (gen.tables.find(tname) != gen.tables.end())
-=======
         rules.push_back(
             MatchHandler{
                 .predicate
                 = [](const google::protobuf::Message & m) { return m.GetDescriptor()->full_name() == "BuzzHouse.TableOrFunction"; },
                 .handler = [&](google::protobuf::Message & message) -> bool
->>>>>>> origin/master
                 {
                     TableOrFunction * tf = dynamic_cast<TableOrFunction *>(&message);
 
                     chassert(tf);
                     if (tf && tf->has_est() && !compare_explain)
                     {
-<<<<<<< HEAD
-                        if (replace)
-=======
                         const ExprSchemaTable & est = tf->est();
 
                         if (!est.has_database()
                             || (est.database().value() != "system" && est.database().value() != "INFORMATION_SCHEMA"
                                 && est.database().value() != "information_schema"))
->>>>>>> origin/master
                         {
                             const String tkey = StatementGenerator::getNameFromProto(est.table().value());
 
@@ -1610,27 +1460,10 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
                                 return true;
                             }
                         }
-<<<<<<< HEAD
-                        found_tables.insert(tname);
-                        can_test_query_success &= t.hasClickHousePeer();
-                    }
-                }
-            }
-        }
-        else if (torfunc.has_tfunc())
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<TableFunction &>(torfunc.tfunc()), gen, replace);
-        }
-        else if (torfunc.has_select())
-        {
-            findTablesWithPeersAndReplace(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()), gen, replace);
-        }
-=======
                     }
                     return false;
                 }});
         iterateQuery(nsel, rules);
->>>>>>> origin/master
     }
 }
 
@@ -1666,15 +1499,10 @@ void QueryOracle::replaceQueryWithTablePeers(
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
-<<<<<<< HEAD
-    Select & nsel = const_cast<Select &>(
-        measure_performance ? sq2.explain().inner_query().select().sel() : sq2.explain().inner_query().insert().select());
-=======
     SQLQueryInner * sq2inner = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query();
     Select & nsel = *(
         measure_performance ? sq2inner->mutable_select()->mutable_sel() : sq2inner->mutable_insert()->mutable_select()->mutable_select());
 
->>>>>>> origin/master
     /// Replace references
     rules.push_back(
         MatchHandler{
@@ -1743,10 +1571,6 @@ void QueryOracle::replaceQueryWithTablePeers(
     {
         SQLQuery next2;
         const SQLTable & t = gen.tables.at(entry);
-<<<<<<< HEAD
-        Insert * ins = next.mutable_explain()->mutable_inner_query()->mutable_insert();
-        SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
-=======
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
@@ -1756,7 +1580,6 @@ void QueryOracle::replaceQueryWithTablePeers(
             SQLQuery next;
             const std::optional<String> & cluster = t.getCluster();
             Alter * alter = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
->>>>>>> origin/master
 
             alter->set_sobject(SQLObject::TABLE);
             t.setName(alter->mutable_object()->mutable_est(), false);
@@ -1779,11 +1602,7 @@ void QueryOracle::replaceQueryWithTablePeers(
             gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         }
         gen.entries.clear();
-<<<<<<< HEAD
-        peer_queries.emplace_back(next);
-=======
         peer_queries.emplace_back(next2);
->>>>>>> origin/master
     }
 }
 

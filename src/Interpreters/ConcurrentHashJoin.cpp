@@ -113,11 +113,7 @@ void reserveSpaceInHashMaps(
     {
         /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
         /// we need to preallocate in all buckets of all hash maps.
-<<<<<<< HEAD
-        const size_t reserve_size = hint->median_size;
-=======
         const size_t reserve_size = hint->ht_size;
->>>>>>> origin/master
 
         /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill memory cap.
         /// Statistics-driven preallocation can reserve many gigabytes up front based on a previous larger
@@ -432,42 +428,7 @@ JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
 
     chassert(dispatched_blocks.size() == (hash_joins[0]->data->twoLevelMapIsUsed() ? 1 : slots));
 
-<<<<<<< HEAD
-    block = {};
-
-    /// Just in case, should be no-op always
-    remaining_blocks.resize(dispatched_blocks.size());
-
-    chassert(res.empty());
-    res.clear();
-    res.reserve(dispatched_blocks.size());
-
-    /// Might be zero, which means unlimited
-    size_t remaining_rows_before_limit = table_join->maxJoinedBlockRows();
-
-    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
-    {
-        if (table_join->maxJoinedBlockRows() && remaining_rows_before_limit == 0)
-        {
-            /// Joining previous blocks produced enough rows already, skipping the rest of the blocks until the next call
-            remaining_blocks[i] = std::move(dispatched_blocks[i]);
-            continue;
-        }
-        auto & hash_join = hash_joins[i];
-        auto & current_block = dispatched_blocks[i];
-        if (current_block && (i == 0 || current_block.rows()))
-            hash_join->data->joinBlock(current_block, remaining_blocks[i]);
-        remaining_rows_before_limit -= std::min(current_block.rows(), remaining_rows_before_limit);
-    }
-    for (size_t i = 0; i < dispatched_blocks.size(); ++i)
-    {
-        auto & dispatched_block = dispatched_blocks[i];
-        if (dispatched_block && (i == 0 || dispatched_block.rows()))
-            res.emplace_back(std::move(dispatched_block).getSourceBlock());
-    }
-=======
     return std::make_unique<ConcurrentHashJoinResult>(hash_joins, std::move(dispatched_blocks));
->>>>>>> origin/master
 }
 
 void ConcurrentHashJoin::checkTypesOfKeys(const Block & block) const

@@ -80,15 +80,12 @@ mkdir -p $DEST_CLIENT_PATH
 # you should check clickhouse version so that you won't
 # break validations using previous ClickHouse version (like bugfix validation).
 
-<<<<<<< HEAD
-=======
 # Patching configs which are symbolic links can affect source files,
 # need to delete links created by previous script versions
 # Also this is generally good (least astonishment principle) not to retain any old configs
 rm -rf "$DEST_SERVER_PATH"/config.d
 mkdir -p $DEST_SERVER_PATH/config.d/
 
->>>>>>> origin/master
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_num_to_warn.xml $DEST_SERVER_PATH/config.d/
@@ -127,9 +124,7 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
-if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
-    ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
-fi
+ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
@@ -418,12 +413,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
 
-    if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
-        rm $ch_server_1_path/config.d/transactions.xml
-        rm $ch_server_2_path/config.d/transactions.xml
-        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
-        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
-    fi
+    rm $ch_server_1_path/config.d/transactions.xml
+    rm $ch_server_2_path/config.d/transactions.xml
+    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
+    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
 
 #    ch_server_lib_1=$DEST_SERVER_PATH/../../var/lib/clickhouse1
 #    ch_server_lib_2=$DEST_SERVER_PATH/../../var/lib/clickhouse2

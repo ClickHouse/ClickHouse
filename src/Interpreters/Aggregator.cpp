@@ -1,7 +1,4 @@
-<<<<<<< HEAD
-=======
 #include <optional>
->>>>>>> origin/master
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>

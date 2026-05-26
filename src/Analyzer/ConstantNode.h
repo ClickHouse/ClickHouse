@@ -5,10 +5,7 @@
 #include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
-<<<<<<< HEAD
-=======
 #include <Parsers/ASTLiteral.h>
->>>>>>> origin/master
 
 namespace DB
 {
@@ -25,13 +22,8 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
-<<<<<<< HEAD
-    /// Construct constant query tree node from constant value and source expression
-    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression);
-=======
     /// Construct constant query tree node from constant value, source expression and deterministic flag
     explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression, bool is_deterministic = true);
->>>>>>> origin/master
 
     /// Construct constant query tree node from constant value
     explicit ConstantNode(ConstantValue constant_value_);
@@ -114,20 +106,13 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType() const
-=======
     String getValueName(const IColumn::Options & options) const
->>>>>>> origin/master
     {
         return constant_value.getValueName(options);
     }
 
-<<<<<<< HEAD
-=======
     bool isDeterministic() const { return is_deterministic; }
 
->>>>>>> origin/master
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 

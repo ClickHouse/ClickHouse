@@ -672,16 +672,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, minmax_columns);
 
-<<<<<<< HEAD
-    bool optimize_on_insert = context->getSettingsRef()[Setting::optimize_on_insert] && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-=======
-    const auto & global_settings = context->getSettingsRef();
-    const auto & data_settings = data.getSettings();
-    bool optimize_on_insert = !isPatchPartitionId(partition_id)
+    const bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]
         && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-
->>>>>>> origin/master
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 

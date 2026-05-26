@@ -46,10 +46,7 @@ endfunction()
 # protoc and llvm-tlbgen.
 disable_heavy_build_check_if_needed()
 disable_dummy_launchers_if_needed()
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/master
 # We need to add OpenSSL first so that all our projects use our own version instead of the system one.
 add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 add_contrib (abseil-cpp-cmake abseil-cpp)

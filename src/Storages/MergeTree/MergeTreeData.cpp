@@ -8888,21 +8888,23 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             const auto & query_settings = query_context->getSettingsRef();
 
             minmax_idx_condition.emplace(
-                inverted_dag, query_context, minmax_columns_names,
-<<<<<<< HEAD
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)));
-            partition_pruner.emplace(metadata_snapshot, inverted_dag, query_context, false /* strict */);
-=======
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)),
-                /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_analysis);
+                inverted_dag, query_context, minmax_columns.getNames(),
+                getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context)),
+                /*single_point_=*/false,
+                /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning] || !query_settings[Setting::use_skip_indexes]);
+        }
+
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            const auto & query_settings = query_context->getSettingsRef();
+
             partition_pruner.emplace(
                 metadata_snapshot,
                 inverted_dag,
                 query_context,
-                false /* strict */,
-                skip_partition_analysis);
->>>>>>> origin/master
+                /*strict=*/false,
+                /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning]);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);
@@ -10884,11 +10886,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
         /// New part have to capture its name, therefore there is no concurrentcy in directory creation
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-<<<<<<< HEAD
-                        "New empty part is about to matirialize but the directory already exist"
-=======
                         "New empty part is about to materialize but the directory already exist"
->>>>>>> origin/master
                         ", new part {}"
                         ", directory {}",
                         new_part_name, new_data_part_storage->getFullPath());

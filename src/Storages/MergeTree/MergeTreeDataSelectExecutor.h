@@ -130,33 +130,6 @@ private:
         const Settings & settings,
         LoggerPtr log);
 
-<<<<<<< HEAD
-    static MarkRanges filterMarksUsingIndex(
-        MergeTreeIndexPtr index_helper,
-        MergeTreeIndexConditionPtr condition,
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
-        LoggerPtr log);
-
-    static MarkRanges filterMarksUsingMergedIndex(
-        MergeTreeIndices indices,
-        MergeTreeIndexMergedConditionPtr condition,
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
-        LoggerPtr log);
-
-=======
->>>>>>> origin/master
     struct PartFilterCounters
     {
         size_t num_initial_selected_parts = 0;

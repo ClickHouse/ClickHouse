@@ -29,14 +29,6 @@ struct MatchHandler
 class QueryOracle
 {
 private:
-<<<<<<< HEAD
-    const FuzzConfig & fc;
-    const std::filesystem::path qfile, qfile_peer;
-
-    MD5Impl md5_hash1, md5_hash2;
-    Poco::DigestEngine::Digest first_digest, second_digest;
-    PerformanceResult res1, res2;
-=======
     static const std::vector<std::vector<OutFormat>> oracleFormats;
     FuzzConfig & fc;
     const std::filesystem::path qcfile;
@@ -49,7 +41,6 @@ private:
     Poco::DigestEngine::Digest second_digest;
     PerformanceResult res1;
     PerformanceResult res2;
->>>>>>> origin/master
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     int first_errcode = 0;

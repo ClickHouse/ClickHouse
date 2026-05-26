@@ -308,15 +308,9 @@ std::optional<String> optimizeUseNormalProjections(
         if (!analyzed)
             continue;
 
-<<<<<<< HEAD
-        /// Only consider projection with equal cost when force_optimize_projection is true.
-        if (candidate.sum_marks > ordinary_reading_marks
-            || (candidate.sum_marks == ordinary_reading_marks && !context->getSettingsRef()[Setting::force_optimize_projection]))
-=======
         auto & stat = parent_reading_select_result->projection_stats.emplace_back();
         stat.name = candidate.projection->name;
         for (const auto & index_stat : candidate.merge_tree_projection_select_result_ptr->index_stats)
->>>>>>> origin/master
         {
             if (index_stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
             {
@@ -344,13 +338,9 @@ std::optional<String> optimizeUseNormalProjections(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
                 candidate.projection->name,
                 candidate.sum_marks,
-<<<<<<< HEAD
-                ordinary_reading_marks);
-=======
                 parent_reading_marks);
 
             LOG_DEBUG(logger, "{}", stat.description);
->>>>>>> origin/master
             continue;
         }
         else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)

@@ -329,10 +329,6 @@
     M(FilesystemCacheOvercommitUsers, "Number of users tracked by the overcommit filesystem cache eviction policy") \
     M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-<<<<<<< HEAD
-    M(IcebergMetadataFilesCacheSize, "Size of the iceberg metadata cache in bytes") \
-    M(VectorSimilarityIndexCacheSize, "Size of the vector similarity index cache in bytes") \
-=======
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
@@ -385,7 +381,6 @@
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
     M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
     M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
->>>>>>> origin/master
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \

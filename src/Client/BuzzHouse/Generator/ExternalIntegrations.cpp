@@ -11,26 +11,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
-<<<<<<< HEAD
-#include <Common/ShellCommand.h>
-=======
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
->>>>>>> origin/master
 
 namespace BuzzHouse
 {
 
-<<<<<<< HEAD
-bool ClickHouseIntegratedDatabase::performIntegration(
-    RandomGenerator & rg,
-    std::shared_ptr<SQLDatabase> db,
-    const uint32_t tname,
-    const bool can_shuffle,
-    std::vector<ColumnPathChain> & entries)
-=======
 static String escapeJSON(const String & s)
 {
     String out;
@@ -73,7 +61,6 @@ static String escapeJSON(const String & s)
 
 bool ClickHouseIntegratedDatabase::performTableIntegration(
     RandomGenerator & rg, SQLTable & t, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
->>>>>>> origin/master
 {
     const String tname = getSQLQuotedTableName(t.db, t.getBaseName());
 
@@ -1090,11 +1077,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
             const uint32_t left = next_dist(rg.generator);
             const uint32_t right = next_dist(rg.generator);
 
-<<<<<<< HEAD
-            buf = appendDecimal(rg, left, right);
-=======
             buf = appendDecimal(rg, false, left, right);
->>>>>>> origin/master
         }
         if constexpr (is_document<T>)
         {
@@ -1121,9 +1104,6 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((ttp = dynamic_cast<TimeType *>(tp)))
     {
-<<<<<<< HEAD
-        String buf = dttp->extended ? rg.nextDateTime64() : rg.nextDateTime();
-=======
         String buf = ttp->extended ? rg.nextTime64("", false, rg.nextBool()) : rg.nextTime("", false);
 
         if constexpr (is_document<T>)
@@ -1138,7 +1118,6 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
         String buf = dttp->extended ? rg.nextDateTime64("", false, rg.nextBool()) : rg.nextDateTime("", false, rg.nextBool());
->>>>>>> origin/master
 
         if constexpr (is_document<T>)
         {
@@ -1153,11 +1132,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     {
         const uint32_t right = detp->scale.value_or(0);
         const uint32_t left = detp->precision.value_or(10) - right;
-<<<<<<< HEAD
-        String buf = appendDecimal(rg, left, right);
-=======
         String buf = appendDecimal(rg, false, left, right);
->>>>>>> origin/master
 
         if (rg.nextBool())
         {
@@ -1301,11 +1276,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-<<<<<<< HEAD
-        chassert(0);
-=======
         UNREACHABLE();
->>>>>>> origin/master
     }
 }
 
@@ -1316,11 +1287,7 @@ void MongoDBIntegration::documentAppendArray(
     const uint64_t limit = nested_rows_dist(rg.generator);
     /// Array
     auto array = document << cname << bsoncxx::builder::stream::open_array;
-<<<<<<< HEAD
-    SQLType * tp = at->subtype;
-=======
     SQLType * tp = at->subtype.get();
->>>>>>> origin/master
     Nullable * nl;
     VariantType * vtp;
     LowCardinality * lc;
@@ -1450,21 +1417,13 @@ void MongoDBIntegration::documentAppendAnyValue(
         }
         else
         {
-<<<<<<< HEAD
-            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes));
-=======
             documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes).get());
->>>>>>> origin/master
         }
     }
     else
     {
-<<<<<<< HEAD
-        chassert(0);
-=======
         /// Workaround for unknown types, insert null
         document << cname << bsoncxx::types::b_null{};
->>>>>>> origin/master
     }
 }
 

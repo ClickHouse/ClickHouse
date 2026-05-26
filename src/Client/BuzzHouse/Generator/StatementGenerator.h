@@ -27,8 +27,6 @@ public:
         , path(names)
     {
     }
-<<<<<<< HEAD
-=======
 
     SQLRelationCol(const String & rname, const DB::Strings & names, SQLType * t)
         : rel_name(rname)
@@ -44,7 +42,6 @@ public:
         , special(sp)
     {
     }
->>>>>>> origin/master
 
     void AddRef(ColumnPath * cp) const
     {
@@ -66,11 +63,7 @@ public:
 
     SQLRelation() = default;
 
-<<<<<<< HEAD
-    explicit SQLRelation(const String n)
-=======
     explicit SQLRelation(const String & n)
->>>>>>> origin/master
         : name(n)
     {
     }
@@ -88,25 +81,15 @@ public:
         , gexpr(g)
     {
     }
-<<<<<<< HEAD
-=======
 
     SQLType * getType() const { return col.has_value() ? col->tp : nullptr; }
 
     ColumnSpecial getSpecial() const { return col.has_value() ? col->special : ColumnSpecial::NONE; }
->>>>>>> origin/master
 };
 
 class QueryLevel
 {
 public:
-<<<<<<< HEAD
-    bool global_aggregate = false, inside_aggregate = false, allow_aggregates = true, allow_window_funcs = true, group_by_all = false;
-    uint32_t level, cte_counter = 0, aliases_counter = 0, window_counter = 0;
-    std::vector<GroupCol> gcols;
-    std::vector<SQLRelation> rels;
-    std::vector<String> projections;
-=======
     bool global_aggregate = false;
     bool inside_aggregate = false;
     bool allow_aggregates = true;
@@ -118,7 +101,6 @@ public:
     std::vector<GroupCol> gcols;
     std::vector<SQLRelation> rels;
     DB::Strings projections;
->>>>>>> origin/master
 
     QueryLevel() = default;
 
@@ -131,12 +113,8 @@ public:
 const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_distinct = (1 << 2), allow_from = (1 << 3),
                          allow_prewhere = (1 << 4), allow_where = (1 << 5), allow_groupby = (1 << 6), allow_global_aggregate = (1 << 7),
                          allow_groupby_settings = (1 << 8), allow_orderby = (1 << 9), allow_orderby_settings = (1 << 10),
-<<<<<<< HEAD
-                         allow_limit = (1 << 11), allow_window_clause = (1 << 12), allow_qualify = (1 << 13);
-=======
                          allow_limitby = (1 << 11), allow_limit = (1 << 12), allow_offset = (1 << 13), allow_window_clause = (1 << 14),
                          allow_qualify = (1 << 15);
->>>>>>> origin/master
 
 const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
                          skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
@@ -404,11 +382,7 @@ private:
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
 
     template <typename T>
-<<<<<<< HEAD
-    const std::unordered_map<uint32_t, T> & getNextCollection() const
-=======
     auto & getNextCollection()
->>>>>>> origin/master
     {
         if constexpr (std::is_same_v<T, SQLTable>)
         {
@@ -516,23 +490,13 @@ public:
         {
             if (func(entry.second))
             {
-<<<<<<< HEAD
-                res.emplace_back(std::ref<const T>(entry.second));
-=======
                 res.emplace_back(std::ref<T>(entry.second));
->>>>>>> origin/master
             }
         }
         return res;
     }
 
 private:
-<<<<<<< HEAD
-    String getNextAlias() { return "a" + std::to_string(this->levels[this->current_level].aliases_counter++); }
-    void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
-    void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
-    String nextComment(RandomGenerator & rg);
-=======
     static String getNameFromProto(const String & name)
     {
         /// Strip the LakeCatalog "test." prefix if present, return the name which is the map key.
@@ -546,7 +510,6 @@ private:
     void colRefOrExpression(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, const ColumnPathChain & entry, Expr * expr);
     String nextComment(RandomGenerator & rg) const;
     SQLRelation createTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
->>>>>>> origin/master
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     SQLRelation createViewRelation(const String & rel_name, const SQLView & v);
     void addViewRelation(const String & rel_name, const SQLView & v);
@@ -655,13 +618,8 @@ private:
         const std::vector<SQLRelationCol> & available_cols,
         std::vector<GroupCol> & gcols,
         Expr * expr);
-<<<<<<< HEAD
-    bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, GroupByStatement * gb);
-    void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
-=======
     bool generateGroupBy(RandomGenerator & rg, uint32_t ncols, bool enforce_having, bool allow_settings, SelectStatementCore * ssc);
     void addWhereSide(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, SQLType * tp, ColumnSpecial special, Expr * expr);
->>>>>>> origin/master
     void addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr);
     void generateWherePredicate(RandomGenerator & rg, Expr * expr);
     void addJoinClause(RandomGenerator & rg, Expr * expr);
@@ -728,21 +686,6 @@ private:
         Select * sel);
 
     void generateTopSelect(RandomGenerator & rg, bool force_global_agg, uint32_t allowed_clauses, TopSelect * ts);
-<<<<<<< HEAD
-    void generateNextExplain(RandomGenerator & rg, ExplainQuery * eq);
-    void generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq);
-
-    std::tuple<SQLType *, Integers> randomIntType(RandomGenerator & rg, uint32_t allowed_types);
-    std::tuple<SQLType *, FloatingPoints> randomFloatType(RandomGenerator & rg) const;
-    std::tuple<SQLType *, Dates> randomDateType(RandomGenerator & rg, uint32_t allowed_types) const;
-    SQLType * randomDateTimeType(RandomGenerator & rg, uint32_t allowed_types, DateTimeTp * dt) const;
-    SQLType * bottomType(RandomGenerator & rg, uint32_t allowed_types, bool low_card, BottomTypeName * tp);
-
-    void dropTable(bool staged, bool drop_peer, uint32_t tname);
-    void dropDatabase(uint32_t dname);
-
-    void generateNextTablePartition(RandomGenerator & rg, bool allow_parts, const SQLTable & t, PartitionExpr * pexpr);
-=======
     void generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq);
     void generateNextQuery(RandomGenerator & rg, bool in_parallel, SQLQueryInner * sq);
 
@@ -760,7 +703,6 @@ private:
 
     void generateNextTablePartition(
         RandomGenerator & rg, uint32_t allow_parts, bool detached, bool supports_all, const SQLTable & t, PartitionExpr * pexpr);
->>>>>>> origin/master
 
     void setBackupOut(RandomGenerator & rg, BackupOut * bout);
     void generateNextBackup(RandomGenerator & rg, BackupRestore * br);

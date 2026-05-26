@@ -1,16 +1,10 @@
 ---
 description: 'Documentation for Natural Language Processing (NLP) functions'
 sidebar_label: 'NLP'
-<<<<<<< HEAD
-sidebar_position: 130
-slug: /sql-reference/functions/nlp-functions
-title: 'Natural Language Processing (NLP) Functions'
-=======
 slug: /sql-reference/functions/nlp-functions
 title: 'Natural Language Processing (NLP) Functions'
 doc_type: 'reference'
 keywords: ['NLP', 'Natural Language Processing']
->>>>>>> origin/master
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

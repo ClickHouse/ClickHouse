@@ -3017,20 +3017,11 @@ Possible values:
 - `0` — `ORDER BY` in external memory disabled.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
-<<<<<<< HEAD
-The ratio of available memory that is allowed for `ORDER BY`. Once reached,
-external sort is used.
-
-For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory
-(to server/user/merges) at the beginning of the execution, after that,
-it will start using external sort.
-=======
 The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
 
 For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
 
 Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
->>>>>>> origin/master
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
 In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
@@ -3985,6 +3976,16 @@ Possible values:
 **See Also**
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
+)", 0) \
+    DECLARE(Bool, enable_sharding_aggregator, false, R"(
+Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
+
+This is efficient for high-cardinality keys with evenly distributed data, but may suffer from highly skewed key distributions or queries with very few distinct keys.
+
+Possible values:
+
+- 0 — Sharded aggregation optimization is disabled.
+- 1 — Sharded aggregation optimization is enabled.
 )", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
@@ -5751,6 +5752,9 @@ Enable independent aggregation of partitions on separate threads when partition 
     DECLARE(Bool, force_aggregate_partitions_independently, false, R"(
 Force the use of optimization when it is applicable, but heuristics decided not to use it
 )", 0) \
+    DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
+Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
 Maximal number of partitions in table to apply optimization
 )", 0) \
@@ -6045,6 +6049,16 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_merge_filters, true, R"(
 Allow to merge filters in the query plan.
+)", 0) \
+    DECLARE(Bool, query_plan_push_limit_by_into_sort, true, R"(
+Toggles a query-plan-level optimization for `ORDER BY ... LIMIT BY` queries. When `LIMIT BY` columns are a prefix of the `ORDER BY` clause, each parallel sorted stream applies `LIMIT BY` before the streams are merged into one, reducing rows processed by the final merge and later pipeline stages. Speeds up queries where `LIMIT BY` discards a large fraction of rows.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
@@ -7233,11 +7247,7 @@ Allows to set default `DEFINER` option while creating a view. [More about SQL se
 The default value is `CURRENT_USER`.
 )", 0) \
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
-<<<<<<< HEAD
-Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
-=======
 Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
->>>>>>> origin/master
 )", 0) \
     DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
 Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
@@ -7620,19 +7630,6 @@ It is unspecified how this setting affects views and distributed queries.
 The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
 Both database and table names have to be unquoted - only simple identifiers are allowed.
 )", 0) \
-<<<<<<< HEAD
-    \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_variant_type, true, R"(
-Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
-)", 0, enable_variant_type) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_dynamic_type, true, R"(
-Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
-)", 0, enable_dynamic_type) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_json_type, true, R"(
-Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
-)", 0, enable_json_type) \
-=======
->>>>>>> origin/master
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
@@ -7665,13 +7662,10 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
-<<<<<<< HEAD
-=======
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.
 )", 0) \
->>>>>>> origin/master
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
 
@@ -7690,10 +7684,6 @@ Force the s3 endpoint style. Possible values: auto, virtual_hosted, path.
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
-<<<<<<< HEAD
-    DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 2.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
-    DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 6.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
-=======
     DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
@@ -7833,7 +7823,30 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
->>>>>>> origin/master
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
+Initial backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms, 1000, R"(
+Max backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_parts_update_max_retries, 10, R"(
+Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
+The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
+
+For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
+
+If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
+
+Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
+)", 0) \
+    DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
+Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7940,6 +7953,18 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to use a cache of deserialized text index posting lists.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
+    DECLARE(Bool, allow_experimental_text_index_lazy_apply, false, R"(
+If set to true, allow using the lazy posting list apply mode for text index queries.
+)", EXPERIMENTAL) \
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
+Controls how posting lists are applied during text index queries.
+'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
+'lazy' uses cursor-based on-demand decoding (requires V2 index format and allow_experimental_text_index_lazy_apply).
+)", 0) \
+    DECLARE(Float, text_index_density_threshold, 0.2f, R"(
+Density threshold for algorithm selection in lazy posting list mode.
+Below threshold: leapfrog intersection. At or above: brute-force bitmap.
+)", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \
@@ -8003,8 +8028,6 @@ Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgre
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
-<<<<<<< HEAD
-=======
     DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
 Allow experimental delta-kernel-rs implementation.
 )", BETA) \
@@ -8098,7 +8121,6 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
->>>>>>> origin/master
     \
     /** Experimental timeSeries* aggregate functions. */ \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
@@ -8297,16 +8319,15 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
-<<<<<<< HEAD
-=======
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
     MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
     MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
     MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
-    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false)
->>>>>>> origin/master
+    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
+    MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
+    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

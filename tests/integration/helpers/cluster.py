@@ -2164,14 +2164,10 @@ class ClickHouseCluster:
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
-<<<<<<< HEAD
-            with_secrets=with_secrets or with_kerberos_kdc or with_kerberized_kafka or with_kafka_sasl,
-=======
             with_secrets=with_secrets
             or with_kerberos_kdc
             or with_kerberized_kafka
             or with_kafka_sasl,
->>>>>>> origin/master
             with_mongo=with_mongo,
             with_redis=with_redis,
             with_minio=with_minio,

@@ -8,10 +8,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
-<<<<<<< HEAD
-=======
 #include <Core/Settings.h>
->>>>>>> origin/master
 
 namespace ProfileEvents
 {

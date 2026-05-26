@@ -646,8 +646,6 @@ def test_table_functions():
             "CREATE TABLE tablefunc40 (`x` int) AS gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc41 (`x` int) AS icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-<<<<<<< HEAD
-=======
             f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
             "CREATE TABLE tablefunc44 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc45 (`x` int) AS arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
@@ -665,7 +663,10 @@ def test_table_functions():
             "CREATE TABLE tablefunc57 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
             "CREATE TABLE tablefunc58 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
             "CREATE TABLE tablefunc59 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
->>>>>>> origin/master
+            "CREATE TABLE tablefunc60 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc61 (`x` int) AS paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            "CREATE TABLE tablefunc62 (`x` int) AS paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
+            f"CREATE TABLE tablefunc63 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
         ],
         must_not_contain=[password],
     )

@@ -45,11 +45,7 @@ public:
     FuzzConfig & fc;
     const ServerCredentials & sc;
 
-<<<<<<< HEAD
-    ClickHouseIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
-=======
     ClickHouseIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
->>>>>>> origin/master
         : fc(fcc)
         , sc(scc)
     {
@@ -57,12 +53,6 @@ public:
 
     virtual void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *) { }
 
-<<<<<<< HEAD
-    virtual bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, std::vector<ColumnPathChain> &)
-    {
-        return false;
-    }
-=======
     virtual bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) { return false; }
 
     virtual void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) { }
@@ -74,7 +64,6 @@ public:
     virtual bool reRunCreateDatabase(const String &) { return false; }
 
     virtual bool reRunCreateTable(const String &) { return false; }
->>>>>>> origin/master
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -83,11 +72,7 @@ class ClickHouseIntegratedDatabase : public ClickHouseIntegration
 {
 public:
     std::ofstream out_file;
-<<<<<<< HEAD
-    explicit ClickHouseIntegratedDatabase(const FuzzConfig & fcc, const ServerCredentials & scc)
-=======
     explicit ClickHouseIntegratedDatabase(FuzzConfig & fcc, const ServerCredentials & scc)
->>>>>>> origin/master
         : ClickHouseIntegration(fcc, scc)
         , out_file(std::ofstream(scc.query_log_file, std::ios::out | std::ios::trunc))
     {
@@ -113,11 +98,7 @@ public:
 
     bool truncatePeerTableOnRemote(const SQLTable &);
 
-<<<<<<< HEAD
-    bool performQueryOnServerOrRemote(PeerTableDatabase pt, const String & query);
-=======
     bool performQueryOnServerOrRemote(PeerTableDatabase, const String &);
->>>>>>> origin/master
 
     ~ClickHouseIntegratedDatabase() override = default;
 
@@ -225,11 +206,7 @@ private:
 public:
     const std::filesystem::path sqlite_path;
 
-<<<<<<< HEAD
-    SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc, SQLiteUniqueKeyPtr scon, const std::filesystem::path & spath)
-=======
     SQLiteIntegration(FuzzConfig & fcc, const ServerCredentials & scc, SQLiteUniqueKeyPtr scon, const std::filesystem::path & spath)
->>>>>>> origin/master
         : ClickHouseIntegratedDatabase(fcc, scc)
         , sqlite_connection(std::move(scon))
         , sqlite_path(spath)
@@ -246,20 +223,12 @@ public:
 
     String columnTypeAsString(RandomGenerator & rg, bool is_deterministic, SQLType * tp) const override;
 
-<<<<<<< HEAD
-    bool performQuery(const String & query) override;
-=======
     int performQuery(const String & query) override;
->>>>>>> origin/master
 #else
 public:
     const std::filesystem::path sqlite_path;
 
-<<<<<<< HEAD
-    SQLiteIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
-=======
     SQLiteIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
->>>>>>> origin/master
         : ClickHouseIntegratedDatabase(fcc, scc)
     {
     }
@@ -272,22 +241,14 @@ public:
 class RedisIntegration : public ClickHouseIntegration
 {
 public:
-<<<<<<< HEAD
-    RedisIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
-=======
     RedisIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
->>>>>>> origin/master
         : ClickHouseIntegration(fcc, scc)
     {
     }
 
     void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
-<<<<<<< HEAD
-    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t, bool, std::vector<ColumnPathChain> &) override;
-=======
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
->>>>>>> origin/master
 
     ~RedisIntegration() override = default;
 };
@@ -317,33 +278,16 @@ public:
     {
     }
 
-<<<<<<< HEAD
-    static std::unique_ptr<MongoDBIntegration> testAndAddMongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc);
-
-    void setEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
-
-    bool performIntegration(
-        RandomGenerator & rg,
-        std::shared_ptr<SQLDatabase>,
-        uint32_t tname,
-        bool can_shuffle,
-        std::vector<ColumnPathChain> & entries) override;
-=======
     static std::unique_ptr<MongoDBIntegration> testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials & scc);
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te) override;
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
->>>>>>> origin/master
 
     ~MongoDBIntegration() override = default;
 #else
 public:
-<<<<<<< HEAD
-    MongoDBIntegration(const FuzzConfig & fcc, const ServerCredentials & scc)
-=======
     MongoDBIntegration(FuzzConfig & fcc, const ServerCredentials & scc)
->>>>>>> origin/master
         : ClickHouseIntegration(fcc, scc)
     {
     }
@@ -356,16 +300,8 @@ public:
 
 class MinIOIntegration : public ClickHouseIntegration
 {
-<<<<<<< HEAD
-private:
-    bool sendRequest(const String & resource);
-
-public:
-    explicit MinIOIntegration(const FuzzConfig & fcc, const ServerCredentials & ssc)
-=======
 public:
     explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
->>>>>>> origin/master
         : ClickHouseIntegration(fcc, ssc)
     {
     }
@@ -374,13 +310,7 @@ public:
 
     void setBackupDetails(const String &, BackupOut *);
 
-<<<<<<< HEAD
-    void setBackupDetails(const String & filename, BackupRestore * br);
-
-    bool performIntegration(RandomGenerator &, std::shared_ptr<SQLDatabase>, uint32_t tname, bool, std::vector<ColumnPathChain> &) override;
-=======
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
->>>>>>> origin/master
 
     ~MinIOIntegration() override = default;
 };
@@ -448,11 +378,7 @@ public:
 class ExternalIntegrations
 {
 private:
-<<<<<<< HEAD
-    const FuzzConfig & fc;
-=======
     FuzzConfig & fc;
->>>>>>> origin/master
     std::unique_ptr<MySQLIntegration> mysql;
     std::unique_ptr<PostgreSQLIntegration> postresql;
     std::unique_ptr<SQLiteIntegration> sqlite;
@@ -468,15 +394,11 @@ private:
     size_t requires_external_call_check = 0;
     std::vector<bool> next_calls_succeeded;
 
-<<<<<<< HEAD
-    std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt) const;
-=======
     BackgroundWorker worker;
 
     std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
 
     ClickHouseIntegratedDatabase * getPeerPtr(PeerTableDatabase pt) const;
->>>>>>> origin/master
 
 public:
     bool getRequiresExternalCallCheck() const { return requires_external_call_check > 0; }
@@ -525,15 +447,6 @@ public:
         next_calls_succeeded.clear();
     }
 
-<<<<<<< HEAD
-    explicit ExternalIntegrations(const FuzzConfig & fcc);
-
-    void createExternalDatabaseTable(
-        RandomGenerator & rg, IntegrationCall dc, const SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
-
-    void createPeerTable(
-        RandomGenerator & rg, PeerTableDatabase pt, const SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
-=======
     explicit ExternalIntegrations(FuzzConfig & fcc);
 
     void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
@@ -549,7 +462,6 @@ public:
 
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);
->>>>>>> origin/master
 
     bool truncatePeerTableOnRemote(const SQLTable & t);
 
@@ -565,11 +477,7 @@ public:
 
     void replicateSettings(PeerTableDatabase pt);
 
-<<<<<<< HEAD
-    void setBackupDetails(const String & filename, BackupRestore * br);
-=======
     void setBackupDetails(IntegrationCall dc, const String & filename, BackupOut * bout);
->>>>>>> origin/master
 };
 
 }

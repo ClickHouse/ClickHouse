@@ -34,17 +34,8 @@ struct ExplainPlanOptions;
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
-<<<<<<< HEAD
-=======
-namespace QueryPlanFormat
-{
-    std::string_view trimColumnIdentifier(std::string_view name);
-    void formatOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
-    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
-}
+struct ExplainFormatSettings;
 
-
->>>>>>> origin/master
 /// Single step of query plan.
 class IQueryPlanStep
 {

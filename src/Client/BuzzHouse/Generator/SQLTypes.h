@@ -3,10 +3,7 @@
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
-<<<<<<< HEAD
-=======
 #include <memory>
->>>>>>> origin/master
 #include <optional>
 
 namespace BuzzHouse
@@ -46,11 +43,7 @@ enum class SQLTypeClass
 class SQLType
 {
 public:
-<<<<<<< HEAD
-    virtual String typeName(bool escape) const = 0;
-=======
     virtual String typeName(bool, bool) const = 0;
->>>>>>> origin/master
     virtual String MySQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String SQLitetypeName(RandomGenerator & rg, bool escape) const = 0;
@@ -67,11 +60,7 @@ public:
 class BoolType : public SQLType
 {
 public:
-<<<<<<< HEAD
-    String typeName(bool) const override;
-=======
     String typeName(bool, bool) const override;
->>>>>>> origin/master
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
@@ -256,11 +245,7 @@ public:
 class UUIDType : public SQLType
 {
 public:
-<<<<<<< HEAD
-    String typeName(bool) const override;
-=======
     String typeName(bool, bool) const override;
->>>>>>> origin/master
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -313,11 +298,7 @@ public:
 class IPv4Type : public SQLType
 {
 public:
-<<<<<<< HEAD
-    String typeName(bool) const override;
-=======
     String typeName(bool, bool) const override;
->>>>>>> origin/master
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -333,11 +314,7 @@ public:
 class IPv6Type : public SQLType
 {
 public:
-<<<<<<< HEAD
-    String typeName(bool) const override;
-=======
     String typeName(bool, bool) const override;
->>>>>>> origin/master
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
@@ -406,25 +383,15 @@ public:
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::JSON; }
 
-<<<<<<< HEAD
-    ~JSONType() override;
-=======
     ~JSONType() override = default;
->>>>>>> origin/master
 };
 
 class Nullable : public SQLType
 {
 public:
-<<<<<<< HEAD
-    SQLType * subtype;
-    explicit Nullable(SQLType * s)
-        : subtype(s)
-=======
     std::unique_ptr<SQLType> subtype;
     explicit Nullable(std::unique_ptr<SQLType> s)
         : subtype(std::move(s))
->>>>>>> origin/master
     {
     }
 
@@ -444,15 +411,9 @@ public:
 class LowCardinality : public SQLType
 {
 public:
-<<<<<<< HEAD
-    SQLType * subtype;
-    explicit LowCardinality(SQLType * s)
-        : subtype(s)
-=======
     std::unique_ptr<SQLType> subtype;
     explicit LowCardinality(std::unique_ptr<SQLType> s)
         : subtype(std::move(s))
->>>>>>> origin/master
     {
     }
 
@@ -494,15 +455,9 @@ public:
 class ArrayType : public SQLType
 {
 public:
-<<<<<<< HEAD
-    SQLType * subtype;
-    explicit ArrayType(SQLType * s)
-        : subtype(s)
-=======
     std::unique_ptr<SQLType> subtype;
     explicit ArrayType(std::unique_ptr<SQLType> s)
         : subtype(std::move(s))
->>>>>>> origin/master
     {
     }
 
@@ -523,18 +478,11 @@ public:
 class MapType : public SQLType
 {
 public:
-<<<<<<< HEAD
-    SQLType *key, *value;
-    MapType(SQLType * k, SQLType * v)
-        : key(k)
-        , value(v)
-=======
     std::unique_ptr<SQLType> key;
     std::unique_ptr<SQLType> value;
     MapType(std::unique_ptr<SQLType> k, std::unique_ptr<SQLType> v)
         : key(std::move(k))
         , value(std::move(v))
->>>>>>> origin/master
     {
     }
 
@@ -548,11 +496,7 @@ public:
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::MAP; }
 
-<<<<<<< HEAD
-    ~MapType() override;
-=======
     ~MapType() override = default;
->>>>>>> origin/master
 };
 
 class SubType
@@ -561,11 +505,7 @@ public:
     const std::optional<const uint32_t> cname;
     std::unique_ptr<SQLType> subtype;
 
-<<<<<<< HEAD
-    SubType(const std::optional<const uint32_t> n, SQLType * s)
-=======
     SubType(const std::optional<const uint32_t> n, std::unique_ptr<SQLType> s)
->>>>>>> origin/master
         : cname(n)
         , subtype(std::move(s))
     {
@@ -575,17 +515,11 @@ public:
 class TupleType : public SQLType
 {
 public:
-<<<<<<< HEAD
-    const std::vector<SubType> subtypes;
-    explicit TupleType(const std::vector<SubType> s)
-        : subtypes(s)
-=======
     const bool nullable;
     std::vector<SubType> subtypes;
     explicit TupleType(const bool n, std::vector<SubType> s)
         : nullable(n)
         , subtypes(std::move(s))
->>>>>>> origin/master
     {
     }
 
@@ -599,25 +533,15 @@ public:
     bool isNullable() const override { return !nullable; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::TUPLE; }
 
-<<<<<<< HEAD
-    ~TupleType() override;
-=======
     ~TupleType() override = default;
->>>>>>> origin/master
 };
 
 class VariantType : public SQLType
 {
 public:
-<<<<<<< HEAD
-    const std::vector<SQLType *> subtypes;
-    explicit VariantType(const std::vector<SQLType *> s)
-        : subtypes(s)
-=======
     std::vector<std::unique_ptr<SQLType>> subtypes;
     explicit VariantType(std::vector<std::unique_ptr<SQLType>> s)
         : subtypes(std::move(s))
->>>>>>> origin/master
     {
     }
 
@@ -631,9 +555,6 @@ public:
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::VARIANT; }
 
-<<<<<<< HEAD
-    ~VariantType() override;
-=======
     ~VariantType() override = default;
 };
 
@@ -687,23 +608,15 @@ public:
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::AGGREGATEFUNCTION; }
 
     ~AggregateFunctionType() override = default;
->>>>>>> origin/master
 };
 
 class NestedSubType
 {
 public:
-<<<<<<< HEAD
-    uint32_t cname;
-    SQLType * subtype;
-
-    NestedSubType(const uint32_t n, SQLType * s)
-=======
     String cname;
     std::unique_ptr<SQLType> subtype;
 
     NestedSubType(const String n, std::unique_ptr<SQLType> s)
->>>>>>> origin/master
         : cname(n)
         , subtype(std::move(s))
     {
@@ -747,20 +660,12 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
 
         if ((nl = dynamic_cast<Nullable *>(tp)))
         {
-<<<<<<< HEAD
-            return hasType<T>(inside_array, inside_nullable, inside_nested, nl->subtype);
-=======
             return hasType<T>(inside_array, inside_nullable, inside_nested, nl->subtype.get());
->>>>>>> origin/master
         }
     }
     if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
-<<<<<<< HEAD
-        return hasType<T>(inside_array, inside_nullable, inside_nested, lc->subtype);
-=======
         return hasType<T>(inside_array, inside_nullable, inside_nested, lc->subtype.get());
->>>>>>> origin/master
     }
     if (inside_array)
     {
@@ -768,11 +673,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
 
         if ((at = dynamic_cast<ArrayType *>(tp)))
         {
-<<<<<<< HEAD
-            return hasType<T>(inside_array, inside_nullable, inside_nested, at->subtype);
-=======
             return hasType<T>(inside_array, inside_nullable, inside_nested, at->subtype.get());
->>>>>>> origin/master
         }
     }
     if (inside_nested)
@@ -784,11 +685,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
         {
             for (const auto & entry : ttp->subtypes)
             {
-<<<<<<< HEAD
-                if (hasType<T>(inside_array, inside_nullable, inside_nested, entry.subtype))
-=======
                 if (hasType<T>(inside_array, inside_nullable, inside_nested, entry.subtype.get()))
->>>>>>> origin/master
                 {
                     return true;
                 }
@@ -798,11 +695,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
         {
             for (const auto & entry : ntp->subtypes)
             {
-<<<<<<< HEAD
-                if (hasType<T>(inside_array, inside_nullable, inside_nested, entry.subtype))
-=======
                 if (hasType<T>(inside_array, inside_nullable, inside_nested, entry.subtype.get()))
->>>>>>> origin/master
                 {
                     return true;
                 }
@@ -812,17 +705,10 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     return false;
 }
 
-<<<<<<< HEAD
-String appendDecimal(RandomGenerator & rg, uint32_t left, uint32_t right);
-=======
 String appendDecimal(RandomGenerator & rg, bool use_func, uint32_t left, uint32_t right);
->>>>>>> origin/master
 String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
-<<<<<<< HEAD
-=======
 
->>>>>>> origin/master
 }

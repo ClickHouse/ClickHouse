@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-#include <DataTypes/DataTypeTuple.h>
-=======
->>>>>>> origin/master
 #include <Columns/ColumnTuple.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -152,11 +148,7 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
-=======
 void ColumnTuple::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     const size_t tuple_size = columns.size();
 

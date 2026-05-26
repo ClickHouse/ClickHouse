@@ -9,10 +9,7 @@
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
-<<<<<<< HEAD
-=======
 #include <Common/FailPoint.h>
->>>>>>> origin/master
 
 #include <Common/DateLUTImpl.h>
 

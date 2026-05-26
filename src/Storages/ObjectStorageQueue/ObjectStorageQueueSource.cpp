@@ -1280,7 +1280,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -1292,7 +1294,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             return chunk;
         }
@@ -1353,11 +1356,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     Coordination::Requests & requests,
     bool insert_succeeded,
     StoredObjects & successful_files,
-<<<<<<< HEAD
-=======
     PartitionLastProcessedFileInfoMap & file_map,
     LastProcessedFileInfoMapPtr created_nodes,
->>>>>>> origin/master
     const std::string & exception_message,
     int error_code)
 {
@@ -1485,11 +1485,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
-<<<<<<< HEAD
-                    reduce_retry_count);
-=======
                     reduce_retry_count && processed_count <= 1);
->>>>>>> origin/master
                 break;
             }
             case FileState::ErrorOnRead:

@@ -7,10 +7,6 @@ title: 'Manipulating Column Statistics'
 doc_type: 'reference'
 ---
 
-<<<<<<< HEAD
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-=======
->>>>>>> origin/master
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Manipulating Column Statistics

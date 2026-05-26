@@ -209,23 +209,9 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         dependencies[col_name] = std::move(deps);
     }
 
-<<<<<<< HEAD
-    if (!evaluate_block.columns())
-        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
-
-    auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
-    if (dag)
-    {
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, dag->getRequiredColumnsNames(), context);
-        auto actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag)), ExpressionActionsSettings(context, CompileExpressions::yes), true);
-        actions->execute(evaluate_block);
-    }
-
-=======
     /// Process columns in dependency order (topological sort).
     /// In each iteration, process columns whose dependencies have all been satisfied.
     std::unordered_set<String> processed;
->>>>>>> origin/master
     std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 
     while (processed.size() < columns_needing_defaults.size())

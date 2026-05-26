@@ -206,20 +206,6 @@ PartsRanges ITTLMergeSelector::select(
 {
     MergeRangesConstructor constructor(*this, parts_ranges, range_filter);
 
-<<<<<<< HEAD
-    auto [range, center] = std::move(position.value());
-    if (center->size > max_total_size_to_merge)
-        return {};
-
-    size_t usable_memory = max_total_size_to_merge - center->size;
-    PartsIterator left = findLeftRangeBorder(center, range->begin(), usable_memory);
-    PartsIterator right = findRightRangeBorder(std::next(center), range->end(), usable_memory);
-
-    if (range_filter && !range_filter({left, right}))
-        return {};
-
-    return PartsRange(left, right);
-=======
     PartsRanges result;
     for (const auto & constraint : merge_constraints)
     {
@@ -230,7 +216,6 @@ PartsRanges ITTLMergeSelector::select(
     }
 
     return result;
->>>>>>> origin/master
 }
 
 TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_, size_t max_parts_to_drop_at_once_)

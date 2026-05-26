@@ -10,14 +10,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-<<<<<<< HEAD
-    std::string res;
-    for (const auto & [name, desc] : arguments)
-        res += "- `" + name + "` — " + desc + "\n";
-    return res;
-=======
     extern const int LOGICAL_ERROR;
->>>>>>> origin/master
 }
 
 namespace

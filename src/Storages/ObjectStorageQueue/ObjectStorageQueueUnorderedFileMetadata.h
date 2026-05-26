@@ -30,23 +30,14 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
-<<<<<<< HEAD
-    void prepareProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) override;
+    PathState getPathState(std::string & failure_message) const override;
 
-private:
-    std::pair<bool, FileStatus::State> setProcessingImpl() override;
-    void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
-    SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests & requests) override;
-=======
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
     void prepareProcessedRequestsImpl(Coordination::Requests & requests, LastProcessedFileInfoMapPtr created_nodes) override;
     SetProcessingResponseIndexes prepareProcessingRequestsImpl(
         Coordination::Requests & requests,
         const std::string & processing_id) override;
->>>>>>> origin/master
 };
 
 }

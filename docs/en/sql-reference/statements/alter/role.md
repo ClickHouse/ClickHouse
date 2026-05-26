@@ -4,10 +4,7 @@ sidebar_label: 'ROLE'
 sidebar_position: 46
 slug: /sql-reference/statements/alter/role
 title: 'ALTER ROLE'
-<<<<<<< HEAD
-=======
 doc_type: 'reference'
->>>>>>> origin/master
 ---
 
 Changes roles.

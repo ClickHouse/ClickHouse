@@ -126,9 +126,6 @@ static struct InitFiu
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
-<<<<<<< HEAD
-
-=======
     ONCE(keeper_leader_sets_invalid_digest) \
     PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
@@ -184,8 +181,11 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
-    REGULAR(patch_parts_reverse_column_order)
->>>>>>> origin/master
+    REGULAR(patch_parts_reverse_column_order) \
+    REGULAR(wide_part_writer_fail_in_add_streams) \
+    REGULAR(compact_part_writer_fail_in_add_streams) \
+    REGULAR(transaction_force_unknown_state_after_commit) \
+    PAUSEABLE(transaction_after_commit_pause)
 
 namespace FailPoints
 {
@@ -206,9 +206,6 @@ struct FailPointChannel
 
     /// Condition variable for target threads to wait for resume notification
     std::condition_variable resume_cv;
-
-    /// Number of threads currently paused at this failpoint
-    size_t pause_count = 0;
 
     /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
     /// Threads record the epoch when they start waiting, and only wake up
@@ -305,7 +302,6 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     size_t my_resume_epoch = channel->resume_epoch;
 
     /// Signal that a thread has reached and paused at this failpoint
-    ++channel->pause_count;
     ++channel->pause_epoch;
     channel->pause_cv.notify_all();
 
@@ -313,9 +309,6 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     channel->resume_cv.wait(lock, [&] {
         return channel->resume_epoch > my_resume_epoch;
     });
-
-    --channel->pause_count;
-
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -328,9 +321,6 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     auto channel = iter->second;
 
     /// Wait until a thread has paused at this failpoint after the most recent resume.
-    /// Using pause_epoch > resume_epoch instead of pause_count > 0 avoids a race:
-    /// after NOTIFY, the task thread may not have decremented pause_count yet,
-    /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
         return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });

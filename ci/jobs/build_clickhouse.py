@@ -2,11 +2,7 @@ import argparse
 import os
 import shutil
 
-<<<<<<< HEAD
-from ci.defs.defs import BuildTypes, ToolSet
-=======
 from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
->>>>>>> origin/master
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -127,6 +123,10 @@ def main():
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
+    # PR builds must not pollute the shared sccache bucket; only master/release
+    # builds (pr_number == 0) are allowed to write entries.
+    if info.pr_number > 0:
+        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -154,8 +154,6 @@ def main():
     if info.pr_number == 0:
         cmake_cmd += " -DCLICKHOUSE_OFFICIAL_BUILD=1"
 
-<<<<<<< HEAD
-=======
     is_private = (
         "PRIVATE_BUILDS_TO_CMAKE" in vars() or "PRIVATE_BUILDS_TO_CMAKE" in globals()
     )
@@ -188,7 +186,6 @@ def main():
     cmake_cmd += f" {repo_path_normalized} -B {build_dir_normalized}"
     cmake_cmd_no_pgo += f" {repo_path_normalized} -B {build_dir_normalized}"
 
->>>>>>> origin/master
     res = True
     results = []
 
@@ -450,14 +447,9 @@ def main():
             Result.from_commands_run(
                 name="Build Packages",
                 command=[
-<<<<<<< HEAD
-                    f"DESTDIR={build_dir}/root ninja programs/install",
-                    f"ln -sf {build_dir}/root {Utils.cwd()}/packages/root",
-=======
                     f"rm -rf {build_dir_normalized}/root",
                     f"DESTDIR={build_dir_normalized}/root command time -v ninja programs/install",
                     f"ln -sf {build_dir_normalized}/root {Utils.cwd()}/packages/root",
->>>>>>> origin/master
                     f"cd {Utils.cwd()}/packages/ && OUTPUT_DIR={temp_dir} BUILD_TYPE={BUILD_TYPE_TO_DEB_PACKAGE_TYPE[build_type]} VERSION_STRING={version_dict['string']} DEB_ARCH={deb_arch} ./build --deb {'--rpm --tgz' if 'release' in build_type else ''}",
                 ],
                 workdir=build_dir_normalized,

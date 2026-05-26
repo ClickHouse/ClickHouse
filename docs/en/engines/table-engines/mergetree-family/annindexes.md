@@ -717,7 +717,4 @@ The performance benefit of `QBit` comes from reduced I/O operations, as less dat
 Blogs:
 - [Vector Search with ClickHouse - Part 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
 - [Vector Search with ClickHouse - Part 2](https://clickhouse.com/blog/vector-search-clickhouse-p2)
-<<<<<<< HEAD
-=======
 - [We built a vector search engine that lets you choose precision at query time](https://clickhouse.com/blog/qbit-vector-search)
->>>>>>> origin/master

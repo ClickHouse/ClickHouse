@@ -5479,17 +5479,12 @@ ORDER BY (test_name, callee_offset)
     blacklist_check.extend(try_get_skip_list(base_dir, "../analyzer_tech_debt.txt"))
 
     if args.no_parallel_replicas is True:
-<<<<<<< HEAD
-        skip_list_parallel_replicas = try_get_skip_list(
-            base_dir, "../parallel_replicas_blacklist.txt"
-=======
         blacklist = try_get_skip_list(base_dir, "../parallel_replicas_blacklist.txt")
         blacklist_check.extend(blacklist)
 
     if args.no_async_insert is True:
         skip_list_async_inserts = try_get_skip_list(
             base_dir, "../async_insert_blacklist.txt"
->>>>>>> origin/master
         )
         blacklist_check.extend(skip_list_async_inserts)
 
@@ -6268,11 +6263,6 @@ def parse_args():
         help="Replace ordinary MergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
-<<<<<<< HEAD
-        "--client-log",
-        default="./client.fatal.log",
-        help="Path to file for fatal logs from client",
-=======
         "--replace-log-memory-with-mergetree",
         action="store_true",
         default=str_to_bool(os.environ.get("REPLACE_LOG_MEM_WITH_MT", False)),
@@ -6295,7 +6285,6 @@ def parse_args():
         action="store_true",
         default=False,
         help="Run tests stress tests with Shared Catalog",
->>>>>>> origin/master
     )
     parser.add_argument(
         "--capture-client-stacktrace",

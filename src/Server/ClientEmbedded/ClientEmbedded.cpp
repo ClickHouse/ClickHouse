@@ -180,12 +180,7 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-<<<<<<< HEAD
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
-    global_context->setSettings(cmd_settings);
-=======
     global_context->setSettings(*cmd_settings);
->>>>>>> origin/master
 
     is_interactive = stdin_is_a_tty;
     /// If a query is passed via SSH - just append it to the list of queries to execute:

@@ -549,31 +549,6 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         WhichDataType rhs_which_type(rhs_type);
 
         if (rhs_which_type.isArray())
-<<<<<<< HEAD
-        {
-            const DataTypeArray * value_array_type = assert_cast<const DataTypeArray *>(value_type.get());
-            size_t value_array_size = value.safeGet<Array>().size();
-            DataTypes value_types(value_array_size, value_array_type->getNestedType());
-            result_block = createBlockFromCollection(value.safeGet<Array>(), value_types, set_element_types, params);
-        }
-        else if (rhs_which_type.isTuple())
-        {
-            const DataTypeTuple * value_tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
-            const DataTypes & value_types = value_tuple_type->getElements();
-            result_block = createBlockFromCollection(value.safeGet<Tuple>(), value_types, set_element_types, params);
-        }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Unsupported type at the right-side of IN. Expected Array or Tuple. Actual {}",
-                value_type->getName());
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Unsupported types for IN. First argument type {}. Second argument type {}",
-            expression_type->getName(),
-            value_type->getName());
-=======
             return build_from_array(rhs, rhs_type);
 
         if (rhs_which_type.isTuple())
@@ -583,7 +558,6 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Unsupported type at the right-side of IN. Expected Array or Tuple or Nullable(Tuple). Actual {}",
             rhs_type->getName());
->>>>>>> origin/master
     }
 
     throw Exception(

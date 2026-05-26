@@ -84,10 +84,7 @@ private:
 
     /// Use bad_utf8 on x' strings!
     const DB::Strings bad_utf8{
-<<<<<<< HEAD
-=======
         "00", /// Null byte
->>>>>>> origin/master
         "FF",
         "C328",
         "A0A1",
@@ -102,9 +99,6 @@ private:
         "C328FF",
         "AAC328"};
 
-<<<<<<< HEAD
-    const DB::Strings jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
-=======
     const DB::Strings jcols{
         "_",
         ".",
@@ -124,7 +118,6 @@ private:
         "where",
         "key with space",
         "key-with-dash"};
->>>>>>> origin/master
 
 public:
     pcg64_fast generator;
@@ -161,11 +154,6 @@ public:
     {
     }
 
-<<<<<<< HEAD
-    const DB::Strings nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e", "",   "😉", "\"", "\\'",  "\\t",  "\\n",  "--", "0",
-                                    "1",    "-1",    "{",     "}",     "(",   ")",  "[",  "]",  ",",    ".",    ";",    ":",  "\\\\",
-                                    "/",    "_",     "%",     "*",     "\\0", "{}", "[]", "()", "null", "NULL", "TRUE", "叫", "FALSE"};
-=======
     const DB::Strings nasty_strings{
         "a\"a",
         "b\\tb",
@@ -298,7 +286,6 @@ public:
         "DROP",
         "PROJECTION",
     };
->>>>>>> origin/master
 
     uint64_t getSeed() const;
 
@@ -348,11 +335,7 @@ public:
     String nextDateTime(const String & separator, bool allow_func, bool has_subseconds);
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-<<<<<<< HEAD
-    String nextDateTime64();
-=======
     String nextDateTime64(const String & separator, bool allow_func, bool has_subseconds);
->>>>>>> origin/master
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
@@ -401,11 +384,7 @@ public:
             std::uniform_real_distribution<T> d{min_val, max_val};
             return d(generator);
         }
-<<<<<<< HEAD
-        chassert(0);
-=======
         UNREACHABLE();
->>>>>>> origin/master
         return 0;
     }
 

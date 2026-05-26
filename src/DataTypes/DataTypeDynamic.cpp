@@ -13,10 +13,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Field.h>
-<<<<<<< HEAD
-=======
 #include <Common/SipHash.h>
->>>>>>> origin/master
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

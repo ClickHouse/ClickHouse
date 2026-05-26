@@ -1131,17 +1131,8 @@ def main():
             # of copying to save space. Before that, remove preprocessed configs and
             # system tables, because sharing them between servers with hardlinks may
             # lead to weird effects
-<<<<<<< HEAD
-            f"rm -rf {perf_left}/db",
-            f"rm -rf {perf_right}/db",
-            f"rm -r {db_path}/preprocessed_configs",
-            f"rm -r {db_path}/data/system",
-            f"rm -r {db_path}/metadata/system",
-            f"rm -rf {db_path}/status",
-=======
             f"rm -rf {perf_left}/db {perf_right}/db",
             f"rm -rf {db_path}/preprocessed_configs {db_path}/data/system {db_path}/metadata/system {db_path}/status",
->>>>>>> origin/master
             f"cp -al {db_path} {perf_left}/db ||:",
             f"cp -al {db_path} {perf_right}/db ||:",
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",

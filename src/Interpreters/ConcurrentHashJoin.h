@@ -96,11 +96,7 @@ public:
             table_join_, slots, right_sample_block_, stats_collecting_params, any_take_last_row, external_join_threshold);
     }
 
-<<<<<<< HEAD
-    std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, const Block &, const Block & right_sample_block_) const override
-=======
     std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const override
->>>>>>> origin/master
     {
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
     }

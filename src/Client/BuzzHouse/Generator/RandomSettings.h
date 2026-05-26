@@ -12,17 +12,6 @@
 namespace BuzzHouse
 {
 
-<<<<<<< HEAD
-const auto trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
-
-const auto zeroOneTwo = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
-
-const auto zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
-
-const auto probRange = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
-
-const auto highRange = [](RandomGenerator & rg)
-=======
 extern const std::unordered_set<String> blockSizes;
 
 const auto trueOrFalse = [](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "1" : "0"; };
@@ -37,7 +26,6 @@ const auto probRangeNoZero
     = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.001, 0.999)); };
 
 const auto highRange = [](RandomGenerator & rg, FuzzConfig &)
->>>>>>> origin/master
 {
     const auto val = rg.randomInt<uint32_t>(0, 25);
     return std::to_string(val == UINT32_C(0) ? UINT32_C(0) : (UINT32_C(1) << (val - UINT32_C(1))));
@@ -96,59 +84,7 @@ extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSettin
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings;
 
-<<<<<<< HEAD
-const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allColumnSettings
-    = {{MergeTree, mergeTreeColumnSettings},
-       {ReplacingMergeTree, mergeTreeColumnSettings},
-       {SummingMergeTree, mergeTreeColumnSettings},
-       {AggregatingMergeTree, mergeTreeColumnSettings},
-       {CollapsingMergeTree, mergeTreeColumnSettings},
-       {VersionedCollapsingMergeTree, mergeTreeColumnSettings},
-       {File, {}},
-       {Null, {}},
-       {Set, {}},
-       {Join, {}},
-       {Memory, {}},
-       {StripeLog, {}},
-       {Log, {}},
-       {TinyLog, {}},
-       {EmbeddedRocksDB, {}},
-       {Buffer, {}},
-       {MySQL, {}},
-       {PostgreSQL, {}},
-       {SQLite, {}},
-       {MongoDB, {}},
-       {Redis, {}},
-       {S3, {}},
-       {S3Queue, {}},
-       {Hudi, {}},
-       {DeltaLake, {}},
-       {IcebergS3, {}},
-       {Merge, {}},
-       {Distributed, {}},
-       {Dictionary, {}},
-       {GenerateRandom, {}}};
-
-const std::unordered_map<String, CHSetting> backupSettings
-    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
-       {"allow_backup_broken_projections", CHSetting(trueOrFalse, {}, false)},
-       {"allow_checksums_from_remote_paths", CHSetting(trueOrFalse, {}, false)},
-       {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
-       {"async", CHSetting(trueOrFalse, {}, false)},
-       {"azure_attempt_to_create_container", CHSetting(trueOrFalse, {}, false)},
-       {"check_parts", CHSetting(trueOrFalse, {}, false)},
-       {"check_projection_parts", CHSetting(trueOrFalse, {}, false)},
-       {"decrypt_files_from_encrypted_disks", CHSetting(trueOrFalse, {}, false)},
-       {"deduplicate_files", CHSetting(trueOrFalse, {}, false)},
-       {"experimental_lightweight_snapshot", CHSetting(trueOrFalse, {}, false)},
-       {"internal", CHSetting(trueOrFalse, {}, false)},
-       {"read_from_filesystem_cache", CHSetting(trueOrFalse, {}, false)},
-       {"s3_storage_class", CHSetting([](RandomGenerator &) { return "'STANDARD'"; }, {}, false)},
-       {"structure_only", CHSetting(trueOrFalse, {}, false)},
-       {"write_access_entities_dependents", CHSetting(trueOrFalse, {}, false)}};
-=======
 extern std::unordered_map<String, CHSetting> backupSettings;
->>>>>>> origin/master
 
 extern std::unordered_map<String, CHSetting> restoreSettings;
 
@@ -175,10 +111,6 @@ String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
-<<<<<<< HEAD
-void loadSystemTables(const FuzzConfig & fc);
-=======
 void loadSystemTables(FuzzConfig & fc);
->>>>>>> origin/master
 
 }

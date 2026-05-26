@@ -105,13 +105,7 @@ public:
         const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);
 
-<<<<<<< HEAD
-    void prepareProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) override;
-=======
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
->>>>>>> origin/master
 
 private:
     const size_t buckets_num;

@@ -1,10 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-<<<<<<< HEAD
-=======
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
->>>>>>> origin/master
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 
 namespace DB
@@ -116,15 +113,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
-<<<<<<< HEAD
-void MergeTreeIndexReader::read(size_t mark, MergeTreeIndexGranulePtr & granule)
-{
-    auto load_func = [this, mark](auto & res)
-=======
 void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule)
 {
     auto load_func = [this, mark, condition](auto & res)
->>>>>>> origin/master
     {
         initStreamIfNeeded();
 
@@ -187,8 +178,6 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
         stream->seekToMark(mark);
 
     granules->deserializeBinary(current_granule_num, *stream->getDataBuffer(), version);
-<<<<<<< HEAD
-=======
     stream_mark = mark + 1;
 }
 
@@ -213,7 +202,6 @@ MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSetti
     }
 
     return settings;
->>>>>>> origin/master
 }
 
 }

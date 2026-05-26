@@ -240,11 +240,7 @@ public:
         res = (*this)[n];
     }
 
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
-=======
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
->>>>>>> origin/master
 
     UInt64 get64(size_t n) const override;
 

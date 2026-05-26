@@ -15,12 +15,8 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-<<<<<<< HEAD
-Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](/sql-reference/statements/create/view#window-view) are listed below:
-=======
 Time window functions return the inclusive lower and exclusive upper bound of the corresponding window.
 The functions for working with [WindowView](/sql-reference/statements/create/view#window-view) are listed below:
->>>>>>> origin/master
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

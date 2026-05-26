@@ -5,10 +5,7 @@ sidebar_label: 'Int | UInt'
 sidebar_position: 2
 slug: /sql-reference/data-types/int-uint
 title: 'Int | UInt Types'
-<<<<<<< HEAD
-=======
 doc_type: 'reference'
->>>>>>> origin/master
 ---
 
 ClickHouse offers a number of fixed-length integers, 

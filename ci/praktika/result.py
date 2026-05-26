@@ -857,21 +857,9 @@ class Result(MetaClasses.Serializable):
                         retries == 1
                     ), "FIXME: retry not supported for python callables"
                     # If command is a Python function, call it with provided arguments
-<<<<<<< HEAD
-                    if with_info:
-=======
                     if with_info or with_info_on_failure:
->>>>>>> origin/master
                         buffer = io.StringIO()
                     else:
-<<<<<<< HEAD
-                        result = command_(*command_args, **command_kwargs)
-                    if isinstance(result, bool):
-                        res = result
-                    elif result:
-                        error_infos.append(str(result))
-                        res = False
-=======
                         buffer = "stdout"
                     try:
                         with Utils.Tee(stdout=buffer):
@@ -898,7 +886,6 @@ class Result(MetaClasses.Serializable):
                                 f.write(
                                     output if output.endswith("\n") else output + "\n"
                                 )
->>>>>>> origin/master
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
@@ -1477,12 +1464,8 @@ class _ResultS3:
 
 
 class ResultTranslator:
-<<<<<<< HEAD
-    GTEST_RESULT_FILE = "./ci/tmp/gtest.json"
-=======
     GTEST_RESULT_FILE = Path("./ci/tmp/gtest.json").absolute()
     PYTEST_RESULT_FILE = Path("./ci/tmp/pytest.jsonl").absolute()
->>>>>>> origin/master
 
     @classmethod
     def from_gtest(cls):

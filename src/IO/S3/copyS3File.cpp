@@ -876,17 +876,7 @@ void copyS3File(
 
     if (!settings[S3RequestSetting::allow_native_copy])
     {
-<<<<<<< HEAD
-        LOG_TRACE(getLogger("copyS3File"), "Native copy is disabled for {}", src_key);
-        fallback_method();
-        return;
-    }
-    if (allow_native_copy.is_auto && (src_s3_client->getCredentials() != dest_s3_client->getCredentials()))
-    {
-        LOG_TRACE(getLogger("copyS3File"), "Native copy is not possible for {} because credentials are different", src_key);
-=======
         LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
->>>>>>> origin/master
         fallback_method();
         return;
     }

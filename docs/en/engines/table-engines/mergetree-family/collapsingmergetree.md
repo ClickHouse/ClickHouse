@@ -5,12 +5,8 @@ keywords: ['updates', 'collapsing']
 sidebar_label: 'CollapsingMergeTree'
 sidebar_position: 70
 slug: /engines/table-engines/mergetree-family/collapsingmergetree
-<<<<<<< HEAD
-title: 'CollapsingMergeTree'
-=======
 title: 'CollapsingMergeTree table engine'
 doc_type: 'guide'
->>>>>>> origin/master
 ---
 
 ## Description {#description}

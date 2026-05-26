@@ -543,33 +543,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     for (size_t i = 0; i < 1000; ++i)
     {
         Coordination::Requests requests;
-<<<<<<< HEAD
-        requests.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-        requests.emplace_back(zkutil::makeCreateRequest(
-                                  table_metadata_path, table_metadata.toString(), zkutil::CreateMode::Persistent));
-
-        for (const auto & path : metadata_paths)
-        {
-            const auto zk_path = zookeeper_path / path;
-            requests.emplace_back(zkutil::makeCreateRequest(zk_path, "", zkutil::CreateMode::Persistent));
-        }
-
-        if (!table_metadata.last_processed_path.empty())
-        {
-            std::atomic<size_t> noop = 0;
-            ObjectStorageQueueOrderedFileMetadata(
-                zookeeper_path,
-                table_metadata.last_processed_path,
-                std::make_shared<FileStatus>(),
-                /* bucket_info */nullptr,
-                buckets_num,
-                table_metadata.loading_retries,
-                noop,
-                log).prepareProcessedAtStartRequests(requests, zookeeper);
-        }
-
-=======
->>>>>>> origin/master
         Coordination::Responses responses;
         std::optional<Coordination::Error> code;
         zk_retries.resetFailures();

@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
-=======
->>>>>>> origin/master
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -424,11 +419,7 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
-=======
 void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)

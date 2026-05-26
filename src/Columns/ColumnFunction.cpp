@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-#include <DataTypes/DataTypeTuple.h>
-=======
->>>>>>> origin/master
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -98,11 +94,7 @@ void ColumnFunction::get(size_t n, Field & res) const
         res_tuple.push_back((*captured_columns[i].column)[n]);
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n) const
-=======
 void ColumnFunction::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
->>>>>>> origin/master
 {
     size_t size = captured_columns.size();
 

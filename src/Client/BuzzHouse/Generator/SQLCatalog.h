@@ -54,8 +54,6 @@ enum class PeerQuery
     AllPeers = 2
 };
 
-<<<<<<< HEAD
-=======
 enum class LakeFormat
 {
     All = 0,
@@ -85,7 +83,6 @@ extern const std::vector<std::vector<OutFormat>> outFormats;
 extern const std::unordered_map<OutFormat, InFormat> outIn;
 extern const std::vector<std::vector<InOutFormat>> inOutFormats;
 
->>>>>>> origin/master
 struct SQLColumn
 {
 public:
@@ -99,24 +96,15 @@ public:
     SQLColumn(const SQLColumn & c)
     {
         this->cname = c.cname;
-<<<<<<< HEAD
-        this->tp = c.tp->typeDeepCopy();
-=======
         this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
->>>>>>> origin/master
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
     }
     SQLColumn(SQLColumn && c) noexcept
     {
-<<<<<<< HEAD
-        this->cname = c.cname;
-        this->tp = c.tp->typeDeepCopy();
-=======
         this->cname = std::move(c.cname);
         this->tp = std::move(c.tp);
->>>>>>> origin/master
         this->special = c.special;
         this->nullable = c.nullable;
         this->dmod = c.dmod;
@@ -128,12 +116,7 @@ public:
             return *this;
         }
         this->cname = c.cname;
-<<<<<<< HEAD
-        delete this->tp;
-        this->tp = c.tp->typeDeepCopy();
-=======
         this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
->>>>>>> origin/master
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -162,55 +145,17 @@ public:
 struct WithCluster
 {
 public:
-<<<<<<< HEAD
-    uint32_t iname = 0;
-};
-
-struct SQLDatabase
-{
-public:
-=======
     String name;
->>>>>>> origin/master
     std::optional<String> cluster;
 
     const std::optional<String> & getCluster() const { return cluster; }
 
-<<<<<<< HEAD
-    bool isAttached() const { return attached == DetachStatus::ATTACHED; }
-
-    bool isDettached() const { return attached != DetachStatus::ATTACHED; }
-
-    void setName(Database * db) const { SQLDatabase::setName(db, dname); }
-
-    void finishDatabaseSpecification(DatabaseEngine * dspec)
-    {
-        if (isReplicatedDatabase())
-        {
-            dspec->add_params()->set_svalue("/test/db" + std::to_string(zoo_path_counter));
-            dspec->add_params()->set_svalue("s1");
-            dspec->add_params()->set_svalue("r1");
-        }
-        else if (isBackupDatabase())
-        {
-            dspec->add_params()->mutable_database()->set_database(backed_db);
-            BackupDisk * bd = dspec->add_params()->mutable_disk();
-            bd->set_disk(backed_disk);
-            this->setName(bd->mutable_database());
-        }
-    }
-=======
     void setName(SQLIdentifier * f) const;
->>>>>>> origin/master
 };
 
 struct SQLDatabase : WithCluster
 {
 public:
-<<<<<<< HEAD
-    bool is_temp = false, is_deterministic = false;
-    uint32_t tname = 0;
-=======
     bool random_engine = false;
     String keeper_path;
     String shard_name;
@@ -273,7 +218,6 @@ public:
     bool can_run_merges = true;
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
->>>>>>> origin/master
     std::shared_ptr<SQLDatabase> db = nullptr;
     std::optional<String> file_comp;
     std::optional<String> partition_strategy;
@@ -304,14 +248,7 @@ public:
     SQLBase(SQLBase &&) = default;
     SQLBase & operator=(SQLBase &&) = default;
 
-<<<<<<< HEAD
-    bool isMergeTreeFamily() const
-    {
-        return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
-    }
-=======
     static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b);
->>>>>>> origin/master
 
     static bool supportsFinal(TableEngineValues teng);
 
@@ -353,13 +290,9 @@ public:
 
     bool isS3Engine() const;
 
-<<<<<<< HEAD
-    bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
-=======
     bool isS3QueueEngine() const;
 
     bool isAnyS3Engine() const;
->>>>>>> origin/master
 
     bool isAzureEngine() const;
 
@@ -369,11 +302,7 @@ public:
 
     bool isAnyQueueEngine() const;
 
-<<<<<<< HEAD
-    bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
-=======
     bool isHudiEngine() const;
->>>>>>> origin/master
 
     bool isDeltaLakeS3Engine() const;
 
@@ -381,19 +310,12 @@ public:
 
     bool isDeltaLakeLocalEngine() const;
 
-<<<<<<< HEAD
-    bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
-=======
     bool isAnyDeltaLakeEngine() const;
->>>>>>> origin/master
 
     bool isIcebergS3Engine() const;
 
     bool isIcebergAzureEngine() const;
 
-<<<<<<< HEAD
-    bool isDettached() const { return (db && db->attached != DetachStatus::ATTACHED) || attached != DetachStatus::ATTACHED; }
-=======
     bool isIcebergLocalEngine() const;
 
     bool isAnyIcebergEngine() const;
@@ -481,19 +403,11 @@ public:
     void setName(ExprSchemaTable * est, bool setdbname) const;
 
     void setName(TableEngine * te) const;
->>>>>>> origin/master
 };
 
 struct SQLTable : SQLBase
 {
 public:
-<<<<<<< HEAD
-    uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
-    std::unordered_map<uint32_t, SQLColumn> cols, staged_cols;
-    std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
-    std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
-    std::unordered_map<uint32_t, String> frozen_partitions;
-=======
     uint32_t col_counter = 0;
     uint32_t idx_counter = 0;
     uint32_t proj_counter = 0;
@@ -503,56 +417,29 @@ public:
     std::unordered_set<String> constrs;
     std::unordered_set<String> staged_constrs;
     std::unordered_map<String, String> frozen_partitions;
->>>>>>> origin/master
 
     SQLTable()
         : SQLBase("t")
     {
     }
 
-<<<<<<< HEAD
-    bool supportsFinal() const
-    {
-        return (teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
-            || isBufferEngine() || isDistributedEngine();
-    }
-=======
     size_t numberOfInsertableColumns(bool all) const;
->>>>>>> origin/master
 
     bool supportsFinal() const;
 
-<<<<<<< HEAD
-    bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
-=======
     bool hasSignColumn() const;
->>>>>>> origin/master
 
     bool hasVersionColumn() const;
 
-<<<<<<< HEAD
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        te->add_params()->mutable_table()->set_table("t" + std::to_string(tname));
-    }
-=======
     bool areInsertsAppends() const;
->>>>>>> origin/master
 };
 
 struct SQLView : SQLBase
 {
 public:
-<<<<<<< HEAD
-    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
-=======
     bool is_materialized = false;
     bool is_refreshable = false;
     bool has_with_cols = false;
->>>>>>> origin/master
     uint32_t staged_ncols = 0;
     std::unordered_set<String> cols;
 
@@ -574,32 +461,15 @@ public:
     {
     }
 
-<<<<<<< HEAD
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLDictionary::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database("d" + (db ? std::to_string(db->dname) : "efault"));
-        te->add_params()->mutable_table()->set_table("d" + std::to_string(tname));
-    }
-
-    bool supportsFinal() const { return false; }
-=======
     bool supportsFinal() const;
->>>>>>> origin/master
 };
 
 struct SQLFunction : WithCluster
 {
 public:
     bool is_deterministic = false;
-<<<<<<< HEAD
-    uint32_t fname = 0, nargs = 0;
-    std::optional<String> cluster;
-=======
     uint32_t nargs = 0;
 };
->>>>>>> origin/master
 
 struct SQLPolicy : WithCluster
 {
@@ -611,9 +481,6 @@ public:
     /// True when the policy was created with `TO buzzhouse_oracle_role` — eligible for the row policy oracle.
     bool targets_oracle_role = false;
 
-<<<<<<< HEAD
-    void setName(Function * f) const { f->set_function("f" + std::to_string(fname)); }
-=======
     SQLPolicy() = default;
     SQLPolicy(const SQLPolicy & other)
         : WithCluster(other)
@@ -625,7 +492,6 @@ public:
         this->targets_oracle_role = other.targets_oracle_role;
     }
     SQLPolicy & operator=(const SQLPolicy & other) = default;
->>>>>>> origin/master
 };
 
 struct ColumnPathChainEntry
@@ -658,11 +524,7 @@ public:
     {
     }
 
-<<<<<<< HEAD
-    const String & getBottomName() const { return path[path.size() - 1].cname; }
-=======
     const String & getBottomName() const;
->>>>>>> origin/master
 
     /// Returns the bottom name as a backtick-quoted SQL identifier: `escaped_name`.
     String getBottomNameSQL() const;

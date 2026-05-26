@@ -64,11 +64,7 @@ public:
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override;
-=======
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
->>>>>>> origin/master
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;

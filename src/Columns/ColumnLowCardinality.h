@@ -56,11 +56,7 @@ public:
 
     Field operator[](size_t n) const override { return getDictionary()[getIndexes().getUInt(n)]; }
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
-<<<<<<< HEAD
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-=======
     void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
->>>>>>> origin/master
     {
         getDictionary().getValueNameImpl(name_buf, getIndexes().getUInt(n), options);
     }

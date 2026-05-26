@@ -1,9 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
-<<<<<<< HEAD
-=======
 #include <Processors/Formats/IOutputFormat.h>
->>>>>>> origin/master
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
@@ -29,13 +26,8 @@ namespace DB
 {
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-<<<<<<< HEAD
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_)
-     : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations()), style(style_), mono_block(mono_block_), color(color_), glue_chunks(glue_chunks_)
-=======
     WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, Style style_, bool mono_block_, bool color_, bool glue_chunks_)
      : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_->getSerializations()), style(style_), mono_block(mono_block_), color(color_), glue_chunks(glue_chunks_)
->>>>>>> origin/master
 {
     /// Decide whether we should print a tip near the single number value in the result.
     if (!header_->getColumns().empty())

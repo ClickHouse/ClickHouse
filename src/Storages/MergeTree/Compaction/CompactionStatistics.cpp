@@ -77,11 +77,7 @@ UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data)
     return getMaxSourcePartsBytesForMerge(data, max_tasks_count, scheduled_tasks_count);
 }
 
-<<<<<<< HEAD
-UInt64 getMaxSourcePartsSizeForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count)
-=======
 UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data, size_t max_count, size_t scheduled_tasks_count)
->>>>>>> origin/master
 {
     const auto data_settings = data.getSettings();
     return getMaxSourcePartsBytesForMerge(
@@ -136,11 +132,7 @@ UInt64 getMaxSourcePartsBytesForMerge(
     return std::min(max_size, static_cast<UInt64>(static_cast<double>(max_unreserved_free_space) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
-<<<<<<< HEAD
-UInt64 getMaxSourcePartSizeForMutation(const MergeTreeData & data)
-=======
 UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out_log_comment)
->>>>>>> origin/master
 {
     const auto data_settings = data.getSettings();
     Int64 occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);

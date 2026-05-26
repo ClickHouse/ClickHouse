@@ -12,11 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-<<<<<<< HEAD
-constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
-
-=======
->>>>>>> origin/master
 namespace DB
 {
 

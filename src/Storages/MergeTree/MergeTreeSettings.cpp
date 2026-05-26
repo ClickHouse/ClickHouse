@@ -264,8 +264,6 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-<<<<<<< HEAD
-=======
     DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
     Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
     )", 0) \
@@ -435,7 +433,6 @@ namespace ErrorCodes
     For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_compact_part is set to 128,
     after merge into the Compact data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
     )", 0) \
->>>>>>> origin/master
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, R"(
@@ -447,11 +444,7 @@ namespace ErrorCodes
     )", 0) \
     \
     /** Merge settings. */ \
-<<<<<<< HEAD
-    DECLARE(UInt64, merge_max_block_size, 8192, R"(
-=======
     DECLARE(NonZeroUInt64, merge_max_block_size, 8192, R"(
->>>>>>> origin/master
     The number of rows that are read from the merged parts into memory.
 
     Possible values:
@@ -842,12 +835,9 @@ namespace ErrorCodes
     (expert level setting, don't change if you don't understand what it is doing).
     0 - disabled. Works for Simple and StochasticSimple merge selectors.
     )", 0) \
-<<<<<<< HEAD
-=======
     DECLARE(Bool, apply_patches_on_merge, true, R"(
     If true patch parts are applied on merges
     )", 0) \
->>>>>>> origin/master
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
     The maximum uncompressed size of data in all patch parts in bytes.
@@ -2061,15 +2051,12 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
-<<<<<<< HEAD
-=======
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
     Enabled cleanup of Keeper entries of empty partition.
     )", 0) \
     DECLARE(Seconds, shared_merge_tree_empty_partition_lifetime, 86400, R"(
     How many seconds partition will be stored in keeper if it has no parts.
     )", 0) \
->>>>>>> origin/master
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, R"(

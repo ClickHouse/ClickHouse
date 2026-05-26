@@ -974,35 +974,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             if (is_final_query && use_skip_indexes_if_final_exact_mode_)
             {
-<<<<<<< HEAD
-                if (ranges.ranges.empty())
-                    break;
-
-                const auto & index_and_condition = skip_indexes.useful_indices[idx];
-                auto & stat = useful_indices_stat[idx];
-                stat.total_parts.fetch_add(1, std::memory_order_relaxed);
-                size_t total_granules = ranges.ranges.getNumberOfMarks();
-                stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
-
-                ranges.ranges = filterMarksUsingIndex(
-                    index_and_condition.index,
-                    index_and_condition.condition,
-                    part,
-                    ranges.ranges,
-                    settings,
-                    reader_settings,
-                    mark_cache.get(),
-                    uncompressed_cache.get(),
-                    vector_similarity_index_cache.get(),
-                    log);
-
-                stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
-                if (ranges.ranges.empty())
-                    stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                skip_index_used_in_part[part_index] = 1; /// thread-safe
-=======
                 ranges.ranges_snapshot_after_pk_analysis = ranges.ranges;
->>>>>>> origin/master
             }
 
             if (!skip_indexes.empty())
@@ -1013,23 +985,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    if (all_updated_columns.empty())
-                        return {};
-
-<<<<<<< HEAD
-                size_t total_granules = ranges.ranges.getNumberOfMarks();
-                ranges.ranges = filterMarksUsingMergedIndex(
-                    indices_and_condition.indices, indices_and_condition.condition,
-                    part, ranges.ranges,
-                    settings, reader_settings,
-                    mark_cache.get(), uncompressed_cache.get(), vector_similarity_index_cache.get(), log);
-=======
-                    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-                    auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
-                    auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
->>>>>>> origin/master
-
-                    auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
+                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns);
+                    if (!check_result)
                     {
                         return std::unexpected(PreformattedMessage::create(
                             "Index {} is not used for part {}. Reason: {}",
@@ -1994,11 +1951,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
-<<<<<<< HEAD
-=======
     bool use_skip_indexes_for_disjunctions,
     PartialDisjunctionResult & partial_disjunction_result,
->>>>>>> origin/master
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName()))
@@ -2112,10 +2066,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     else if (bulk_filtering)
     {
         MergeTreeIndexBulkGranulesPtr granules;
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/master
         size_t current_granule_num = 0;
 
         for (size_t i = 0; i < ranges_size; ++i)
@@ -2242,112 +2192,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     return {res, read_hints};
 }
 
-<<<<<<< HEAD
-MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
-    MergeTreeIndices indices,
-    MergeTreeIndexMergedConditionPtr condition,
-    MergeTreeData::DataPartPtr part,
-    const MarkRanges & ranges,
-    const Settings & settings,
-    const MergeTreeReaderSettings & reader_settings,
-    MarkCache * mark_cache,
-    UncompressedCache * uncompressed_cache,
-    VectorSimilarityIndexCache * vector_similarity_index_cache,
-    LoggerPtr log)
-{
-    for (const auto & index_helper : indices)
-    {
-        if (!part->getDataPartStorage().existsFile(index_helper->getFileName() + ".idx"))
-        {
-            LOG_DEBUG(log, "File for index {} does not exist. Skipping it.", backQuote(index_helper->index.name));
-            return ranges;
-        }
-    }
-
-    auto index_granularity = indices.front()->index.granularity;
-
-    const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
-        settings[Setting::merge_tree_min_rows_for_seek],
-        settings[Setting::merge_tree_min_bytes_for_seek],
-        part->index_granularity_info.fixed_index_granularity,
-        part->index_granularity_info.index_granularity_bytes);
-
-    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
-    size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
-
-    MarkRanges index_ranges;
-    for (const auto & range : ranges)
-    {
-        MarkRange index_range(
-                range.begin / index_granularity,
-                (range.end + index_granularity - 1) / index_granularity);
-        index_ranges.push_back(index_range);
-    }
-
-    std::vector<std::unique_ptr<MergeTreeIndexReader>> readers;
-    for (const auto & index_helper : indices)
-    {
-        readers.emplace_back(
-            std::make_unique<MergeTreeIndexReader>(
-                index_helper,
-                part,
-                index_marks_count,
-                index_ranges,
-                mark_cache,
-                uncompressed_cache,
-                vector_similarity_index_cache,
-                reader_settings));
-    }
-
-    MarkRanges res;
-
-    /// Some granules can cover two or more ranges,
-    /// this variable is stored to avoid reading the same granule twice.
-    MergeTreeIndexGranules granules(indices.size(), nullptr);
-    bool granules_filled = false;
-    size_t last_index_mark = 0;
-    for (const auto & range : ranges)
-    {
-        MarkRange index_range(
-            range.begin / index_granularity,
-            (range.end + index_granularity - 1) / index_granularity);
-
-        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
-        {
-            if (index_mark != index_range.begin || !granules_filled || last_index_mark != index_range.begin)
-            {
-                for (size_t i = 0; i < readers.size(); ++i)
-                {
-                    readers[i]->read(index_mark, granules[i]);
-                    granules_filled = true;
-                }
-            }
-
-            if (!condition->mayBeTrueOnGranule(granules))
-                continue;
-
-            MarkRange data_range(
-                std::max(range.begin, index_mark * index_granularity),
-                std::min(range.end, (index_mark + 1) * index_granularity));
-
-            if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                res.push_back(data_range);
-            else
-                res.back().end = data_range.end;
-        }
-
-        last_index_mark = index_range.end - 1;
-    }
-
-    return res;
-}
-
-void MergeTreeDataSelectExecutor::selectPartsToRead(
-    MergeTreeData::DataPartsVector & parts,
-=======
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const RangesInDataParts & parts,
->>>>>>> origin/master
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,

@@ -26,11 +26,7 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
-<<<<<<< HEAD
-std::pair<String, DataTypePtr> IColumnDummy::getValueNameAndType(size_t) const
-=======
 void IColumnDummy::getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const
->>>>>>> origin/master
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name from {}", getName());
 }

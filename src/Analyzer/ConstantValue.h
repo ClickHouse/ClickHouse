@@ -2,10 +2,6 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn_fwd.h>
-<<<<<<< HEAD
-#include <DataTypes/FieldToDataType.h>
-=======
->>>>>>> origin/master
 #include <DataTypes/IDataType.h>
 
 namespace DB
