@@ -152,6 +152,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         Type::CLEAR_FILESYSTEM_CACHE,
         Type::SYNC_FILESYSTEM_CACHE,
         Type::CLEAR_QUERY_CACHE,
+        Type::CLEAR_AGGREGATE_CACHE,
+        Type::CLEAR_PARTIAL_AGGREGATE_CACHE,
     };
 
     if (!queries_with_on_cluster_at_end.contains(type) && !cluster.empty())

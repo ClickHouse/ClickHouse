@@ -41,6 +41,7 @@ public:
         CLEAR_MMAP_CACHE,
         CLEAR_QUERY_CONDITION_CACHE,
         CLEAR_QUERY_CACHE,
+        CLEAR_AGGREGATE_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
         CLEAR_PARQUET_METADATA_CACHE,
@@ -146,6 +147,8 @@ public:
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
+        /// Same execution as `CLEAR_AGGREGATE_CACHE`; separate enum so parsing does not go through `system_aliases`.
+        CLEAR_PARTIAL_AGGREGATE_CACHE,
         END
     };
 

@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
@@ -4062,10 +4063,20 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
-    if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+    try
     {
-        hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
-        hash.update(static_cast<UInt8>(is_array_join_left));
+        if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+        {
+            hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
+            hash.update(static_cast<UInt8>(is_array_join_left));
+        }
+    }
+    catch (const Exception & e)
+    {
+        /// Multiple ARRAY JOIN is not supported in `arrayJoinExpressionList`; disable cache keying fail-close.
+        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            return 0;
+        throw;
     }
     if (const auto prewhere = select.prewhere())
         hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));

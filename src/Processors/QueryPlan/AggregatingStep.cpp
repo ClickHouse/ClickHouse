@@ -27,8 +27,10 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -366,6 +368,23 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.group_by_two_level_threshold_bytes = 0;
     }
 
+    const bool use_sharded_aggregation = canUseShardedAggregation(pipeline);
+
+    if (use_sharded_aggregation)
+    {
+        /// Even though there is no merge phase, two-level can help keep each hash table small
+        /// and make hash table operations faster. However, after benchmarking, there have been
+        /// mostly slowdowns for most common queries. Therefore, disable two-level for sharded aggregation.
+        params.group_by_two_level_threshold = 0;
+        params.group_by_two_level_threshold_bytes = 0;
+
+        /// Sharded aggregation does not implement temporary-file spill/merge yet.
+        params.max_bytes_before_external_group_by = 0;
+
+        /// TODO(nihalzp): Support it
+        params.stats_collecting_params.disable();
+    }
+
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
@@ -378,7 +397,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// Disabled when `sort_description_for_merging` is non-empty (in-order aggregation) or when `partial_cache_is_compatible_with_group_by_limits` is false.
     const bool partial_cache_is_compatible_with_group_by_limits
         = params.max_rows_to_group_by == 0 || params.group_by_overflow_mode == OverflowMode::THROW;
-    if (settings.use_partial_aggregate_cache && sort_description_for_merging.empty() && partial_cache_is_compatible_with_group_by_limits)
+    if (!use_sharded_aggregation
+        && settings.use_partial_aggregate_cache
+        && sort_description_for_merging.empty()
+        && partial_cache_is_compatible_with_group_by_limits)
     {
         partial_aggregate_cache_holder = Context::getGlobalContextInstance()->getPartialAggregateCache();
         if (partial_aggregate_cache_holder)
@@ -644,6 +666,76 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
+    /// Sharded aggregation: shard rows by hash(key) % N, then aggregate per shard independently.
+    if (use_sharded_aggregation)
+    {
+        /// TODO(nihalzp): Compare perf against always choosing a power of two.
+        const size_t num_shards = max_threads;
+        const size_t num_streams = pipeline.getNumStreams();
+
+        /// Resolve key column positions for BufferedShardByHashTransform.
+        auto stream_header = pipeline.getSharedHeader();
+        ColumnNumbers key_columns;
+        key_columns.reserve(transform_params->params.keys.size());
+        for (const auto & key : transform_params->params.keys)
+            key_columns.push_back(stream_header->getPositionByName(key));
+
+        /// Add BufferedShardByHashTransform to each stream (1 input -> num_shards outputs).
+        /// After this the pipeline has num_streams * num_shards output ports.
+        pipeline.transform(
+            [&, stream_header, key_columns](OutputPortRawPtrs ports)
+            {
+                Processors shard_transforms;
+                for (auto * port : ports)
+                {
+                    auto shard_transform = std::make_shared<BufferedShardByHashTransform>(stream_header, num_shards, key_columns);
+                    connect(*port, shard_transform->getInputs().front());
+                    shard_transforms.push_back(shard_transform);
+                }
+                return shard_transforms;
+            });
+
+        /// For each shard, collect outputs from all sharding transforms and merge them with Resize(num_streams -> 1).
+        /// After this the pipeline has num_shards output ports (one per shard).
+        if (num_streams > 1)
+        {
+            pipeline.transform(
+                [&, stream_header](OutputPortRawPtrs ports)
+                {
+                    chassert(ports.size() == num_streams * num_shards);
+                    Processors resize_processors;
+
+                    for (size_t shard = 0; shard < num_shards; ++shard)
+                    {
+                        /// Shard k from sharding transform i is at index: i * num_shards + shard
+                        auto resize = std::make_shared<ResizeProcessor>(stream_header, num_streams, 1);
+                        auto & resize_inputs = resize->getInputs();
+                        auto input_it = resize_inputs.begin();
+
+                        /// For shard `s`, connect the `s`-th output of each BufferedShardByHashTransform
+                        /// to this ResizeProcessor input. BufferedShardByHashTransform routes rows by
+                        /// `hash(group_by_key) % num_shards`, so identical GROUP BY keys always
+                        /// land on the same shard.
+                        for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)
+                            connect(*ports[stream * num_shards + shard], *input_it);
+
+                        resize_processors.push_back(resize);
+                    }
+
+                    return resize_processors;
+                });
+        }
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & shard_header)
+            { return std::make_shared<AggregatingTransform>(shard_header, transform_params, dataflow_cache_updater); });
+
+        chassert(!should_produce_results_in_order_of_bucket_number);
+
+        aggregating = collector.detachProcessors(0);
+        return;
+    }
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
     {
@@ -885,8 +977,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes] = aggregation_in_order_max_block_bytes;
 
-    settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging] = should_produce_results_in_order_of_bucket_number;
-    settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number] = memory_bound_merging_of_aggregation_results_enabled;
+    settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number] = should_produce_results_in_order_of_bucket_number;
+    settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging] = memory_bound_merging_of_aggregation_results_enabled;
 
     settings[QueryPlanSerializationSetting::max_rows_to_group_by] = params.max_rows_to_group_by;
     settings[QueryPlanSerializationSetting::group_by_overflow_mode] = params.group_by_overflow_mode;
