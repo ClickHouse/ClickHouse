@@ -3078,7 +3078,7 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
     constexpr size_t size_hint = 4096; /// These files are small.
     auto read_settings = getReadSettings().adjustBufferSize(size_hint);
     /// Default read method is pread_threadpool, but there is not much point in it here.
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.local_fs_method = LocalFSReadMethod::pread;
     auto res = getDataPartStorage().readFile(file_name, read_settings, size_hint);
 
     if (isCompressedFromFileName(file_name))

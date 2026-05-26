@@ -17,6 +17,37 @@ class MMappedFileCache;
 class PageCache;
 class Context;
 
+/// Settings controlling reads from the local filesystem.
+/// Used by `createReadBufferFromFileBase` to pick a read method and buffer size.
+struct LocalFSReadSettings
+{
+    /// Method to use reading from local filesystem.
+    LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
+
+    /// https://eklitzke.org/efficient-file-copying-on-linux
+    size_t local_fs_buffer_size = 128 * 1024;
+
+    bool local_fs_prefetch = false;
+
+    /// For 'read', 'pread' and 'pread_threadpool' methods.
+    size_t direct_io_threshold = 0;
+
+    /// For 'mmap' method.
+    size_t mmap_threshold = 0;
+    MMappedFileCache * mmap_cache = nullptr;
+};
+
+/// Settings controlling HTTP transport retry/backoff and behavior.
+/// Used by `ReadWriteBufferFromHTTP`.
+struct HTTPReadSettings
+{
+    size_t http_max_tries = 10;
+    size_t http_retry_initial_backoff_ms = 100;
+    size_t http_retry_max_backoff_ms = 1600;
+    bool http_skip_not_found_url_for_globs = true;
+    bool http_make_head_request = true;
+};
+
 /// Settings controlling the in-memory page cache behavior.
 /// Used by CachedInMemoryReadBufferFromFile and the ReadPipeline memory cache stage.
 struct PageCacheSettings
@@ -48,28 +79,18 @@ struct FilesystemCacheSettings
 
 struct ReadSettings
 {
-    /// Method to use reading from local filesystem.
-    LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
+    /// Local filesystem source parameters (read method, buffer size, mmap/direct-io thresholds).
+    LocalFSReadSettings local_fs_settings;
+
     /// Method to use reading from remote filesystem.
     RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::threadpool;
-
-    /// https://eklitzke.org/efficient-file-copying-on-linux
-    size_t local_fs_buffer_size = 128 * 1024;
 
     size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     size_t prefetch_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
-    bool local_fs_prefetch = false;
     bool remote_fs_prefetch = false;
 
-    /// For 'read', 'pread' and 'pread_threadpool' methods.
-    size_t direct_io_threshold = 0;
-
-    /// For 'mmap' method.
-    size_t mmap_threshold = 0;
-    MMappedFileCache * mmap_cache = nullptr;
-
-    /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
+    /// For 'pread_threadpool'/'io_uring' method and async prefetch. Lower value is higher priority.
     Priority priority;
 
     size_t remote_fs_read_max_backoff_ms = 10000;
@@ -98,11 +119,8 @@ struct ReadSettings
 
     IOSchedulingSettings io_scheduling;
 
-    size_t http_max_tries = 10;
-    size_t http_retry_initial_backoff_ms = 100;
-    size_t http_retry_max_backoff_ms = 1600;
-    bool http_skip_not_found_url_for_globs = true;
-    bool http_make_head_request = true;
+    /// HTTP transport retry/backoff parameters.
+    HTTPReadSettings http_settings;
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;

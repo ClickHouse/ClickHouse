@@ -228,16 +228,16 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     if (current_uri.getPath().empty())
         current_uri.setPath("/");
 
-    if (read_settings.http_max_tries <= 0 || read_settings.http_retry_initial_backoff_ms <= 0
-        || read_settings.http_retry_initial_backoff_ms >= read_settings.http_retry_max_backoff_ms)
+    if (read_settings.http_settings.http_max_tries <= 0 || read_settings.http_settings.http_retry_initial_backoff_ms <= 0
+        || read_settings.http_settings.http_retry_initial_backoff_ms >= read_settings.http_settings.http_retry_max_backoff_ms)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid setting for http backoff, "
             "must be http_max_tries >= 1 (current is {}) and "
-            "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
-            read_settings.http_max_tries,
-            read_settings.http_retry_initial_backoff_ms,
-            read_settings.http_retry_max_backoff_ms);
+            "0 < http_retry_initial_backoff_ms < settings.http_settings.http_retry_max_backoff_ms (now 0 < {} < {})",
+            read_settings.http_settings.http_max_tries,
+            read_settings.http_settings.http_retry_initial_backoff_ms,
+            read_settings.http_settings.http_retry_max_backoff_ms);
 
     // Configure User-Agent if it not already set.
     const std::string user_agent = "User-Agent";
@@ -315,14 +315,14 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                                             std::function<void()> on_retry,
                                             bool mute_logging) const
 {
-    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
+    [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_settings.http_retry_initial_backoff_ms;
 
     bool is_retriable = true;
     std::exception_ptr exception = nullptr;
 
-    for (size_t attempt = 1; attempt <= read_settings.http_max_tries; ++attempt)
+    for (size_t attempt = 1; attempt <= read_settings.http_settings.http_max_tries; ++attempt)
     {
-        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_max_tries;
+        [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.http_max_tries;
 
         String error_message;
 
@@ -376,7 +376,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           "Failed at try {}/{}.",
                           initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                           error_message,
-                          attempt, read_settings.http_max_tries);
+                          attempt, read_settings.http_settings.http_max_tries);
 
             std::rethrow_exception(exception);
         }
@@ -393,11 +393,11 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          "Will retry with current backoff wait is {}/{} ms.",
                          initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
                          error_message,
-                         attempt + 1, read_settings.http_max_tries,
-                         milliseconds_to_wait, read_settings.http_retry_max_backoff_ms);
+                         attempt + 1, read_settings.http_settings.http_max_tries,
+                         milliseconds_to_wait, read_settings.http_settings.http_retry_max_backoff_ms);
 
             sleepForMilliseconds(milliseconds_to_wait);
-            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_retry_max_backoff_ms);
+            milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.http_retry_max_backoff_ms);
         }
     }
 }
@@ -747,7 +747,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
-    if (!read_settings.http_make_head_request)
+    if (!read_settings.http_settings.http_make_head_request)
         return HTTPFileInfo{};
 
     Poco::Net::HTTPResponse response;

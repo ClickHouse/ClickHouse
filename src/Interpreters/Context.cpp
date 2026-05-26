@@ -7657,7 +7657,7 @@ ReadSettings Context::getReadSettings() const
     std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
 
     if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
-        res.local_fs_method = *opt_method;
+        res.local_fs_settings.local_fs_method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
 
@@ -7668,7 +7668,7 @@ ReadSettings Context::getReadSettings() const
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
 
-    res.local_fs_prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
+    res.local_fs_settings.local_fs_prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
     res.remote_fs_prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
 
     res.enable_filesystem_read_prefetches_log = settings_ref[Setting::enable_filesystem_read_prefetches_log];
@@ -7714,25 +7714,25 @@ ReadSettings Context::getReadSettings() const
             ErrorCodes::INVALID_SETTING_VALUE, "Invalid value '{}' for max_read_buffer_size", getSettingsRef()[Setting::max_read_buffer_size].value);
     }
 
-    res.local_fs_buffer_size
+    res.local_fs_settings.local_fs_buffer_size
         = settings_ref[Setting::max_read_buffer_size_local_fs] ? settings_ref[Setting::max_read_buffer_size_local_fs] : settings_ref[Setting::max_read_buffer_size];
     res.remote_fs_buffer_size
         = settings_ref[Setting::max_read_buffer_size_remote_fs] ? settings_ref[Setting::max_read_buffer_size_remote_fs] : settings_ref[Setting::max_read_buffer_size];
     res.prefetch_buffer_size = settings_ref[Setting::prefetch_buffer_size];
-    res.direct_io_threshold = settings_ref[Setting::min_bytes_to_use_direct_io];
-    res.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
+    res.local_fs_settings.direct_io_threshold = settings_ref[Setting::min_bytes_to_use_direct_io];
+    res.local_fs_settings.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
     res.priority = Priority{settings_ref[Setting::read_priority]};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
 
-    res.http_max_tries = settings_ref[Setting::http_max_tries];
-    res.http_retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
-    res.http_retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
-    res.http_skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
-    res.http_make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.http_max_tries = settings_ref[Setting::http_max_tries];
+    res.http_settings.http_retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
+    res.http_settings.http_retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
+    res.http_settings.http_skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
+    res.http_settings.http_make_head_request = settings_ref[Setting::http_make_head_request];
 
-    res.mmap_cache = getMMappedFileCache().get();
+    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
     res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.enable_blob_storage_log_for_read_operations = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 

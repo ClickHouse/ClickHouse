@@ -51,18 +51,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         estimated_size = *file_size;
 
     if (!existing_memory
-        && settings.local_fs_method == LocalFSReadMethod::mmap
-        && settings.mmap_threshold
-        && settings.mmap_cache
-        && estimated_size >= settings.mmap_threshold)
+        && settings.local_fs_settings.local_fs_method == LocalFSReadMethod::mmap
+        && settings.local_fs_settings.mmap_threshold
+        && settings.local_fs_settings.mmap_cache
+        && estimated_size >= settings.local_fs_settings.mmap_threshold)
     {
         try
         {
             std::unique_ptr<MMapReadBufferFromFileWithCache> res;
             if (file_size)
-                res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0, *file_size);
+                res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.local_fs_settings.mmap_cache, filename, 0, *file_size);
             else
-                res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.mmap_cache, filename, 0);
+                res = std::make_unique<MMapReadBufferFromFileWithCache>(*settings.local_fs_settings.mmap_cache, filename, 0);
 
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
@@ -83,7 +83,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         std::unique_ptr<ReadBufferFromFileBase> res;
 
-        if (settings.local_fs_method == LocalFSReadMethod::read)
+        if (settings.local_fs_settings.local_fs_method == LocalFSReadMethod::read)
         {
             res = std::make_unique<ReadBufferFromFile>(
                 filename,
@@ -94,7 +94,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 file_size,
                 settings.local_throttler);
         }
-        else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
+        else if (settings.local_fs_settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_settings.local_fs_method == LocalFSReadMethod::mmap)
         {
             res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(
                 filename,
@@ -105,7 +105,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 file_size,
                 settings.local_throttler);
         }
-        else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
+        else if (settings.local_fs_settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
             auto & reader = getIOUringReaderOrThrow();
@@ -124,7 +124,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif
         }
-        else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
+        else if (settings.local_fs_settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
             auto & reader = getThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
@@ -139,7 +139,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 settings.local_throttler,
                 get_prefetches_log());
         }
-        else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
+        else if (settings.local_fs_settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
             auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
@@ -166,7 +166,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     std::unique_ptr<ReadBufferFromFileBase> res;
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
-    if (settings.direct_io_threshold && estimated_size >= settings.direct_io_threshold)
+    if (settings.local_fs_settings.direct_io_threshold && estimated_size >= settings.local_fs_settings.direct_io_threshold)
     {
         /** O_DIRECT
           * The O_DIRECT flag may impose alignment restrictions on the length and address of user-space buffers and the file offset of I/Os.
@@ -185,7 +185,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         auto align_up = [=](size_t value) { return (value + min_alignment - 1) / min_alignment * min_alignment; };
 
-        size_t buffer_size = settings.local_fs_buffer_size;
+        size_t buffer_size = settings.local_fs_settings.local_fs_buffer_size;
 
         if (buffer_size % min_alignment)
         {
@@ -216,7 +216,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
 
-        size_t buffer_size = settings.local_fs_buffer_size;
+        size_t buffer_size = settings.local_fs_settings.local_fs_buffer_size;
         /// Check if the buffer can be smaller than default
         if (read_hint.has_value() && *read_hint > 0 && *read_hint < buffer_size)
             buffer_size = *read_hint;

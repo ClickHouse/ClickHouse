@@ -283,7 +283,7 @@ public:
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         ReadSettings settings;
-        settings.local_fs_buffer_size = buffer_size_;
+        settings.local_fs_settings.local_fs_buffer_size = buffer_size_;
         settings.remote_fs_buffer_size = buffer_size_;
         settings.prefetch_buffer_size = buffer_size_;
 

@@ -440,7 +440,7 @@ void DiskEncrypted::prepareRead(
     auto encryption_settings = current_settings.get();
     pipeline.needDecryption(
         path,
-        settings.local_fs_buffer_size,
+        settings.local_fs_settings.local_fs_buffer_size,
         [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
