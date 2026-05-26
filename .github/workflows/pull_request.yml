@@ -5058,7 +5058,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'BuzzHouse (amd_msan)' --workflow "PR" --ci --timestamp
 
   la_casa_del_dolor_amd_debug:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, pr-amd-medium]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_tsan, build_arm_binary, build_arm_tidy, ci_tests, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFtZF9kZWJ1Zyk=') }}
     name: "La Casa Del Dolor (amd_debug)"
@@ -5093,7 +5093,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'La Casa Del Dolor (amd_debug)' --workflow "PR" --ci --timestamp
 
   la_casa_del_dolor_arm_asan_ubsan:
-    runs-on: [self-hosted, arm-medium]
+    runs-on: [self-hosted, pr-arm-medium]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_tsan, build_arm_asan_ubsan, build_arm_binary, build_arm_tidy, ci_tests, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFybV9hc2FuX3Vic2FuKQ==') }}
     name: "La Casa Del Dolor (arm_asan_ubsan)"
@@ -5128,7 +5128,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'La Casa Del Dolor (arm_asan_ubsan)' --workflow "PR" --ci --timestamp
 
   la_casa_del_dolor_amd_tsan:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, pr-amd-medium]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_tsan, build_arm_binary, build_arm_tidy, ci_tests, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFtZF90c2FuKQ==') }}
     name: "La Casa Del Dolor (amd_tsan)"
@@ -5163,7 +5163,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'La Casa Del Dolor (amd_tsan)' --workflow "PR" --ci --timestamp
 
   la_casa_del_dolor_amd_msan:
-    runs-on: [self-hosted, amd-medium]
+    runs-on: [self-hosted, pr-amd-medium]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy, ci_tests, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_1_2, stateless_tests_amd_asan_ubsan_distributed_plan_parallel_2_2, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel_1_2, stateless_tests_amd_tsan_parallel_2_2, stateless_tests_arm_binary_parallel, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'TGEgQ2FzYSBEZWwgRG9sb3IgKGFtZF9tc2FuKQ==') }}
     name: "La Casa Del Dolor (amd_msan)"
