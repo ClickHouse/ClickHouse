@@ -3,8 +3,9 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Core/Settings.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -698,6 +699,9 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     }
     if (max_processed_files_override)
         commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
+    /// Mirrors `is_deduplication_v2` computed in `streamToViews`.
+    const bool is_deduplication_v2 = add_deduplication_info
+        && local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -719,7 +723,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getStorageID(),
         log,
         commit_once_processed,
-        add_deduplication_info);
+        add_deduplication_info,
+        is_deduplication_v2);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
