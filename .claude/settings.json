@@ -12,7 +12,6 @@
       "Bash(gh search:*)",
       "Bash(gh run view:*)",
       "Bash(gh auth status:*)",
-      "Bash(node .claude/tools/fetch_ci_report.js:*)",
       "Bash(git log:*)",
       "Bash(git show:*)",
       "Bash(git status)",
