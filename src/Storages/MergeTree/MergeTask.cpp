@@ -936,9 +936,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         global_ctx->ttl_drop_short_circuit = true;
 
-        /// Zero TTL infos since all data is dropped.
-        /// Normally done by TTLTransform::finalize.
-        global_ctx->new_data_part->ttl_infos = {};
+        /// Mark table TTL as finished with zero min/max, matching what
+        /// TTLDeleteAlgorithm::finalize produces in the normal all_data_dropped
+        /// path.  We keep the accumulated part_min_ttl / part_max_ttl from
+        /// source parts (set at line ~592) so that ttl_infos.empty() returns
+        /// false and ttl.txt is written — producing the same checksums as the
+        /// non-short-circuit path.
+        global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
 
         /// Clear projections — no rows means no projection data to merge or rebuild.
         global_ctx->projections_to_rebuild.clear();
