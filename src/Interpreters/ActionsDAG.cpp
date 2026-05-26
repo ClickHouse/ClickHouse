@@ -3973,7 +3973,13 @@ static ColumnConst::Ptr deserializeConstant(
                 std::move(capture_dag),
                 ExpressionActionsSettings(context, CompileExpressions::yes)));
 
-        return ColumnConst::create(ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns)), 0);
+        /// `deserializeConstant` (below) returns size-0 ColumnConsts for each captured column,
+        /// matching the size-0 invariant for DAG node columns. Build the ColumnFunction with
+        /// the same `elements_size=0` so that `ColumnFunction::replicate` (called during
+        /// `convertToFullColumnIfConst` at header time) doesn't get a size-1 ColumnFunction
+        /// trying to replicate size-0 ColumnConst captures — which would throw
+        /// "Size of offsets doesn't match size of column".
+        return ColumnConst::create(ColumnFunction::create(0, std::move(function_expression), std::move(captured_columns)), 0);
     }
 
     auto column = type.createColumn();
