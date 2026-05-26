@@ -5686,9 +5686,12 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         }
         empty_info.level += 1;
 
-        const auto & partition = parts_to_remove.front()->partition;
+        const auto & source_part = parts_to_remove.front();
+        const auto & partition = source_part->partition;
         String empty_part_name = empty_info.getPartNameAndCheckFormat(format_version);
-        auto [new_data_part, tmp_dir_holder] = createEmptyPart(empty_info, partition, empty_part_name, NO_TRANSACTION_PTR);
+        /// Use the source part's metadata so patch parts pick up patch-part metadata.
+        auto [new_data_part, tmp_dir_holder] = createEmptyPart(
+            empty_info, partition, empty_part_name, source_part->getMetadataSnapshot(), NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
@@ -10829,9 +10832,8 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const MergeTreeTransactionPtr & txn)
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto settings = getSettings();
 
     auto block = metadata_snapshot->getSampleBlock();
