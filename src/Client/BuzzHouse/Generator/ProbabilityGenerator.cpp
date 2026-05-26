@@ -2,7 +2,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
-#include <algorithm>
+#include <cassert>
 #include <random>
 
 #include <base/defines.h>
@@ -85,20 +85,15 @@ size_t ProbabilityGenerator::nextOp(const bool tick)
     if (tick)
         this->tick();
 
-    const double u = uniform_unit(generator);
+    std::uniform_real_distribution<double> unif01(0.0, 1.0);
+    const double u = unif01(generator);
 
-    /// Binary search for the first bucket whose cdf is strictly greater than u.
-    /// O(log N) per sample versus the previous O(N) linear scan. The CDF is built so the
-    /// last enabled bucket has cdf == 1.0 (see buildCdf); disabled buckets keep the running
-    /// sum unchanged so they cannot be picked unless u falls exactly on a tie, which is
-    /// vanishingly unlikely with uniform_real_distribution.
-    const auto it = std::upper_bound(cdf.begin(), cdf.end(), u);
-    if (it == cdf.end())
-        return lastEnabledIndex();
-    const size_t idx = static_cast<size_t>(it - cdf.begin());
-    /// Guard the FP-edge case where u rounds up onto a disabled trailing bucket whose CDF
-    /// was forced to 1.0 prior to this fix.
-    return enabled_values[idx] ? idx : lastEnabledIndex();
+    for (size_t i = 0; i < nvalues; ++i)
+        if (u < cdf[i])
+            return i;
+
+    /// FP edge
+    return lastEnabledEnum();
 }
 
 void ProbabilityGenerator::tick()
@@ -123,7 +118,7 @@ void ProbabilityGenerator::ensureAtLeastOneEnabled(const std::vector<bool> & mas
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "At least one option must be enabled");
 }
 
-size_t ProbabilityGenerator::lastEnabledIndex() const
+size_t ProbabilityGenerator::lastEnabledEnum() const
 {
     for (size_t i = nvalues; i-- > 0;)
         if (enabled_values[i])
@@ -143,8 +138,6 @@ std::vector<double> ProbabilityGenerator::generateInitial()
         case ProbabilityStrategy::Drifting:
             return genBounded(); /// start from bounded
     }
-    /// Defensive against future enum additions; current enumerators all return above.
-    throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown ProbabilityStrategy at {}", description);
 }
 
 std::vector<double> ProbabilityGenerator::genBalanced()
@@ -153,9 +146,9 @@ std::vector<double> ProbabilityGenerator::genBalanced()
     for (int attempt = 0; attempt < std::max(1, balanced_resample_attempts); ++attempt)
     {
         std::vector<double> w(nvalues, 0.0);
-        std::exponential_distribution<double> exp_dist(1.0);
+        std::exponential_distribution<double> exp(1.0);
         for (size_t i = 0; i < nvalues; ++i)
-            w[i] = enabled_values[i] ? (exp_dist(generator) + kEpsilon) : 0.0;
+            w[i] = enabled_values[i] ? (exp(generator) + 1e-12) : 0.0;
 
         normalizeEnabledInPlace(w, enabled_values);
 
@@ -167,9 +160,9 @@ std::vector<double> ProbabilityGenerator::genBalanced()
 
     /// fallback
     std::vector<double> w(nvalues, 0.0);
-    std::exponential_distribution<double> exp_dist(1.0);
+    std::exponential_distribution<double> exp(1.0);
     for (size_t i = 0; i < nvalues; ++i)
-        w[i] = enabled_values[i] ? (exp_dist(generator) + kEpsilon) : 0.0;
+        w[i] = enabled_values[i] ? (exp(generator) + 1e-12) : 0.0;
 
     normalizeEnabledInPlace(w, enabled_values);
     return w;
@@ -188,7 +181,7 @@ std::vector<double> ProbabilityGenerator::genBounded()
         }
         const auto b = bounds[i];
         if (b.min < 0.0 || b.max < 0.0 || b.min > b.max)
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Invalid bounds at {} index {}: min={}, max={}", description, i, b.min, b.max);
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Invalid bounds");
         std::uniform_real_distribution<double> unif(b.min, b.max);
         w[i] = unif(generator);
     }
@@ -228,16 +221,8 @@ void ProbabilityGenerator::buildCdf()
         running += probabilities[i];
         cdf[i] = running;
     }
-    /// Pin the LAST ENABLED bucket's cdf to exactly 1.0 so floating-point drift in the
-    /// running sum can never leave a sliver of probability that maps to a disabled trailing
-    /// bucket. Previously this unconditionally set cdf[nvalues - 1] = 1.0, which gave the
-    /// disabled last bucket the full upper tail of the unit interval.
-    const size_t last_enabled = lastEnabledIndex();
-    cdf[last_enabled] = 1.0;
-    /// Carry that 1.0 forward over any disabled trailing buckets so upper_bound still
-    /// terminates inside the cdf array for u close to 1.0.
-    for (size_t i = last_enabled + 1; i < nvalues; ++i)
-        cdf[i] = 1.0;
+    /// Force last enabled bucket to 1.0; others after it (if disabled) already have same value.
+    cdf[nvalues - 1] = 1.0;
 }
 
 void ProbabilityGenerator::applyEnabledMaskAndRenorm(std::vector<double> & p) const
@@ -310,13 +295,13 @@ void ProbabilityGenerator::clampToBoundsAndRenormEnabled(std::vector<double> & p
         sum_min += bounds[i].min;
         sum_max += bounds[i].max;
     }
-    if (sum_min > 1.0 + kEpsilon)
+    if (sum_min > 1.0 + 1e-12)
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Inconsistent bounds for enabled subset at {} (cannot min sum to 1)", description);
-    if (sum_max < 1.0 - kEpsilon)
+    if (sum_max < 1.0 - 1e-12)
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Inconsistent bounds for enabled subset at {} (cannot max sum to 1)", description);
 
     std::vector<bool> fixed(nvalues, false);
-    for (int iter = 0; iter < kClampMaxIterations; ++iter)
+    for (int iter = 0; iter < 10; ++iter)
     {
         for (size_t i = 0; i < nvalues; ++i)
         {
@@ -346,7 +331,7 @@ void ProbabilityGenerator::clampToBoundsAndRenormEnabled(std::vector<double> & p
             used += p[i];
         double remaining = 1.0 - used;
 
-        if (std::fabs(remaining) < kEpsilon)
+        if (std::fabs(remaining) < 1e-12)
         {
             /// tiny adjustment to first enabled op
             for (size_t i = 0; i < nvalues; ++i)

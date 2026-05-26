@@ -8,7 +8,7 @@ namespace DB
 
 /// Source that generates chunks with constant columns and
 /// size up to max_block_size with total rows total_num_rows.
-class ConstChunkGenerator final : public ISource
+class ConstChunkGenerator : public ISource
 {
 public:
     ConstChunkGenerator(SharedHeader header, size_t total_num_rows, size_t max_block_size_)
