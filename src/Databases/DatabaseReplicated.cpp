@@ -1774,6 +1774,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Same for table_name_to_metadata and make_query_context
             auto task = [this, &table_id, &table_name_to_metadata, &make_query_context]()
             {
+                /// The task might run on a different thread, so we need to set current component for it
+                auto inner_component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
                 auto table_name = table_id.getTableName();
 
                 auto metadata_it = table_name_to_metadata.find(table_name);
