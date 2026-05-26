@@ -124,7 +124,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     /// Will only fail if key is not in ACTIVE state, e.g. REMOVING or REMOVED.
     LockedKeyPtr tryLock();
 
-    std::error_code createBaseDirectory();
+    [[nodiscard]] std::error_code createBaseDirectory();
 
     std::string getPath() const;
 

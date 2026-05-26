@@ -1278,14 +1278,8 @@ bool FileCache::doTryReserve(
 
     if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
-        if (skip_cache_on_disk_failure)
-        {
-            failure_reason = ec.message();
-            return false;
-        }
-
-        throw std::filesystem::filesystem_error(
-            fmt::format("failed to create base directory for a key {}", file_segment.getKeyMetadata()->getPath()), ec);
+        failure_reason = ec.message();
+        return false;
     }
 
     return true;

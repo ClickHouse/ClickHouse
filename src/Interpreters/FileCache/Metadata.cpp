@@ -148,10 +148,9 @@ std::error_code KeyMetadata::createBaseDirectory()
         created_base_directory.store(true);
         ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
-    else
-    {
+    else if (ec != std::errc::no_space_on_device && ec != std::errc::too_many_files_open)
         LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, {}", key, ec.message());
-    }
+
 
     return ec;
 }
