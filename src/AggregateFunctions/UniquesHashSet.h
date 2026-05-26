@@ -2,7 +2,6 @@
 
 #include <math.h>
 
-#include <base/defines.h>
 #include <base/types.h>
 
 #include <IO/ReadHelpers.h>
@@ -463,9 +462,6 @@ public:
     {
         if (m_size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
-
-        /// A null `buf` here would indicate upstream state corruption (e.g. a double-destroyed state).
-        chassert(buf);
 
         DB::writeBinaryLittleEndian(skip_degree, wb);
         DB::writeVarUInt(m_size, wb);
