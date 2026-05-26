@@ -257,14 +257,18 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
             "Using `use_environment_credentials` in S3 named collections is not allowed");
     }
 
-    s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
-    s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
+    if (collection.has("access_key_id"))
+        s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.get<String>("access_key_id");
+    if (collection.has("secret_access_key"))
+        s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.get<String>("secret_access_key");
     if (collection.has("use_environment_credentials"))
         s3_settings->auth_settings[S3AuthSetting::use_environment_credentials] = collection.get<bool>("use_environment_credentials");
-    s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
-    s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
-        = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
-    s3_settings->auth_settings[S3AuthSetting::session_token] = collection.getOrDefault<String>("session_token", "");
+    if (collection.has("no_sign_request"))
+        s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.get<bool>("no_sign_request");
+    if (collection.has("expiration_window_seconds"))
+        s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds] = collection.get<UInt64>("expiration_window_seconds");
+    if (collection.has("session_token"))
+        s3_settings->auth_settings[S3AuthSetting::session_token] = collection.get<String>("session_token");
 
     if (collection.has("partition_strategy"))
     {
@@ -281,20 +285,27 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
 
     partition_columns_in_data_file = collection.getOrDefault<bool>(
         "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
-    s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
+    if (collection.has("role_arn"))
+        s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.get<String>("role_arn");
     /// The check looks only at the keys in the named collection itself, not at the merged
     /// `auth_settings`, so that the user cannot piggy-back on server-managed `<s3>` config
     /// credentials when supplying their own `role_arn`.
     const bool nc_has_user_keys = !collection.getOrDefault<String>("access_key_id", "").empty()
         && !collection.getOrDefault<String>("secret_access_key", "").empty();
-    if (!s3_settings->auth_settings[S3AuthSetting::role_arn].value.empty() && !nc_has_user_keys)
+    const bool nc_has_role_arn = !collection.getOrDefault<String>("role_arn", "").empty();
+    if (nc_has_role_arn && !nc_has_user_keys)
         throwRoleArnRequiresUserSuppliedKeys("S3 named collections");
-    s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
+    if (collection.has("role_session_name"))
+        s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.get<String>("role_session_name");
 
-    s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
-    s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
-    s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.getOrDefault<String>("metadata_service", "");
-    s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
+    if (collection.has("http_client"))
+        s3_settings->auth_settings[S3AuthSetting::http_client] = collection.get<String>("http_client");
+    if (collection.has("service_account"))
+        s3_settings->auth_settings[S3AuthSetting::service_account] = collection.get<String>("service_account");
+    if (collection.has("metadata_service"))
+        s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.get<String>("metadata_service");
+    if (collection.has("request_token_path"))
+        s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.get<String>("request_token_path");
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));

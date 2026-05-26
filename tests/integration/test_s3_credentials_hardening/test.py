@@ -129,6 +129,23 @@ def test_endpoint_scoped_credentials_still_apply():
     assert result.strip() == "2"
 
 
+def test_named_collection_endpoint_scoped_credentials_still_apply():
+    node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint")
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION nc_trusted_endpoint AS
+            url = '{TRUSTED_ENDPOINT}'
+        """
+    )
+    try:
+        result = node.query(
+            "SELECT * FROM s3(nc_trusted_endpoint, format = 'CSV', structure = 'leaked UInt8')"
+        )
+        assert result.strip() == "2"
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint")
+
+
 def test_named_collection_role_arn_does_not_inherit_admin_keys():
     node.query("DROP NAMED COLLECTION IF EXISTS nc_role_no_keys")
     node.query(
