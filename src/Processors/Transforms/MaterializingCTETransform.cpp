@@ -128,6 +128,8 @@ Chunk MaterializingCTETransform::generate()
     auto seconds = static_cast<double>(watch.elapsedNanoseconds()) / 1e9;
     LOG_DEBUG(getLogger("MaterializingCTETransform"), "Finished materializing CTE with name '{}' in {} seconds", materialized_cte->cte_name, seconds);
 
+    materialized_cte->is_built.store(true, std::memory_order_release);
+
     /// Releases every reader blocked in `MemorySource::generate` on
     /// `build_future.get()`. Throws only if the promise was already
     /// fulfilled by `onCancel`, in which case `work()`'s catch routes

@@ -89,6 +89,17 @@ struct MaterializedCTE
     /// parallel to `is_materialization_planned`, but for the optimize
     /// stage rather than the claim/move stage.
     std::atomic_bool is_plan_optimized{false};
+    /// True once `MaterializingCTETransform::generate` has finished writing
+    /// to `storage` and called `MemorySink::onFinish`. Set with
+    /// `memory_order_release` by the writer; readers in
+    /// `ReadFromMemoryStorageStep` load with `memory_order_acquire`. This is
+    /// a fail-fast invariant: by the time a `MemorySource` is scheduled to
+    /// produce a chunk, `DelayedPortsProcessor` (inserted by
+    /// `MaterializingCTEsStep::updatePipeline` via `addPipelineBefore`)
+    /// guarantees the writer has finished, so the load must observe `true`.
+    /// If it ever observes `false`, the planner failed to wire the gate -
+    /// fail loudly rather than block or read half-populated storage.
+    std::atomic_bool is_built{false};
     /// Coordinates the writer (`MaterializingCTETransform`) with concurrent
     /// readers (`MemorySource` of any plan that reads `storage`). Fulfilled
     /// exactly once:
