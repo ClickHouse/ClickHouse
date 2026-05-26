@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Pre-push hook: prevent pushing commits with default/generic author or committer identities.
+# Pre-push hook: refuse to push when the local git identity looks default/generic.
 # Install: git config core.hooksPath .githooks
 
 blocked='ubuntu|root|ec2-user|centos|fedora|debian|admin|bitnami|azureuser|gce-user|runner|jenkins|nobody|user|test|default|guest'
@@ -8,36 +8,43 @@ blocked='ubuntu|root|ec2-user|centos|fedora|debian|admin|bitnami|azureuser|gce-u
 blocked_re="(^|[^A-Za-z0-9_])($blocked)([^A-Za-z0-9_]|\$)"
 shopt -s nocasematch
 
-failed=0
-while read -r local_ref local_sha remote_ref remote_sha; do
-    # Skip branch deletions
-    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
-        continue
-    fi
+# Only scan when the local identity itself looks default/generic. Otherwise we
+# trust the push: walking the range would false-positive on upstream merge
+# ancestors that carry bot identities like `robot-ch-test-poll`, which aren't
+# the pusher's to fix.
+my_name=$(git config user.name)
+if [[ $my_name =~ $blocked_re ]]; then
+    # List the affected commits in the push range so they can be amended after
+    # fixing `git config`.
+    echo "ERROR: Your git identity (user.name='$my_name') matches a default/generic pattern." >&2
+    echo "Affected commits in the push range:" >&2
 
-    # For new branches, check commits not reachable from any remote branch
-    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-        range=("$local_sha" --not --remotes)
-    else
-        range=("$remote_sha..$local_sha")
-    fi
-
-    # One git-log call per push ref. Records are NUL-separated (-z) so identities
-    # containing tabs cannot bypass the check; fields within a record are newline-
-    # separated since `\n` cannot appear in `%an` / `%ae` / `%cn` / `%ce`.
-    while IFS=$'\n' read -r -d '' sha an ae cn ce; do
-        if [[ $an =~ $blocked_re ]]; then
-            echo "ERROR: Commit $sha has a default/generic identity: $an <$ae>" >&2
-            failed=1
+    while read -r local_ref local_sha remote_ref remote_sha; do
+        # Skip branch deletions
+        if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+            continue
         fi
-        if [[ $cn =~ $blocked_re ]]; then
-            echo "ERROR: Commit $sha has a default/generic identity: $cn <$ce>" >&2
-            failed=1
-        fi
-    done < <(git log -z --format='%H%n%an%n%ae%n%cn%n%ce' "${range[@]}")
-done
 
-if [ "$failed" -eq 1 ]; then
+        # For new branches, list commits not reachable from any remote branch
+        if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+            range=("$local_sha" --not --remotes)
+        else
+            range=("$remote_sha..$local_sha")
+        fi
+
+        # Records are NUL-separated (-z) so identities containing tabs cannot
+        # bypass the check; fields within a record are newline-separated since
+        # `\n` cannot appear in `%an` / `%ae` / `%cn` / `%ce`.
+        while IFS=$'\n' read -r -d '' sha an ae cn ce; do
+            if [[ $an =~ $blocked_re ]]; then
+                echo "  $sha author $an <$ae>" >&2
+            fi
+            if [[ $cn =~ $blocked_re ]]; then
+                echo "  $sha committer $cn <$ce>" >&2
+            fi
+        done < <(git log -z --format='%H%n%an%n%ae%n%cn%n%ce' "${range[@]}")
+    done
+
     echo >&2
     echo "Push blocked. Please fix your git identity with:" >&2
     echo "  git config user.name \"Your Name\"" >&2
