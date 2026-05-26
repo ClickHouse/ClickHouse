@@ -14,9 +14,6 @@ class AbstractConfiguration;
 
 namespace DB
 {
-
-class JWTProvider;
-
 struct ConnectionParameters
 {
     String host;
@@ -29,11 +26,7 @@ struct ConnectionParameters
     std::string quota_key;
     SSHKey ssh_private_key;
     std::string jwt;
-#if USE_JWT_CPP && USE_SSL
-    std::shared_ptr<JWTProvider> jwt_provider;
-#endif
     Protocol::Secure security = Protocol::Secure::Disable;
-    std::string tls_sni_override;
     std::string bind_host;
     Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
