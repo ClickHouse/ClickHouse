@@ -42,6 +42,7 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -559,6 +560,19 @@ static bool writeMetadataFiles(
     return true;
 }
 
+void validateMutationWriteFormat(const String & write_format)
+{
+    /// Position delete files are written using the table's data file format (see `writeDataFiles`).
+    /// Only Parquet is supported on the read side (see `IcebergDataObjectInfo::addPositionDeleteObject`),
+    /// and ORC/Avro writers fail or produce data that cannot be read back. Reject mutations on
+    /// non-Parquet tables to avoid corrupting the table or aborting the server. See issue #102508.
+    if (Poco::toUpper(write_format) != "PARQUET")
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Iceberg DELETE and UPDATE are only supported for tables with Parquet data file format, but got {}",
+            write_format);
+}
+
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
@@ -571,6 +585,8 @@ void mutate(
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
+    validateMutationWriteFormat(write_format);
+
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
