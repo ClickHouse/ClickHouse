@@ -8,6 +8,7 @@
 #include <initializer_list>
 #include <vector>
 #include <Common/StringHashForHeterogeneousLookup.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 class SipHash;
@@ -31,7 +32,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using IndexByName = UnorderedMapWithMemoryTracking<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     Container data;
     IndexByName index_by_name;

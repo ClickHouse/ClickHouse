@@ -6,6 +6,8 @@
 #include <unordered_set>
 #include <unordered_map>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
@@ -19,7 +21,7 @@ using NameToNameVector = std::vector<std::pair<std::string, std::string>>;
 using NameToIndexMap = std::unordered_map<std::string, size_t>;
 
 using NameWithAlias = std::pair<std::string, std::string>;
-using NamesWithAliases = std::vector<NameWithAlias>;
+using NamesWithAliases = VectorWithMemoryTracking<NameWithAlias>;
 
 struct NamesHash
 {
