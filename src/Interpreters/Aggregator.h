@@ -134,6 +134,9 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
+        /// Partial aggregate cache semantic key; see `partialAggregateCacheSemanticKey`. Independent of `collect_hash_table_stats_during_aggregation`.
+        UInt64 query_semantic_hash_for_partial_cache = 0;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -158,7 +161,8 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
             bool enable_producing_buckets_out_of_order_in_aggregation_,
-            bool serialize_string_with_zero_byte_);
+            bool serialize_string_with_zero_byte_,
+            UInt64 query_semantic_hash_for_partial_cache_ = 0);
 
         /// Only parameters that matter during merge.
         Params(
@@ -193,6 +197,9 @@ public:
     ~Aggregator();
 
     const Params & getParams() const { return params; }
+
+    /// Byte size of one aggregate-state row (all aggregate functions); used for memory estimates.
+    size_t getTotalSizeOfAggregateStates() const { return total_size_of_aggregate_states; }
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(Columns columns,
@@ -705,6 +712,19 @@ private:
 
 /// NOTE: For non-Analyzer it does not include the database name
 UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
+
+/// Extends `calculateCacheKey` with `current_database` for partial aggregate cache correctness
+/// when `StorageID::uuid` is nil (e.g. Ordinary) and unqualified table names resolve per database.
+/// `apply_deleted_mask` affects which rows are visible for MergeTree reads; `has_row_level_filter` disables
+/// caching because row policies are not represented in the AST hash. Non-empty `additional_table_filters`
+/// is applied outside that AST and also disables the semantic key. Predicate subqueries in `PREWHERE`/`WHERE`
+/// also disable the key because external source freshness is not tracked.
+UInt64 partialAggregateCacheSemanticKey(
+    const DB::ASTPtr & select_query,
+    const String & current_database,
+    bool apply_deleted_mask,
+    bool has_row_level_filter,
+    bool has_additional_table_filters);
 
 /** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);

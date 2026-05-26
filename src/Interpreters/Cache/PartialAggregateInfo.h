@@ -7,7 +7,11 @@
 namespace DB
 {
 
-/// Metadata for partial aggregate cache lookups: table UUID, part name, and mutation version.
+/// Part identity for `use_partial_aggregate_cache` execution-time path (hits, misses, and `put`).
+/// Attached in `MergeTreeSource`: fixed part at plan time (`partial_aggregate_identity_from_plan`, in-order reads) or
+/// `MergeTreeSelectProcessor::buildPartialAggregateInfoFromCurrentTask` for pooled reads.
+/// `skip_execution_time_cache_lookup`: plan-time `PartialAggregateCache::get` already missed for this part
+/// (`ReadFromMergeTree` sets `MergeTreeReaderSettings::skip_partial_aggregate_execution_cache_lookup` on miss readers).
 class PartialAggregateInfo : public ChunkInfoCloneable<PartialAggregateInfo>
 {
 public:
@@ -29,7 +33,7 @@ public:
     String part_name;
     UInt64 part_mutation_version = 0;
 
-    /// Reserved; unused while query integration is not enabled.
+    /// When `ReadFromMergeTree` already probed `PartialAggregateCache` at plan time and missed, skip a redundant `get` in `AggregatingTransform`.
     bool skip_execution_time_cache_lookup = false;
 };
 

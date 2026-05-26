@@ -14,7 +14,8 @@ namespace DB
 
 /// Cache infrastructure for partial aggregate states per MergeTree part (`use_partial_aggregate_cache`).
 /// Key: `query_hash` (aggregation query identity), plus `table_uuid`, `part_name`, `part_mutation_version`.
-/// `PartialAggregateCacheHits`/`Misses` are updated on every `get`.
+/// Entries with `table_uuid == UUIDHelpers::Nil` are intentionally ignored to avoid cross-table key collisions for non-UUID databases.
+/// `PartialAggregateCacheHits`/`Misses` are updated on `get` only when `table_uuid` is non-`Nil`.
 class PartialAggregateCache
 {
 public:
@@ -23,7 +24,7 @@ public:
         /// Hash of the aggregation query identity.
         IASTHash query_hash;
 
-        /// Table identity.
+        /// Table identity. Must be non-`Nil` for cache participation.
         UUID table_uuid;
 
         /// Part identity (`name` + authoritative mutation counter from the data part, not inferred by parsing `part_name`).

@@ -1,6 +1,4 @@
 #include <Interpreters/Cache/PartialAggregateCache.h>
-#include <Interpreters/Cache/PartialAggregatePlanHitInfo.h>
-#include <Storages/MergeTree/MergeTreePartialAggregateInfo.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -73,6 +71,9 @@ PartialAggregateCache::PartialAggregateCache(size_t max_size_in_bytes, size_t ma
 
 std::optional<Block> PartialAggregateCache::get(const Key & key)
 {
+    if (key.table_uuid == UUIDHelpers::Nil)
+        return std::nullopt; /// Same invariant as QueryConditionCache: non-UUID tables do not participate.
+
     auto entry = cache.get(key);
     if (entry)
     {
@@ -88,6 +89,9 @@ std::optional<Block> PartialAggregateCache::get(const Key & key)
 
 void PartialAggregateCache::put(const Key & key, Block partial_aggregate)
 {
+    if (key.table_uuid == UUIDHelpers::Nil)
+        return; /// Same invariant as QueryConditionCache: non-UUID tables do not participate.
+
     auto entry = std::make_shared<Entry>();
     entry->partial_aggregate = std::move(partial_aggregate);
     entry->weight_in_bytes = estimateBlockWeightBytes(entry->partial_aggregate);

@@ -50,7 +50,9 @@
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/PartialAggregateCacheQueryHash.h>
 
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <QueryPipeline/Pipe.h>
@@ -136,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool allow_experimental_query_deduplication;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
@@ -1200,7 +1203,9 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    BuildQueryPipelineSettings pipeline_settings(context);
+    pipeline_settings.partial_aggregate_cache_query_hash = partial_aggregate_cache_query_hash_for_pipeline;
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), pipeline_settings);
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
@@ -2905,6 +2910,7 @@ static Aggregator::Params getAggregatorParams(
     const ASTPtr & query_ptr,
     const SelectQueryExpressionAnalyzer & query_analyzer,
     const Context & context,
+    const SelectQueryInfo & select_query_info,
     const Names & keys,
     const AggregateDescriptions & aggregates,
     bool overflow_row,
@@ -2912,6 +2918,16 @@ static Aggregator::Params getAggregatorParams(
     size_t group_by_two_level_threshold,
     size_t group_by_two_level_threshold_bytes)
 {
+    const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
+    const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
+    const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
+    const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
+        query_ptr,
+        context.getCurrentDatabase(),
+        apply_deleted_mask_value,
+        has_row_level_filter,
+        has_additional_table_filters);
+
     const auto stats_collecting_params = StatsCollectingParams(
         calculateCacheKey(query_ptr),
         settings[Setting::collect_hash_table_stats_during_aggregation],
@@ -2943,7 +2959,8 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]};
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        partial_aggregate_semantic_key};
 }
 
 void InterpreterSelectQuery::executeAggregation(
@@ -2963,6 +2980,7 @@ void InterpreterSelectQuery::executeAggregation(
         query_ptr,
         *query_analyzer,
         *context,
+        query_info,
         keys,
         aggregates,
         overflow_row,
@@ -2988,6 +3006,17 @@ void InterpreterSelectQuery::executeAggregation(
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
         sort_description_for_merging = group_by_sort_description;
     }
+
+    partial_aggregate_cache_query_hash_for_pipeline = tryComputePartialAggregateCacheQueryHash(
+        settings,
+        Context::getGlobalContextInstance()->getPartialAggregateCache(),
+        aggregator_params,
+        settings[Setting::group_by_use_nulls],
+        !sort_description_for_merging.empty());
+    /// `GROUPING SETS`: disable planning-stage probe only (`partial_aggregate_cache_query_hash_for_pipeline` is a single hash).
+    /// Per-set `partial_aggregate_query_hash` and execution-time cache behavior are still set in `AggregatingStep::transformPipeline`.
+    if (!grouping_sets_params.empty())
+        partial_aggregate_cache_query_hash_for_pipeline.reset();
 
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
@@ -3098,7 +3127,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     for (auto & aggregate : aggregates)
         aggregate.argument_names.clear();
 
-    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, keys, aggregates, false, settings, 0, 0);
+    auto params = getAggregatorParams(query_ptr, *query_analyzer, *context, query_info, keys, aggregates, false, settings, 0, 0);
     const bool final = true;
 
     QueryPlanStepPtr step;
