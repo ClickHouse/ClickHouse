@@ -135,6 +135,7 @@ def test_deterministic_rotation_race(started_cluster):
 
     # Seed data before stopping the lagger.
     leader_zk.create(prefix, b"basedata")
+    lagger_zk.sync(prefix)
     assert lagger_zk.get(prefix)[0] == b"basedata"
     stop_zk(lagger_zk)
 
@@ -359,6 +360,7 @@ def test_stable_recovery_under_write_load(started_cluster):
     lagger_zk = keeper_utils.get_fake_zk(started_cluster, lagger.name)
 
     leader_zk.create(prefix, b"basedata")
+    lagger_zk.sync(prefix)
     assert lagger_zk.get(prefix)[0] == b"basedata"
     stop_zk(lagger_zk)
 
