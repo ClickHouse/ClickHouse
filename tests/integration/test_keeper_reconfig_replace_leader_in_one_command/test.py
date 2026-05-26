@@ -5,6 +5,7 @@ import typing as tp
 from os.path import dirname, join, realpath
 
 import pytest
+from kazoo.exceptions import NodeExistsError
 
 import helpers.keeper_utils as ku
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -128,7 +129,21 @@ def test_reconfig_replace_leader_in_one_command(started_cluster):
 
     for i in range(100):
         assert zk4.exists(f"test_four_{i}") is not None
-        zk4.create(f"/test_four_{100 + i}", b"somedata")
+        path = f"/test_four_{100 + i}"
+        value = b"somedata"
+        try:
+            zk4.create(path, value)
+        except NodeExistsError:
+            # The cluster is still settling right after the reconfig, so the
+            # implicit kazoo retry can hit `NodeExistsError`: the first attempt
+            # commits server-side, the response is lost on `ConnectionLoss`,
+            # and the retry sees the now-existing znode. Treat this as success
+            # only if the existing value matches what we tried to write.
+            existing_value, _ = zk4.get(path)
+            assert existing_value == value, (
+                f"NodeExistsError on {path} but existing value differs: "
+                f"{existing_value!r} != {value!r}"
+            )
 
     with pytest.raises(Exception):
         zk1.stop()
