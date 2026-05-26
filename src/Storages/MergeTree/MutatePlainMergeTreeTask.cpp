@@ -8,7 +8,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -116,9 +115,6 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();
-#if CLICKHOUSE_CLOUD
-                data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
-#endif
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.precommitTransaction();
 
