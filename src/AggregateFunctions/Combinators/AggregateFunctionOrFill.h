@@ -52,29 +52,6 @@ public:
             return nested_function->getName() + "OrDefault";
     }
 
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        if (!this->haveSameDefinition(rhs))
-            return false;
-
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
-    {
-        auto rhs_nested = rhs.getNestedFunction();
-        chassert(rhs_nested != nullptr);
-
-        nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
-
-        const size_t rhs_size_of_data = rhs_nested->sizeOfData();
-        place[size_of_data] |= rhs_place[rhs_size_of_data];
-    }
-
     bool isVersioned() const override
     {
         return nested_function->isVersioned();
@@ -327,42 +304,6 @@ public:
             else
             {
                 // -OrDefault
-                if constexpr (merge)
-                    nested_function->insertMergeResultInto(place, to, arena);
-                else
-                    nested_function->insertResultInto(place, to, arena);
-            }
-        }
-        else if (nested_function->isState())
-        {
-            /// Mirror the flag-set branch for State-nested combinators: routing
-            /// flag-unset rows through `to.insertDefault()` would call
-            /// `ColumnAggregateFunction::ensureOwnership()` on the inner column and
-            /// reset its `src`, leaving subsequent flag-set rows pushing externally-
-            /// owned state pointers without `src` protection (double-destroy under
-            /// `MemorySanitizer`, issue #105462). The state at `place` is already
-            /// default-initialized by `create()` above, so it is safe to forward.
-            if constexpr (UseNull)
-            {
-                if (!result_is_nullable || inner_nullable)
-                {
-                    if constexpr (merge)
-                        nested_function->insertMergeResultInto(place, to, arena);
-                    else
-                        nested_function->insertResultInto(place, to, arena);
-                }
-                else
-                {
-                    ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
-                    col.getNullMapColumn().getData().push_back(static_cast<UInt8>(1));
-                    if constexpr (merge)
-                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
-                    else
-                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
-                }
-            }
-            else
-            {
                 if constexpr (merge)
                     nested_function->insertMergeResultInto(place, to, arena);
                 else
