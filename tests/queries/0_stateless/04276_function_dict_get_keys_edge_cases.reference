@@ -1,0 +1,55 @@
+Float NaN, dictGetKeys constant
+[]
+Float NaN, rewrite - plan
+SELECT groupArray(__table1.id) AS `groupArray(id)`
+FROM default.data_float_nan AS __table1
+WHERE 0
+SETTINGS optimize_inverse_dictionary_lookup = 1
+Float NaN, rewrite
+[]
+Float NaN, no rewrite
+[]
+Date attr vs DateTime constant, rewrite - plan
+SELECT groupArray(__table1.id) AS `groupArray(id)`
+FROM default.data_date_attr AS __table1
+WHERE __table1.id IN (
+    SELECT id AS id
+    FROM dictionary(\'dict_date_attr\')
+    WHERE d = _CAST(\'2025-01-01 12:00:00\', \'DateTime\')
+)
+SETTINGS optimize_inverse_dictionary_lookup = 1
+Date attr vs DateTime constant, rewrite
+[]
+Date attr vs DateTime constant, no rewrite
+[]
+Decimal attr vs Float constant, rewrite - plan
+SELECT groupArray(__table1.id) AS `groupArray(id)`
+FROM default.data_decimal_attr AS __table1
+WHERE __table1.id IN (
+    SELECT id AS id
+    FROM dictionary(\'dict_decimal_attr\')
+    WHERE p = _CAST(1.234, \'Float64\')
+)
+SETTINGS optimize_inverse_dictionary_lookup = 1
+Decimal attr vs Float constant, rewrite
+[]
+Decimal attr vs Float constant, no rewrite
+[]
+Wide dict key vs narrow column, rewrite - plan
+SELECT groupArray(__table1.id) AS `groupArray(id)`
+FROM default.data_narrow_key AS __table1
+WHERE __table1.id = _CAST(300, \'UInt64\')
+SETTINGS optimize_inverse_dictionary_lookup = 1
+Wide dict key vs narrow column, rewrite
+[]
+Wide dict key vs narrow column, no rewrite
+[]
+Empty rewrite, Nullable predicate, rewrite - plan
+SELECT count() AS `count()`
+FROM default.data_nullable_predicate AS __table1
+WHERE isNull(__table1.id IN [])
+SETTINGS optimize_inverse_dictionary_lookup = 1
+Empty rewrite, Nullable predicate, rewrite
+1
+Empty rewrite, Nullable predicate, no rewrite
+1
