@@ -539,3 +539,22 @@ INSERT INTO t_phys_part_src2 VALUES (1, 'hello');
 ALTER TABLE t_phys_part_dst2 ATTACH PARTITION 1 FROM t_phys_part_src2; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_phys_part_src2;
 DROP TABLE t_phys_part_dst2;
+
+-- Test 21: flattened Nested with share_nested_offsets = 0 keeps per-column
+-- offsets when column IDs are active.  Before the gating fix
+-- `getFileNameForStreamByColumnId` folded offsets to the Nested parent prefix
+-- unconditionally, conflicting with the per-column layout this setting requests.
+SELECT 'Test 21: nested with share_nested_offsets=0';
+DROP TABLE IF EXISTS t_phys_nested_no_share;
+CREATE TABLE t_phys_nested_no_share (a UInt64, n Nested(x UInt32, y String))
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    share_nested_offsets = 0,
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
+INSERT INTO t_phys_nested_no_share VALUES (1, [10, 20], ['a', 'bb']);
+INSERT INTO t_phys_nested_no_share VALUES (2, [30], ['cc']);
+SELECT a, n.x, n.y FROM t_phys_nested_no_share ORDER BY a;
+OPTIMIZE TABLE t_phys_nested_no_share FINAL;
+SELECT a, n.x, n.y FROM t_phys_nested_no_share ORDER BY a;
+DROP TABLE t_phys_nested_no_share;

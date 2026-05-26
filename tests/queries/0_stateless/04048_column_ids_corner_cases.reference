@@ -119,3 +119,8 @@ Test 18: multi-child Nested rename across parents
 Test 19: partition transfer compatible mappings
 1	hello
 Test 20: partition transfer incompatible mappings
+Test 21: nested with share_nested_offsets=0
+1	[10,20]	['a','bb']
+2	[30]	['cc']
+1	[10,20]	['a','bb']
+2	[30]	['cc']

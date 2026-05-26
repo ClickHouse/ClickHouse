@@ -463,13 +463,17 @@ String ISerialization::getFileNameForStreamByColumnId(
 {
     String stream_name;
 
-    if (isPossibleOffsetsOfNested(path))
+    /// Mirror `getFileNameForStream`: only fold offset streams onto the
+    /// Nested parent prefix when sibling offsets are actually shared
+    /// (`share_nested_offsets = 1`).  When sharing is off, each flattened
+    /// Nested sibling keeps its own offset stream under the full column ID.
+    if (settings.share_nested_offsets && isPossibleOffsetsOfNested(path))
     {
         /// For flattened Nested siblings (e.g. n.x, n.y), the array offset
         /// stream is shared under the Nested parent prefix.  Prefer the
-        /// PHYSICAL name's prefix because it is stable across metadata-only
-        /// renames.  For identity-mapped columns (physical = "n.x") this
-        /// gives "n"; for compound-allocated columns (physical = "5.x")
+        /// column-ID name's prefix because it is stable across metadata-only
+        /// renames.  For identity-mapped columns (column ID = "n.x") this
+        /// gives "n"; for counter-allocated columns (column ID = "5.x")
         /// this gives "5".  Fall back to the logical name for columns
         /// whose column ID has no dot (plain counter like "5").
         auto nested_from_physical = Nested::extractTableName(column_id_in_storage);
