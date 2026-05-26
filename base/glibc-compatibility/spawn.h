@@ -15,7 +15,7 @@ extern "C" {
 #define POSIX_SPAWN_SETSIGMASK		0x08
 
 typedef struct {
-	int __flags;
+	short int __flags;
 	pid_t __pgrp;
 	sigset_t __sd;
 	sigset_t __ss;
