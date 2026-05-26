@@ -13,10 +13,12 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/WindowNode.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
+#include <Analyzer/WindowFunctionsUtils.h>
 
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
@@ -93,6 +95,74 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             "Function with name {} cannot use {} NULLS",
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+}
+
+/// Walk every clause of `inner_query` except its SELECT list and the correlated columns
+/// list itself, and return the subset of `old_correlated_columns` whose `ColumnNode`s are
+/// still referenced. Used by the EXISTS rewrite: when the projection of an EXISTS
+/// subquery is stripped to `SELECT 1`, the correlated columns that were only referenced
+/// in that projection become irrelevant for row-count semantics and must be removed
+/// from the subquery's correlated columns list so that they do not become join keys
+/// during decorrelation.
+QueryTreeNodes findReferencedCorrelatedColumnsOutsideProjection(
+    QueryNode & inner_query,
+    const QueryTreeNodes & old_correlated_columns)
+{
+    if (old_correlated_columns.empty())
+        return {};
+
+    std::vector<bool> referenced(old_correlated_columns.size(), false);
+
+    auto column_matches = [](const ColumnNode & a, const ColumnNode & b)
+    {
+        if (a.getColumnName() != b.getColumnName())
+            return false;
+        return a.getColumnSourceOrNull().get() == b.getColumnSourceOrNull().get();
+    };
+
+    std::function<void(const QueryTreeNodePtr &)> walk = [&](const QueryTreeNodePtr & node)
+    {
+        if (!node)
+            return;
+        if (const auto * col = node->as<ColumnNode>())
+        {
+            for (size_t i = 0; i < old_correlated_columns.size(); ++i)
+            {
+                if (referenced[i])
+                    continue;
+                if (const auto * old_col = old_correlated_columns[i]->as<ColumnNode>())
+                {
+                    if (column_matches(*col, *old_col))
+                        referenced[i] = true;
+                }
+            }
+        }
+        for (const auto & child : node->getChildren())
+            walk(child);
+    };
+
+    walk(inner_query.getWithNode());
+    walk(inner_query.getJoinTree());
+    walk(inner_query.getPrewhere());
+    walk(inner_query.getWhere());
+    walk(inner_query.getGroupByNode());
+    walk(inner_query.getHaving());
+    walk(inner_query.getWindowNode());
+    walk(inner_query.getQualify());
+    walk(inner_query.getOrderByNode());
+    walk(inner_query.getInterpolate());
+    walk(inner_query.getLimitByLimit());
+    walk(inner_query.getLimitByOffset());
+    walk(inner_query.getLimitByNode());
+    walk(inner_query.getLimit());
+    walk(inner_query.getOffset());
+
+    QueryTreeNodes result;
+    result.reserve(old_correlated_columns.size());
+    for (size_t i = 0; i < old_correlated_columns.size(); ++i)
+        if (referenced[i])
+            result.push_back(old_correlated_columns[i]);
+    return result;
 }
 }
 
@@ -701,6 +771,46 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             true /*allow_table_expression*/,
             allow_niladic_functions
         );
+
+        /// EXISTS only checks whether the subquery returns any rows. The contents of
+        /// the inner subquery's SELECT list are semantically irrelevant unless they
+        /// trigger implicit aggregation or interact with row-count-affecting clauses.
+        /// When it is safe, replace the inner subquery's projection with `SELECT 1`
+        /// so that outer-correlated references in the projection are not picked up
+        /// as correlated columns. Otherwise they propagate to `new_exists_subquery`
+        /// and `buildLogicalJoin` adds them as equality predicates of the
+        /// decorrelation JOIN, which then filters out rows whose Nullable column
+        /// values do not compare equal to themselves. See issue #105760.
+        if (auto * inner_query = new_exists_subquery->getJoinTree()->as<QueryNode>())
+        {
+            const auto & projection_node = inner_query->getProjectionNode();
+            const bool projection_only_affects_output =
+                !hasAggregateFunctionNodes(projection_node)
+                && !hasWindowFunctionNodes(projection_node)
+                && !inner_query->hasGroupBy()
+                && !inner_query->hasHaving()
+                && !inner_query->isDistinct()
+                && !inner_query->hasLimitBy()
+                && !inner_query->hasOrderBy()
+                && !inner_query->hasQualify()
+                && !inner_query->hasInterpolate();
+
+            if (projection_only_affects_output && inner_query->isCorrelated())
+            {
+                auto previous_correlated_columns = inner_query->getCorrelatedColumns().getNodes();
+
+                inner_query->getProjection().getNodes()
+                    = { std::make_shared<ConstantNode>(1UL, constant_data_type) };
+                inner_query->clearProjectionColumns();
+                inner_query->resolveProjectionColumns(NamesAndTypes{NameAndTypePair("1", constant_data_type)});
+
+                auto still_correlated = findReferencedCorrelatedColumnsOutsideProjection(
+                    *inner_query, previous_correlated_columns);
+
+                inner_query->getCorrelatedColumns().getNodes() = still_correlated;
+                new_exists_subquery->getCorrelatedColumns().getNodes() = still_correlated;
+            }
+        }
 
         if (new_exists_subquery->isCorrelated())
         {
