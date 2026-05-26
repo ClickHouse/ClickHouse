@@ -1841,6 +1841,23 @@ void optimizeStreamingWindowFunctions(
         }
     }
 
+    /// Validate the window frame.  `lagInFrame(col, 1)` equals "previous row in
+    /// partition order (or default if first)" exactly when the immediately
+    /// preceding row is guaranteed to lie inside the frame.  That holds when:
+    ///   - frame start is UNBOUNDED PRECEDING (frame_start == partition_start), AND
+    ///   - frame end is not a fixed PRECEDING offset (which would place frame_end
+    ///     before the preceding row and make lagInFrame always return the default).
+    /// Concretely this accepts the default RANGE BETWEEN UNBOUNDED PRECEDING AND
+    /// CURRENT ROW as well as ROWS BETWEEN UNBOUNDED PRECEDING AND <anything that
+    /// is not N PRECEDING>.  Any other frame falls back to WindowTransform.
+    {
+        const auto & frame = window->getWindowDescription().frame;
+        if (frame.begin_type != WindowFrame::BoundaryType::Unbounded || !frame.begin_preceding)
+            return;
+        if (frame.end_type == WindowFrame::BoundaryType::Offset && frame.end_preceding)
+            return;
+    }
+
     /// `prefix_description` must be a strict prefix of `partition_by`.
     const auto & partition_by = window->getWindowDescription().partition_by;
     if (prefix_description.size() >= partition_by.size())
