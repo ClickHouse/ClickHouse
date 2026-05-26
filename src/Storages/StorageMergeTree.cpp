@@ -504,17 +504,10 @@ void StorageMergeTree::alter(
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             checkTTLExpressions(new_metadata, old_metadata);
 
-            /// Hold the lock across `setProperties` and the mutation registration in
-            /// `startMutation` so background merge selection (which uses the same
-            /// mutex) cannot observe new in-memory metadata without seeing the pending
-            /// rename mutation. See #80648. `alterTable` uses
-            /// `validate_new_create_query=false` because validation already ran above;
-            /// re-running it under the lock would re-trigger the inversion.
-            std::lock_guard background_lock(currently_processing_in_background_mutex);
-
-            /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(new_metadata, old_metadata, false, local_context);
-
+            /// `alterTable` calls `waitDatabaseStarted` which takes `DatabaseAtomic::mutex`;
+            /// holding `currently_processing_in_background_mutex` across it forms a lock-order
+            /// cycle with the scheduler/`RENAME`/`DROP` paths. `validate_new_create_query=false`
+            /// because validation already ran above. See #80648.
             try
             {
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
@@ -523,17 +516,43 @@ void StorageMergeTree::alter(
             {
                 LOG_ERROR(log, "Failed to alter table in database, reverting changes");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
-                setProperties(old_metadata, new_metadata, false, local_context);
                 throw;
             }
 
+            /// Atomic in-memory commit of metadata + rename mutation. Pairs with
+            /// `scheduleDataProcessingJob`, which reads in-memory metadata under the
+            /// same mutex, so merge selection cannot observe new metadata without
+            /// also seeing the pending rename mutation. See #80648.
+            try
             {
-                auto parts_lock = lockParts();
-                resetSerializationHints(parts_lock);
-            }
+                std::lock_guard background_lock(currently_processing_in_background_mutex);
 
-            if (!maybe_mutation_commands.empty())
-                mutation_version = startMutation(maybe_mutation_commands, local_context, background_lock);
+                /// Reinitialize primary key because primary key column types might have changed.
+                setProperties(new_metadata, old_metadata, false, local_context);
+
+                {
+                    auto parts_lock = lockParts();
+                    resetSerializationHints(parts_lock);
+                }
+
+                if (!maybe_mutation_commands.empty())
+                    mutation_version = startMutation(maybe_mutation_commands, local_context, background_lock);
+            }
+            catch (...)
+            {
+                /// Best-effort rollback of on-disk metadata so a restart matches the data in parts.
+                LOG_ERROR(log, "In-memory metadata commit failed, rolling back on-disk metadata");
+                try
+                {
+                    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to roll back on-disk metadata; server may be inconsistent until restart");
+                }
+                changeSettings(old_metadata.settings_changes, table_lock_holder);
+                throw;
+            }
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
@@ -1776,7 +1795,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     cleanup_thread.wakeupEarlierIfNeeded();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
     MergeMutateSelectedEntryPtr merge_entry;
     MergeMutateSelectedEntryPtr mutate_entry;
 
@@ -1794,6 +1813,10 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     bool has_mutations = false;
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
+
+        /// Pairs with `StorageMergeTree::alter`, which updates in-memory metadata and
+        /// inserts rename mutations atomically under this mutex. See #80648.
+        metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
