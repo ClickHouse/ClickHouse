@@ -20,6 +20,7 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
+#include <cstring>
 #include <future>
 #include <vector>
 
@@ -30,6 +31,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace
@@ -160,10 +162,46 @@ analyzeSparseColumnGranules(
     ///     too evenly distributed for pruning to ever fire and we abandon the analysis
     ///     before paying the full pass. Bounds the worst-case overhead on
     ///     uniformly-distributed sparse columns.
-    ///   Phase 2 (full): split the remaining ranges into ~ANALYZER_CHUNK_MARKS chunks
-    ///     and run on the global IO thread pool to keep the serial wall-time small.
+    ///   Phase 2 (full): split the remaining ranges across roughly `max_threads` chunks
+    ///     so the parallel pass on the global IO thread pool finishes in a single round
+    ///     instead of stair-stepping through multiple rounds when chunks > cores.
     constexpr size_t ANALYZER_SAMPLE_MARKS = 32;
-    constexpr size_t ANALYZER_CHUNK_MARKS = 1024;
+    constexpr size_t MIN_ANALYZER_CHUNK_MARKS = 256;
+    constexpr size_t MAX_ANALYZER_CHUNK_MARKS = 8192;
+
+    size_t remaining_marks_after_sample = 0;
+    {
+        bool first_seen = false;
+        for (const auto & range : ranges)
+        {
+            if (range.begin >= range.end)
+                continue;
+            const size_t span = range.end - range.begin;
+            if (!first_seen)
+            {
+                remaining_marks_after_sample += span > ANALYZER_SAMPLE_MARKS ? span - ANALYZER_SAMPLE_MARKS : 0;
+                first_seen = true;
+            }
+            else
+            {
+                remaining_marks_after_sample += span;
+            }
+        }
+    }
+
+    /// Aim for ~max_threads chunks so the parallel pass finishes in one round.
+    /// Clamp to a [MIN, MAX] band so very small parts don't dispatch microscopic chunks
+    /// (per-chunk reader setup would dominate) and very large parts don't create huge
+    /// chunks that under-utilise cores.
+    const size_t target_chunks
+        = std::max<size_t>(1, static_cast<UInt64>(query_context->getSettingsRef()[Setting::max_threads]));
+    const size_t chunk_marks = remaining_marks_after_sample == 0
+        ? 0
+        : std::clamp(
+            (remaining_marks_after_sample + target_chunks - 1) / target_chunks,
+            MIN_ANALYZER_CHUNK_MARKS,
+            MAX_ANALYZER_CHUNK_MARKS);
+
     std::vector<MarkRange> chunks;
     bool first_chunk_is_sample = false;
     for (const auto & range : ranges)
@@ -174,7 +212,6 @@ analyzeSparseColumnGranules(
         size_t cursor = range.begin;
         if (chunks.empty())
         {
-            /// The very first chunk we emit is the sample.
             const size_t sample_end = std::min(cursor + ANALYZER_SAMPLE_MARKS, range.end);
             chunks.push_back(MarkRange{cursor, sample_end});
             first_chunk_is_sample = true;
@@ -183,7 +220,7 @@ analyzeSparseColumnGranules(
 
         while (cursor < range.end)
         {
-            const size_t end = std::min(cursor + ANALYZER_CHUNK_MARKS, range.end);
+            const size_t end = std::min(cursor + chunk_marks, range.end);
             chunks.push_back(MarkRange{cursor, end});
             cursor = end;
         }
@@ -302,14 +339,9 @@ analyzeSparseColumnGranules(
                 break;
             }
         }
-        if (!found_extreme)
-        {
-            LOG_DEBUG(log,
-                "No extreme granule found in the first {} marks of part {} column {}; "
-                "abandoning sparsity classification (column is too evenly distributed for pruning).",
-                ANALYZER_SAMPLE_MARKS, part->name, column_name);
-            return std::nullopt;
-        }
+        /// TEMP: heuristic bail-out is disabled for profiling. Re-enable to skip the
+        /// full analyzer pass when the sample finds no extreme granule.
+        (void)found_extreme;
     }
 
     /// Sample-only case (single chunk == the sample): we already have its result.
@@ -387,9 +419,13 @@ analyzeSparseColumnGranules(
                 total_rows += results[j].rows_in_chunk;
             }
 
+            /// Pre-size and write by index so the per-element shift compiles to SSE2 paddq
+            /// (same shape as the slicer's copy loop). `push_back` would force a bounds
+            /// check + grow path per element and the compiler can't vectorise it.
             auto combined = ColumnUInt64::create();
             auto & combined_data = combined->getData();
-            combined_data.reserve(total_offsets);
+            combined_data.resize(total_offsets);
+            size_t out_pos = 0;
             size_t row_shift = 0;
             for (size_t j = first_chunk; j < last_chunk; ++j)
             {
@@ -397,8 +433,21 @@ analyzeSparseColumnGranules(
                 {
                     const auto & chunk_offsets
                         = assert_cast<const ColumnUInt64 &>(*results[j].offsets).getData();
-                    for (UInt64 pos : chunk_offsets)
-                        combined_data.push_back(pos + row_shift);
+                    const size_t n = chunk_offsets.size();
+                    if (row_shift == 0)
+                    {
+                        /// First chunk in the range: no shift, plain memcpy.
+                        std::memcpy(combined_data.data() + out_pos, chunk_offsets.data(), n * sizeof(UInt64));
+                    }
+                    else
+                    {
+                        UInt64 * __restrict__ dst = combined_data.data() + out_pos;
+                        const UInt64 * __restrict__ src = chunk_offsets.data();
+                        const UInt64 shift = row_shift;
+                        for (size_t i = 0; i < n; ++i)
+                            dst[i] = src[i] + shift;
+                    }
+                    out_pos += n;
                 }
                 row_shift += results[j].rows_in_chunk;
             }
