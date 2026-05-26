@@ -1,4 +1,5 @@
--- Tags: long, no-random-settings, no-random-merge-tree-settings
+-- Tags: long, no-msan, no-random-settings, no-random-merge-tree-settings
+-- no-msan: ~30 scenarios with INSERT + EXPLAIN; the MSan slowdown blows past the test timeout
 -- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
 
