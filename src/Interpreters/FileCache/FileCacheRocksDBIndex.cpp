@@ -34,6 +34,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ROCKSDB_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 FileCacheRocksDBIndex::FileCacheRocksDBIndex(const std::string & cache_base_path, const std::string & cache_name)
@@ -190,6 +191,10 @@ bool FileCacheRocksDBIndex::exists(const FileCacheKey & key, size_t offset) cons
 
 std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLoadAll()
 {
+    if (initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB metadata index is already initialized");
+    initialized = true;
+
     std::vector<Entry> entries;
 
     rocksdb::ReadOptions read_options;

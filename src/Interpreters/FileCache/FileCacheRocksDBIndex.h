@@ -55,13 +55,14 @@ public:
         FileCacheOriginInfo origin;
     };
 
-    /// Iterate the entire index, initialize element_count and the CurrentMetric,
-    /// and return all entries. Called once at startup before loading metadata.
+    /// Iterate the entire index, initialize the CurrentMetric, and return all entries.
+    /// Must be called once at startup before loading metadata; repeated calls throw.
     std::vector<Entry> initializeAndLoadAll();
 
 private:
     std::unique_ptr<rocksdb::DB> db;
     LoggerPtr log;
+    bool initialized = false;
 
     static std::string serializeKey(const FileCacheKey & key, size_t offset);
     static void deserializeKey(std::string_view slice, FileCacheKey & key, size_t & offset);

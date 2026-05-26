@@ -1692,7 +1692,6 @@ void FileCache::loadMetadata()
     if (rocksdb_index)
     {
         auto entries = rocksdb_index->initializeAndLoadAll();
-        LOG_INFO(log, "Loaded {} entries from RocksDB index", entries.size());
         if (!entries.empty())
         {
             size_t entries_size = entries.size();
