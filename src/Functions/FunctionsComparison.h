@@ -292,6 +292,28 @@ struct StringComparisonImpl
         }
     }
 
+    /// `String` vector vs constant `FixedString`. `string_vector_constant` uses a plain
+    /// `memcmp`, which respects the constant's trailing NUL padding and disagrees with the
+    /// `String` vs `FixedString` vector path (which uses zero-padded comparison, per SQL
+    /// semantics that `toFixedString('abc', 5) = 'abc'`).
+    static void NO_INLINE string_vector_constant_fixed_string( /// NOLINT
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                b_data.data(), b_n), 0);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
     static void fixed_string_vector_string_vector( /// NOLINT
         const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
@@ -378,6 +400,14 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a_data, a_size, c);
+    }
+
+    static void constant_fixed_string_string_vector( /// NOLINT
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant_fixed_string(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void constant_fixed_string_vector( /// NOLINT
@@ -480,6 +510,30 @@ struct StringEqualsImpl
         }
     }
 
+    /// `String` vector vs constant `FixedString`. See the same-named method in
+    /// `StringComparisonImpl` for the rationale: the constant's trailing NUL padding
+    /// must not be respected, otherwise the result disagrees with the `String` vs
+    /// `FixedString` vector path.
+    static void NO_INLINE string_vector_constant_fixed_string( /// NOLINT
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto a_size = a_offsets[i] - prev_a_offset;
+
+            c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_size,
+                b_data.data(), b_n);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16( /// NOLINT
         const ColumnString::Chars & a_data,
         const ColumnString::Chars & b_data,
@@ -563,6 +617,14 @@ struct StringEqualsImpl
         PaddedPODArray<UInt8> & c)
     {
         string_vector_constant(b_data, b_offsets, a_data, a_size, c);
+    }
+
+    static void constant_fixed_string_string_vector( /// NOLINT
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        string_vector_constant_fixed_string(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void constant_fixed_string_vector( /// NOLINT
@@ -686,7 +748,7 @@ struct ComparisonParams
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
-class FunctionComparison : public IFunction
+class FunctionComparison final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -821,11 +883,15 @@ private:
         const ColumnString::Chars * c1_const_chars = nullptr;
         ColumnString::Offset c0_const_size = 0;
         ColumnString::Offset c1_const_size = 0;
+        const ColumnString      * c0_const_string       = nullptr;
+        const ColumnFixedString * c0_const_fixed_string = nullptr;
+        const ColumnString      * c1_const_string       = nullptr;
+        const ColumnFixedString * c1_const_fixed_string = nullptr;
 
         if (c0_const)
         {
-            const ColumnString * c0_const_string = checkAndGetColumn<ColumnString>(&c0_const->getDataColumn());
-            const ColumnFixedString * c0_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c0_const->getDataColumn());
+            c0_const_string = checkAndGetColumn<ColumnString>(&c0_const->getDataColumn());
+            c0_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c0_const->getDataColumn());
 
             if (c0_const_string)
             {
@@ -843,8 +909,8 @@ private:
 
         if (c1_const)
         {
-            const ColumnString * c1_const_string = checkAndGetColumn<ColumnString>(&c1_const->getDataColumn());
-            const ColumnFixedString * c1_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c1_const->getDataColumn());
+            c1_const_string = checkAndGetColumn<ColumnString>(&c1_const->getDataColumn());
+            c1_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c1_const->getDataColumn());
 
             if (c1_const_string)
             {
@@ -881,6 +947,9 @@ private:
         else if (c0_string && c1_fixed_string)
             StringImpl::string_vector_fixed_string_vector(
                 c0_string->getChars(), c0_string->getOffsets(), c1_fixed_string->getChars(), c1_fixed_string->getN(), c_res->getData());
+        else if (c0_string && c1_const_fixed_string)
+            StringImpl::string_vector_constant_fixed_string(
+                c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
         else if (c0_string && c1_const)
             StringImpl::string_vector_constant(
                 c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
@@ -897,6 +966,9 @@ private:
         else if (c0_fixed_string && c1_const)
             StringImpl::fixed_string_vector_constant(
                 c0_fixed_string->getChars(), c0_fixed_string->getN(), *c1_const_chars, c1_const_size, c_res->getData());
+        else if (c0_const_fixed_string && c1_string)
+            StringImpl::constant_fixed_string_string_vector(
+                *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
         else if (c0_const && c1_string)
             StringImpl::constant_string_vector(
                 *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
@@ -1279,6 +1351,22 @@ public:
                                                    {nullptr, right_tuple->getElements()[i], ""}};
                     element_type = func->build(args)->getResultType();
                 }
+                else
+                {
+                    /// One side is `String`/`FixedString`. At runtime the string is parsed as a tuple
+                    /// value matching the structure of the tuple side and compared element-wise.
+                    /// Recursively compute the element-vs-string comparison type so that nested
+                    /// `Nullable` (or `Nothing`/`Dynamic`/`Variant`) elements transitively propagate
+                    /// `Nullable` to the outer return type. Without this, e.g.
+                    /// `Tuple(Tuple(Nullable(String))) <= String` would be inferred as `UInt8`
+                    /// while the runtime produces `Nullable(UInt8)`, tripping the type-mismatch
+                    /// assertion in the analyzer's constant-folding path (STID 3344-4a3c).
+                    const DataTypePtr & string_side_type = left_tuple ? arguments[1] : arguments[0];
+                    ColumnsWithTypeAndName args = left_tuple
+                        ? ColumnsWithTypeAndName{{nullptr, element_type, ""}, {nullptr, string_side_type, ""}}
+                        : ColumnsWithTypeAndName{{nullptr, string_side_type, ""}, {nullptr, element_type, ""}};
+                    element_type = func->build(args)->getResultType();
+                }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
 
                 /// Nullable(Nothing)
@@ -1496,7 +1584,14 @@ public:
                 continue;
 
             if (column->isNullAt(0))
+            {
+                /// If the result type cannot hold NULL values (e.g. LowCardinality(UInt8) when
+                /// comparing with a Variant column that contains NULL but is not Nullable itself),
+                /// don't constant-fold — let the runtime execution path handle NULL correctly.
+                if (!canContainNull(*result_type))
+                    return nullptr;
                 return result_type->createColumnConst(1, Null());
+            }
         }
 
         return nullptr;

@@ -1887,8 +1887,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
 
     if (zk_request.path == Coordination::keeper_api_feature_flags_path
-        || zk_request.path == Coordination::keeper_config_path
-        || zk_request.path == Coordination::keeper_availability_zone_path)
+        || zk_request.path == Coordination::keeper_config_path)
         return {};
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
@@ -2453,8 +2452,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperListRecursiveRequest);
 
     if (zk_request.path == Coordination::keeper_api_feature_flags_path
-        || zk_request.path == Coordination::keeper_config_path
-        || zk_request.path == Coordination::keeper_availability_zone_path)
+        || zk_request.path == Coordination::keeper_config_path)
         return {};
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
@@ -4198,13 +4196,13 @@ KeeperResponsesForSessions KeeperStorage<Container>::processLocalRequests(
             {
                 const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
                 {
-                    ZooKeeperOpentelemetrySpans::maybeInitialize(
-                        concrete_zk_request.spans.read_process,
-                        concrete_zk_request.tracing_context,
+                    concrete_zk_request.spans.maybeInitialize(
+                        KeeperSpan::ReadProcess,
+                        concrete_zk_request.tracing_context.get(),
                         start_time_us);
 
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        concrete_zk_request.spans.read_process,
+                    concrete_zk_request.spans.maybeFinalize(
+                        KeeperSpan::ReadProcess,
                         [&]
                         {
                             return std::vector<OpenTelemetry::SpanAttribute>{

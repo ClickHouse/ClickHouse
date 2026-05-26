@@ -3,11 +3,13 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
@@ -43,7 +45,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource : public ISource
+class RedisDataSource final : public ISource
 {
 public:
     RedisDataSource(
@@ -152,7 +154,7 @@ private:
 };
 
 
-class RedisSink : public SinkToStorage
+class RedisSink final : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
@@ -219,8 +221,7 @@ StorageRedis::StorageRedis(
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
-    setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
 }
 
 VirtualColumnsDescription StorageRedis::createVirtuals()
@@ -423,7 +424,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)
@@ -651,7 +652,8 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     }
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
-    if (commands.front().column_to_update_expression.contains(primary_key))
+    auto alter = commands.front().ast();
+    if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);

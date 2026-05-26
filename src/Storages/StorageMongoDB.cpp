@@ -51,6 +51,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
 }
@@ -70,6 +71,15 @@ void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
         context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
 }
 
+void MongoDBConfiguration::checkCollection() const
+{
+    /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
+    /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
+    /// effectively empty collection name, which aborts the process inside the driver.
+    if (collection.empty() || collection.find('\0') != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
+}
+
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
     MongoDBConfiguration configuration_,
@@ -84,8 +94,8 @@ StorageMongoDB::StorageMongoDB(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMongoDB::createVirtuals()
@@ -160,6 +170,7 @@ MongoDBConfiguration StorageMongoDB::getConfigurationFromCollection(MutableNamed
         boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
 
     configuration.checkHosts(context);
+    configuration.checkCollection();
     return configuration;
 }
 
@@ -240,6 +251,7 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
                             "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
 
     configuration.checkHosts(context);
+    configuration.checkCollection();
 
     return configuration;
 }

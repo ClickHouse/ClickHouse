@@ -1,13 +1,13 @@
 #pragma once
-#include <IO/WriteSettings.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <base/types.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/WriteMode.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteSettings.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <base/types.h>
+#include <Common/TransactionID.h>
 
 #include <memory>
 #include <optional>
@@ -18,6 +18,7 @@ namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
+class ReadPipeline;
 class WriteBufferFromFileBase;
 
 struct IDiskTransaction;
@@ -135,10 +136,19 @@ public:
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    /// Convenience wrapper: calls prepareRead() + pipeline.build().
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const = 0;
+        std::optional<size_t> read_hint) const;
+
+    /// Populate a ReadPipeline with the stages needed to read from this part storage.
+    /// Every implementation must override this method.
+    virtual void prepareRead(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
@@ -309,7 +319,7 @@ public:
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
     /// can be modified after part creation.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
     virtual void moveFile(const String & from_name, const String & to_name) = 0;
