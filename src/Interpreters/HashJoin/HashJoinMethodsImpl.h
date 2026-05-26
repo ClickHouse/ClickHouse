@@ -156,7 +156,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
-      *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
+      *  but they will not be used at this stage of joining (and will be in `CollectorNonJoined`), and they need to be skipped.
       * For ASOF, the last column is used as the ASOF column
       */
     AddedColumns<!join_features.is_any_join> added_columns(
