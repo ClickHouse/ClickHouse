@@ -12,6 +12,12 @@ DROP TABLE IF EXISTS oracle_tlp_agg;
 CREATE TABLE oracle_tlp_agg (g UInt8, v Int64) ENGINE = MergeTree ORDER BY g;
 INSERT INTO oracle_tlp_agg SELECT number % 5, number FROM numbers(200);
 
+-- Suppress error-level log messages from fuzzed queries that fail expectedly
+-- (matches 03833_server_ast_fuzzer.sql). Without this the `flaky check` job
+-- reruns this test 100x and trips on `<Error>` log lines from random AST
+-- mutations that produce syntactically valid but semantically nonsense
+-- queries (e.g. `min` with wrong arity, FINAL on MergeTree).
+SET send_logs_level = 'fatal';
 SET ast_fuzzer_runs = 1;
 SET ast_fuzzer_oracle = 1;
 
