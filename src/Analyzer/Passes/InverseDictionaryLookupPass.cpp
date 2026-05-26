@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
@@ -221,6 +222,46 @@ bool isRewriteSemanticallySafe(
     return comparison_result.tryGet<UInt64>(comparison_result_uint) && comparison_result_uint == 0;
 }
 
+/// Whether `dictGetX(dict, attr, key) = const` can be rewritten as `key IN dictGetKeys(dict, attr, const)`.
+/// The rewrite is only semantically equivalent under the three conditions checked below.
+bool canReplaceWithDictGetKeys(
+    const String & attr_comparison_function_name,
+    const String & dictget_function_name,
+    const DataTypePtr & dict_attr_col_type,
+    const DataTypePtr & dictget_return_type,
+    const DataTypePtr & const_arg_type)
+{
+    /// `dictGetKeys` finds rows where the attribute equals the constant. Other operators
+    /// (`<`, `like`, ...) ask for non-equality matches that `dictGetKeys` does not implement,
+    /// so the rewrite would change the predicate semantics. Skip optimization for such case.
+    if (attr_comparison_function_name != "equals")
+        return false;
+
+    /// The `dictGet`-family function must not perform an internal cast of the attribute that the
+    /// rewrite would lose. For the generic `dictGet`, the return type is the attribute type by
+    /// construction; for `dictGetX`, the return type must equal the attribute type.
+    /// Example: attribute `d` is `Date` and the query uses `dictGetDateTime(..., 'd', id)`.
+    /// `dictGetDateTime` casts the `Date` attribute to `DateTime` at runtime, so the comparison
+    /// happens in `DateTime` space. Rewriting to `dictGetKeys` would drop that cast and compare
+    /// in `Date` space instead, changing the predicate semantics. Skip optimization for such case.
+    if (dictget_function_name != "dictGet" && !dict_attr_col_type->equals(*dictget_return_type))
+        return false;
+
+    /// `=` coerces both sides to a least common supertype at the comparison site, while
+    /// `dictGetKeys` casts the comparison value to the attribute type internally. For the rewrite
+    /// to be equivalent, the supertype must be the attribute type itself. Otherwise the internal
+    /// cast can lose information that `=` would preserve.
+    /// Example: attribute `d` is `Date`, constant is `toDateTime('2025-01-01 12:00:00')`. We promote
+    /// both to `DateTime`, promoting `Date('2025-01-01')` to `DateTime('2025-01-01 00:00:00')`,
+    /// so the original predicate is false at noon. The rewrite would truncate `DateTime` to
+    /// `Date` inside `dictGetKeys` and find a spurious match for row `Date('2025-01-01')`. Skip
+    /// optimization for such case.
+    const DataTypePtr stripped_attr_type = removeLowCardinalityAndNullable(dict_attr_col_type);
+    const DataTypePtr stripped_const_type = removeLowCardinalityAndNullable(const_arg_type);
+    const DataTypePtr supertype = tryGetLeastSupertype(DataTypes{stripped_attr_type, stripped_const_type});
+    return supertype && supertype->equals(*stripped_attr_type);
+}
+
 class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>
 {
 public:
@@ -351,16 +392,12 @@ public:
         const String dictget_function_name = dict_side == Side::LHS ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
                                                                     : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
 
-        /// `dictGetKeys` compares casts constant to the attribute column type.
-        /// For `dictGet`-family functions that perform an internal type cast of the attribute
-        /// (for example, `dictGetDateTime` over a `Date` attribute), rewriting
-        ///   dictGetX(dict, attr, key) = const
-        /// to
-        ///   key IN dictGetKeys(dict, attr, const)
-        /// would drop that cast and change the predicate semantics. Therefore this optimization is only allowed
-        /// when the function result type is exactly the dictionary attribute type.
-        bool can_replace_with_dictgetkeys = (attr_comparison_function_name == "equals")
-            && (dictget_function_name == "dictGet" || dict_attr_col_type->equals(*dictget_function_info.return_type));
+        const bool can_replace_with_dictgetkeys = canReplaceWithDictGetKeys(
+            attr_comparison_function_name,
+            dictget_function_name,
+            dict_attr_col_type,
+            dictget_function_info.return_type,
+            const_arg_node->getResultType());
 
         if (can_replace_with_dictgetkeys)
         {
@@ -402,8 +439,16 @@ public:
                 const auto & keys_array = keys_field.safeGet<Array>();
                 const size_t keys_size = keys_array.size();
 
-                /// No keys -> WHERE 0
-                if (keys_size == 0)
+                /// No keys -> the predicate is always false. We can replace the entire comparison
+                /// with the constant `0`, but only when the predicate's result type is not Nullable
+                /// (`Nullable(UInt8)` or `LowCardinality(Nullable(UInt8))`). For Nullable predicates
+                /// `dictGet` can produce `NULL` per row (e.g. when the key column is `Nullable` and
+                /// the row's key is `NULL`, or when the attribute itself is `Nullable`), and
+                /// `NULL = const` is `NULL`. Replacing such a row with `0` flips a NULL into a
+                /// non-null `0` - observable via `isNull(predicate)`.
+                /// `SELECT count() WHERE isNull(predicate)` returns `1` without the rewrite and
+                /// `0` with it.
+                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
                 {
                     auto zero_type = std::make_shared<DataTypeUInt8>();
                     auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
@@ -411,14 +456,15 @@ public:
                     return;
                 }
 
-                DataTypePtr key_expr_type = dictget_function_info.key_expr_node->getResultType();
-
                 /// Single key -> key_expr = <that key>
                 if (keys_size == 1)
                 {
                     const Field & single_key_field = keys_array.front();
 
-                    auto single_key_const = std::make_shared<ConstantNode>(single_key_field, key_expr_type);
+                    const DataTypePtr & single_key_value_type
+                        = assert_cast<const DataTypeArray &>(*keys_constant->getResultType()).getNestedType();
+
+                    auto single_key_const = std::make_shared<ConstantNode>(single_key_field, single_key_value_type);
 
                     auto equals_node = std::make_shared<FunctionNode>("equals");
                     equals_node->markAsOperator();
