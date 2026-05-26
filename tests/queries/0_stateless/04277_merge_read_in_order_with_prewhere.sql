@@ -14,6 +14,8 @@ INSERT INTO users_86313 VALUES (1231, 'Ksenia', 33, 2);
 INSERT INTO users_86313 VALUES (6666, 'Ksenia', 48, 2);
 INSERT INTO users_86313 VALUES (8888, 'John', 50, 2);
 
+SET optimize_read_in_order=1;
+
 -- Sanity check that the result is the same for both reads.
 SELECT name FROM users_86313 WHERE time > 1 ORDER BY time, age LIMIT 1;
 SELECT name FROM merge(currentDatabase(), '^users_86313$') WHERE time > 1 ORDER BY time, age LIMIT 1;
