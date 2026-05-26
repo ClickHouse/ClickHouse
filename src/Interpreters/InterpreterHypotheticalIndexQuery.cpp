@@ -11,6 +11,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
 {
@@ -68,6 +69,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         /* escape_filenames = */ true,
         context);
 
+    MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false);
     store.add(table_id, index_desc, query.if_not_exists);
     return {};
 }
