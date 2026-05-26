@@ -118,7 +118,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 {
     bool do_prefetch = data_part_info_for_read->getDataPartStorage()->isStoredOnRemoteDisk()
         ? settings.read_settings.remote_fs_prefetch
-        : settings.read_settings.local_fs_settings.local_fs_prefetch;
+        : settings.read_settings.local_fs_settings.prefetch;
 
     if (!do_prefetch || all_mark_ranges.getNumberOfMarks() == 0)
         return;

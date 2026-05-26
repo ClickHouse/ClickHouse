@@ -22,12 +22,12 @@ class Context;
 struct LocalFSReadSettings
 {
     /// Method to use reading from local filesystem.
-    LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
+    LocalFSReadMethod method = LocalFSReadMethod::pread;
 
     /// https://eklitzke.org/efficient-file-copying-on-linux
-    size_t local_fs_buffer_size = 128 * 1024;
+    size_t buffer_size = 128 * 1024;
 
-    bool local_fs_prefetch = false;
+    bool prefetch = false;
 
     /// For 'read', 'pread' and 'pread_threadpool' methods.
     size_t direct_io_threshold = 0;
@@ -41,40 +41,40 @@ struct LocalFSReadSettings
 /// Used by `ReadWriteBufferFromHTTP`.
 struct HTTPReadSettings
 {
-    size_t http_max_tries = 10;
-    size_t http_retry_initial_backoff_ms = 100;
-    size_t http_retry_max_backoff_ms = 1600;
-    bool http_skip_not_found_url_for_globs = true;
-    bool http_make_head_request = true;
+    size_t max_tries = 10;
+    size_t retry_initial_backoff_ms = 100;
+    size_t retry_max_backoff_ms = 1600;
+    bool skip_not_found_url_for_globs = true;
+    bool make_head_request = true;
 };
 
 /// Settings controlling the in-memory page cache behavior.
 /// Used by CachedInMemoryReadBufferFromFile and the ReadPipeline memory cache stage.
 struct PageCacheSettings
 {
-    bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
-    bool page_cache_inject_eviction = false;
-    size_t page_cache_block_size = 1 << 20;
-    size_t page_cache_lookahead_blocks = 16;
-    size_t page_cache_max_coalesced_bytes = 16 << 20;
+    bool read_if_exists_otherwise_bypass = false;
+    bool inject_eviction = false;
+    size_t block_size = 1 << 20;
+    size_t lookahead_blocks = 16;
+    size_t max_coalesced_bytes = 16 << 20;
 };
 
 /// Settings controlling the filesystem (disk) cache behavior.
 /// Used by CachedOnDiskReadBufferFromFile and the ReadPipeline disk cache stage.
 struct FilesystemCacheSettings
 {
-    bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
-    size_t filesystem_cache_segments_batch_size = 20;
-    std::optional<size_t> filesystem_cache_boundary_alignment;
-    bool filesystem_cache_allow_background_download = true;
-    bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
-    bool filesystem_cache_allow_background_download_during_fetch = true;
-    bool filesystem_cache_prefer_bigger_buffer_size = true;
-    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
-    size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
-    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
-    bool enable_filesystem_cache_log = false;
-    std::optional<FileCacheOriginInfo> filecache_origin_info;
+    bool read_if_exists_otherwise_bypass = false;
+    size_t segments_batch_size = 20;
+    std::optional<size_t> boundary_alignment;
+    bool allow_background_download = true;
+    bool allow_background_download_for_metadata_files_in_packed_storage = true;
+    bool allow_background_download_during_fetch = true;
+    bool prefer_bigger_buffer_size = true;
+    size_t reserve_space_wait_lock_timeout_milliseconds = 1000;
+    size_t max_download_size = (128UL * 1024 * 1024 * 1024);
+    bool skip_download_if_exceeds_per_query_cache_write_limit = true;
+    bool enable_log = false;
+    std::optional<FileCacheOriginInfo> origin_info;
 };
 
 struct ReadSettings

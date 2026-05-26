@@ -470,7 +470,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 
     {
         ReadSettings read_settings;
-        read_settings.local_fs_settings.local_fs_buffer_size = 1;
+        read_settings.local_fs_settings.buffer_size = 1;
         testSeekAndReadUntilPosition(encrypted_disk, "b.txt", read_settings);
     }
 }

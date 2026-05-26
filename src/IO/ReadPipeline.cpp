@@ -258,7 +258,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 std::move(impl_creator),
                 fs_cache_settings,
                 captured_settings.remote_fs_buffer_size,
-                captured_settings.local_fs_settings.local_fs_buffer_size,
+                captured_settings.local_fs_settings.buffer_size,
                 query_id,
                 object.bytes_size,
                 /* allow_seeks_after_first_read */ !restricted_seek,
@@ -467,7 +467,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 cache_key, cache = dc.cache, origin,
                 fs_cache_settings,
                 remote_buf_size = settings.remote_fs_buffer_size,
-                local_buf_size = settings.local_fs_settings.local_fs_buffer_size,
+                local_buf_size = settings.local_fs_settings.buffer_size,
                 object_size = object.bytes_size,
                 cache_log = dc.cache_log,
                 throttler = settings.local_throttler,
@@ -506,7 +506,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             std::move(impl_creator),
             fs_cache_settings,
             settings.remote_fs_buffer_size,
-            settings.local_fs_settings.local_fs_buffer_size,
+            settings.local_fs_settings.buffer_size,
             query_id,
             object.bytes_size,
             /* allow_seeks_after_first_read */ true,
@@ -592,8 +592,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     /// match the block size the memory-cache stage was configured with,
     /// otherwise prefetches don't line up with cache blocks.
     size_t async_page_cache_block_size = memory_cache
-        ? memory_cache->page_cache_settings.page_cache_block_size
-        : settings.page_cache_settings.page_cache_block_size;
+        ? memory_cache->page_cache_settings.block_size
+        : settings.page_cache_settings.block_size;
 
     return std::make_unique<AsynchronousBoundedReadBuffer>(
         std::move(impl),

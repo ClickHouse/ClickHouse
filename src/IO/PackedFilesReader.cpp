@@ -81,8 +81,8 @@ Names PackedFilesReader::getFileNames() const
 static ReadSettings patchSettings(ReadSettings settings)
 {
     settings.local_fs_settings.direct_io_threshold = 0;
-    if (settings.local_fs_settings.local_fs_method == LocalFSReadMethod::mmap)
-        settings.local_fs_settings.local_fs_method = LocalFSReadMethod::pread;
+    if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
+        settings.local_fs_settings.method = LocalFSReadMethod::pread;
     return settings;
 }
 

@@ -992,7 +992,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
     /// User's object may change, don't cache it.
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
-    modified_read_settings.filesystem_cache_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
+    modified_read_settings.filesystem_cache_settings.boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -1012,7 +1012,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// so we gate on `use_filesystem_cache` rather than a runtime `isCached()` check.
     /// This means the bigger buffer may be used even when the cache stage is later
     /// skipped (e.g. missing etag) — slightly wasteful but not incorrect.
-    if (modified_read_settings.filesystem_cache_settings.filesystem_cache_prefer_bigger_buffer_size && use_filesystem_cache)
+    if (modified_read_settings.filesystem_cache_settings.prefer_bigger_buffer_size && use_filesystem_cache)
         modified_read_settings.remote_fs_buffer_size = std::max<size_t>(
             modified_read_settings.remote_fs_buffer_size,
             modified_read_settings.prefetch_buffer_size);

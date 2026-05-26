@@ -53,8 +53,8 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     if (inserted)
     {
         it->second = std::make_shared<QueryContext>(
-            settings.filesystem_cache_max_download_size,
-            !settings.filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit);
+            settings.max_download_size,
+            !settings.skip_download_if_exceeds_per_query_cache_write_limit);
     }
 
     return it->second;

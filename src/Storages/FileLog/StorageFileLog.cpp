@@ -590,7 +590,7 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     }
 
     auto read_settings = getReadSettings();
-    read_settings.local_fs_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
     UInt64 inode;

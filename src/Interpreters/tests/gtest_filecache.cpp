@@ -1145,7 +1145,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
 
     std::string file_path = fs::current_path() / "test";
     auto read_buffer_creator = [&]()
@@ -1168,7 +1168,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, user, read_buffer_creator,
-            read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_settings.local_fs_buffer_size,
+            read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_settings.buffer_size,
             "test", s.size(), false, false, std::nullopt, nullptr);
 
         WriteBufferFromOwnString result;
@@ -1362,7 +1362,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     {
         ReadSettings read_settings;
         read_settings.enable_filesystem_cache = true;
-        read_settings.local_fs_settings.local_fs_method = LocalFSReadMethod::pread;
+        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
 
         auto write_file = [](const std::string & filename, const std::string & s)
         {
@@ -1396,7 +1396,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
             auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
                 file, key, cache, user, read_buffer_creator,
-                read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_settings.local_fs_buffer_size,
+                read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_settings.buffer_size,
                 "test", expect_result.size(), false, false, std::nullopt, nullptr);
 
             WriteBufferFromOwnString result;
@@ -1465,7 +1465,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
 
     auto write_file = [](const std::string & filename, const std::string & s)
     {
@@ -1503,7 +1503,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
         };
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file, key, cache, user, read_buffer_creator,
-            read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_settings.local_fs_buffer_size,
+            read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_settings.buffer_size,
             "test", expect_result.size(), false, false, std::nullopt, nullptr);
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
