@@ -31,4 +31,8 @@
     <query>SELECT * FROM probe p FULL JOIN build_narrow b ON p.{probe_key} = b.k FORMAT Null</query>
     <query>SELECT * FROM probe p FULL JOIN build_nullable b ON p.{probe_key} = b.k FORMAT Null</query>
 
+    <drop_query>DROP TABLE IF EXISTS build_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS build_narrow</drop_query>
+    <drop_query>DROP TABLE IF EXISTS build_nullable</drop_query>
+    <drop_query>DROP TABLE IF EXISTS probe</drop_query>
 </test>

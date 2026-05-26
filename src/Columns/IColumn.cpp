@@ -816,7 +816,7 @@ template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::fillFromRowStorePtrsWithNullMap(const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, PaddedPODArray<UInt8> & null_map)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowStorePtrs<true, Derived, true>(&self, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, &null_map);
+    fillColumnFromRowStorePtrs<false, Derived, true>(&self, /*type=*/ nullptr, row_store_ptrs, field_offset, field_size, &null_map);
 }
 
 template <typename Derived, typename Parent>
