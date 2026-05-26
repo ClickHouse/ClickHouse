@@ -31,6 +31,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -824,6 +825,19 @@ inline bool isArrayOrNullableArray(const IDataType & type)
     if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
         return checkAndGetDataType<DataTypeArray>(nullable->getNestedType().get()) != nullptr;
     return checkAndGetDataType<DataTypeArray>(&type) != nullptr;
+}
+
+inline bool hasNullableArrayArgument(const ColumnsWithTypeAndName & arguments)
+{
+    for (const auto & argument : arguments)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(argument.type.get()))
+        {
+            if (isArray(nullable->getNestedType()))
+                return true;
+        }
+    }
+    return false;
 }
 
 struct UnwrappedNullableArrayColumn
@@ -3704,11 +3718,12 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
 
-    bool useDefaultImplementationForNulls() const override
+    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// `divideOrNull` / `intDivOrNull` need unde-nested types for `Nullable(Array(...))` inference.
-        /// `moduloOrNull` / `positiveModuloOrNull` keep default null handling (e.g. `moduloOrNull(NULL, 0)`).
-        return !(IsOperation<Op>::div_floating_or_null || IsOperation<Op>::int_div_or_null);
+        if (!detail::hasNullableArrayArgument(arguments))
+            return IFunctionOverloadResolver::build(arguments);
+
+        return buildImpl(arguments, getReturnTypePreservingNullableArrayTypes(arguments));
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -3773,5 +3788,31 @@ public:
 
 private:
     ContextPtr context;
+
+    /// Default NULL handling strips outer `Nullable(Array(...))` before `getReturnTypeImplStatic`,
+    /// which breaks array×number inference. Scalar `Nullable(T)` still uses default handling.
+    DataTypePtr getReturnTypePreservingNullableArrayTypes(const ColumnsWithTypeAndName & arguments) const
+    {
+        checkNumberOfArguments(arguments.size());
+
+        const NullPresence null_presence = getNullPresense(arguments);
+        if (null_presence.has_null_constant)
+            return makeNullable(std::make_shared<DataTypeNothing>());
+
+        if (!arguments.empty() && useDefaultImplementationForNothing())
+        {
+            for (const auto & arg : arguments)
+            {
+                if (isNothing(arg.type))
+                    return std::make_shared<DataTypeNothing>();
+            }
+        }
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+
+        return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(data_types, context);
+    }
 };
 }
