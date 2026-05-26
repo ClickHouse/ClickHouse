@@ -1,0 +1,56 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- Existing disk (used by legacy tests, high retries) -->
+            <azure_disk>
+                <type>azure_blob_storage</type>
+                <storage_account_url from_env="AZURITE_STORAGE_ACCOUNT_URL"/>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <max_single_read_retries>10</max_single_read_retries>
+                <max_single_download_retries>10</max_single_download_retries>
+            </azure_disk>
+
+            <!-- Default behavior: small retries, no RBAC warmup -->
+            <azure_disk_default>
+                <type>azure_blob_storage</type>
+                <storage_account_url from_env="AZURITE_STORAGE_ACCOUNT_URL"/>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <max_single_read_retries>3</max_single_read_retries>
+                <max_single_download_retries>3</max_single_download_retries>
+                <max_unexpected_write_error_retries>3</max_unexpected_write_error_retries>
+            </azure_disk_default>
+
+            <!-- RBAC warmup enabled: small retries with 300s warmup window, 3x multiplier -->
+            <azure_disk_warmup>
+                <type>azure_blob_storage</type>
+                <storage_account_url from_env="AZURITE_STORAGE_ACCOUNT_URL"/>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <max_single_read_retries>3</max_single_read_retries>
+                <max_single_download_retries>3</max_single_download_retries>
+                <max_unexpected_write_error_retries>3</max_unexpected_write_error_retries>
+                <rbac_warmup_interval_sec>300</rbac_warmup_interval_sec>
+                <rbac_warmup_retry_multiplier>3</rbac_warmup_retry_multiplier>
+            </azure_disk_warmup>
+        </disks>
+        <policies>
+            <azure_policy>
+                <volumes><main><disk>azure_disk</disk></main></volumes>
+            </azure_policy>
+            <azure_default_policy>
+                <volumes><main><disk>azure_disk_default</disk></main></volumes>
+            </azure_default_policy>
+            <azure_warmup_policy>
+                <volumes><main><disk>azure_disk_warmup</disk></main></volumes>
+            </azure_warmup_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

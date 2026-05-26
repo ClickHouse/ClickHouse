@@ -12,8 +12,12 @@
 #include <Core/ServerSettings.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#include <IO/WriteSettings.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/Scheduler/ResourceGuard.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -27,6 +31,23 @@ namespace ProfileEvents
     extern const Event DiskAzureGetProperties;
     extern const Event AzureCreateContainer;
     extern const Event DiskAzureCreateContainer;
+
+    extern const Event AzureListObjects;
+    extern const Event DiskAzureListObjects;
+    extern const Event AzureDeleteObjects;
+    extern const Event DiskAzureDeleteObjects;
+    extern const Event AzureUpload;
+    extern const Event DiskAzureUpload;
+    extern const Event AzureStageBlock;
+    extern const Event DiskAzureStageBlock;
+    extern const Event AzureCommitBlockList;
+    extern const Event DiskAzureCommitBlockList;
+    extern const Event AzureCopyObject;
+    extern const Event DiskAzureCopyObject;
+    extern const Event AzureGetObject;
+    extern const Event DiskAzureGetObject;
+
+    extern const Event ReadBufferFromAzureRequestsErrors;
 
     extern const Event AzureGetRequestThrottlerCount;
     extern const Event AzureGetRequestThrottlerBlocked;
@@ -66,6 +87,8 @@ namespace Setting
     extern const SettingsBool azure_check_objects_after_upload;
     extern const SettingsBool azure_use_adaptive_timeouts;
     extern const SettingsUInt64 azure_max_redirects;
+    extern const SettingsUInt64 azure_rbac_warmup_interval_sec;
+    extern const SettingsUInt64 azure_rbac_warmup_retry_multiplier;
     extern const SettingsUInt64 azure_connect_timeout_ms;
     extern const SettingsUInt64 azure_request_timeout_ms;
     extern const SettingsSeconds tcp_keep_alive_timeout;
@@ -90,6 +113,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int RECEIVED_EMPTY_DATA;
 }
 
 namespace AzureBlobStorage
@@ -136,11 +161,44 @@ static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIde
     return credential;
 }
 
-ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
-    : client(std::move(client_)), blob_prefix(std::move(blob_prefix_))
+ContainerClientWrapper::ContainerClientWrapper(
+    RawContainerClient client_,
+    String blob_prefix_,
+    size_t rbac_warmup_interval_sec_,
+    size_t rbac_warmup_retry_multiplier_)
+    : client(std::move(client_))
+    , blob_prefix(std::move(blob_prefix_))
+    , created_at(std::chrono::steady_clock::now())
+    , rbac_warmup_interval_sec(rbac_warmup_interval_sec_)
+    , rbac_warmup_retry_multiplier(rbac_warmup_retry_multiplier_)
 {
     if (!blob_prefix.empty() && !blob_prefix.ends_with('/'))
         blob_prefix += '/';
+}
+
+bool ContainerClientWrapper::isInWarmupPeriod() const
+{
+    if (rbac_warmup_interval_sec == 0)
+        return false;
+    auto elapsed = std::chrono::steady_clock::now() - created_at;
+    return elapsed < std::chrono::seconds(rbac_warmup_interval_sec);
+}
+
+size_t ContainerClientWrapper::getEffectiveRetries(size_t base_retries) const
+{
+    if (base_retries < 1)
+        return base_retries;
+
+    bool is_in_warmup = isInWarmupPeriod();
+
+    if (is_in_warmup && rbac_warmup_retry_multiplier < 1)
+    {
+        LOG_WARNING(getLogger("AzureBlobStorageCommon"),
+                "Invalid rbac_warmup_retry_multiplier={} given, should be >=1", rbac_warmup_retry_multiplier
+        );
+        return base_retries;
+    }
+    return is_in_warmup ? base_retries * rbac_warmup_retry_multiplier : base_retries;
 }
 
 BlobClient ContainerClientWrapper::GetBlobClient(const String & blob_name) const
@@ -153,27 +211,45 @@ BlockBlobClient ContainerClientWrapper::GetBlockBlobClient(const String & blob_n
     return client.GetBlockBlobClient(blob_prefix + blob_name);
 }
 
-BlobContainerPropertiesRespones ContainerClientWrapper::GetProperties() const
+BlobContainerPropertiesResponse ContainerClientWrapper::GetProperties() const
 {
-    return client.GetProperties();
+    return executeWithRetry(nullptr, blob_prefix, 1, [&](size_t)
+    {
+        traceAzureGetProperties();
+        return client.GetProperties();
+    });
+}
+
+BlobPropertiesResponse ContainerClientWrapper::GetBlobProperties(const String & blob_name) const
+{
+    return executeWithRetry(nullptr, blob_prefix + blob_name, 1, [&](size_t)
+    {
+        traceAzureGetProperties();
+        return client.GetBlobClient(blob_prefix + blob_name).GetProperties();
+    });
 }
 
 ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions & options) const
 {
-    auto new_options = options;
-    new_options.Prefix = blob_prefix + options.Prefix.ValueOr("");
-
-    auto response = client.ListBlobs(new_options);
-
-    for (auto & blob : response.Blobs)
+    return executeWithRetry(nullptr, blob_prefix, 1, [&](size_t)
     {
-        if (!blob.Name.starts_with(blob_prefix))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix, blob.Name);
+        traceAzureListObjects();
 
-        blob.Name = blob.Name.substr(blob_prefix.size());
-    }
+        auto new_options = options;
+        new_options.Prefix = blob_prefix + options.Prefix.ValueOr("");
 
-    return response;
+        auto response = client.ListBlobs(new_options);
+
+        for (auto & blob : response.Blobs)
+        {
+            if (!blob.Name.starts_with(blob_prefix))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix, blob.Name);
+
+            blob.Name = blob.Name.substr(blob_prefix.size());
+        }
+
+        return response;
+    });
 }
 
 bool ContainerClientWrapper::IsClientForDisk() const
@@ -188,7 +264,10 @@ BlobContainerBatch ContainerClientWrapper::CreateBatch() const
 
 BlobBatchResultResponse ContainerClientWrapper::SubmitBatch(const BlobContainerBatch & batch) const
 {
-    return client.SubmitBatch(batch);
+    return executeWithRetry(nullptr, "batch_submit", 1, [&](size_t)
+    {
+        return client.SubmitBatch(batch);
+    });
 }
 
 String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
@@ -196,13 +275,398 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
     return blob_prefix + blob_name;
 }
 
-/// The Azure SDK throws std::logic_error subtypes (std::invalid_argument from
-/// std::stoi for malformed ports, std::out_of_range for port overflow) when a
-/// connection string or blob URL has malformed components. These are user-input
-/// errors but must be translated to DB::Exception, otherwise they propagate to
-/// getCurrentExceptionMessageAndPattern, which catches std::logic_error and calls
-/// abortOnFailedAssertion in debug/sanitizer builds — turning a user typo into a
-/// "Logical error" abort.
+
+void ContainerClientWrapper::traceAzureListObjects(size_t count) const
+{
+    ProfileEvents::increment(ProfileEvents::AzureListObjects, count);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureListObjects, count);
+}
+
+void ContainerClientWrapper::traceAzureGetProperties() const
+{
+    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+}
+
+void ContainerClientWrapper::traceAzureDeleteObjects(size_t count) const
+{
+    ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, count);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, count);
+}
+
+void ContainerClientWrapper::traceAzureUpload() const
+{
+    ProfileEvents::increment(ProfileEvents::AzureUpload);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureUpload);
+}
+
+void ContainerClientWrapper::traceAzureStageBlock() const
+{
+    ProfileEvents::increment(ProfileEvents::AzureStageBlock);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
+}
+
+void ContainerClientWrapper::traceAzureCommitBlockList() const
+{
+    ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
+}
+
+void ContainerClientWrapper::traceAzureCopyObject() const
+{
+    ProfileEvents::increment(ProfileEvents::AzureCopyObject);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
+}
+
+void ContainerClientWrapper::traceAzureGetObject() const
+{
+    ProfileEvents::increment(ProfileEvents::AzureGetObject);
+    if (IsClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskAzureGetObject);
+}
+
+
+void ContainerClientWrapper::applyAccessConditions(
+    Azure::Storage::Blobs::BlobAccessConditions & access_conditions,
+    const WriteSettings & write_settings)
+{
+    if (!write_settings.object_storage_write_if_none_match.empty())
+        access_conditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
+    if (!write_settings.object_storage_write_if_match.empty())
+        access_conditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
+}
+
+
+Azure::Response<Azure::Storage::Blobs::Models::DownloadBlobResult>
+ContainerClientWrapper::downloadRange(
+    const String & blob_name,
+    const String & container_name,
+    size_t range_offset,
+    size_t range_length,
+    size_t num_tries,
+    LoggerPtr log,
+    const BlobStorageLogWriterPtr & blob_log,
+    DownloadResponseHandler response_handler) const
+{
+    return executeWithRetry(
+        log, blob_name, num_tries,
+        [&](size_t attempt)
+        {
+            Azure::Storage::Blobs::DownloadBlobOptions options;
+            Azure::Nullable<int64_t> length{};
+            if (range_length != 0)
+                length = {static_cast<int64_t>(range_length)};
+            options.Range = {static_cast<int64_t>(range_offset), length};
+
+            traceAzureGetObject();
+            auto azure_context = Azure::Core::Context()
+                .WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
+
+            Stopwatch watch;
+            try
+            {
+                auto response = client.GetBlobClient(blob_prefix + blob_name).Download(options, azure_context);
+
+                if (!response.Value.BodyStream)
+                    throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA,
+                        "Null body stream in Azure download response for {}", blob_prefix + blob_name);
+
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::Read,
+                        container_name, blob_name, {},
+                        static_cast<size_t>(response.Value.BodyStream->Length()),
+                        watch.elapsedMicroseconds(), 0, {});
+
+                if (response_handler)
+                    response_handler(response);
+
+                return response;
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::Read,
+                        container_name, blob_name, {},
+                        range_length, watch.elapsedMicroseconds(),
+                        static_cast<Int32>(e.StatusCode), e.Message);
+                ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
+                throw;
+            }
+        });
+}
+
+void ContainerClientWrapper::uploadSinglePart(
+    const String & blob_name,
+    const String & container_name,
+    const uint8_t * data,
+    size_t data_size,
+    const WriteSettings * write_settings,
+    size_t num_tries,
+    LoggerPtr log,
+    const BlobStorageLogWriterPtr & blob_log) const
+{
+    executeWithRetry(
+        log, blob_name, num_tries,
+        [&](size_t attempt)
+        {
+            /// WriteBuffer path: scope the IO-write ResourceGuard around the SDK
+            /// call. data_size=0 → ResourceGuard is a no-op (zero-cost requests
+            /// are ignored), matching today's empty-upload behaviour. Copy path
+            /// (write_settings == nullptr) skips the guard entirely.
+            std::optional<ResourceGuard> rlock;
+            if (write_settings)
+                rlock.emplace(ResourceGuard::Metrics::getIOWrite(),
+                              write_settings->io_scheduling.write_resource_link,
+                              data_size);
+
+            Azure::Core::IO::MemoryBodyStream stream(data, data_size);
+
+            Azure::Storage::Blobs::UploadBlockBlobOptions options;
+            Azure::Core::Context azure_context;
+            if (write_settings)
+            {
+                applyAccessConditions(options.AccessConditions, *write_settings);
+                azure_context = Azure::Core::Context()
+                    .WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
+            }
+
+            traceAzureUpload();
+            auto bbc = client.GetBlockBlobClient(blob_prefix + blob_name);
+
+            Stopwatch watch;
+            try
+            {
+                bbc.Upload(stream, options, azure_context);
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::Upload,
+                        container_name, blob_name, {},
+                        data_size, watch.elapsedMicroseconds(), 0, {});
+                if (rlock)
+                    rlock->unlock(data_size);
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::Upload,
+                        container_name, blob_name, {},
+                        data_size, watch.elapsedMicroseconds(),
+                        static_cast<Int32>(e.StatusCode), e.Message);
+                throw;
+            }
+        });
+}
+
+void ContainerClientWrapper::stageBlock(
+    const String & blob_name,
+    const String & container_name,
+    const String & block_id,
+    const uint8_t * data,
+    size_t data_size,
+    const WriteSettings * write_settings,
+    size_t num_tries,
+    LoggerPtr log,
+    const BlobStorageLogWriterPtr & blob_log) const
+{
+    executeWithRetry(
+        log, blob_name, num_tries,
+        [&](size_t attempt)
+        {
+            std::optional<ResourceGuard> rlock;
+            if (write_settings)
+                rlock.emplace(ResourceGuard::Metrics::getIOWrite(),
+                              write_settings->io_scheduling.write_resource_link,
+                              data_size);
+
+            Azure::Core::IO::MemoryBodyStream stream(data, data_size);
+
+            Azure::Core::Context azure_context;
+            if (write_settings)
+                azure_context = Azure::Core::Context()
+                    .WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
+
+            traceAzureStageBlock();
+            auto bbc = client.GetBlockBlobClient(blob_prefix + blob_name);
+
+            Stopwatch watch;
+            try
+            {
+                bbc.StageBlock(block_id, stream, Azure::Storage::Blobs::StageBlockOptions{}, azure_context);
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::MultiPartUploadWrite,
+                        container_name, blob_name, {},
+                        data_size, watch.elapsedMicroseconds(), 0, {});
+                if (rlock)
+                    rlock->unlock(data_size);
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::MultiPartUploadWrite,
+                        container_name, blob_name, {},
+                        data_size, watch.elapsedMicroseconds(),
+                        static_cast<Int32>(e.StatusCode), e.Message);
+                throw;
+            }
+        });
+}
+
+void ContainerClientWrapper::commitBlockList(
+    const String & blob_name,
+    const String & container_name,
+    const std::vector<std::string> & block_ids,
+    const WriteSettings * write_settings,
+    size_t num_tries,
+    LoggerPtr log,
+    const BlobStorageLogWriterPtr & blob_log) const
+{
+    executeWithRetry(
+        log, blob_name, num_tries,
+        [&](size_t attempt)
+        {
+            Azure::Storage::Blobs::CommitBlockListOptions options;
+            Azure::Core::Context azure_context;
+            if (write_settings)
+            {
+                applyAccessConditions(options.AccessConditions, *write_settings);
+                azure_context = Azure::Core::Context()
+                    .WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), attempt);
+            }
+
+            traceAzureCommitBlockList();
+            auto bbc = client.GetBlockBlobClient(blob_prefix + blob_name);
+
+            Stopwatch watch;
+            try
+            {
+                bbc.CommitBlockList(block_ids, options, azure_context);
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::MultiPartUploadComplete,
+                        container_name, blob_name, {},
+                        0, watch.elapsedMicroseconds(), 0, {});
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                if (blob_log)
+                    blob_log->addEvent(
+                        BlobStorageLogElement::EventType::MultiPartUploadComplete,
+                        container_name, blob_name, {},
+                        0, watch.elapsedMicroseconds(),
+                        static_cast<Int32>(e.StatusCode), e.Message);
+                throw;
+            }
+        });
+}
+
+void ContainerClientWrapper::deleteBlobSingleWithBlobStorageLog(
+    const String & blob_name,
+    const String & container_name,
+    const String & local_path,
+    bool if_exists,
+    const BlobStorageLogWriterPtr & blob_log,
+    size_t bytes_size_for_logging) const
+{
+    traceAzureDeleteObjects(1);
+
+    const String full_path = blob_prefix + blob_name;
+    Stopwatch watch;
+
+    executeWithRetry(nullptr, full_path, 1, [&](size_t)
+    {
+        try
+        {
+            auto delete_info = client.GetBlobClient(full_path).Delete();
+            if (!if_exists && !delete_info.Value.Deleted)
+                throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                    "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
+                    full_path,
+                    delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
+
+            if (blob_log)
+                blob_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    container_name, blob_name, local_path,
+                    bytes_size_for_logging, watch.elapsedMicroseconds(), 0, {});
+        }
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+            if (blob_log)
+                blob_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    container_name, blob_name, local_path,
+                    bytes_size_for_logging, watch.elapsedMicroseconds(),
+                    static_cast<Int32>(e.StatusCode), e.Message);
+
+            /// `if_exists=true` swallows a NotFound (object already gone is fine).
+            if (if_exists && e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                return;
+
+            throw;
+        }
+    });
+}
+
+DeleteBlobResultDeferredResponse ContainerClientWrapper::addDeleteBlobToBatch(
+    BlobContainerBatch & batch,
+    const String & blob_name) const
+{
+    return batch.DeleteBlob(blob_prefix + blob_name);
+}
+
+std::map<std::string, std::string> ContainerClientWrapper::getBlobTagsForUpdate(const String & blob_name) const
+{
+    auto response = client.GetBlobClient(blob_prefix + blob_name).GetTags();
+    return std::move(response.Value);
+}
+
+void ContainerClientWrapper::setBlobTags(const String & blob_name, const std::map<std::string, std::string> & tags) const
+{
+    client.GetBlobClient(blob_prefix + blob_name).SetTags(tags);
+}
+
+bool ContainerClientWrapper::UpdateBlobTag(
+    const String & blob_name,
+    const String & tag_key,
+    const String & tag_value,
+    LoggerPtr log) const
+{
+    return executeWithRetry(log, blob_name, 1, [&](size_t)
+    {
+        auto tags = getBlobTagsForUpdate(blob_name);
+        const auto tag_iter = tags.find(tag_key);
+        if (tag_iter != tags.end() && tag_iter->second == tag_value)
+        {
+            LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}",
+                      blob_name, tag_key, tag_value);
+            return false;
+        }
+        tags[tag_key] = tag_value;
+        setBlobTags(blob_name, tags);
+        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
+        return true;
+    });
+}
+
+String ContainerClientWrapper::GetBlobUrl(const String & blob_name) const
+{
+    return client.GetBlockBlobClient(blob_prefix + blob_name).GetUrl();
+}
+
+/// Azure SDK might throw errors on malformed URL/Blob strings - we will catch them in place, and will this helper to normalize the error
 [[noreturn]] static void translateAzureSdkParseError(const std::logic_error & e)
 {
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -245,27 +709,35 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
     }
 }
 
-std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
+std::unique_ptr<ContainerClient> ConnectionParams::createForContainer(
+    size_t rbac_warmup_interval_sec,
+    size_t rbac_warmup_retry_multiplier) const
 {
     try
     {
         if (!endpoint.sas_auth.empty())
         {
             RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            return std::make_unique<ContainerClient>(
+                std::move(raw_client), endpoint.prefix,
+                rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
         }
 
-        return std::visit([this]<typename T>(const T & auth)
+        return std::visit([&]<typename T>(const T & auth)
         {
             if constexpr (std::is_same_v<T, ConnectionString>)
             {
                 auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+                return std::make_unique<ContainerClient>(
+                    std::move(raw_client), endpoint.prefix,
+                    rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
             }
             else
             {
                 RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
-                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+                return std::make_unique<ContainerClient>(
+                    std::move(raw_client), endpoint.prefix,
+                    rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
             }
         }, auth_method);
     }
@@ -304,16 +776,12 @@ void processURL(const String & url, const String & container_name, Endpoint & en
 
 static bool containerExists(const ContainerClient & client)
 {
-    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client.IsClientForDisk())
-        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
-
     try
     {
         client.GetProperties();
         return true;
     }
-    catch (const Azure::Storage::StorageException & e)
+    catch (const Azure::Core::RequestFailedException & e)
     {
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
@@ -334,19 +802,23 @@ static bool containerExists(const ContainerClient & client)
     }
 }
 
-std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
+std::unique_ptr<ContainerClient> getContainerClient(
+    const ConnectionParams & params,
+    bool readonly,
+    size_t rbac_warmup_interval_sec,
+    size_t rbac_warmup_retry_multiplier)
 {
     if (!params.endpoint.sas_auth.empty() || !params.endpoint.additional_params.empty())
-        return params.createForContainer();
+        return params.createForContainer(rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
 
     if (params.endpoint.container_already_exists.value_or(false) || readonly)
     {
-        return params.createForContainer();
+        return params.createForContainer(rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
     }
 
     if (!params.endpoint.container_already_exists.has_value())
     {
-        auto container_client = params.createForContainer();
+        auto container_client = params.createForContainer(rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
         if (containerExists(*container_client))
             return container_client;
     }
@@ -355,19 +827,25 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     {
         auto service_client = params.createForService();
 
+        /// NOTE: This is a service-level Azure SDK call — `ContainerClientWrapper` is not
+        /// in scope yet because we are creating the container that the wrapper will then
+        /// represent. Tracing and SDK access stay raw here. A future `ServiceClientWrapper`
+        /// could absorb it, but that's out of scope for T2.
         ProfileEvents::increment(ProfileEvents::AzureCreateContainer);
         if (params.client_options.ClickhouseOptions.IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureCreateContainer);
 
         auto raw_client = service_client->CreateBlobContainer(params.endpoint.container_name).Value;
-        return std::make_unique<ContainerClient>(std::move(raw_client), params.endpoint.prefix);
+        return std::make_unique<ContainerClient>(
+            std::move(raw_client), params.endpoint.prefix,
+            rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
     }
-    catch (const Azure::Storage::StorageException & e)
+    catch (const Azure::Core::RequestFailedException & e)
     {
         /// If container_already_exists is not set (in config), ignore already exists error. Conflict - The specified container already exists.
         /// To avoid race with creation of container, handle this error despite that we have already checked the existence of container.
         if (!params.endpoint.container_already_exists.has_value() && e.StatusCode == Azure::Core::Http::HttpStatusCode::Conflict)
-            return params.createForContainer();
+            return params.createForContainer(rbac_warmup_interval_sec, rbac_warmup_retry_multiplier);
         throw;
     }
 }
@@ -623,6 +1101,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     settings->sdk_retry_initial_backoff_ms = query_settings[Setting::azure_sdk_retry_initial_backoff_ms];
     settings->sdk_retry_max_backoff_ms = query_settings[Setting::azure_sdk_retry_max_backoff_ms];
     settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
+    settings->rbac_warmup_interval_sec = query_settings[Setting::azure_rbac_warmup_interval_sec];
+    settings->rbac_warmup_retry_multiplier = query_settings[Setting::azure_rbac_warmup_retry_multiplier];
 
     return settings;
 }
@@ -668,6 +1148,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
+    settings->rbac_warmup_interval_sec = config.getUInt64(config_prefix + ".rbac_warmup_interval_sec", settings_ref[Setting::azure_rbac_warmup_interval_sec]);
+    settings->rbac_warmup_retry_multiplier = config.getUInt64(config_prefix + ".rbac_warmup_retry_multiplier", settings_ref[Setting::azure_rbac_warmup_retry_multiplier]);
 
     return settings;
 }

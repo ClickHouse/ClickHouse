@@ -94,7 +94,10 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
     assertInitialized();
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
-    auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
+    auto client = AzureBlobStorage::getContainerClient(
+        connection_params, is_readonly,
+        settings->rbac_warmup_interval_sec,
+        settings->rbac_warmup_retry_multiplier);
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",

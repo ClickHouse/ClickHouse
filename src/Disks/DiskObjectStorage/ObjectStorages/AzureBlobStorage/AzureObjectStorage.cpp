@@ -34,24 +34,11 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageAzureThreadsScheduled;
 }
 
-namespace ProfileEvents
-{
-    extern const Event AzureListObjects;
-    extern const Event DiskAzureListObjects;
-    extern const Event AzureDeleteObjects;
-    extern const Event DiskAzureDeleteObjects;
-    extern const Event AzureGetProperties;
-    extern const Event DiskAzureGetProperties;
-    extern const Event AzureCopyObject;
-    extern const Event DiskAzureCopyObject;
-}
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int AZURE_BLOB_STORAGE_ERROR;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -85,10 +72,6 @@ public:
 private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
-        ProfileEvents::increment(ProfileEvents::AzureListObjects);
-        if (client->IsClientForDisk())
-            ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
-
         chassert(batch.empty());
         auto blob_list_response = client->ListBlobs(options);
         auto blobs_list = blob_list_response.Blobs;
@@ -152,18 +135,12 @@ ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
 bool AzureObjectStorage::exists(const StoredObject & object) const
 {
     auto client_ptr = client.get();
-
-    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client_ptr->IsClientForDisk())
-        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
-
     try
     {
-        auto blob_client = client_ptr->GetBlobClient(object.remote_path);
-        blob_client.GetProperties();
+        client_ptr->GetBlobProperties(object.remote_path);
         return true;
     }
-    catch (const Azure::Storage::StorageException & e)
+    catch (const Azure::Core::RequestFailedException & e)
     {
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
@@ -195,12 +172,9 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
+    while (true)
     {
-        ProfileEvents::increment(ProfileEvents::AzureListObjects);
-        if (client_ptr->IsClientForDisk())
-            ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
-
+        auto blob_list_response = client_ptr->ListBlobs(options);
         const auto & blobs_list = blob_list_response.Blobs;
 
         for (const auto & blob : blobs_list)
@@ -220,6 +194,11 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         if (max_keys && children.size() >= max_keys)
             break;
+
+        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
+            break;
+
+        options.ContinuationToken = blob_list_response.NextPageToken;
     }
 }
 
@@ -332,86 +311,49 @@ void AzureObjectStorage::removeObjectImpl(
     bool if_exists,
     BlobStorageLogWriterPtr blob_storage_log)
 {
-    ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
-    if (client_ptr->IsClientForDisk())
-        ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects);
+    LOG_TEST(log, "Removing single object: {}", object.remote_path);
 
-    const auto & path = object.remote_path;
-    LOG_TEST(log, "Removing single object: {}", path);
-
-    Stopwatch watch;
-    Int32 error_code = 0;
-    String error_message;
-    bool success = false;
-    try
+    if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
-        if (isAdlsGen2Endpoint(connection_params.endpoint))
+        client_ptr->traceAzureDeleteObjects(1);
+
+        const auto & path = object.remote_path;
+        Stopwatch watch;
+        try
         {
             buildDataLakeFileClient(path)->Delete();
-            success = true;
-        }
-        else
-        {
-            auto delete_info = client_ptr->GetBlobClient(path).Delete();
-            success = delete_info.Value.Deleted;
-            if (!if_exists && !delete_info.Value.Deleted)
-                throw Exception(
-                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
-                    path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
-        }
-    }
-    catch (const Azure::Storage::StorageException & e)
-    {
-        error_code = static_cast<Int32>(e.StatusCode);
-        error_message = e.Message;
 
-        if (!if_exists)
+            if (blob_storage_log)
+                blob_storage_log->addEvent(
+                    BlobStorageLogElement::EventType::Delete,
+                    connection_params.getContainer(), path, object.local_path,
+                    object.bytes_size, watch.elapsedMicroseconds(), 0, {});
+        }
+        catch (const Azure::Storage::StorageException & e)
         {
             if (blob_storage_log)
                 blob_storage_log->addEvent(
                     BlobStorageLogElement::EventType::Delete,
-                    /* bucket */ connection_params.getContainer(),
-                    /* remote_path */ path,
-                    object.local_path,
-                    object.bytes_size,
-                    watch.elapsedMicroseconds(),
-                    error_code,
-                    error_message);
+                    connection_params.getContainer(), path, object.local_path,
+                    object.bytes_size, watch.elapsedMicroseconds(),
+                    static_cast<Int32>(e.StatusCode), e.Message);
+
+            if (if_exists && e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                return;
+
             throw;
         }
-
-        /// If object doesn't exist.
-        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-        {
-            auto elapsed = watch.elapsedMicroseconds();
-            if (blob_storage_log)
-                blob_storage_log->addEvent(
-                    BlobStorageLogElement::EventType::Delete,
-                    /* bucket */ connection_params.getContainer(),
-                    /* remote_path */ path,
-                    object.local_path,
-                    object.bytes_size,
-                    elapsed,
-                    error_code,
-                    error_message);
-            return;
-        }
-
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        throw;
     }
-    auto elapsed = watch.elapsedMicroseconds();
-
-    if (blob_storage_log)
-        blob_storage_log->addEvent(
-            BlobStorageLogElement::EventType::Delete,
-            /* bucket */ connection_params.getContainer(),
-            /* remote_path */ path,
+    else
+    {
+        client_ptr->deleteBlobSingleWithBlobStorageLog(
+            object.remote_path,
+            connection_params.getContainer(),
             object.local_path,
-            object.bytes_size,
-            elapsed,
-            success ? 0 : error_code,
-            success ? "" : error_message);
+            if_exists,
+            blob_storage_log,
+            object.bytes_size);
+    }
 }
 
 void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
@@ -429,7 +371,6 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
     static constexpr size_t AZURE_BATCH_MAX_SUBREQUESTS = 256;
 
     const String & container = connection_params.getContainer();
-    const bool is_disk = client_ptr->IsClientForDisk();
     const auto add_log_entry = [&](const StoredObject & object, size_t elapsed_mu, int32_t error_code = 0, const std::string & error_message = "")
     {
         if (!blob_storage_log)
@@ -458,13 +399,20 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         AzureBlobStorage::BlobContainerBatch requests = client_ptr->CreateBatch();
         std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;
         for (const auto & object : object_batch)
-            responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
+            responses.push_back(client_ptr->addDeleteBlobToBatch(requests, object.remote_path));
 
-        client_ptr->SubmitBatch(requests);
+        try
+        {
+            client_ptr->SubmitBatch(requests);
+        }
+        catch (...)
+        {
+            for (const auto & object : object_batch)
+                add_log_entry(object, watch.elapsedMicroseconds() / object_batch.size(), -1, getCurrentExceptionMessage(false));
+            throw;
+        }
 
-        ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
-        if (is_disk)
-            ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
+        client_ptr->traceAzureDeleteObjects(object_batch.size());
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
         std::exception_ptr throw_at_end;
@@ -475,7 +423,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
                 deferred_response.GetResponse();
                 add_log_entry(object, avg_elapsed_us);
             }
-            catch (const Azure::Storage::StorageException & e)
+            catch (const Azure::Core::RequestFailedException & e)
             {
                 if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
                 {
@@ -493,6 +441,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
             }
         }
 
+        /// Rethrow after iterating all responses so every deferred result is logged.
         if (throw_at_end)
             std::rethrow_exception(throw_at_end);
     }
@@ -524,21 +473,7 @@ static void setAzureBlobTag(
 {
     auto log = getLogger("setAzureBlobTag");
     for (const auto & blob_name : blob_names)
-    {
-        auto blob_client = client_ptr->GetBlobClient(blob_name);
-        auto get_response = blob_client.GetTags();
-        auto & tags = get_response.Value;
-        const auto tag_iter = tags.find(tag_key);
-        if (tag_iter != tags.end() && tag_iter->second == tag_value)
-        {
-            LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}", blob_name, tag_key, tag_value);
-            continue;
-        }
-
-        tags[tag_key] = tag_value;
-        blob_client.SetTags(tags);
-        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
-    }
+        client_ptr->UpdateBlobTag(blob_name, tag_key, tag_value, log);
 }
 
 void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
@@ -551,12 +486,7 @@ void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::st
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     auto client_ptr = client.get();
-    auto blob_client = client_ptr->GetBlobClient(path);
-    auto properties = blob_client.GetProperties().Value;
-
-    ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client_ptr->IsClientForDisk())
-        ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
+    auto properties = client_ptr->GetBlobProperties(path).Value;
 
     ObjectMetadata result;
     result.size_bytes = properties.BlobSize;
@@ -576,7 +506,7 @@ try
 {
     return getObjectMetadata(path, with_tags);
 }
-catch (const Azure::Storage::StorageException & e)
+catch (const Azure::Core::RequestFailedException & e)
 {
     if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
         return {};
@@ -594,9 +524,6 @@ void AzureObjectStorage::copyObject( /// NOLINT
     auto client_ptr = client.get();
     auto object_metadata = getObjectMetadata(object_from.remote_path, false);
 
-    ProfileEvents::increment(ProfileEvents::AzureCopyObject);
-    if (client_ptr->IsClientForDisk())
-        ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
     LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
 
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::AZURE_COPY_POOL);
@@ -628,14 +555,19 @@ void AzureObjectStorage::applyNewSettings(
     if (!options.allow_client_change)
         return;
 
+    auto settings_ptr = settings.get();
     bool is_client_for_disk = client.get()->IsClientForDisk();
 
     AzureBlobStorage::ConnectionParams params;
     params.endpoint = AzureBlobStorage::processEndpoint(config, config_prefix);
     params.auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix);
-    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
+    params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings_ptr, is_client_for_disk);
 
-    auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
+    auto new_client = AzureBlobStorage::getContainerClient(
+        params,
+        true,
+        settings_ptr->rbac_warmup_interval_sec,
+        settings_ptr->rbac_warmup_retry_multiplier);
     client.set(std::move(new_client));
 }
 

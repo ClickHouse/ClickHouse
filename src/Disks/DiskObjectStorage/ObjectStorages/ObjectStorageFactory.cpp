@@ -204,7 +204,13 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            params.auth_method,
+            AzureBlobStorage::getContainerClient(
+                params,
+                false,
+                azure_settings->rbac_warmup_interval_sec,
+                azure_settings->rbac_warmup_retry_multiplier),
+            std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };

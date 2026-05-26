@@ -535,7 +535,13 @@ The maximum number of retries during single S3 read.
 The maximum number of retries during single Azure blob storage read.
 )", 0) \
     DECLARE(UInt64, azure_max_unexpected_write_error_retries, 4, R"(
-The maximum number of retries in case of unexpected errors during Azure blob storage write
+The maximum number of retries in case of unexpected errors during Azure blob storage write.
+)", 0) \
+    DECLARE(UInt64, azure_rbac_warmup_interval_sec, 0, R"(
+Seconds after Azure client creation during which all retryable operations use an extended retry budget (base × multiplier) to tolerate RBAC propagation lag. 0 disables the warmup.
+)", 0) \
+    DECLARE(UInt64, azure_rbac_warmup_retry_multiplier, 3, R"(
+Retry count multiplier applied during the RBAC warmup interval.
 )", 0) \
     DECLARE(UInt64, s3_max_unexpected_write_error_retries, S3::DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES, R"(
 The maximum number of retries in case of unexpected errors during S3 write.
