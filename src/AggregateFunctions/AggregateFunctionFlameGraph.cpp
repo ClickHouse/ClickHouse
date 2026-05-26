@@ -415,7 +415,9 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = -size;
+            /// Cast to unsigned before negating: -size is UB when size == INT64_MIN
+            /// because INT64_MAX + 1 is not representable in Int64.
+            UInt64 abs_size = -static_cast<UInt64>(size);
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);
