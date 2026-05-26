@@ -1853,12 +1853,11 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
 
     auto * current = current_ptr.get();
 
-    /// Evict a rolled-back node from `current->children` and re-insert its orphaned descendants
-    /// together with the incoming `(info, name, disk)`, sorted by (level, mutation) descending so
-    /// that a covering node is always added before any node it may contain. This handles both the
-    /// intersection case (rolled-back tree-resident intersects with incoming committed peer) and
-    /// the containment case (incoming committed peer descends through a rolled-back ancestor whose
-    /// committed descendants would otherwise be silently treated as outdated).
+    /// Replace a rolled-back node with the incoming committed peer in the intersection case:
+    /// erase the victim, then re-insert its orphans and the incoming part sorted by (level,
+    /// mutation) descending so that covering parts are added before the parts they contain.
+    /// The containment case doesn't need this — `loadDataPartsFromDisk` promotes orphans of
+    /// any top-level part demoted to Outdated.
     auto evict_rolled_back_and_reinsert = [&](auto victim_iter)
     {
         LOG_INFO(
@@ -1896,14 +1895,6 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
 
             if (prev_info.contains(info))
             {
-                /// Descending into a rolled-back ancestor would silently bury committed descendants
-                /// (they would be loaded as Outdated instead of active). Evict the ancestor and let
-                /// its committed children be re-parented.
-                if (read_txn_status(prev->second->name, prev->second->disk) == RollbackStatus::RolledBack)
-                {
-                    evict_rolled_back_and_reinsert(prev);
-                    return;
-                }
                 current = prev->second.get();
                 continue;
             }
@@ -1960,12 +1951,6 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
 
             if (next_info.contains(info))
             {
-                /// See the equivalent branch in the `prev` arm above.
-                if (read_txn_status(it->second->name, it->second->disk) == RollbackStatus::RolledBack)
-                {
-                    evict_rolled_back_and_reinsert(it);
-                    return;
-                }
                 current = it->second.get();
                 continue;
             }
