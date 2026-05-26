@@ -2452,16 +2452,6 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             "Table settings index_granularity and index_granularity_bytes cannot both be zero");
     }
 
-    /// `index_granularity = 0` relies on byte-driven (adaptive) granularity. If adaptive granularity is
-    /// disabled by `enable_mixed_granularity_parts = false`, granule sizing has no row- or byte-based
-    /// driver, so reject the combination upfront rather than let a divide-by-zero fall out later.
-    if (!(*this)[MergeTreeSetting::index_granularity] && !(*this)[MergeTreeSetting::enable_mixed_granularity_parts])
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Table setting index_granularity cannot be zero when enable_mixed_granularity_parts is disabled");
-    }
-
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
     // If index_granularity_bytes is not disabled i.e > 0 b, then always ensure that it's greater than
     // min_index_granularity_bytes. This is mainly a safeguard against accidents whereby a really low
