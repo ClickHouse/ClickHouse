@@ -14,6 +14,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             return b"3\n"
         if "TRUSTED_FAKE_KEY" in authorization:
             return b"2\n"
+        admin_header = self.headers.get("X-Admin-Secret", "")
+        if "ADMIN_HEADER" in admin_header:
+            return b"4\n"
+        if "TRUSTED_HEADER" in admin_header:
+            return b"5\n"
         return b"0\n"
 
     def do_HEAD(self):

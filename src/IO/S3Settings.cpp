@@ -27,6 +27,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsBool no_sign_request;
@@ -78,6 +79,7 @@ void S3Settings::resetCredentialsForUserControlledRequest()
     auth_settings[S3AuthSetting::access_key_id] = "";
     auth_settings[S3AuthSetting::secret_access_key] = "";
     auth_settings[S3AuthSetting::session_token] = "";
+    auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64] = "";
     auth_settings[S3AuthSetting::use_environment_credentials] = false;
     auth_settings[S3AuthSetting::use_insecure_imds_request] = false;
     auth_settings[S3AuthSetting::role_arn] = "";
@@ -89,6 +91,9 @@ void S3Settings::resetCredentialsForUserControlledRequest()
     auth_settings[S3AuthSetting::google_adc_client_id] = "";
     auth_settings[S3AuthSetting::google_adc_client_secret] = "";
     auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+    auth_settings.headers.clear();
+    auth_settings.access_headers.clear();
+    auth_settings.server_side_encryption_kms_config = {};
 }
 
 void S3Settings::copyCredentialsFrom(const S3Settings & settings)

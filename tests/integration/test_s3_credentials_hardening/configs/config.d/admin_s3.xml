@@ -11,10 +11,12 @@
     <s3>
         <access_key_id>ADMIN_FAKE_KEY</access_key_id>
         <secret_access_key>ADMIN_FAKE_SECRET</secret_access_key>
+        <header>X-Admin-Secret: ADMIN_HEADER</header>
         <trusted_endpoint>
             <endpoint>http://resolver:18080/trusted/</endpoint>
             <access_key_id>TRUSTED_FAKE_KEY</access_key_id>
             <secret_access_key>TRUSTED_FAKE_SECRET</secret_access_key>
+            <header>X-Admin-Secret: TRUSTED_HEADER</header>
         </trusted_endpoint>
     </s3>
 </clickhouse>
