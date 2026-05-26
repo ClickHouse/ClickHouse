@@ -220,7 +220,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
 
         database->dropDetachedTable(context_, table_name, query.sync);
-        
+
         if (query.sync)
         {
             uuid_to_wait = database->tryGetTableUUID(table_id.table_name);
