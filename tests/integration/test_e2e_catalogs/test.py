@@ -736,16 +736,15 @@ def test_show_data_lake_catalogs_setting(
     db = catalog_manager.make_database_name()
     catalog_manager.create_catalog(node, db)
 
-    assert not node.query(
-        f"SELECT 1 FROM system.databases WHERE name = '{db}' FORMAT TSV",
-        settings={"show_data_lake_catalogs_in_system_tables": 0},
-    ).strip()
-
-    db_row = node.query(
-        f"SELECT engine FROM system.databases WHERE name = '{db}' FORMAT TSV",
-        settings={"show_data_lake_catalogs_in_system_tables": 1},
-    ).strip()
-    assert "DataLakeCatalog" in db_row
+    # system.databases always lists data lake catalog databases regardless of
+    # show_data_lake_catalogs_in_system_tables: the database name is local
+    # metadata and never requires a call to the external catalog service.
+    for setting_value in (0, 1):
+        db_row = node.query(
+            f"SELECT engine FROM system.databases WHERE name = '{db}' FORMAT TSV",
+            settings={"show_data_lake_catalogs_in_system_tables": setting_value},
+        ).strip()
+        assert "DataLakeCatalog" in db_row
 
     catalog_manager.resolve_table_name(node, db, sales_table)
 

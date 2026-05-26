@@ -27,8 +27,8 @@ StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription 
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageInput::createVirtuals()

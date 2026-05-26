@@ -15,10 +15,11 @@ allowed-tools: Task, Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
 ## Obtaining the Diff
 
 **If a PR number is given:**
-- Fetch PR metadata (title, description, base/head refs, changed files).
 - Fetch the full PR diff.
+- Fetch PR metadata (title, description, base/head refs, comments, changed files).
 - Note the PR title, description, and linked issues
-- Validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
+- **Detect revert PRs** before validating template metadata. A PR is a revert when the title starts with `Revert "..."` (the GitHub default), or the body matches `Reverts ClickHouse/ClickHouse#<N>` / `This reverts commit <sha>`. Revert PRs are **exempt** from PR template validation: skip `Changelog category` and `Changelog entry` checks for them, and do not flag missing template fields. Only verify that the body identifies the reverted PR or commit.
+- For non-revert PRs, validate PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`:
   - `Changelog category` is present, valid, and semantically correct for the actual code change.
   - `Changelog entry` is present and user-readable when required by the selected category.
   - `Changelog entry` quality follows ClickHouse expectations: specific user-facing impact, no vague wording, and migration guidance for backward-incompatible changes.
@@ -54,29 +55,28 @@ INPUTS YOU WILL RECEIVE
 - Linked issues / discussions
 - CI status and logs (if available)
 - Tests added/modified and their results
-- Docs changes (user docs, release notes)
 
-If any of these are missing, note it under "Missing context" and proceed as far as possible.
+If any of these are missing, note it under "Missing context / blind spots" and proceed as far as possible.
 
-PRIMARY GOALS (IN ORDER)
-1) **Correctness & safety**
-   - Logic errors, data corruption, missing checks, undefined behavior.
-2) **Resource management**
-   - Memory leaks, file descriptor leaks, socket/FD/FDset misuse, lifetime issues, double frees, ownership confusion.
-3) **Concurrency & robustness**
-   - Data races, deadlocks, ABA, misuse of atomics/locks, unsafe shared state.
-4) **Performance characteristics**
-   - Hot-path regressions, pathological complexity, unbounded allocations, unnecessary disk/network roundtrips.
-5) **Maintainability & simplicity**
-   - Over-engineering, duplicated logic, fragile patterns.
-6) **User-facing quality**
-   - Wrong or misleading messages, missing observability (logs/metrics) for serious failure modes.
-7) **ClickHouse-specific compliance**
-   - Deletion logging, serialization versioning, compatibility, settings, experimental gates, Cloud/OSS rollout.
+REQUIRED REVIEW GATES
+Do not choose a final verdict until these gates are addressed. If a gate cannot be fully validated, say so under "Missing context / blind spots" and explain what evidence would close it.
 
-FALSE POSITIVES ARE WORSE THAN MISSED NITS
-- Prefer **high precision**: if you are not reasonably confident that something is a real problem or a serious risk, do **not** flag it.
-- When in doubt between "possible minor style issue" and "no issue" – choose **no issue**.
+1) **Contract**
+   - Derive the behavior the PR promises from title, description, metadata, tests, docs, and code shape. Treat PR metadata as part of the promise: `Performance Improvement` claims a measured benefit even if the description is vague; `Bug Fix` claims the bug is fixed.
+   - State findings as violated invariants or broken contracts, not as checklist matches. Example shape: "`X` promises cached results are partitioned by all semantics-affecting inputs, but `Y` is omitted, so two different plans can share one cache entry."
+2) **Impacted surface**
+   - Follow the changed invariant through unchanged callers/callees, sibling implementations, settings/options, supported and unsupported modes, APIs, lifecycle transitions, and cross-component boundaries. New settings/flags/options must be implemented consistently where supported and rejected where unsupported.
+3) **Failure and divergence**
+   - Check state transitions and failure paths: startup, steady state, shutdown, retries, cancellation, exceptions, partial progress, async work already in flight, and anything that can still mutate after a guard or role check fires. For stateful/distributed changes, also check what can diverge over time across metadata, paths, identities, leases, caches, and ownership.
+4) **Evidence**
+   - Map each material claim to proof before approving. Performance claims need before/after measurements, a benchmark, or a focused performance test; correctness claims need regression coverage or a clear reason coverage is impractical. Missing proof for important behavior is a review concern even when the code looks plausible.
+5) **Lower-priority quality**
+   - After the contract and high-impact risks are covered, review performance regressions, build time, CI/script reliability, PR metadata, documentation, diagnostics, and maintainability.
+
+SIGNAL AND UNCERTAINTY
+- Avoid reporting minor issues when unsure: style preferences, naming opinions, speculative refactors, and micro-optimizations should be omitted unless they clearly affect correctness, maintainability, or user-facing quality.
+- Do not suppress potentially serious findings only because the proof is incomplete. If the evidence points to a plausible correctness, safety, data-loss, security, compatibility, or operational risk, report it as a concern and state exactly what would prove the code correct.
+- Use confidence-aware wording: definite bugs belong in `Findings`; plausible serious risks can be framed as "needs verification" or "missing/insufficient tests". Do not present speculation as fact.
 
 WHAT TO REVIEW VS WHAT TO IGNORE
 
@@ -93,15 +93,18 @@ WHAT TO REVIEW VS WHAT TO IGNORE
   - Security-relevant paths (auth, ACLs, row policies, resource limits).
   - Deletion of any data or metadata.
 
-**Always check for typos and message quality:**
-- Scan all changed lines for typos in comments, variable names, string literals, log messages, error messages, and documentation.
-- Report all typos found with suggested corrections.
+**Message, docs, and metadata quality:**
+- Check user-visible strings, diagnostics, documentation, and important technical names for clarity and correctness.
+- Report typos when they affect user-visible text, searchable diagnostics, public interfaces, or technical clarity. Do not let minor text issues crowd out correctness findings.
 - Check that error messages are clear, informative, and help the user understand what went wrong and how to fix it.
-- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable.
+- Review PR template changelog quality: `Changelog category` must match the change, and `Changelog entry` (when required by the PR template) must be present, specific, and user-readable. **Skip this for revert PRs**.
 - Read the changelog-entry standards from `clickhouse-pr-description` and apply them: avoid vague text (e.g. "fix bug"), describe the exact affected feature/behavior, and for backward-incompatible changes explain old behavior, new behavior, and how to preserve old behavior when possible.
 
+**Documentation:**
+- Structured ClickHouse surfaces are documented from source registrations: SQL functions and aggregate functions (`FunctionDocumentation`), settings (`DECLARE` doc strings), table functions, table engines, formats, system tables, and similar components. Do not ask for a separate `docs/` page when this source-level documentation is present and adequate.
+- Flag documentation only when source-level structured docs are missing or weak, or when the change needs non-structured user guidance that belongs under `docs/` (guides, tutorials, architecture, operations/admin, integrations).
+
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
-- Commented debugging code (completely ignore for draft PR, no more than one message in total)
 - Pure formatting (whitespace, brace style, minor naming preferences).
 - "Nice to have" refactors or micro-optimizations without clear benefit.
 - Python/Ruby/CI config nitpicks such as:
@@ -110,111 +113,33 @@ WHAT TO REVIEW VS WHAT TO IGNORE
   - Switching quote style, etc.
 - Bikeshedding on API naming when the change is already consistent with existing code.
 
-C++ / CLICKHOUSE RISK CHECKLIST
+TRIGGERED EXPANSIONS
 
-When reading diffs, scan for these classes of bugs:
+Run these only when the trigger appears. They are small expansion passes, not a universal matrix. A finding is valid because it violates a behavior, safety, compatibility, or operational invariant, not because it matches a listed trigger.
 
-**1) Memory & lifetime**
-- Raw pointers where ownership is unclear or inconsistent with surrounding code.
-- Missing `delete` / `free` / `unmap` / `close` on early returns or exceptions.
-- Containers or views returning references/iterators to temporary or moved-from objects.
-- Use of `std::string_view`, spans, or references to buffers whose lifetime is not guaranteed.
-- Manual `new`/`delete` instead of RAII where the surrounding code uses RAII types.
+- **After first serious invariant failure:** fan out once through the same invariant in foreground paths, background paths, DDL/mutating entrypoints, lifecycle transitions, and sibling engines/settings. Group related issues when they share a cause, but do not omit distinct user-impacting paths.
+- **New setting/flag/option:** grep consumers that share the settings class or configuration surface. Each relevant engine/mode/API must implement it, reject it, or make an explicit harmless no-op contract.
+- **Ownership, leadership, leases, locks, or failover:** inspect ownership gain, ownership loss, active in-flight work, delayed commits after waits, and anything that can still mutate after the guard changes state.
+- **Subclass adds guards:** inspect inherited mutating operations it does not override, especially `rename`, `drop`, `truncate`, `alter`, partition commands, and background callbacks.
+- **Shared storage or distributed state:** identify which state is shared and which remains local. If local state affects correctness after failover/restart, it must be synchronized, rejected, or explicitly unsupported.
+- **Tests weaker than contract:** if a test asserts weaker behavior than the PR promises, treat it as suspicious evidence rather than validation.
+- **Delegated review:** subagent or helper output can provide leads, but it does not close required gates for the highest-risk touched subsystem; keep enough local tracing to verify the invariant.
 
-**2) Resource management**
-- Opened file descriptors or sockets not closed on all paths (including error paths).
-- Leaks in loops where allocation happens inside the loop but deallocation depends on conditions.
-- Misuse of `std::unique_ptr` / `std::shared_ptr` / intrusive refcounts: cycles, double ownership, or forgotten release.
+**Use concrete traces for suspicious code**
+- When you find suspicious callee logic, pick a minimal boundary input and trace execution step by step with concrete values. Do not dismiss it by abstract reasoning.
+- **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it or request the test that would prove it.
 
-**3) Concurrency & threading**
-- Access to shared state without a lock or atomic: look for member variable reads/writes that happen outside the guarded region, especially on fast paths that skip locking as an optimization.
-- Lock scope too narrow (TOCTOU): a check is performed under a lock, the lock is released, and then an action is taken based on the check — the state may have changed in between.
-- Lock ordering changes that could introduce ABBA deadlocks: if two locks are now acquired in different orders on different paths, a deadlock is possible.
-- `std::atomic` with wrong memory ordering: `relaxed` is rarely correct for anything beyond counters; loads/stores that must synchronize with other threads need at least `acquire`/`release`.
-- Condition variable misuse: `wait` without a predicate loop (vulnerable to spurious wakeups), or notifying while the lock is still held.
-- Using non-thread-safe containers (e.g. `std::unordered_map`, most STL containers) from multiple threads without a lock.
-- Mutable globals or singletons modified from multiple threads.
+CLICKHOUSE-SPECIFIC RULES (SUPPORTING CHECKS)
+Use these as supporting checks for ClickHouse-specific invariants. They are not the review goal and they are not exhaustive. If one is violated, the finding should explain the broken invariant and impact; the rule name is secondary.
 
-**4) Error handling & observability**
-- Ignored return values of functions that can fail (IO, network, syscalls).
-- Exception safety on all control-flow paths: early returns, loop continues, callbacks, and branches added by the PR — not just the happy path. Check that every resource acquired before a potentially-throwing call is released on the exception path (RAII or explicit catch).
-- **Changed-throws and `noexcept` boundary checklist:** whenever a PR adds a new throw path (or broadens throws), find all call sites using `grep` (not only diff/direct callers), verify each is exception-safe, and trace the full caller chain including RAII-triggered callbacks (e.g. `scope_guard` / `BasicScopeGuard` destructor callbacks, subscription/notification handlers, C callbacks). Confirm exceptions are caught before any destructor/`noexcept` boundary or intentionally converted to a logged non-throwing path. Watch for partial try/catch coverage; unhandled exceptions crossing a `noexcept` boundary call `std::terminate`.
-- Inconsistent error codes or messages that make debugging impossible.
-- Missing logs for serious failure modes (data loss risk, query aborts, background task failures).
-
-**5) Data correctness & serialization**
-- Changes to on-disk or wire formats without:
-  - Explicit versioning,
-  - Clear upgrade/downgrade behavior,
-  - Compatibility tests.
-- Schema or metadata evolution without migration logic or feature flags.
-- Silent truncation, overflow, or lossy conversions.
-
-**6) Performance & algorithmic behavior**
-- New allocations or copies in tight loops.
-- Unbounded structures (maps, vectors) that can grow without limits in long-running processes.
-- Accidental O(N²) patterns on large inputs.
-- Extra syscalls, unnecessary fsyncs, sleeps, or polling in hot paths.
-
-**7) Compilation time & build impact**
-- ClickHouse has ~10k translation units; compilation time is a key developer productivity concern.
-- Adding non-trivial code (function bodies, method implementations, template definitions) to widely-included headers instead of moving it to `.cpp` files. Large function bodies in headers force recompilation of every translation unit that includes them. Prefer keeping only declarations, forward declarations, and truly trivial inline functions in `.h` files.
-- Adding or pulling heavy transitive includes into high-fan-out headers. When a header is included by hundreds or thousands of translation units, every extra `#include` it carries multiplies across the entire build. Watch for foundational headers like `Exception.h`, `IColumn.h`, `IDataType.h`, `typeid_cast.h`, `assert_cast.h`, and `Context_fwd.h` gaining new includes. Prefer forward declarations, dedicated lightweight `_fwd.h` headers, or moving the dependency into `.cpp` files.
-- Unnecessary template instantiations: template code that unconditionally instantiates specializations for cases that are statically known to be unreachable. Use `if constexpr` to prune template variants that do not apply (e.g., instantiating a `division_by_nullable=true` variant for non-division operations). Each unnecessary instantiation multiplies compile time and binary size.
-- Large `constexpr` evaluation in headers: complex `constexpr` loops or recursive `constexpr` functions in headers that the compiler must evaluate in every translation unit. Extract them into `.cpp` files or break them into smaller units.
-
-**8) Server-side file access & path traversal**
-- Any setting, table function argument, or SQL-accessible parameter that accepts a **file path** and causes the server to read or write that path is a potential arbitrary file access vulnerability. A user with the required privilege (e.g., `CREATE DATABASE`, `CREATE TABLE`) could read sensitive server-side files (`/etc/shadow`, config files with secrets, other users' data) or write to unexpected locations.
-- When a new file-path setting or argument is introduced, check that it is restricted by one of:
-  - `user_files_path` validation (like the `file()` table function),
-  - Resolution relative to a fixed directory with `..` traversal rejection,
-  - A dedicated access control check (e.g., requiring `FILE` access type or admin privileges).
-- Watch for file paths that surface contents in error messages on parse failure — even a "read then validate" pattern can leak file contents through exceptions.
-- This applies to all code paths that use `ReadBufferFromFile`, `WriteBufferToFile`, `std::ifstream`, or similar with user-controlled paths.
-
-**9) Repository bloat — large & binary files**
-- ClickHouse is a huge monorepo; every byte committed to git is cloned by every contributor forever and can never be fully removed without history rewriting.
-- **Binary blobs** (JARs, compiled executables, archives, images, dataset files, model weights) must **never** be committed directly. Flag any new binary file larger than ~100 KB as a blocker. Check `file` type and size for any non-text addition.
-- **Chunked / split binaries** are a red flag — they indicate someone tried to work around size limits while still committing the same blob.
-- **Fat dependency bundles** (uber-JARs, vendored node_modules, bundled `.so`/.`dylib` files) are never acceptable in-tree.
-- **Acceptable alternatives:** download at test time from CI artifact storage / S3 / Maven Central; build from source inside the test container; use a Docker image that already contains the dependency; use git-lfs if the project supports it (ClickHouse does not).
-- **Test data** (Parquet files, Avro files, small JSON fixtures) under ~1 MB total is usually fine, but anything larger should be generated at test time or downloaded.
-- When a PR adds new files under `tests/integration/`, `tests/queries/`, or any other directory, always scan for unexpectedly large or binary additions — contributors sometimes commit build artifacts or data files without realizing the permanent cost.
-
-**10) Semantic correctness & fix completeness**
-- **Partial / asymmetric fixes:** when a behavior is changed in one code path, check whether symmetric paths need the same change. Examples: fixing `SYSTEM STOP MERGES` for merge selection but not mutation selection; fixing `ReplicatedMergeTree` but not `SharedMergeTree`. Use `grep` to find all related call sites.
-- **Multi-instance resource selection:** when a PR adds support for multiple instances of a resource (e.g. auxiliary ZooKeeper clusters, secondary storage backends), grep for every place that accesses the resource and verify the correct instance is selected — not just in the newly added code paths.
-
-**11) Trust boundary expansion — looking beyond the diff**
-
-Trigger: a PR wraps existing internal code for a wider audience (library function → SQL function, CLI tool → server endpoint, internal reader → table function, background-only path → user-reachable query). The wrapper diff may look fine, but the callee was written with assumptions about its original callers that no longer hold.
-
-**The single most important rule: when you find something suspicious in callee code, you MUST pick a concrete minimal input and trace execution step by step, writing out every variable value at every iteration. Never dismiss a finding by reasoning about it abstractly — the whole point is that abstract reasoning ("this is technically safe because...") is how real bugs get missed. A 5-line trace with concrete values catches what paragraphs of analysis miss.**
-
-Workflow:
-
-1. **Read the core callee(s)** — full implementation, not just signatures.
-
-2. **Compare existing callers vs. the PR.** Grep for ALL call sites. For each parameter, compare what existing callers pass against what the PR passes. Flag any parameter where the PR passes a weaker, degenerate, or no-op value (callback, validator, filter, flag). These are "degraded integration" bugs.
-
-3. **Grep the callee for dangerous patterns.** Run actual Grep commands — do not scan visually. Look for: relative indexing (accessing neighbors of current position), assertions used as guards (`assert`/`chassert` compile out in release), pointer arithmetic without size checks, end-relative access on possibly-empty ranges, and unbounded allocation proportional to input.
-
-4. **For every match: trace with a concrete boundary input.** This step is mandatory and non-negotiable. Pick the shortest input that reaches the dangerous code. Write out the trace: for each iteration, state the line, the expression, the concrete value, and whether it is safe or not. Track every pointer/index/flag — a condition that *looks* protective may execute *after* the dangerous access within the same iteration. Choose inputs at extremes: empty, length 1, length 2, first element of each type the code branches on.
-
-   **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it. Pre-existing bugs that were harmless in the old calling context become exploitable under user-controlled input — that is the whole point of this checklist.
-
-5. **Verify test coverage.** The PR's tests must include adversarial edge cases that the original caller would never produce: empty inputs, minimal-length inputs, malformed inputs, NULLs, maximum-length inputs.
-
-
-CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
   All data deletion events (files, parts, metadata, ZooKeeper/Keeper entries, etc.) must be logged at an appropriate level.
 - **Serialization versioning**
   Any format (columns, aggregates, protocol, settings serialization, replication metadata) must be versioned. Check upgrade/downgrade resilience and the impact on existing clusters.
 - **Core-area scrutiny**
   For changes in query execution, storage engines, replication, Keeper/coordination, system tables, and MergeTree internals: read the full modified file (not just the diff context); verify invariants hold under concurrent background operations (merges, mutations, replication); check all error paths including those not touched by the diff; and confirm the change is consistent with symmetric subsystems — e.g. if fixing `ReplicatedMergeTree`, check `SharedMergeTree` and partition-level variants for the same issue.
-- **No test removal**
-  Do **not** delete or relax existing tests. New behavior requires **new tests**.
+- **Test coverage**
+  Do **not** delete or relax existing tests, except in revert PRs where removing tests added by the reverted change is expected. Material new behavior and important fixes require focused tests that prove the changed behavior, relevant invariants, and important edge cases. Broad existing tests are insufficient unless they would fail if the new behavior were removed or wired incorrectly.
   Tests replace random database names with `default` in output normalization. Do **not** flag hardcoded `default.` or `default_` prefixes in expected test output as incorrect or suggest using `${CLICKHOUSE_DATABASE}` – this is by design.
 - **Experimental gate**
   Features that introduce genuinely new or risky behavior — new engines, new query execution strategies, new replication mechanisms, new on-disk formats, or features whose incorrect implementation could cause data loss or corruption — must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA. Thin wrappers that expose already-stable internal code as SQL functions, simple utility functions, or low-risk additive features do **not** need a gate.
@@ -225,13 +150,14 @@ CLICKHOUSE RULES (MANDATORY)
 - **Safe rollout**
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
-  Follow checklist **7) Compilation time & build impact**. Treat violations there as ClickHouse-rule issues.
+  Avoid non-trivial code in widely-included headers, heavy transitive includes in high-fan-out headers, unnecessary template instantiations, and large `constexpr` work in headers.
 - **No large / binary files in git**
-  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Follow checklist **9) Repository bloat**. Any violation is a blocker.
+  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Any violation is a blocker.
 - **PR metadata quality**
-  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes).
+  For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes). **Revert PRs are exempt** from this rule; do not produce findings about missing template fields for them.
 
 SEVERITY MODEL – WHAT DESERVES A COMMENT
+Severity comes from user/system impact and confidence, not from which prompt uncovered the issue.
 
 **Blockers** – must be fixed before merge
 - Incorrectness, data loss, or corruption.
@@ -244,6 +170,7 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - Security or privilege issues, or license incompatibility.
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
 - Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
+- Destructive shell commands (`rm -rf`, `mv`, `chmod`, `dd`, `sudo`, …) with unquoted substitution under `shell=True` or in shell scripts.
 
 **Majors** – serious but not catastrophic
 - Under-tested important edge cases or error paths.
@@ -260,22 +187,23 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 REQUESTED OUTPUT FORMAT
 Respond with the following sections. Be terse but specific. Include code suggestions as minimal diffs/patches where helpful.
 Focus on problems — do not describe what was checked and found to be fine. Use emojis (❌ ⚠️ ✅ 💡) to make findings scannable.
-**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary, ClickHouse Rules, and Final Verdict.
+**Omit any section entirely if there is nothing notable to report in it** — do not include a section just to say "looks good" or "no concerns". The only mandatory sections are Summary and Final Verdict.
 
 **Summary**
 - One paragraph explaining what the PR does and your high-level verdict.
 
-**PR Metadata** (omit if no issues found)
+**PR Metadata** (omit if no issues found; **always omit for revert PRs**)
 - State whether `Changelog category` is correct for the actual change.
 - State whether `Changelog entry` is required by the chosen category, and whether the provided entry satisfies that requirement.
 - Evaluate `Changelog entry` quality using `clickhouse-pr-description` criteria (specific change, user impact, and migration guidance for backward-incompatible changes).
 - If any item is incorrect, provide the exact replacement text.
 
-**Missing context** (omit if none)
-- Bullet list of critical info you lacked. Prefix each item with ⚠️ (e.g., ⚠️ No CI logs available, ⚠️ No benchmarks provided).
+**Missing context / blind spots** (omit if none)
+- Bullet list of critical info or impacted surfaces you could not fully validate. Prefix each item with ⚠️ and say what would close the gap.
 - If PR motivation/reason is not clear from the title and description, add a ⚠️ item explicitly stating that motivation is unclear.
 
 **Findings** (omit if no findings)
+- Each finding must name the violated behavior/invariant/contract and its impact. Do not frame findings as checklist matches.
 - **❌ Blockers**
   - `[File:Line(s)]` Clear description of issue and impact.
   - Suggested fix (code snippet or steps).
@@ -288,27 +216,11 @@ Focus on problems — do not describe what was checked and found to be fine. Use
 
 
 **Tests** (omit if adequate)
-- Only include this section if tests are **missing or insufficient**. Prefix each missing test with ⚠️. Specify which additional tests to add and why.
+- Only include this section if evidence is **missing or insufficient**. Prefix each missing test/evidence item with ⚠️. Ask for the smallest focused test, benchmark, or measurement that would prove the relevant behavior, invariant, or claimed benefit. For `Performance Improvement`, missing before/after evidence belongs here even if the implementation looks reasonable.
 
-**ClickHouse Rules**
-Render as a Markdown table. Use ✅ (ok), ❌ (problem), ⚠️ (concern), or ➖ (not applicable) — never write "N/A" as text.
-For any ❌ or ⚠️ item, add a brief explanation in the Notes column. Leave Notes empty for ✅ and ➖.
-
-Example:
-| Item | Status | Notes |
-|---|---|---|
-| Deletion logging | ✅ | |
-| Serialization versioning | ➖ | |
-| Core-area scrutiny | ✅ | |
-| No test removal | ✅ | |
-| Experimental gate | ❌ | New feature `X` has no gate |
-| No magic constants | ✅ | |
-| Backward compatibility | ⚠️ | Default changed without `SettingsChangesHistory.cpp` update |
-| `SettingsChangesHistory.cpp` | ❌ | Not updated |
-| PR metadata quality | ⚠️ | `Changelog category` does not match change type; `Changelog entry` is too vague for users |
-| Safe rollout | ➖ | |
-| Compilation time | ✅ | |
-| No large/binary files | ✅ | |
+**ClickHouse-Specific Rule Notes** (omit if none)
+- Include only actual ClickHouse-specific rule concerns that are not already clear from `Findings` or `Tests`.
+- Do not render a full checklist of ✅/➖ statuses. The rules are prompts for review, not an audit table.
 
 **Performance & Safety** (omit if no concerns)
 - Only include this section if there are actual concerns about hot-path regressions, memory, concurrency, or failure modes.
@@ -318,12 +230,12 @@ Example:
 
 **Final Verdict**
 - Status: **✅ Approve** / **⚠️ Request changes** / **❌ Block**
-- If not approving, list the **minimum** required actions.
+- Approve only if there are no unresolved contract violations, no unresolved high-impact plausible risks, and no missing evidence for material claims. A `Performance Improvement` without performance evidence, or a `Bug Fix` without regression evidence or a clear exception, should be **⚠️ Request changes**. If not approving, list the **minimum** required actions.
 
 STYLE & CONDUCT
 - Be precise, evidence-based, and neutral.
 - Prefer small, surgical suggestions over broad rewrites.
-- Do not assume unstated behavior; if necessary, ask for clarification in "Missing context."
+- Do not assume unstated behavior; if necessary, ask for clarification in "Missing context / blind spots."
 - Avoid changing scope: review what's in the PR; suggest follow-ups separately.
-- If you are not reasonably confident a finding is a real issue or meaningful risk, **do not mention it**.
+- Avoid uncertain minor comments. For serious plausible risks, state the uncertainty and request the needed verification or tests.
 - When performing a code review, **ignore `/.github/workflows/*` files**.

@@ -85,6 +85,10 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
                 {
                     jcol->set_jarray(rg.randomInt<uint32_t>(0, 3));
                 }
+                else if (noption2 < 72)
+                {
+                    jcol->set_jcombined(true);
+                }
                 jcol->mutable_col()->set_column(rg.nextJSONCol());
                 this->width++;
             }

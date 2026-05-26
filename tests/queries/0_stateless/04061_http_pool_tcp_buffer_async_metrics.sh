@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: linux
+# Tags: linux, no-asan, no-tsan, no-msan, no-ubsan
 
 # Verify that asynchronous metrics for HTTP connection pool TCP buffer memory
 # (HTTPConnectionPool*TCP{Rcv,Snd}BufBytes_{p50,p75,p90,p95} and TotalBytes)

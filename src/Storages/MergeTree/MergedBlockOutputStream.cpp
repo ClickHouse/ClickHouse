@@ -1,13 +1,15 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+
+#include <Core/Settings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Core/Settings.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
-
 
 namespace DB
 {
@@ -62,8 +64,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
-    data_part->version.setCreationTID(tid, nullptr);
-    data_part->storeVersionMetadata();
+    data_part->version->setAndStoreCreationTID(tid, nullptr);
 
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
@@ -75,7 +76,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         columns_list,
         data_part->getColumnPositions(),
         metadata_snapshot,
-        data_part->storage.getVirtualsPtr(),
         skip_indices,
         data_part->getMarksFileExtension(),
         default_codec,
@@ -145,11 +145,19 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
 
+    /// Finalize all files first (writes any pending bytes to the OS),
+    /// then sync them in parallel — fsync of independent files can run concurrently
+    /// and is a major contributor to part finalization latency when many small files are involved.
     for (auto & file : written_files)
-    {
         file->finalize();
-        if (sync)
-            file->sync();
+
+    if (sync)
+    {
+        std::vector<WriteBufferFromFileBase *> files_to_sync;
+        files_to_sync.reserve(written_files.size());
+        for (auto & file : written_files)
+            files_to_sync.push_back(file.get());
+        parallelSyncFiles(files_to_sync);
     }
 
     for (const auto & file_name : files_to_remove_after_finish)

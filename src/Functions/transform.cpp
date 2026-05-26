@@ -9,6 +9,7 @@
 #include <Common/SipHash.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
@@ -56,11 +57,36 @@ namespace
       *
       * Note: the implementation is rather cumbersome.
       */
+    /// Different versions of the hash tables to implement the mapping.
+    struct TransformCache
+    {
+        using NumToIdx = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
+        using StringToIdx = HashMap<std::string_view, size_t, StringViewHash>;
+        using AnythingToIdx = HashMap<UInt128, size_t>;
+
+        std::unique_ptr<NumToIdx> table_num_to_idx;
+        std::unique_ptr<StringToIdx> table_string_to_idx;
+        std::unique_ptr<AnythingToIdx> table_anything_to_idx;
+
+        ColumnPtr from_column;
+        ColumnPtr to_column;
+        ColumnPtr default_column;
+
+        bool is_empty = false;
+    };
+
+    using TransformCachePtr = std::shared_ptr<const TransformCache>;
+
+    /// Forward declaration; defined after FunctionTransform.
+    TransformCachePtr initializeTransformCache(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type);
+
     class FunctionTransform : public IFunction
     {
     public:
         static constexpr auto name = "transform";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTransform>(); }
+
+        explicit FunctionTransform(TransformCachePtr cache_) : cache(std::move(cache_)) {}
+        FunctionTransform() = default;
 
         String getName() const override { return name; }
 
@@ -132,7 +158,7 @@ namespace
             if (!ret)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Function {} have signature: "
+                    "Function {} has signature: "
                     "transform(T, Array(T), Array(U), U) -> U; "
                     "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
                     getName());
@@ -142,7 +168,13 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
-            std::call_once(once, [&] { initialize(arguments, result_type); });
+            /// If cache was not initialized at build time (e.g. columns were not available during analysis),
+            /// initialize it now from the actual arguments.
+            std::call_once(cache_once_flag, [&]
+            {
+                if (!cache)
+                    cache = initializeTransformCache(arguments, result_type);
+            });
 
             const auto * in = arguments[0].column.get();
 
@@ -150,7 +182,7 @@ namespace
                 return executeConst(arguments, result_type, input_rows_count);
 
             ColumnPtr default_non_const;
-            if (!cache.default_column && arguments.size() == 4)
+            if (!cache->default_column && arguments.size() == 4)
             {
                 if (arguments[1].column.get()->size() > arguments[3].column.get()->size() || arguments[2].column.get()->size() > arguments[3].column.get()->size())
                 {
@@ -172,13 +204,13 @@ namespace
                 in_cast = castColumn(arguments[0], result_type);
 
             auto column_result = result_type->createColumn();
-            if (cache.is_empty)
+            if (cache->is_empty)
             {
                 return default_non_const
                     ? default_non_const
                     : castColumn(arguments[0], result_type);
             }
-            if (cache.table_num_to_idx)
+            if (cache->table_num_to_idx)
             {
                 if (!executeNum<ColumnVector<UInt8>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
                     && !executeNum<ColumnVector<UInt16>>(in, *column_result, default_non_const, *in_cast, input_rows_count)
@@ -197,12 +229,12 @@ namespace
                         ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
                 }
             }
-            else if (cache.table_string_to_idx)
+            else if (cache->table_string_to_idx)
             {
                 if (!executeString(in, *column_result, default_non_const, *in_cast, input_rows_count))
                     executeContiguous(in, *column_result, default_non_const, *in_cast, input_rows_count);
             }
-            else if (cache.table_anything_to_idx)
+            else if (cache->table_anything_to_idx)
             {
                 executeAnything(in, *column_result, default_non_const, *in_cast, input_rows_count);
             }
@@ -213,21 +245,21 @@ namespace
         }
 
     private:
-        static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
+        ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
         {
             /// Materialize the input column and compute the function as usual.
 
             ColumnsWithTypeAndName args = arguments;
             args[0].column = args[0].column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
 
-            auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>())->build(args);
+            auto impl = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTransform>(cache))->build(args);
 
             return impl->execute(args, result_type, input_rows_count, /* dry_run = */ false);
         }
 
         void executeAnything(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
-            const auto & table = *cache.table_anything_to_idx;
+            const auto & table = *cache->table_anything_to_idx;
             column_result.reserve(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -236,9 +268,9 @@ namespace
 
                 const auto * it = table.find(hash.get128());
                 if (it)
-                    column_result.insertFrom(*cache.to_column, it->getMapped());
-                else if (cache.default_column)
-                    column_result.insertFrom(*cache.default_column, 0);
+                    column_result.insertFrom(*cache->to_column, it->getMapped());
+                else if (cache->default_column)
+                    column_result.insertFrom(*cache->default_column, 0);
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
@@ -248,15 +280,15 @@ namespace
 
         void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
-            const auto & table = *cache.table_string_to_idx;
+            const auto & table = *cache->table_string_to_idx;
             column_result.reserve(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto * it = table.find(in->getDataAt(i));
                 if (it)
-                    column_result.insertFrom(*cache.to_column, it->getMapped());
-                else if (cache.default_column)
-                    column_result.insertFrom(*cache.default_column, 0);
+                    column_result.insertFrom(*cache->to_column, it->getMapped());
+                else if (cache->default_column)
+                    column_result.insertFrom(*cache->default_column, 0);
                 else if (default_non_const)
                     column_result.insertFrom(*default_non_const, i);
                 else
@@ -289,15 +321,15 @@ namespace
                 && !executeNumToNum<ColumnDecimal<Decimal32>>(pod, column_result, default_non_const, in_scale, input_rows_count)
                 && !executeNumToNum<ColumnDecimal<Decimal64>>(pod, column_result, default_non_const, in_scale, input_rows_count))
             {
-                const auto & table = *cache.table_num_to_idx;
+                const auto & table = *cache->table_num_to_idx;
                 column_result.reserve(input_rows_count);
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     const auto * it = table.find(bit_cast<UInt64>(pod[i]));
                     if (it)
-                        column_result.insertFrom(*cache.to_column, it->getMapped());
-                    else if (cache.default_column)
-                        column_result.insertFrom(*cache.default_column, 0);
+                        column_result.insertFrom(*cache->to_column, it->getMapped());
+                    else if (cache->default_column)
+                        column_result.insertFrom(*cache->default_column, 0);
                     else if (default_non_const)
                         column_result.insertFrom(*default_non_const, i);
                     else
@@ -317,14 +349,14 @@ namespace
             out_offs.resize(input_rows_count);
             auto & out_chars = out->getChars();
 
-            const auto * to_col = assert_cast<const ColumnString *>(cache.to_column.get());
+            const auto * to_col = assert_cast<const ColumnString *>(cache->to_column.get());
             const auto & to_chars = to_col->getChars();
             const auto & to_offs = to_col->getOffsets();
-            const auto & table = *cache.table_num_to_idx;
+            const auto & table = *cache->table_num_to_idx;
 
-            if (cache.default_column)
+            if (cache->default_column)
             {
-                const auto * def = assert_cast<const ColumnString *>(cache.default_column.get());
+                const auto * def = assert_cast<const ColumnString *>(cache->default_column.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
                 const auto * def_data = def_chars.data();
@@ -397,11 +429,11 @@ namespace
             if constexpr (std::is_same_v<ColumnDecimal<Decimal32>, T> || std::is_same_v<ColumnDecimal<Decimal64>, T>)
                 out_scale = out->getScale();
 
-            const auto & to_pod = assert_cast<const T *>(cache.to_column.get())->getData();
-            const auto & table = *cache.table_num_to_idx;
-            if (cache.default_column)
+            const auto & to_pod = assert_cast<const T *>(cache->to_column.get())->getData();
+            const auto & table = *cache->table_num_to_idx;
+            if (cache->default_column)
             {
-                const auto const_def = assert_cast<const T *>(cache.default_column.get())->getData()[0];
+                const auto const_def = assert_cast<const T *>(cache->default_column.get())->getData()[0];
                 executeNumToNumHelper(table, pod, out_pod, to_pod, const_def, input_rows_count, out_scale, out_scale);
             }
             else if (default_non_const)
@@ -476,7 +508,7 @@ namespace
                 && !executeStringToNum<ColumnDecimal<Decimal64>>(data, offsets, column_result, default_non_const, input_rows_count))
             {
                 const size_t size = offsets.size();
-                const auto & table = *cache.table_string_to_idx;
+                const auto & table = *cache->table_string_to_idx;
                 ColumnString::Offset current_offset = 0;
                 for (size_t i = 0; i < size; ++i)
                 {
@@ -484,9 +516,9 @@ namespace
                     current_offset = offsets[i];
                     const auto * it = table.find(ref);
                     if (it)
-                        column_result.insertFrom(*cache.to_column, it->getMapped());
-                    else if (cache.default_column)
-                        column_result.insertFrom(*cache.default_column, 0);
+                        column_result.insertFrom(*cache->to_column, it->getMapped());
+                    else if (cache->default_column)
+                        column_result.insertFrom(*cache->default_column, 0);
                     else if (default_non_const)
                         column_result.insertFrom(*default_non_const, i);
                     else
@@ -510,14 +542,14 @@ namespace
             out_offs.resize(input_rows_count);
             auto & out_chars = out->getChars();
 
-            const auto * to_col = assert_cast<const ColumnString *>(cache.to_column.get());
+            const auto * to_col = assert_cast<const ColumnString *>(cache->to_column.get());
             const auto & to_chars = to_col->getChars();
             const auto & to_offs = to_col->getOffsets();
 
-            const auto & table = *cache.table_string_to_idx;
-            if (cache.default_column)
+            const auto & table = *cache->table_string_to_idx;
+            if (cache->default_column)
             {
-                const auto * def = assert_cast<const ColumnString *>(cache.default_column.get());
+                const auto * def = assert_cast<const ColumnString *>(cache->default_column.get());
                 const auto & def_chars = def->getChars();
                 const auto & def_offs = def->getOffsets();
                 const auto * def_data = def_chars.data();
@@ -599,11 +631,11 @@ namespace
             auto & out_pod = out->getData();
             out_pod.resize(input_rows_count);
 
-            const auto & to_pod = assert_cast<const T *>(cache.to_column.get())->getData();
-            const auto & table = *cache.table_string_to_idx;
-            if (cache.default_column)
+            const auto & to_pod = assert_cast<const T *>(cache->to_column.get())->getData();
+            const auto & table = *cache->table_string_to_idx;
+            if (cache->default_column)
             {
-                const auto const_def = assert_cast<const T *>(cache.default_column.get())->getData()[0];
+                const auto const_def = assert_cast<const T *>(cache->default_column.get())->getData()[0];
                 executeStringToNumHelper(table, data, offsets, out_pod, to_pod, const_def, input_rows_count);
             }
             else
@@ -644,29 +676,10 @@ namespace
             }
         }
 
-        /// Different versions of the hash tables to implement the mapping.
+        mutable TransformCachePtr cache;
+        mutable std::once_flag cache_once_flag;
 
-        struct Cache
-        {
-            using NumToIdx = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
-            using StringToIdx = HashMap<std::string_view, size_t, StringViewHash>;
-            using AnythingToIdx = HashMap<UInt128, size_t>;
-
-            std::unique_ptr<NumToIdx> table_num_to_idx;
-            std::unique_ptr<StringToIdx> table_string_to_idx;
-            std::unique_ptr<AnythingToIdx> table_anything_to_idx;
-
-            ColumnPtr from_column;
-            ColumnPtr to_column;
-            ColumnPtr default_column;
-
-            bool is_empty = false;
-        };
-
-        mutable std::once_flag once;
-        mutable Cache cache;
-
-
+    public:
         static void checkAllowedType(const DataTypePtr & type)
         {
             if (type->isNullable())
@@ -675,6 +688,7 @@ namespace
                 checkAllowedTypeHelper(type);
         }
 
+    private:
         static void checkAllowedTypeHelper(const DataTypePtr & type)
         {
             if (isStringOrFixedString(type))
@@ -690,125 +704,246 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unexpected type {} in function 'transform'", type->getName());
         }
 
-        /// Can be called from different threads. It works only on the first call.
-        void initialize(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    };
+
+
+    /// Initialize the transform cache from the constant arguments.
+    TransformCachePtr initializeTransformCache(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    {
+        auto cache = std::make_shared<TransformCache>();
+
+        const DataTypePtr & from_type = arguments[0].type;
+
+        if (from_type->onlyNull())
         {
-            const DataTypePtr & from_type = arguments[0].type;
+            cache->is_empty = true;
+            return cache;
+        }
 
-            if (from_type->onlyNull())
+        const ColumnArray * array_from = checkAndGetColumnConstData<ColumnArray>(arguments[1].column.get());
+        const ColumnArray * array_to = checkAndGetColumnConstData<ColumnArray>(arguments[2].column.get());
+
+        if (!array_from || !array_to)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays", "transform");
+
+        const ColumnPtr & from_column_uncast = array_from->getDataPtr();
+
+        cache->from_column = castColumn(
             {
-                cache.is_empty = true;
-                return;
-            }
+                from_column_uncast,
+                typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType(),
+                arguments[1].name
+            },
+            from_type);
 
-            const ColumnArray * array_from = checkAndGetColumnConstData<ColumnArray>(arguments[1].column.get());
-            const ColumnArray * array_to = checkAndGetColumnConstData<ColumnArray>(arguments[2].column.get());
-
-            if (!array_from || !array_to)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN, "Second and third arguments of function {} must be constant arrays", getName());
-
-            const ColumnPtr & from_column_uncast = array_from->getDataPtr();
-
-            cache.from_column = castColumn(
-                {
-                    from_column_uncast,
-                    typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType(),
-                    arguments[1].name
-                },
-                from_type);
-
-            cache.to_column = castColumn(
-                {
-                    array_to->getDataPtr(),
-                    typeid_cast<const DataTypeArray &>(*arguments[2].type).getNestedType(),
-                    arguments[2].name
-                },
-                result_type);
-
-            const size_t size = cache.from_column->size();
-            if (0 == size)
+        cache->to_column = castColumn(
             {
-                cache.is_empty = true;
-                return;
-            }
+                array_to->getDataPtr(),
+                typeid_cast<const DataTypeArray &>(*arguments[2].type).getNestedType(),
+                arguments[2].name
+            },
+            result_type);
 
-            if (cache.to_column->size() != size)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "Second and third arguments of function {} must be arrays of same size", getName());
+        const size_t size = cache->from_column->size();
+        if (0 == size)
+        {
+            cache->is_empty = true;
+            return cache;
+        }
 
-            /// Whether the default value is set.
-            if (arguments.size() == 4)
+        if (cache->to_column->size() != size)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Second and third arguments of function {} must be arrays of same size", "transform");
+
+        /// Whether the default value is set.
+        if (arguments.size() == 4)
+        {
+            const IColumn * default_col = arguments[3].column.get();
+            if (default_col && isColumnConst(*default_col))
             {
-                const IColumn * default_col = arguments[3].column.get();
-                if (default_col && isColumnConst(*default_col))
+                auto default_column = result_type->createColumn();
+                if (!default_col->onlyNull())
                 {
-                    auto default_column = result_type->createColumn();
-                    if (!default_col->onlyNull())
-                    {
-                        Field f = convertFieldToType((*default_col)[0], *result_type);
-                        default_column->insert(f);
-                    }
-                    else
-                        default_column->insertDefault();
-                    cache.default_column = std::move(default_column);
+                    Field f = convertFieldToType((*default_col)[0], *result_type);
+                    default_column->insert(f);
                 }
+                else
+                    default_column->insertDefault();
+                cache->default_column = std::move(default_column);
             }
+        }
 
-            WhichDataType which(from_type);
+        WhichDataType which(from_type);
 
-            /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
-            if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
+        /// Field may be of Float type, but for the purpose of bitwise equality we can treat them as UInt64
+        if (isNativeNumber(which) || which.isDecimal32() || which.isDecimal64() || which.isEnum())
+        {
+            cache->table_num_to_idx = std::make_unique<TransformCache::NumToIdx>();
+            auto & table = *cache->table_num_to_idx;
+            for (size_t i = 0; i < size; ++i)
             {
-                cache.table_num_to_idx = std::make_unique<Cache::NumToIdx>();
-                auto & table = *cache.table_num_to_idx;
-                for (size_t i = 0; i < size; ++i)
+                if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
+                    || accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
-                    if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
-                        || accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
-                    {
-                        UInt64 key = 0;
-                        auto * dst = reinterpret_cast<char *>(&key);
-                        const auto ref = cache.from_column->getDataAt(i);
+                    UInt64 key = 0;
+                    auto * dst = reinterpret_cast<char *>(&key);
+                    const auto ref = cache->from_column->getDataAt(i);
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
-                        if constexpr (std::endian::native == std::endian::big)
-                            dst += sizeof(key) - ref.size();
+                    if constexpr (std::endian::native == std::endian::big)
+                        dst += sizeof(key) - ref.size();
 #pragma clang diagnostic pop
 
-                        memcpy(dst, ref.data(), ref.size());
-                        table.insertIfNotPresent(key, i);
-                    }
+                    memcpy(dst, ref.data(), ref.size());
+                    table.insertIfNotPresent(key, i);
                 }
             }
-            else if (from_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        }
+        else if (from_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        {
+            cache->table_string_to_idx = std::make_unique<TransformCache::StringToIdx>();
+            auto & table = *cache->table_string_to_idx;
+            for (size_t i = 0; i < size; ++i)
             {
-                cache.table_string_to_idx = std::make_unique<Cache::StringToIdx>();
-                auto & table = *cache.table_string_to_idx;
-                for (size_t i = 0; i < size; ++i)
+                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
                 {
-                    if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
-                    {
-                        std::string_view ref = cache.from_column->getDataAt(i);
-                        table.insertIfNotPresent(ref, i);
-                    }
+                    std::string_view ref = cache->from_column->getDataAt(i);
+                    table.insertIfNotPresent(ref, i);
                 }
+            }
+        }
+        else
+        {
+            cache->table_anything_to_idx = std::make_unique<TransformCache::AnythingToIdx>();
+            auto & table = *cache->table_anything_to_idx;
+            for (size_t i = 0; i < size; ++i)
+            {
+                if (accurateEquals((*cache->from_column)[i], (*from_column_uncast)[i]))
+                {
+                    SipHash hash;
+                    cache->from_column->updateHashWithValue(i, hash);
+                    table.insertIfNotPresent(hash.get128(), i);
+                }
+            }
+        }
+
+        return cache;
+    }
+
+
+    class FunctionTransformOverloadResolver : public IFunctionOverloadResolver
+    {
+    public:
+        static constexpr auto name = "transform";
+        static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionTransformOverloadResolver>(); }
+
+        String getName() const override { return name; }
+        bool isVariadic() const override { return true; }
+        size_t getNumberOfArguments() const override { return 0; }
+        bool useDefaultImplementationForNulls() const override { return false; }
+        bool useDefaultImplementationForNothing() const override { return false; }
+        ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        {
+            const auto args_size = arguments.size();
+            if (args_size != 3 && args_size != 4)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: "
+                    "passed {}, should be 3 or 4",
+                    getName(),
+                    args_size);
+
+            const DataTypePtr & type_x = arguments[0];
+
+            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+
+            if (!type_arr_from)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {}, must be array of source values to transform from",
+                    getName());
+
+            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+
+            if (!type_arr_to)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Third argument of function {}, must be array of destination values to transform to",
+                    getName());
+
+            const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
+
+            if (args_size == 3)
+            {
+                if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                    || (isString(type_x) != isString(type_arr_to_nested)))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} has signature: "
+                        "transform(T, Array(T), Array(U), U) -> U; "
+                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
+                        getName());
+
+                auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, type_x});
+                if (!ret)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} has signature: "
+                        "transform(T, Array(T), Array(U), U) -> U; "
+                        "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
+                        getName());
+                FunctionTransform::checkAllowedType(ret);
+                return ret;
+            }
+
+            auto ret = tryGetLeastSupertype(DataTypes{type_arr_to_nested, arguments[3]});
+            if (!ret)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} has signature: "
+                    "transform(T, Array(T), Array(U), U) -> U; "
+                    "or transform(T, Array(T), Array(T)) -> T; where T and U are types",
+                    getName());
+            FunctionTransform::checkAllowedType(ret);
+            return ret;
+        }
+
+        FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+        {
+            /// buildImpl receives original arguments which may still have LowCardinality wrappers.
+            /// Strip them so that type checks and cache initialization work correctly.
+            ColumnsWithTypeAndName args = arguments;
+            for (auto & arg : args)
+            {
+                arg.type = recursiveRemoveLowCardinality(arg.type);
+                arg.column = recursiveRemoveLowCardinality(arg.column);
+            }
+
+            /// Check if constant columns are available. During analysis passes (e.g. IfTransformStringsToEnumPass),
+            /// columns may not be populated yet. In that case, defer cache initialization to execution time.
+            const ColumnArray * array_from = args.size() > 1 && args[1].column
+                ? checkAndGetColumnConstData<ColumnArray>(args[1].column.get()) : nullptr;
+            const ColumnArray * array_to = args.size() > 2 && args[2].column
+                ? checkAndGetColumnConstData<ColumnArray>(args[2].column.get()) : nullptr;
+
+            std::shared_ptr<FunctionTransform> function;
+            if (array_from && array_to)
+            {
+                auto stripped_return_type = recursiveRemoveLowCardinality(return_type);
+                function = std::make_shared<FunctionTransform>(initializeTransformCache(args, stripped_return_type));
             }
             else
-            {
-                cache.table_anything_to_idx = std::make_unique<Cache::AnythingToIdx>();
-                auto & table = *cache.table_anything_to_idx;
-                for (size_t i = 0; i < size; ++i)
-                {
-                    if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
-                    {
-                        SipHash hash;
-                        cache.from_column->updateHashWithValue(i, hash);
-                        table.insertIfNotPresent(hash.get128(), i);
-                    }
-                }
-            }
+                function = std::make_shared<FunctionTransform>();
+
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
         }
     };
 
@@ -892,7 +1027,7 @@ LIMIT 10
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionTransform>(documentation);
+    factory.registerFunction<FunctionTransformOverloadResolver>(documentation);
 }
 
 }

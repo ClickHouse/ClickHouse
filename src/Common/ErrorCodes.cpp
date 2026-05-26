@@ -664,6 +664,7 @@
     M(1002, UNKNOWN_EXCEPTION) \
     M(1003, SSH_EXCEPTION) \
     M(1004, STARTUP_SCRIPTS_ERROR) \
+    M(1005, STALE_VERSION) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -680,7 +681,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1004;
+    constexpr ErrorCode END = 1005;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames

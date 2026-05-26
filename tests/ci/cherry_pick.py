@@ -240,20 +240,39 @@ close it.
 
         # Second step, create cherrypick branch
         git_runner(
-            f"{GIT_PREFIX} branch -f "
+            f"{GIT_PREFIX} checkout --no-track -B "
             f"{self.cherrypick_branch} {self.pr.merge_commit_sha}"
         )
 
-        # Check if there are actually any changes between branches. If no, then no
-        # other actions are required. It's possible when changes are backported
-        # manually to the release branch already
+        # Try to merge backport_branch into cherrypick_branch locally. When it
+        # succeeds, the merge commit (with rename detection etc. resolved) is
+        # baked into cherrypick_branch, so GitHub's merge of the cherry-pick PR
+        # becomes trivial - backport_branch is an ancestor of cherrypick_branch
+        # via the merge commit. This avoids a failure mode where files renamed
+        # between the release branch and master produce conflicts in GitHub's
+        # merge even though local `git merge` resolves them via rename
+        # detection. The rename limit is raised to prevent git from silently
+        # disabling rename detection on large diffs.
+        #
+        # On conflict, cherrypick_branch stays at pr.merge_commit_sha (the
+        # merge --abort restores HEAD), and conflicts are surfaced on the
+        # GitHub PR for manual resolution by the assigned engineer.
         try:
-            output = git_runner(
-                f"{GIT_PREFIX} merge --no-commit --no-ff {self.cherrypick_branch}"
+            git_runner(
+                f"{GIT_PREFIX} -c merge.renameLimit=999999 "
+                f"merge --no-ff --no-edit {self.backport_branch}"
             )
-            # 'up-to-date', 'up to date', who knows what else (╯°v°)╯ ^┻━┻
-            if output.startswith("Already up") and output.endswith("date."):
-                # The changes are already in the release branch, we are done here
+            # The merge succeeded. If it produced no tree change vs
+            # backport_branch, the PR is effectively already backported to
+            # the release branch - either "Already up to date" (no merge
+            # commit at all) or an empty merge commit whose resolution
+            # collapsed onto backport_branch's tree (e.g. the PR was
+            # manually applied with equivalent content). In either case,
+            # skip creating an empty cherry-pick PR.
+            if not git_runner(
+                f"{GIT_PREFIX} diff --name-only "
+                f"{self.backport_branch} {self.cherrypick_branch}"
+            ):
                 logging.info(
                     "Release branch %s already contain changes from %s",
                     self.name,
@@ -262,11 +281,7 @@ close it.
                 self._backported = True
                 return
         except CalledProcessError:
-            # There are most probably conflicts, they'll be resolved in PR
-            git_runner(f"{GIT_PREFIX} reset --merge")
-        else:
-            # There are changes to apply, so continue
-            git_runner(f"{GIT_PREFIX} reset --merge")
+            git_runner(f"{GIT_PREFIX} merge --abort")
 
         # Push, create the cherry-pick PR and label it
         for branch in [self.cherrypick_branch, self.backport_branch]:

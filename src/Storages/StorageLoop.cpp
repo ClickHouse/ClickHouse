@@ -1,6 +1,5 @@
 #include <Storages/StorageLoop.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageSnapshot.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLoopStep.h>
 #include <Common/CurrentThread.h>
@@ -16,13 +15,7 @@ namespace DB
             , inner_storage(std::move(inner_storage_))
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
-        StorageInMemoryMetadata storage_metadata = *inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-        setInMemoryMetadata(storage_metadata);
-    }
-
-    StorageSnapshotPtr StorageLoop::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
-    {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, inner_storage->getVirtualsPtr());
+        setInMemoryMetadata(*inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false));
     }
 
     QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(

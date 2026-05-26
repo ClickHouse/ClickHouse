@@ -166,6 +166,7 @@ FROM 'module_name' [:: 'source_function_name']
 ARGUMENTS ( [name type[, ...]] | [type[, ...]] )
 RETURNS return_type
 [ABI ROW_DIRECT | ABI BUFFERED_V1]
+[DETERMINISTIC]
 [SHA256_HASH 'hex']
 [SETTINGS key = value[, ...]];
 ```
@@ -178,6 +179,7 @@ RETURNS return_type
 - `ABI`: Application Binary Interface version
   - `ROW_DIRECT`: Direct type mapping, row-by-row processing
   - `BUFFERED_V1`: Block-based processing with serialization
+- `DETERMINISTIC`: Declares the function as deterministic — always returns the same output for the same input. When specified, ClickHouse may constant-fold calls where all arguments are constants: the function is evaluated once at query analysis time and the result is reused for every row.
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
     - `serialization_format` String — Serialization format for ABI requires it. Default: `MsgPack`.

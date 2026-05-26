@@ -174,8 +174,8 @@ StorageMemory::StorageMemory(
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setComment(comment);
     storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMemory::createVirtuals()

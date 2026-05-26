@@ -56,6 +56,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_key_condition_coalesce_rewrite;
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
@@ -785,6 +786,157 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     ActionsDAG & inverted_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
+    bool need_inversion);
+
+/// Rewrite `<op>(coalesce(a_1, ..., a_N), const)` (or with `ifNull`, or with the constant on the
+/// left) into
+///     `(y_1 <op> const)`
+///     `OR (isNull(y_1) AND y_2 <op> const)`
+///     `OR (isNull(y_1) AND isNull(y_2) AND y_3 <op> const)`
+///     `...`
+///     `OR (isNull(y_1) AND ... AND isNull(y_{M-1}) AND y_M <op> const)`
+///     `[OR (isNull(y_1) AND ... AND isNull(y_M) AND (c <op> const))]`
+/// so per-column primary-key and skip indexes on each `y_i` can prune granules through the
+/// existing `use_skip_indexes_for_disjunctions` path in
+/// `MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions`.
+///
+/// The `a_i` list is normalized mirroring `FunctionCoalesce::getReturnTypeImpl`: NULL-literal
+/// args are dropped, and args after the first non-Nullable one are unreachable by short-circuit
+/// and dropped. If that terminator is a non-null constant it is captured as `c` and emitted as
+/// the final branch; if it is a non-constant column, it becomes `y_M` with no separate `c` -
+/// reaching that branch implies `y_M` is the `coalesce` result regardless of its nullability.
+/// Returns `nullptr` if the pattern does not match.
+static const ActionsDAG::Node * tryRewriteCoalesceComparison(
+    const ActionsDAG::Node & node,
+    const String & op_name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    if (node.children.size() != 2)
+        return nullptr;
+
+    /// `less(const, x)` ≡ `greater(x, const)`; also the allowlist of ops we rewrite at all.
+    auto mirrored_op = [](std::string_view op) -> std::string_view
+    {
+        if (op == "equals") return "equals";
+        if (op == "less") return "greater";
+        if (op == "greater") return "less";
+        if (op == "lessOrEquals") return "greaterOrEquals";
+        if (op == "greaterOrEquals") return "lessOrEquals";
+        return {};
+    };
+    const std::string_view mirrored = mirrored_op(op_name);
+    if (mirrored.empty())
+        return nullptr;
+
+    auto is_const = [](const ActionsDAG::Node & n)
+    {
+        return n.type == ActionsDAG::ActionType::COLUMN && n.column && isColumnConst(*n.column);
+    };
+
+    const bool c0 = is_const(*node.children[0]);
+    const bool c1 = is_const(*node.children[1]);
+    if (c0 == c1)
+        return nullptr;
+
+    const ActionsDAG::Node * coalesce_node = node.children[c0 ? 1 : 0];
+    const ActionsDAG::Node * const_node = node.children[c0 ? 0 : 1];
+    const std::string_view canonical_op = c0 ? mirrored : std::string_view{op_name};
+
+    if (coalesce_node->type != ActionsDAG::ActionType::FUNCTION)
+        return nullptr;
+
+    const auto & coalesce_name = coalesce_node->function_base->getName();
+    if (coalesce_name != "coalesce" && coalesce_name != "ifNull")
+        return nullptr;
+
+    if (coalesce_node->children.size() < 2)
+        return nullptr;
+
+    /// Normalize the argument list mirroring `FunctionCoalesce::getReturnTypeImpl`, so the
+    /// rewritten DAG is always semantically equivalent to the original `coalesce`.
+    std::vector<const ActionsDAG::Node *> normalized_args;
+    const ActionsDAG::Node * trailing_const = nullptr;
+    normalized_args.reserve(coalesce_node->children.size());
+    for (const auto * child : coalesce_node->children)
+    {
+        if (child->result_type->onlyNull())
+            continue;
+
+        if (!canContainNull(*child->result_type))
+        {
+            /// Non-Nullable terminator: a non-constant column folds into `y_M` (no separate
+            /// trailing branch); a constant becomes `c` in the trailing branch.
+            if (is_const(*child))
+                trailing_const = child;
+            else
+                normalized_args.push_back(child);
+            break;
+        }
+
+        normalized_args.push_back(child);
+    }
+
+    const size_t m = normalized_args.size();
+    const bool has_trailing_const = trailing_const != nullptr;
+
+    /// Degenerate: all args were NULL literals. `coalesce(...) <op> const` is NULL (FALSE in
+    /// WHERE). Let the default path clone the node; not worth special-casing.
+    if (m == 0 && !has_trailing_const)
+        return nullptr;
+
+    std::vector<const ActionsDAG::Node *> cloned_args;
+    cloned_args.reserve(m + (has_trailing_const ? 1 : 0));
+    for (const auto * y : normalized_args)
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*y, inverted_dag, inputs_mapping, context, false));
+    if (has_trailing_const)
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false));
+    const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
+
+    auto op_func = FunctionFactory::instance().get(String{canonical_op}, context);
+    auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
+    {
+        return inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
+    };
+
+    const size_t total = cloned_args.size();
+    if (total == 1)
+        return &make_cmp(cloned_args[0]);
+
+    auto is_null_func = FunctionFactory::instance().get("isNull", context);
+    auto and_func = FunctionFactory::instance().get("and", context);
+    auto or_func = FunctionFactory::instance().get("or", context);
+
+    /// isNull(y_i) is consumed by branches with index > i, so we need it for i in [0, total - 1).
+    /// The trailing const (if present) only appears as the last branch's `<op> const` node, never
+    /// as an isNull argument - so isNull is built only on the Nullable prefix.
+    std::vector<const ActionsDAG::Node *> is_null_nodes;
+    is_null_nodes.reserve(total - 1);
+    for (size_t i = 0; i + 1 < total; ++i)
+        is_null_nodes.push_back(&inverted_dag.addFunction(is_null_func, {cloned_args[i]}, ""));
+
+    ActionsDAG::NodeRawConstPtrs or_children;
+    or_children.reserve(total);
+    or_children.push_back(&make_cmp(cloned_args[0]));
+    for (size_t i = 1; i < total; ++i)
+    {
+        ActionsDAG::NodeRawConstPtrs and_children;
+        and_children.reserve(i + 1);
+        for (size_t j = 0; j < i; ++j)
+            and_children.push_back(is_null_nodes[j]);
+        and_children.push_back(&make_cmp(cloned_args[i]));
+        or_children.push_back(&inverted_dag.addFunction(and_func, std::move(and_children), ""));
+    }
+
+    return &inverted_dag.addFunction(or_func, std::move(or_children), "");
+}
+
+static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
+    const ActionsDAG::Node & node,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context,
     const bool need_inversion)
 {
     const ActionsDAG::Node * res = nullptr;
@@ -896,6 +1048,12 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
                 res = &inverted_dag.addFunction(function_builder, children, "");
+                handled_inversion = true;
+            }
+            else if (!need_inversion
+                && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
+                && (res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr)
+            {
                 handled_inversion = true;
             }
             else
@@ -1245,8 +1403,20 @@ bool applyFunctionChainToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_data_type)
 {
-    /// Remove LowCardinality from input column, and convert it to regular one
-    auto result_column = in_column->convertToFullIfNeeded();
+    /// Strip outer-level wrappers (Const/Replicated/Sparse/LowCardinality) to prepare
+    /// the column for the monotonic function chain. This must be symmetric with
+    /// `removeLowCardinality` on the type — both strip only outer-level LowCardinality,
+    /// preserving `LowCardinality` nested inside container types (`Array`, `Tuple`, `Map`, `Variant`).
+    /// Calling `convertToFullIfNeeded` here would recurse into subcolumns and strip inner
+    /// `LowCardinality`, creating a column/type mismatch when the type still has inner LC
+    /// (e.g. `Variant(LowCardinality(Date), String)` wrapped in `ColumnConst` bypasses
+    /// `ColumnVariant`'s override of `convertToFullIfNeeded`) — leading to `typeid_cast`
+    /// failures in `FunctionCast` wrappers such as `prepareUnpackDictionaries`.
+    auto result_column = in_column
+        ->convertToFullColumnIfConst()
+        ->convertToFullColumnIfReplicated()
+        ->convertToFullColumnIfSparse()
+        ->convertToFullColumnIfLowCardinality();
     auto result_type = removeLowCardinality(in_data_type);
 
     /// In case function sequence is empty, return full non-LowCardinality column
@@ -3986,6 +4156,59 @@ BoolMask KeyCondition::checkInRange(
     });
 }
 
+/// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
+/// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
+/// monotonic (value fits in the target type), the Field value doesn't change.
+/// Similarly for Int8/16/32/64 (all stored as Int64).
+/// In such cases we can skip the expensive function application (which creates columns and executes
+/// the function via the full column execution machinery) and just keep the original Field value.
+///
+/// IMPORTANT: This must only return true for pure type conversion functions (_CAST, toUInt*, toInt*),
+/// NOT for arithmetic or other functions that happen to have compatible integer types on input/output.
+static bool functionIsIntegerCastPreservingFieldRepresentation(
+    const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    /// Only type conversion functions preserve Field values across integer type boundaries.
+    /// Arithmetic functions like plus/minus change the value even with same-family types.
+    const auto & name = func->getName();
+    bool is_cast = (name == "_CAST" || name == "CAST"
+        || name == "toUInt8" || name == "toUInt16" || name == "toUInt32" || name == "toUInt64"
+        || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64");
+
+    if (!is_cast)
+        return false;
+
+    /// Nullable types don't have a fixed size in memory; this optimization only applies to plain integer types.
+    if (from_type->isNullable() || to_type->isNullable())
+        return false;
+
+    auto from_id = from_type->getTypeId();
+    auto to_id = to_type->getTypeId();
+
+    auto is_unsigned_int = [](TypeIndex id)
+    {
+        return id == TypeIndex::UInt8 || id == TypeIndex::UInt16 || id == TypeIndex::UInt32 || id == TypeIndex::UInt64;
+    };
+
+    auto is_signed_int = [](TypeIndex id)
+    {
+        return id == TypeIndex::Int8 || id == TypeIndex::Int16 || id == TypeIndex::Int32 || id == TypeIndex::Int64;
+    };
+
+    /// Check that both types are in the same integer family before calling
+    /// getSizeOfValueInMemory, which throws for variable-length types like String.
+    bool same_family = (is_unsigned_int(from_id) && is_unsigned_int(to_id))
+        || (is_signed_int(from_id) && is_signed_int(to_id));
+
+    if (!same_family)
+        return false;
+
+    /// We can only skip the function application when the target type is at least as wide
+    /// as the source type (widening or same-size cast). For narrowing casts (e.g. UInt32 -> UInt16),
+    /// truncation changes the actual value even though both use UInt64 in the Field representation.
+    return to_type->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory();
+}
+
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
@@ -4005,24 +4228,45 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             return {};
         }
 
-        /// If we apply function to open interval, we can get empty intervals in result.
-        /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
-        /// To avoid this we make range left and right included.
-        /// Any function that treats NULL specially is not monotonic.
-        /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
-        if (!key_range.left.isNull())
+        auto result_type = func->getResultType();
+
+        /// For functions like CAST between integer types that share the same Field representation
+        /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
+        /// on the given range, the Field values are guaranteed to be unchanged.
+        /// We can skip the expensive function application that creates columns and executes the function.
+        /// The monotonicity check already verified that the values fit in the target type.
+        bool skip_apply = functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
+
+        if (!skip_apply)
         {
-            key_range.left = applyFunction(func, current_type, key_range.left);
-            key_range.left_included = true;
+            /// If we apply function to open interval, we can get empty intervals in result.
+            /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
+            /// To avoid this we make range left and right included.
+            /// Any function that treats NULL specially is not monotonic.
+            /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
+            if (!key_range.left.isNull())
+            {
+                key_range.left = applyFunction(func, current_type, key_range.left);
+                key_range.left_included = true;
+            }
+
+            if (!key_range.right.isNull())
+            {
+                key_range.right = applyFunction(func, current_type, key_range.right);
+                key_range.right_included = true;
+            }
+        }
+        else
+        {
+            /// Even though we skip the function application, we still need to make bounds included
+            /// (the function could map open bounds to the same point).
+            if (!key_range.left.isNull())
+                key_range.left_included = true;
+            if (!key_range.right.isNull())
+                key_range.right_included = true;
         }
 
-        if (!key_range.right.isNull())
-        {
-            key_range.right = applyFunction(func, current_type, key_range.right);
-            key_range.right_included = true;
-        }
-
-        current_type = func->getResultType();
+        current_type = result_type;
 
         if (!monotonicity.is_positive)
             key_range.invert();
@@ -4166,6 +4410,24 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 
     for (const auto & element : rpn)
     {
+        /// `extractPlainRanges` produces a range set that consumers (e.g. `ReadFromSystemNumbersStep`,
+        /// `ReadFromSystemPrimesStep`, `LIMIT` pushdown) treat as the exact set of matching key values.
+        /// A relaxed atom by definition does not yield exact ranges: depending on the source it may be
+        /// a strict superset of true matches (e.g. `LIKE` without a perfect prefix, monotonic-constant
+        /// wrapping) or, after complement, a strict subset that incorrectly skips matching rows
+        /// (e.g. `tuple(i, i) NOT IN (tuple(1, 2))` deduplicates the set to `i NOT IN (1)` and builds
+        /// `(-inf, 1) U (1, +inf)`, skipping `i = 1` even though `tuple(1, 1) != tuple(1, 2)`).
+        ///
+        /// Bail out for any relaxed atom and let the caller fall back to a conservative bound. This
+        /// guard is positioned at the top of the loop intentionally, so it covers all current atom
+        /// kinds (`FUNCTION_IN_SET`, `FUNCTION_NOT_IN_SET`, `FUNCTION_IN_RANGE`, `FUNCTION_NOT_IN_RANGE`,
+        /// `FUNCTION_IS_NULL`, `FUNCTION_IS_NOT_NULL`, ...) and any future atom that introduces
+        /// relaxation handling. Operator elements (`FUNCTION_AND`, `FUNCTION_OR`, `FUNCTION_NOT`,
+        /// `ALWAYS_TRUE`, `ALWAYS_FALSE`) are never set as relaxed; relaxation propagates through them
+        /// via their child atoms (see the comment on `KeyCondition::relaxed` in `KeyCondition.h`).
+        if (element.relaxed)
+            return false;
+
         if (element.function == RPNElement::FUNCTION_AND)
         {
             auto right_ranges = rpn_stack.top();
@@ -4416,13 +4678,16 @@ BoolMask KeyCondition::checkInHyperrectangle(
                                 hyperrectangle.size(), key_column, element.toString());
             }
 
-            Range key_range = hyperrectangle[key_column];
+            /// Avoid copying Range when there is no monotonic function chain (the common case).
+            const Range * key_range_ptr = &hyperrectangle[key_column];
+            std::optional<Range> key_range_storage;
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
+                key_range_storage = hyperrectangle[key_column];
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    key_range,
+                    *key_range_storage,
                     element.monotonic_functions_chain,
                     data_types[key_column],
                     single_point
@@ -4433,8 +4698,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     rpn_stack.emplace_back(true, true);
                     continue;
                 }
-                key_range = *new_range;
+                key_range_storage = *new_range;
+                key_range_ptr = &*key_range_storage;
             }
+
+            const Range & key_range = *key_range_ptr;
 
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);

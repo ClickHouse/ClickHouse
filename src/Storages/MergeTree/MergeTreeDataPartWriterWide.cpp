@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -100,7 +101,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -110,7 +110,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     : MergeTreeDataPartWriterOnDisk(
             data_part_name_, logger_name_, serializations_,
             data_part_storage_, index_granularity_info_, storage_settings_,
-            columns_list_, metadata_snapshot_, virtual_columns_,
+            columns_list_, metadata_snapshot_,
             indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_),
             written_offset_substreams_)
@@ -804,10 +804,15 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
 void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 {
     for (auto & stream : column_streams)
-    {
         stream.second->finalize();
-        if (sync)
-            stream.second->sync();
+
+    if (sync)
+    {
+        std::vector<const MergeTreeWriterStream *> streams_to_sync;
+        streams_to_sync.reserve(column_streams.size());
+        for (const auto & stream : column_streams)
+            streams_to_sync.push_back(stream.second.get());
+        parallelSyncFiles(streams_to_sync);
     }
 
     column_streams.clear();

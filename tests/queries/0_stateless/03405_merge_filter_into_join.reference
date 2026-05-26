@@ -6,18 +6,18 @@ Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
          INPUT : 2 -> __table1.age Int16 : 2
-         INPUT : 3 -> __table1.u2.uid Int16 : 3
-         INPUT : 4 -> __table1.u2.name String : 4
-         INPUT : 5 -> __table1.u2.age Int16 : 5
+         INPUT : 3 -> __table1.`u2.uid` Int16 : 3
+         INPUT : 4 -> __table1.`u2.name` String : 4
+         INPUT : 5 -> __table1.`u2.age` Int16 : 5
          ALIAS __table1.uid :: 0 -> uid Int16 : 6
          ALIAS __table1.name :: 1 -> name String : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
-         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
-         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
-         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+         ALIAS __table1.`u2.uid` :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.`u2.name` :: 4 -> u2.name String : 3
+         ALIAS __table1.`u2.age` :: 5 -> u2.age Int16 : 4
 Positions: 6 0 1 2 3 4
   Sorting (Sorting for ORDER BY)
-  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.`u2.uid` ASC, __table1.`u2.name` ASC, __table1.`u2.age` ASC
     Expression ((Before ORDER BY + (Projection + )))
     Actions: INPUT : 0 -> __table2.uid Int16 : 0
              INPUT : 1 -> __table2.name String : 1
@@ -34,9 +34,9 @@ Positions: 6 0 1 2 3 4
              ALIAS uid :: 6 -> __table1.uid Int16 : 5
              ALIAS name :: 0 -> __table1.name String : 6
              ALIAS age :: 1 -> __table1.age Int16 : 0
-             ALIAS u2.uid :: 2 -> __table1.u2.uid Int16 : 1
-             ALIAS u2.name :: 3 -> __table1.u2.name String : 2
-             ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+             ALIAS u2.uid :: 2 -> __table1.`u2.uid` Int16 : 1
+             ALIAS u2.name :: 3 -> __table1.`u2.name` String : 2
+             ALIAS u2.age :: 4 -> __table1.`u2.age` Int16 : 3
     Positions: 5 6 0 1 2 3
       Expression (Post Join Actions)
       Actions: INPUT :: 0 -> __table2.uid Int16 : 0
@@ -95,18 +95,18 @@ Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
          INPUT : 2 -> __table1.age Int16 : 2
-         INPUT : 3 -> __table1.u2.uid Int16 : 3
-         INPUT : 4 -> __table1.u2.name String : 4
-         INPUT : 5 -> __table1.u2.age Int16 : 5
+         INPUT : 3 -> __table1.`u2.uid` Int16 : 3
+         INPUT : 4 -> __table1.`u2.name` String : 4
+         INPUT : 5 -> __table1.`u2.age` Int16 : 5
          ALIAS __table1.uid :: 0 -> uid Int16 : 6
          ALIAS __table1.name :: 1 -> name String : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
-         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
-         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
-         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+         ALIAS __table1.`u2.uid` :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.`u2.name` :: 4 -> u2.name String : 3
+         ALIAS __table1.`u2.age` :: 5 -> u2.age Int16 : 4
 Positions: 6 0 1 2 3 4
   Sorting (Sorting for ORDER BY)
-  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.`u2.uid` ASC, __table1.`u2.name` ASC, __table1.`u2.age` ASC
     Expression ((Before ORDER BY + (Projection + )))
     Actions: INPUT : 0 -> __table2.uid Int16 : 0
              INPUT : 1 -> __table2.name String : 1
@@ -123,9 +123,9 @@ Positions: 6 0 1 2 3 4
              ALIAS uid :: 6 -> __table1.uid Int16 : 5
              ALIAS name :: 0 -> __table1.name String : 6
              ALIAS age :: 1 -> __table1.age Int16 : 0
-             ALIAS u2.uid :: 2 -> __table1.u2.uid Int16 : 1
-             ALIAS u2.name :: 3 -> __table1.u2.name String : 2
-             ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+             ALIAS u2.uid :: 2 -> __table1.`u2.uid` Int16 : 1
+             ALIAS u2.name :: 3 -> __table1.`u2.name` String : 2
+             ALIAS u2.age :: 4 -> __table1.`u2.age` Int16 : 3
     Positions: 5 6 0 1 2 3
       Expression (Post Join Actions)
       Actions: INPUT :: 0 -> __table2.uid Int16 : 0
@@ -184,28 +184,28 @@ Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
          INPUT : 2 -> __table1.age Int16 : 2
-         INPUT : 3 -> __table1.u2.uid Int16 : 3
-         INPUT : 4 -> __table1.u2.name String : 4
-         INPUT : 5 -> __table1.u2.age Int16 : 5
+         INPUT : 3 -> __table1.`u2.uid` Int16 : 3
+         INPUT : 4 -> __table1.`u2.name` String : 4
+         INPUT : 5 -> __table1.`u2.age` Int16 : 5
          ALIAS __table1.uid :: 0 -> uid Int16 : 6
          ALIAS __table1.name :: 1 -> name String : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
-         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
-         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
-         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+         ALIAS __table1.`u2.uid` :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.`u2.name` :: 4 -> u2.name String : 3
+         ALIAS __table1.`u2.age` :: 5 -> u2.age Int16 : 4
 Positions: 6 0 1 2 3 4
   Sorting (Sorting for ORDER BY)
-  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.`u2.uid` ASC, __table1.`u2.name` ASC, __table1.`u2.age` ASC
     Expression ((Before ORDER BY + Projection))
     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
              INPUT :: 1 -> __table1.name String : 1
              INPUT :: 2 -> __table1.age Int16 : 2
-             INPUT :: 3 -> __table1.u2.uid Int16 : 3
-             INPUT :: 4 -> __table1.u2.name String : 4
-             INPUT :: 5 -> __table1.u2.age Int16 : 5
+             INPUT :: 3 -> __table1.`u2.uid` Int16 : 3
+             INPUT :: 4 -> __table1.`u2.name` String : 4
+             INPUT :: 5 -> __table1.`u2.age` Int16 : 5
     Positions: 0 1 2 3 4 5
       Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
-      Filter column: equals(__table1.age, __table1.u2.age) (removed)
+      Filter column: equals(__table1.age, __table1.`u2.age`) (removed)
       Actions: INPUT : 0 -> __table2.uid Int16 : 0
                INPUT : 1 -> __table2.name String : 1
                INPUT : 2 -> __table2.age Int16 : 2
@@ -218,13 +218,13 @@ Positions: 6 0 1 2 3 4
                ALIAS __table3.uid :: 3 -> u2.uid Int16 : 7
                ALIAS __table3.name :: 4 -> u2.name String : 3
                ALIAS __table3.age : 5 -> u2.age Int16 : 4
-               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.u2.age) UInt8 : 8
+               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.`u2.age`) UInt8 : 8
                ALIAS uid :: 6 -> __table1.uid Int16 : 5
                ALIAS name :: 0 -> __table1.name String : 6
                ALIAS age :: 1 -> __table1.age Int16 : 0
-               ALIAS u2.uid :: 7 -> __table1.u2.uid Int16 : 1
-               ALIAS u2.name :: 3 -> __table1.u2.name String : 7
-               ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+               ALIAS u2.uid :: 7 -> __table1.`u2.uid` Int16 : 1
+               ALIAS u2.name :: 3 -> __table1.`u2.name` String : 7
+               ALIAS u2.age :: 4 -> __table1.`u2.age` Int16 : 3
       Positions: 8 5 6 0 1 7 3
         Expression (Post Join Actions)
         Actions: INPUT :: 0 -> __table2.uid Int16 : 0
@@ -281,28 +281,28 @@ Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
          INPUT : 2 -> __table1.age Int16 : 2
-         INPUT : 3 -> __table1.u2.uid Int16 : 3
-         INPUT : 4 -> __table1.u2.name String : 4
-         INPUT : 5 -> __table1.u2.age Int16 : 5
+         INPUT : 3 -> __table1.`u2.uid` Int16 : 3
+         INPUT : 4 -> __table1.`u2.name` String : 4
+         INPUT : 5 -> __table1.`u2.age` Int16 : 5
          ALIAS __table1.uid :: 0 -> uid Int16 : 6
          ALIAS __table1.name :: 1 -> name String : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
-         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
-         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
-         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+         ALIAS __table1.`u2.uid` :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.`u2.name` :: 4 -> u2.name String : 3
+         ALIAS __table1.`u2.age` :: 5 -> u2.age Int16 : 4
 Positions: 6 0 1 2 3 4
   Sorting (Sorting for ORDER BY)
-  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.`u2.uid` ASC, __table1.`u2.name` ASC, __table1.`u2.age` ASC
     Expression ((Before ORDER BY + Projection))
     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
              INPUT :: 1 -> __table1.name String : 1
              INPUT :: 2 -> __table1.age Int16 : 2
-             INPUT :: 3 -> __table1.u2.uid Int16 : 3
-             INPUT :: 4 -> __table1.u2.name String : 4
-             INPUT :: 5 -> __table1.u2.age Int16 : 5
+             INPUT :: 3 -> __table1.`u2.uid` Int16 : 3
+             INPUT :: 4 -> __table1.`u2.name` String : 4
+             INPUT :: 5 -> __table1.`u2.age` Int16 : 5
     Positions: 0 1 2 3 4 5
       Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
-      Filter column: equals(__table1.age, __table1.u2.age) (removed)
+      Filter column: equals(__table1.age, __table1.`u2.age`) (removed)
       Actions: INPUT : 0 -> __table2.uid Int16 : 0
                INPUT : 1 -> __table2.name String : 1
                INPUT : 2 -> __table2.age Int16 : 2
@@ -315,13 +315,13 @@ Positions: 6 0 1 2 3 4
                ALIAS __table3.uid :: 3 -> u2.uid Int16 : 7
                ALIAS __table3.name :: 4 -> u2.name String : 3
                ALIAS __table3.age : 5 -> u2.age Int16 : 4
-               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.u2.age) UInt8 : 8
+               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.`u2.age`) UInt8 : 8
                ALIAS uid :: 6 -> __table1.uid Int16 : 5
                ALIAS name :: 0 -> __table1.name String : 6
                ALIAS age :: 1 -> __table1.age Int16 : 0
-               ALIAS u2.uid :: 7 -> __table1.u2.uid Int16 : 1
-               ALIAS u2.name :: 3 -> __table1.u2.name String : 7
-               ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+               ALIAS u2.uid :: 7 -> __table1.`u2.uid` Int16 : 1
+               ALIAS u2.name :: 3 -> __table1.`u2.name` String : 7
+               ALIAS u2.age :: 4 -> __table1.`u2.age` Int16 : 3
       Positions: 8 5 6 0 1 7 3
         Expression (Post Join Actions)
         Actions: INPUT :: 0 -> __table2.uid Int16 : 0
@@ -378,28 +378,28 @@ Expression (Project names)
 Actions: INPUT : 0 -> __table1.uid Int16 : 0
          INPUT : 1 -> __table1.name String : 1
          INPUT : 2 -> __table1.age Int16 : 2
-         INPUT : 3 -> __table1.u2.uid Int16 : 3
-         INPUT : 4 -> __table1.u2.name String : 4
-         INPUT : 5 -> __table1.u2.age Int16 : 5
+         INPUT : 3 -> __table1.`u2.uid` Int16 : 3
+         INPUT : 4 -> __table1.`u2.name` String : 4
+         INPUT : 5 -> __table1.`u2.age` Int16 : 5
          ALIAS __table1.uid :: 0 -> uid Int16 : 6
          ALIAS __table1.name :: 1 -> name String : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
-         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
-         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
-         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+         ALIAS __table1.`u2.uid` :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.`u2.name` :: 4 -> u2.name String : 3
+         ALIAS __table1.`u2.age` :: 5 -> u2.age Int16 : 4
 Positions: 6 0 1 2 3 4
   Sorting (Sorting for ORDER BY)
-  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.`u2.uid` ASC, __table1.`u2.name` ASC, __table1.`u2.age` ASC
     Expression ((Before ORDER BY + Projection))
     Actions: INPUT :: 0 -> __table1.uid Int16 : 0
              INPUT :: 1 -> __table1.name String : 1
              INPUT :: 2 -> __table1.age Int16 : 2
-             INPUT :: 3 -> __table1.u2.uid Int16 : 3
-             INPUT :: 4 -> __table1.u2.name String : 4
-             INPUT :: 5 -> __table1.u2.age Int16 : 5
+             INPUT :: 3 -> __table1.`u2.uid` Int16 : 3
+             INPUT :: 4 -> __table1.`u2.name` String : 4
+             INPUT :: 5 -> __table1.`u2.age` Int16 : 5
     Positions: 0 1 2 3 4 5
       Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
-      Filter column: equals(__table1.age, __table1.u2.age) (removed)
+      Filter column: equals(__table1.age, __table1.`u2.age`) (removed)
       Actions: INPUT : 0 -> __table2.uid Int16 : 0
                INPUT : 1 -> __table2.name String : 1
                INPUT : 2 -> __table2.age Int16 : 2
@@ -412,13 +412,13 @@ Positions: 6 0 1 2 3 4
                ALIAS __table3.uid :: 3 -> u2.uid Int16 : 7
                ALIAS __table3.name :: 4 -> u2.name String : 3
                ALIAS __table3.age : 5 -> u2.age Int16 : 4
-               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.u2.age) UInt8 : 8
+               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.`u2.age`) UInt8 : 8
                ALIAS uid :: 6 -> __table1.uid Int16 : 5
                ALIAS name :: 0 -> __table1.name String : 6
                ALIAS age :: 1 -> __table1.age Int16 : 0
-               ALIAS u2.uid :: 7 -> __table1.u2.uid Int16 : 1
-               ALIAS u2.name :: 3 -> __table1.u2.name String : 7
-               ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+               ALIAS u2.uid :: 7 -> __table1.`u2.uid` Int16 : 1
+               ALIAS u2.name :: 3 -> __table1.`u2.name` String : 7
+               ALIAS u2.age :: 4 -> __table1.`u2.age` Int16 : 3
       Positions: 8 5 6 0 1 7 3
         Expression (Post Join Actions)
         Actions: INPUT :: 0 -> __table2.uid Int16 : 0

@@ -1,0 +1,127 @@
+--- NumericNode: JSON number types ---
+1.5
+1.5
+1
+123456789
+-123456789
+0
+0
+--- NumericNode: strings with allow_type_conversion=1 (default) ---
+42
+3.14
+1
+0
+0
+--- NumericNode: bool conversion ---
+1
+0
+--- NumericNode: null -> default with null_as_default setting ---
+0
+0
+--- NumericNode: strings with allow_type_conversion=0 ---
+42
+--- BoolNode ---
+true
+false
+true
+false
+false
+false
+false
+--- StringNode ---
+hello
+42
+1.5
+true
+
+[1,2]
+{"a":1}
+--- FixedStringNode ---
+abcde
+short\0\0\0\0\0
+\0\0\0
+42\0
+--- DecimalNode ---
+1.234
+1.234
+0
+0
+0
+--- DateNode / DateTimeNode / DateTime64Node ---
+2023-01-02
+2023-01-02 03:04:05
+1970-01-01 00:00:00
+2023-01-02 03:04:05.123
+1970-01-01
+--- UUIDNode ---
+550e8400-e29b-41d4-a716-446655440000
+00000000-0000-0000-0000-000000000000
+00000000-0000-0000-0000-000000000000
+--- IPv4 / IPv6 Node ---
+192.168.1.1
+0.0.0.0
+::1
+2001:db8::1
+0.0.0.0
+--- EnumNode: by name and by number ---
+a
+b
+a
+--- LowCardinalityNode ---
+hello
+42
+--- NullableNode ---
+\N
+42
+42
+\N
+--- ArrayNode ---
+[1,2,3]
+[1,2,3]
+[[1,2],[3,4]]
+[]
+[]
+[]
+--- TupleNode: by keys and by position ---
+(1,'hi')
+(1,'hi')
+(1,'')
+(0,'hi')
+(0,'')
+--- MapNode ---
+{'a':1,'b':2}
+{'a':'1','b':'hi'}
+{'1':'a','2':'b'}
+{}
+{}
+--- VariantNode ---
+1
+hi
+3.14
+true
+--- DynamicNode ---
+42
+hi
+[1,2,3]
+{"a":1}
+\N
+--- ObjectNode (JSON type) ---
+{"a":1,"b":"hi"}
+{"a":{"b":{"c":42}}}
+--- Nested path extraction ---
+42
+1
+2
+0
+--- JSONExtractKeys / KeysAndValues / Raw ---
+['a','b']
+[]
+[]
+[('a',1),('b',2)]
+[('a','1'),('b','[2,3]')]
+--- JSONExtractArrayRaw ---
+['1','2','3']
+[]
+--- JSONExtract on nonexistent path returns default ---
+0
+0

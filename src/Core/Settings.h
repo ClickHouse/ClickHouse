@@ -67,6 +67,7 @@ class WriteBuffer;
     M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
@@ -100,6 +101,7 @@ class WriteBuffer;
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
+    M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \

@@ -198,13 +198,24 @@ bool canWriteStatistics(
 
 String removeEscapedSlashes(const String & json_str)
 {
-    auto result = json_str;
-    size_t pos = 0;
-    while ((pos = result.find("\\/", pos)) != std::string::npos)
+    size_t pos = json_str.find("\\/");
+    if (pos == String::npos)
+        return json_str;
+
+    String result;
+    result.reserve(json_str.size());
+
+    size_t start = 0;
+    while (pos != String::npos)
     {
-        result.replace(pos, 2, "/");
-        ++pos;
+        result.append(json_str, start, pos - start);
+        result.push_back('/');
+
+        start = pos + 2;
+        pos = json_str.find("\\/", start);
     }
+    result.append(json_str, start, String::npos);
+
     return result;
 }
 
@@ -242,6 +253,8 @@ void generateManifestFile(
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
     const std::vector<IcebergPathFromMetadata> & data_file_names,
+    const std::vector<UInt64> & data_file_row_counts,
+    const std::vector<UInt64> & data_file_byte_counts,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -281,8 +294,9 @@ void generateManifestFile(
     Poco::JSON::Stringifier::stringify(partition_spec->getArray(Iceberg::f_fields), oss_partition_spec);
     writer.setMetadata(Iceberg::f_partition_spec, oss_partition_spec.str());
     writer.setMetadata(Iceberg::f_partition_spec_id, std::to_string(partition_spec_id));
-    for (const auto & data_file_name : data_file_names)
+    for (size_t file_idx = 0; file_idx < data_file_names.size(); ++file_idx)
     {
+        const auto & data_file_name = data_file_names[file_idx];
         avro::GenericDatum manifest_datum(root_schema);
         avro::GenericRecord & manifest = manifest_datum.value<avro::GenericRecord>();
 
@@ -364,23 +378,8 @@ void generateManifestFile(
             if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
         }
-        auto summary = new_snapshot->getObject(Iceberg::f_summary);
-        if (summary->has(Iceberg::f_added_records))
-        {
-            Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_records);
-            Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
-
-            data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
-            data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
-        }
-        else
-        {
-            Int64 added_records = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
-            Int64 added_files_size = summary->getValue<Int64>(Iceberg::f_added_files_size);
-
-            data_file.field(Iceberg::f_record_count) = avro::GenericDatum(added_records);
-            data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(added_files_size);
-        }
+        data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
+        data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
@@ -991,6 +990,8 @@ bool IcebergStorageSink::initializeMetadata()
                     partition_key,
                     partitioner ? partitioner->getResultTypes() : std::vector<DataTypePtr>{},
                     writer.getDataFiles(),
+                    writer.getDataFileRowCounts(),
+                    writer.getDataFileByteCounts(),
                     writer.getResultStatistics(),
                     sample_block,
                     new_snapshot,

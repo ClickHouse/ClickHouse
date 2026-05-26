@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -137,6 +138,11 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
     {
         limit_by_step->applyOrder(properties->sort_description);
+    }
+
+    if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
+    {
+        negative_limit_by_step->applyOrder(properties->sort_description);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))

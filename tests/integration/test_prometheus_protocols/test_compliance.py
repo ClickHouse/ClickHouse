@@ -577,9 +577,9 @@ def test_promql_compliance():
     print(f"             {result.passed} / {result.total} passed")
     print("=" * 80)
 
+    categories = {}  # key -> [(query, reason)]
     if result.failures:
         import re as _re
-        categories = {}  # key -> [(query, reason)]
         for query, reason in result.failures:
             if "UNSUPPORTED:" in reason:
                 m = _re.search(r"(Function \S+ is not implemented|"
@@ -620,5 +620,20 @@ def test_promql_compliance():
                     r_short = r if len(r) <= 100 else r[:97] + "..."
                     print(f"             {q_short}")
                     print(f"               → {r_short}")
+
+    breakdown = {cat: len(entries) for cat, entries in categories.items()}
+    out_path = os.environ.get("COMPLIANCE_RESULT_FILE")
+    if out_path:
+        record = {
+            "passed": result.passed,
+            "failed": result.failed,
+            "unsupported": result.unsupported,
+            "total": result.total,
+            "pct": round(result.score, 4),
+            "breakdown": breakdown,
+        }
+        with open(out_path, "w") as out_f:
+            json.dump(record, out_f, indent=2)
+            out_f.write("\n")
 
     print()

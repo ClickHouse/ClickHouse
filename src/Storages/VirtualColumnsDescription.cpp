@@ -20,6 +20,8 @@ VirtualColumnDescription::VirtualColumnDescription(
 
 void VirtualColumnsDescription::add(VirtualColumnDescription desc)
 {
+    chassert(!desc.name.empty());
+
     if (container.get<1>().contains(desc.name))
         throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Virtual column {} already exists", desc.name);
 

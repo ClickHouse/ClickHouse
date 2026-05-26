@@ -389,10 +389,6 @@ y: 993
 Deleting extra rows in the merge-on-read format is also supported in ClickHouse.
 This query will create a new snapshot with position delete files.
 
-NOTE: If you want to read your tables in the future with other Iceberg engines (such as Spark), you need to disable the settings `output_format_parquet_use_custom_encoder` and `output_format_parquet_parallel_encoding`.
-This is because Spark reads these files by parquet field-ids, while ClickHouse does not currently support writing field-ids when these flags are enabled.
-We plan to fix this behavior in the future.
-
 ### Example {#example-iceberg-writes-delete}
 
 ```sql

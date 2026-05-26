@@ -165,6 +165,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     if (!endpointOverride.empty())
     {
         static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
+        static const RE2 s3express_region_pattern(R"(^s3express(?:-[a-z0-9\-]+)?(?:\.dualstack)?\.([a-z0-9\-]+)\.amazonaws\.)");
         Poco::URI uri(endpointOverride);
         if (uri.getScheme() == "http")
             scheme = Aws::Http::Scheme::HTTP;
@@ -172,7 +173,9 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
         if (force_region.empty())
         {
             String matched_region;
-            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+            if (
+                re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region)
+                || re2::RE2::PartialMatch(uri.getHost(), s3express_region_pattern, &matched_region))
             {
                 boost::algorithm::to_lower(matched_region);
                 region = matched_region;
@@ -509,8 +512,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
     {
         if (!latency_recorded)
         {
-            observeLatency(request, S3LatencyType::Connect, connect_time);
-            observeLatency(request, first_byte_latency_type, first_byte_time);
+            observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
         }
         addMetric(request, S3MetricType::Errors);
     };
@@ -608,8 +611,8 @@ void PocoHTTPClient::makeRequestInternalImpl(
             auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
             /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
             /// we won't record the same latency twice.
-            observeLatency(request, S3LatencyType::Connect, connect_time);
-            observeLatency(request, first_byte_latency_type, first_byte_time);
+            observeLatency(request, S3LatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
+            observeLatency(request, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
             latency_recorded = true;
 
             if (request.GetContentBody())

@@ -186,6 +186,17 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                 String token;
                 if (pos->type == TokenType::QuotedIdentifier)
                     token = "'" + escapeSingleQuotes(String(pos->begin + 1, pos->end - 1)) + "'";
+                else if (pos->type == TokenType::At)
+                {
+                    /// KQL verbatim string: @'...' — skip the @ and use the string literal.
+                    /// `@` not followed by a string literal is a syntax error in KQL: rejecting
+                    /// it here gives a clear diagnostic at the point of failure instead of
+                    /// silently rewinding and producing a confusing downstream exception.
+                    ++pos;
+                    if (!isValidKQLPos(pos) || pos->type != TokenType::StringLiteral)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "KQL: '@' must be followed by a string literal (verbatim string)");
+                    token = String(pos->begin, pos->end);
+                }
                 else if (pos->type == TokenType::OpeningSquareBracket)
                 {
                     ++pos;
@@ -313,9 +324,24 @@ void IParserKQLFunction::validateEndOfFunction(const String & fn_name, IParser::
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too many arguments in function: {}", fn_name);
 }
 
+String IParserKQLFunction::formatTimespanSQL(const String & seconds_expr)
+{
+    /// Bind `seconds_expr` to a SQL alias (`_ts`) once and reuse it. Otherwise the
+    /// expression is expanded and re-evaluated nine times in the generated SQL —
+    /// costly for non-trivial inputs and incorrect for non-deterministic ones,
+    /// because each fragment could observe a different value.
+    return "concat("
+        "if((toInt64(" + seconds_expr + ") as _ts) < 0, '-', ''), "
+        "if(abs(_ts) >= 86400, concat(toString(intDiv(abs(_ts), 86400)), '.'), ''), "
+        "leftPad(toString(intDiv(abs(_ts) % 86400, 3600)), 2, '0'), ':', "
+        "leftPad(toString(intDiv(abs(_ts) % 3600, 60)), 2, '0'), ':', "
+        "leftPad(toString(abs(_ts) % 60), 2, '0'))";
+}
+
 String IParserKQLFunction::getExpression(IParser::Pos & pos)
 {
     String arg(pos->begin, pos->end);
+    bool is_timespan = false;
     auto parseConstTimespan = [&]()
     {
         ParserKQLDateTypeTimespan time_span;
@@ -323,35 +349,59 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
         Expected expected;
 
         if (time_span.parse(pos, node, expected))
+        {
             arg = boost::lexical_cast<std::string>(time_span.toSeconds());
+            is_timespan = true;
+        }
     };
 
     if (pos->type == TokenType::BareWord)
     {
-        const auto fun = KQLFunctionFactory::get(arg);
-        if (String new_arg; fun && fun->convert(new_arg, pos))
+        /// Check if this is a let binding
+        auto & bindings = kqlLetBindings();
+        if (auto it = bindings.find(arg); it != bindings.end())
         {
-            validateEndOfFunction(arg, pos);
-            arg = std::move(new_arg);
+            arg = it->second;
         }
         else
         {
-            if (!fun)
+            const auto fun = KQLFunctionFactory::get(arg);
+            if (String new_arg; fun && fun->convert(new_arg, pos))
             {
-                ++pos;
-                if (pos->type == TokenType::OpeningRoundBracket)
-                {
-                    if (Poco::toLower(arg) != "and" && Poco::toLower(arg) != "or")
-                        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "{} is not a supported kusto function", arg);
-                }
-                --pos;
+                validateEndOfFunction(arg, pos);
+                arg = std::move(new_arg);
             }
+            else
+            {
+                if (!fun)
+                {
+                    ++pos;
+                    if (pos->type == TokenType::OpeningRoundBracket)
+                    {
+                        if (Poco::toLower(arg) != "and" && Poco::toLower(arg) != "or")
+                            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "{} is not a supported kusto function", arg);
+                    }
+                    --pos;
+                }
 
-            parseConstTimespan();
+                parseConstTimespan();
+            }
         }
     }
     else if (pos->type == TokenType::ErrorWrongNumber)
         parseConstTimespan();
+    else if (pos->type == TokenType::At)
+    {
+        /// KQL verbatim string: @'...' — skip the `@` and use the string literal.
+        /// `@` not followed by a string literal is a syntax error in KQL: rejecting
+        /// it here gives a clear diagnostic at the point of failure instead of
+        /// silently rewinding and producing a confusing downstream exception
+        /// (and matches the behavior of `getConvertedArgument`).
+        ++pos;
+        if (!isValidKQLPos(pos) || pos->type != TokenType::StringLiteral)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "KQL: '@' must be followed by a string literal (verbatim string)");
+        arg = String(pos->begin, pos->end);
+    }
     else if (pos->type == TokenType::QuotedIdentifier)
         arg = "'" + escapeSingleQuotes(String(pos->begin + 1, pos->end - 1)) + "'";
     else if (pos->type == TokenType::OpeningSquareBracket)
@@ -364,6 +414,29 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
             ++pos;
         }
         arg = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+    }
+
+    /// If this was a timespan literal and it's NOT in an arithmetic context,
+    /// format it as a KQL timespan string (d.hh:mm:ss)
+    if (is_timespan)
+    {
+        auto next = pos;
+        ++next;
+        bool next_is_arithmetic = isValidKQLPos(next)
+            && (next->type == TokenType::Plus || next->type == TokenType::Minus
+                || next->type == TokenType::Asterisk || next->type == TokenType::Slash
+                || next->type == TokenType::Percent);
+        auto prev = pos;
+        --prev;
+        bool prev_is_arithmetic = prev.isValid()
+            && (prev->type == TokenType::Plus || prev->type == TokenType::Minus
+                || prev->type == TokenType::Asterisk || prev->type == TokenType::Slash
+                || prev->type == TokenType::Percent);
+        /// Don't format inside function calls or array indexing
+        bool in_function_context = prev.isValid()
+            && (prev->type == TokenType::OpeningRoundBracket || prev->type == TokenType::Comma);
+        if (!next_is_arithmetic && !prev_is_arithmetic && !in_function_context)
+            arg = formatTimespanSQL(arg);
     }
 
     return arg;

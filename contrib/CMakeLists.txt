@@ -53,6 +53,7 @@ add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)
 add_contrib (google-protobuf-cmake google-protobuf)
 add_contrib (grpc-cmake grpc)
+add_contrib (compiler-rt-cmake llvm-project)
 add_contrib (libllvmlibc-cmake llvm-project)
 add_contrib (llvm-project-cmake llvm-project)
 
@@ -178,9 +179,10 @@ if (USE_MONGODB)
     add_contrib (mongo-cxx-driver-cmake mongo-cxx-driver) # requires: libmongoc, libbson
 endif()
 
+add_contrib (libstemmer-c-cmake libstemmer_c)
+
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
-    add_contrib (libstemmer-c-cmake libstemmer_c)
     add_contrib (wordnet-blast-cmake wordnet-blast)
     add_contrib (lemmagen-c-cmake lemmagen-c)
     add_contrib (cld2-cmake cld2)

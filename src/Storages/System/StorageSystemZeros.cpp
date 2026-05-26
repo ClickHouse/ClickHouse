@@ -95,8 +95,8 @@ StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multith
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>(), "dummy"}}));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemZeros::createVirtuals()

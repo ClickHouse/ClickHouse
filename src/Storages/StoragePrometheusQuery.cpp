@@ -153,8 +153,8 @@ StoragePrometheusQuery::StoragePrometheusQuery(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StoragePrometheusQuery::createVirtuals()

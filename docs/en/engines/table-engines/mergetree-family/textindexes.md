@@ -81,8 +81,8 @@ CREATE TABLE table
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
-                                            | ngrams[(N)]
                                             | asciiCJK
+                                            | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
                                 -- Optional parameters:
@@ -480,6 +480,24 @@ SELECT count() FROM table WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
 SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 ```
 
+#### `hasPhrase` {#functions-example-hasphrase}
+
+Function [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) matches against a phrase: all tokens must appear consecutively and in the same order as in the search string.
+
+Unlike `hasAllTokens`, which only requires all tokens to be present somewhere, `hasPhrase` requires them to appear as a consecutive sequence.
+The search phrase is tokenized using the same tokenizer configured for the index column.
+Note that the function requires one of the `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK` tokenizers.
+
+Example:
+
+```sql
+-- Matches: 'clickhouse' and 'olap' must appear consecutively in that order
+SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
+
+-- Does NOT match a row containing 'olap clickhouse' (wrong order)
+-- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
+```
+
 #### `has` {#functions-example-has}
 
 Array function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
@@ -488,6 +506,17 @@ Example:
 
 ```sql
 SELECT count() FROM table WHERE has(array, 'clickhouse');
+```
+
+#### `hasAny` and `hasAll` {#functions-example-hasany-hasall}
+
+Array functions [hasAny](/sql-reference/functions/array-functions#hasAny) and [hasAll](/sql-reference/functions/array-functions#hasAll) test whether the indexed array column contains any or all of a constant set of needle strings.
+
+Example:
+
+```sql
+SELECT count() FROM table WHERE hasAny(tags, ['clickhouse', 'olap']);
+SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 ```
 
 #### `mapContains` {#functions-example-mapcontains}
@@ -847,6 +876,51 @@ SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
 
+### Phrase search {#text-index-phrase-search}
+
+Text index supports phrase search via the `hasPhrase` function.
+All tokens in the phrase must appear consecutively and in the same order in the document.
+
+The text index accelerates phrase search by intersecting the posting lists for all tokens in the phrase to identify candidate granules.
+Within those granules, ClickHouse then verifies exact token adjacency.
+
+`hasPhrase` is supported with tokenizers `splitByNonAlpha`, `splitByString`, `ngrams`, and `asciiCJK`.
+
+The phrase string is tokenized using the index's configured tokenizer.
+Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quick+brown')` is equivalent to `hasPhrase(text, 'quick brown')` for the `splitByNonAlpha` tokenizer.
+
+#### Example {#text-index-phrase-search-example}
+
+```sql
+CREATE TABLE tab (
+    id UInt32,
+    text String,
+    INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, 'weather in New York'),
+    (2, 'New weather in York'),
+    (3, 'weather in New Orleans');
+```
+
+```sql
+SELECT id, text FROM tab WHERE hasPhrase(text, 'weather in New York');
+```
+
+Result:
+
+```result
+   ┌─id─┬─text────────────────┐
+1. │  1 │ weather in New York │
+   └────┴─────────────────────┘
+```
+
+Row 2 (`'New weather in York'`) does not match because the tokens are in the wrong order.
+Row 3 (`'weather in New Orleans'`) does not match because it does not contain the token `'York'`.
+
 ## Performance Tuning {#performance-tuning}
 
 ### Direct read {#direct-read}
@@ -871,7 +945,7 @@ Direct read is controlled by two settings:
 **Supported functions**
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
-If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
+If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
@@ -931,7 +1005,7 @@ However, even if the text column is accessed elsewhere in the query, direct read
 Direct read as a hint is based on the same principles as normal direct read, but instead adds an additional filter build from the text index data without removing the underlying text column.
 It is used for functions when reading only from the text index would produce false positives.
 
-Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `mapContainsKey`, and `mapContainsValue`.
+Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `hasPhrase`, `mapContainsKey`, and `mapContainsValue`.
 
 The additional filter can provide additional selectivity to restrict the result set in combination with other filters further, helping to reduce the amount of data read from other columns.
 
@@ -981,7 +1055,7 @@ This ordering enables skipping even more data granules than the granules skipped
 
 ### LIKE/ILIKE queries {#like-ilike-queries-perf}
 
-When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%` and the text index tokenizer is `splitByNonAlpha`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
+When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%` and the text index tokenizer is `splitByNonAlpha` or `array`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
 
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
 

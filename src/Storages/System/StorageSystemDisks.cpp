@@ -39,8 +39,8 @@ StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
         {"is_broken", std::make_shared<DataTypeUInt8>(), "Flag which indicates if disk is broken. Broken disks will have 0 space and cannot be used."},
         {"cache_path", std::make_shared<DataTypeString>(), "The path to the cache directory on local drive in case when the disk supports caching."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDisks::createVirtuals()
