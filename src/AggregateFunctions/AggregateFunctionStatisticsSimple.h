@@ -161,7 +161,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment3() / std::pow(var_value, static_cast<ResultType>(1.5))));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment3()) / std::pow(static_cast<Float64>(var_value), 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 
@@ -172,7 +172,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment3() / std::pow(var_value, static_cast<ResultType>(1.5))));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment3()) / std::pow(static_cast<Float64>(var_value), 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 
@@ -183,7 +183,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment4() / std::pow(var_value, static_cast<ResultType>(2))));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment4()) / std::pow(static_cast<Float64>(var_value), 2.0)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 
@@ -194,7 +194,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment4() / std::pow(var_value, static_cast<ResultType>(2))));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment4()) / std::pow(static_cast<Float64>(var_value), 2.0)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 
