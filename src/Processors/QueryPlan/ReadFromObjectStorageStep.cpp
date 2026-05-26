@@ -73,7 +73,8 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
     if (!filter_actions_dag)
         return;
-    VirtualColumnUtils::buildOrderedSetsForDAG(*filter_actions_dag, getContext());
+    // ExcludingGlobalIn handles non-const ColumnSet (i.e. IN (subquery)) and skips globalIn. See #100743.
+    VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)

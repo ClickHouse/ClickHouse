@@ -1829,7 +1829,11 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
+    {
         predicate = filter_actions_dag->getOutputs().at(0);
+        // Materialise IN (subquery) sets before the format reader builds KeyCondition. See #100743.
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
+    }
 
     createIterator(predicate);
 }
