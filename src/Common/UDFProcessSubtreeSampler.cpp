@@ -369,6 +369,14 @@ void UDFProcessSubtreeSampler::recordReleased()
     if (post_stime_sum >= pre_stime_sum)
         system_time_us = post_stime_sum - pre_stime_sum;
 
+    /// Why byte-seconds rather than peak bytes? PeakBytes is not additive
+    /// across UDF invocations within a single query — summing per-borrow
+    /// peaks would be meaningless (two borrows that each hit 1 GiB at
+    /// different times don't add up to 2 GiB of memory pressure).
+    /// PeakByteSeconds (peak_rss × wall_time) IS additive: it measures
+    /// memory-time area, which sums cleanly across borrows in the
+    /// query-level ProfileEvent aggregate.
+    ///
     /// PeakMemoryByteSeconds = peak_rss × borrow_wall_seconds. Stored as
     /// integer byte-seconds. 64-bit multiplication is fine for any realistic
     /// UDF (1 GiB × 100 s ≈ 10^14, well below 2^64); pathological inputs
