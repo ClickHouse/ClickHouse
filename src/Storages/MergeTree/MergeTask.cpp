@@ -938,10 +938,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         /// Mark table TTL as finished with zero min/max, matching what
         /// TTLDeleteAlgorithm::finalize produces in the normal all_data_dropped
-        /// path. We keep the accumulated part_min_ttl / part_max_ttl from
-        /// source parts (set at line ~592) so that ttl_infos.empty() returns
-        /// false and ttl.txt is written — producing the same checksums as the
-        /// non-short-circuit path.
+        /// path. We keep the accumulated part_min_ttl / part_max_ttl from source
+        /// parts (set at line ~592) so that ttl_infos.empty() returns false and
+        /// ttl.txt is written — producing the same checksums as the non-short-circuit
+        /// path.
         global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
 
         /// Clear projections — no rows means no projection data to merge or rebuild.
@@ -951,7 +951,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         /// Force Horizontal algorithm. This prevents the Vertical stage from trying
         /// to finalize an empty rows_sources file, and ensures finalizePart takes
-        /// the correct code path.  Reinitialize the column/index state to match the
+        /// the correct code path. Reinitialize the column/index state to match the
         /// Horizontal branch of the switch above — if chooseMergeAlgorithm picked
         /// Vertical, merging_columns would be key-only and gathering_columns non-empty,
         /// which would leave MergedBlockOutputStream with incomplete column metadata.
