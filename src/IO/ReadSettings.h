@@ -157,9 +157,10 @@ struct ReadSettings
     /// per-operation logs. Used by checkDataPart, restore, and iceberg metadata reads.
     void disableCachesAndLogging();
 
-    /// Force a synchronous local-FS read path (`pread`). Used by metadata and
-    /// transaction-log readers that don't benefit from `io_uring` / threadpool / mmap.
-    void forceSyncLocalRead();
+    /// Configure the remote-FS source for reading a small object-storage file
+    /// (sets threadpool method, disables prefetch, shrinks the buffer). Used by
+    /// metadata-storage operations that fetch small per-object files.
+    void useForSmallRemoteRead(size_t buffer_size);
 };
 
 ReadSettings getReadSettings();

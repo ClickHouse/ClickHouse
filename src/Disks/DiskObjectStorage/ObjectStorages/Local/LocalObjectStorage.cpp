@@ -62,7 +62,7 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 {
     auto modified_settings{read_settings};
     /// Other options might break assertions in AsynchronousBoundedReadBuffer.
-    modified_settings.forceSyncLocalRead();
+    modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     modified_settings.local_fs_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }

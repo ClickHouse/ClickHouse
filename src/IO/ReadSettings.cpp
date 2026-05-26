@@ -61,9 +61,11 @@ void ReadSettings::disableCachesAndLogging()
     remote_fs_settings.enable_blob_storage_log = false;
 }
 
-void ReadSettings::forceSyncLocalRead()
+void ReadSettings::useForSmallRemoteRead(size_t buffer_size)
 {
-    local_fs_settings.method = LocalFSReadMethod::pread;
+    remote_fs_settings.method = RemoteFSReadMethod::threadpool;
+    remote_fs_settings.prefetch = false;
+    remote_fs_settings.buffer_size = buffer_size;
 }
 
 }
