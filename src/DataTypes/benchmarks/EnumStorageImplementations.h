@@ -328,8 +328,7 @@ private:
     std::string string_data;             // concatenated strings
     std::vector<T> values_by_name;       // values_by_name[i] = value for i-th string
 
-    // Direct array for O(1) reverse lookup: index 0-255 maps to value -128 to 127
-    // value_to_index[value + 128] = index into name arrays, or 255 if not present
+    // Direct array for O(1) reverse lookup
     std::array<uint8_t, 256> value_to_index;
 
     static constexpr uint8_t INVALID_INDEX = 255;
