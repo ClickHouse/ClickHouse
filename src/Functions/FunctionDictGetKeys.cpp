@@ -86,7 +86,7 @@ public:
     String getName() const override { return "DictGetKeysMatchingRowsSink"; }
 
     /// One entry per consumed chunk that had matches; each entry holds `num_keys` filtered key columns.
-    const std::vector<Columns> & getMatchedChunks() const { return matched_chunks; }
+    const std::vector<Columns> & getMatchedChunks() const { return matched_chunks; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t getMatchedRows() const { return matched_rows; }
 
 protected:
@@ -143,7 +143,7 @@ private:
     ColumnPtr value_column;
     DataTypePtr attr_type;
     size_t num_keys = 0;
-    std::vector<Columns> matched_chunks;
+    std::vector<Columns> matched_chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t matched_rows = 0;
 };
 }
