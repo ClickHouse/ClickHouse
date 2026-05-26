@@ -32,6 +32,7 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
+#include <base/scope_guard.h>
 #include <Formats/NativeWriter.h>
 #include <Formats/NativeReader.h>
 #include <IO/WriteHelpers.h>
@@ -1040,14 +1041,21 @@ void QueryResultCacheWriter::finalizeWrite()
 
     std::lock_guard lock(mutex);
 
+    /// Until the entry is stored, ensure that any exception propagating out of this
+    /// function (or any early-exit) releases the remote IN_PROGRESS lock. Otherwise
+    /// other nodes would keep waiting on this key while the heartbeat renews the lock.
+    bool stored = false;
+    SCOPE_EXIT({
+        if (!stored)
+            storage.cancelWrite(key, write_context);
+    });
+
     /// Check some reasons why the entry must not be cached:
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)
     {
         LOG_TRACE(logger, "Skipped insert because the query is not expensive enough, query runtime: {} msec (minimum query runtime: {} msec), query: {}",
                 query_runtime.count(), min_query_runtime.count(), doubleQuoteString(key.query_string));
-        storage.cancelWrite(key, write_context);
-        was_finalized = true;
         return;
     }
 
@@ -1056,8 +1064,6 @@ void QueryResultCacheWriter::finalizeWrite()
         || current_write_context.tag_generation != write_context.tag_generation)
     {
         LOG_TRACE(logger, "Skipped insert because the query cache was cleared while the query was running, query: {}", doubleQuoteString(key.query_string));
-        storage.cancelWrite(key, write_context);
-        was_finalized = true;
         return;
     }
 
@@ -1065,8 +1071,6 @@ void QueryResultCacheWriter::finalizeWrite()
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
-        storage.cancelWrite(key, write_context);
-        was_finalized = true;
         return;
     }
 
@@ -1151,12 +1155,11 @@ void QueryResultCacheWriter::finalizeWrite()
     {
         LOG_TRACE(logger, "Skipped insert because the query result is too big, query result size: {} (maximum size: {}), query result size in rows: {} (maximum size: {}), query: {}",
                 formatReadableSizeWithBinarySuffix(new_entry_size_in_bytes, 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), new_entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
-        storage.cancelWrite(key, write_context);
-        was_finalized = true;
         return;
     }
 
     storage.setEntry(key, query_result, write_context);
+    stored = true;
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
 }
