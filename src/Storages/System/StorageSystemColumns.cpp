@@ -74,8 +74,8 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     });
 
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemColumns::createVirtuals()
@@ -93,7 +93,7 @@ namespace
 }
 
 
-class ColumnsSource : public ISource
+class ColumnsSource final : public ISource
 {
 public:
     ColumnsSource(

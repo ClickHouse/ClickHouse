@@ -22,6 +22,32 @@
                 <s3_max_put_rps>10</s3_max_put_rps>
                 <s3_max_get_rps>10</s3_max_get_rps>
             </s3_no_resource>
+            <!-- Disk with use_fake_transaction=false to exercise the real DiskObjectStorageTransaction path,
+                 which is what s3_with_keeper (Keeper metadata) uses. -->
+            <s3_no_fake_tx>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+                <s3_max_put_rps>10</s3_max_put_rps>
+                <s3_max_get_rps>10</s3_max_get_rps>
+                <read_resource>network_read</read_resource>
+                <write_resource>network_write</write_resource>
+                <use_fake_transaction>false</use_fake_transaction>
+            </s3_no_fake_tx>
+            <s3_no_fake_tx_2>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data2/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+                <s3_max_put_rps>10</s3_max_put_rps>
+                <s3_max_get_rps>10</s3_max_get_rps>
+                <read_resource>network_read</read_resource>
+                <write_resource>network_write</write_resource>
+                <use_fake_transaction>false</use_fake_transaction>
+            </s3_no_fake_tx_2>
         </disks>
         <policies>
             <s3>
@@ -38,6 +64,23 @@
                     </main>
                 </volumes>
             </s3_no_resource>
+            <s3_no_fake_tx>
+                <volumes>
+                    <main>
+                        <disk>s3_no_fake_tx</disk>
+                    </main>
+                </volumes>
+            </s3_no_fake_tx>
+            <s3_no_fake_tx_move>
+                <volumes>
+                    <src>
+                        <disk>s3_no_fake_tx</disk>
+                    </src>
+                    <dst>
+                        <disk>s3_no_fake_tx_2</disk>
+                    </dst>
+                </volumes>
+            </s3_no_fake_tx_move>
         </policies>
     </storage_configuration>
 </clickhouse>

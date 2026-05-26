@@ -40,6 +40,7 @@ public:
     /// Encodes posting list from a pre-sorted array of row_ids.
     /// Splits into posting_list_block_size-large blocks and encodes each block separately.
     /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
+    /// Compressed codecs (Bitpacking) append a per-block Index Section after each segment for lazy cursor support.
     virtual void encode(std::span<const UInt32> row_ids, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
     /// Reads an encoded posting list, decodes it, and returns a posting list.
@@ -51,6 +52,7 @@ private:
 class PostingListCodecFactory : public boost::noncopyable
 {
 public:
+    static std::unique_ptr<IPostingListCodec> createPostingListCodec(IPostingListCodec::Type type);
     static std::unique_ptr<IPostingListCodec> createPostingListCodec(std::string_view codec_name, const String & caller_name);
 };
 

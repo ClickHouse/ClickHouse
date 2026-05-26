@@ -31,7 +31,7 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.LLVM_COVERAGE_BUILD: f" cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DWITH_COVERAGE=ON",
     BuildTypes.PER_TEST_COVERAGE: f" cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE} -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DWITH_COVERAGE=ON -DWITH_COVERAGE_DEPTH=ON",
     BuildTypes.AMD_COVERAGE: f" cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_SYSCONFDIR=/etc -DCMAKE_INSTALL_LOCALSTATEDIR=/var -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DSANITIZE_COVERAGE=1",
-    BuildTypes.ARM_BINARY: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DENABLE_EXAMPLES=1 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
+    BuildTypes.ARM_BINARY: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.AMD_TIDY: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=Debug -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=1 -DENABLE_UTILS=1 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_CLANG_TIDY=1 -DENABLE_EXAMPLES=1 -DENABLE_BUZZHOUSE=1",
     BuildTypes.ARM_TIDY: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=Debug -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=1 -DENABLE_LEXER_TEST=1 -DENABLE_UTILS=1 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_CLANG_TIDY=1 -DENABLE_EXAMPLES=1 -DENABLE_BUZZHOUSE=1",
     BuildTypes.AMD_DARWIN: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/darwin/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DCMAKE_AR:FILEPATH=/cctools/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=/cctools/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=/cctools/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=/cctools/bin/x86_64-apple-darwin-ld",
@@ -39,7 +39,7 @@ BUILD_TYPE_TO_CMAKE = {
     BuildTypes.ARM_V80COMPAT: f"cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DNO_ARMV81_OR_HIGHER=1 -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.AMD_FREEBSD: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/freebsd/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.PPC64LE: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-ppc64le.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
-    BuildTypes.AMD_COMPAT: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DX86_ARCH_LEVEL=1 -DENABLE_EXAMPLES=1",
+    BuildTypes.AMD_COMPAT: f"   cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DX86_ARCH_LEVEL=1",
     BuildTypes.AMD_MUSL: f"     cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64-musl.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.RISCV64: f"      cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-riscv64.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
     BuildTypes.S390X: f"        cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE_LEGACY} -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-s390x.cmake -DENABLE_BUILD_PROFILING=1 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
@@ -123,6 +123,10 @@ def main():
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
+    # PR builds must not pollute the shared sccache bucket; only master/release
+    # builds (pr_number == 0) are allowed to write entries.
+    if info.pr_number > 0:
+        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -160,7 +164,27 @@ def main():
     if not is_private and info.pr_number != 0 and "ENABLE_THINLTO=1" in cmake_cmd:
         cmake_cmd += " -DDISABLE_ALL_DEBUG_SYMBOLS=1"
 
+    # PGO/BOLT profile integration for release builds
+    pgo_profile = "/opt/clickhouse-profiles/clickhouse-pgo.profdata"
+    bolt_profile = "/opt/clickhouse-profiles/clickhouse-bolt.fdata"
+    use_pgo = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(pgo_profile)
+    use_bolt = build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE) and os.path.isfile(bolt_profile) and os.path.getsize(bolt_profile) > 0
+
+    # PGO is best-effort: keep a PGO-free command ready so we can retry without
+    # profile-guided optimization if cmake/build fails with a stale/incompatible
+    # profile. BOLT has a similar fallback path applied after linking. Apply BOLT
+    # before snapshotting `cmake_cmd_no_pgo` so the retry preserves `--emit-relocs`
+    # and the later `llvm-bolt` step still has a relocatable binary to operate on.
+    if use_bolt:
+        print(f"BOLT profile found at {bolt_profile}, enabling BOLT post-link optimization")
+        cmake_cmd += " -DENABLE_CLICKHOUSE_BOLT=ON"
+    cmake_cmd_no_pgo = cmake_cmd
+    if use_pgo:
+        print(f"PGO profile found at {pgo_profile}, enabling profile-guided optimization")
+        cmake_cmd += f" -DCLICKHOUSE_PGO_PROFILE_PATH={pgo_profile}"
+
     cmake_cmd += f" {repo_path_normalized} -B {build_dir_normalized}"
+    cmake_cmd_no_pgo += f" {repo_path_normalized} -B {build_dir_normalized}"
 
     res = True
     results = []
@@ -198,6 +222,18 @@ def main():
         )
         res = results[-1].is_ok()
 
+        # Validate `.gitmodules` (no recursive submodules, valid URLs, name == path).
+        # Run it only in the arm_tidy build to avoid adding overhead to every build
+        # and to the style check (which does not have submodules available).
+        if res and build_type == BuildTypes.ARM_TIDY:
+            results.append(
+                Result.from_commands_run(
+                    name="Check Submodules",
+                    command="./ci/jobs/scripts/check_style/check_submodules.sh",
+                )
+            )
+            res = results[-1].is_ok()
+
     version_dict = None
     if not info.is_local_run:
         version_dict = info.get_kv_data("version")
@@ -208,8 +244,8 @@ def main():
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
             )
-            info.add_workflow_report_message(
-                "WARNING: ClickHouse version has not been found in workflow kv storage"
+            info.add_workflow_warning(
+                "ClickHouse version has not been found in workflow kv storage"
             )
     assert version_dict
 
@@ -234,6 +270,7 @@ def main():
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
         run_shell("sccache stats", "sccache --show-stats")
+        cmake_result_index = len(results)
         results.append(
             Result.from_commands_run(
                 name="Cmake configuration",
@@ -242,6 +279,31 @@ def main():
             )
         )
         res = results[-1].is_ok()
+
+        # PGO is best-effort: if cmake failed with a profile (e.g. it is stale
+        # or incompatible with the current sources/toolchain), retry once
+        # without `-DCLICKHOUSE_PGO_PROFILE_PATH`. If the retry succeeds the
+        # fallback must not block the job, so replace the failed first attempt
+        # with the successful retry — otherwise `Result.create_from` aggregates
+        # the job status as FAIL because of the stranded failed child result.
+        if not res and use_pgo:
+            print("WARNING: cmake with PGO failed, retrying without profile-guided optimization")
+            Shell.check(f"rm -f {build_dir}/CMakeCache.txt")
+            retry_result = Result.from_commands_run(
+                name="Cmake configuration (retry without PGO)",
+                command=cmake_cmd_no_pgo,
+                workdir=build_dir_normalized,
+            )
+            if retry_result.is_ok():
+                retry_result.set_info(
+                    "PGO profile was stale or incompatible; reconfigured without it (best-effort fallback)"
+                )
+                results[cmake_result_index] = retry_result
+                use_pgo = False
+                res = True
+            else:
+                results.append(retry_result)
+                res = False
 
         # Pre-seed .ninja_log from toolchain for timing-based scheduling
         if res:
@@ -259,16 +321,15 @@ def main():
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
         elif build_type == BuildTypes.ARM_BINARY:
-            targets = "clickhouse-bundle parser_memory_profiler"
+            targets = "clickhouse-bundle"
         elif build_type in (
             BuildTypes.AMD_TIDY,
             BuildTypes.ARM_TIDY,
-            BuildTypes.AMD_COMPAT,
         ):
-            # check all targets in BuildTypes.AMD_COMPAT instead of a regular build to not delay tests job
             targets = "-k0 all"
         else:
             targets = "clickhouse-bundle"
+        build_result_index = len(results)
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
@@ -276,6 +337,38 @@ def main():
                 workdir=build_dir_normalized,
             )
         )
+
+        # PGO is best-effort: if linking with a stale/incompatible profile fails,
+        # reconfigure without `-DCLICKHOUSE_PGO_PROFILE_PATH` and rebuild once.
+        # As with the cmake fallback above, on a successful retry we replace
+        # the failed first-attempt build result so the job is not blocked by
+        # a stranded FAIL child.
+        if not results[-1].is_ok() and use_pgo:
+            print("WARNING: build with PGO failed, retrying without profile-guided optimization")
+            Shell.check(f"rm -f {build_dir}/CMakeCache.txt")
+            retry_cmake = Result.from_commands_run(
+                name="Cmake configuration (retry without PGO)",
+                command=cmake_cmd_no_pgo,
+                workdir=build_dir_normalized,
+            )
+            if retry_cmake.is_ok():
+                retry_build = Result.from_commands_run(
+                    name="Build ClickHouse (retry without PGO)",
+                    command=f"command time -v ninja {targets}",
+                    workdir=build_dir_normalized,
+                )
+                if retry_build.is_ok():
+                    retry_build.set_info(
+                        "PGO profile was stale or incompatible; rebuilt without it (best-effort fallback)"
+                    )
+                    results[build_result_index] = retry_build
+                    use_pgo = False
+                else:
+                    results.append(retry_cmake)
+                    results.append(retry_build)
+            else:
+                results.append(retry_cmake)
+
         run_shell("sccache stats", "sccache --show-stats")
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
@@ -290,6 +383,52 @@ def main():
         run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
         Shell.check("pwd")
         res = results[-1].is_ok()
+
+        # Apply BOLT post-link optimization if profiles are available
+        if res and use_bolt:
+            clickhouse_binary = f"{build_dir}/programs/clickhouse"
+            clickhouse_bolted = f"{build_dir}/programs/clickhouse.bolt"
+            bolt_cmd = (
+                f"llvm-bolt {clickhouse_binary} "
+                f"-o {clickhouse_bolted} "
+                f"-data={bolt_profile} "
+                f"-reorder-blocks=ext-tsp "
+                f"-reorder-functions=cdsort "
+                f"-split-functions "
+                f"-split-all-cold "
+                f"-split-eh "
+                f"-dyno-stats "
+                f"-use-gnu-stack"
+            )
+            bolt_result = Result.from_commands_run(
+                name="BOLT optimization",
+                command=bolt_cmd,
+            )
+            results.append(bolt_result)
+            if bolt_result.is_ok():
+                # Replace original binary with BOLT-optimized version
+                Shell.check(f"mv {clickhouse_bolted} {clickhouse_binary}")
+                # Rebuild the self-extracting bundle so uploaded artifacts contain the BOLT-optimized binary
+                results.append(
+                    Result.from_commands_run(
+                        name="Rebuild self-extracting bundle after BOLT",
+                        command=f"ninja clickhouse-self-extracting",
+                        workdir=build_dir_normalized,
+                    )
+                )
+                if results[-1].is_ok():
+                    print("BOLT optimization applied successfully, self-extracting bundle rebuilt")
+                else:
+                    print("WARNING: Failed to rebuild self-extracting bundle after BOLT")
+                    res = False
+            else:
+                # BOLT is best-effort: if it fails, continue with the unoptimized binary
+                print("WARNING: BOLT optimization failed, continuing with unoptimized binary")
+                results[-1] = Result(
+                    name="BOLT optimization (skipped)",
+                    status=Result.Status.OK,
+                    info="BOLT post-processing failed (best-effort), using PGO-only binary",
+                )
 
     if (
         res

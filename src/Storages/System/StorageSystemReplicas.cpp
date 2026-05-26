@@ -94,8 +94,8 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemReplicas::createVirtuals()
@@ -230,7 +230,7 @@ void StorageSystemReplicas::readImpl(
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource : public ISource
+class SystemReplicasSource final : public ISource
 {
 public:
     SystemReplicasSource(

@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentAggregationOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyAggregationOperatorQuantile.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyLimitAggregationOperator.h>
 
 
 namespace DB::ErrorCodes
@@ -24,6 +25,9 @@ SQLQueryPiece applyAggregationOperator(
 
     if (isAggregationOperatorQuantile(operator_name))
         return applyAggregationOperatorQuantile(operator_node, std::move(arguments), context);
+
+    if (isLimitAggregationOperator(operator_name))
+        return applyLimitAggregationOperator(operator_node, std::move(arguments), context);
 
     throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                     "Aggregation operator '{}' is not implemented", operator_name);

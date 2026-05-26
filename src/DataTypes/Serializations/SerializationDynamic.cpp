@@ -12,6 +12,7 @@
 
 #include <Columns/ColumnDynamic.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -169,7 +170,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         for (const auto & type : flattened_column.types)
         {
             if (settings.native_format && settings.format_settings && settings.format_settings->native.encode_types_in_binary_format)
-                encodeDataType(type);
+                encodeDataType(type, *stream);
             else
                 writeStringBinary(type->getName(), *stream);
         }
@@ -848,8 +849,15 @@ static void deserializeTextImpl(
         /// We cannot insert value with incomplete type, insert it as String.
         variant_type = std::make_shared<DataTypeString>();
         /// To be able to deserialize field as String with Quoted escaping rule, it should be quoted.
+        /// Use `writeQuotedString` so inner single quotes and backslashes are escaped properly;
+        /// naive concatenation `"'" + field + "'"` would terminate prematurely at the first inner
+        /// single quote, truncating the stored value (issue #105441).
         if (escaping_rule == FormatSettings::EscapingRule::Quoted && (field.size() < 2 || field.front() != '\'' || field.back() != '\''))
-            field = "'" + field + "'";
+        {
+            WriteBufferFromOwnString quoted;
+            writeQuotedString(field, quoted);
+            field = std::move(quoted.str());
+        }
     }
 
     if (dynamic_column.addNewVariant(variant_type, variant_type->getName()))

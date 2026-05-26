@@ -8,6 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
@@ -43,7 +44,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource : public ISource
+class RedisDataSource final : public ISource
 {
 public:
     RedisDataSource(
@@ -152,7 +153,7 @@ private:
 };
 
 
-class RedisSink : public SinkToStorage
+class RedisSink final : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
@@ -219,8 +220,7 @@ StorageRedis::StorageRedis(
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
-    setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
 }
 
 VirtualColumnsDescription StorageRedis::createVirtuals()
@@ -423,7 +423,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)

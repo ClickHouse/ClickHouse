@@ -38,6 +38,8 @@ class _Settings:
     ######################################
     MAX_RETRIES_S3 = 3
     MAX_RETRIES_GH = 3
+    # PR label that bypasses all job filtering (filter hooks and changed-file filtering)
+    CI_FORCE_ALL_LABEL: str = "ci-force-all"
 
     ######################################
     #   S3 (artifact storage) settings   #
@@ -157,6 +159,7 @@ _USER_DEFINED_SETTINGS = [
     "INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS",
     "MAX_RETRIES_S3",
     "MAX_RETRIES_GH",
+    "CI_FORCE_ALL_LABEL",
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
