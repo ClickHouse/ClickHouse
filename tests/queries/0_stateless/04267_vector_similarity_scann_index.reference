@@ -4,10 +4,12 @@
 7	0.20000004768371582
 0
 0
+0
 2. cosineDistance
 6	0.005731362878640178
 4	0.09204062768384846
 1	0.15200169244542905
+0
 0
 0
 3. dotProduct
@@ -16,9 +18,16 @@
 7	9.399999618530273
 0
 0
-4. invalid distance function
-5. too few arguments
-6. too many arguments
-7. dimensions must be > 0
-8. must be created on Array(Float32) or Array(Float64) column
-9. dimension mismatch at insert
+0
+4. Fallback path (< 1000 vectors)
+0
+0
+5. invalid distance function
+6. too few arguments
+7. too many arguments
+8. dimensions must be > 0
+9. must be created on Array(Float32) or Array(Float64) column
+10. dimension mismatch at insert
+11. Serialization round-trip (DETACH/ATTACH)
+1
+0
