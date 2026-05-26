@@ -76,7 +76,8 @@ def test_sts_smoke(started_cluster):
             f"""
             SELECT sum(a), sum(b), sum(c) FROM s3(
                 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke.csv',
-                'CSV', 'a Int64, b Int64, c Int64',
+                access_key_id = 'aws', secret_access_key = 'aws123',
+                format = 'CSV', structure = 'a Int64, b Int64, c Int64',
                 extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
                 SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
         """
@@ -89,7 +90,8 @@ def test_sts_smoke(started_cluster):
         f"""
         SELECT sum(a), sum(b), sum(c) FROM s3(
             'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke.csv',
-            'CSV', 'a Int64, b Int64, c Int64',
+            access_key_id = 'aws', secret_access_key = 'aws123',
+            format = 'CSV', structure = 'a Int64, b Int64, c Int64',
             extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
     """
     )
@@ -110,7 +112,9 @@ def test_sts_smoke_s3cluster(started_cluster):
             SELECT sum(a), sum(b), sum(c) FROM s3Cluster(
                 test_shard_localhost,
                 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke_s3cluster.csv',
-                'CSV', extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
+                access_key_id = 'aws', secret_access_key = 'aws123',
+                format = 'CSV', structure = 'a Int64, b Int64, c Int64',
+                extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession'))
                 SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
         """
         )
@@ -123,7 +127,9 @@ def test_sts_smoke_s3cluster(started_cluster):
         SELECT sum(c1), sum(c2), sum(c3) FROM s3Cluster(
             test_shard_localhost,
             'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke_s3cluster.csv',
-            'CSV', extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
+            access_key_id = 'aws', secret_access_key = 'aws123',
+            format = 'CSV', structure = 'c1 Int64, c2 Int64, c3 Int64',
+            extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
     """
     )
 
@@ -142,7 +148,8 @@ def test_sts_credentials_cache(started_cluster):
             f"""
             SELECT sum(a), sum(b), sum(c) FROM s3(
                 'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke.csv',
-                'CSV', 'a Int64, b Int64, c Int64',
+                access_key_id = 'aws', secret_access_key = 'aws123',
+                format = 'CSV', structure = 'a Int64, b Int64, c Int64',
                 extra_credentials(role_arn = 'arn::role', role_session_name = 'miniorole'))
         """
         )
@@ -177,7 +184,9 @@ def test_sts_credentials_cache(started_cluster):
                 SELECT sum(a), sum(b), sum(c) FROM s3Cluster(
                     test_shard_localhost,
                     'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_sts_smoke_s3cluster.csv',
-                    'CSV', extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession{i}'))
+                    access_key_id = 'aws', secret_access_key = 'aws123',
+                    format = 'CSV', structure = 'a Int64, b Int64, c Int64',
+                    extra_credentials(role_arn = 'arn::role', role_session_name = 'mysession{i}'))
                     SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000
             """
             )

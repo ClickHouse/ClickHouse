@@ -1155,8 +1155,8 @@ def test_truncate_table(started_cluster):
     name = "truncate"
 
     instance.query(
-        "CREATE TABLE {} (id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV')".format(
-            name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, name
+        "CREATE TABLE {} (id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'minio', '{}', 'CSV')".format(
+            name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, name, minio_secret_key
         )
     )
 
@@ -3064,8 +3064,8 @@ def test_object_tags(started_cluster):
     table_name_with_tags = f"test_object_tags_{uuid.uuid4()}"
     table_name_without_tags = f"test_object_no_tags_{uuid.uuid4()}"
 
-    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_with_tags}.tsv', auto, 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1")
-    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_without_tags}.tsv', auto, 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1")
+    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_with_tags}.tsv', 'minio', '{minio_secret_key}', 'auto', 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1")
+    instance.query(f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_without_tags}.tsv', 'minio', '{minio_secret_key}', 'auto', 'x UInt64') select 1 SETTINGS s3_truncate_on_insert=1")
 
     tags = Tags(for_object=True)
     tags["Database"] = "ClickHouse"
@@ -3078,9 +3078,9 @@ def test_object_tags(started_cluster):
     assert read_tags == tags
 
     def read_without_s3_tags(file_or_glob, *args, **kwargs):
-        return instance.query(f"select _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_or_glob}', auto, 'x UInt64')", *args, **kwargs)
+        return instance.query(f"select _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_or_glob}', 'minio', '{minio_secret_key}', 'auto', 'x UInt64')", *args, **kwargs)
     def read_s3_tags(file_or_glob, *args, **kwargs):
-        return instance.query(f"select _tags, _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_or_glob}', auto, 'x UInt64')", *args, **kwargs)
+        return instance.query(f"select _tags, _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{file_or_glob}', 'minio', '{minio_secret_key}', 'auto', 'x UInt64')", *args, **kwargs)
     def read_s3_tags_events(query_id):
         events = instance.query(f"""
             system flush logs;
@@ -3118,7 +3118,7 @@ def test_object_tags(started_cluster):
     # (it should be always like that, but, who knows what "workarounds" we can
     # have)
     query_id = uuid.uuid4().hex
-    instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_with_tags}.tsv', auto, 'x UInt64')", query_id=query_id)
+    instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_with_tags}.tsv', 'minio', '{minio_secret_key}', 'auto', 'x UInt64')", query_id=query_id)
     assert read_s3_tags_events(query_id) == (0, 0)
 
 
@@ -3360,4 +3360,3 @@ def test_query_condition_cache(started_cluster):
     assert hits_after_drop == 0, f"Expected no hits after drop, got {hits_after_drop}"
 
     instance.query(f"DROP TABLE {table_name}")
-

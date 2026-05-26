@@ -756,20 +756,18 @@ def test_show_data_lake_catalogs_setting(
 
 
 @only_glue
-def test_glue_env_credentials(node, catalog_manager, sales_table):
-    """ClickHouse picks up AWS credentials from container env vars."""
+def test_glue_env_credentials_rejected(node, catalog_manager, sales_table):
+    """Fresh Glue catalogs cannot rely on server AWS environment credentials."""
 
     env_out = node.exec_in_container([
         "bash", "-c", "env | grep AWS",
     ]).strip()
     assert "AWS_ACCESS_KEY_ID" in env_out
 
-    db = _fresh_glue_db(node, catalog_manager, credentials_mode="none")
-    full = catalog_manager.resolve_table_name(node, db, sales_table)
-    result = node.query(
-        f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-    ).strip()
-    assert int(result) == 20
+    with pytest.raises(Exception) as exc_info:
+        _fresh_glue_db(node, catalog_manager, credentials_mode="none")
+
+    assert "ACCESS_DENIED" in str(exc_info.value)
 
 
 @only_glue

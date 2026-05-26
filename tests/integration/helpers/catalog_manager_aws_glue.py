@@ -208,7 +208,7 @@ class AwsGlueCatalogManager(CatalogManager):
         """Create a Glue DataLakeCatalog database.
 
         credentials_mode:
-          "none"     -- no credentials in DDL, rely on env vars
+          "none"     -- no credentials in DDL; retained for negative tests
           "settings" -- credentials as SETTINGS keys
         """
         settings = [
