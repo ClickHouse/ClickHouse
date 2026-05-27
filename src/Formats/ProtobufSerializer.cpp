@@ -1970,7 +1970,7 @@ namespace
     };
 
 
-    /// Wraps a structute (field, Message, etc) which is a member of OneOf (protobuf union)
+    /// Wraps a structure (field, Message, etc) which is a member of OneOf (protobuf union)
     class ProtobufSerializerOneOf : public ProtobufSerializer
     {
     public:
@@ -2033,6 +2033,11 @@ namespace
                 presence_column->insert(0);
 
             nested_serializer->insertDefaults(row_num);
+        }
+
+        void resetState() override
+        {
+            nested_serializer->resetState();
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2132,6 +2137,11 @@ namespace
             column_nullable.getNullMapData().push_back(false);
         }
 
+        void resetState() override
+        {
+            nested_serializer->resetState();
+        }
+
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerNullable ->\n";
@@ -2173,6 +2183,7 @@ namespace
         void writeRow(size_t row_num) override { nested_serializer->writeRow(row_num); }
         void readRow(size_t row_num) override { nested_serializer->readRow(row_num); }
         void insertDefaults(size_t row_num) override { nested_serializer->insertDefaults(row_num); }
+        void resetState() override { nested_serializer->resetState(); }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
@@ -2266,6 +2277,11 @@ namespace
             column_lc.insertFromFullColumn(*default_value_column, 0);
         }
 
+        void resetState() override
+        {
+            nested_serializer->resetState();
+        }
+
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
             writeIndent(out, indent) << "ProtobufSerializerLowCardinality ->\n";
@@ -2354,6 +2370,11 @@ namespace
             if (row_num < column_array.size())
                 return;
             column_array.insertDefault();
+        }
+
+        void resetState() override
+        {
+            element_serializer->resetState();
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2462,6 +2483,12 @@ namespace
                 }
                 throw;
             }
+        }
+
+        void resetState() override
+        {
+            for (const auto & element_serializer : element_serializers)
+                element_serializer->resetState();
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2662,6 +2689,7 @@ namespace
                         if (column->size() > old_size)
                             column->popBack(column->size() - old_size);
                     }
+                    resetState();
                     throw;
                 }
             }
@@ -2685,6 +2713,19 @@ namespace
             }
 
             addDefaultsToMissingColumns(row_num);
+        }
+
+        void resetState() override
+        {
+            for (auto & info : field_infos)
+            {
+                info.field_read = false;
+                if (info.field_serializer)
+                    info.field_serializer->resetState();
+            }
+
+            last_field_tag = 0;
+            last_field_index = static_cast<size_t>(-1);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
@@ -2885,6 +2926,7 @@ namespace
         {
             first_call_of_write_row = true;
             first_call_of_read_row = true;
+            serializer->resetState();
         }
 
         void startReading() override
@@ -2960,6 +3002,7 @@ namespace
         void writeRow(size_t row_num) override { message_serializer->writeRow(row_num); }
         void readRow(size_t row_num) override { message_serializer->readRow(row_num); }
         void insertDefaults(size_t row_num) override { message_serializer->insertDefaults(row_num); }
+        void resetState() override { message_serializer->resetState(); }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
         {
@@ -3111,6 +3154,11 @@ namespace
                 }
                 throw;
             }
+        }
+
+        void resetState() override
+        {
+            message_serializer->resetState();
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
