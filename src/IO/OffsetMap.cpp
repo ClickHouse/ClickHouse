@@ -68,9 +68,9 @@ const StoredObject * OffsetMap::findObjectAt(size_t logical_offset, size_t * obj
     return nullptr;
 }
 
-std::vector<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logical_range) const
+std::vector<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logical_range) const  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::vector<PhysicalRange> result;
+    std::vector<PhysicalRange> result;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     for (const auto & seg : segments)
     {

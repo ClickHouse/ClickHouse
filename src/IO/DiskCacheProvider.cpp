@@ -462,7 +462,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
                 "write_range=[{}, {}), data intervals={}",
                 write_range.offset, write_range.end(), data.getIntervals().size());
 
-        std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(contiguous);
+        std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(contiguous);  // STYLE_CHECK_ALLOW_STD_CONTAINERS
         data.copyTo(flat_buf.data(), write_range);
 
         segment.write(flat_buf.data(), contiguous, write_offset);

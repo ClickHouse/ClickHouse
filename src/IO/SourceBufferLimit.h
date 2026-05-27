@@ -95,7 +95,7 @@ public:
     size_t getCapacity() const;
 
     /// Observability: snapshot of all active slots.
-    std::vector<ActiveBufferInfo> getActive() const;
+    std::vector<ActiveBufferInfo> getActive() const;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     friend class SourceBufferSlot;
@@ -106,7 +106,7 @@ private:
 
     mutable std::mutex mutex;
     size_t next_id = 0;
-    std::unordered_map<size_t, ActiveBufferInfo> registry;
+    std::unordered_map<size_t, ActiveBufferInfo> registry;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     LoggerPtr log = getLogger("SourceBufferLimit");
 };

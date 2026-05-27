@@ -63,7 +63,7 @@ private:
     /// legacy `CachedInMemoryReadBufferFromFile` behaviour for bypass-mode
     /// reads (background merges/mutations).
     bool bypass_if_missing;
-    std::vector<Block> blocks;
+    std::vector<Block> blocks;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     LoggerPtr log = getLogger("PageCacheHandle");
 };
 

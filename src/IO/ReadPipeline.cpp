@@ -297,7 +297,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     if (!source_reader)
         return nullptr;
 
-    std::vector<std::shared_ptr<ICacheProvider>> executor_caches;
+    std::vector<std::shared_ptr<ICacheProvider>> executor_caches;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// PageCache (memory) — goes first in chain (fastest). It's a
     /// file-level cache: derive a single `PageCacheFile` from the front

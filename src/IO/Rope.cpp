@@ -272,9 +272,9 @@ size_t Rope::coveredBytes(ByteRange req) const
     return total;
 }
 
-std::vector<ByteRange> Rope::gaps(ByteRange req) const
+std::vector<ByteRange> Rope::gaps(ByteRange req) const  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
-    std::vector<ByteRange> result;
+    std::vector<ByteRange> result;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     if (req.size == 0)
         return result;
 

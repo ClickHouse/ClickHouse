@@ -12,8 +12,8 @@ namespace DB
 
 struct CacheLookupResult
 {
-    std::vector<ByteRange> hit_ranges;
-    std::vector<ByteRange> miss_ranges;
+    std::vector<ByteRange> hit_ranges;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<ByteRange> miss_ranges;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     bool allHit() const { return miss_ranges.empty(); }
     bool allMiss() const { return hit_ranges.empty(); }

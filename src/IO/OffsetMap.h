@@ -26,7 +26,7 @@ public:
 
     /// Map a logical range to physical ranges.
     /// A single logical range may span multiple objects.
-    std::vector<PhysicalRange> map(ByteRange logical_range) const;
+    std::vector<PhysicalRange> map(ByteRange logical_range) const;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Find the object whose range contains `logical_offset`. Returns nullptr
     /// if `logical_offset` is at or past `totalSize()`. The optional output
@@ -52,7 +52,7 @@ private:
         size_t size;
     };
 
-    std::vector<Segment> segments;
+    std::vector<Segment> segments;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t total_size = 0;
     bool has_unknown_size = false;
 };

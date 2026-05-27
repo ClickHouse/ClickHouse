@@ -112,9 +112,9 @@ public:
 
     /// Returns r minus all intervals in the set, as a list of disjoint
     /// sub-ranges in increasing-offset order.
-    std::vector<ByteRange> subtract(ByteRange r) const
+    std::vector<ByteRange> subtract(ByteRange r) const  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
-        std::vector<ByteRange> out;
+        std::vector<ByteRange> out;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
         if (r.size == 0)
             return out;
         size_t cur = r.offset;
@@ -137,7 +137,7 @@ public:
     }
 
 private:
-    std::vector<ByteRange> intervals;
+    std::vector<ByteRange> intervals;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 }
@@ -145,7 +145,7 @@ private:
 ReaderExecutor::ReaderExecutor(
     std::shared_ptr<ISourceReader> source_,
     const StoredObjects & objects,
-    std::vector<std::shared_ptr<ICacheProvider>> caches_,
+    std::vector<std::shared_ptr<ICacheProvider>> caches_,  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t window_size_,
     size_t min_bytes_for_seek_,
     String log_file_path_)
@@ -236,16 +236,16 @@ ReaderExecutor::~ReaderExecutor()
     }
 }
 
-std::vector<ByteRange> ReaderExecutor::mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap)
+std::vector<ByteRange> ReaderExecutor::mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if (ranges.empty() || min_gap == 0)
         return ranges;
 
-    std::vector<ByteRange> sorted = ranges;
+    std::vector<ByteRange> sorted = ranges;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::sort(sorted.begin(), sorted.end(),
         [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
 
-    std::vector<ByteRange> merged;
+    std::vector<ByteRange> merged;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     merged.push_back(sorted[0]);
 
     for (size_t i = 1; i < sorted.size(); ++i)
@@ -548,7 +548,7 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
 
     /// Encryptors are reused across blocks — cheaper than constructing one
     /// per block per layer.
-    std::vector<FileEncryption::Encryptor> encryptors;
+    std::vector<FileEncryption::Encryptor> encryptors;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     encryptors.reserve(decryption_layers.size());
     for (size_t i = 0; i < decryption_layers.size(); ++i)
         encryptors.emplace_back(
@@ -739,11 +739,11 @@ void ReaderExecutor::seek(size_t new_position)
     maybeTriggerPrefetch();
 }
 
-std::vector<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::allocateBlocks(
-    size_t size, size_t block_size, const std::vector<size_t> & splits)
+std::vector<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::allocateBlocks(  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    size_t size, size_t block_size, const std::vector<size_t> & splits)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     chassert(block_size > 0);
-    std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks;
+    std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     blocks.reserve((size + block_size - 1) / block_size + splits.size());
 
     size_t pos = 0;
@@ -787,7 +787,7 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 }
 
 Rope ReaderExecutor::readFromLiveBufferIntoRope(
-    std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
+    std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     chassert(live_buffer);
     auto & buf = *live_buffer->buffer;
@@ -818,7 +818,7 @@ Rope ReaderExecutor::readFromLiveBufferIntoRope(
 
 Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
-    std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
+    std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     /// Try live buffer: reuse open connection for sequential reads.
     if (live_buffer
@@ -941,8 +941,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     /// (so we know which to iterate for `put`) is a layout detail — both
     /// are destroyed together in scope exit. See `~DiskCacheHandle` for the
     /// deferred-bump rationale.
-    std::vector<std::unique_ptr<ICacheHandle>> miss_handles;
-    std::vector<std::unique_ptr<ICacheHandle>> hit_only_handles;
+    std::vector<std::unique_ptr<ICacheHandle>> miss_handles;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<std::unique_ptr<ICacheHandle>> hit_only_handles;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Over-read pre-check: bytes the previous `readPhysicalWindow` source-read
     /// just past its requested window (with `live_buffer` advancing through
@@ -987,10 +987,10 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     /// (If `covered` is empty, this returns the whole window; if over_read
     /// covered everything, returns empty and the cache+source loops below are
     /// no-ops.)
-    std::vector<ByteRange> remaining = covered.subtract(physical_window);
+    std::vector<ByteRange> remaining = covered.subtract(physical_window);  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     for (auto & cache : caches)
     {
-        std::vector<ByteRange> still_missing;
+        std::vector<ByteRange> still_missing;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         for (const auto & r : remaining)
         {
@@ -1103,7 +1103,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             /// When the caller drops the returned rope, the user-data buffer's
             /// refcount drops to zero immediately — even if we retain
             /// over-read blocks in `over_read_buffer` for a later request.
-            std::vector<size_t> splits;
+            std::vector<size_t> splits;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
             const size_t pr_lo = logical_pos;
             const size_t pr_hi = logical_pos + pr.size;
             if (physical_window.offset > pr_lo && physical_window.offset < pr_hi)

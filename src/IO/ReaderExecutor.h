@@ -36,7 +36,7 @@ public:
     ReaderExecutor(
         std::shared_ptr<ISourceReader> source,
         const StoredObjects & objects,
-        std::vector<std::shared_ptr<ICacheProvider>> caches,
+        std::vector<std::shared_ptr<ICacheProvider>> caches,  // STYLE_CHECK_ALLOW_STD_CONTAINERS
         size_t window_size = DEFAULT_WINDOW_SIZE,
         size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
         String log_file_path = {});
@@ -116,7 +116,7 @@ public:
 
     /// Merge close-together ranges to reduce source request count.
     /// Ranges separated by less than min_gap are combined.
-    static std::vector<ByteRange> mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap);
+    static std::vector<ByteRange> mergeRanges(const std::vector<ByteRange> & ranges, size_t min_gap);  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     /// Read a specific physical range through the cache chain and source.
@@ -127,20 +127,20 @@ private:
     /// blocks that receive no data (e.g., file ended early) are released when this function returns.
     Rope readFromSource(
         const StoredObject & object, size_t offset,
-        std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
+        std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Read from the live buffer into the pre-allocated `blocks`.
     /// Uses set() + next() — data goes directly from network into block memory.
     Rope readFromLiveBufferIntoRope(
-        std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
+        std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ `block_size`.
     /// `splits` (sorted, relative offsets within `[0, size)`) forces a block boundary at each
     /// listed offset so the resulting `OwnedRopeBuffer` allocations don't straddle those points.
     /// Used to keep user-window bytes and over-read bytes in separate buffers so each can be
     /// released independently.
-    static std::vector<std::shared_ptr<OwnedRopeBuffer>> allocateBlocks(
-        size_t size, size_t block_size, const std::vector<size_t> & splits = {});
+    static std::vector<std::shared_ptr<OwnedRopeBuffer>> allocateBlocks(  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        size_t size, size_t block_size, const std::vector<size_t> & splits = {});  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
@@ -174,7 +174,7 @@ private:
     std::shared_ptr<ISourceReader> source;
     StoredObjects stored_objects;  /// retained for makeTransientForReadAt
     OffsetMap offset_map;
-    std::vector<std::shared_ptr<ICacheProvider>> caches;
+    std::vector<std::shared_ptr<ICacheProvider>> caches;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     /// File path used only for `system.reader_executor_log` /
     /// `ReaderExecutorLogElement::source_file_path`. Cache identity is
     /// derived per-object by the cache providers themselves and no longer
@@ -239,8 +239,8 @@ private:
         String key;
     };
 
-    std::vector<DecryptionLayer> decryption_layers;
-    std::vector<FileEncryption::Header> decryption_headers;
+    std::vector<DecryptionLayer> decryption_layers;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<FileEncryption::Header> decryption_headers;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     bool decryption_initialized = false;
 #endif
     size_t data_start_offset = 0;  /// N * Header::kSize (0 when no encryption)

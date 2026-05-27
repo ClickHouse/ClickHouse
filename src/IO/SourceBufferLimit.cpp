@@ -120,10 +120,10 @@ void SourceBufferLimit::updatePosition(size_t slot_id, size_t new_position)
         it->second.position = new_position;
 }
 
-std::vector<ActiveBufferInfo> SourceBufferLimit::getActive() const
+std::vector<ActiveBufferInfo> SourceBufferLimit::getActive() const  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     std::lock_guard lock(mutex);
-    std::vector<ActiveBufferInfo> result;
+    std::vector<ActiveBufferInfo> result;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
     result.reserve(registry.size());
     for (const auto & [_, info] : registry)
         result.push_back(info);
