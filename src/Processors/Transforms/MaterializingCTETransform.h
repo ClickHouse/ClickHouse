@@ -23,7 +23,6 @@ public:
     void work() override;
     void consume(Chunk chunk) override;
     Chunk generate() override;
-    void onCancel() noexcept override;
 
 private:
     void init();

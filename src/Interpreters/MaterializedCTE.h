@@ -4,8 +4,6 @@
 #include <base/defines.h>
 
 #include <atomic>
-#include <chrono>
-#include <future>
 #include <memory>
 #include <optional>
 #include <string>
@@ -18,14 +16,17 @@ using StoragePtr = std::shared_ptr<IStorage>;
 
 class QueryPlan;
 
-/// Owns a temporary Memory table used by a materialized CTE, and coordinates
-/// the single writer (`MaterializingCTETransform`) with potentially many
-/// concurrent readers (`MemorySource` instances inside arbitrary side
-/// pipelines). Readers block on `build_future` until the writer fulfils
-/// `build_promise`; the writer's `onCancel` and destructor signal an
-/// exception on the same promise so blocked readers unwind cleanly on query
-/// cancellation. Pattern parallel to `CreatingSetsTransform`'s
-/// `promise_to_build` / `prepared_sets_cache` coordination.
+/// Owns a temporary Memory table used by a materialized CTE. The writer
+/// (`MaterializingCTETransform`) commits the data to `storage` via
+/// `MemorySink::onFinish` and sets `is_built` with `memory_order_release`.
+/// Readers (`MemorySource` instances inside any consumer pipeline) are
+/// gated on the writer's completion by the `DelayedPortsProcessor`
+/// inserted by `MaterializingCTEsStep::updatePipeline` via
+/// `addPipelineBefore` - by the time a reader's `generate` runs, the
+/// gate has released and `is_built` must be observed `true`
+/// (asserted as a fail-fast invariant in `ReadFromMemoryStorageStep`).
+/// Pattern parallel to `CreatingSetsStep`'s `DelayedPortsProcessor`
+/// gating.
 struct MaterializedCTE
 {
     explicit MaterializedCTE(const std::string & cte_name_);
@@ -40,15 +41,15 @@ struct MaterializedCTE
         return storage != nullptr;
     }
 
-    /// True iff the writer (`MaterializingCTETransform`) has finished, with
-    /// either success (`set_value`) or failure (`set_exception` from
-    /// `onCancel` / destructor). Equivalent to "the promise has been
-    /// fulfilled"; non-blocking. Use this where you previously checked
-    /// `is_built`; if you need to block until completion, call
-    /// `build_future.get()` instead.
+    /// True iff the writer (`MaterializingCTETransform`) has finished
+    /// committing the CTE's data to `storage` via `MemorySink::onFinish`.
+    /// Non-blocking; pairs with the `memory_order_release` store performed
+    /// by `MaterializingCTETransform::generate`. Used by external callers
+    /// (planner, distributed executor) to decide whether the CTE's plan
+    /// must still be built or whether the storage is safe to read.
     bool isBuilt() const
     {
-        return build_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        return is_built.load(std::memory_order_acquire);
     }
 
     /// True iff `plan` is still held here OR the writer has finished. Used
@@ -100,17 +101,6 @@ struct MaterializedCTE
     /// If it ever observes `false`, the planner failed to wire the gate -
     /// fail loudly rather than block or read half-populated storage.
     std::atomic_bool is_built{false};
-    /// Coordinates the writer (`MaterializingCTETransform`) with concurrent
-    /// readers (`MemorySource` of any plan that reads `storage`). Fulfilled
-    /// exactly once:
-    /// - `set_value()` from `MaterializingCTETransform::generate` on success;
-    /// - `set_exception(...)` from `MaterializingCTETransform::onCancel` on
-    ///   pipeline cancellation, or from the destructor's fallback path on
-    ///   any other abnormal exit.
-    /// Readers in `MemorySource::generate` call `build_future.get()` to wait
-    /// for completion; the get() rethrows the writer's exception on failure.
-    std::promise<void> build_promise;
-    std::shared_future<void> build_future{build_promise.get_future().share()};
 };
 
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
