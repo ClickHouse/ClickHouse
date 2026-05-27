@@ -680,10 +680,12 @@ void S3ObjectStorage::applyNewSettings(
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
     /// Apply global <s3> endpoint settings first (lowest priority).
+    bool endpoint_settings_applied = false;
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
     {
         modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+        endpoint_settings_applied = true;
     }
 
     /// Apply disk config settings on top (higher priority than global <s3> section).
@@ -693,7 +695,7 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    if (!for_disk_s3)
+    if (!for_disk_s3 && !endpoint_settings_applied)
         modified_settings->copyCredentialsFrom(*current_settings);
 
     if (options.allow_client_change
