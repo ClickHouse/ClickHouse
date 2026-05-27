@@ -82,20 +82,7 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
         argument.name = child.result_name;
 
         if (!argument.column || !isColumnConst(*argument.column))
-        {
             all_const = false;
-        }
-        else if (const auto * column_const = typeid_cast<const ColumnConst *>(argument.column.get()))
-        {
-            if (const auto * column_set = typeid_cast<const ColumnSet *>(&column_const->getDataColumn()))
-            {
-                /// A ColumnSet with an unready set should not be constant-folded,
-                /// because the set will be built later during execution.
-                auto future_set = column_set->getData();
-                if (!future_set || !future_set->get())
-                    all_const = false;
-            }
-        }
 
         arguments[i] = std::move(argument);
     }
@@ -280,15 +267,17 @@ ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
-    if (node.type != ActionType::PLACEHOLDER)
+    auto & res = nodes.emplace_back(std::move(node));
+
+    // This should only be a temporary fix to avoid regression in 25.10
+    // https://github.com/ClickHouse/ClickHouse/issues/90363#issue-3642139014
+    if (res.type != ActionType::PLACEHOLDER)
     {
-        if (node.column && !isColumnConst(*node.column))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "ActionsDAG node column must be a ColumnConst, got {} for '{}'",
-                node.column->getName(), node.result_name);
+        const auto valid_column = !res.column || (res.column->isConst() || typeid_cast<const ColumnSet *>(res.column.get()) != nullptr);
+        if (!valid_column)
+            res.column = nullptr;
     }
 
-    auto & res = nodes.emplace_back(std::move(node));
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
@@ -311,11 +300,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     node.type = ActionType::INPUT;
     node.result_type = std::move(column.type);
     node.result_name = std::move(column.name);
-
-    /// Only keep the column if it is a propagated constant.
-    /// Non-const columns from block headers must not be stored in DAG nodes.
-    if (column.column && isColumnConst(*column.column))
-        node.column = std::move(column.column);
+    node.column = std::move(column.column);
 
     return addNode(std::move(node));
 }
@@ -825,35 +810,6 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
     std::erase_if(inputs, [&](const Node * node) { return !required_nodes.contains(node); });
 
     return erased_count != 0;
-}
-
-
-size_t ActionsDAG::removeNodes(const std::unordered_set<const Node *> & to_remove)
-{
-    if (to_remove.empty())
-        return 0;
-
-    std::unordered_set<const Node *> required;
-    std::stack<const Node *> stack;
-    for (const auto * out : outputs)
-        if (required.insert(out).second)
-            stack.push(out);
-    while (!stack.empty())
-    {
-        const auto * cur = stack.top();
-        stack.pop();
-        for (const auto * child : cur->children)
-            if (required.insert(child).second)
-                stack.push(child);
-    }
-
-    size_t removed = std::erase_if(nodes, [&](const Node & n)
-    {
-        return to_remove.contains(&n) && !required.contains(&n);
-    });
-    if (removed > 0)
-        removeUnusedActions(/*allow_remove_inputs=*/false);
-    return removed;
 }
 
 
@@ -3956,16 +3912,23 @@ static MutableColumnPtr deserializeConstant(
         UInt8 flags;
         readBinary(flags, in);
 
-        /// is_constant flag is read for backward compatibility but no longer used;
-        /// ColumnSet is now always wrapped in ColumnConst.
+        bool is_constant = flags & 1;
 
         FutureSet::Hash hash;
         readBinary(hash, in);
 
         auto column_set = ColumnSet::create(1, nullptr);
-        auto * set_ptr = column_set.get();
+
+        if (!is_constant)
+        {
+            registry.sets[hash].push_back(column_set.get());
+            return column_set;
+        }
+
         auto column_const = ColumnConst::create(std::move(column_set), 0);
-        registry.sets[hash].push_back(set_ptr);
+        /// After move, get the pointer from ColumnConst
+        const auto * set_column = typeid_cast<const ColumnSet *>(column_const->getDataColumnPtr().get());
+        registry.sets[hash].push_back(const_cast<ColumnSet *>(set_column));
         return column_const;
     }
 

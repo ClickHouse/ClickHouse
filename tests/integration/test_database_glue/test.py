@@ -29,7 +29,7 @@ from pyiceberg.types import (
     DecimalType,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.mock_servers import start_mock_servers
 
 import boto3
@@ -91,7 +91,7 @@ DEFAULT_SCHEMA = Schema(
     ),
 )
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\\n(\\n    `datetime` Nullable(DateTime64(6)),\\n    `symbol` Nullable(String),\\n    `bid` Nullable(Float64),\\n    `ask` Nullable(Float64),\\n    `details` Tuple(created_by Nullable(String)),\\n    `map_string_decimal` Map(String, Nullable(Decimal(9, 2)))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
 
 DEFAULT_PARTITION_SPEC = PartitionSpec(
     PartitionField(
@@ -117,7 +117,7 @@ def load_catalog_impl(started_cluster):
             "type": "glue",
             "glue.endpoint": get_glue_local_url(started_cluster),
             "glue.region": "us-east-1",
-            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
         },
@@ -202,7 +202,7 @@ def create_clickhouse_glue_database(
     settings = {
         "catalog_type": "glue",
         "warehouse": "test",
-        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
         "region": "us-east-1",
     }
 
@@ -229,7 +229,7 @@ def create_clickhouse_glue_table(
 
     node.query(
         f"""
-CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 {settings_suffix}
 """,
         settings={
@@ -305,7 +305,7 @@ def test_no_secrets_in_logs(started_cluster):
     db_settings = {
         "catalog_type": "glue",
         "warehouse": "test",
-        "storage_endpoint": "http://minio1:9001/warehouse-glue",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
         "region": "us-east-1",
     }
 
@@ -323,7 +323,7 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
 
     qid_table = uuid.uuid4().hex
     node.query(
-        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio1:9001/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
             "allow_experimental_database_glue_catalog": 1,
@@ -674,7 +674,7 @@ def test_timestamps(started_cluster):
     df = pa.Table.from_pylist(data)
     table.append(df)
 
-    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`") == f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6, \\'UTC\\'))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-glue/data/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 
@@ -776,10 +776,9 @@ def test_system_tables(started_cluster):
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 4
 
-    # system.databases always shows data lake catalog databases regardless of show_data_lake_catalogs_in_system_tables,
-    # because listing a database name is purely local metadata and never requires calls to an external catalog service.
+    # system.databases
     assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 1
-    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 1
+    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}'").strip()) == 0
 
     # system.columns
     assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 24
