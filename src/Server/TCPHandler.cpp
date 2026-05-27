@@ -32,6 +32,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTResetSessionQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
@@ -833,6 +834,14 @@ void TCPHandler::runImpl()
 
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
+
+            /// `RESET SESSION` restores session-level settings (including the
+            /// ones this handler caches at line ~600 before query execution).
+            /// Re-extract from the session context now so the next idle-wait
+            /// and timeout setup use the post-reset values, not the
+            /// pre-reset cached ones.
+            if (query_state->parsed_query && query_state->parsed_query->as<ASTResetSessionQuery>())
+                extractConnectionSettingsFromContext(session->sessionContext());
 
             after_check_cancelled.restart();
             after_send_progress.restart();

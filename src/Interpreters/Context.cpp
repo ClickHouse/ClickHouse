@@ -417,6 +417,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int INVALID_TRANSACTION;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
     extern const int SUPPORT_IS_DISABLED;
@@ -1999,6 +2000,16 @@ void Context::resetToUserDefaults()
     if (session_context.lock().get() != this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RESET SESSION must be executed against the session context");
 
+    /// Refuse to reset while the session is inside an active transaction.
+    /// Silently rolling it back would lose work without warning; pretending to
+    /// reset while leaving the transaction in place would let a pooled
+    /// connection inherit the previous snapshot and uncommitted writes.
+    /// Require the caller to commit or roll back first.
+    if (merge_tree_transaction)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION,
+            "RESET SESSION is not allowed inside an active transaction. "
+            "COMMIT or ROLLBACK first.");
+
     /// Re-derive everything from access control (outside the lock — `deriveUserDefaults`
     /// performs IO). Sharing this helper with `setUser` keeps the two code paths
     /// in lock-step.
@@ -2010,8 +2021,11 @@ void Context::resetToUserDefaults()
     ///   1. the database the connection was opened with (captured by
     ///      `rememberDatabaseAtSessionStart`);
     ///   2. the user's profile default;
-    ///   3. empty (matches a freshly-authenticated session for a user with no
-    ///      default database).
+    ///   3. the global context's current database — what `Context::setUser`
+    ///      leaves in place when the user has no `DEFAULT DATABASE`, so this
+    ///      matches the freshly-authenticated state for HTTP, gRPC, and
+    ///      `clickhouse-local` users that lack a profile default;
+    ///   4. empty (only if even the global context has no current database).
     /// Each candidate is probed against the catalog so a dropped database
     /// neither breaks the reset nor shadows the next fallback.
     auto database_exists = [](const String & db) -> bool
@@ -2039,7 +2053,13 @@ void Context::resetToUserDefaults()
         target_database = *database_at_session_start;
     else if (database_exists(user_default_database))
         target_database = user_default_database;
-    /// else: empty.
+    else
+    {
+        const String global_default_database = getGlobalContext()->getCurrentDatabase();
+        if (database_exists(global_default_database))
+            target_database = global_default_database;
+        /// else: empty.
+    }
 
     /// Snapshot the auth-server settings under a shared lock to avoid a data
     /// race with a hypothetical concurrent setSettingsFromAuthServer.

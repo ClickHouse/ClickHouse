@@ -1,0 +1,4 @@
+start db non-empty:	1
+after USE:	system
+after reset non-empty:	1
+after reset matches start:	1

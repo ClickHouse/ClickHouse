@@ -1,17 +1,19 @@
 ---
 description: 'Documentation for RESET SESSION'
 sidebar_label: 'RESET SESSION'
+sidebar_position: 54
+slug: /sql-reference/statements/reset-session
 title: 'RESET SESSION Statement'
 doc_type: 'reference'
 ---
 
-## Syntax
+## Syntax {#syntax}
 
 ```sql
 RESET SESSION
 ```
 
-## Description
+## Description {#description}
 
 Restores the current session to the state it was in immediately after authentication, without dropping the connection or re-authenticating.
 
@@ -30,11 +32,11 @@ The user's profiles are re-read from access control on every `RESET SESSION` cal
 
 `RESET SESSION` on an already-clean session is a no-op.
 
-## Comparison with PostgreSQL
+## Comparison with PostgreSQL {#comparison-with-postgresql}
 
 The behaviour is closest to PostgreSQL's `DISCARD ALL`. PostgreSQL's `RESET ALL` only restores settings (`GUC` parameters) and does not drop temporary tables or other session state; `RESET SESSION` in ClickHouse is broader.
 
-## Example
+## Example {#example}
 
 ```sql
 SET max_threads = 1;
