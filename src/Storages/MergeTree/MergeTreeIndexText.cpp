@@ -727,14 +727,19 @@ bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & quer
 bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) const
 {
     const auto & query_builder = analyzer->getQueryBuilder(query);
+
+    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
+    if (query_builder.is_failed)
+        return false;
+
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
     if (query_builder.is_bypassed && !query.patterns.empty())
         return true;
 
     if (!current_range.has_value())
-        return !query_builder.is_failed;
+        return true;
 
-    if (query_builder.is_failed || !query_builder.rows_range.has_value())
+    if (!query_builder.rows_range.has_value())
         return false;
 
     auto intersection = query_builder.rows_range->intersectWith(*current_range);
@@ -767,14 +772,19 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return true;
 
     const auto & query_builder = analyzer->getQueryBuilder(query);
-    /// Pattern bypass means analysis is incomplete, so conservatively return true
+
+    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
+    if (query_builder.is_failed)
+        return false;
+
+    /// Pattern bypass means analysis is incomplete, so conservatively return true.
     if (query_builder.is_bypassed && !query.patterns.empty())
         return true;
 
     if (!current_range.has_value())
-        return !query_builder.is_failed;
+        return true;
 
-    if (query_builder.is_failed || !query_builder.rows_range.has_value())
+    if (!query_builder.rows_range.has_value())
         return false;
 
     auto intersection = query_builder.rows_range->intersectWith(*current_range);
