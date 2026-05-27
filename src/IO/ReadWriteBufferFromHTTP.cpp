@@ -234,7 +234,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid setting for http backoff, "
             "must be http_max_tries >= 1 (current is {}) and "
-            "0 < http_retry_initial_backoff_ms < settings.http_settings.retry_max_backoff_ms (now 0 < {} < {})",
+            "0 < http_retry_initial_backoff_ms < http_retry_max_backoff_ms (now 0 < {} < {})",
             read_settings.http_settings.max_tries,
             read_settings.http_settings.retry_initial_backoff_ms,
             read_settings.http_settings.retry_max_backoff_ms);
