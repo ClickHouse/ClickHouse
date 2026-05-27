@@ -883,7 +883,14 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
         return false;
 
     /// Use the common safety checks but skip the distinct check (we want it).
+    /// The `arrayJoin(...)` *function* multiplies rows just like the ARRAY JOIN
+    /// clause; partitioning by WHERE then breaks the row-count invariant the
+    /// oracle relies on. `isSafeForOracle` rejects both — mirror that here.
     if (hasArrayJoin(select) || hasPasteJoin(select))
+        return false;
+    if (select.select() && hasArrayJoinFunction(select.select()))
+        return false;
+    if (select.where() && hasArrayJoinFunction(select.where()))
         return false;
     if (select.limitLength() || select.limitBy() || select.prewhere() || select.qualify())
         return false;
@@ -1181,7 +1188,8 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         {{"optimize_move_to_prewhere", Field(false)}},
         {{"query_plan_remove_redundant_sorting", Field(false)}},
         {{"optimize_rewrite_sum_if_to_count_if", Field(false)}},
-        {{"enable_optimize_predicate_expression", Field(false)}},
+        /// `enable_optimize_predicate_expression` is unconditionally `false` in
+        /// `makeOracleContext`, so toggling it here would be a no-op.
         {{"optimize_if_chain_to_multiif", Field(false)}},
         {{"optimize_if_transform_strings_to_enum", Field(false)}},
         {{"optimize_functions_to_subcolumns", Field(false)}},
@@ -1259,6 +1267,25 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     if (agg_data.aggregates.empty())
         return false;
 
+    /// Aggregates that are non-associative on floating-point inputs (`sum`,
+    /// `avg`, variance/stddev/covariance/correlation, etc.) can legitimately
+    /// produce different rounded values between direct evaluation and the
+    /// metamorphic `aggState`/`aggMerge` partition-then-combine path, because
+    /// `Float32`/`Float64` addition is not associative. Result comparison is
+    /// exact row equality, so allowing them yields false oracle mismatches.
+    /// We can't see argument types at the AST level, so blanket-reject the
+    /// names that are known to be float-sensitive.
+    static const std::unordered_set<String> non_associative_aggregates = {
+        "sum", "sumKahan", "sumWithOverflow",
+        "avg", "avgWeighted",
+        "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
+        "varPop", "varSamp", "varPopStable", "varSampStable",
+        "covarPop", "covarSamp", "covarPopStable", "covarSampStable",
+        "corr", "corrStable",
+        "skewPop", "skewSamp",
+        "kurtPop", "kurtSamp",
+    };
+
     /// Skip aggregates that already have combinators (e.g. sumIf, countIf,
     /// avgArray, etc.) — appending State to these produces double-combinator
     /// names that may not resolve correctly.
@@ -1268,6 +1295,8 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         if (!agg_func)
             return false;
         const auto & name = agg_func->name;
+        if (non_associative_aggregates.contains(name))
+            return false;
         /// Check for common combinator suffixes.
         if (name.ends_with("If") || name.ends_with("Array") || name.ends_with("Map")
             || name.ends_with("State") || name.ends_with("Merge")
@@ -1501,17 +1530,35 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     if (hasNonDeterministicFunctions(select.clone()))
         return false;
 
+    /// `hasNonDeterministicFunctions` is name-based and does not filter general
+    /// window functions like `row_number()`, `rank()`, `dense_rank()` over a
+    /// window without an explicit ORDER BY. Those produce implementation-defined
+    /// row numbers; rewriting the WHERE predicate is permitted to reorder rows
+    /// seen by the window function, which legitimately changes the assignment.
+    /// Use the same gate as `checkSubqueryWrap` (issue #105743).
+    if (select.select() && hasWindowFunctionWithoutOrderBy(select.select()))
+        return false;
+
     /// LIMIT is unsafe even with ORDER BY: if the sort key is not unique the
     /// engine can legitimately pick different rows among ties for the reference
     /// vs the rewritten predicate, producing a spurious "mismatch". Forbid LIMIT
     /// entirely for Identity WHERE.
     if (select.limitLength())
         return false;
+    /// `LIMIT BY` is order-sensitive in the same way: for non-unique ordering
+    /// equivalent predicates can legitimately pick different rows among ties.
+    if (select.limitBy())
+        return false;
 
     ASTPtr predicate = select.where()->clone();
 
     /// Build reference query: original.
     auto ref_ast = select.clone();
+    /// Strip any inline `SETTINGS` clause the fuzzed query may carry — otherwise
+    /// it overrides the guard rails set by `makeOracleContext` (notably
+    /// `max_result_rows`, `max_result_bytes`, `result_overflow_mode`), so the
+    /// oracle could compare truncated outputs and surface false mismatches.
+    ref_ast->as<ASTSelectQuery &>().setExpression(ASTSelectQuery::Expression::SETTINGS, {});
     String ref_sql = formatAST(ref_ast);
     if (ref_sql.size() > MAX_ORACLE_QUERY_LENGTH)
         return false;
@@ -1519,6 +1566,7 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     /// Variant 1: WHERE NOT(NOT(p)) — tests NOT handling.
     auto v1_ast = select.clone();
     auto & v1 = v1_ast->as<ASTSelectQuery &>();
+    v1.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
     v1.setExpression(ASTSelectQuery::Expression::WHERE,
         makeASTFunction("not", makeASTFunction("not", predicate->clone())));
     String v1_sql = formatAST(v1_ast);
@@ -1528,6 +1576,7 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     /// Variant 2: WHERE (p) AND (1) — tests constant-AND folding.
     auto v2_ast = select.clone();
     auto & v2 = v2_ast->as<ASTSelectQuery &>();
+    v2.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
     v2.setExpression(ASTSelectQuery::Expression::WHERE,
         makeASTFunction("and", predicate->clone(), make_intrusive<ASTLiteral>(Field(UInt8(1)))));
     String v2_sql = formatAST(v2_ast);
@@ -1537,6 +1586,7 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     /// Variant 3: WHERE (p) OR (0) — tests constant-OR folding.
     auto v3_ast = select.clone();
     auto & v3 = v3_ast->as<ASTSelectQuery &>();
+    v3.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
     v3.setExpression(ASTSelectQuery::Expression::WHERE,
         makeASTFunction("or", predicate->clone(), make_intrusive<ASTLiteral>(Field(UInt8(0)))));
     String v3_sql = formatAST(v3_ast);
