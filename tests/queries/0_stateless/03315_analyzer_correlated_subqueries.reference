@@ -72,10 +72,10 @@ QUERY id: 0
                   LIST id: 14, nodes: 1
                     COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 3
                 PROJECTION COLUMNS
-                  1 UInt8
+                  1 UInt64
                 PROJECTION
                   LIST id: 15, nodes: 1
-                    CONSTANT id: 16, constant_value: UInt64_1, constant_value_type: UInt8
+                    CONSTANT id: 16, constant_value: UInt64_1, constant_value_type: UInt64
                 JOIN TREE
                   TABLE id: 17, alias: __table4, table_name: system.one
                 WHERE

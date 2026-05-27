@@ -1,0 +1,7 @@
+union_all	5
+union_distinct	5
+union_all_projection_only	5
+union_all_where_corr	5
+intersect_overlap	5
+except_remaining	5
+except_all_removed	0
