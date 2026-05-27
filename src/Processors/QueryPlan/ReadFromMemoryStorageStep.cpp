@@ -31,7 +31,6 @@ namespace ErrorCodes
 {
 
 extern const int LOGICAL_ERROR;
-extern const int UNKNOWN_EXCEPTION;
 
 }
 
@@ -82,35 +81,13 @@ protected:
                 /// `addPipelineBefore`) has already gated this reader on the
                 /// corresponding `MaterializingCTETransform` finishing. If we
                 /// observe `is_built == false` here, the planner failed to
-                /// wire the gate - fail loudly rather than block in the
-                /// `build_future.get()` below or read from a half-populated
-                /// `StorageMemory`.
+                /// wire the gate - fail loudly rather than read from a
+                /// half-populated `StorageMemory`.
                 if (!materialized_cte->is_built.load(std::memory_order_acquire))
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Reading from materialized CTE '{}' before its materialization completed - "
                         "DelayedPortsProcessor gate is missing in the query plan",
                         materialized_cte->cte_name);
-
-                /// Defence in depth - kept temporarily so any path the new
-                /// assertion above does not catch still surfaces the writer's
-                /// failure rather than silently reading empty data. Removed
-                /// once the full test bucket has run cleanly without firing
-                /// the assertion (see task plan
-                /// 2026-05-26-materialized-cte-topology-sync.md).
-                try
-                {
-                    materialized_cte->build_future.get();
-                }
-                catch (const Exception & e)
-                {
-                    throw Exception(e);
-                }
-                catch (...)
-                {
-                    throw Exception::createRuntime(
-                        ErrorCodes::UNKNOWN_EXCEPTION,
-                        getExceptionMessage(std::current_exception(), /* with_stacktrace= */ false));
-                }
             }
 
             initializer_func(data);
