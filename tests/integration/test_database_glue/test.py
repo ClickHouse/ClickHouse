@@ -1142,6 +1142,8 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
         additional_settings={
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
+            "aws_access_key_id": minio_access_key,
+            "aws_secret_access_key": minio_secret_key,
         },
         with_credentials=False,
     )
