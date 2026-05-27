@@ -3331,7 +3331,7 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
     need_recalculate_access = true;
 }
 
-void Context::setCurrentQueryId(const String & query_id)
+void Context::setCurrentQueryId(std::string_view query_id)
 {
     /// Generate random UUID, but using lower quality RNG,
     ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
@@ -3352,7 +3352,7 @@ void Context::setCurrentQueryId(const String & query_id)
     random.words.b = thread_local_rng();
 
 
-    String query_id_to_set = query_id;
+    String query_id_to_set{query_id};
     if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
     {
         /// Use protected constructor.

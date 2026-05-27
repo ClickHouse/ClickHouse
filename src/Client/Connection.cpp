@@ -1330,12 +1330,20 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
+    /// `disconnect()` resets `in`, so reaching here from an outer loop after
+    /// the receive side has been torn down (e.g. when the server died
+    /// mid-query and a catch handler ran `disconnect()`) would dereference
+    /// a null `shared_ptr`. Surface a clean network error instead.
+    if (!in)
+        throw NetException(ErrorCodes::NETWORK_ERROR, "Connection has been disconnected");
     return in->poll(timeout_microseconds);
 }
 
 
 bool Connection::hasReadPendingData() const
 {
+    if (!in)
+        return false;
     return last_input_packet_type.has_value() || in->hasBufferedData();
 }
 
