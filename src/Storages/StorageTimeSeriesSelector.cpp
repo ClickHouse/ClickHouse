@@ -24,6 +24,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/matcherToAST.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -173,49 +174,6 @@ VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
 
 namespace
 {
-    /// Makes an AST for the expression referencing a tag value.
-    ASTPtr tagNameToAST(const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name)
-    {
-        if (tag_name == TimeSeriesTagNames::MetricName)
-            return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
-
-        auto it = column_name_by_tag_name.find(tag_name);
-        if (it != column_name_by_tag_name.end())
-            return make_intrusive<ASTIdentifier>(it->second);
-
-        /// arrayElement() can be used to extract a value from a Map too.
-        return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
-    }
-
-    ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
-    {
-        std::string_view function_name;
-        bool add_anchors = false;
-        bool add_not = false;
-
-        auto matcher_type = matcher.matcher_type;
-        switch (matcher_type)
-        {
-            case PrometheusQueryTree::MatcherType::EQ:  function_name = "equals"; break;
-            case PrometheusQueryTree::MatcherType::NE:  function_name = "notEquals"; break;
-            case PrometheusQueryTree::MatcherType::RE:  function_name = "match"; add_anchors = true; break;
-            case PrometheusQueryTree::MatcherType::NRE: function_name = "match"; add_anchors = true; add_not = true; break;
-        }
-
-        String value = matcher.label_value;
-        if (add_anchors)
-        {
-            if (!value.starts_with('^'))
-                value = '^' + value;
-            if (!value.ends_with('$'))
-                value += '$';
-        }
-        ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
-        if (add_not)
-            res = makeASTFunction("not", res);
-        return res;
-    }
-
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
@@ -225,7 +183,7 @@ namespace
     {
         ASTs asts;
         for (const auto & matcher : matchers)
-            asts.push_back(matcherToAST(matcher, column_name_by_tag_name));
+            asts.push_back(PrometheusQueryToSQL::matcherToAST(matcher, column_name_by_tag_name));
 
         if (asts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
