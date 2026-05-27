@@ -23,9 +23,7 @@ struct IsInfiniteImpl
                  & 0b0111111111111111111111111111111111111111111111111111111111111111)
                 == 0b0111111111110000000000000000000000000000000000000000000000000000;
         else if constexpr (std::is_same_v<T, BFloat16>)
-            return (std::bit_cast<UInt16>(t)
-                & 0b0111111111111111)
-                == 0b0111111110000000;
+            return t.isInfinite();
         else
         {
             (void)t;
