@@ -1,0 +1,19 @@
+http_requests
+http_request_duration
+http_request_duration
+http_request_duration
+cpu_usage
+http_requests
+total_things
+http_total_requests
+http_requests_total
+foo_sum
+_total
+_bucket
+
+	
+gauge_no_suffix	gauge_no_suffix
+requests_bucket	requests
+requests_count	requests
+requests_sum	requests
+requests_total	requests
