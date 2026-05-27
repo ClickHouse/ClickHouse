@@ -6,6 +6,7 @@
 #include <base/types.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 class SipHash;
@@ -48,6 +49,10 @@ public:
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
+
+    /// Exact compressed payload size (no header) for the given input. std::nullopt if this codec cannot determine its output size cheaply.
+    /// Same value as doCompressData  would return, computed without actually compressing.
+    virtual std::optional<UInt32> tryGetCompressedSize(const char * /*source*/, UInt32 /*source_size*/) const { return std::nullopt; }
 
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     void setExternalDataFlag() { decompression_error_code = ErrorCodes::CANNOT_DECOMPRESS; }
