@@ -2164,6 +2164,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 {
     const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
     const IColumn * data_column = col_const ? &col_const->getDataColumn() : arguments[0].column.get();
+    const bool argument_type_is_nullable = arguments[0].type->isNullable();
 
     if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(data_column))
     {
@@ -2198,6 +2199,35 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
             return nested_result;
         }
+    }
+    else if (argument_type_is_nullable)
+    {
+        // Type is Nullable(Array) but column is bare Array (e.g. after partial constant folding).
+        ColumnsWithTypeAndName nested_arguments = arguments;
+        nested_arguments[0].type = removeNullable(arguments[0].type);
+
+        auto nested_result_type = removeNullable(result_type);
+        auto nested_result = executeImpl(nested_arguments, nested_result_type, input_rows_count);
+
+        if (!result_type->isNullable())
+            return nested_result;
+
+        auto null_map = ColumnUInt8::create();
+        auto & null_map_data = null_map->getData();
+
+        if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(nested_result.get()))
+        {
+            const auto & result_null_map = nullable_result->getNullMapData();
+            null_map_data.assign(result_null_map.begin(), result_null_map.end());
+            nested_result = nullable_result->getNestedColumnPtr();
+        }
+        else
+            null_map_data.resize_fill(nested_result->size(), 0);
+
+        if (nested_result->canBeInsideNullable())
+            return ColumnNullable::create(nested_result, std::move(null_map));
+
+        return nested_result;
     }
 
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());

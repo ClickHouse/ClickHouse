@@ -57,6 +57,12 @@ FORMAT Null;
 SELECT throwIf(arrayElement(CAST([10, 20], 'Nullable(Array(UInt8))'), 2) != 20)
 FORMAT Null;
 
+SELECT throwIf(arrayElement(CAST([10, NULL], 'Nullable(Array(Nullable(UInt8)))'), 1) != 10)
+FORMAT Null;
+
+SELECT throwIf(NOT isNull(arrayElement(CAST([10, NULL], 'Nullable(Array(Nullable(UInt8)))'), 2)))
+FORMAT Null;
+
 SELECT throwIf(NOT isNull(arrayPopBack(CAST(NULL, 'Nullable(Array(UInt8))'))))
 FORMAT Null;
 
