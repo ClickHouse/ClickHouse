@@ -86,13 +86,9 @@ void WriteBufferToFileSegment::nextImpl()
     if (!ok)
     {
         String reserve_stat_msg;
-        for (size_t i = 0; i < reserve_stat.stat_by_kind.size(); ++i)
-        {
-            const auto kind = static_cast<FileSegmentKind>(i);
-            const auto & stat = reserve_stat.stat_by_kind[i];
+        for (const auto & [kind, stat] : reserve_stat.stat_by_kind)
             reserve_stat_msg += fmt::format("{} hold {}, can release {}; ",
                 toString(kind), ReadableSize(stat.non_releasable_size), ReadableSize(stat.releasable_size));
-        }
 
         throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Failed to reserve {} bytes for {}: reason {}, {}(segment info: {})",
             bytes_to_write,
