@@ -580,6 +580,8 @@ SortAnalysisResult analyzeSort(
         before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
     }
 
+    /// before_interpolate_actions is intentionally not added to the chain here;
+    /// buildExpressionAnalysisResult appends it after analyzeLimitBy so the chain order matches plan execution order.
     return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
 }
 

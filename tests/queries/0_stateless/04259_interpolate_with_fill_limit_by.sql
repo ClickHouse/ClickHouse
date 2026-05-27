@@ -1,4 +1,3 @@
--- Tags: no-random-settings
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/103474
 -- NOT_FOUND_COLUMN_IN_BLOCK when combining WITH FILL INTERPOLATE and LIMIT N BY
 
@@ -16,6 +15,20 @@ FROM t_interpolate_limit_by
 ORDER BY a, h ASC
     WITH FILL STEP INTERVAL 1 HOUR
     INTERPOLATE (s)
+LIMIT 1 BY a, h;
+
+SELECT a, h, s
+FROM t_interpolate_limit_by
+ORDER BY a, h ASC
+    WITH FILL STEP INTERVAL 1 HOUR
+    INTERPOLATE ()
+LIMIT 1 BY a, h;
+
+SELECT a, h, s
+FROM t_interpolate_limit_by
+ORDER BY a, h ASC
+    WITH FILL STEP INTERVAL 1 HOUR
+    INTERPOLATE (s AS upper(s))
 LIMIT 1 BY a, h;
 
 DROP TABLE t_interpolate_limit_by;
