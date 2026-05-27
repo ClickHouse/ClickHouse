@@ -871,47 +871,57 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
-ColumnPtr tryComputeConstantThroughMaterialize(const ActionsDAG::Node * node)
+struct FoldedValue
+{
+    ColumnPtr column;
+    bool deterministic;
+};
+
+std::optional<FoldedValue> tryComputeConstantThroughMaterialize(const ActionsDAG::Node * node)
 {
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.empty() ? nullptr : node->children.front();
     if (!node)
-        return nullptr;
+        return {};
 
     switch (node->type)
     {
         case ActionsDAG::ActionType::COLUMN:
             if (node->column && isColumnConst(*node->column))
-                return node->column;
-            return nullptr;
+                return FoldedValue{node->column, node->is_deterministic_constant};
+            return {};
         case ActionsDAG::ActionType::FUNCTION:
         {
             if (!node->function_base)
-                return nullptr;
+                return {};
             /// materialize(x) value-equals x, it only breaks const-ness at runtime
             if (node->function_base->getName() == "materialize" && node->children.size() == 1)
                 return tryComputeConstantThroughMaterialize(node->children[0]);
             if (!node->function_base->isSuitableForConstantFolding())
-                return nullptr;
+                return {};
             if (!node->function)
-                return nullptr;
+                return {};
 
+            bool deterministic = node->function_base->isDeterministic();
             ColumnsWithTypeAndName args;
             args.reserve(node->children.size());
             for (const auto * child : node->children)
             {
-                auto col = tryComputeConstantThroughMaterialize(child);
-                if (!col)
-                    return nullptr;
-                args.push_back({col, child->result_type, child->result_name});
+                auto folded = tryComputeConstantThroughMaterialize(child);
+                if (!folded)
+                    return {};
+                deterministic = deterministic && folded->deterministic;
+                args.push_back({folded->column, child->result_type, child->result_name});
             }
+            if (!node->result_type || node->result_type->onlyNull() || isNothing(node->result_type))
+                return {};
             auto result = node->function->execute(args, node->result_type, 1, true);
             if (result && isColumnConst(*result))
-                return result;
-            return nullptr;
+                return FoldedValue{result, deterministic};
+            return {};
         }
         default:
-            return nullptr;
+            return {};
     }
 }
 
@@ -926,16 +936,18 @@ void ActionsDAG::foldConstantFilterThroughMaterialize(const std::string & filter
         return;
 
     auto folded = tryComputeConstantThroughMaterialize(filter_node);
-    if (!folded || !isColumnConst(*folded))
+    if (!folded || !isColumnConst(*folded->column))
         return;
 
     /// only the filter node is rewritten, materialize can still be referenced by
     /// passthrough columns that feed UNION and need its non-const output
     filter_node->type = ActionType::COLUMN;
-    filter_node->column = std::move(folded);
+    filter_node->column = std::move(folded->column);
     filter_node->children.clear();
     filter_node->function_base.reset();
     filter_node->function.reset();
+    /// preserve determinism so downstream `is_deterministic_constant` checks stay correct
+    filter_node->is_deterministic_constant = folded->deterministic;
 }
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
