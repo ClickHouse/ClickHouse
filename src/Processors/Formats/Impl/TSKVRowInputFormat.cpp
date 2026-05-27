@@ -268,6 +268,8 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     {
         bool has_value = readName(in, name_ref, name_buf);
         String name = String(name_ref);
+        if (name_ref.size() > 256)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Column name is too long ({} bytes) for TSKV format", name_ref.size());
         if (has_value)
         {
             readEscapedString(value, in);

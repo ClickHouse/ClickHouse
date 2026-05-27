@@ -77,12 +77,12 @@ static const std::vector<String> & getFormatsOrderForDetection()
         "BSONEachRow",
         "JSONCompact",
         "Values",
-        "TSKV",
         "JSONObjectEachRow",
         "JSONColumns",
         "JSONCompactColumns",
         "JSONCompact",
         "JSON",
+        "TSKV",
     };
 
     return formats_order;
