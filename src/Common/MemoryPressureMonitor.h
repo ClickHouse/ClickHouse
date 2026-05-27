@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/types.h>
+
 #include <atomic>
 #include <cstdint>
 
@@ -31,10 +33,11 @@ public:
     virtual MemoryPressureLevel currentLevel() = 0;
 
     /// Thresholds for `Elevated` / `High` / `Critical` as percent of
-    /// `total_memory_tracker.getHardLimit()`. `l1 < l2 < l3` must hold
-    /// (values in 1..100); out-of-range or non-monotonic inputs are
-    /// clamped / sorted before being stored.
-    virtual void setThresholds(uint8_t l1_pct, uint8_t l2_pct, uint8_t l3_pct) = 0;
+    /// `total_memory_tracker.getHardLimit()`. Each value must be in [0, 100]
+    /// and `l1 <= l2 <= l3`; violation throws `BAD_ARGUMENTS`. Takes
+    /// `UInt64` (the server-settings type) so out-of-range inputs reach the
+    /// validator instead of silently wrapping through `uint8_t`.
+    virtual void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) = 0;
 };
 
 /// Internal state machine reused by both impls. Owns the level + cooldown
@@ -46,7 +49,7 @@ public:
     static constexpr uint64_t COOLDOWN_NS = 60ULL * 1000ULL * 1000ULL * 1000ULL;
 
     MemoryPressureLevel sample(double pressure, uint64_t now_ns);
-    void setThresholds(uint8_t l1_pct, uint8_t l2_pct, uint8_t l3_pct);
+    void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct);
 
 private:
     std::atomic<uint8_t> level{0};
@@ -62,7 +65,7 @@ class MemoryPressureMonitor final : public IMemoryPressureMonitor
 {
 public:
     MemoryPressureLevel currentLevel() override;
-    void setThresholds(uint8_t l1_pct, uint8_t l2_pct, uint8_t l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
+    void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
 
 private:
     PressureLevelMachine machine;
@@ -85,7 +88,7 @@ public:
     void setNowNs(uint64_t t) { now_ns.store(t, std::memory_order_relaxed); }
 
     MemoryPressureLevel currentLevel() override;
-    void setThresholds(uint8_t l1_pct, uint8_t l2_pct, uint8_t l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
+    void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
 
 private:
     std::atomic<double> pressure;

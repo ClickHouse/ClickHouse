@@ -1,11 +1,16 @@
 #include <Common/MemoryPressureMonitor.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 
-#include <algorithm>
 #include <chrono>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_ns)
 {
@@ -45,20 +50,26 @@ MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_n
     return static_cast<MemoryPressureLevel>(level.load(std::memory_order_relaxed));
 }
 
-void PressureLevelMachine::setThresholds(uint8_t l1_pct, uint8_t l2_pct, uint8_t l3_pct)
+void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct)
 {
-    /// Clamp to (0, 100] and re-sort so a misconfigured server still gets a
-    /// monotonic threshold ladder rather than silently degenerating to "always
-    /// at Normal" or "always at Critical".
-    uint8_t v[3] = {
-        static_cast<uint8_t>(std::clamp<int>(l1_pct, 1, 100)),
-        static_cast<uint8_t>(std::clamp<int>(l2_pct, 1, 100)),
-        static_cast<uint8_t>(std::clamp<int>(l3_pct, 1, 100)),
-    };
-    std::sort(std::begin(v), std::end(v));
-    threshold_l1.store(v[0], std::memory_order_relaxed);
-    threshold_l2.store(v[1], std::memory_order_relaxed);
-    threshold_l3.store(v[2], std::memory_order_relaxed);
+    /// Validate range and ordering loudly. Silent clamping/sorting (the
+    /// previous behavior) hid config typos — e.g. `300` would wrap to `44`
+    /// through `uint8_t` at the call site and then look valid here, so the
+    /// server would silently apply a wrong threshold ladder.
+    if (l1_pct > 100 || l2_pct > 100 || l3_pct > 100)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Memory pressure thresholds must be in [0, 100], got "
+            "level_1={}, level_2={}, level_3={}",
+            l1_pct, l2_pct, l3_pct);
+    if (!(l1_pct <= l2_pct && l2_pct <= l3_pct))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Memory pressure thresholds must satisfy level_1 <= level_2 <= level_3, got "
+            "level_1={}, level_2={}, level_3={}",
+            l1_pct, l2_pct, l3_pct);
+
+    threshold_l1.store(static_cast<uint8_t>(l1_pct), std::memory_order_relaxed);
+    threshold_l2.store(static_cast<uint8_t>(l2_pct), std::memory_order_relaxed);
+    threshold_l3.store(static_cast<uint8_t>(l3_pct), std::memory_order_relaxed);
 }
 
 namespace

@@ -1,4 +1,5 @@
 #include <Common/MemoryPressureMonitor.h>
+#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
@@ -98,21 +99,28 @@ TEST(MemoryPressureMonitor, OscillationPinsLevelHigh)
     }
 }
 
-TEST(MemoryPressureMonitor, SetThresholdsClampsAndOrders)
+TEST(MemoryPressureMonitor, SetThresholdsRejectsInvalid)
 {
     FakeMemoryPressureMonitor fake(0.80, SECOND);
     ScopedMemoryPressureMonitor scope(fake);
 
-    /// Out-of-order: should be sorted internally so the level ladder stays
-    /// monotonic. 75 ≤ 0.80 < 90 → Elevated.
-    fake.setThresholds(90, 75, 95);
-    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Elevated);
+    /// Out-of-range (any single value > 100) throws — previously wrapped
+    /// silently through `uint8_t` at the call site (e.g. 300 → 44).
+    EXPECT_THROW(fake.setThresholds(101, 90, 95), DB::Exception);
+    EXPECT_THROW(fake.setThresholds(75, 101, 95), DB::Exception);
+    EXPECT_THROW(fake.setThresholds(75, 90, 101), DB::Exception);
+    EXPECT_THROW(fake.setThresholds(300, 90, 95), DB::Exception);
 
-    /// Zero clamped to 1; pressure 0 stays at Normal because 0 < 0.01.
-    FakeMemoryPressureMonitor fake2(0.005, SECOND);
-    ScopedMemoryPressureMonitor scope2(fake2);
-    fake2.setThresholds(0, 0, 0);
-    EXPECT_EQ(fake2.currentLevel(), MemoryPressureLevel::Normal);
+    /// Non-monotonic (level_1 > level_2 etc.) throws — previously silently
+    /// sorted, masking config typos.
+    EXPECT_THROW(fake.setThresholds(90, 75, 95), DB::Exception);
+    EXPECT_THROW(fake.setThresholds(75, 95, 90), DB::Exception);
+
+    /// Valid edges accepted.
+    EXPECT_NO_THROW(fake.setThresholds(0, 0, 0));
+    EXPECT_NO_THROW(fake.setThresholds(100, 100, 100));
+    EXPECT_NO_THROW(fake.setThresholds(75, 90, 95));   // strictly increasing
+    EXPECT_NO_THROW(fake.setThresholds(75, 75, 90));   // equality allowed
 }
 
 TEST(MemoryPressureMonitor, ScopedRestoresPriorMonitor)
