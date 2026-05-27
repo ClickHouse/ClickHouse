@@ -398,16 +398,12 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     deduplication_info->setPartWriterHashes(all_partitions_block_ids, chunk.getNumRows());
 
+    finishDelayed(zookeeper);
+
+    delayed_parts = std::move(current_parts);
+
     if (synchronously_commit_part_for_dependent_views)
-    {
-        delayed_parts = std::move(current_parts);
         finishDelayed(zookeeper);
-    }
-    else
-    {
-        finishDelayed(zookeeper);
-        delayed_parts = std::move(current_parts);
-    }
 
     ++num_blocks_processed;
 }

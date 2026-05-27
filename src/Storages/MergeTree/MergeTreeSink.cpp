@@ -218,18 +218,13 @@ void MergeTreeSink::consume(Chunk & chunk)
     }
     deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
 
+    finishDelayedChunk();
+
+    delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
+    delayed_chunk->partitions = std::move(partitions);
+
     if (synchronously_commit_part_for_dependent_views)
-    {
-        delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
-        delayed_chunk->partitions = std::move(partitions);
         finishDelayedChunk();
-    }
-    else
-    {
-        finishDelayedChunk();
-        delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
-        delayed_chunk->partitions = std::move(partitions);
-    }
 
     ++num_blocks_processed;
 }
