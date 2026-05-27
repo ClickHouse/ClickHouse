@@ -511,7 +511,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     /// `DB::executeQueryImpl` → ... → TCPHandler), giving the full trace
     /// the crash log is supposed to capture.
     ///
-    /// Why this doesn't matter for SIGPROF in `tryCapture()`: the profiler
+    /// Why this doesn't matter for SIGUSR1/SIGUSR2 in `tryCapture()`: the profiler
     /// timer interrupts user code (ClickHouse, built with
     /// `-fno-omit-frame-pointer`), so the saved `rbp` at signal time points
     /// into a frame whose chain abseil can follow without ever needing to
@@ -521,7 +521,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     /// the handler runs.
     ///
     /// And the async-unwinder safety concern that motivated using abseil in
-    /// `tryCapture()` (a SIGPROF storm fighting TSan over libunwind's
+    /// `tryCapture()` (a SIGUSR1/SIGUSR2 storm fighting TSan over libunwind's
     /// internal `dl_iterate_phdr` lock) does not apply here: crash signals
     /// fire synchronously, exactly once, on the thread that crashed.
 #if defined(OS_DARWIN)
