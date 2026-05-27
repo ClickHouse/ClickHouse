@@ -230,7 +230,7 @@ Secure views and row access policies are listed under [Storage and tables](#stor
 | Object tagging (governance metadata) | — | ClickHouse exposes metadata via `system.*` tables rather than user-defined tags. |
 | Data classification (sensitive-data detection) | No direct equivalent — external tools (e.g. DataHub) | Not a managed feature. |
 | Encryption functions (`ENCRYPT` / `DECRYPT`) | [Encryption functions](/sql-reference/functions/encryption-functions) (`encrypt` / `decrypt`) | Covers AES-128/256-CBC/GCM and AEAD modes. |
-| OAuth / SAML SSO | [SSO](/cloud/security/saml-sso-setup) (SAML, OIDC) | Same role; configured in the cloud console. |
+| OAuth / SAML SSO | [SSO](/cloud/security/saml-setup) (SAML, OIDC) | Same role; configured in the cloud console. |
 | Audit logs (`ACCOUNT_USAGE.LOGIN_HISTORY`, `QUERY_HISTORY`) | [Cloud audit log](/cloud/security/audit-logging) and [`system.query_log`](/operations/system-tables/query_log) | Both systems log admin and query activity. |
 
 ## Data sharing {#data-sharing}
