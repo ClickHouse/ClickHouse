@@ -2,7 +2,15 @@ a	Nullable(Int64)
 b	Nullable(Int64)					
 header1	Nullable(String)					
 header2	Nullable(String)					
+UInt8	Int32					
+Float32	UInt64					
+String	UInt8					
+Int64	Float32					
 a	Nullable(Int64)					
 b	Nullable(Int64)					
 header1	Nullable(String)					
 header2	Nullable(String)					
+UInt8	Int32					
+Float32	UInt64					
+String	UInt8					
+Int64	Float32					
