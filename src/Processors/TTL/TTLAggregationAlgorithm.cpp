@@ -192,6 +192,14 @@ void TTLAggregationAlgorithm::execute(Block & block)
             if (where_filter_passed)
                 new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
         }
+
+        /// If every surviving row is also already past the TTL boundary, the
+        /// `GROUP BY` TTL rule has no more work to do on the resulting part.
+        /// Mark it as finished so the merge scheduler does not pick it again
+        /// for the same rule, otherwise the part would be re-merged on every
+        /// scheduler tick (issue #105647).
+        if (!new_ttl_info.ttl_finished.has_value() && isTTLExpired(new_ttl_info.max))
+            new_ttl_info.ttl_finished = true;
     }
 }
 

@@ -230,7 +230,16 @@ time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) cons
 
 bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
 {
-    return part.general_ttl_info.has_value();
+    if (!part.general_ttl_info.has_value())
+        return false;
+
+    /// A part whose TTLs are all marked as finished has already been processed
+    /// by every applicable TTL rule. Re-picking it for `TTLDrop` would just
+    /// re-run the same TTL transform on the same data forever — see issue
+    /// #105647, where `TTL ... GROUP BY` re-aggregates the same single-row
+    /// part on every scheduler tick. This mirrors the gate that
+    /// `TTLRowDeleteMergeSelector::canConsiderPart` already applies below.
+    return part.general_ttl_info->has_any_non_finished_ttls;
 }
 
 TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
