@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
@@ -54,6 +55,7 @@ namespace Setting
     extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsBool optimize_on_insert;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
 namespace ServerSetting
@@ -131,6 +133,9 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
         async_insert_
         ? (*storage.getSettings())[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] != 0
         : (*storage.getSettings())[MergeTreeSetting::replicated_deduplication_window] != 0)
+    , synchronously_commit_part_for_dependent_views(
+        !DatabaseCatalog::instance().getDependentViews(storage_.getStorageID()).empty()
+        && context_->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views])
     , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
@@ -391,8 +396,16 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     deduplication_info->setPartWriterHashes(all_partitions_block_ids, chunk.getNumRows());
 
-    finishDelayed(zookeeper);
-    delayed_parts = std::move(current_parts);
+    if (synchronously_commit_part_for_dependent_views)
+    {
+        delayed_parts = std::move(current_parts);
+        finishDelayed(zookeeper);
+    }
+    else
+    {
+        finishDelayed(zookeeper);
+        delayed_parts = std::move(current_parts);
+    }
 
     ++num_blocks_processed;
 }

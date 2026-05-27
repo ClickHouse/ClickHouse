@@ -1,9 +1,8 @@
-#include <exception>
-#include <memory>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
@@ -13,6 +12,8 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
 
+#include <exception>
+#include <memory>
 
 namespace ProfileEvents
 {
@@ -34,6 +35,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
 namespace MergeTreeSetting
@@ -68,6 +70,9 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
+    , synchronously_commit_part_for_dependent_views(
+        !DatabaseCatalog::instance().getDependentViews(storage_.getStorageID()).empty()
+        && context_->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views])
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }
@@ -211,9 +216,18 @@ void MergeTreeSink::consume(Chunk & chunk)
     }
     deduplication_info->setPartWriterHashes(all_partwriter_hashes, chunk.getNumRows());
 
-    finishDelayedChunk();
-    delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
-    delayed_chunk->partitions = std::move(partitions);
+    if (synchronously_commit_part_for_dependent_views)
+    {
+        delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
+        delayed_chunk->partitions = std::move(partitions);
+        finishDelayedChunk();
+    }
+    else
+    {
+        finishDelayedChunk();
+        delayed_chunk = std::make_unique<MergeTreeDelayedChunk>();
+        delayed_chunk->partitions = std::move(partitions);
+    }
 
     ++num_blocks_processed;
 }

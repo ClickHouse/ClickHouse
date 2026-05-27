@@ -62,6 +62,7 @@ protected:
     StorageSnapshotPtr storage_snapshot;
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
+    bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 

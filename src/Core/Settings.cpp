@@ -4725,6 +4725,11 @@ This setting is useful for ensuring that materialized views do not contain dupli
 
 - [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
+    DECLARE(Bool, wait_for_part_commit_in_dependent_materialized_views, false, R"(
+Controls whether `INSERT` operations into tables with dependent materialized views wait for the inserted part to be fully committed and visible in the storage's parts list before the materialized view cascade runs.
+
+Has no effect on inserts into tables with no dependent materialized views.
+)", 0) \
     DECLARE(Bool, materialized_views_ignore_errors, false, R"(
 Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the table regardless of MVs
 )", 0) \
