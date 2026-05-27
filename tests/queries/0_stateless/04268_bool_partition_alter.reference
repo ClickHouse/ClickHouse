@@ -1,0 +1,20 @@
+drop partition 1
+false	1
+false	2
+drop partition true
+false	1
+false	2
+drop partition 0
+true	3
+true	4
+drop partition false
+true	3
+true	4
+detach partition 1
+false	1
+attach partition 1
+false	1
+true	2
+drop partition (1, 2)
+false	1	a
+true	1	c

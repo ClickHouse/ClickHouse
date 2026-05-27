@@ -7504,6 +7504,11 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         /// Simple partition key, need to evaluate and cast
         Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
         partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
+        /// convertFieldToType returns a Bool-typed Field for Bool columns, but partition ID
+        /// computation (getID) expects UInt64. The INSERT and LOAD paths both produce UInt64 Fields
+        /// for Bool columns, so normalize here to match.
+        if (partition_row[0].getType() == Field::Types::Bool)
+            partition_row[0] = partition_row[0].safeGet<UInt64>();
     }
     else
     {
@@ -7519,7 +7524,11 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                             "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
         for (size_t i = 0; i < fields_count; ++i)
+        {
             partition_row[i] = convertFieldToTypeOrThrow(tuple[i], *key_sample_block.getByPosition(i).type);
+            if (partition_row[i].getType() == Field::Types::Bool)
+                partition_row[i] = partition_row[i].safeGet<UInt64>();
+        }
     }
 
     MergeTreePartition partition(std::move(partition_row));
