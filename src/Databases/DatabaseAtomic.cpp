@@ -240,6 +240,54 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
 }
 
+void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & table_name, const bool sync)
+{
+    waitDatabaseStarted();
+
+    auto db_disk = getDisk();
+    assert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
+
+    const String table_metadata_path = getObjectMetadataPath(table_name);
+    const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
+    const StorageID storage_id{getDatabaseName(), table_name, uuid_table};
+    String table_metadata_path_drop;
+
+    {
+        std::lock_guard lock(mutex);
+        table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(storage_id);
+
+        db_disk->createDirectories(fs::path(table_metadata_path_drop).parent_path());
+
+        auto txn = local_context->getZooKeeperMetadataTransaction();
+        if (txn && !local_context->isInternalSubquery())
+            txn->commit();
+
+        LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
+        db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
+
+        if (db_disk->existsFile(getDetachedPermanentlyFlagPath(table_metadata_path)))
+        {
+            const fs::path metadata_detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
+            const fs::path metadata_dropped_detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path_drop);
+
+            LOG_TRACE(
+                log, "Rename detached flag from {} to {} for removing.", metadata_detached_flag_path, metadata_dropped_detached_flag_path);
+            db_disk->replaceFile(metadata_detached_flag_path, metadata_dropped_detached_flag_path);
+        }
+
+        table_name_to_path.erase(table_name);
+    }
+
+    if (db_disk->existsFile(getPathSymlink(table_name)))
+    {
+        LOG_TRACE(log, "Remove symlink for {}", table_name);
+        tryRemoveSymlink(table_name);
+    }
+
+    LOG_TRACE(log, "Table {} ready for remove.", table_name);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync, true);
+}
+
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                  const String & to_table_name, bool exchange, bool dictionary)
     TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking
@@ -638,7 +686,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
         if (!table->storesDataOnDisk())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
 
-        String link = path_to_table_symlinks / escapeForFileName(table_name);
+        String link = getPathSymlink(table_name);
 
         LOG_DEBUG(
             log,
@@ -662,6 +710,11 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
     }
 }
 
+String DatabaseAtomic::getPathSymlink(const String & table_name) const
+{
+    return path_to_table_symlinks / escapeForFileName(table_name);
+}
+
 void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 {
     auto db_disk = getDisk();
@@ -671,7 +724,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 
     try
     {
-        String path = path_to_table_symlinks / escapeForFileName(table_name);
+        String path = getPathSymlink(table_name);
         db_disk->removeFileIfExists(path);
     }
     catch (...)

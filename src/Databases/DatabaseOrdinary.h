@@ -84,6 +84,7 @@ public:
 
     DiskPtr getDisk() const override { return metadata_disk_ptr; }
 
+    void removeTableFromPermanentlyDetachedTables(const String & table_name) override;
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
 protected:

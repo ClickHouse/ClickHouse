@@ -1,8 +1,8 @@
 #include <Parsers/ASTDropQuery.h>
 
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDropQuery.h>
 
 namespace DB
 {
@@ -19,6 +19,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 {
     ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_detached(Keyword::DETACHED);
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_database(Keyword::DATABASE);
@@ -54,6 +55,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     bool is_view = false;
     bool sync = false;
     bool permanently = false;
+    bool detached = false;
 
     if (s_all.checkWithoutMoving(pos, expected))
         has_all = true;
@@ -107,8 +109,15 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     }
     else
     {
+        if (s_detached.ignore(pos, expected))
+        {
+            detached = true;
+        }
+
         if (s_temporary.ignore(pos, expected))
+        {
             temporary = true;
+        }
 
         if (s_view.ignore(pos, expected))
             is_view = true;
@@ -161,6 +170,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->is_view = is_view;
     query->sync = sync;
     query->permanently = permanently;
+    query->detached = detached;
     query->database = database;
     query->database_and_tables = database_and_tables;
     query->case_insensitive_like = is_case_insensitive_like;

@@ -149,6 +149,14 @@ void IDatabase::dropTable( /// NOLINT
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP TABLE query for Database{}", getEngineName());
 }
 
+void IDatabase::dropDetachedTable( /// NOLINT
+    ContextPtr /*context*/,
+    const String & /*name*/,
+    bool /*sync*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DROP DETACHED TABLE query for Database{}", getEngineName());
+}
+
 void IDatabase::attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path) /// NOLINT
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no ATTACH TABLE query for Database{}", getEngineName());
@@ -157,6 +165,11 @@ void IDatabase::attachTable(ContextPtr /* context */, const String & /*name*/, c
 StoragePtr IDatabase::detachTable(ContextPtr /* context */, const String & /*name*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", getEngineName());
+}
+
+bool IDatabase::isTableDetached(const String & /*table_name*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void IDatabase::detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
