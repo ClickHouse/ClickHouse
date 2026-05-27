@@ -1,13 +1,14 @@
-#include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
-#include <Core/Field.h>
 #include <Common/computeMaxTableNameLength.h>
 
 namespace DB
@@ -20,11 +21,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
+class FunctionGetMaxTableNameLengthForDatabase final : public IFunction, public WithContext
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context_); }
+
+    explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr context_)
+        : WithContext(context_)
+    {
+    }
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -59,7 +65,7 @@ public:
         if (database_name.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect name for a database. It shouldn't be empty");
 
-        allowed_max_length = computeMaxTableNameLength(database_name, Context::getGlobalContextInstance());
+        allowed_max_length = computeMaxTableNameLength(database_name, getContext());
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
 
