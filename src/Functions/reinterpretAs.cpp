@@ -39,7 +39,7 @@ namespace
  * 3. Types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
  * String, and types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID).
  */
-class FunctionReinterpret final : public IFunction
+class FunctionReinterpret : public IFunction
 {
 public:
     static constexpr auto name = "reinterpret";
@@ -424,7 +424,7 @@ private:
 };
 
 template <typename ToDataType, typename Name>
-class FunctionReinterpretAs final : public IFunction
+class FunctionReinterpretAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
