@@ -42,8 +42,7 @@ void TypoCorrection::collectTableExpressionValidIdentifiers(
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
     /// Typo correction is on the error path: build the full map so we can iterate `ColumnNode`s.
-    table_expression_data.ensureColumnNodeMapIsPopulated();
-    for (const auto & [column_name, column_node] : *table_expression_data.column_name_to_column_node)
+    for (const auto & [column_name, column_node] : table_expression_data.getColumnNodeMap())
     {
         Identifier column_identifier(column_name);
         if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())

@@ -1678,8 +1678,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 
         if (table_expression_data)
         {
-            table_expression_data->ensureColumnNodeMapIsPopulated();
-            const auto & node_map = *table_expression_data->column_name_to_column_node;
+            const auto & node_map = table_expression_data->getColumnNodeMap();
             auto column_node_it = node_map.find(column_name);
             if (column_node_it != node_map.end())
             {
@@ -3960,9 +3959,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         table_expression_data.column_names_and_types = NamesAndTypes(column_names_and_types.begin(), column_names_and_types.end());
 
         /// Eager: only the cheap things we need for membership / first-part checks.
-        /// Building `ColumnNode`s for every regular table column is deferred to
-        /// `populate_column_node_map` (set below) and runs only if some identifier
-        /// resolution actually requires the map. Wide tables with no referenced columns
+        /// Building `ColumnNode`s for every regular table column is deferred to the
+        /// populator installed via `setColumnNodeMapPopulator` below and runs only if some
+        /// identifier resolution actually requires the map. Wide tables with no referenced columns
         /// (for example `SELECT count() FROM t`) skip ~100 `ColumnNode` allocations.
         const auto & columns_description = storage_snapshot->metadata->getColumns();
         for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
@@ -3975,7 +3974,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
         /// Subquery / union projection lists are typically small; populate eagerly so the
         /// lazy populator is never installed. Emplacing the optional marks the map populated.
-        auto & node_map = table_expression_data.column_name_to_column_node.emplace();
+        auto & node_map = table_expression_data.emplaceColumnNodeMap();
         node_map.reserve(table_expression_data.column_names_and_types.size());
         for (const auto & column_name_and_type : table_expression_data.column_names_and_types)
         {
@@ -4001,13 +4000,15 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         return;
 
     /// For the table / table-function path, install a populator that materialises
-    /// `column_name_to_column_node` (and resolves any ALIAS column expressions) on first
-    /// use. The populator captures the in-map `data` (its address is stable across
+    /// the column-node map (and resolves any ALIAS column expressions) on first use.
+    /// The populator captures the in-map `data` (its address is stable across
     /// `unordered_map` rehashes) and a kept-alive `storage_snapshot`.
     if (table_node || table_function_node)
     {
         auto & data = data_it->second;
-        data.populate_column_node_map = [this, &data, table_expression_node, captured_storage_snapshot = std::move(storage_snapshot), &scope]() mutable
+        data.setColumnNodeMapPopulator(
+            [this, &data, table_expression_node, captured_storage_snapshot = std::move(storage_snapshot), &scope]
+            (ColumnNameToColumnNodeMap & node_map) mutable
         {
             const auto & columns_description = captured_storage_snapshot->metadata->getColumns();
 
@@ -4020,12 +4021,11 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               * For each alias column we build identifier resolve scope, initialize it with table column name to node map
               * and resolve alias column.
               *
-              * `ensureColumnNodeMapIsPopulated` has already emplaced an empty map; insert directly
-              * into it (rather than into a local map we move at the end) so that any recursive call
-              * into `ensureColumnNodeMapIsPopulated` triggered by alias-expression resolution below
-              * finds the placeholder ColumnNodes.
+              * The caller (`ensureColumnNodeMapIsPopulated`) has already emplaced an empty map and
+              * passes it by reference; insert directly into it (rather than into a local map we
+              * move at the end) so that any recursive `getColumnNodeMap()` triggered by
+              * alias-expression resolution below finds the placeholder ColumnNodes.
               */
-            auto & node_map = *data.column_name_to_column_node;
             node_map.reserve(data.column_names_and_types.size());
             for (const auto & column_name_and_type : data.column_names_and_types)
             {
@@ -4070,7 +4070,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                     resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
                 node_map[alias_column_to_resolve_name] = alias_column_to_resolve;
             }
-        };
+        });
     }
 }
 

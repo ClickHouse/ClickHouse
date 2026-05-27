@@ -1,6 +1,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
+#include <shared_mutex>
 #include <Compression/CompressionFactory.h>
 #include <algorithm>
 #include <functional>
@@ -272,7 +273,10 @@ ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) 
     {
         columns = std::move(other.columns);
         subcolumns = std::move(other.subcolumns);
-        invalidateGetCache();
+        /// Steal the cache from `other`: it is consistent with the columns we just moved.
+        /// Lock `*this` only; `other` is moved-from and has no concurrent users by contract.
+        std::lock_guard lock(get_cache_mutex);
+        get_cache = std::move(other.get_cache);
     }
     return *this;
 }
@@ -610,15 +614,15 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
 
 NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) const
 {
-    /// `get(options)` is hot: analyzer + planner together call it 2-3 times per query
+    /// `get(const GetColumnsOptions &)` is hot: analyzer + planner together call it 2-3 times per query
     /// with the same options, and rebuilding the list iterates the columns multi-index
     /// and runs `addSubcolumnsToList` (linear hash lookups per row). Memoize on
     /// `ColumnsDescription` so the result is shared across queries on the same metadata
-    /// version. The cache is invalidated by every mutator that touches `columns` or
+    /// version. The cache is invalidated by every method that touches `columns` or
     /// `subcolumns`.
     auto key = makeGetCacheKey(options);
     {
-        std::lock_guard lock(get_cache_mutex);
+        std::shared_lock lock(get_cache_mutex);
         for (const auto & entry : get_cache)
         {
             if (entry.first == key)

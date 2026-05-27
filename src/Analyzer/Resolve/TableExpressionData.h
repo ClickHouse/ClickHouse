@@ -2,6 +2,7 @@
 
 #include <IO/Operators.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/Identifier.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
@@ -45,17 +46,6 @@ struct AnalysisTableExpressionData
     /// this set during `initializeTableExpressionData` is itself non-trivial; trivial queries
     /// like `SELECT count() FROM t` never consult it.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_names;
-    /// `name -> ColumnNode`. Lazily populated by `ensureColumnNodeMapIsPopulated()`. Many
-    /// queries (e.g. `SELECT count() FROM t`) never resolve any column identifier from a
-    /// table and therefore never need this map; building 100+ `ColumnNode`s up front for
-    /// such queries is the dominant cost of `initializeTableExpressionData` for wide tables.
-    /// `nullopt` means "not populated yet" — `has_value()` doubles as the populated flag.
-    mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
-    /// Set by `initializeTableExpressionData`. Invoked at most once by
-    /// `ensureColumnNodeMapIsPopulated()` to materialise `column_name_to_column_node` (and
-    /// resolve ALIAS column expressions if any). Kept empty when there is no source table
-    /// (e.g. subqueries) and the map is built eagerly.
-    mutable std::function<void()> populate_column_node_map;
     std::unordered_set<std::string> subcolumn_names; /// Subset columns that are subcolumns of other columns
     /// Set of `Identifier(name).at(0)` for every column. Used to test whether the first part
     /// of a compound identifier could refer to a column in this table. Populated together
@@ -63,36 +53,23 @@ struct AnalysisTableExpressionData
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
 
-    void ensureColumnMembershipSetsArePopulated() const
-    {
-        if (column_membership_sets_populated)
-            return;
-        column_membership_sets_populated = true;
-        column_names.reserve(column_names_and_types.size());
-        column_identifier_first_parts.reserve(column_names_and_types.size());
-        for (const auto & column_name_and_type : column_names_and_types)
-        {
-            column_names.insert(column_name_and_type.name);
-            Identifier column_name_identifier(column_name_and_type.name);
-            column_identifier_first_parts.insert(column_name_identifier.at(0));
-        }
-    }
+    void ensureColumnMembershipSetsArePopulated() const;
 
-    void ensureColumnNodeMapIsPopulated() const
-    {
-        if (column_name_to_column_node.has_value())
-            return;
-        /// Emplace the (initially empty) map before calling the populator. The populator
-        /// first inserts every regular column (and ALIAS placeholders) into the map, then
-        /// resolves ALIAS expressions; that resolution can recursively trigger identifier
-        /// lookups that call this method again. Emplacing up front breaks the recursion:
-        /// re-entrants find the map present and see the placeholders the populator has
-        /// already inserted.
-        column_name_to_column_node.emplace();
-        ensureColumnMembershipSetsArePopulated();
-        if (populate_column_node_map)
-            populate_column_node_map();
-    }
+    /// Returns the `name -> ColumnNode` map, building it on first call. Many queries
+    /// (e.g. `SELECT count() FROM t`) never resolve any column identifier from a table and
+    /// therefore never need this map; building 100+ `ColumnNode`s up front for such queries
+    /// is the dominant cost of `initializeTableExpressionData` for wide tables.
+    const ColumnNameToColumnNodeMap & getColumnNodeMap() const;
+
+    /// Install a populator that materialises the map (and resolves any ALIAS column
+    /// expressions) on first `getColumnNodeMap()`. The populator receives the (initially
+    /// empty) map by reference; emplacing it before invocation breaks recursion when ALIAS
+    /// resolution triggers identifier lookups that call `getColumnNodeMap()` again.
+    void setColumnNodeMapPopulator(std::function<void(ColumnNameToColumnNodeMap &)> populator);
+
+    /// Eagerly emplace an empty map and return a mutable reference for callers that fill
+    /// it inline (used for subquery / union projection lists, which are typically small).
+    ColumnNameToColumnNodeMap & emplaceColumnNodeMap() const;
 
     bool hasFullIdentifierName(IdentifierView identifier_view) const
     {
@@ -121,8 +98,7 @@ struct AnalysisTableExpressionData
             buffer << "   table name '" << table_name << "'\n";
 
         buffer << "   Should qualify columns " << should_qualify_columns << "\n";
-        ensureColumnNodeMapIsPopulated();
-        const auto & node_map = *column_name_to_column_node;
+        const auto & node_map = getColumnNodeMap();
         buffer << "   Columns size " << node_map.size() << "\n";
         static constexpr size_t max_columns_to_dump = 10;
         size_t columns_dumped = 0;
@@ -162,9 +138,9 @@ struct AnalysisTableExpressionData
             /// `column_name_to_column_node` map to be built.
             if (!column_names.contains(column_name))
                 continue;
-            ensureColumnNodeMapIsPopulated();
-            auto it = column_name_to_column_node->find(column_name);
-            if (it != column_name_to_column_node->end())
+            const auto & node_map = getColumnNodeMap();
+            auto it = node_map.find(column_name);
+            if (it != node_map.end())
             {
                 if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
                     return SubcolumnInfo{it->second, subcolumn_name, subcolumn_type};
@@ -173,6 +149,10 @@ struct AnalysisTableExpressionData
 
         return std::nullopt;
     }
+
+private:
+    mutable std::optional<ColumnNameToColumnNodeMap> column_name_to_column_node;
+    std::function<void(ColumnNameToColumnNodeMap &)> populate_column_node_map;
 };
 
 }

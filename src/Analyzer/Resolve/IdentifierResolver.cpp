@@ -404,8 +404,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
-    scope.table_expression_data_for_alias_resolution->ensureColumnNodeMapIsPopulated();
-    const auto & node_map = *scope.table_expression_data_for_alias_resolution->column_name_to_column_node;
+    const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
     auto it = node_map.find(identifier_full_name);
     if (it != node_map.end())
         return it->second;
@@ -548,8 +547,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    table_expression_data.ensureColumnNodeMapIsPopulated();
-    const auto & node_map = *table_expression_data.column_name_to_column_node;
+    const auto & node_map = table_expression_data.getColumnNodeMap();
     if (auto it = node_map.find(identifier_full_name); it != node_map.end())
     {
         result_expression = it->second;
