@@ -24,12 +24,20 @@ STOP_TESTING_EXIT_CODE = runpy.run_path(str(_clickhouse_test))["STOP_TESTING_EXI
 # Exit codes that mean the run was aborted mid-flight, so per-test results
 # (if any) are incomplete and we cannot trust which test "caused" the
 # failure. `STOP_TESTING_EXIT_CODE` is the in-band signal — the parent
-# raised `StopTesting` and reached the outer handler. `128 + SIGTERM/SIGKILL`
-# cover the out-of-band variants where the parent was killed before it
-# could exit through that handler (currently reachable via the
+# raised `StopTesting` and reached the outer handler. The kill-by-signal
+# variants cover the out-of-band cases where the parent was killed before
+# it could exit through that handler (currently reachable via the
 # worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
 # parent terminates re-broadcasts SIGTERM to the whole process group via
-# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`).
+# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`;
+# also covers external kills like job-level timeouts and runner shutdown).
+#
+# Both `128 + N` (bash's convention when its child died from signal N) and
+# the negative form `-N` are included: `Shell.run` wraps the command in
+# `bash -c`, so most kills surface as `128 + N` via bash's exit status, but
+# `Shell._check_timeout` calls `os.killpg` on the whole group, so the
+# wrapper bash can itself die from the signal — and Python's
+# `subprocess.Popen.returncode` reports that as `-N`, not `128 + N`.
 #
 # Exit code 1 is deliberately NOT in this set: it is set by end-of-run
 # checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
@@ -40,6 +48,8 @@ ABORTED_RUN_EXIT_CODES = frozenset(
         STOP_TESTING_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
+        -signal.SIGTERM,  # -15
+        -signal.SIGKILL,  # -9
     }
 )
 
