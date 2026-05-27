@@ -26,7 +26,7 @@ void PostgreSQLOutputFormat::writePrefix()
 
     if (header.columns())
     {
-        std::vector<PostgreSQLProtocol::Messaging::FieldDescription> columns;
+        VectorWithMemoryTracking<PostgreSQLProtocol::Messaging::FieldDescription> columns;
         columns.reserve(header.columns());
 
         for (size_t i = 0; i < header.columns(); ++i)
@@ -44,7 +44,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
         const Columns & columns = chunk.getColumns();
-        std::vector<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
+        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
         row.reserve(chunk.getNumColumns());
 
         for (size_t j = 0; j != chunk.getNumColumns(); ++j)
