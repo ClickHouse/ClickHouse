@@ -108,7 +108,7 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     tryCreateMetadataSymlink();
 }
 
-UUID DatabaseAtomic::getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_name) const
+UUID DatabaseAtomic::getTableUUIDFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const
 {
     const String table_metadata_path = getObjectMetadataPath(table_name);
     return DatabaseOnDisk::getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
@@ -256,6 +256,16 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     const String table_metadata_path = getObjectMetadataPath(table_name);
     const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
     const StorageID storage_id{getDatabaseName(), table_name, uuid_table};
+
+    QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+    waitDetachedTableNotInUse(
+        uuid_table,
+        [&]()
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+        });
+
     String table_metadata_path_drop;
 
     {

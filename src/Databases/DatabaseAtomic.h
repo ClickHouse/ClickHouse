@@ -57,7 +57,7 @@ public:
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
-    UUID getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_name) const;
+    UUID getTableUUIDFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const;
 
     void drop(ContextPtr /*context*/) override;
 

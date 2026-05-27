@@ -222,12 +222,12 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "DROP DETACHED TABLE is unsupported for Database{}", database->getEngineName());
         }
 
-        actual_database->dropDetachedTable(context_, table_name, query.sync);
-
         if (query.sync)
         {
-            uuid_to_wait = actual_database->getTableUUIDFromDetachedMetadata(context_, table_name);
+            uuid_to_wait = actual_database->getTableUUIDFromDetachedMetadataByName(context_, table_name);
         }
+        actual_database->dropDetachedTable(context_, table_name, query.sync);
+
         return {};
     }
 
