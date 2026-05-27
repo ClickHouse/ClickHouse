@@ -1,6 +1,7 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <Compression/CompressionFactory.h>
 #include <algorithm>
