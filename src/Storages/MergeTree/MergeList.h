@@ -52,6 +52,13 @@ struct MergeInfo
     UInt64 thread_id{};
     std::string merge_type;
     std::string merge_algorithm;
+
+    std::string current_projection;
+    Float64 current_projection_progress{0};
+    UInt64 current_projection_parts_merging{0};
+    UInt64 current_projection_parts_remaining{0};
+    Array projections_completed;
+    Array projections_remaining;
 };
 
 struct FutureMergedMutatedPart;
@@ -106,6 +113,24 @@ struct MergeListElement : boost::noncopyable
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
+
+    /// Projection merge introspection.
+    /// Updated by MergeTask when merging/rebuilding projections.
+    mutable std::mutex projection_introspection_mutex;
+    String current_projection;
+    Names projections_done;
+    Names projections_pending;
+
+    /// Atomic fields for projection sub-merge progress (lock-free reads from system.merges).
+    /// current_projection_progress is written by child MergeListElement via parent_progress pointer.
+    std::atomic<Float64> current_projection_progress{0};
+    std::atomic<UInt64> current_projection_parts_merging{0};
+    std::atomic<UInt64> current_projection_parts_remaining{0};
+
+    /// When non-null, child MergeListElement writes its progress here.
+    /// Points to parent's current_projection_progress. Safe because parent
+    /// lifetime always exceeds child lifetime.
+    std::atomic<Float64> * parent_progress{nullptr};
 
     ThreadGroupPtr thread_group;
     CurrentMetrics::Increment num_parts_metric_increment;

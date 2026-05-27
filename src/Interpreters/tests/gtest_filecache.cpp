@@ -1168,7 +1168,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, user, read_buffer_creator,
-            read_settings.getFilesystemCacheSettings(), read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
+            read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
             "test", s.size(), false, false, std::nullopt, nullptr);
 
         WriteBufferFromOwnString result;
@@ -1181,7 +1181,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, user, read_buffer_creator,
-            read_settings.getFilesystemCacheSettings(), /* remote_fs_buffer_size */ 10, /* local_fs_buffer_size */ 10,
+            read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 10, /* local_fs_buffer_size */ 10,
             "test", s.size(), false, false, std::nullopt, nullptr);
 
         cached_buffer->next();
@@ -1396,7 +1396,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
             auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
                 file, key, cache, user, read_buffer_creator,
-                read_settings.getFilesystemCacheSettings(), read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
+                read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
                 "test", expect_result.size(), false, false, std::nullopt, nullptr);
 
             WriteBufferFromOwnString result;
@@ -1503,7 +1503,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
         };
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file, key, cache, user, read_buffer_creator,
-            read_settings.getFilesystemCacheSettings(), read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
+            read_settings.filesystem_cache_settings, read_settings.remote_fs_buffer_size, read_settings.local_fs_buffer_size,
             "test", expect_result.size(), false, false, std::nullopt, nullptr);
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
