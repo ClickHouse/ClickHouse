@@ -341,7 +341,7 @@ private:
 
     static std::string getTableLocation(const std::string & path)
     {
-        // Don't add double slash at the end of the path
+        /// Don't add double slash at the end of the path
         return "file://" + path + (path.ends_with('/') ? "" : "/");
     }
 };
