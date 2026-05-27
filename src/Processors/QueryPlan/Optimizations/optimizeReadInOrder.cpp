@@ -28,6 +28,7 @@
 #include <Storages/StorageMerge.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Common/typeid_cast.h>
 #include <optional>
 
@@ -1888,7 +1889,11 @@ void optimizeStreamingWindowFunctions(
             const auto * default_col_entry = window_input.findByName(func.argument_names[2]);
             if (!default_col_entry || !default_col_entry->column || !isColumnConst(*default_col_entry->column))
                 return;
-            default_values.push_back((*default_col_entry->column)[0]);
+            Field raw = (*default_col_entry->column)[0];
+            Field cast = convertFieldToType(raw, *func.argument_types[0]);
+            if (cast.isNull() && !func.argument_types[0]->isNullable())
+                return;
+            default_values.push_back(std::move(cast));
         }
         else
             default_values.push_back(std::nullopt);
