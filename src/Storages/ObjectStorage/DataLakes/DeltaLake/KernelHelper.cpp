@@ -5,7 +5,6 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
-#include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -21,7 +20,9 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+#if USE_AZURE_BLOB_STORAGE
     extern const int BAD_ARGUMENTS;
+#endif
 }
 
 namespace DB::S3AuthSetting
@@ -31,27 +32,6 @@ namespace DB::S3AuthSetting
 
 namespace DeltaLake
 {
-
-namespace
-{
-
-/// Forwards to `ffi::set_builder_option` after validating the value.
-/// The Rust FFI decodes `(ptr, len)` as `&str` via `std::str::from_utf8` and panics on
-/// invalid UTF-8, which crosses the `extern "C"` boundary and aborts the server via
-/// `panic_in_cleanup`. Binary credentials (e.g. raw `MD5(...)` bytes) trigger this.
-/// Translate to a normal `BAD_ARGUMENTS` exception instead.
-void setBuilderOptionChecked(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
-{
-    if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Option '{}' for the DeltaLake engine contains invalid UTF-8 bytes; "
-            "the delta-kernel-rs FFI requires valid UTF-8 input.",
-            name);
-    ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
-}
-
-}
 
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
@@ -91,7 +71,7 @@ public:
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            setBuilderOptionChecked(builder, name, value);
+            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
         };
 
         const auto & credentials = client->getCredentials();
@@ -176,7 +156,7 @@ public:
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            setBuilderOptionChecked(builder, name, value);
+            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
         };
 
         const auto & endpoint = connection_params.endpoint;
