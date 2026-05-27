@@ -221,7 +221,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
             access_key_id = s3_updated_credentials->getAccessKeyId();
             secret_access_key = s3_updated_credentials->getSecretAccessKey();
             session_token = s3_updated_credentials->getSessionToken();
-            LOG_DEBUG(getLogger("getClient"), "Got new access tokens {} {} {}", access_key_id, secret_access_key, session_token);
         }
     }
     return S3::ClientFactory::instance().create(
