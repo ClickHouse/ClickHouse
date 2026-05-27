@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <Poco/Timestamp.h>
-#include <QueryPipeline/BlockIO.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
@@ -23,19 +21,19 @@ public:
 
     FileDictionarySource(const FileDictionarySource & other);
 
-    BlockIO loadAll() override;
+    QueryPipeline loadAll() override;
 
-    BlockIO loadUpdatedAll() override
+    QueryPipeline loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
     }
 
-    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & /*ids*/) override
+    QueryPipeline loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
     }
 
-    BlockIO loadKeys(const Columns & /*key_columns*/, const VectorWithMemoryTracking<size_t> & /*requested_rows*/) override
+    QueryPipeline loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
     }

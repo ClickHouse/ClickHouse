@@ -4,7 +4,6 @@
 
 #if USE_ORC
 
-#include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
@@ -12,6 +11,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <boost/algorithm/string.hpp>
+#include <orc/MemoryPool.hh>
 #include <orc/OrcFile.hh>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -34,10 +34,7 @@ public:
 protected:
     SeekableReadBuffer & in;
     size_t file_size;
-    /// Use offset-based reads (ReadBuffer::readBigAt) instead of seek+read; needed for ORC tail.
-    bool use_offset_based_read;
-    /// Async wrapper only when caller enabled prefetch and the buffer supports read-at.
-    bool use_async_prefetch;
+    bool supports_read_at;
     ThreadPoolCallbackRunnerUnsafe<void> async_runner;
 
     std::string name = "ORCInputStream";
@@ -92,7 +89,10 @@ private:
 
     void prepareFileReader();
     bool prepareStripeReader();
+
     void prefetchStripes();
+
+    std::unique_ptr<orc::MemoryPool> memory_pool;
 
     std::unique_ptr<orc::Reader> file_reader;
     std::unique_ptr<orc::RowReader> stripe_reader;
