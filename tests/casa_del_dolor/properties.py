@@ -740,7 +740,11 @@ def add_single_disk(
         object_storage_type_xml.text = object_storage_type
 
         # Set disk metadata type
-        metadata_type = "keeper" if object_storage_type == "s3_with_keeper" else "local"
+        metadata_type = (
+            "keeper"
+            if object_storage_type == "s3_with_keeper"
+            else "web" if object_storage_type == "web" else "local"
+        )
         if random.randint(1, 100) <= 70:
             possible_metadata_types = (
                 ["plain", "web"]
