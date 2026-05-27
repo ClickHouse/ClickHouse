@@ -21,12 +21,14 @@ void TextIndexAnalyzer::QueryBuilder::markFailed()
 {
     is_failed = true;
     postings.reset();
+    rows_range.reset();
 }
 
 void TextIndexAnalyzer::QueryBuilder::markBypassed()
 {
     is_bypassed = true;
-    postings.reset();
+    /// Keep `postings` and `rows_range` for index analysis in `mayBeTrueOnGranule`.
+    /// Bypassing a query makes sense only for direct read optimization.
 }
 
 void TextIndexAnalyzer::QueryBuilder::addMissingToken()
