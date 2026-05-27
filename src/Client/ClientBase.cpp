@@ -932,6 +932,12 @@ void ClientBase::initClientContext(ContextMutablePtr context)
     /// mutate `default_database`. `RESET SESSION` restores from here.
     if (!default_database_at_connect.has_value())
         default_database_at_connect = default_database;
+
+    /// Snapshot the effective settings before any in-session `SET` could mutate
+    /// them. Command-line overrides like `--max_threads N` have already been
+    /// applied to the context by this point, so they end up in the snapshot.
+    if (!settings_at_connect)
+        settings_at_connect = std::make_unique<Settings>(client_context->getSettingsCopy());
 }
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
@@ -2522,10 +2528,11 @@ void ClientBase::processParsedSingleQuery(
             /// side so we don't re-send stale state on the next query.
             query_parameters.clear();
             client_context->setQueryParameters({});
-            /// Settings are reset to the compiled-in defaults rather than to the
-            /// user's profile defaults — the server has the profile values, the
-            /// client will re-acquire any per-query overrides from there.
-            client_context->setSettings(Settings());
+            /// Settings are reset to the snapshot taken at connect time, which
+            /// includes any command-line `--setting` overrides supplied to the
+            /// client binary. The server has the profile values; this snapshot
+            /// captures the *client*-side baseline.
+            client_context->setSettings(settings_at_connect ? *settings_at_connect : Settings());
             /// Restore the database the connection was opened with so a
             /// reconnection after `USE other_db; RESET SESSION;` lands back on
             /// the connection-start database, matching the server-side reset.

@@ -2018,8 +2018,14 @@ void Context::resetToUserDefaults()
         {
             DatabaseCatalog::instance().assertDatabaseExists(target_database);
         }
-        catch (const Exception &)
+        catch (const Exception & e)
         {
+            /// The database went away between session start and reset (admin
+            /// dropped it). Fall back to empty rather than failing the reset.
+            /// Any other failure (catalog internal error, permission issue)
+            /// is genuinely surprising — let it propagate.
+            if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                throw;
             target_database.clear();
         }
     }

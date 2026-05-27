@@ -378,6 +378,14 @@ protected:
     std::unique_ptr<Settings> cmd_settings;
     std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
 
+    /// Effective settings on the client context at the time of the first
+    /// successful connection (i.e. after command-line `--setting` overrides
+    /// have been applied but before any in-session `SET`). `RESET SESSION`
+    /// restores to this snapshot rather than to compiled-in defaults, so a
+    /// client invoked with e.g. `--max_threads 4` keeps that value after a
+    /// reset.
+    std::unique_ptr<Settings> settings_at_connect;
+
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
 

@@ -883,9 +883,10 @@ public:
     /// Restore the session context to the state it had right after the
     /// authentication and handshake: re-derives profiles / roles from access
     /// control, restores the database the connection was opened with, replays
-    /// the settings supplied by the auth server, and drops all session-scoped
-    /// collections (temporary tables, query parameters, scalars, formats).
-    /// Preserves user identity and client info.
+    /// the settings supplied by the auth server, and drops session-scoped
+    /// temporary tables, query parameters, and scalars.
+    /// Preserves user identity, client info, and the handshake-negotiated
+    /// output format.
     void resetToUserDefaults();
 
     std::optional<UUID> getUserID() const;
