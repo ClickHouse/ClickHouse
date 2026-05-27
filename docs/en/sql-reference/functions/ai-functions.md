@@ -37,7 +37,7 @@ CREATE NAMED COLLECTION ai_credentials AS
 | `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
 | `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
-| `api_key` | String | — | Authentication key for the provider. |
+| `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which lets you target OpenAI-compatible servers that do not require authentication (e.g. a local Ollama instance). |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
 

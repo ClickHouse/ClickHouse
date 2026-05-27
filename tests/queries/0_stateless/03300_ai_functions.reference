@@ -8,6 +8,8 @@ aiGenerate
 -- Named collection missing model
 -- Named collection without api_key resolves
 0
+-- Named collection without api_key reaches HTTP path
+0
 -- Nonexistent named collection
 -- aiGenerate return type
 result	String
