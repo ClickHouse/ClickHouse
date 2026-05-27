@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 disk_name="s3_cache_02944_lru"
 
 # Exercises the legacy `CachedOnDiskReadBufferFromFile` reader.
-# A companion test `04267_dynamically_change_filesystem_cache_size_reader_executor.sh`
+# A companion test `04295_dynamically_change_filesystem_cache_size_reader_executor.sh`
 # runs the same scenario with `use_reader_executor=1`.
 ch="$CLICKHOUSE_CLIENT --use_reader_executor=0"
 
