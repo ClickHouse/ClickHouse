@@ -62,6 +62,71 @@ FROM (
     SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
 );
 
+-- ORDER BY TimeUnix DESC mismatches the storage ASC key: must NOT activate streaming.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
+    FROM lag_streaming_t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+-- Table with a DESC storage key for TimeUnix.
+CREATE TABLE lag_streaming_desc_t (
+    MetricName LowCardinality(String),
+    TimeUnix UInt64,
+    Count UInt64,
+    Attributes Map(LowCardinality(String), String)
+) ENGINE = MergeTree()
+ORDER BY (MetricName, TimeUnix DESC)
+SETTINGS index_granularity = 8192, allow_experimental_reverse_key = 1;
+
+INSERT INTO lag_streaming_desc_t
+SELECT
+    concat('metric_', toString(number % 10)) AS MetricName,
+    number * 1000 AS TimeUnix,
+    number AS Count,
+    map('k1', toString(number % 5)) AS Attributes
+FROM numbers(0, 100000);
+
+-- Storage ORDER BY (MetricName, TimeUnix DESC) + window ORDER BY TimeUnix DESC: directions match, must activate streaming.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
+    FROM lag_streaming_desc_t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+-- Same DESC table but window ORDER BY TimeUnix ASC: directions mismatch, must NOT activate streaming.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix ASC) AS prev_count
+    FROM lag_streaming_desc_t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+-- Verify correctness for DESC storage key.
+SELECT
+    (
+        SELECT sum(prev_count) FROM (
+            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
+            FROM lag_streaming_desc_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
+        )
+    ) AS without_opt,
+    (
+        SELECT sum(prev_count) FROM (
+            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix DESC) AS prev_count
+            FROM lag_streaming_desc_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+        )
+    ) AS with_opt,
+    without_opt = with_opt AS correct;
+
+DROP TABLE lag_streaming_desc_t;
+
 -- Verify correctness: results are identical with and without the optimization.
 SELECT
     (

@@ -1922,16 +1922,36 @@ void optimizeStreamingWindowFunctions(
     if (prefix_description.size() + window_order_by.size() > full_key_size)
         return;
 
-    /// Each window ORDER BY column must match the corresponding storage key column.
-    /// Plan-time names carry a table-qualifier prefix (e.g. `__table1.TimeUnix`); strip it.
-    const auto & storage_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKey().column_names;
+    /// Each window ORDER BY column must be fully compatible with the corresponding storage key column:
+    /// name, direction (accounting for the global read direction), nulls ordering, and collation.
+    const auto & sorting_key = read_from_merge_tree->getStorageMetadata()->getSortingKey();
     for (size_t i = 0; i < window_order_by.size(); ++i)
     {
-        const std::string & plan_name = window_order_by[i].column_name;
-        const std::string & raw_name = storage_key_columns[prefix_description.size() + i];
-        const auto dot = plan_name.rfind('.');
-        const std::string base_name = (dot != std::string::npos) ? plan_name.substr(dot + 1) : plan_name;
-        if (base_name != raw_name)
+        const size_t j = prefix_description.size() + i;
+        const auto & win_col = window_order_by[i];
+
+        /// Storage keys cannot have collations; a collated window column is incompatible.
+        if (win_col.collator)
+            return;
+
+        /// Strip plan-time table qualifier (e.g. `__table1.TimeUnix` → `TimeUnix`).
+        const auto dot = win_col.column_name.rfind('.');
+        const std::string base_name = (dot != std::string::npos)
+            ? win_col.column_name.substr(dot + 1) : win_col.column_name;
+        if (base_name != sorting_key.column_names[j])
+            return;
+
+        /// The storage delivers column j in direction: input_order->direction * storage_raw_direction.
+        /// storage_raw_direction is +1 (ASC) unless reverse_flags marks it as DESC.
+        const int storage_raw_direction = (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[j]) ? -1 : 1;
+        if (win_col.direction != input_order->direction * storage_raw_direction)
+            return;
+
+        /// Storage always sorts with nulls_direction = +1 (NULLS LAST for ASC, NULLS FIRST for DESC).
+        /// A window column requesting nulls_direction == -1 on a nullable/float column is incompatible.
+        const bool column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[j])
+            || isFloat(*sorting_key.data_types[j]);
+        if (column_is_nullable && win_col.nulls_direction == -1)
             return;
     }
 
