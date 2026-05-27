@@ -1219,6 +1219,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.6",
+        {
+            {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
