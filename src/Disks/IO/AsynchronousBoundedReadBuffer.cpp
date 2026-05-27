@@ -4,7 +4,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include <Common/ThreadStatus.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -51,18 +50,14 @@ namespace ErrorCodes
 AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     ImplPtr impl_,
     IAsynchronousReader & reader_,
+    const ReadSettings & settings_,
     size_t buffer_size_,
     size_t min_bytes_for_seek_,
-    Priority priority_,
-    size_t page_cache_block_size_,
-    bool enable_prefetches_log_,
     AsyncReadCountersPtr async_read_counters_,
     FilesystemReadPrefetchesLogPtr prefetches_log_)
     : ReadBufferFromFileBase(0, nullptr, 0, impl_->getFileSize())
     , impl(std::move(impl_))
-    , base_priority(priority_)
-    , page_cache_block_size(page_cache_block_size_)
-    , enable_prefetches_log(enable_prefetches_log_)
+    , read_settings(settings_)
     , buffer_size(buffer_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     /// Avoid calling thread-unsafe impl->getFileName() while prefetch is in progress.
@@ -82,7 +77,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     if (cached_impl)
     {
         use_page_cache = true;
-        buffer_size = page_cache_block_size;
+        buffer_size = read_settings.page_cache_block_size;
     }
     LOG_TEST(log, "Using buffer size {} while reading {}", buffer_size, file_name);
 
@@ -130,7 +125,7 @@ std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsyn
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = Priority{base_priority.value + priority.value};
+    request.priority = Priority{read_settings.priority.value + priority.value};
     request.ignore = bytes_to_ignore;
     return reader.submit(request);
 }
@@ -255,7 +250,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         prefetch_future = {};
         prefetch_buffer.swap(memory);
 
-        if (enable_prefetches_log)
+        if (read_settings.enable_filesystem_read_prefetches_log)
             appendToPrefetchLog(FilesystemPrefetchState::USED, result.size, result.execution_watch);
 
         last_prefetch_info = {};
@@ -363,7 +358,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         if (read_from_prefetch)
         {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
-            if (enable_prefetches_log)
+            if (read_settings.enable_filesystem_read_prefetches_log)
                 appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
         }
 

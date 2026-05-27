@@ -49,7 +49,7 @@ namespace MergeTreeSetting
 /// NOTE:
 ///  It doesn't filter out rows that are deleted with lightweight deletes.
 ///  Use createMergeTreeSequentialSource filter out those rows.
-class MergeTreeSequentialSource final : public ISource
+class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
@@ -148,7 +148,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.filesystem_cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
@@ -339,7 +339,7 @@ Pipe createMergeTreeSequentialSource(
 
     if (info->alter_conversions->hasPatches())
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader).withSubcolumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns();
         auto all_read_columns = info->task_columns.getAllColumnNames();
         auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
         info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);

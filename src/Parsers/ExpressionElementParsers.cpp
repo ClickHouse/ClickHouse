@@ -191,36 +191,6 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             result_node = buildSelectFromTableFunction(view_explain);
         }
     }
-    else if (ParserKeyword(Keyword::VALUES).ignore(pos, expected))
-    {
-        /// SQL standard VALUES clause: (VALUES (1, 'a'), (2, 'b'))
-        /// Rewrite as SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
-        if (pos->type != TokenType::OpeningRoundBracket)
-            return false;
-
-        auto args = make_intrusive<ASTExpressionList>();
-        ParserExpression expr_parser;
-
-        ASTPtr value_expr;
-        if (!expr_parser.parse(pos, value_expr, expected))
-            return false;
-        args->children.push_back(std::move(value_expr));
-
-        while (pos->type == TokenType::Comma)
-        {
-            ++pos;
-            if (!expr_parser.parse(pos, value_expr, expected))
-                return false;
-            args->children.push_back(std::move(value_expr));
-        }
-
-        auto values_func = make_intrusive<ASTFunction>();
-        values_func->name = "SQLStandardValues";
-        values_func->arguments = args;
-        values_func->children.push_back(values_func->arguments);
-
-        result_node = buildSelectFromTableFunction(values_func);
-    }
     else
     {
         return false;
@@ -398,7 +368,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
-    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::At}), SpecialDelimiter::JSON_PATH_COMBINED);
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
@@ -457,7 +426,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
-    bool has_uuid_clause = false;
 
     if (table_name_with_optional_uuid)
     {
@@ -471,13 +439,11 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
-            has_uuid_clause = true;
         }
 
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
-        node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
     else
         node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
@@ -489,7 +455,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 {
     /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
     if (name.size() < 3
-        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX) && name[0] != char(SpecialDelimiter::JSON_PATH_COMBINED))
+        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
         || name[1] != '`' || name.back() != '`')
         return std::nullopt;
 
@@ -1674,7 +1640,6 @@ const char * ParserAlias::restricted_keywords[] =
     "LEFT",
     "LIKE",
     "LIMIT",
-    "NATURAL",
     "NOT",
     "OFFSET",
     "ON",
@@ -1686,7 +1651,6 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
-    "STREAM",
     "UNION",
     "USING",
     "WHERE",

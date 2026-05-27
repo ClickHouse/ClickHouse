@@ -15,8 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <csignal>
 
-#include "config.h"
-
 
 namespace CurrentMetrics
 {
@@ -312,7 +310,7 @@ template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCPU>;
 
 QueryProfilerReal::QueryProfilerReal(UInt64 thread_id, UInt64 period)
-    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, PAUSE_SIGNAL)
+    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
 {}
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
@@ -325,7 +323,7 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 }
 
 QueryProfilerCPU::QueryProfilerCPU(UInt64 thread_id, UInt64 period)
-    : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, PAUSE_SIGNAL)
+    : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 
 void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)
