@@ -938,6 +938,13 @@ void ClientBase::initClientContext(ContextMutablePtr context)
     /// applied to the context by this point, so they end up in the snapshot.
     if (!settings_at_connect)
         settings_at_connect = std::make_unique<Settings>(client_context->getSettingsCopy());
+
+    /// Same idea for query parameters supplied via `--param_*`: the client
+    /// has parsed them into `query_parameters` (and pushed them to the
+    /// context two lines above) before any in-session `SET param_*`, so we
+    /// can stash that map here and `RESET SESSION` can restore from it.
+    if (!query_parameters_at_connect.has_value())
+        query_parameters_at_connect = query_parameters;
 }
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
@@ -2526,8 +2533,11 @@ void ClientBase::processParsedSingleQuery(
         {
             /// The server has cleared its session state; mirror that on the client
             /// side so we don't re-send stale state on the next query.
-            query_parameters.clear();
-            client_context->setQueryParameters({});
+            /// Restore startup `--param_*` values (analogous to settings and the
+            /// default database below): they're part of the connection baseline,
+            /// not in-session state.
+            query_parameters = query_parameters_at_connect.value_or(NameToNameMap{});
+            client_context->setQueryParameters(query_parameters);
             /// Settings are reset to the snapshot taken at connect time, which
             /// includes any command-line `--setting` overrides supplied to the
             /// client binary. The server has the profile values; this snapshot

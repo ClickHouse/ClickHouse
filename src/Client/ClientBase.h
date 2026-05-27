@@ -386,6 +386,13 @@ protected:
     /// reset.
     std::unique_ptr<Settings> settings_at_connect;
 
+    /// Query parameters supplied via `--param_*` at startup. `RESET SESSION`
+    /// restores `query_parameters` to this set (rather than clearing it), so
+    /// startup parameters are part of the connection baseline alongside the
+    /// startup `default_database` and `settings`. In-session `SET param_*`
+    /// changes are dropped on reset, matching the server-side behavior.
+    std::optional<NameToNameMap> query_parameters_at_connect;
+
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
 

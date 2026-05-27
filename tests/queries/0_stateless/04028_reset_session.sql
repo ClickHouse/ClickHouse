@@ -8,6 +8,12 @@
 --   6. Idempotency
 --   7. Session is still usable after a reset
 
+-- Suppress server log forwarding so expected `serverError` queries below
+-- don't pollute the client_logs_file with their (intentional) error lines.
+-- `RESET SESSION` resets this back to the baseline, so we re-`SET` it after
+-- each reset that precedes a `serverError` query.
+SET send_logs_level = 'fatal';
+
 -- A noisy initial mutation to confirm we are starting dirty.
 SET max_threads = 999, max_block_size = 12345;
 SET param_x = 'mango', param_y = '7';
@@ -25,16 +31,19 @@ SELECT * FROM reset_session_tmp_2;
 SELECT currentDatabase() = 'system' AS in_system;
 
 RESET SESSION;
+SET send_logs_level = 'fatal';
 
 SELECT '-- post-reset --';
 -- 999 / 12345 are arbitrary non-defaults; they must be gone.
 SELECT getSetting('max_threads') = 999, getSetting('max_block_size') = 12345;
--- Query parameters: both should be gone.
+-- Query parameters: both should be gone. Use the substitution-error path
+-- because there's no public introspection for the session's parameter map.
 SELECT {x:String}; -- { serverError UNKNOWN_QUERY_PARAMETER }
 SELECT {y:UInt32}; -- { serverError UNKNOWN_QUERY_PARAMETER }
--- Both temporary tables: gone.
-SELECT * FROM reset_session_tmp_1; -- { serverError UNKNOWN_TABLE }
-SELECT * FROM reset_session_tmp_2; -- { serverError UNKNOWN_TABLE }
+-- Both temporary tables: gone. Check via `system.tables` rather than by
+-- triggering UNKNOWN_TABLE — temporaries live in a hidden per-session
+-- database and disappear when the session-scoped mapping is cleared.
+SELECT count() FROM system.tables WHERE is_temporary AND name IN ('reset_session_tmp_1', 'reset_session_tmp_2');
 -- Database: restored to whatever the connection was opened with — definitely not 'system'.
 SELECT currentDatabase() != 'system' AS not_system;
 
@@ -53,7 +62,7 @@ SELECT getSetting('max_threads'), {z:String}, * FROM reset_session_tmp_3;
 -- And another reset wipes the freshly-set state too.
 RESET SESSION;
 SELECT getSetting('max_threads') = 777 AS still_seven_seven_seven;
-SELECT * FROM reset_session_tmp_3; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM system.tables WHERE is_temporary AND name = 'reset_session_tmp_3';
 
 -- If the current database is dropped mid-session, `RESET SESSION` must not
 -- throw — it should fall back to the user's profile default (or empty) rather

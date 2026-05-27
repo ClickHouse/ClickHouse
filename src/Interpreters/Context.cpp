@@ -2080,6 +2080,12 @@ void Context::resetToUserDefaults()
     new_profiles_state->constraints.check(new_settings, auth_settings_snapshot, SettingSource::QUERY);
     new_settings.applyChanges(auth_settings_snapshot);
     applySettingsQuirks(new_settings);
+    /// The login path runs the server-level sanity clamp after the auth-server
+    /// settings are applied (via `applySettingChangeWithLock` which clamps
+    /// per-setting); run it once at the end here to land in the same state.
+    if (auto type = getApplicationType();
+        type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
+        doSettingsSanityCheckClamp(new_settings, getLogger("SettingsSanity"));
 
     /// Take ownership of fields whose destructors do non-trivial work and run
     /// those destructors after we drop the lock. `TemporaryTableHolder::~`

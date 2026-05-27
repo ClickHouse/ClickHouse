@@ -34,11 +34,16 @@ ${CLICKHOUSE_CLIENT} -m -q "
 "
 
 # Scenario A: profile constraint survives the reset.
+# `SET send_logs_level='fatal'` keeps the expected `SETTING_CONSTRAINT_VIOLATION`
+# server log out of the per-test client_logs_file. `RESET SESSION` clears the
+# setting, so we re-`SET` it after each reset.
 ${CLICKHOUSE_CLIENT} --user "${USER}" -m -q "
+    SET send_logs_level = 'fatal';
     SET max_threads = 7;
     SELECT 'A: pre-reset changed:', (SELECT changed FROM system.settings WHERE name = 'max_threads');
     SET max_threads = 99; -- { serverError SETTING_CONSTRAINT_VIOLATION }
     RESET SESSION;
+    SET send_logs_level = 'fatal';
     SELECT 'A: post-reset changed:', (SELECT changed FROM system.settings WHERE name = 'max_threads');
     -- constraint must still apply after the reset
     SET max_threads = 99; -- { serverError SETTING_CONSTRAINT_VIOLATION }
@@ -58,8 +63,10 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -m -q "
 ${CLICKHOUSE_CLIENT} -m -q "ALTER SETTINGS PROFILE ${PROF} SETTINGS max_threads MIN 1 MAX 2;"
 
 ${CLICKHOUSE_CLIENT} --user "${USER}" -m -q "
+    SET send_logs_level = 'fatal';
     SET max_threads = 1;
     RESET SESSION;
+    SET send_logs_level = 'fatal';
     -- new (tighter) constraint must be in force after reset
     SET max_threads = 5; -- { serverError SETTING_CONSTRAINT_VIOLATION }
     SET max_threads = 2;
