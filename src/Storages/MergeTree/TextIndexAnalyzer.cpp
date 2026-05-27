@@ -42,6 +42,9 @@ void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, Token
     if (is_failed)
         return;
 
+    if (tokens.contains(token))
+        return;
+
     tokens[token] = token_info;
 
     chassert(!token_info->ranges.empty());
