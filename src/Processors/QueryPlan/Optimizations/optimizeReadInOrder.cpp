@@ -1890,7 +1890,7 @@ void optimizeStreamingWindowFunctions(
             if (!default_col_entry || !default_col_entry->column || !isColumnConst(*default_col_entry->column))
                 return;
             Field raw = (*default_col_entry->column)[0];
-            Field cast = convertFieldToType(raw, *func.argument_types[0]);
+            Field cast = convertFieldToType(raw, *func.argument_types[0], func.argument_types[2].get());
             if (cast.isNull() && !func.argument_types[0]->isNullable())
                 return;
             default_values.push_back(std::move(cast));
