@@ -9,9 +9,12 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
+#include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 
+#include <map>
 #include <type_traits>
+#include <unordered_map>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -54,6 +57,65 @@ namespace ProfileEvents
 
 namespace
 {
+    /// Diagnostic registry of live `ThreadPoolImpl<ThreadFromGlobalPool*>` instances.
+    /// Used by `GlobalThreadPool::shutdown` to identify the subsystem that leaked a local
+    /// thread pool: a leaker's workers stay parked on the local pool's `new_job_or_shutdown`
+    /// condition variable, so they block `GlobalThreadPool::finalize` when it tries to join
+    /// the underlying `std::thread`. See the chronic "Hung check failed, possible deadlock
+    /// found" investigation notes for context.
+    struct LocalThreadPoolRegistry
+    {
+        std::mutex mutex;
+        std::unordered_map<const void *, std::string> pool_names;
+    };
+
+    LocalThreadPoolRegistry & getLocalThreadPoolRegistry()
+    {
+        /// Intentionally leak the registry: function-local statics inside this translation
+        /// unit (e.g. `getIOThreadPool` in `SharedThreadPools.cpp`) wrap `ThreadPool` instances
+        /// whose destructors call `unregisterLocalThreadPool`. Those statics are initialized
+        /// before this registry, so they are destroyed after it would otherwise be gone. A
+        /// leaked singleton avoids the use-after-destruction with no observable cost (one mutex
+        /// plus an empty map at program exit).
+        static LocalThreadPoolRegistry & registry = *new LocalThreadPoolRegistry();
+        return registry;
+    }
+
+    void registerLocalThreadPool(const void * pool, std::string_view metric_name)
+    {
+        auto & r = getLocalThreadPoolRegistry();
+        std::lock_guard lock(r.mutex);
+        r.pool_names.emplace(pool, std::string{metric_name});
+    }
+
+    void unregisterLocalThreadPool(const void * pool)
+    {
+        auto & r = getLocalThreadPoolRegistry();
+        std::lock_guard lock(r.mutex);
+        r.pool_names.erase(pool);
+    }
+
+    /// Returns "<metric_name>x<count>, ..." for all live local pools, sorted by metric name.
+    /// "(none)" if the registry is empty. Safe to call concurrently with register/unregister.
+    std::string snapshotLocalThreadPools()
+    {
+        auto & r = getLocalThreadPoolRegistry();
+        std::lock_guard lock(r.mutex);
+        if (r.pool_names.empty())
+            return "(none)";
+        std::map<std::string, size_t> counts;
+        for (const auto & [_, name] : r.pool_names)
+            ++counts[name];
+        std::string result;
+        for (const auto & [name, cnt] : counts)
+        {
+            if (!result.empty())
+                result += ", ";
+            fmt::format_to(std::back_inserter(result), "{}x{}", name, cnt);
+        }
+        return result;
+    }
+
     struct ScopedDecrement
     {
         std::optional<std::reference_wrapper<std::atomic<int64_t>>> atomic_var;
@@ -183,6 +245,12 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     max_free_threads = std::min(max_free_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
     available_threads.store(0, std::memory_order_relaxed);
+
+    /// Diagnostic only: register local pools so that `GlobalThreadPool::shutdown` can list
+    /// the live ones and identify the subsystem responsible for any "Hung check failed,
+    /// possible deadlock found" caused by a leaked local pool.
+    if constexpr (!std::is_same_v<Thread, std::thread>)
+        registerLocalThreadPool(this, CurrentMetrics::getName(metric_threads));
 }
 
 template <typename Thread>
@@ -569,6 +637,12 @@ void ThreadPoolImpl<Thread>::finalize()
 
     // now it's safe to clear the threads
     threads.clear();
+
+    /// Diagnostic only: unregister from the live-pools registry. Placed after the join loop
+    /// so a hung `finalize` leaves the entry in place, which is exactly the leaker signal
+    /// `GlobalThreadPool::shutdown` reads.
+    if constexpr (!std::is_same_v<Thread, std::thread>)
+        unregisterLocalThreadPool(this);
 }
 
 template <typename Thread>
@@ -919,6 +993,16 @@ void GlobalThreadPool::shutdown()
 {
     if (the_instance)
     {
+        /// Diagnostic for the chronic "Hung check failed, possible deadlock found" family:
+        /// if any local `ThreadPoolImpl<ThreadFromGlobalPool*>` instance was leaked by its
+        /// owner, its workers are still parked on the local pool's `new_job_or_shutdown`
+        /// condition variable and the `finalize` call below will block forever joining the
+        /// underlying `std::thread`. Log the live local pools first so the leaker subsystem
+        /// is identifiable in CI artifacts even when the join hangs.
+        LOG_INFO(
+            &Poco::Logger::get("GlobalThreadPool"),
+            "shutdown(): live local ThreadPoolImpl instances at shutdown: [{}]",
+            snapshotLocalThreadPools());
         the_instance->finalize();
     }
 }
