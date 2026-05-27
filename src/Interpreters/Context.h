@@ -1252,6 +1252,9 @@ public:
     bool getS3QueueDisableStreaming() const;
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
+    bool getMessageQueueDisableInsertion() const;
+    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
