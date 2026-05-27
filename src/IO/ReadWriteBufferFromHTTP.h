@@ -14,7 +14,6 @@
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
-#include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -22,7 +21,6 @@
 #include <Poco/URI.h>
 #include <Poco/URIStreamFactory.h>
 #include <Common/RemoteHostFilter.h>
-#include "config.h"
 #include <Common/config_version.h>
 
 #include <filesystem>
