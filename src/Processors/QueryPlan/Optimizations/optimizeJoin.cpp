@@ -261,14 +261,16 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
     std::optional<Float64> total_number_of_distinct_values = 1;
+    bool all_group_key_ndvs_known = true;
     RelationStats aggregation_stats;
     for (const auto & key : aggregator_params.keys)
     {
         auto key_stats = input_stats.column_stats.find(key);
-        if (key_stats == input_stats.column_stats.end())
+        if (key_stats == input_stats.column_stats.end() || key_stats->second.num_distinct_values == 0)
         {
             /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns
             total_number_of_distinct_values.reset();
+            all_group_key_ndvs_known = false;
             continue;
         }
 
@@ -290,7 +292,11 @@ RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_s
         total_number_of_distinct_values = input_stats.estimated_rows;
 
     aggregation_stats.estimated_rows = total_number_of_distinct_values;
-    aggregation_stats.rows_estimate_trusted = input_stats.rows_estimate_trusted;
+    /// Only stay trusted when every grouping-key NDV came from real column statistics
+    /// and the input row count itself was trusted. Otherwise the aggregate cardinality
+    /// is partially fabricated (the fallback uses `input_stats.estimated_rows` instead
+    /// of a product of NDVs) and must not cross the trust boundary upstream.
+    aggregation_stats.rows_estimate_trusted = input_stats.rows_estimate_trusted && all_group_key_ndvs_known;
 
     return aggregation_stats;
 }
