@@ -64,6 +64,7 @@ Each row describes one data part.
 - `serialization_kind` ([String](/sql-reference/data-types/string)) — Kind of serialization of a column
 - `substreams` ([Array(String)](/sql-reference/data-types/array)) — Names of substreams to which column is serialized
 - `filenames` ([Array(String)](/sql-reference/data-types/array)) — Names of files for each substream of a column respectively
+- `codec_block_counts` ([Map(String, UInt64)](/sql-reference/data-types/map)) — The number of compressed blocks grouped by codec across all substreams. Empty for `Compact` parts.
 - `subcolumns.names` ([Array(String)](/sql-reference/data-types/array)) — Names of subcolumns of a column
 - `subcolumns.types` ([Array(String)](/sql-reference/data-types/array)) — Types of subcolumns of a column
 - `subcolumns.serializations` ([Array(String)](/sql-reference/data-types/array)) — Kinds of serialization of subcolumns of a column
@@ -71,6 +72,7 @@ Each row describes one data part.
 - `subcolumns.data_compressed_bytes` ([Array(UInt64)](/sql-reference/data-types/array)) — Sizes of the compressed data for each subcolumn, in bytes
 - `subcolumns.data_uncompressed_bytes` ([Array(UInt64)](/sql-reference/data-types/array)) — Sizes of the decompressed data for each subcolumn, in bytes
 - `subcolumns.marks_bytes` ([Array(UInt64)](/sql-reference/data-types/array)) — Sizes of the marks for each subcolumn of a column, in bytes
+- `subcolumns.codec_block_counts` ([Array(Map(String, UInt64))](/sql-reference/data-types/array)) — The number of compressed blocks of each subcolumn grouped by codec.
 
 **Aliases:**
 

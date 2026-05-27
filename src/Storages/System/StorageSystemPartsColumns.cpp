@@ -2,11 +2,13 @@
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -14,12 +16,26 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <IO/ReadSettings.h>
+#include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
 {
+
+namespace
+{
+Map codecCountsToField(const std::map<String, UInt64> & counts)
+{
+    Map result;
+    result.reserve(counts.size());
+    for (const auto & [name, count] : counts)
+        result.emplace_back(Tuple({name, count}));
+    return result;
+}
+}
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -76,6 +92,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
         {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of files for each substream of a column respectively"},
+        {"codec_block_counts",                         std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "The number of compressed blocks grouped by codec across all substreams. Empty for `Compact` parts"},
         {"subcolumns.names",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of subcolumns of a column"},
         {"subcolumns.types",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Types of subcolumns of a column"},
         {"subcolumns.serializations",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Kinds of serialization of subcolumns of a column"},
@@ -83,6 +100,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"subcolumns.data_compressed_bytes",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the compressed data for each subcolumn, in bytes"},
         {"subcolumns.data_uncompressed_bytes",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the decompressed data for each subcolumn, in bytes"},
         {"subcolumns.marks_bytes",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Sizes of the marks for each subcolumn of a column, in bytes"},
+        {"subcolumns.codec_block_counts",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>())), "The number of compressed blocks of each subcolumn grouped by codec"},
     }
     )
 {
@@ -355,6 +373,47 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(filenames);
 
+            /// {substream filename : {codec name : number of compressed blocks}}
+            std::map<String, std::map<String, UInt64>> per_substream_codec_counts;
+            /// {codec name : number of compressed blocks} (aggregate of per_substream_codec_counts)
+            std::map<String, UInt64> column_codec_counts;
+            bool codec_counts_walked = false;
+
+            /// λ to count the number of compressed blocks of each substream and each codec.
+            auto walk_codec_counts = [&]()
+            {
+                if (std::exchange(codec_counts_walked, true) || isCompactPart(part))
+                    return;
+
+                const auto read_settings = context->getReadSettings();
+                for (const auto & filename_field : filenames)
+                {
+                    const String fname = filename_field.safeGet<String>();
+                    const String bin_path = fname + ".bin";
+
+                    if (!part->checksums.files.contains(bin_path))
+                        continue;
+
+                    auto read_buffer = part->getDataPartStorage().readFile(bin_path, read_settings, std::nullopt);
+                    auto & substream_counts = per_substream_codec_counts[fname];
+                    while (!read_buffer->eof())
+                    {
+                        UInt32 size_compressed = 0;
+                        UInt32 size_decompressed = 0;
+                        auto codec = getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, true);
+                        const auto codec_name = codec->getCodecDesc()->formatForLogging();
+                        ++substream_counts[codec_name];
+                        ++column_codec_counts[codec_name];
+                    }
+                }
+            };
+
+            if (columns_mask[src_index++])
+            {
+                walk_codec_counts();
+                columns[res_index++]->insert(codecCountsToField(column_codec_counts));
+            }
+
             Array subcolumn_names;
             Array subcolumn_types;
             Array subcolumn_serializations;
@@ -362,6 +421,7 @@ void StorageSystemPartsColumns::processNextStorage(
             Array subcolumn_data_compressed_bytes;
             Array subcolumn_data_uncompressed_bytes;
             Array subcolumn_marks_bytes;
+            std::vector<std::optional<String>> subcolumn_stream_names;
 
             IDataType::forEachSubcolumn([&](const auto & subpath, const auto & name, const auto & data)
             {
@@ -400,6 +460,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 subcolumn_data_compressed_bytes.push_back(size.data_compressed);
                 subcolumn_data_uncompressed_bytes.push_back(size.data_uncompressed);
                 subcolumn_marks_bytes.push_back(size.marks);
+                subcolumn_stream_names.push_back(stream_name);
 
             }, ISerialization::SubstreamData(serialization).withType(column.type));
 
@@ -417,6 +478,22 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(subcolumn_data_uncompressed_bytes);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_marks_bytes);
+
+            if (columns_mask[src_index++])
+            {
+                walk_codec_counts();
+                Array subcolumn_codec_block_counts;
+                subcolumn_codec_block_counts.reserve(subcolumn_stream_names.size());
+                for (const auto & stream_name : subcolumn_stream_names)
+                {
+                    Map field;
+                    if (stream_name)
+                        if (auto it = per_substream_codec_counts.find(*stream_name); it != per_substream_codec_counts.end())
+                            field = codecCountsToField(it->second);
+                    subcolumn_codec_block_counts.emplace_back(std::move(field));
+                }
+                columns[res_index++]->insert(subcolumn_codec_block_counts);
+            }
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
