@@ -1934,11 +1934,24 @@ void optimizeStreamingWindowFunctions(
         if (win_col.collator)
             return;
 
-        /// Strip plan-time table qualifier (e.g. `__table1.TimeUnix` → `TimeUnix`).
-        const auto dot = win_col.column_name.rfind('.');
-        const std::string base_name = (dot != std::string::npos)
-            ? win_col.column_name.substr(dot + 1) : win_col.column_name;
-        if (base_name != sorting_key.column_names[j])
+        /// Strip a plan-time table qualifier of the form `__tableN.` (first component only).
+        /// Using rfind would incorrectly truncate real dotted names such as subcolumns
+        /// (e.g. `__table1.obj.ts` → `obj.ts`, not `ts`).
+        std::string_view col_name = win_col.column_name;
+        {
+            const auto first_dot = col_name.find('.');
+            if (first_dot != std::string_view::npos)
+            {
+                const auto prefix = col_name.substr(0, first_dot);
+                if (prefix.starts_with("__table"))
+                {
+                    const auto digits = prefix.substr(7);
+                    if (!digits.empty() && std::all_of(digits.begin(), digits.end(), ::isdigit))
+                        col_name = col_name.substr(first_dot + 1);
+                }
+            }
+        }
+        if (col_name != sorting_key.column_names[j])
             return;
 
         /// The storage delivers column j in direction: input_order->direction * storage_raw_direction.
