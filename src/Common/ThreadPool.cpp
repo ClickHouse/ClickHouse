@@ -118,9 +118,8 @@ namespace
             entry.metric_name = metric_name;
             ++entry.live_workers;
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic-only; swallow allocation failures, see comment above
         {
-            /// Diagnostic-only: swallow allocation failures; see comment above.
         }
     }
 
@@ -142,9 +141,8 @@ namespace
             if (--it->second.live_workers == 0)
                 r.pools.erase(it);
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic-only; swallow lock failures, see comment above
         {
-            /// Diagnostic-only: swallow lock-acquisition failures; see comment above.
         }
     }
 
@@ -153,25 +151,39 @@ namespace
     /// total number of worker threads currently alive across all pool instances with
     /// that metric. "(none)" if no pool currently owns any workers. Safe to call
     /// concurrently with `addLocalThreadPoolWorker` and `removeLocalThreadPoolWorker`.
-    std::string snapshotLocalThreadPools()
+    ///
+    /// MUST NOT throw: this is called from `GlobalThreadPool::shutdown` BEFORE
+    /// `the_instance->finalize()`. An exception escaping the snapshot path (e.g.
+    /// `MEMORY_LIMIT_EXCEEDED` during `std::map`/`std::string` allocation or
+    /// `fmt::format_to`) would skip `finalize`, leaving background threads un-joined.
+    /// Returns "(unavailable)" if any operation throws; callers see a benign fallback
+    /// string and `finalize` always runs.
+    std::string snapshotLocalThreadPools() noexcept
     {
-        auto & r = getLocalThreadPoolRegistry();
-        std::lock_guard lock(r.mutex);
-        if (r.pools.empty())
-            return "(none)";
-        /// Keys are `string_view`s into program-lifetime static storage, so no allocation
-        /// for the keys themselves.
-        std::map<std::string_view, size_t> workers_per_metric;
-        for (const auto & [_, entry] : r.pools)
-            workers_per_metric[entry.metric_name] += entry.live_workers;
-        std::string result;
-        for (const auto & [name, cnt] : workers_per_metric)
+        try
         {
-            if (!result.empty())
-                result += ", ";
-            fmt::format_to(std::back_inserter(result), "{}x{}", name, cnt);
+            auto & r = getLocalThreadPoolRegistry();
+            std::lock_guard lock(r.mutex);
+            if (r.pools.empty())
+                return "(none)";
+            /// Keys are `string_view`s into program-lifetime static storage, so no allocation
+            /// for the keys themselves.
+            std::map<std::string_view, size_t> workers_per_metric;
+            for (const auto & [_, entry] : r.pools)
+                workers_per_metric[entry.metric_name] += entry.live_workers;
+            std::string result;
+            for (const auto & [name, cnt] : workers_per_metric)
+            {
+                if (!result.empty())
+                    result += ", ";
+                fmt::format_to(std::back_inserter(result), "{}x{}", name, cnt);
+            }
+            return result;
         }
-        return result;
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic-only; fall back so `finalize` always runs
+        {
+            return "(unavailable)";
+        }
     }
 
     struct ScopedDecrement
@@ -1069,10 +1081,21 @@ void GlobalThreadPool::shutdown()
         /// subsystem is identifiable in CI artifacts even when the join hangs. Pools whose
         /// workers have all exited (e.g. idle long-lived shared pools) do not appear here,
         /// so on a healthy shutdown the list is `(none)`.
-        LOG_INFO(
-            &Poco::Logger::get("GlobalThreadPool"),
-            "shutdown(): live local ThreadPoolImpl worker threads at shutdown: [{}]",
-            snapshotLocalThreadPools());
+        ///
+        /// Wrapped in `try/catch` so that an exception from `LOG_INFO` (Poco channel I/O,
+        /// formatter allocation under `MEMORY_LIMIT_EXCEEDED`, etc.) cannot skip the
+        /// `finalize` call. `snapshotLocalThreadPools` is itself `noexcept` and falls back
+        /// to `"(unavailable)"`; this catch covers everything else on the log path.
+        try
+        {
+            LOG_INFO(
+                &Poco::Logger::get("GlobalThreadPool"),
+                "shutdown(): live local ThreadPoolImpl worker threads at shutdown: [{}]",
+                snapshotLocalThreadPools());
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: diagnostic must not skip `finalize`
+        {
+        }
         the_instance->finalize();
     }
 }
