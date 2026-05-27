@@ -221,12 +221,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     readRawChild("snapshot_desc", snapshot_desc);
     readRawChild("execute_args", execute_args);
 
-    auto child = r.readChild("refresh");
-    if (child)
-    {
-        refresh = child;
-        children.push_back(refresh);
-    }
+    readRawChild("refresh", refresh);
 }
 
 /// When the alter command is about statistics, the Parentheses is necessary to avoid ambiguity.
