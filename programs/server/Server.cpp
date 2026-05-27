@@ -495,7 +495,10 @@ int mainEntryClickHouseServer(int argc, char ** argv)
     /// Do not fork separate process from watchdog if we attached to terminal.
     /// Otherwise it breaks gdb usage.
     /// Can be overridden by environment variable (cannot use server config at this moment).
-    if (argc > 0)
+    /// CLICKHOUSE_WATCHDOG_CHILD=1 marks the re-exec'd child on platforms where the
+    /// watchdog uses posix_spawn (Darwin) — the child must not enable its own watchdog.
+    const bool is_watchdog_child = nullptr != getenv("CLICKHOUSE_WATCHDOG_CHILD"); // NOLINT(concurrency-mt-unsafe)
+    if (argc > 0 && !is_watchdog_child)
     {
         const char * env_watchdog = getenv("CLICKHOUSE_WATCHDOG_ENABLE"); // NOLINT(concurrency-mt-unsafe)
         if (env_watchdog)

@@ -19,7 +19,13 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <spawn.h>
 #include <unistd.h>
+
+#if defined(OS_DARWIN)
+#include <crt_externs.h>
+extern char ** environ;
+#endif
 
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
@@ -570,6 +576,45 @@ void BaseDaemon::setupWatchdog()
         auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
         if (async_channel)
             async_channel->close();
+
+#if defined(OS_DARWIN)
+        /// macOS libsystem_c kills any forked child that performs non-async-signal-safe
+        /// work (logger, malloc, mutex) before exec*(). Spawn a fresh server instance
+        /// via posix_spawn and use CLICKHOUSE_WATCHDOG_CHILD as a sentinel so the
+        /// re-exec'd process does not enable its own watchdog.
+        {
+            setenv("CLICKHOUSE_WATCHDOG_CHILD", "1", 1); // NOLINT(concurrency-mt-unsafe)
+
+            char ** orig_argv = *_NSGetArgv();
+
+            posix_spawn_file_actions_t file_actions;
+            posix_spawn_file_actions_init(&file_actions);
+            /// The synchronization pipe is only used by the fork-based watchdog path;
+            /// close both ends in the spawned child to avoid leaking fds for its lifetime.
+            posix_spawn_file_actions_addclose(&file_actions, notify_sync.readHandle());
+            posix_spawn_file_actions_addclose(&file_actions, notify_sync.writeHandle());
+
+            posix_spawnattr_t attr;
+            posix_spawnattr_init(&attr);
+            sigset_t empty_mask;
+            sigemptyset(&empty_mask);
+            posix_spawnattr_setsigmask(&attr, &empty_mask);
+            posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK);
+
+            int rc = posix_spawn(&pid, orig_argv[0], &file_actions, &attr, orig_argv, environ);
+
+            posix_spawn_file_actions_destroy(&file_actions);
+            posix_spawnattr_destroy(&attr);
+
+            unsetenv("CLICKHOUSE_WATCHDOG_CHILD"); // NOLINT(concurrency-mt-unsafe)
+
+            if (async_channel)
+                async_channel->open();
+
+            if (rc != 0)
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, rc, "Cannot posix_spawn watchdog child");
+        }
+#else
         pid = fork();
 
 #if USE_JEMALLOC
@@ -612,6 +657,7 @@ void BaseDaemon::setupWatchdog()
 
             return;
         }
+#endif
 
 #if defined(OS_LINUX)
         /// Tell the service manager the actual main process is not this one but the forked process
