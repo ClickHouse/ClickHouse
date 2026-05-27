@@ -75,7 +75,7 @@ ffi::EngineBuilder * IKernelHelper::createBuilder() const
             auto engine = KernelUtils::unwrapResult(ffi::builder_build(builder), "createBuilder(cleanup)");
             ffi::free_engine(engine);
         }
-        catch (...) {} // NOLINT: preserve the original exception
+        catch (...) {} // Ok: preserve the original exception
         throw;
     }
 
