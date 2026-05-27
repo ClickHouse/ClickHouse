@@ -6,10 +6,16 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <IO/WriteHelpers.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -341,7 +347,10 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'targets' array during AST JSON deserialization", i);
         ViewTarget target;
         String kind_str = target_obj->getValue<String>("kind");
-        parseFromString(target.kind, kind_str);
+        auto kind_opt = magic_enum::enum_cast<ViewTarget::Kind>(kind_str);
+        if (!kind_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
+        target.kind = *kind_opt;
         if (target_obj->has("table_id"))
         {
             String full_name = target_obj->getValue<String>("table_id");
