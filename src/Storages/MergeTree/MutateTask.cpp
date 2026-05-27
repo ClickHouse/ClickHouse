@@ -2593,8 +2593,11 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     /// We need to rewrite statistics because they have different serialization with nullable type.
+    /// `column_desc` can be `nullptr` if the column was concurrently dropped from the metadata
+    /// snapshot used here (mutation commands and metadata can drift apart under concurrent ALTERs).
+    /// Skip this optimization in that case; the normal mutation path will surface the error.
     const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
-    if (!column_desc->statistics.empty())
+    if (!column_desc || !column_desc->statistics.empty())
         return false;
 
     return true;
