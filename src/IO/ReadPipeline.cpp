@@ -108,10 +108,9 @@ void ReadPipeline::needFilesystemCache(
         .custom_origin = std::move(origin)});
 }
 
-void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
+void ReadPipeline::needMemoryCache(String cache_path_prefix, PageCacheSettings page_cache_settings)
 {
     memory_cache = MemoryCacheStage{
-        .cache = std::move(cache),
         .cache_path_prefix = std::move(cache_path_prefix),
         .page_cache_settings = std::move(page_cache_settings),
         .custom_cache_path = {},
@@ -119,13 +118,11 @@ void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cach
 }
 
 void ReadPipeline::needMemoryCache(
-    std::shared_ptr<PageCache> cache,
     String custom_cache_path,
     String custom_file_version,
     PageCacheSettings page_cache_settings)
 {
     memory_cache = MemoryCacheStage{
-        .cache = std::move(cache),
         .cache_path_prefix = {},
         .page_cache_settings = std::move(page_cache_settings),
         .custom_cache_path = std::move(custom_cache_path),
@@ -541,7 +538,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
     /// -- Stage 4: Memory cache --
-    if (!memory_cache || !memory_cache->cache)
+    if (!memory_cache || !memory_cache->page_cache_settings.cache)
         return impl;
 
     PageCacheFile cache_file;
@@ -558,7 +555,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::uniqu
     }
 
     return std::make_unique<CachedInMemoryReadBufferFromFile>(
-        cache_file, memory_cache->cache, std::move(impl), memory_cache->page_cache_settings);
+        cache_file, memory_cache->page_cache_settings.cache, std::move(impl), memory_cache->page_cache_settings);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const

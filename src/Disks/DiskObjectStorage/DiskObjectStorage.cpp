@@ -819,7 +819,7 @@ void DiskObjectStorage::prepareRead(
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
 
-        pipeline.needMemoryCache(read_settings.page_cache_settings.cache, std::move(cache_path_prefix), read_settings.page_cache_settings);
+        pipeline.needMemoryCache(std::move(cache_path_prefix), read_settings.page_cache_settings);
     }
 
     /// Async prefetch.

@@ -422,7 +422,7 @@ void DiskLocal::prepareRead(
     }
 
     if (use_page_cache)
-        pipeline.needMemoryCache(settings.page_cache_settings.cache, "local:", settings.page_cache_settings);
+        pipeline.needMemoryCache("local:", settings.page_cache_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

@@ -1079,7 +1079,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_page_cache)
     {
         pipeline.needMemoryCache(
-            effective_read_settings.page_cache_settings.cache,
             "s3:" + object_info.getPath(),
             "etag:" + object_info.metadata->etag,
             modified_read_settings.page_cache_settings);
