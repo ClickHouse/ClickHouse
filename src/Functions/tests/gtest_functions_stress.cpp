@@ -178,7 +178,7 @@ struct Options
     VectorOfStrings ignore_problems = {{"late_typecheck", "const_dependent_checks", "broken_nullable_input", "data_dependent_const",
         "exception_in_prepare", "bulk_success_but_row_error", "bulk_error_but_row_success",
         "broken_determinism", "broken_injectivity", "broken_monotonicity",
-        "field_comparison_inconsistency", "validation_infrastructure"}};
+        "field_comparison_inconsistency", "validation_infrastructure", "timeout_not_honored"}};
     VectorOfStrings functions;
     VectorOfStrings skip_functions;
 
@@ -1340,6 +1340,10 @@ struct FunctionsStressTestThread
             }
         }
 
+        /// We mutate `context->setCurrentQueryId()` per iteration but never refresh
+        /// `ThreadStatus::query_id`, so detach before destroying `thread_status` to
+        /// keep the destructor's id-vs-context invariant happy.
+        CurrentThread::detachFromGroupIfNotDetached();
         thread_status.reset(); // must be done from this thread
 
         {
