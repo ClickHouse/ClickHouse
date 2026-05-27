@@ -98,6 +98,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char mt_mutate_task_pause_in_execute[];
 }
 
 namespace ErrorCodes
@@ -1422,8 +1423,8 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
+        bool mutations_stopped = new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled();
+        if (mutations_stopped || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
@@ -2531,6 +2532,7 @@ bool MutateTask::execute()
         }
         case State::NEED_EXECUTE:
         {
+            FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_in_execute);
             ctx->checkOperationIsNotCanceled();
 
             if (task->executeStep())

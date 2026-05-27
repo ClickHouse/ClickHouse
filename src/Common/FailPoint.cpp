@@ -153,6 +153,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(mt_mutate_task_pause_in_execute) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
