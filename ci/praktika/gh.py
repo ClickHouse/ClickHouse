@@ -70,10 +70,14 @@ class GH:
             repo_name = info.repo_name
             sha = info.sha
         else:
-            repo_name = Shell.get_output(
-                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
-                strict=True,
+            repo_url = Shell.get_output(
+                "git config --get remote.origin.url", strict=True
             )
+            repo_name = cls._repo_name_from_git_remote_url(repo_url)
+            if not repo_name:
+                raise RuntimeError(
+                    f"Failed to extract repository name from remote URL [{repo_url}]"
+                )
             sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
 
         assert repo_name
@@ -109,6 +113,14 @@ class GH:
             raise RuntimeError("Failed to get changed files")
 
         return res
+
+    @staticmethod
+    def _repo_name_from_git_remote_url(repo_url: str) -> str:
+        match = re.match(
+            r"^(?:https?://[^/]+/|git@[^:]+:|ssh://git@[^/]+/)([^/\s]+/[^/\s]+?)(?:\.git)?/?$",
+            repo_url,
+        )
+        return match.group(1) if match else ""
 
     @classmethod
     def do_command_with_retries(cls, command, verbose=False):
