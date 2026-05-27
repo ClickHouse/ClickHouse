@@ -1,0 +1,10 @@
+-- pre-reset --
+mango	7	3
+-- post-reset --
+1
+1
+1
+-- idempotent --
+ok
+-- session still usable --
+banana	99

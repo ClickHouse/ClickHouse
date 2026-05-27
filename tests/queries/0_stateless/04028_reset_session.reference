@@ -1,0 +1,13 @@
+-- pre-reset --
+999	12345
+mango	7
+3
+hello
+1
+-- post-reset --
+0	0
+1
+reset is idempotent
+777	banana	42
+0
+dropped-db reset survived

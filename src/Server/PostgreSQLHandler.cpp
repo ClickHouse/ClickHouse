@@ -279,6 +279,7 @@ bool PostgreSQLHandler::startup()
         session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
             session->sessionContext()->setCurrentDatabase(start_up_msg->database);
+        session->sessionContext()->rememberDatabaseAtSessionStart();
     }
     catch (const Exception & exc)
     {

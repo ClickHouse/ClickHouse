@@ -318,6 +318,10 @@ protected:
     ContextMutablePtr client_context;
 
     String default_database;
+    /// Value of `default_database` at the time of the first successful connection.
+    /// Used by `RESET SESSION` to revert any in-session `USE` so a subsequent
+    /// reconnect lands on the same database the user originally asked for.
+    std::optional<String> default_database_at_connect;
     String query_id;
     Int32 suggestion_limit;
     bool enable_highlight = true;

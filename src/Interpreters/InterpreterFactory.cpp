@@ -22,6 +22,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTResetSessionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -215,6 +216,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         /// readonly is checked inside InterpreterSetQuery
         interpreter_name = "InterpreterSetQuery";
+    }
+    else if (query->as<ASTResetSessionQuery>())
+    {
+        interpreter_name = "InterpreterResetSessionQuery";
     }
     else if (query->as<ASTSetRoleQuery>())
     {

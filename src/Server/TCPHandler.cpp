@@ -442,6 +442,10 @@ void TCPHandler::runImpl()
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
                 session->sessionContext()->setCurrentDatabase(default_database);
+
+            /// Lock in the post-handshake database as the session-start value, so
+            /// `RESET SESSION` can restore it later.
+            session->sessionContext()->rememberDatabaseAtSessionStart();
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.

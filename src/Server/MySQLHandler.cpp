@@ -290,6 +290,7 @@ void MySQLHandler::run()
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
                 session->sessionContext()->setCurrentDatabase(handshake_response.database);
+            session->sessionContext()->rememberDatabaseAtSessionStart();
         }
         catch (const Exception & exc)
         {

@@ -17,6 +17,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserResetSessionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
@@ -52,6 +53,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserUseQuery use_p;
+    ParserResetSessionQuery reset_session_p;
     ParserSetQuery set_p;
     ParserSystemQuery system_p;
     ParserCreateUserQuery create_user_p;
@@ -84,6 +86,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
         || use_p.parse(pos, node, expected)
+        || reset_session_p.parse(pos, node, expected)
         || set_role_p.parse(pos, node, expected)
         || set_p.parse(pos, node, expected)
         || system_p.parse(pos, node, expected)

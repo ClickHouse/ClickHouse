@@ -10,6 +10,7 @@
 #include <Common/SharedMutex.h>
 #include <Common/SharedMutexHelper.h>
 #include <Common/StopToken.h>
+#include <Common/SettingsChanges.h>
 #include <Core/UUID.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -369,6 +370,17 @@ protected:
     String current_database;
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
+
+    /// Settings supplied by the authentication server at auth time. Persisted on
+    /// the session context so they can be replayed by `RESET SESSION` without
+    /// re-running authentication. Empty on non-session contexts.
+    SettingsChanges settings_from_auth_server;
+
+    /// The `current_database` value right after the connection handshake (after
+    /// the user's profile default and any connection-level default database have
+    /// been applied). Captured via `rememberDatabaseAtSessionStart`. Used as the
+    /// restore target for `RESET SESSION`.
+    std::optional<String> database_at_session_start;
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
@@ -855,6 +867,26 @@ public:
     /// WARNING: This function doesn't check the password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
+
+    /// Settings produced by the authentication server (e.g. LDAP) at auth time.
+    /// Stored on the session context so `RESET SESSION` can replay them without re-authenticating.
+    void setSettingsFromAuthServer(const SettingsChanges & settings_changes);
+
+    /// Lock in the current `current_database` value as the database the session
+    /// was opened with. To be called by a protocol handler after it has finished
+    /// applying handshake-level state (e.g. a TCP/MySQL/Postgres Hello packet's
+    /// default_database). `RESET SESSION` restores `current_database` to this
+    /// value rather than to the user's profile default, so a client that opened
+    /// the connection with `--database X` lands back in `X` after the reset.
+    void rememberDatabaseAtSessionStart();
+
+    /// Restore the session context to the state it had right after the
+    /// authentication and handshake: re-derives profiles / roles from access
+    /// control, restores the database the connection was opened with, replays
+    /// the settings supplied by the auth server, and drops all session-scoped
+    /// collections (temporary tables, query parameters, scalars, formats).
+    /// Preserves user identity and client info.
+    void resetToUserDefaults();
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;

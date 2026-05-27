@@ -49,6 +49,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTResetSessionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -926,6 +927,11 @@ void ClientBase::initClientContext(ContextMutablePtr context)
     client_context->setQueryKindInitial();
     client_context->setQueryKind(query_kind);
     client_context->setQueryParameters(query_parameters);
+
+    /// Snapshot the connection-start database before any in-session `USE` could
+    /// mutate `default_database`. `RESET SESSION` restores from here.
+    if (!default_database_at_connect.has_value())
+        default_database_at_connect = default_database;
 }
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
@@ -2509,6 +2515,27 @@ void ClientBase::processParsedSingleQuery(
             getClientConfiguration().setString("database", new_database);
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
+        }
+        if (parsed_query->as<ASTResetSessionQuery>())
+        {
+            /// The server has cleared its session state; mirror that on the client
+            /// side so we don't re-send stale state on the next query.
+            query_parameters.clear();
+            client_context->setQueryParameters({});
+            /// Settings are reset to the compiled-in defaults rather than to the
+            /// user's profile defaults — the server has the profile values, the
+            /// client will re-acquire any per-query overrides from there.
+            client_context->setSettings(Settings());
+            /// Restore the database the connection was opened with so a
+            /// reconnection after `USE other_db; RESET SESSION;` lands back on
+            /// the connection-start database, matching the server-side reset.
+            if (default_database_at_connect.has_value())
+            {
+                default_database = *default_database_at_connect;
+                getClientConfiguration().setString("database", default_database);
+                if (connection)
+                    connection->setDefaultDatabase(default_database);
+            }
         }
     }
 

@@ -465,6 +465,7 @@ public:
         ParallelWithQuery,
         Copy,
         Snapshot,
+        ResetSession,
     };
 
     /// Return QueryKind of this AST query.

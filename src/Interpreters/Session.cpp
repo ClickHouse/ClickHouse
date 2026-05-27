@@ -574,6 +574,9 @@ ContextMutablePtr Session::makeSessionContext()
     // Use QUERY source as for SET query for a session
     session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
     session_context->applySettingsChanges(settings_from_auth_server);
+    /// Stash the auth-server settings on the session context so `RESET SESSION`
+    /// can replay them without re-authenticating.
+    session_context->setSettingsFromAuthServer(settings_from_auth_server);
 
     recordLoginSuccess(session_context);
 
@@ -638,6 +641,11 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         *user_id,
         { session_name_ },
         max_sessions_for_user);
+
+    /// Stash the auth-server settings so `RESET SESSION` can replay them, same
+    /// as in the unnamed-session path. The settings themselves are applied
+    /// elsewhere (or, today, not applied for named sessions — pre-existing).
+    session_context->setSettingsFromAuthServer(settings_from_auth_server);
 
     recordLoginSuccess(session_context);
 

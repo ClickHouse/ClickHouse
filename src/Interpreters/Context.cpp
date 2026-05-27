@@ -1928,19 +1928,35 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+namespace
+{
+    /// Lookup-only bundle: given a user_id, read the user record and derive the
+    /// roles / profiles state both `setUser` and `resetToUserDefaults` need
+    /// before applying. Both `AccessControl::read<User>()` and its friends here
+    /// may perform IO, so this must be called WITHOUT holding `Context::mutex`.
+    struct UserDerivedDefaults
+    {
+        UserPtr user;
+        std::vector<UUID> default_roles;
+        std::shared_ptr<const EnabledRolesInfo> enabled_roles;
+        std::shared_ptr<const SettingsProfilesInfo> enabled_profiles;
+    };
+
+    UserDerivedDefaults deriveUserDefaults(AccessControl & access_control, const UUID & user_id)
+    {
+        auto user = access_control.read<User>(user_id);
+        auto default_roles = user->granted_roles.findGranted(user->default_roles);
+        auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
+        auto enabled_profiles = access_control.getEnabledSettingsInfo(
+            user_id, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
+        return {std::move(user), std::move(default_roles), std::move(enabled_roles), std::move(enabled_profiles)};
+    }
+}
+
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
-    /// Prepare lists of user's profiles, constraints, settings, roles.
-    /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
-    /// so Context::getLocalLock() and Context::getGlobalLock() must be unlocked while we're doing this.
-
-    auto & access_control = getAccessControl();
-    auto user = access_control.read<User>(user_id_);
-
-    auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
-    auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
-    const auto & database = user->default_database;
+    auto defaults = deriveUserDefaults(getAccessControl(), user_id_);
+    const auto & database = defaults.user->default_database;
 
     /// Apply user's profiles, constraints, settings, roles.
     std::lock_guard lock(mutex);
@@ -1949,14 +1965,115 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// A profile can specify a value and a readonly constraint for same setting at the same time,
     /// so we shouldn't check constraints here.
-    setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
+    setCurrentProfilesWithLock(*defaults.enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(default_roles, lock);
+    setCurrentRolesWithLock(defaults.default_roles, lock);
     setExternalRolesWithLock(external_roles_, lock);
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
         setCurrentDatabaseWithLock(database, lock);
+}
+
+void Context::setSettingsFromAuthServer(const SettingsChanges & settings_changes)
+{
+    std::lock_guard lock(mutex);
+    settings_from_auth_server = settings_changes;
+}
+
+void Context::rememberDatabaseAtSessionStart()
+{
+    std::lock_guard lock(mutex);
+    database_at_session_start = current_database;
+}
+
+void Context::resetToUserDefaults()
+{
+    if (!user_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "resetToUserDefaults() called on a context without a user");
+
+    /// `resetToUserDefaults` is meant to operate on the session context itself.
+    /// Calling it on a query context would silently misbehave: the new
+    /// `settings_from_auth_server` / `database_at_session_start` fields default
+    /// initialise on copy, so they would be empty here. Enforce.
+    if (session_context.lock().get() != this)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RESET SESSION must be executed against the session context");
+
+    /// Re-derive everything from access control (outside the lock — `deriveUserDefaults`
+    /// performs IO). Sharing this helper with `setUser` keeps the two code paths
+    /// in lock-step.
+    auto defaults = deriveUserDefaults(getAccessControl(), *user_id);
+    const String user_default_database = defaults.user->default_database;
+
+    /// Decide the target database eagerly so the locked section never has to
+    /// recover from a failed `setCurrentDatabaseWithLock`. We prefer the database
+    /// the connection was opened with (captured by `rememberDatabaseAtSessionStart`)
+    /// and fall back to the user's profile default. If neither database exists
+    /// any more (admin dropped it between session start and reset), fall back
+    /// to empty rather than letting the reset fail outright.
+    String target_database = database_at_session_start.value_or(user_default_database);
+    if (!target_database.empty())
+    {
+        try
+        {
+            DatabaseCatalog::instance().assertDatabaseExists(target_database);
+        }
+        catch (const Exception &)
+        {
+            target_database.clear();
+        }
+    }
+
+    /// Snapshot the auth-server settings under a shared lock to avoid a data
+    /// race with a hypothetical concurrent setSettingsFromAuthServer.
+    SettingsChanges auth_settings_snapshot;
+    {
+        SharedLockGuard lock(mutex);
+        auth_settings_snapshot = settings_from_auth_server;
+    }
+
+    /// Pre-compute the post-reset settings into a local instance so any failure
+    /// from constraint checks or applying changes happens before we mutate the
+    /// live context. The session is then either fully reset or not reset at all.
+    Settings new_settings;
+    auto new_profiles_state = defaults.enabled_profiles->getConstraintsAndProfileIDs({});
+    {
+        SettingsChanges all_changes = defaults.enabled_profiles->settings;
+        all_changes.insert(all_changes.end(), auth_settings_snapshot.begin(), auth_settings_snapshot.end());
+        new_settings.applyChanges(all_changes);
+        new_profiles_state->constraints.check(new_settings, auth_settings_snapshot, SettingSource::QUERY);
+    }
+
+    /// Take ownership of fields whose destructors do non-trivial work and run
+    /// those destructors after we drop the lock. `TemporaryTableHolder::~`
+    /// reaches into DatabaseCatalog / DatabaseMemory locks; holding our own
+    /// mutex across that is both slow and a lock-ordering hazard.
+    TemporaryTablesMapping tables_to_drop;
+    Scalars scalars_to_drop;
+    Scalars special_scalars_to_drop;
+
+    {
+        std::lock_guard lock(mutex);
+
+        *settings = std::move(new_settings);
+        settings_constraints_and_current_profiles = std::move(new_profiles_state);
+
+        setCurrentRolesWithLock(defaults.default_roles, lock);
+        external_roles.reset();
+        need_recalculate_access = true;
+
+        if (target_database.empty())
+            current_database.clear();
+        else
+            current_database = target_database;
+
+        tables_to_drop.swap(external_tables_mapping);
+        scalars_to_drop.swap(scalars);
+        special_scalars_to_drop.swap(special_scalars);
+        query_parameters.clear();
+    }
+    /// `tables_to_drop`, `scalars_to_drop`, `special_scalars_to_drop` destructors
+    /// run here, outside the lock.
 }
 
 std::shared_ptr<const User> Context::getUser() const
