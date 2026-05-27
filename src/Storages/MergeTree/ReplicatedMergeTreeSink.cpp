@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
@@ -133,9 +132,6 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
         async_insert_
         ? (*storage.getSettings())[MergeTreeSetting::replicated_deduplication_window_for_async_inserts] != 0
         : (*storage.getSettings())[MergeTreeSetting::replicated_deduplication_window] != 0)
-    , synchronously_commit_part_for_dependent_views(
-        !DatabaseCatalog::instance().getDependentViews(storage_.getStorageID()).empty()
-        && context_->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views])
     , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
@@ -174,6 +170,12 @@ ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink()
         partition.temp_part->cancel();
     }
     delayed_parts.clear();
+}
+
+void ReplicatedMergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
+{
+    synchronously_commit_part_for_dependent_views
+        = has_dependent_views && context->getSettingsRef()[Setting::wait_for_part_commit_in_dependent_materialized_views];
 }
 
 size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFaultInjectionPtr & zookeeper)

@@ -53,6 +53,7 @@ public:
     void consume(Chunk & chunk) override;
     void onStart() override;
     void onFinish() override;
+    void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
 protected:
     StorageMergeTree & storage;

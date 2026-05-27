@@ -76,6 +76,7 @@ public:
     void onStart() override;
     void consume(Chunk & chunk) override;
     void onFinish() override;
+    void setHasDependentMaterializedViews(bool has_dependent_views) override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
