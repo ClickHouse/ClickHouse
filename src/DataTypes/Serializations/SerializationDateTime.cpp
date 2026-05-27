@@ -245,7 +245,7 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadAsIntText(x, istr))
             return false;
     }
 
