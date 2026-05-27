@@ -490,9 +490,36 @@ static void addFilters(
         return;
 
     auto table_expressions = extractTableExpressions(query_node->getJoinTree());
-    /// Case with JOIN is not supported so far.
+
+    /// If the inner subquery joins multiple tables, we cannot use the
+    /// single-table column-rewriting path below. Push the predicate as a
+    /// HAVING on the subquery directly — the predicate's identifiers already
+    /// reference the subquery's projection names (see `tryBuildAdditionalFilterAST`
+    /// above), and the downstream analyzer turns HAVING without GROUP BY into
+    /// WHERE and pushes it through the JOIN onto the eligible side. This is
+    /// the JOIN-aware version of the rewrite that `PredicateRewriteVisitor`
+    /// would otherwise perform on a single table. Closes #105855.
     if (table_expressions.size() != 1)
+    {
+        auto & select_query = getSelectQuery(query_ast);
+
+        /// Same set of guardrails as `PredicateRewriteVisitor::rewriteSubquery`
+        /// for the single-table case: bail when pushing the predicate would
+        /// change the semantics of the subquery.
+        bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
+        bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
+        if ((!optimize_final && select_query.final())
+            || (select_query.with() && !optimize_with)
+            || select_query.withFill()
+            || select_query.limitBy() || select_query.limitLength() || select_query.limitByLength() || select_query.limitByOffset()
+            || (select_query.orderBy() && select_query.limitOffset()))
+            return;
+
+        ASTPtr existing_having = select_query.having();
+        select_query.setExpression(ASTSelectQuery::Expression::HAVING,
+            existing_having ? makeASTOperator("and", predicate, existing_having) : predicate);
         return;
+    }
 
     const auto * table_node = table_expressions.front()->as<TableNode>();
     if (!table_node)
