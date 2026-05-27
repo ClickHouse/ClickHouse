@@ -64,6 +64,12 @@ SELECT formatQueryFromJSON('{"type":"BackupQuery"}'); -- { serverError BAD_ARGUM
 -- Partition: requires one of 'value', 'id', or 'all' = true (otherwise `formatImpl` dereferences a null `id`).
 SELECT formatQueryFromJSON('{"type":"Partition"}'); -- { serverError BAD_ARGUMENTS }
 
+-- KillQueryQuery: `kill_type` is required (a missing key would otherwise be silently deserialized as `KILL QUERY`).
+SELECT formatQueryFromJSON('{"type":"KillQueryQuery"}'); -- { serverError BAD_ARGUMENTS }
+
+-- RefreshStrategy: `schedule_kind` is required (otherwise schedule semantics are dropped and the query formats as just `REFRESH`).
+SELECT formatQueryFromJSON('{"type":"CreateQuery","table":"v","is_materialized_view":true,"refresh_strategy":{"type":"RefreshStrategy"}}'); -- { serverError BAD_ARGUMENTS }
+
 -- Well-formed payloads still work.
 SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DROP TABLE t'));

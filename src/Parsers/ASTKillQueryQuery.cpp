@@ -65,6 +65,8 @@ void ASTKillQueryQuery::writeJSON(WriteBuffer & out) const
 void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    if (!r.has("kill_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'kill_type' field in `KillQueryQuery` during AST JSON deserialization");
     Int64 type_value = r.getInt("kill_type");
     auto type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(type_value));
     if (!type_opt || static_cast<Int64>(*type_opt) != type_value)

@@ -93,12 +93,13 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
 void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    if (!r.has("schedule_kind"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'schedule_kind' field in `RefreshStrategy` during AST JSON deserialization");
     String schedule_kind_str = r.getString("schedule_kind");
     auto kind_opt = magic_enum::enum_cast<RefreshScheduleKind>(schedule_kind_str);
-    if (kind_opt)
-        schedule_kind = *kind_opt;
-    else if (!schedule_kind_str.empty())
+    if (!kind_opt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown RefreshScheduleKind: '{}'", schedule_kind_str);
+    schedule_kind = *kind_opt;
     auto period_child = r.readChild("period");
     if (period_child)
         set(period, period_child);
