@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -20,9 +21,7 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_AZURE_BLOB_STORAGE
     extern const int BAD_ARGUMENTS;
-#endif
 }
 
 namespace DB::S3AuthSetting
@@ -32,6 +31,64 @@ namespace DB::S3AuthSetting
 
 namespace DeltaLake
 {
+
+namespace
+{
+
+/// Forwards to `ffi::set_builder_option` after validating the value.
+/// The Rust FFI decodes `(ptr, len)` as `&str` via `std::str::from_utf8` and panics
+/// on invalid UTF-8, which crosses the `extern "C"` boundary and aborts the server
+/// via `panic_in_cleanup`. Binary credentials (e.g. raw `MD5(...)` bytes used as a
+/// SAS token) trigger this. Translate to a normal `BAD_ARGUMENTS` exception so the
+/// caller can clean up the builder rather than letting the panic propagate.
+void setBuilderOptionChecked(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+{
+    if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Option '{}' for the DeltaLake engine contains invalid UTF-8 bytes; "
+            "the delta-kernel-rs FFI requires valid UTF-8 input.",
+            name);
+    ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+}
+
+}
+
+ffi::EngineBuilder * IKernelHelper::createBuilder() const
+{
+    ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
+        ffi::get_engine_builder(
+            KernelUtils::toDeltaString(getTableLocation()),
+            &KernelUtils::allocateError),
+        "get_engine_builder");
+
+    try
+    {
+        configureBuilder(builder);
+    }
+    catch (...)
+    {
+        /// The Rust FFI does not expose `free_engine_builder`: the builder
+        /// allocation is only released by `ffi::builder_build`, which consumes
+        /// the builder and returns an engine handle that itself must be freed
+        /// via `ffi::free_engine`. Run that sequence here so the partially
+        /// configured builder does not leak when `configureBuilder` throws.
+        try
+        {
+            auto * engine = KernelUtils::unwrapResult(
+                ffi::builder_build(builder),
+                "createBuilder(cleanup)");
+            ffi::free_engine(engine);
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        throw;
+    }
+
+    return builder;
+}
 
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
@@ -61,17 +118,12 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
-    ffi::EngineBuilder * createBuilder() const override
+private:
+    void configureBuilder(ffi::EngineBuilder * builder) const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
-                KernelUtils::toDeltaString(table_location),
-                &KernelUtils::allocateError),
-            "get_engine_builder");
-
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+            setBuilderOptionChecked(builder, name, value);
         };
 
         const auto & credentials = client->getCredentials();
@@ -110,11 +162,8 @@ public:
             "has access_key_id: {}, has secret_access_key: {}, has token: {}",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
             !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
-
-        return builder;
     }
 
-private:
     DB::S3::URI url;
     const std::string table_location;
     const std::shared_ptr<const DB::S3::Client> client;
@@ -146,17 +195,12 @@ public:
 
     const std::string & getDataPath() const override { return data_path; }
 
-    ffi::EngineBuilder * createBuilder() const override
+private:
+    void configureBuilder(ffi::EngineBuilder * builder) const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
-                KernelUtils::toDeltaString(table_location),
-                &KernelUtils::allocateError),
-            "get_engine_builder");
-
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+            setBuilderOptionChecked(builder, name, value);
         };
 
         const auto & endpoint = connection_params.endpoint;
@@ -273,11 +317,8 @@ public:
             log,
             "Using azure container: {}, data_path: {}",
             endpoint.container_name, data_path);
-
-        return builder;
     }
 
-private:
     const DB::AzureBlobStorage::ConnectionParams connection_params;
     const std::string table_location;
     const std::string data_path;
@@ -309,24 +350,14 @@ public:
 
     const std::string & getDataPath() const override { return path; }
 
-    ffi::EngineBuilder * createBuilder() const override
-    {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
-                KernelUtils::toDeltaString(table_location),
-                &KernelUtils::allocateError),
-            "get_engine_builder");
-
-        return builder;
-    }
-
 private:
     const std::string table_location;
     const std::string path;
 
     static std::string getTableLocation(const std::string & path)
     {
-        return "file://" + path + "/";
+        /// Don't add a double slash at the end of the path.
+        return "file://" + path + (path.ends_with('/') ? "" : "/");
     }
 };
 }

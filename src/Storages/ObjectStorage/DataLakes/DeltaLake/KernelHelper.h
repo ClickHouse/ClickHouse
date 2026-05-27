@@ -30,10 +30,22 @@ public:
     /// (while full location would be "s3://bucket/path/to/table/data")
     virtual const std::string & getDataPath() const = 0;
 
-    /// Create "EngineBuilder" which allows to work with
-    /// delta-kernel-rs ffi api and performs all interactions
-    /// with object storage layer.
-    virtual ffi::EngineBuilder * createBuilder() const = 0;
+    /// Create `EngineBuilder` which allows working with the
+    /// `delta-kernel-rs` FFI API and performs all interactions
+    /// with the object storage layer.
+    ///
+    /// Allocates the builder via `ffi::get_engine_builder` and
+    /// invokes `configureBuilder` to set storage-specific options.
+    /// If `configureBuilder` throws, the builder is cleaned up
+    /// (consumed via `ffi::builder_build` plus `ffi::free_engine`,
+    /// because the Rust FFI does not expose a `free_engine_builder`)
+    /// before the exception is rethrown.
+    ffi::EngineBuilder * createBuilder() const;
+
+protected:
+    /// Override to set storage-specific options on the builder.
+    /// Default implementation sets no options.
+    virtual void configureBuilder(ffi::EngineBuilder * builder) const { (void)builder; }
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;
