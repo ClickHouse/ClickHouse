@@ -516,6 +516,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                     {
                         /// Invalid escape sequence in the pattern: bail out so the index is not used,
                         /// and let row-level evaluation throw the same error.
+                        return false;
                     }
                 }
             }
