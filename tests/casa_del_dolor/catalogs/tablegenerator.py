@@ -215,7 +215,7 @@ class LakeTableGenerator:
     ) -> str:
         """Generate random ALTER TABLE statements for testing"""
         next_operation = random.randint(
-            1, 500 if self.get_format() == "delta" else 1000
+            1, 1000 if self.get_format() == "iceberg" else 500
         )
 
         if next_operation <= 250:
@@ -1027,6 +1027,11 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             "delta.feature.variantType-preview": lambda: random.choice(
                 ["supported", "enabled"]
             ),
+            # Target file size
+            # V2 checkpoint
+            "delta.feature.v2Checkpoint": lambda: random.choice(
+                ["supported", "enabled"]
+            ),
             # Not available on OSS Spark
             # Optimize write
             "spark.databricks.delta.autoCompact.enabled": true_false_lambda,
@@ -1055,19 +1060,57 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             "spark.databricks.delta.stats.skipping": true_false_lambda,
         }
 
+    def generate_alter_table_statements(
+        self,
+        table: SparkTable,
+    ) -> str:
+        next_operation = random.randint(1, 750)
+
+        if next_operation <= 250:
+            # Set random properties
+            properties = self.generate_table_properties(table)
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+        elif next_operation <= 500:
+            # Unset a property
+            properties = self.generate_table_properties(table)
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
+        elif next_operation <= 625:
+            # Add a column
+            col_name = f"c_added_{random.randint(1, 1000)}"
+            col_type = self.type_mapper.generate_random_spark_sql_type()
+            return f"ALTER TABLE {table.get_table_full_path()} ADD COLUMNS ({col_name} {col_type});"
+        elif next_operation <= 750:
+            # Drop a column
+            flat_cols = list(table.flat_columns().keys())
+            if len(flat_cols) > 1:
+                col = random.choice(flat_cols)
+                return f"ALTER TABLE {table.get_table_full_path()} DROP COLUMN {col};"
+        return ""
+
     def generate_extra_statement(
         self,
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 4)
+        next_option = random.randint(1, 7)
 
         if next_option == 1:
             # Vacuum
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
             # Optimize
-            return f"OPTIMIZE {table.get_table_full_path()}{f' ZORDER BY ({self.random_ordered_columns(table, False)})' if random.randint(1, 2) == 1 else ''};"
+            res = f"OPTIMIZE {table.get_table_full_path()}"
+            if random.randint(1, 3) == 1:
+                flat_cols = list(table.flat_columns().keys())
+                col = random.choice(flat_cols)
+                res += f" WHERE {col} IS NOT NULL"
+            if random.randint(1, 2) == 1:
+                res += f" ZORDER BY ({self.random_ordered_columns(table, False)})"
+            return res + ";"
         if next_option in (3, 4):
             # Restore
             result = spark.sql(
@@ -1083,6 +1126,15 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             if len(timestamps) > 0:
                 return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
             return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
+        if next_option == 5:
+            # Describe history
+            return f"DESCRIBE HISTORY {table.get_table_full_path()};"
+        if next_option == 6:
+            # Describe detail
+            return f"DESCRIBE DETAIL {table.get_table_full_path()};"
+        if next_option == 7:
+            # Generate manifest
+            return f"GENERATE symlink_format_manifest FOR TABLE {table.get_table_full_path()};"
         return ""
 
 
@@ -1138,7 +1190,10 @@ class PaimonTableGenerator(LakeTableGenerator):
                 "deletion-vectors.bitmap64",
             ):
                 properties.pop(key, None)
-        if "deletion-vectors.bitmap64" in properties and properties.get("deletion-vectors.enabled") != "true":
+        if (
+            "deletion-vectors.bitmap64" in properties
+            and properties.get("deletion-vectors.enabled") != "true"
+        ):
             del properties["deletion-vectors.bitmap64"]
         if "bucket-key" in properties and "bucket" not in properties:
             del properties["bucket-key"]
@@ -1196,6 +1251,28 @@ class PaimonTableGenerator(LakeTableGenerator):
             "num-sorted-run.compaction-trigger": lambda: str(random.choice([3, 5, 10])),
             "num-sorted-run.stop-trigger": lambda: str(random.choice([10, 20, 50])),
             "write-only": true_false_lambda,
+            "scan.mode": lambda: random.choice(
+                ["default", "latest-full", "latest", "compacted-full"]
+            ),
+            "full-compaction.delta-commits": lambda: str(random.choice([1, 3, 5, 10])),
+            "tag.automatic-creation": lambda: random.choice(
+                ["none", "process-time", "watermark"]
+            ),
+            "tag.creation-period": lambda: random.choice(
+                ["daily", "hourly", "two-hours"]
+            ),
+            "tag.num-retained-max": lambda: str(random.choice([1, 3, 5, 10, 50])),
+            "read-batch-size": lambda: str(random.choice([1024, 4096, 8192, 16384])),
+            "local-sort.max-num-file-handles": lambda: str(
+                random.choice([50, 128, 256, 512])
+            ),
+            "lookup.cache-file-retention": lambda: random.choice(["1h", "6h", "1d"]),
+            "lookup.cache-max-disk-size": lambda: random.choice(
+                ["64mb", "256mb", "1gb", "10gb"]
+            ),
+            "lookup.cache-max-memory-size": lambda: random.choice(
+                ["64mb", "256mb", "1gb"]
+            ),
         }
         if self.write_format == FileFormat.ORC:
             next_properties.update(
@@ -1220,12 +1297,17 @@ class PaimonTableGenerator(LakeTableGenerator):
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 3)
+        next_option = random.randint(1, 5)
 
         if next_option == 1:
             return f"CALL `{table.catalog_name}`.sys.compact(table => '{table.get_namespace_path()}');"
         if next_option == 2:
             return f"CALL `{table.catalog_name}`.sys.expire_snapshots(table => '{table.get_namespace_path()}', retain_max => {random.choice([1, 2, 5, 10])});"
         if next_option == 3:
-            return f"CALL `{table.catalog_name}`.sys.create_tag(table => '{table.get_namespace_path()}', tag => 'tag_{random.randint(1, 1000)}');"
+            tag_name = f"tag_{random.randint(1, 1000)}"
+            return f"CALL `{table.catalog_name}`.sys.create_tag(table => '{table.get_namespace_path()}', tag => '{tag_name}');"
+        if next_option == 4:
+            return f"CALL `{table.catalog_name}`.sys.repair(table => '{table.get_namespace_path()}');"
+        if next_option == 5:
+            return f"CALL `{table.catalog_name}`.sys.remove_orphan_files(table => '{table.get_namespace_path()}');"
         return ""
