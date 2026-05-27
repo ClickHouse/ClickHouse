@@ -158,47 +158,6 @@ Iceberg::TableStateSnapshotPtr extractIcebergSnapshotIdFromMetadataObject(Storag
     return std::make_shared<TableStateSnapshot>(std::get<TableStateSnapshot>(storage_metadata->datalake_table_state.value()));
 }
 
-/// Walks the current snapshot's data files and throws `NOT_IMPLEMENTED` if any
-/// is not Parquet. Mutations write position-delete files that reference data
-/// files by path; the read side rejects non-Parquet data files in
-/// `IcebergDataObjectInfo::addPositionDeleteObject`, so allowing the mutation
-/// would leave the table unreadable. The table's configured `write_format` is
-/// not sufficient because Iceberg permits mixed-format tables. See issue
-/// #102508 and the PR #105893 review.
-void validateMutationDataFileFormats(
-    ObjectStoragePtr object_storage,
-    const Iceberg::PersistentTableComponents & persistent_components,
-    Iceberg::IcebergDataSnapshotPtr data_snapshot,
-    const Iceberg::TableStateSnapshot & table_state_snapshot,
-    ContextPtr context,
-    LoggerPtr log)
-{
-    if (!data_snapshot)
-        return; /// Empty table - no existing data files to validate.
-
-    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
-    {
-        auto files_handle = getManifestFileEntriesHandle(
-            object_storage,
-            persistent_components,
-            context,
-            log,
-            manifest_list_entry,
-            table_state_snapshot.schema_id);
-
-        for (const auto & file_entry : files_handle.getFilesWithoutDeleted(Iceberg::FileContentType::DATA))
-        {
-            const String & file_format = file_entry->parsed_entry->file_format;
-            if (Poco::toLower(file_format) != "parquet")
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Iceberg DELETE and UPDATE require all data files in the current snapshot to be Parquet, "
-                    "but data file `{}` has format `{}`",
-                    file_entry->parsed_entry->file_path_key.serialize(),
-                    file_format);
-        }
-    }
-}
 }
 
 Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableComponents(
@@ -633,18 +592,10 @@ void IcebergMetadata::mutate(
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 
-    /// Reject mutations on tables whose current snapshot contains any non-Parquet
-    /// data file (including mixed-format tables). The fast `write_format` check
-    /// in `checkMutationIsPossible` catches the obvious case of a non-Parquet
-    /// configured table; this deeper check additionally protects mixed-format
-    /// tables where the configured `write_format` is Parquet but existing data
-    /// files are not.
-    {
-        auto [data_snapshot, table_state_snapshot]
-            = getRelevantState(context, /* force_fetch_latest_metadata */ true);
-        validateMutationDataFileFormats(
-            object_storage, persistent_components, data_snapshot, table_state_snapshot, context, log);
-    }
+    /// The per-data-file Parquet validation now lives inside `DB::Iceberg::mutate`'s
+    /// retry loop, bound to the metadata version actually being mutated. That closes
+    /// the TOCTOU gap a pre-check here would leave for concurrent writers committing
+    /// non-Parquet data files between the check and the write.
 
     DB::Iceberg::mutate(
         commands,
