@@ -7919,6 +7919,12 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
     DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
 Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_streaming_queries, false, R"(
+Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
+When off, any table expression using the `STREAM` modifier is rejected
+at plan-build time. This is the umbrella gate for the streaming-queries
+feature; additional capabilities may be gated by their own settings.
+)", EXPERIMENTAL) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
