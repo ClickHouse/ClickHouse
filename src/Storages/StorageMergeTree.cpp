@@ -525,10 +525,14 @@ void StorageMergeTree::alter(
             /// `scheduleDataProcessingJob`, which reads in-memory metadata under the
             /// same mutex, so merge selection cannot observe new metadata without
             /// also seeing the pending rename mutation. See #80648.
+            ///
+            /// The lock is declared outside the try so it stays held through the catch
+            /// handler. A `lock_guard` would be destroyed during stack unwinding before
+            /// the catch runs, leaving a race window where another thread could observe
+            /// `new_metadata` without the pending rename mutation.
+            std::unique_lock background_lock(currently_processing_in_background_mutex);
             try
             {
-                std::lock_guard background_lock(currently_processing_in_background_mutex);
-
                 /// Reinitialize primary key because primary key column types might have changed.
                 setProperties(new_metadata, old_metadata, false, local_context);
 
@@ -542,20 +546,20 @@ void StorageMergeTree::alter(
             }
             catch (...)
             {
-                /// Best-effort rollback. Order matters: revert in-memory metadata under
-                /// the same mutex so concurrent merge selection cannot see the new column
-                /// names without the pending rename mutation; then revert on-disk metadata
-                /// (outside the mutex, to keep the M1->M2 edge broken).
+                /// `background_lock` is still held here, so the in-memory rollback is
+                /// atomic with the publish above: merge selection cannot observe the
+                /// partial state. The on-disk rollback must run with the lock released
+                /// to keep the M1->M2 edge broken (see comment on `alterTable` above).
                 LOG_ERROR(log, "In-memory metadata commit failed, rolling back");
                 try
                 {
-                    std::lock_guard background_lock(currently_processing_in_background_mutex);
                     setProperties(old_metadata, new_metadata, false, local_context);
                 }
                 catch (...)
                 {
                     tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
                 }
+                background_lock.unlock();
                 try
                 {
                     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
@@ -751,7 +755,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
 Int64 StorageMergeTree::startMutation(
     const MutationCommands & commands,
     ContextPtr query_context,
-    const std::lock_guard<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
+    const std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
 {
     /// Caller (`alter`) already holds `currently_processing_in_background_mutex` so
     /// that `(setProperties + current_mutations_by_version insert)` is atomic against
