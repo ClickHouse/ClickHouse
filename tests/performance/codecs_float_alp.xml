@@ -1,0 +1,52 @@
+<test>
+    <settings>
+        <allow_suspicious_codecs>1</allow_suspicious_codecs>
+        <allow_experimental_codecs>1</allow_experimental_codecs>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>variant</name>
+            <values>
+                <value>AUTO</value>
+                <value>STD</value>
+                <value>RD</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Float32</value>
+                <value>Float64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>seq_type</name>
+            <values>
+                <value>rtn</value>
+                <value>rnd</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>num_rows</name>
+            <values>
+                <value>20000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_alp_{variant} (n {type} CODEC(ALP({variant})))
+        ENGINE = MergeTree PARTITION BY tuple()
+        ORDER BY tuple();
+    </create_query>
+
+    <fill_query>INSERT INTO codec_rtn_{type}_alp_{variant} (n) SELECT round(number/20+sin(number), 3) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query>INSERT INTO codec_rnd_{type}_alp_{variant} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query>optimize table codec_{seq_type}_{type}_alp_{variant} FINAL settings optimize_throw_if_noop = 1</fill_query>
+
+    <query>SELECT count(n) FROM codec_{seq_type}_{type}_alp_{variant} WHERE ignore(n) == 0 LIMIT {num_rows} SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS codec_{seq_type}_{type}_alp_{variant}</drop_query>
+
+</test>
