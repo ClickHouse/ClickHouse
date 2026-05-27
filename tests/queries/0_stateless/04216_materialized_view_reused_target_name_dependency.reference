@@ -1,2 +1,4 @@
 dst	1	A
 mv_dst	1	A
+dst_deps	['mv_dst','mv_second']
+mv_second_deps	[]

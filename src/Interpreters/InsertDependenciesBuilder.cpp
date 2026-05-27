@@ -1119,6 +1119,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
             /// See setting `allow_experimental_alter_materialized_view_structure`.
             /// A stale dependency can also point through a table name that now belongs to another valid dependency.
             /// Validate the relation before updating the shared maps, so rejecting this path cannot remove the valid one.
+            DatabaseCatalog::instance().removeViewDependency(parent, current);
             LOG_INFO(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
                 parent, current, select_table_id);
             return false;

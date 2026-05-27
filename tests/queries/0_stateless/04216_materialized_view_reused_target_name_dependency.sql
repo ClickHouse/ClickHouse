@@ -45,6 +45,8 @@ INSERT INTO dst VALUES (1, 'A');
 
 SELECT 'dst', key, value FROM dst ORDER BY ALL;
 SELECT 'mv_dst', key, value FROM mv_dst ORDER BY ALL;
+SELECT 'dst_deps', arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = 'dst';
+SELECT 'mv_second_deps', dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'mv_second';
 
 DROP TABLE mv_second;
 DROP TABLE mv_dst;
