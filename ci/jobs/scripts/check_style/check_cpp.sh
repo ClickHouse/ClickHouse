@@ -252,6 +252,7 @@ directories_to_lint_std_containers_usages=(
     src/Compression
     src/Daemon
     src/Dictionaries
+    src/Examples
     src/Functions
     src/IO
     src/Loggers
