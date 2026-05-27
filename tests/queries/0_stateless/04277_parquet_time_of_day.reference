@@ -1,0 +1,7 @@
+=== Schema-less inference ===
+t_ms	Nullable(Time64(3))
+t_us	Nullable(Time64(6))
+t_ns	Nullable(Time64(9))
+ts_us	Nullable(DateTime64(6, \'UTC\'))
+=== Import into Time64 columns (session_timezone = Asia/Shanghai) ===
+01:02:03.456	01:02:03.456789	01:02:03.456789012

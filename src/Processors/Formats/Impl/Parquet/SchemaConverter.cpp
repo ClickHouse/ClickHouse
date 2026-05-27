@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -829,6 +830,8 @@ void SchemaConverter::processPrimitiveColumn(
             return output_type->getSizeOfValueInMemory() == expected_size && getDecimalScale(*output_type) == expected_scale;
         else if (which.isDateTime64())
             return 8 == expected_size && assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == expected_scale;
+        else if (which.isTime64())
+            return 8 == expected_size && assert_cast<const DataTypeTime64 *>(output_type)->getScale() == expected_scale;
         return false;
     };
 
@@ -988,9 +991,15 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.TIMESTAMP || logical.__isset.TIME || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
     {
-        /// We interpret both timestamp (logical.TIMESTAMP) and time-of-day (logical.TIME)
-        /// types as timestamps, since clickhouse doesn't have time-of-day type.
-        /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
+        /// Parquet `TIMESTAMP` is a Unix timestamp -> ClickHouse `DateTime64` (timezone-aware).
+        /// Parquet `TIME` is a time-of-day (no date, no timezone) -> ClickHouse `Time64`
+        /// (timezone-unaware). Routing `TIME` through `DateTime64` and then casting to a
+        /// `Time64` target would shift the value by `session_timezone`, which is wrong because
+        /// time-of-day has no date/timezone to interpret (see issue #104038 for the Arrow
+        /// equivalent of this bug).
+        const bool is_time_of_day = logical.__isset.TIME
+            || converted == CONV::TIME_MILLIS
+            || converted == CONV::TIME_MICROS;
 
         UInt32 scale;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
@@ -1005,19 +1014,27 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
-        /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        String timezone = "UTC";
-        if (!options.format.parquet.local_time_as_utc &&
-            ((logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC) ||
-             (logical.__isset.TIME && !logical.TIME.isAdjustedToUTC)))
-            timezone = "";
-        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        if (is_time_of_day)
+        {
+            /// Time64 is timezone-unaware; `isAdjustedToUTC` is intentionally ignored here
+            /// because Time64 has no place to store that distinction.
+            out_inferred_type = std::make_shared<DataTypeTime64>(scale);
+        }
+        else
+        {
+            /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
+            String timezone = "UTC";
+            if (!options.format.parquet.local_time_as_utc
+                && logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC)
+                timezone = "";
+            out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        }
         auto converter = std::make_shared<IntConverter>();
-        /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
-        /// (i.e. time of day rather than timestamp).
+        /// `TIMESTAMP` is always INT64. INT32 is only used for `TIME_MILLIS`
+        /// (the sole INT32-backed time-of-day logical type in Parquet).
         converter->input_size = type == parq::Type::INT32 ? 4 : 8;
 
-        if (scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
+        if (!is_time_of_day && scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
         {
             /// Special case: converting milliseconds to seconds.
             /// We generally don't do such conversions during decoding, leaving it to castColumn.
