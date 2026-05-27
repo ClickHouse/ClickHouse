@@ -98,8 +98,8 @@ namespace DB
  * The left parts therefore form a small vocabulary that can be represented as a compact dictionary (up to 8 entries), while the right parts are bit-packed directly.
  *
  * Stream-Level left_bits Selection
- * The encoder selects a single `left_bits` split point for the entire column that minimises the estimated encoded size.
- * It samples up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values evenly from the column and evaluates every candidate left_bits from 1 to ALP_RD_CUTTING_LIMIT (16).
+ * The encoder selects a single `left_bits` split point for the whole compress block (controlled by `min_compress_block_size` and `max_compress_block_size`) that minimises the estimated encoded size.
+ * It samples up to ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS values evenly from the compress block and evaluates every candidate left_bits from 1 to ALP_RD_CUTTING_LIMIT (16).
  *
  * Per-Stream RD Header (written once before all blocks)
  *   - 1 byte:  left bit-width (UInt8, valid range 1–16)
@@ -158,6 +158,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECOMPRESS;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -343,9 +344,6 @@ struct ALPUtils
      */
     static UInt8 calcRdDictBits(const UInt8 dict_size)
     {
-        if (unlikely(dict_size == 0))
-            return 1;
-
         // Dictionary indices are from 0 to dict_size - 1, so the bit-width is calculated based on dict_size - 1.
         return calculateBitWidth(dict_size - 1);
     }
@@ -1366,6 +1364,9 @@ UInt32 CompressionCodecALP::getMaxCompressedDataSize(UInt32 uncompressed_size) c
 
 UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
+    if (unlikely(source_size == 0))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress with ALP codec, source size is 0");
+
     // Write ALP header
     char * meta_byte = dest;
     *dest++ = ALP_CODEC_VERSION;
