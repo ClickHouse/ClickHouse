@@ -227,6 +227,7 @@ namespace ServerSetting
     extern const ServerSettingsString default_database;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -1580,10 +1581,10 @@ try
         /// otherwise they keep running indefinitely and block shutdown.
         global_context->signalKeeperDispatcherShutdown();
 
+        size_t current_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
-            size_t current_connections = 0;
             {
                 std::lock_guard lock(servers_lock);
                 for (auto & server : servers_to_start_before_tables)
@@ -1607,7 +1608,7 @@ try
                 LOG_INFO(log, "Closed connections to servers for tables.");
         }
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
@@ -2356,7 +2357,13 @@ try
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
+            global_context->setMutationsUseAnalyzerOverride(
+                config().has("use_analyzer_for_mutations")
+                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
+                    : std::nullopt);
+
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
 
             global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 
@@ -2397,10 +2404,6 @@ try
 
             if (config().has("keeper_server"))
             {
-#if USE_NURAFT
-                if (config().getBool("keeper_server.standalone_keeper", false))
-                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
-#endif
                 global_context->updateKeeperConfiguration(config());
             }
 
