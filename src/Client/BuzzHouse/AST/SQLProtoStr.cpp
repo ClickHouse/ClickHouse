@@ -1291,12 +1291,26 @@ CONV_FN(CondExpr, econd)
     ret += econd.paren() ? ")" : "";
 }
 
-CONV_FN(ExprNullTests, ent)
+CONV_FN(ExprTruthTests, ent)
 {
     ExprToString(ret, ent.expr());
     ret += " IS";
     ret += ent.not_() ? " NOT" : "";
-    ret += " NULL";
+    switch (ent.truth_value())
+    {
+        case ExprTruthTests::IS_TRUE:
+            ret += " TRUE";
+            break;
+        case ExprTruthTests::IS_FALSE:
+            ret += " FALSE";
+            break;
+        case ExprTruthTests::IS_UNKNOWN:
+            ret += " UNKNOWN";
+            break;
+        default:
+            ret += " NULL";
+            break;
+    }
 }
 
 CONV_FN(ExprBetween, ebetween)
@@ -1781,8 +1795,8 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kExprAny:
             ExprAnyToString(ret, expr.expr_any());
             break;
-        case ExprType::kExprNullTests:
-            ExprNullTestsToString(ret, expr.expr_null_tests());
+        case ExprType::kExprTruthTests:
+            ExprTruthTestsToString(ret, expr.expr_truth_tests());
             break;
         case ExprType::kExprCase:
             ExprCaseToString(ret, expr.expr_case());

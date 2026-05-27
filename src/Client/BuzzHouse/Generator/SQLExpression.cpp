@@ -545,7 +545,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
     predMask[static_cast<size_t>(PredOp::InExpr)] = this->fc.max_depth > this->depth && this->fc.max_width > this->width;
     predMask[static_cast<size_t>(PredOp::AnyExpr)]
         = this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 1) && this->allow_subqueries;
-    predMask[static_cast<size_t>(PredOp::IsNullExpr)] = this->fc.max_depth > this->depth;
+    predMask[static_cast<size_t>(PredOp::IsTruthExpr)] = this->fc.max_depth > this->depth;
     predMask[static_cast<size_t>(PredOp::ExistsExpr)] = this->fc.max_depth > this->depth && this->allow_subqueries;
     predMask[static_cast<size_t>(PredOp::LikeExpr)] = this->fc.max_depth > this->depth;
     predMask[static_cast<size_t>(PredOp::SearchExpr)] = this->fc.max_depth > this->depth;
@@ -658,11 +658,13 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->depth--;
         }
         break;
-        case PredOp::IsNullExpr: {
+        case PredOp::IsTruthExpr: {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
-            ExprNullTests * enull = cexpr->mutable_expr_null_tests();
+            ExprTruthTests * enull = cexpr->mutable_expr_truth_tests();
 
             enull->set_not_(rg.nextBool());
+            if (rg.nextSmallNumber() < 3)
+                enull->set_truth_value(static_cast<ExprTruthTests_TruthValueTest>(rg.nextSmallNumber() % 4));
             this->depth++;
             this->generateExpression(rg, enull->mutable_expr());
             this->depth--;

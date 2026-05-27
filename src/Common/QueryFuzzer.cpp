@@ -2726,6 +2726,8 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
     return id && !id->name_parts.empty() && !id->isParam();
 };
 
+static const std::unordered_set<String> truth_predicates = {"isTruePredicate", "isFalsePredicate", "isUnknownPredicate"};
+
 ASTPtr QueryFuzzer::generatePredicate()
 {
     const int prob = fuzz_rand() % 3;
@@ -2809,7 +2811,13 @@ ASTPtr QueryFuzzer::generatePredicate()
                         makeASTFunction("greaterOrEquals", expression_1->clone(), lo),
                         makeASTFunction("lessOrEquals", expression_1, hi));
                 }
-                /// Fall back to a column comparison if no subquery was available (case 1) or for nprob >= 4
+                else if (nprob == 4)
+                {
+                    auto it = truth_predicates.begin();
+                    std::advance(it, fuzz_rand() % truth_predicates.size());
+                    next_condition = makeASTFunction(*it, expression_1);
+                }
+                /// Fall back to a column comparison if no subquery was available (case 1) or for nprob >= 5
                 if (!next_condition)
                 {
                     /// Pick any other column reference
@@ -3249,6 +3257,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"globalIn", "globalNotIn", "in", "notIn"},
         /// Null predicate and conversion functions
         {"assumeNotNull", "isNotNull", "isNull", "isNullable", "isZeroOrNull", "toNullable"},
+        /// Truth-value predicates
+        truth_predicates,
         /// Value selection / clamping / null-coalescing
         {"clamp", "coalesce", "firstNonDefault", "greatest", "ifNull", "least", "nullIf"},
         /// Comparison operators

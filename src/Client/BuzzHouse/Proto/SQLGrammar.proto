@@ -385,9 +385,16 @@ message ExprAny {
     required ExplainQuery sel = 4;
 }
 
-message ExprNullTests {
+message ExprTruthTests {
+    enum TruthValueTest {
+        IS_NULL = 0;
+        IS_TRUE = 1;
+        IS_FALSE = 2;
+        IS_UNKNOWN = 3;
+    }
     required Expr expr = 1;
     required bool not = 2;
+    optional TruthValueTest truth_value = 3;
 }
 
 message ExprCase {
@@ -631,7 +638,7 @@ message ComplicatedExpr {
         ExprBetween expr_between = 6;
         ExprIn expr_in = 7;
         ExprAny expr_any = 8;
-        ExprNullTests expr_null_tests = 9;
+        ExprTruthTests expr_truth_tests = 9;
         ExprCase expr_case = 10;
         ExprExists expr_exists = 11;
         ExprLike expr_like = 12;
@@ -2144,7 +2151,7 @@ message RemoveColumnProperty {
         CODEC = 4;
         COMMENT = 5;
         TTL = 6;
-        SETTINGS = 7;
+        //SETTINGS = 7;
     }
     required ColumnPath col = 1;
     required ColumnProperties property = 2;

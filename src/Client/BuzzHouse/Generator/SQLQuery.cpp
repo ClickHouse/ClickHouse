@@ -1673,21 +1673,24 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         }
         break;
         case PredOp::UnaryExpr: {
-            /// Is null expr
+            /// truth expr
             Expr * isexpr = nullptr;
 
             if (rg.nextSmallNumber() < 8)
             {
-                ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
+                ExprTruthTests * enull = expr->mutable_comp_expr()->mutable_expr_truth_tests();
 
                 enull->set_not_(rg.nextBool());
+                if (rg.nextSmallNumber() < 3)
+                    enull->set_truth_value(static_cast<ExprTruthTests_TruthValueTest>(rg.nextSmallNumber() % 4));
                 isexpr = enull->mutable_expr();
             }
             else
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto nullFuncs = {"isNull", "isNullable", "isNotNull", "isZeroOrNull"};
+                static const auto nullFuncs
+                    = {"isNull", "isNullable", "isNotNull", "isZeroOrNull", "isTruePredicate", "isFalsePredicate", "isUnknownPredicate"};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
                 isexpr = sfc->add_args()->mutable_expr();

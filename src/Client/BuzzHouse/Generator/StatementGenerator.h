@@ -339,7 +339,7 @@ private:
         BetweenExpr,
         InExpr,
         AnyExpr,
-        IsNullExpr,
+        IsTruthExpr,
         ExistsExpr,
         LikeExpr,
         SearchExpr,
