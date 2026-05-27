@@ -3282,18 +3282,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
-        /// `LIKE pattern ESCAPE 'c'`, `ILIKE pattern ESCAPE 'c'`, `NOT LIKE pattern ESCAPE 'c'`
-        /// and `NOT ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument function call
-        /// `like(col, pattern, escape_char)` (or the `i`/`not`/`notI` variants). Fold the escape
-        /// character into the pattern (rewrite to standard backslash escapes) so the existing
-        /// 2-argument handler can build a key range; otherwise the call falls through to the
-        /// else branch and returns false, and the primary key cannot be used to prune the scan.
+        /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a
+        /// 3-argument function call `like(col, pattern, escape_char)` (or the `notLike`
+        /// variant). Fold the escape character into the pattern (rewrite to standard
+        /// backslash escapes) so the existing 2-argument handler can build a key range;
+        /// otherwise the call falls through to the else branch and returns false, and the
+        /// primary key cannot be used to prune the scan. `ilike`/`notILike` are not handled
+        /// here because they are not in `atom_map` (the check above already bailed out for
+        /// them), so case-insensitive matching always falls back to row-level evaluation.
         Field rewritten_like_pattern;
         DataTypePtr rewritten_like_pattern_type;
         bool rewritten_like = false;
-        if (num_args == 3
-            && (func_name == "like" || func_name == "ilike"
-                || func_name == "notLike" || func_name == "notILike"))
+        if (num_args == 3 && (func_name == "like" || func_name == "notLike"))
         {
             Field pattern_field;
             DataTypePtr pattern_type;

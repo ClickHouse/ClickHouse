@@ -1,9 +1,11 @@
 -- Tests that the primary key (`KeyCondition`) is still used when the predicate
--- uses `LIKE pattern ESCAPE 'c'`, `ILIKE pattern ESCAPE 'c'` or `NOT LIKE
--- pattern ESCAPE 'c'`. The escape character is folded into the pattern
--- (rewritten to standard backslash escapes) before
--- `KeyCondition::extractAtomFromTree` dispatches it through the existing
--- 2-argument handler.
+-- uses `LIKE pattern ESCAPE 'c'` or `NOT LIKE pattern ESCAPE 'c'`. The escape
+-- character is folded into the pattern (rewritten to standard backslash
+-- escapes) before `KeyCondition::extractAtomFromTree` dispatches it through
+-- the existing 2-argument handler. `ILIKE ... ESCAPE` and `NOT ILIKE ... ESCAPE`
+-- are not pruned by the primary key because `ilike`/`notILike` are not in
+-- `KeyCondition::atom_map`; case-insensitive forms fall back to row-level
+-- evaluation. The text index covers all four forms (see test 04277).
 --
 -- Issue: https://github.com/ClickHouse/ClickHouse/issues/105885
 
