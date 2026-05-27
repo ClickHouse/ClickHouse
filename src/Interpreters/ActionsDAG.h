@@ -376,7 +376,8 @@ public:
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr,
-        NameSet * columns_contain_compiled_function = nullptr);
+        NameSet * columns_contain_compiled_function = nullptr,
+        bool materialize_constants=true);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
     static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);

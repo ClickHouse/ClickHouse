@@ -379,7 +379,7 @@ void StorageView::readImpl(
             header->getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
-            context);
+            context, false, false, nullptr, nullptr, false);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");

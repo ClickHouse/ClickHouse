@@ -1795,7 +1795,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     bool ignore_constant_values,
     bool add_cast_columns,
     NameToNameMap * new_names,
-    NameSet * columns_contain_compiled_function)
+    NameSet * columns_contain_compiled_function,
+    bool materialize_constants)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -1903,7 +1904,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
             dst_node = &actions_dag.addFunction(func_base_cast, std::move(children), {});
         }
 
-        if (dst_node->column && isColumnConst(*dst_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
+        if (materialize_constants && dst_node->column && isColumnConst(*dst_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
         {
             NodeRawConstPtrs children = {dst_node};
             dst_node = &actions_dag.addFunction(func_builder_materialize, std::move(children), {});
