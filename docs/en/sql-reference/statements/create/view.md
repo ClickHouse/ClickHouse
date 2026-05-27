@@ -4,7 +4,6 @@ sidebar_label: 'VIEW'
 sidebar_position: 37
 slug: /sql-reference/statements/create/view
 title: 'CREATE VIEW'
-doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -63,68 +62,9 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
-[REFRESH ...]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
-```
-
-```sql
-CREATE OR REPLACE MATERIALIZED VIEW [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
-[REFRESH ...]
-[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
-AS SELECT ...
-[COMMENT 'comment']
-```
-
-`OR REPLACE` and `IF NOT EXISTS` are mutually exclusive: combining them is a syntax error.
-
-### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
-
-`CREATE OR REPLACE MATERIALIZED VIEW` atomically replaces an existing materialized view and its inner storage table (if any). The operation requires an `Atomic` or `Replicated` database engine.
-
-```sql
-CREATE OR REPLACE MATERIALIZED VIEW [db.]name [ON CLUSTER cluster]
-[TO [db.]target_table]
-[ENGINE = engine]
-[POPULATE]
-[REFRESH ...]
-AS SELECT ...
-```
-
-Key behaviors:
-
-- **Without `TO` clause**: the old inner table is dropped and a new one is created. Existing data in the inner table is lost unless `POPULATE` is specified.
-- **With `TO` clause**: only the view definition is replaced; the target table and its data are unaffected.
-- Compatible with `REFRESH`, `ON CLUSTER`, and all engine options. `POPULATE` is supported on `Atomic` databases only — it is rejected on `Replicated` databases (see the `POPULATE` note below).
-- Requires `CREATE VIEW` and `DROP VIEW` privileges.
-
-:::note
-`CREATE OR REPLACE MATERIALIZED VIEW` is only supported with `Atomic` or `Replicated` database engines. It is not supported with the `Ordinary` database engine.
-:::
-
-**Examples:**
-
-```sql
--- Create a materialized view with an inner table
-CREATE OR REPLACE MATERIALIZED VIEW mv
-    ENGINE = MergeTree ORDER BY x
-    AS SELECT x, sum(y) AS total FROM src GROUP BY x;
-
--- Replace with a new definition (old inner table data is lost)
-CREATE OR REPLACE MATERIALIZED VIEW mv
-    ENGINE = MergeTree ORDER BY x
-    AS SELECT x, count() AS cnt FROM src GROUP BY x;
-
--- Replace with POPULATE to backfill from existing source data
-CREATE OR REPLACE MATERIALIZED VIEW mv
-    ENGINE = MergeTree ORDER BY x
-    POPULATE
-    AS SELECT x FROM src;
-
--- Replace an inner-table MV with a TO-table MV (target data is preserved)
-CREATE OR REPLACE MATERIALIZED VIEW mv TO target
-    AS SELECT x FROM src;
 ```
 
 :::tip
@@ -163,7 +103,7 @@ Instead a separate `INSERT ... SELECT` can be used.
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
-If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
+The execution of [ALTER](/sql-reference/statements/alter/view.md) queries on materialized views has limitations, for example, you can not update the `SELECT` query, so this might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
 Note that materialized view is influenced by [optimize_on_insert](/operations/settings/settings#optimize_on_insert) setting. The data is merged before the insertion into a view.
 
@@ -226,7 +166,7 @@ For your convenience, the old documentation is located [here](https://pastila.nl
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-REFRESH [EVERY|AFTER interval [OFFSET interval]]
+REFRESH EVERY|AFTER interval [OFFSET interval]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
@@ -242,15 +182,11 @@ where `interval` is a sequence of simple intervals:
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
 
-The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS ON`. Bare `REFRESH` (with none of these) is rejected. `REFRESH DEPENDS ON ...` without `EVERY`/`AFTER` is shorthand for `REFRESH AFTER 0 SECOND DEPENDS ON ...`; see [Refresh Dependencies](#refresh-dependencies) below.
-
-Periodically runs the corresponding query and stores its result into a table.
-* If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
-* Otherwise, each refresh atomically replaces the table's previous contents.
-
+Periodically runs the corresponding query and stores its result in a table.
+* If the query says `APPEND`, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular INSERT SELECT.
+* Otherwise each refresh atomically replaces the table's previous contents.
 Differences from regular non-refreshable materialized views:
-* No insert trigger. When new data is inserted into the table specified in `SELECT`, it's *not* automatically pushed to the refreshable materialized view. Instead, data insertion only takes place during the periodic or manual refresh runs.
-* No restrictions on the `SELECT` query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
+* No insert trigger. I.e. when new data is inserted into the table specified in SELECT, it's *not* automatically pushed to the refreshable materialized view. The periodic refresh runs the entire query. * No restrictions on the SELECT query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
 
 :::note
 The settings in the `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
@@ -280,7 +216,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 At most one refresh may be running at a time, for a given view. E.g. if a view with `REFRESH EVERY 1 MINUTE` takes 2 minutes to refresh, it'll just be refreshing every 2 minutes. If it then becomes faster and starts refreshing in 10 seconds, it'll go back to refreshing every minute. (In particular, it won't refresh every 10 seconds to catch up with a backlog of missed refreshes - there's no such backlog.)
 
-Typically the first refresh is started immediately after the materialized view is created: time since last refresh is infinity, so any schedule says it's time to refresh now. If `EMPTY` is specified, this initial refresh is skipped, and the first refresh happens at the next scheduled time; e.g. for `EVERY 1 HOUR` the first refresh will happen at the end of current hour.
+Additionally, a refresh is started immediately after the materialized view is created, unless `EMPTY` is specified in the `CREATE` query. If `EMPTY` is specified, the first refresh happens according to schedule.
 
 ### In Replicated DB {#in-replicated-db}
 
@@ -292,153 +228,70 @@ In non-`APPEND` mode, only coordinated refreshing is supported. For uncoordinate
 
 The coordination is done through Keeper. The znode path is determined by [default_replica_path](../../../operations/server-configuration-parameters/settings.md#default_replica_path) server setting.
 
-### Refresh Dependencies {#refresh-dependencies}
+### Dependencies {#refresh-dependencies}
 
-`DEPENDS ON` synchronizes refreshes of different tables:
+`DEPENDS ON` synchronizes refreshes of different tables. By way of example, suppose there's a chain of two refreshable materialized views:
 ```sql
-CREATE MATERIALIZED VIEW dependent REFRESH EVERY 1 HOUR DEPENDS ON dependency [...]
+CREATE MATERIALIZED VIEW source REFRESH EVERY 1 DAY AS SELECT * FROM url(...)
+CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY AS SELECT ... FROM source
 ```
-Dependent view's refresh will start only after all dependency views' refreshes complete.
+Without `DEPENDS ON`, both views will start a refresh at midnight, and `destination` typically will see yesterday's data in `source`. If we add dependency:
+```sql
+CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY DEPENDS ON source AS SELECT ... FROM source
+```
+then `destination`'s refresh will start only after `source`'s refresh finished for that day, so `destination` will be based on fresh data.
 
-To refresh immediately after another view's refresh:
+Alternatively, the same result can be achieved with:
 ```sql
-CREATE MATERIALIZED VIEW dependent REFRESH AFTER 0 SECOND DEPENDS ON dependency [...]
+CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS SELECT ... FROM source
 ```
-Or equivalently:
-```sql
-CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
-```
+where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
+
+A few more examples:
+* `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
+  If `source` refresh takes more than 10 minutes, `destination` will wait for it.
+* `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
+  Similar to the above, even though the corresponding refreshes happen on different calendar days.
+  `destination`'s refresh on day X+1 will wait for `source`'s refresh on day X (if it takes more than 2 hours).
+* `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
+  The 2 HOUR refresh happens after the 1 HOUR refresh for every other hour, e.g. after the midnight
+  refresh, then after the 2am refresh, etc.
+* `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+  `REFRESH AFTER 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
+  `REFRESH AFTER 1 MINUTE` depends on `REFRESH AFTER 2 HOUR`<br/>
+  `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
+* `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
+  Currently this is not recommended.
 
 :::note
-`DEPENDS ON` only works between refreshable materialized views. In particular, if the dependency view uses `TO <table>`, make sure to use the name of the view rather than the table. If the `DEPENDS ON` list contains a regular table or non-refreshable view or has a typo, the view will never refresh and will show state `MissingDependencies` in `system.view_refreshes`. Dependencies can be changed or removed using `ALTER`, see [Changing Refresh Parameters](#changing-refresh-parameters).
+`DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be removed with `ALTER`, see below).
 :::
 
-#### Using DEPENDS ON for consistent propagation latency {#using-depends-on-for-consistent-propagation-latency}
-
-If both views use `REFRESH EVERY` with the same period, the dependency applies in each timeslot.
-
-E.g. suppose views X and Y both use `REFRESH EVERY 1 HOUR`, and Y reads from X's output table. Without dependencies, Y would usually see X's data from previous hour's refresh. With `DEPENDS ON X`, Y's 11:00 refresh will start only after the X's 11:00 refresh completes.
-
-```text
-           10:00            11:00            12:00
-           │                │                │
-  X:        [run]┐           [run]┐           [run]┐
-                 │                │                │
-  Y:             └►[run]          └►[run]          └►[run]
-```
-
-Both dependency and dependent may independently skip timeslots if refreshes run for longer than the refresh period. There's no guarantee that the dependent refreshes exactly once for each dependency refresh.
-
-```text
-           10:00          11:00          12:00          13:00
-           │              │              │              |
-  X:        [run]┐         [run]┐         [run]┐         [run]┐
-                 │              └────┐    (Y skips 12:00)     └───┐
-  Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
-```
-
-#### Using DEPENDS ON for batched stream processing {#using-depends-on-for-batched-stream-processing}
-
-If `REFRESH EVERY` is not used, the dependent view X refreshes if all its dependencies refreshed at least once since X's last refresh. `REFRESH AFTER T` adds a delay: the dependent will start refresh T time after the dependency completes a refresh.
-
-Circular dependencies are allowed and useful. Consider this graph of refreshable materialized views:
- 1. X takes a batch of rows from some stream and puts them in a table.
- 2. Then Y and Z both read from that table, do different aggregation, and append results to other tables.
- 3. After the batch is fully processed, X takes the next batch, and the cycle repeats.
-
-```text
-            source
-               │
-               ▼
-          ┌─────────┐
-     ┌───►│    X    │◄───┐
-     │    └──┬───┬──┘    │
-  DEPENDS    │   │    DEPENDS
-    ON       ▼   ▼      ON
-     │      ┌─┐ ┌─┐      │
-     └──────┤Y│ │Z├──────┘
-            └─┘ └─┘
-```
-
-Complete example:
-```sql
-CREATE TABLE current_batch (t UInt64, v Int64) ENGINE ReplicatedMergeTree ORDER BY t;
-CREATE TABLE batch_log (max_t UInt64, n Int64, v_sum Int64, processed_at DateTime64) ENGINE ReplicatedMergeTree ORDER BY max_t;
-CREATE TABLE stats (h UInt64, n UInt64) ENGINE ReplicatedSummingMergeTree ORDER BY h;
-
--- (system.numbers stands in for a data source with monotonically increasing timestamps or sequence numbers)
-CREATE MATERIALIZED VIEW current_batch_v REFRESH EVERY 10 SECOND DEPENDS ON batch_log_v, stats_v TO current_batch AS SELECT number as t, number * 10 as v FROM system.numbers WHERE number > (SELECT max(max_t) FROM batch_log) LIMIT 100;
-
-CREATE MATERIALIZED VIEW batch_log_v REFRESH DEPENDS ON current_batch_v APPEND TO batch_log AS SELECT max(t) as max_t, count() as n, sum(v) as v_sum, now64() as processed_at FROM current_batch;
-
-CREATE MATERIALIZED VIEW stats_v REFRESH DEPENDS ON current_batch_v APPEND TO stats AS SELECT cityHash64(v) % 20 as h, count() as n FROM current_batch GROUP BY h;
-
--- Must trigger initial refresh manually.
-SYSTEM REFRESH VIEW current_batch_v;
-```
-
-Longer chains work as well.
-
-This only works well when refresh coordination is enabled, i.e. the views are in Replicated or Shared database. Without coordination, server restart breaks the cycle, requiring a manual `SYSTEM REFRESH VIEW` after each restart rather than once after creating the views.
-
-### Refresh Settings {#refresh-settings}
+### Settings {#settings}
 
 Available refresh settings:
-* `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 2.
+* `refresh_retries` - How many times to retry if refresh query fails with an exception. If all retries fail, skip to the next scheduled refresh time. 0 means no retries, -1 means infinite retries. Default: 0.
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
-* `all_replicas` - In a [Replicated database](../../../engines/database-engines/replicated.md) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
-Refresh parameters of an existing refreshable materialized view are changed with [`ALTER TABLE ... MODIFY REFRESH`](../alter/view.md#alter-table--modify-refresh-statement):
-
+To change refresh parameters:
 ```sql
 ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
 ```
 
-The schedule (`EVERY` or `AFTER`) is mandatory: the statement always replaces *all* refresh parameters — schedule, `RANDOMIZE FOR`, `DEPENDS ON`, and refresh settings — with what is specified. Anything omitted is reset to its default (settings) or removed (dependencies, randomization).
-
 :::note
-- To change only refresh settings (e.g. `refresh_retries`), repeat the existing schedule:
-
-  ```sql
-  ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR SETTINGS refresh_retries = 5;
-  ```
-
-- `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` is not supported on materialized views; you must go through `MODIFY REFRESH`.
-
-- Adding or removing `APPEND` is not supported.
-
-- The `all_replicas` setting cannot be changed after creation.
+This replaces *all* refresh parameters at once: schedule, dependencies, settings, and APPEND-ness. E.g. if the table had a `DEPENDS ON`, doing a `MODIFY REFRESH` without `DEPENDS ON` will remove the dependencies.
 :::
-
-Examples:
-
-```sql
--- Change the schedule, drop existing settings and dependencies.
-ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
-
--- Change the schedule and tune retry behavior.
-ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
-SETTINGS refresh_retries = 5,
-         refresh_retry_initial_backoff_ms = 500,
-         refresh_retry_max_backoff_ms = 60000;
-
--- Keep the dependency while changing the period.
-ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
-
--- Drop the dependency by omitting `DEPENDS ON`.
-ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
-```
 
 ### Other operations {#other-operations}
 
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
-To manually stop, start, trigger, or cancel refreshes, use [`SYSTEM STOP|START|REFRESH|WAIT|CANCEL VIEW`](../system.md#managing-refreshable-materialized-views).
+To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|WAIT|CANCEL VIEW`](../system.md#refreshable-materialized-views).
 
-To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#wait-view). In particular, useful for waiting for initial refresh after creating a view.
+To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refreshable-materialized-views). In particular, useful for waiting for initial refresh after creating a view.
 
 :::note
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
@@ -517,7 +370,7 @@ WATCH [db.]window_view
 [FORMAT format]
 ```
 
-A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
+`WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
 
 ### Settings {#settings-1}
 
@@ -578,101 +431,3 @@ The window view is useful in the following scenarios:
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
-
-## Temporary Views {#temporary-views}
-
-ClickHouse supports **temporary views** with the following characteristics (matching temporary tables where applicable):
-
-* **Session-lifetime**
-  A temporary view exists only for the duration of the current session. It is dropped automatically when the session ends.
-
-* **No database**
-  You **cannot** qualify a temporary view with a database name. It lives outside databases (session namespace).
-
-* **Not replicated / no ON CLUSTER**
-  Temporary objects are local to the session and **cannot** be created with `ON CLUSTER`.
-
-* **Name resolution**
-  If a temporary object (table or view) has the same name as a persistent object and a query references the name **without** a database, the **temporary** object is used.
-
-* **Logical object (no storage)**
-  A temporary view stores only its `SELECT` text (uses the `View` storage internally). It does not persist data and cannot accept `INSERT`.
-
-* **Engine clause**
-  You do **not** need to specify `ENGINE`; if provided as `ENGINE = View`, it’s ignored/treated as the same logical view.
-
-* **Security / privileges**
-  Creating a temporary view requires the privilege `CREATE TEMPORARY VIEW` which is implicitly granted by `CREATE VIEW`.
-
-* **SHOW CREATE**
-  Use `SHOW CREATE TEMPORARY VIEW view_name;` to print the DDL of a temporary view.
-
-### Syntax {#temporary-views-syntax}
-
-```sql
-CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
-```
-
-`OR REPLACE` is **not** supported for temporary views (to match temporary tables). If you need to “replace” a temporary view, drop it and create it again.
-
-### Examples {#temporary-views-examples}
-
-Create a temporary source table and a temporary view on top:
-
-```sql
-CREATE TEMPORARY TABLE t_src (id UInt32, val String);
-INSERT INTO t_src VALUES (1, 'a'), (2, 'b');
-
-CREATE TEMPORARY VIEW tview AS
-SELECT id, upper(val) AS u
-FROM t_src
-WHERE id <= 2;
-
-SELECT * FROM tview ORDER BY id;
-```
-
-Show its DDL:
-
-```sql
-SHOW CREATE TEMPORARY VIEW tview;
-```
-
-Drop it:
-
-```sql
-DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
-```
-
-### Disallowed / limitations {#temporary-views-limitations}
-
-* `CREATE OR REPLACE TEMPORARY VIEW ...` → **not allowed** (use `DROP` + `CREATE`).
-* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `WINDOW VIEW` → **not allowed**.
-* `CREATE TEMPORARY VIEW db.view AS ...` → **not allowed** (no database qualifier).
-* `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **not allowed** (temporary objects are session-local).
-* `POPULATE`, `REFRESH`, `TO [db.table]`, inner engines, and all MV-specific clauses → **not applicable** to temporary views.
-
-### Notes on distributed queries {#temporary-views-distributed-notes}
-
-A temporary **view** is just a definition; there’s no data to pass around. If your temporary view references temporary **tables** (e.g., `Memory`), their data can be shipped to remote servers during distributed query execution the same way temporary tables work.
-
-#### Example {#temporary-views-distributed-example}
-
-```sql
--- A session-scoped, in-memory table
-CREATE TEMPORARY TABLE temp_ids (id UInt64) ENGINE = Memory;
-
-INSERT INTO temp_ids VALUES (1), (5), (42);
-
--- A session-scoped view over the temp table (purely logical)
-CREATE TEMPORARY VIEW v_ids AS
-SELECT id FROM temp_ids;
-
--- Replace 'test' with your cluster name.
--- GLOBAL JOIN forces ClickHouse to *ship* the small join-side (temp_ids via v_ids)
--- to every remote server that executes the left side.
-SELECT count()
-FROM cluster('test', system.numbers) AS n
-GLOBAL ANY INNER JOIN v_ids USING (id)
-WHERE n.number < 100;
-
-```

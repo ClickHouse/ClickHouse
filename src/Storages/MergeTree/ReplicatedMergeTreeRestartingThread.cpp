@@ -8,10 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
-#include <Core/ServerSettings.h>
 #include <boost/algorithm/string/replace.hpp>
 
 
@@ -23,11 +21,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
-}
 
 namespace MergeTreeSetting
 {
@@ -61,7 +54,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     const auto storage_settings = storage.getSettings();
     check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
 
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeRestartingThread::start(bool schedule)
@@ -88,7 +81,6 @@ void ReplicatedMergeTreeRestartingThread::run()
     const size_t backoff_ms = 100 * ((consecutive_check_failures + 1) * (consecutive_check_failures + 2)) / 2;
     const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
 
-    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeRestartingThread");
     try
     {
         bool replica_is_active = runImpl();
@@ -175,7 +167,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     /// Start queue processing
     storage.background_operations_assignee.start();
-    storage.background_streaming_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
@@ -183,9 +174,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.cleanup_thread.start();
     storage.async_block_ids_cache.start();
     storage.part_check_thread.start();
-
-    if (storage.getContext()->getServerSettings()[ServerSetting::insert_deduplication_version].value != InsertDeduplicationVersions::OLD_SEPARATE_HASHES)
-        storage.deduplication_hashes_cache.start();
 
     LOG_DEBUG(log, "Table started successfully");
     return true;
@@ -226,7 +214,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr(storage.getContext(), false)->withMetadataVersion(replica_metadata_version));
+            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr()->withMetadataVersion(replica_metadata_version));
         }
         else
         {

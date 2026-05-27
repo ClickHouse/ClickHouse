@@ -13,7 +13,6 @@
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
-#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
 
@@ -43,17 +42,11 @@ bool KafkaConsumer2::TopicPartition::operator<(const TopicPartition & other) con
 }
 
 KafkaConsumer2::KafkaConsumer2(
-    LoggerPtr log_,
-    size_t max_batch_size,
-    size_t poll_timeout_,
-    const std::atomic<bool> & stopped_,
-    const Names & topics_,
-    size_t skip_bytes_)
+    LoggerPtr log_, size_t max_batch_size, size_t poll_timeout_, const std::atomic<bool> & stopped_, const Names & topics_)
     : exceptions_buffer(EXCEPTIONS_DEPTH)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
-    , skip_bytes(skip_bytes_)
     , stopped(stopped_)
     , current(messages.begin())
     , topics(topics_)
@@ -149,24 +142,14 @@ void KafkaConsumer2::cleanQueuesAndMessages()
 void KafkaConsumer2::initializeQueues(const cppkafka::TopicPartitionList & topic_partitions)
 {
     cleanQueuesAndMessages();
-
-    queues.reserve(topic_partitions.size());
-    // `get_partition_queue` creates the partition queue if needed and disables forwarding to the main consumer queue.
-    // Do this before `assign` starts fetching, otherwise messages may leak into the main queue before we detach it.
-    try
-    {
-        for (const auto & topic_partition : topic_partitions)
-            queues.emplace(
-                TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()},
-                consumer->get_partition_queue(topic_partition));
-
-        consumer->assign(topic_partitions);
-    }
-    catch (...)
-    {
-        cleanQueuesAndMessages();
-        throw;
-    }
+    // cppkafka itself calls assign(), but in order to detach the queues here we have to do the assignment manually.
+    // Later on we have to reassign the topic partitions with correct offsets.
+    consumer->assign(topic_partitions);
+    for (const auto & topic_partition : topic_partitions)
+        // This will also detach the partition queues from the consumer, thus the messages won't be forwarded without
+        // attaching them manually
+        queues.emplace(
+            TopicPartition{topic_partition.get_topic(), topic_partition.get_partition()}, consumer->get_partition_queue(topic_partition));
 }
 
 // it does the poll when needed
@@ -379,8 +362,8 @@ ReadBufferPtr KafkaConsumer2::getNextMessage()
         ++current;
 
         // `data` can be nullptr on case of the Kafka message has empty payload
-        if (data && size >= skip_bytes)
-            return std::make_shared<ReadBufferFromMemory>(data + skip_bytes, size - skip_bytes);
+        if (data)
+            return std::make_shared<ReadBufferFromMemory>(data, size);
     }
 
     return nullptr;
