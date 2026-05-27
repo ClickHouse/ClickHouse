@@ -3,6 +3,8 @@
 #include <IO/ISourceReader.h>
 #include <IO/ReadSettings.h>
 #include <IO/ReadHelpers.h>
+#include <IO/MMappedFileCache.h>
+#include <IO/MMapReadBufferFromFileWithCache.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <gtest/gtest.h>
@@ -172,4 +174,90 @@ TEST(PipelineReadBuffer, TryGetFileSizeReturnsNulloptForUnknownSize)
     PipelineReadBuffer buf(std::move(executor));
 
     EXPECT_EQ(buf.tryGetFileSize(), std::nullopt);
+}
+
+namespace
+{
+
+/// Source reader that returns `MMapReadBufferFromFileWithCache` over a temp
+/// file. Used to drive the executor through the mmap path so we can assert it
+/// doesn't trip on `set()+next()` returning `false` (mmap has no `nextImpl`).
+class MMapSourceReader : public ISourceReader
+{
+public:
+    explicit MMapSourceReader(String data_) : data(std::move(data_)) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
+    {
+        auto path = std::filesystem::temp_directory_path() / ("test_pipeline_mmap_" + std::to_string(file_counter++));
+        {
+            std::ofstream f(path, std::ios::binary);
+            f.write(data.data(), data.size());
+        }
+        temp_files.push_back(path);
+        return std::make_unique<MMapReadBufferFromFileWithCache>(cache, path.string(), /*offset=*/0, data.size());
+    }
+
+    String name() const override { return "MMapSourceReader"; }
+
+    ~MMapSourceReader() override
+    {
+        for (const auto & p : temp_files)
+            std::filesystem::remove(p);
+    }
+
+private:
+    String data;
+    MMappedFileCache cache{8};
+    size_t file_counter = 0;
+    std::vector<std::filesystem::path> temp_files;
+};
+
+}
+
+TEST(PipelineReadBuffer, MMapSourceDoesNotReturnImmediateEof)
+{
+    /// Regression: `MMapReadBufferFromFileWithCache` inherits
+    /// `supportsExternalBufferMode = true` by default. The executor's
+    /// `readIntoBlock` trusts that flag, calls `set(dest, n); next();`, and the
+    /// mmap class has no `nextImpl` — so `next()` returns `false` and the
+    /// executor sees an immediate EOF on the very first window. After the fix,
+    /// `MMapReadBufferFromFileWithCache::supportsExternalBufferMode` returns
+    /// `false` and `readIntoBlock` falls through to `buf.read(dest, n)`, which
+    /// memcpys out of the mapped region.
+    String content(8192, 'M');
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<MMapSourceReader>(content);
+
+    StoredObjects objects;
+    objects.emplace_back("test", "", content.size());
+
+    auto executor = std::make_unique<ReaderExecutor>(
+        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 1024);
+
+    PipelineReadBuffer buf(std::move(executor));
+
+    String result;
+    readStringUntilEOF(result, buf);
+    EXPECT_EQ(result.size(), content.size());
+    EXPECT_EQ(result, content);
+}
+
+TEST(PipelineReadBuffer, MMapReportsNoExternalBufferMode)
+{
+    /// Direct contract check: the mmap buffer must advertise that it cannot
+    /// refill into a caller-supplied external buffer. Without this, any caller
+    /// using `set()+next()` (notably `ReaderExecutor::readIntoBlock`) treats
+    /// the first call as EOF.
+    auto path = std::filesystem::temp_directory_path() / "test_pipeline_mmap_contract";
+    {
+        std::ofstream f(path, std::ios::binary);
+        f.write("hello", 5);
+    }
+    MMappedFileCache cache{8};
+    MMapReadBufferFromFileWithCache buf(cache, path.string(), 0, 5);
+    EXPECT_FALSE(buf.supportsExternalBufferMode());
+    std::filesystem::remove(path);
 }
