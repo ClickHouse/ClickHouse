@@ -1090,8 +1090,15 @@ generate_hash_secret_salt(void) {
 #if defined(EXPAT_POCO)
   Poco::RandomInputStream rstr;
   Poco::BinaryReader rrdr(rstr);
-  rrdr >> entropy.k[0];
-  rrdr >> entropy.k[1];
+  // Read into `unsigned long` (64-bit on all supported platforms) because
+  // `Poco::BinaryReader` has no `uint64_t` overload on macOS, where
+  // `uint64_t` is `unsigned long long` rather than `unsigned long`.
+  unsigned long k0 = 0;
+  unsigned long k1 = 0;
+  rrdr >> k0;
+  rrdr >> k1;
+  entropy.k[0] = k0;
+  entropy.k[1] = k1;
   return ENTROPY_DEBUG("RandomInputStream", entropy);
 #else
 
