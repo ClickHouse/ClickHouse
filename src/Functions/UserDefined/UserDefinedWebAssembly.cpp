@@ -35,9 +35,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
-
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
-#include <IO/WriteBufferForWasmMemory.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -356,12 +354,23 @@ public:
             }
             else
             {
-                auto wb = std::make_unique<WriteBufferForWasmMemory>(wmm.get(), stop_token, 0);
-                auto out = context->getOutputFormat(serialization_format, *wb, block.cloneEmpty());
-                out->write(block);
-                out->finalize();
-                wb->cancel();
-                wasm_data.reset(wb->getHandle());
+                // Fallback: serialize into a CH-side String, then copy into WASM memory.
+                // WriteBufferForWasmMemory (zero-copy path) cannot be used here because it
+                // invokes clickhouse_create_buffer in the WASM compartment during construction,
+                // which crashes during constant-folding dry-run (executeImplDryRun).
+                StringWithMemoryTracking input_data;
+                {
+                    WriteBufferFromStringWithMemoryTracking buf(input_data);
+                    auto out = context->getOutputFormat(serialization_format, buf, block.cloneEmpty());
+                    formatBlock(out, block);
+                }
+                wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
+                auto wasm_mem = wasm_data.getMemoryView();
+                if (wasm_mem.size() != input_data.size())
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "Cannot allocate WASM buffer of size {}, got {}",
+                        input_data.size(), wasm_mem.size());
+                std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
             }
         }
 
