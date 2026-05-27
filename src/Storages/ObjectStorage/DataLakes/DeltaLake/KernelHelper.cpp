@@ -72,10 +72,13 @@ ffi::EngineBuilder * IKernelHelper::createBuilder() const
         /// error allocation (Err) — both must be released to avoid leaks.
         try
         {
-            auto engine = KernelUtils::unwrapResult(ffi::builder_build(builder), "createBuilder(cleanup)");
+            auto * engine = KernelUtils::unwrapResult(ffi::builder_build(builder), "createBuilder(cleanup)");
             ffi::free_engine(engine);
         }
-        catch (...) {} // Ok: preserve the original exception
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         throw;
     }
 
