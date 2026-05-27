@@ -106,19 +106,55 @@ separate via `compare_aliases = true`, so `SELECT 1 AS a` vs
 
 ### Locus
 
-All changes inside `src/Analyzer/inlineMaterializedCTEIfNeeded.cpp`.
-The public signature stays:
+Primary changes inside `src/Analyzer/inlineMaterializedCTEIfNeeded.cpp`.
+Companion cleanup in `src/Analyzer/Resolve/QueryAnalyzer.{h,cpp}`.
+
+`MaterializedCTE` is not changed (we considered storing nesting depth
+on the struct but ruled it out: depth becomes stale once inlining
+removes references).
+
+#### Signature change
+
+The public function loses the `reused_materialized_cte` out-parameter.
+The set is now derivable from the deduped tree and is built locally:
 
 ```cpp
+// before
 void inlineMaterializedCTEIfNeeded(
     QueryTreeNodePtr & node,
     ReusedMaterializedCTEs & reused_materialized_cte,
     ContextPtr context);
+
+// after
+void inlineMaterializedCTEIfNeeded(
+    QueryTreeNodePtr & node,
+    ContextPtr context);
 ```
 
-Internally the function becomes a three-step pipeline. `MaterializedCTE`
-is not changed (we considered storing nesting depth on the struct but
-ruled it out: depth becomes stale once inlining removes references).
+`ReusedMaterializedCTEs` (currently `std::unordered_set<MaterializedCTEPtr>`
+typedef in the header) becomes a file-local detail and moves into
+`inlineMaterializedCTEIfNeeded.cpp` along with
+`InlineMaterializedCTEsVisitor`. Nothing outside the file uses the
+type after the signature change.
+
+#### Companion cleanup in `QueryAnalyzer`
+
+The `std::unordered_set<MaterializedCTEPtr> reused_materialized_cte;`
+member at `src/Analyzer/Resolve/QueryAnalyzer.h:306` is deleted. The
+incremental `reused_materialized_cte.insert(table_node->getMaterializedCTE());`
+at `src/Analyzer/Resolve/QueryAnalyzer.cpp:1302` is deleted. The call
+site at line 274 becomes `inlineMaterializedCTEIfNeeded(node, context);`.
+
+Rationale: before this change, the set was incrementally accumulated
+during identifier resolution as a side-effect of `tryResolveIdentifierFromCTE`
+encountering a CTE `TableNode` for the second time. That accumulation
+was always tied to pointer identity; with dedup, identity is now
+established post-resolution, so the only correct moment to count
+references is *after* the dedup pass has finished. There is no longer
+any value computed during resolution that the inline pass needs;
+keeping the member and the line-1302 insert as a redundant
+pre-population would just be dead work that risks future readers
+treating it as load-bearing.
 
 ### Step A - `deduplicateMaterializedCTEs(node, context)` (file-local static)
 
@@ -181,31 +217,33 @@ ruled it out: depth becomes stale once inlining removes references).
    `MaterializedCTEWeakPtr` (`src/Storages/StorageMemory.h:129/149`)
    so no cycle. Clean handoff.
 
-### Step B - `recomputeReusedMaterializedCTEs(node, reused_materialized_cte)` (file-local static)
+### Step B - `collectReusedMaterializedCTEs(node) -> ReusedMaterializedCTEs` (file-local static)
 
-The set is owned by `QueryAnalyzer` and was populated during resolution
-against the pre-dedup (now-stale) pointers. Step B fixes it:
+The set is built fresh from the deduped tree:
 
-1. `reused_materialized_cte.clear();`
-2. Walk the tree once; for each `TableNode` whose
+1. Walk the tree once; for each `TableNode` whose
    `getMaterializedCTE()` is non-null, increment a counter in a local
    `std::unordered_map<MaterializedCTEPtr, size_t>`.
-3. Insert every pointer with count >= 2 back into the set.
+2. Return a `ReusedMaterializedCTEs` containing every pointer with
+   count >= 2.
 
 After Step B, the set contains exactly the canonical pointers that are
 referenced from >= 2 places in the deduped tree - including
 cross-branch references that previously couldn't accumulate because
-they hit distinct pointers.
+they hit distinct pointers. The set lives only for the remaining
+duration of `inlineMaterializedCTEIfNeeded`; nothing outside the
+function depends on it.
 
-### Step C - existing `InlineMaterializedCTEsVisitor` (unchanged)
+### Step C - existing `InlineMaterializedCTEsVisitor` (unchanged behavior)
 
-The set passed to it now reflects reality. CTEs that survived dedup
-with multiple references stay materialized; CTEs that genuinely have a
+Driven by the set returned from Step B. CTEs that survived dedup with
+multiple references stay materialized; CTEs that genuinely have a
 single use get inlined as today.
 
 The existing `addExternalTable` loop in `inlineMaterializedCTEIfNeeded`
-runs over the corrected set; each `temporary_table_name` is registered
-exactly once because the set contains only canonical pointers.
+runs over the locally-built set; each `temporary_table_name` is
+registered exactly once because the set contains only canonical
+pointers.
 
 ## Edge cases
 
