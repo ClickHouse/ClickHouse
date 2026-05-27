@@ -113,6 +113,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
+    extern const SettingsUInt64 max_bytes_before_external_join;
 }
 
 
@@ -378,7 +379,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                             }
                         }
 
-                        NameAndTypePair key{column_name, use_nulls ? makeNullableOrLowCardinalityNullableSafe(node->result_type) : node->result_type };
+                        NameAndTypePair key{column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                         grouping_set_list.push_back(key);
 
@@ -432,7 +433,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                         }
                     }
 
-                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullableOrLowCardinalityNullableSafe(node->result_type) : node->result_type };
+                    NameAndTypePair key = NameAndTypePair{ column_name, use_nulls ? makeNullableSafe(node->result_type) : node->result_type };
 
                     /// Aggregation keys are uniqued.
                     if (!unique_keys.contains(key.name))
@@ -841,8 +842,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
             window_function.function_node->getNullsAction(),
             window_function.argument_types,
             window_function.function_parameters,
-            properties,
-            AggregateFunctionStateVariant::Window);
+            properties);
 
         // Find the window corresponding to this function. It may be either
         // referenced by name and previously defined in WINDOW clause, or it
@@ -1035,7 +1035,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
-        if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
+        if (settings[Setting::max_bytes_before_external_join] > 0 && context->getTempDataOnDisk()
             && GraceHashJoin::isSupported(analyzed_join))
         {
             Block left_sample_block(left_sample_columns);
@@ -1094,7 +1094,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     {
         const auto & settings = context->getSettingsRef();
 
-        if (analyzed_join->maxBytesBeforeExternalJoin() > 0 && context->getTempDataOnDisk()
+        if (settings[Setting::max_bytes_before_external_join] > 0 && context->getTempDataOnDisk()
             && GraceHashJoin::isSupported(analyzed_join))
         {
             Block left_sample_block(left_sample_columns);

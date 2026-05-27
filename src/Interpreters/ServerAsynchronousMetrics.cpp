@@ -28,9 +28,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/StorageSharedMergeTree.h>
-#endif
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
@@ -48,11 +45,6 @@ namespace HistogramMetrics
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int TABLE_IS_READ_ONLY;
-}
 
 namespace
 {
@@ -329,11 +321,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_index_granularity_bytes_in_memory = 0;
         size_t total_index_granularity_bytes_in_memory_allocated = 0;
 
-        size_t total_projection_primary_key_bytes_memory = 0;
-        size_t total_projection_primary_key_bytes_memory_allocated = 0;
-        size_t total_projection_index_granularity_bytes_in_memory = 0;
-        size_t total_projection_index_granularity_bytes_in_memory_allocated = 0;
-
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -381,14 +368,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
                         total_index_granularity_bytes_in_memory += part->getIndexGranularityBytes();
                         total_index_granularity_bytes_in_memory_allocated += part->getIndexGranularityAllocatedBytes();
-
-                        for (const auto & [_, proj_part] : part->getProjectionParts())
-                        {
-                            total_projection_primary_key_bytes_memory += proj_part->getIndexSizeInBytes();
-                            total_projection_primary_key_bytes_memory_allocated += proj_part->getIndexSizeInAllocatedBytes();
-                            total_projection_index_granularity_bytes_in_memory += proj_part->getIndexGranularityBytes();
-                            total_projection_index_granularity_bytes_in_memory_allocated += proj_part->getIndexGranularityAllocatedBytes();
-                        }
                     }
                 }
 
@@ -414,17 +393,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         }
                         catch (...)
                         {
-                            /// The table can transition to readonly between the `status.is_readonly`
-                            /// check above and the call to `getReplicaDelays` (which calls
-                            /// `assertNotReadonly` internally). This is a benign race for a
-                            /// background metrics thread, so do not pollute the error log /
-                            /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
-                            auto level = getCurrentExceptionCode() == ErrorCodes::TABLE_IS_READ_ONLY
-                                ? LogsLevel::debug
-                                : LogsLevel::error;
                             tryLogCurrentException(__PRETTY_FUNCTION__,
-                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
-                                level);
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                         }
                     }
                 }
@@ -463,11 +433,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
-
-        new_values["TotalProjectionPrimaryKeyBytesInMemory"] = { total_projection_primary_key_bytes_memory, "The total amount of memory (in bytes) used by projection primary key values (only takes active parts into account)." };
-        new_values["TotalProjectionPrimaryKeyBytesInMemoryAllocated"] = { total_projection_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for projection primary key values (only takes active parts into account)." };
-        new_values["TotalProjectionIndexGranularityBytesInMemory"] = { total_projection_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by projection index granularity (only takes active parts into account)." };
-        new_values["TotalProjectionIndexGranularityBytesInMemoryAllocated"] = { total_projection_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for projection index granularity (only takes active parts into account)." };
     }
 
     {
