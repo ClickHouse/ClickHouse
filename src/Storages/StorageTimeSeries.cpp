@@ -7,6 +7,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -17,7 +19,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
+#include <Storages/TimeSeries/makeTimeSeriesReadQuery.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
@@ -536,16 +540,21 @@ VirtualColumnsDescription StorageTimeSeries::createVirtuals()
 }
 
 void StorageTimeSeries::readImpl(
-    QueryPlan & /* query_plan */,
-    const Names & /* column_names */,
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
+    auto select_query = makeTimeSeriesReadQuery(*this, column_names, local_context);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, /*is_subquery=*/false,
+                                      query_info.settings_limit_offset_done);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, local_context, options, column_names);
+    interpreter.addStorageLimits(*query_info.storage_limits);
+    query_plan = std::move(interpreter).extractQueryPlan();
 }
 
 
