@@ -3,7 +3,7 @@
 
 #include <numeric>
 
-#include <Core/AccurateComparison.h>
+#include <Common/checkStackSize.h>
 #include <Core/Field.h>
 
 #include <Common/CacheBase.h>
@@ -57,8 +57,6 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
-
-#include <base/EnumReflection.h>
 
 
 namespace CurrentMetrics
@@ -114,41 +112,6 @@ size_t AvroInputStreamReadBufferAdapter::byteCount() const
     return in.count();
 }
 
-/// Helper to convert and insert a numeric value.
-/// Only floating-point to integer/float conversions can cause undefined behavior,
-/// so we only apply range checks for floating-point source types.
-/// Integer-to-integer conversions are always defined (may truncate/wrap).
-template <typename Source, typename Target, typename Column, bool is_ipv4 = false>
-static void convertAndInsert(Column & column, Source value, TypeIndex type_index)
-{
-    auto insert = [&](Target value_to_insert)
-    {
-        if constexpr (is_ipv4)
-            column.insertValue(IPv4(value_to_insert));
-        else
-            column.insertValue(value_to_insert);
-    };
-
-    if constexpr (std::is_floating_point_v<Source>)
-    {
-        // Float-to-integer, float-to-float overflow, and casting NaN to integer are UB - must check
-        Target converted;
-        if ((!std::is_floating_point_v<Target> && isNaN(value)) ||
-         !accurate::convertNumeric<Source, Target, /* strict= */ false>(value, converted))
-        {
-            throw Exception(
-                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                "Cannot convert Avro value {} to {}", value, magic_enum::enum_name(type_index));
-        }
-        insert(converted);
-    }
-    else
-    {
-        // Integer-to-integer conversions are always defined (may truncate/wrap)
-        insert(static_cast<Target>(value));
-    }
-}
-
 /// Insert value with conversion to the column of target type.
 template <typename T>
 static void insertNumber(IColumn & column, WhichDataType type, T value)
@@ -156,52 +119,49 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
     switch (type.idx)
     {
         case TypeIndex::UInt8:
-            convertAndInsert<T, UInt8>(assert_cast<ColumnUInt8 &>(column), value, type.idx);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
-        case TypeIndex::Date:
-            [[fallthrough]];
+        case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
-            convertAndInsert<T, UInt16>(assert_cast<ColumnUInt16 &>(column), value, type.idx);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
-        case TypeIndex::DateTime:
-            [[fallthrough]];
+        case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
-            convertAndInsert<T, UInt32>(assert_cast<ColumnUInt32 &>(column), value, type.idx);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         case TypeIndex::UInt64:
-            convertAndInsert<T, UInt64>(assert_cast<ColumnUInt64 &>(column), value, type.idx);
+            assert_cast<ColumnUInt64 &>(column).insertValue(static_cast<UInt64>(value));
             break;
         case TypeIndex::Int8:
-            convertAndInsert<T, Int8>(assert_cast<ColumnInt8 &>(column), value, type.idx);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         case TypeIndex::Int16:
-            convertAndInsert<T, Int16>(assert_cast<ColumnInt16 &>(column), value, type.idx);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
-        case TypeIndex::Date32:
-            [[fallthrough]];
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Int32:
-            convertAndInsert<T, Int32>(assert_cast<ColumnInt32 &>(column), value, type.idx);
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Int64:
-            convertAndInsert<T, Int64>(assert_cast<ColumnInt64 &>(column), value, type.idx);
+            assert_cast<ColumnInt64 &>(column).insertValue(static_cast<Int64>(value));
             break;
         case TypeIndex::Float32:
-            convertAndInsert<T, Float32>(assert_cast<ColumnFloat32 &>(column), value, type.idx);
+            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
             break;
         case TypeIndex::Float64:
-            convertAndInsert<T, Float64>(assert_cast<ColumnFloat64 &>(column), value, type.idx);
+            assert_cast<ColumnFloat64 &>(column).insertValue(static_cast<Float64>(value));
             break;
         case TypeIndex::Decimal32:
-            convertAndInsert<T, Int32>(assert_cast<ColumnDecimal<Decimal32> &>(column), value, type.idx);
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Decimal64:
-            convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<Decimal64> &>(column), value, type.idx);
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         case TypeIndex::DateTime64:
-            convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<DateTime64> &>(column), value, type.idx);
+            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
             break;
         case TypeIndex::IPv4:
-            convertAndInsert<T, UInt32, ColumnIPv4, true>(assert_cast<ColumnIPv4 &>(column), value, type.idx);
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
             break;
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type is not compatible with Avro");
@@ -296,6 +256,8 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
 {
+    checkStackSize();
+
     if (target_type->lowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(target_type.get());
@@ -394,8 +356,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
-                    // Cast bool to UInt8 since accurate::convertNumeric doesn't support bool
-                    insertNumber(column, target, static_cast<UInt8>(decoder.decodeBool()));
+                    insertNumber(column, target, decoder.decodeBool());
                     return true;
                 };
             }
@@ -667,15 +628,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             break;
         }
         case avro::AVRO_SYMBOLIC:
-        {
-            const auto & sym_name = root_node->name().fullname();
-            if (!symbolic_deserialize_guard.insert(sym_name).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Recursive Avro schema is not supported: type '{}' references itself", sym_name);
-            auto result = createDeserializeFn(avro::resolveSymbol(root_node), target_type);
-            symbolic_deserialize_guard.erase(sym_name);
-            return result;
-        }
+            return createDeserializeFn(avro::resolveSymbol(root_node), target_type);
         case avro::AVRO_RECORD:
         {
             if (target.isTuple())
@@ -780,6 +733,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
 {
+    checkStackSize();
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING:
@@ -922,6 +877,8 @@ static inline std::string concatPath(const std::string & a, const std::string & 
 
 AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path)
 {
+    checkStackSize();
+
     if (node->type() == avro::AVRO_SYMBOLIC)
     {
         /// continue traversal only if some column name starts with current_path
@@ -930,26 +887,9 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             return col.name.starts_with(current_path);
         });
         auto resolved_node = avro::resolveSymbol(node);
-
-        /// When we do not need to descend into the referenced type, take the safe skip path.
-        /// `createSkipFn` handles cyclic symbolic references via `symbolic_skip_fn_map` (lazy
-        /// placeholder that is filled in on first resolution). So legitimately recursive
-        /// schemas (e.g. a LinkedList with optional self-reference) are still readable when
-        /// the requested columns do not traverse into the cycle.
-        if (!keep_going)
-            return AvroDeserializer::Action(createSkipFn(resolved_node));
-
-        /// If we do need to descend, we cannot build a finite deserializer when the same
-        /// symbolic reference appears on the current path — that would require infinite
-        /// unrolling. Guard with a path-stack (insert on entry, erase on exit) so sibling
-        /// re-uses of the same named type are allowed, and only back-edges are rejected.
-        const auto & sym_name = node->name().fullname();
-        if (!symbolic_deserialize_guard.insert(sym_name).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Recursive Avro schema is not supported: type '{}' references itself", sym_name);
-        Action result = createAction(header, resolved_node, current_path);
-        symbolic_deserialize_guard.erase(sym_name);
-        return result;
+        if (keep_going)
+            return createAction(header, resolved_node, current_path);
+        return AvroDeserializer::Action(createSkipFn(resolved_node));
     }
 
     if (header.has(current_path))
@@ -1102,7 +1042,8 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 
 void AvroRowInputFormat::readPrefix()
 {
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*in));
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
+        std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
     file_reader_ptr->init();
@@ -1206,7 +1147,7 @@ private:
 
                 auto schema = json_body->getValue<std::string>("schema");
                 LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
-                return avro::compileJsonSchemaFromString(schema);
+                return avro::compileJsonSchemaFromString(schema, MAX_AVRO_SCHEMA_DEPTH);
             }
             catch (const Exception &)
             {
@@ -1327,7 +1268,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
         auto schema = schema_registry->getSchema(schema_id);
         AvroDeserializer deserializer(
             output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
-        it = deserializer_cache.emplace(schema_id, deserializer).first;
+        it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
     }
     return it->second;
 }
@@ -1347,7 +1288,8 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     }
     else
     {
-        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(in));
+        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
+            std::make_unique<AvroInputStreamReadBufferAdapter>(in), MAX_AVRO_SCHEMA_DEPTH);
         root_node = file_reader_ptr->dataSchema().root();
     }
 
@@ -1363,12 +1305,9 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
 {
-    std::unordered_set<std::string> seen_names;
-    return avroNodeToDataTypeImpl(node, seen_names);
-}
+    checkStackSize();
 
-DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names)
-{
+
     switch (node->type())
     {
         case avro::Type::AVRO_INT:
@@ -1437,7 +1376,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
         }
         case avro::Type::AVRO_ARRAY:
-            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names));
+            return std::make_shared<DataTypeArray>(avroNodeToDataType(node->leafAt(0)));
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
@@ -1445,7 +1384,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             // Treat union[T] as just T
             if (node->leaves() == 1)
             {
-                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names);
+                return avroNodeToDataType(node->leafAt(0));
             }
 
             // Treat union[T, NULL] and union[NULL, T] as Nullable(T)
@@ -1454,7 +1393,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names);
+                auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index));
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
 
@@ -1470,37 +1409,27 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names));
+                nested_types.push_back(avroNodeToDataType(avro_node));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
         case avro::Type::AVRO_SYMBOLIC:
-        {
-            auto resolved = avro::resolveSymbol(node);
-            return avroNodeToDataTypeImpl(resolved, seen_names);
-        }
+            return avroNodeToDataType(avro::resolveSymbol(node));
         case avro::Type::AVRO_RECORD:
         {
-            const auto & name = node->name().fullname();
-            if (!seen_names.insert(name).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Recursive Avro schema is not supported: type '{}' references itself", name);
-
             DataTypes nested_types;
             nested_types.reserve(node->leaves());
             Names nested_names;
             nested_names.reserve(node->leaves());
             for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
-                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names));
+                nested_types.push_back(avroNodeToDataType(node->leafAt(i)));
                 nested_names.push_back(node->nameAt(i));
             }
-
-            seen_names.erase(name);
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
         case avro::Type::AVRO_MAP:
-            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names), avroNodeToDataTypeImpl(node->leafAt(1), seen_names));
+            return std::make_shared<DataTypeMap>(avroNodeToDataType(node->leafAt(0)), avroNodeToDataType(node->leafAt(1)));
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
     }

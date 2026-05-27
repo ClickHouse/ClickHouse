@@ -117,7 +117,7 @@ def main():
             test_results.append(
                 Result.create_from(
                     name="Start server",
-                    status=Result.Status.OK,
+                    status=Result.Status.SUCCESS,
                     info="Server started successfully",
                 )
             )
@@ -131,7 +131,7 @@ def main():
             test_results.append(
                 Result.create_from(
                     name="Start server",
-                    status=Result.Status.FAIL,
+                    status=Result.Status.FAILED,
                     info=f"Server failed to start within timeout\n{err_content}",
                 )
             )
@@ -139,7 +139,7 @@ def main():
         test_results.append(
             Result.create_from(
                 name="Start server",
-                status=Result.Status.FAIL,
+                status=Result.Status.FAILED,
                 info=f"Exception starting server: {e}",
             )
         )
