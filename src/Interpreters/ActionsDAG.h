@@ -245,6 +245,12 @@ public:
     /// The order of outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
+    /// Remove the given nodes, bypassing `removeUnusedActions`'s row-changing
+    /// carve-out for ARRAY_JOIN. Nodes still required by any output are kept.
+    /// Caller MUST ensure removed ARRAY_JOIN is recomputed elsewhere in the plan.
+    /// Returns count of removed nodes.
+    size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
+
     void removeAliasesForFilter(const std::string & filter_name);
 
     /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done

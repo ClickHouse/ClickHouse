@@ -19,6 +19,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -65,6 +66,14 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
     return key_values;
 }
 
+FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
+{
+    FormatSettings hive_format_settings = format_settings.value_or(getFormatSettings(context));
+    hive_format_settings.allow_number_leading_zeros = true;
+    hive_format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    return hive_format_settings;
+}
+
 NamesAndTypesList extractHivePartitionColumnsFromPath(
     const ColumnsDescription & storage_columns,
     const std::string & sample_path,
@@ -87,8 +96,7 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         }
         else
         {
-            auto hive_format_settings = format_settings ? *format_settings : getFormatSettings(context);
-            hive_format_settings.allow_number_leading_zeros = true;
+            const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
             if (const auto type = tryInferDataTypeByEscapingRule(
                     value, hive_format_settings, FormatSettings::EscapingRule::Raw))
             {
@@ -114,9 +122,13 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
 void addPartitionColumnsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
-    const std::string & path)
+    const std::string & path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
 {
     const auto hive_map = parseHivePartitioningKeysAndValues(path);
+
+    const auto hive_format_settings = buildHiveFormatSettings(format_settings, context);
 
     for (const auto & column : hive_partition_columns_to_read_from_file_path)
     {
@@ -133,8 +145,6 @@ void addPartitionColumnsToChunk(
                 path);
         }
 
-        FormatSettings hive_format_settings;
-        hive_format_settings.allow_number_leading_zeros = true;
         auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(String(it->second)), *column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst();
         chunk.addColumn(std::move(chunk_column));
     }
