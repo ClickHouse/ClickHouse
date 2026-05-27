@@ -29,8 +29,13 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
     LIMIT 1
 "
 
-# Must not throw std::out_of_range. We only assert the row count; the random
-# value itself is irrelevant for the regression check.
+# Force the nested column read path. `SELECT count()` alone can be answered
+# from Parquet row-group metadata via `optimize_count_from_files` and would
+# not exercise `readNonNullableColumnFromArrowColumn` where the original
+# `std::out_of_range` was raised.
+${CLICKHOUSE_CLIENT} --query "SELECT c0 FROM ${TABLE} FORMAT Null"
+
+# Sanity check on the row we inserted.
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
