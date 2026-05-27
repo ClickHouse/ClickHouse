@@ -27,13 +27,14 @@ $CLICKHOUSE_CLIENT -m --query "
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_105912_conc SELECT number, number % 256 FROM numbers(1000)"
 
 # Background INSERTs running while the mutation is in flight. Bounded by a
-# fixed iteration count so the test cannot hang.
+# fixed iteration count so the test cannot hang. Stderr is intentionally not
+# redirected: any unexpected INSERT failure must surface so the concurrent
+# coverage cannot become vacuous.
 for i in 1 2 3 4; do
     (
         for j in $(seq 1 20); do
             $CLICKHOUSE_CLIENT --query \
-                "INSERT INTO t_105912_conc SELECT number + $i * 100000 + $j * 1000, (number + $j) % 256 FROM numbers(100)" \
-                2>/dev/null
+                "INSERT INTO t_105912_conc SELECT number + $i * 100000 + $j * 1000, (number + $j) % 256 FROM numbers(100)"
         done
     ) &
 done
@@ -52,10 +53,11 @@ wait
 $CLICKHOUSE_CLIENT --query \
     "SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_105912_conc' AND name = 'y'"
 
-# Sanity check on the row count: we inserted 1000 rows in the seed and at
-# most 4 * 20 * 100 = 8000 more from the background loops, so the count is
-# strictly between 1000 and 9001.
+# Sanity check on the row count: 1000 seed rows plus at most 4 * 20 * 100 =
+# 8000 from the background loops. We require strictly more than 1000 so at
+# least one background INSERT actually completed, keeping the concurrent
+# coverage non-vacuous.
 $CLICKHOUSE_CLIENT --query \
-    "SELECT count() >= 1000 AND count() <= 9000 FROM t_105912_conc"
+    "SELECT count() > 1000 AND count() <= 9000 FROM t_105912_conc"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_105912_conc SYNC"
