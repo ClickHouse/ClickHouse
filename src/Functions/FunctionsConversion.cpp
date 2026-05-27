@@ -1,5 +1,7 @@
 #include <Functions/FunctionsConversion.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
 #    include <DataTypes/Native.h>
@@ -267,8 +269,8 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & offsets = variant_column.getOffsets();
 
-    std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
-    std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
+    VectorWithMemoryTracking<ColumnPtr> cast_variant_columns(variant_types.size());
+    VectorWithMemoryTracking<bool> cast_variant_columns_is_const(variant_types.size(), false);
     for (size_t i = 0; i != variant_types.size(); ++i)
     {
         if (variant_column.getVariantPtrByGlobalDiscriminator(i)->empty())
