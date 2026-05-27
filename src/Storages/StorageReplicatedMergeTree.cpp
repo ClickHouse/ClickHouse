@@ -8893,20 +8893,31 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 {
     Coordination::Requests delete_requests;
     getClearBlocksInPartitionOps(delete_requests, zookeeper, partition_id, min_block_num, max_block_num);
-    Coordination::Responses delete_responses;
-    auto code = zookeeper.tryMulti(delete_requests, delete_responses);
-    if (code != Coordination::Error::ZOK)
+
+    size_t total_removed = delete_requests.size();
+
+    /// Send removals in batches to avoid exceeding ZooKeeper's maximum message size.
+    /// Without batching, tables with large deduplication windows can produce multi-requests
+    /// exceeding 1MB (the default jute.maxbuffer), causing the operation to fail.
+    for (size_t batch_start = 0; batch_start < delete_requests.size(); batch_start += zkutil::MULTI_BATCH_SIZE)
     {
-        for (size_t i = 0; i < delete_requests.size(); ++i)
-            if (delete_responses[i]->error != Coordination::Error::ZOK)
-                LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", delete_requests[i]->getPath(), delete_responses[i]->error);
+        size_t batch_end = std::min(batch_start + zkutil::MULTI_BATCH_SIZE, delete_requests.size());
+        Coordination::Requests batch_ops(delete_requests.begin() + batch_start, delete_requests.begin() + batch_end);
+        Coordination::Responses batch_responses;
+        auto code = zookeeper.tryMulti(batch_ops, batch_responses);
+        if (code != Coordination::Error::ZOK)
+        {
+            for (size_t i = 0; i < batch_ops.size(); ++i)
+                if (batch_responses[i]->error != Coordination::Error::ZOK)
+                    LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", batch_ops[i]->getPath(), batch_responses[i]->error);
+        }
     }
 
     async_block_ids_cache.truncate();
     deduplication_hashes_cache.truncate();
 
     LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
-              delete_requests.size(), partition_id, min_block_num, max_block_num);
+              total_removed, partition_id, min_block_num, max_block_num);
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(
