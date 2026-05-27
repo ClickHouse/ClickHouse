@@ -1225,12 +1225,17 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position) const
 {
-    /// Shared with the parent (immutable; thread-safe to share):
+    /// Shared with the parent (immutable or thread-safe to share):
     ///   - `source` (concurrent `open()` is OK; required by `canReadAt()`)
     ///   - `stored_objects`, `cache_key`, `window_size`, `min_bytes_for_seek`
     ///   - `caches` (each `ICacheProvider` is internally thread-safe)
     ///   - `decryption_layers`, `decryption_headers`, `data_start_offset`
     ///     (set once in `initDecryption`, never mutated)
+    ///   - `buffer_limit`: shared so the transient's live connection counts
+    ///     against the server-wide budget. Within one `readBigAt` the
+    ///     transient keeps its slot for the whole request and reuses the
+    ///     open connection across windows; on slot exhaustion it falls back
+    ///     to one-shot reads, same as the parent under pressure.
     ///
     /// Private to the transient (so concurrent `readBigAt` calls don't race
     /// with each other or with the parent's `next()`/`seek()`):
@@ -1242,14 +1247,14 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     ///   - `prefetch_pool`: a one-shot read can't amortise prefetch latency;
     ///     sharing the parent's pool would let a transient steal slots from a
     ///     concurrently-running sequential reader.
-    ///   - `buffer_limit`: live-buffer slots are for state reuse across calls
-    ///     on the SAME stream; a transient closes immediately.
     ///   - `reader_executor_log`: the transient's stats land in global
     ///     `ProfileEvents` via the destructor anyway; we don't want a row per
     ///     `readBigAt` in `system.reader_executor_log`.
     auto t = std::make_unique<ReaderExecutor>(
         source, stored_objects, caches,
         window_size, min_bytes_for_seek, log_file_path);
+
+    t->buffer_limit = buffer_limit;
 
 #if USE_SSL
     t->decryption_layers = decryption_layers;
