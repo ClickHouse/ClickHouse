@@ -325,12 +325,12 @@ bool UserDefinedExecutableFunctionFactory::has(const String & function_name, Con
     return result;
 }
 
-Strings UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
+VectorWithMemoryTracking<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto loaded_objects = loader.getLoadedObjects();
 
-    Strings registered_names;
+    VectorWithMemoryTracking<String> registered_names;
     registered_names.reserve(loaded_objects.size());
 
     for (auto & loaded_object : loaded_objects)

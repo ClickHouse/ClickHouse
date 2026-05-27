@@ -869,9 +869,9 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     map.erase(it);
 }
 
-std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const
 {
-    std::vector<String> names;
+    VectorWithMemoryTracking<String> names;
     names.reserve(map.size());
     for (const auto & pair : map)
         names.push_back(pair.first);

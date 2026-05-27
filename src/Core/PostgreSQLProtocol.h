@@ -750,7 +750,7 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    std::vector<String> parameters;
+    VectorWithMemoryTracking<String> parameters;
     Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
@@ -1730,7 +1730,7 @@ private:
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
-    String getStatement(const String & function_name, const std::vector<String> & arguments)
+    String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {
         auto it = statements.find(function_name);
         if (it == statements.end())

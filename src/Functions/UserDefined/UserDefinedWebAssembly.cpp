@@ -803,9 +803,9 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
     };
 
-    Strings getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        Strings result;
+        VectorWithMemoryTracking<String> result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

@@ -104,9 +104,9 @@ bool EnumValues<T>::tryGetValue(T & x, std::string_view field_name) const
 }
 
 template <typename T>
-Names EnumValues<T>::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> EnumValues<T>::getAllRegisteredNames() const
 {
-    Names result;
+    VectorWithMemoryTracking<String> result;
     for (const auto & value : values)
         result.emplace_back(value.first);
     return result;

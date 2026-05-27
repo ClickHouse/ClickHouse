@@ -123,9 +123,9 @@ public:
         return storages;
     }
 
-    std::vector<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(storages.begin(), storages.end(), std::back_inserter(result), getter);
         return result;

@@ -22,7 +22,7 @@ public:
 
     bool has(const String & object_name) const override;
 
-    Strings getAllObjectNames() const override;
+    VectorWithMemoryTracking<String> getAllObjectNames() const override;
 
     VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const override;
 

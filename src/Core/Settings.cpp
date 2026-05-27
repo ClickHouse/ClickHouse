@@ -8395,7 +8395,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
 
@@ -8510,9 +8510,9 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     }
 }
 
-std::vector<String> SettingsImpl::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
 {
-    std::vector<String> all_settings;
+    VectorWithMemoryTracking<String> all_settings;
     for (const auto & setting_field : all())
         all_settings.push_back(setting_field.getName());
     return all_settings;
@@ -8643,7 +8643,7 @@ void Settings::setDefaultValue(std::string_view name)
     impl->resetToDefault(name);
 }
 
-std::vector<String> Settings::getHints(const String & name) const
+VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
 {
     return impl->getHints(name);
 }

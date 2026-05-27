@@ -1470,7 +1470,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            std::vector<std::string> possible_function_names;
+            VectorWithMemoryTracking<std::string> possible_function_names;
 
             auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());

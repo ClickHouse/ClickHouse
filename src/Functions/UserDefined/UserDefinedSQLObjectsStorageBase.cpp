@@ -55,9 +55,9 @@ bool UserDefinedSQLObjectsStorageBase::has(const String & object_name) const
     return tryGet(object_name) != nullptr;
 }
 
-Strings UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
+VectorWithMemoryTracking<String> UserDefinedSQLObjectsStorageBase::getAllObjectNames() const
 {
-    Strings object_names;
+    VectorWithMemoryTracking<String> object_names;
 
     std::lock_guard lock(mutex);
     object_names.reserve(object_name_to_create_object_map.size());

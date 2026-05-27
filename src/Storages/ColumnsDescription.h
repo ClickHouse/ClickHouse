@@ -246,7 +246,7 @@ public:
         return columns.empty();
     }
 
-    std::vector<String> getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     /// Keep the sequence of columns and allow to lookup by name.
     using ColumnsContainer = boost::multi_index_container<

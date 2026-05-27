@@ -1186,7 +1186,7 @@ FormatFactory & FormatFactory::instance()
     return ret;
 }
 
-std::vector<String> FormatFactory::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> FormatFactory::getAllRegisteredNames() const
 {
     return KnownFormatNames::instance().getAllRegisteredNames();
 }

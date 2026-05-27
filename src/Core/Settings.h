@@ -147,7 +147,7 @@ struct Settings
     void set(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
-    std::vector<String> getHints(const String & name) const;
+    VectorWithMemoryTracking<String> getHints(const String & name) const;
     String toString() const;
 
     SettingsChanges changes() const;

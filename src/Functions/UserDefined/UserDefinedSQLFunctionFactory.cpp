@@ -258,7 +258,7 @@ bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
     return getContext()->getUserDefinedSQLObjectsStorage().has(function_name);
 }
 
-Strings UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
     return getContext()->getUserDefinedSQLObjectsStorage().getAllObjectNames();
 }
