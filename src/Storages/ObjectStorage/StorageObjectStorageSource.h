@@ -1,6 +1,9 @@
 #pragma once
+
+#include <future>
 #include <optional>
 #include <Common/re2.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -11,12 +14,13 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
+
 namespace DB
 {
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public ISource
+class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
 
@@ -47,7 +51,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     static std::shared_ptr<IObjectIterator> createFileIterator(
         StorageObjectStorageConfigurationPtr configuration,

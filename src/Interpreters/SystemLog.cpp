@@ -47,7 +47,6 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
-#include <Interpreters/HistogramMetricLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -375,13 +374,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
                                                                 DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
-    }
-
-    if (histogram_metric_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("histogram_metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        histogram_metric_log->startCollect(ThreadName::HISTOGRAM_METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (background_schedule_pool_log)
@@ -910,6 +902,22 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
         "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     StorageWithComment & storage_with_comment = storage_with_comment_ast->as<StorageWithComment &>();
+
+    /// The default engine string wraps `PARTITION BY` / `ORDER BY` / `PRIMARY KEY` /
+    /// `SAMPLE BY` arguments in artificial parentheses so the parser accepts both
+    /// single-expression and tuple forms. Clear the `parenthesized` flag so the formatter
+    /// does not emit those artificial wrapping parens in `system.tables.engine_full`.
+    if (auto * storage = storage_with_comment.storage->as<ASTStorage>())
+    {
+        if (storage->partition_by)
+            storage->partition_by->setParenthesized(false);
+        if (storage->order_by)
+            storage->order_by->setParenthesized(false);
+        if (storage->primary_key)
+            storage->primary_key->setParenthesized(false);
+        if (storage->sample_by)
+            storage->sample_by->setParenthesized(false);
+    }
 
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);

@@ -142,6 +142,7 @@ struct ProcessedManifestFileEntry
     // Always zero in case of format version 1
     Int64 sequence_number;
     Int32 resolved_schema_id;
+    String manifest_file_path;
 
     String dumpDeletesMatchingInfo() const;
 };

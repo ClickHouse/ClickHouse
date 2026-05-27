@@ -1,6 +1,8 @@
 #include <Poco/String.h>
 #include "config.h"
 
+#include <Core/Field.h>
+#include <Common/FieldVisitorToString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -35,6 +37,23 @@ namespace Setting
 extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 };
 
+namespace Iceberg
+{
+String computePartitionId(const Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return {};
+    String result;
+    for (const auto & val : partition_key_value)
+    {
+        if (!result.empty())
+            result += '_';
+        result += applyVisitor(FieldVisitorToString{}, val);
+    }
+    return result;
+}
+}
+
 #if USE_AVRO
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(
@@ -47,6 +66,8 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           schema_id_relevant_to_iterator_,
           data_manifest_file_entry_->sequence_number,
           data_manifest_file_entry_->parsed_entry->file_format,
+          /* manifest_file */ data_manifest_file_entry_->manifest_file_path,
+          /* partition_id */ Iceberg::computePartitionId(data_manifest_file_entry_->parsed_entry->partition_key_value),
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,
@@ -60,6 +81,12 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)
     : ObjectInfo(path_)
+{
+}
+
+IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_, const Iceberg::IcebergObjectSerializableInfo & info_)
+    : ObjectInfo(path_)
+    , info(info_)
 {
 }
 
@@ -89,7 +116,8 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
             info.file_format);
     }
     info.position_deletes_objects.emplace_back(
-        resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt);
+        resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt,
+        position_delete_object->sequence_number);
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path)
@@ -299,4 +327,3 @@ void IcebergObjectSerializableInfo::checkVersion(size_t protocol_version) const
     }
 }
 }
-

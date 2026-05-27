@@ -17,7 +17,7 @@ public:
     /// `in_` should be seekable and should be able to read the whole file from 0 to in_->getFileSize();
     /// in particular, don't call setReadUntilPosition() on `in_` directly, call
     /// CachedInMemoryReadBufferFromFile::setReadUntilPosition().
-    CachedInMemoryReadBufferFromFile(PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_);
+    CachedInMemoryReadBufferFromFile(PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const PageCacheSettings & settings_);
 
     String getFileName() const override;
     String getInfoForLog() override;
@@ -46,7 +46,7 @@ private:
     PageCacheByteRange cache_range; // offset is offset of `chunk` start
     SipHash cache_key_base_hash;
     PageCachePtr cache;
-    ReadSettings settings;
+    PageCacheSettings settings;
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     size_t file_offset_of_buffer_end = 0;

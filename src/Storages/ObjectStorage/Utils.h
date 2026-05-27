@@ -1,5 +1,7 @@
 #pragma once
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
@@ -117,5 +119,10 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const DB::ContextPtr & context,
     const Iceberg::IcebergPathResolver & path_resolver);
 #endif
+
+void expandPaimonKeeperMacrosIfNeeded(
+    const StorageFactory::Arguments & args,
+    const DataLakeStorageSettingsPtr & storage_settings);
+
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
@@ -25,10 +24,10 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
-struct FileBucketInfo;
-using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
-
 class PullingPipelineExecutor;
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 class StorageFile final : public IStorage
 {
@@ -218,7 +217,7 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
-class StorageFileSource : public ISource, WithContext
+class StorageFileSource final : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext
@@ -251,11 +250,6 @@ public:
         }
 
         const String & getFileNameInArchive();
-
-        /// Returns the (possibly virtual-column-filtered) list of files this iterator
-        /// will produce. Only meaningful when not reading from an archive and not
-        /// using distributed_processing.
-        const std::vector<std::string> & getFiles() const { return files; }
 private:
         std::vector<std::string> files;
 
@@ -296,7 +290,7 @@ private:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -307,6 +301,12 @@ private:
     String current_path;
     std::optional<size_t> current_file_size;
     std::optional<Poco::Timestamp> current_file_last_modified;
+    /// Sub-second precision token for the cache key, derived from the same `stat`
+    /// as `current_file_last_modified`. Kept separate so the user-visible
+    /// `_last_modified` virtual column keeps its existing second resolution while
+    /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
+    /// for in-place rewrites within the same wall-clock second.
+    std::optional<String> current_file_cache_version;
     struct stat current_archive_stat;
     std::optional<String> filename_override;
     Block sample_block;
@@ -319,17 +319,6 @@ private:
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
-
-    /// Optional subset-of-file assignment. When set, the input format only reads
-    /// these buckets (e.g. for Parquet — only the listed row groups). This is how
-    /// a single big file is processed in parallel by multiple sources.
-    FileBucketInfoPtr file_bucket_info;
-
-    /// When this source has been assigned a specific (file, bucket) pair, it
-    /// reads only that one file (once) and ignores the shared FilesIterator.
-    /// Set together with `file_bucket_info`.
-    std::optional<String> fixed_file_path;
-    bool fixed_file_consumed = false;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
