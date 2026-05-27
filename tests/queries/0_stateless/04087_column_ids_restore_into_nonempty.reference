@@ -6,3 +6,5 @@ throws_on_mismatch
 == counter-bump scenario ==
 1	x	1.5	99
 10	y	99	99
+== restore legacy backup into active-mapping destination ==
+throws_on_legacy_into_active

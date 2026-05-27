@@ -96,3 +96,43 @@ $CLIENT --query "ALTER TABLE t_orphan ADD COLUMN e UInt32 DEFAULT 99"
 $CLIENT --query "SELECT a, b, c, e FROM t_orphan ORDER BY a"
 
 $CLIENT --query "DROP TABLE t_orphan SYNC"
+
+# Scenario 3: backup has no `column_ids.json` (legacy backup, e.g. taken before
+# column IDs were enabled), restored into a destination with an active mapping.
+# Without the guard, parts attach with legacy logical filenames and the reader
+# silently returns defaults; the guard makes this fail loudly instead.
+backup3="${CLICKHOUSE_TEST_UNIQUE_NAME}_b3"
+$CLIENT --query "DROP TABLE IF EXISTS t_legacy SYNC"
+$CLIENT --query "
+CREATE TABLE t_legacy (a UInt32, b String, c Float64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+"
+echo "INSERT INTO t_legacy VALUES (1, 'x', 1.5)" | $CLIENT
+$CLIENT --query "BACKUP TABLE t_legacy TO Disk('backups', '${backup3}')" > /dev/null
+$CLIENT --query "DROP TABLE t_legacy SYNC"
+
+# Simulate a legacy backup taken before the column-IDs feature shipped by
+# removing column_ids.json from the backup directory.  Backups produced by
+# current code always include it, so the guard is otherwise unreachable.
+backups_root=$($CLIENT --query "SELECT path FROM system.disks WHERE name = 'backups'")
+find "${backups_root}${backup3}" -name 'column_ids.json' -type f -delete 2>/dev/null || true
+
+# Destination: same name, but with column IDs active and pushed off identity.
+$CLIENT --query "
+CREATE TABLE t_legacy (a UInt32, b String, c Float64)
+ENGINE = MergeTree ORDER BY a
+SETTINGS serialization_info_version = 'with_column_ids',
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+"
+$CLIENT --query "ALTER TABLE t_legacy DROP COLUMN c"
+$CLIENT --query "ALTER TABLE t_legacy ADD COLUMN c Float64"
+echo "INSERT INTO t_legacy VALUES (10, 'y', 99)" | $CLIENT
+
+echo "== restore legacy backup into active-mapping destination =="
+$CLIENT --query "
+RESTORE TABLE t_legacy FROM Disk('backups', '${backup3}')
+SETTINGS allow_non_empty_tables = 1, allow_different_table_def = 1
+" 2>&1 | grep -qE "backup has no.+legacy backup" && echo "throws_on_legacy_into_active" || echo "missing_guard"
+
+$CLIENT --query "DROP TABLE t_legacy SYNC"

@@ -7240,7 +7240,24 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     /// non-identity column IDs.  Older backups predating this fix have no
     /// `column_ids.json`; they fall through to the legacy logical-name path.
     auto column_ids_in_backup = fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME;
-    if (backup->fileExists(column_ids_in_backup))
+    if (!backup->fileExists(column_ids_in_backup))
+    {
+        /// Legacy backup (no mapping file) into an active-mapping destination
+        /// would attach parts named by logical column names; the reader resolves
+        /// through column IDs and would find no physical files for the columns,
+        /// silently returning defaults via `remapColumnsWithPhysicalNames`.
+        if (getTotalActiveSizeInBytes() > 0)
+        {
+            auto current = getColumnIdMapping();
+            if (current && current->isActive())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "RESTORE: backup has no `{}` (legacy backup), but destination has "
+                    "an active column-ID mapping.  Restored parts would be read with "
+                    "the wrong physical column names.  Restore into an empty table.",
+                    COLUMN_IDS_FILE_NAME);
+        }
+    }
+    else
     {
         ColumnIdMapping restored;
         {
@@ -9500,11 +9517,25 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Tables have incompatible column ID mapping state: "
             "one table has column IDs active while the other does not");
-    if (my_has_pn && src_has_pn
-        && my_pn->getLogicalToId() != src_pn->getLogicalToId())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Tables have different column ID mappings; "
-            "partition operations require identical logical-to-ID column mappings");
+    if (my_has_pn && src_has_pn)
+    {
+        if (my_pn->getLogicalToId() != src_pn->getLogicalToId())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Tables have different column ID mappings; "
+                "partition operations require identical logical-to-ID column mappings");
+
+        /// Counter compatibility: source parts can carry orphan column files at
+        /// IDs the destination's counter has not yet handed out.  Transferring
+        /// such parts and later ADDing a column on the destination would
+        /// allocate one of those IDs and read the stale orphan bytes.
+        if (src_pn->getNextColumnIdCounter() > my_pn->getNextColumnIdCounter())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Source table's column-ID counter ({}) is ahead of destination's "
+                "({}); transferred parts may carry orphan column IDs the "
+                "destination would later reuse.  Bump the destination's counter "
+                "(e.g. via ADD/DROP COLUMN cycles) before the partition operation.",
+                src_pn->getNextColumnIdCounter(), my_pn->getNextColumnIdCounter());
+    }
 
     return *src_data;
 }

@@ -1,0 +1,3 @@
+== ATTACH PARTITION with counter mismatch ==
+throws_on_counter_mismatch
+10	y	99
