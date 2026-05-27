@@ -3637,11 +3637,23 @@ class TestCase:
         if need_cleanup and args.no_drop_if_fail:
             need_cleanup = passed
 
-        if not need_cleanup or args.no_drop:
-            return
-
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
         timeout = max(args.timeout - time_passed, 20)
+
+        # Reset failpoints between no-parallel tests so a failure that prevented
+        # `SYSTEM DISABLE FAILPOINT` from running can't contaminate the next
+        # test. Skipped for parallel tests because failpoints are server-wide
+        # and another in-flight test on the same server may legitimately have
+        # them enabled.
+        if "no-parallel" in self.tags or "sequential" in self.tags:
+            try:
+                self._cleanup_failpoints(args, timeout)
+            except (ConnectionError, http.client.ImproperConnectionState):
+                if check_server_liveness(args):
+                    raise
+
+        if not need_cleanup or args.no_drop:
+            return
 
         try:
             self._cleanup_database(args, timeout)
@@ -3709,6 +3721,45 @@ class TestCase:
                     continue
                 raise
             break
+
+    def _cleanup_failpoints(self, args, timeout):
+        # Failpoints are server-wide and persist across tests. A test that
+        # enables a REGULAR failpoint and then fails before reaching its
+        # SYSTEM DISABLE FAILPOINT leaks state into every test that follows.
+        try:
+            enabled = clickhouse_execute(
+                args,
+                "SELECT name FROM system.fail_points WHERE enabled FORMAT TSV",
+                timeout=timeout,
+                settings={
+                    "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
+                },
+            ).decode().split()
+        except Exception as e:
+            print(
+                f"WARNING: failpoint enumeration failed for {self.name}: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            return
+
+        for name in enabled:
+            try:
+                clickhouse_execute(
+                    args,
+                    f"SYSTEM DISABLE FAILPOINT {name}",
+                    timeout=timeout,
+                    settings={
+                        "log_comment": f'{args.testcase_basename}-{args.testcase_database}',
+                    },
+                )
+            except Exception as e:
+                print(
+                    f"WARNING: failed to disable leaked failpoint {name} "
+                    f"after {self.name}: {type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
+
 
 def parse_to_bytes(size_str):
     units = {
