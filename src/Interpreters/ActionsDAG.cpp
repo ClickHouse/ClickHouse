@@ -868,6 +868,76 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
     }
 }
 
+namespace
+{
+
+ColumnPtr tryComputeConstantThroughMaterialize(const ActionsDAG::Node * node)
+{
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.empty() ? nullptr : node->children.front();
+    if (!node)
+        return nullptr;
+
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::COLUMN:
+            if (node->column && isColumnConst(*node->column))
+                return node->column;
+            return nullptr;
+        case ActionsDAG::ActionType::FUNCTION:
+        {
+            if (!node->function_base)
+                return nullptr;
+            /// materialize(x) value-equals x, it only breaks const-ness at runtime
+            if (node->function_base->getName() == "materialize" && node->children.size() == 1)
+                return tryComputeConstantThroughMaterialize(node->children[0]);
+            if (!node->function_base->isSuitableForConstantFolding())
+                return nullptr;
+            if (!node->function)
+                return nullptr;
+
+            ColumnsWithTypeAndName args;
+            args.reserve(node->children.size());
+            for (const auto * child : node->children)
+            {
+                auto col = tryComputeConstantThroughMaterialize(child);
+                if (!col)
+                    return nullptr;
+                args.push_back({col, child->result_type, child->result_name});
+            }
+            auto result = node->function->execute(args, node->result_type, 1, true);
+            if (result && isColumnConst(*result))
+                return result;
+            return nullptr;
+        }
+        default:
+            return nullptr;
+    }
+}
+
+}
+
+void ActionsDAG::foldConstantFilterThroughMaterialize(const std::string & filter_column_name)
+{
+    auto * filter_node = const_cast<Node *>(tryFindInOutputs(filter_column_name));
+    if (!filter_node)
+        return;
+    if (filter_node->type == ActionType::COLUMN)
+        return;
+
+    auto folded = tryComputeConstantThroughMaterialize(filter_node);
+    if (!folded || !isColumnConst(*folded))
+        return;
+
+    /// only the filter node is rewritten, materialize can still be referenced by
+    /// passthrough columns that feed UNION and need its non-const output
+    filter_node->type = ActionType::COLUMN;
+    filter_node->column = std::move(folded);
+    filter_node->children.clear();
+    filter_node->function_base.reset();
+    filter_node->function.reset();
+}
+
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
     std::unordered_map<const Node *, const Node *> copy_map;
