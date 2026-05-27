@@ -479,7 +479,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         {
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
-            std::vector<std::unique_ptr<ReadBuffer>> buffers;
+            ConcatReadBuffer::Buffers buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 

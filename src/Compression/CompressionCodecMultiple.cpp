@@ -130,9 +130,9 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
     return decompressed_size;
 }
 
-std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
+VectorWithMemoryTracking<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
 {
-    std::vector<uint8_t> result;
+    VectorWithMemoryTracking<uint8_t> result;
     uint8_t compression_methods_size = source[0];
     result.reserve(compression_methods_size);
 

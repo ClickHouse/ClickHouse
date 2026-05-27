@@ -1,3 +1,4 @@
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
@@ -158,11 +159,11 @@ std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & 
     writeIntBinary(PackedFilesIO::VERSION, out);
     writeIntBinary(num_files, out);
 
-    std::vector<String> ordered_file_names;
+    Strings ordered_file_names;
     ordered_file_names.reserve(num_files);
     /// Order files according to the hint.
     {
-        std::unordered_set<String> already_added_files;
+        UnorderedSetWithMemoryTracking<String> already_added_files;
         for (const auto & hinted_name : files_order_hint)
         {
             std::string found_file_name;

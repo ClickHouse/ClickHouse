@@ -98,7 +98,7 @@ void QueryPipelineBuilder::addTransform(ProcessorPtr transform, InputPort * tota
     pipe.addTransform(std::move(transform), totals, extremes);
 }
 
-void QueryPipelineBuilder::addChains(std::vector<Chain> chains)
+void QueryPipelineBuilder::addChains(VectorWithMemoryTracking<Chain> chains)
 {
     checkInitializedAndNotCompleted();
     pipe.addChains(std::move(chains));
@@ -107,7 +107,7 @@ void QueryPipelineBuilder::addChains(std::vector<Chain> chains)
 void QueryPipelineBuilder::addChain(Chain chain)
 {
     checkInitializedAndNotCompleted();
-    std::vector<Chain> chains;
+    VectorWithMemoryTracking<Chain> chains;
     chains.emplace_back(std::move(chain));
     pipe.resize(1);
     pipe.addChains(std::move(chains));
@@ -205,7 +205,7 @@ void QueryPipelineBuilder::addExtremesTransform()
 }
 
 QueryPipelineBuilder QueryPipelineBuilder::unitePipelines(
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines,
+    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
@@ -510,9 +510,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
-    std::vector<OutputPort *> joined_output_ports;
-    std::vector<OutputPort *> delayed_root_output_ports;
-    std::vector<OutputPort *> non_joined_output_ports;
+    OutputPortRawPtrs joined_output_ports;
+    OutputPortRawPtrs delayed_root_output_ports;
+    OutputPortRawPtrs non_joined_output_ports;
 
     std::shared_ptr<DelayedJoinedBlocksTransform> delayed_root = nullptr;
     if (join->hasDelayedBlocks())
@@ -624,7 +624,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     if (delayed_root || use_parallel_non_joined)
     {
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
-        std::vector<UInt64> delayed_ports_numbers;
+        VectorWithMemoryTracking<UInt64> delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
         for (size_t i = 1; i < joined_output_ports.size(); i += 2)
             delayed_ports_numbers.push_back(i);
@@ -648,7 +648,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         // delays the NonJoinedBlocksTransforms until all delayed-block workers finish.
         if (delayed_root && use_parallel_non_joined)
         {
-            std::vector<UInt64> non_joined_delayed_ports;
+            VectorWithMemoryTracking<UInt64> non_joined_delayed_ports;
             non_joined_delayed_ports.reserve(num_streams);
             for (size_t i = 0; i < num_streams; ++i)
                 non_joined_delayed_ports.push_back(2 * i + 1);
@@ -744,7 +744,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
             num_streams, right->getNumStreams());
 
     SharedHeader left_header = left->getSharedHeader();
-    std::vector<JoinPtr> joins;
+    VectorWithMemoryTracking<JoinPtr> joins;
     right->addSimpleTransform([&](const SharedHeader & header)
     {
         joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
@@ -835,7 +835,7 @@ void QueryPipelineBuilder::addPipelineBefore(QueryPipelineBuilder pipeline)
     bool has_totals = pipe.getTotalsPort();
     bool has_extremes = pipe.getExtremesPort();
     size_t num_extra_ports = (has_totals ? 1 : 0) + (has_extremes ? 1 : 0);
-    std::vector<UInt64> delayed_streams(pipe.numOutputPorts() + num_extra_ports);
+    VectorWithMemoryTracking<UInt64> delayed_streams(pipe.numOutputPorts() + num_extra_ports);
     iota(delayed_streams.data(), delayed_streams.size(), UInt64{0});
 
     auto * collected_processors = pipe.collected_processors;

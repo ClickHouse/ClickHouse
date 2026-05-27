@@ -396,7 +396,7 @@ public:
 #endif
 
     bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }

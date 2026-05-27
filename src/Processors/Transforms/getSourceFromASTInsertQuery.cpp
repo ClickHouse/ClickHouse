@@ -134,7 +134,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
     }
 
-    std::vector<ReadBufferUniquePtr> buffers;
+    ConcatReadBuffer::Buffers buffers;
     if (insert_query->data)
     {
         /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.

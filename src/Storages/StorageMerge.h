@@ -187,6 +187,10 @@ public:
 
     QueryPlanRawPtrs getChildPlans() override;
 
+    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
+    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
+    std::vector<QueryPlan *> getAllChildPlans();
+
     void addFilter(FilterDAGInfo filter);
 
 private:

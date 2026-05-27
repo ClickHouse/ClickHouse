@@ -499,7 +499,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             });
     }
 
-    std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    VectorWithMemoryTracking<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
     pipeline.resize(insert_dependencies->getSinkStreamSize());
 

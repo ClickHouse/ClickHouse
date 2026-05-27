@@ -4,6 +4,9 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Server/CloudPlacementInfo.h>
@@ -236,11 +239,11 @@ private:
         CredentialsProviderPtr credentials;
     };
 
-    using CredentialsLRUQueue = std::list<CacheValue>;
+    using CredentialsLRUQueue = ListWithMemoryTracking<CacheValue>;
 
     std::atomic<size_t> max_credentials;
     std::mutex mutex;
-    std::unordered_map<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
+    UnorderedMapWithMemoryTracking<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
     CredentialsLRUQueue credentials_lru;
 };
 
@@ -282,7 +285,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentials() const
     if (trimmed_credentials_string.empty())
         return {};
 
-    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
+    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} returned credential string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_credentials_string);
@@ -337,7 +340,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     String profile_string = GetResourceWithAWSWebServiceResult(profile_request).GetPayload();
 
     String trimmed_profile_string = Aws::Utils::StringUtils::Trim(profile_string.c_str());
-    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
+    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} with token returned profile string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_profile_string);
@@ -524,7 +527,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     using AZGetter = std::function<String()>;
 
-    std::vector<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
+    VectorWithMemoryTracking<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
     {
         /// mimics original behavior Placement logic relies on
         ///   skip AWS_ZONE_ID (in favour of AWS_ZONE_NAME) and CLICKHOUSE
@@ -536,7 +539,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     if (az_facility == AZFacilities::AWS_ZONE_NAME_THEN_GCP_ZONE)
     {
-        std::vector<std::string> ex_msgs;
+        Strings ex_msgs;
 
         /// it is expected that some facilities do not work, we are prepared for exceptions
         for (auto & getter : az_getters)
@@ -789,7 +792,7 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
-    std::vector<String> retryable_errors;
+    Strings retryable_errors;
     retryable_errors.push_back("IDPCommunicationError");
     retryable_errors.push_back("InvalidIdentityToken");
 

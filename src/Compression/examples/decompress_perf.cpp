@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <lz4.h>
 
 #include <IO/ReadBuffer.h>
@@ -192,7 +193,7 @@ try
     size_t times = argc < 3 ? 1 : parse<size_t>(argv[2]);
     ssize_t variant = argc < 4 ? -1 : parse<ssize_t>(argv[3]);
 
-    std::vector<UInt64> runs;
+    DB::VectorWithMemoryTracking<UInt64> runs;
 
     for (size_t i = 0; i < times; i++)
     {

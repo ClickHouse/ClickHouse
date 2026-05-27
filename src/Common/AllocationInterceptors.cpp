@@ -107,7 +107,7 @@ void * operator new[](std::size_t size, std::align_val_t align)
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
+    std::size_t actual_size = Memory::trackMemory(size, trace, std::nothrow);
     void * ptr = Memory::newNoExcept(size);
     if (!ptr) [[unlikely]]
     {
@@ -121,7 +121,7 @@ void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
+    std::size_t actual_size = Memory::trackMemory(size, trace, std::nothrow);
     void * ptr = Memory::newNoExcept(size);
     if (!ptr) [[unlikely]]
     {
@@ -135,7 +135,7 @@ void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 void * operator new(std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
+    std::size_t actual_size = Memory::trackMemory(size, trace, std::nothrow, align);
     void * ptr = Memory::newNoExcept(size, align);
     if (!ptr) [[unlikely]]
     {
@@ -149,7 +149,7 @@ void * operator new(std::size_t size, std::align_val_t align, const std::nothrow
 void * operator new[](std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace, align);
+    std::size_t actual_size = Memory::trackMemory(size, trace, std::nothrow, align);
     void * ptr = Memory::newNoExcept(size, align);
     if (!ptr) [[unlikely]]
     {

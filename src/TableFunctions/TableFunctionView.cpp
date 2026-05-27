@@ -29,7 +29,7 @@ const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
     return *create.select;
 }
 
-std::vector<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
 }

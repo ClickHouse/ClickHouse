@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeArray.h>
@@ -149,7 +150,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// - The search column is 'vec1'.
     /// - The reference vector is [1.0, 2.0, ...].
     const ActionsDAG::NodeRawConstPtrs & sort_column_node_children = sort_column_node->children;
-    std::vector<Float64> reference_vector;
+    VectorWithMemoryTracking<Float64> reference_vector;
     String search_column;
 
     for (const auto * child : sort_column_node_children)

@@ -4,6 +4,7 @@
 #include <Parsers/NullsAction.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Core/Names.h>
 
 #include <functional>
 #include <memory>
@@ -108,7 +109,7 @@ private:
         AggregateFunctionStateVariant state_variant) const;
 
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    using ActionMap = std::unordered_map<String, String>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using ActionMap = NameToNameMap;
 
     AggregateFunctions aggregate_functions;
     /// Mapping from functions with `RESPECT NULLS` modifier to actual aggregate function names

@@ -427,6 +427,8 @@ protected:
       *   - wrap getReturnType() result in Nullable type and pass to build
       *
       * Otherwise build returns build(arguments, getReturnType(arguments));
+      * Note that the function may be called with garbage input for the null rows (but the output will be masked out),
+      * so this is not suitable for heavy functions or functions with side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 

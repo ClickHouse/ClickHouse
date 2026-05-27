@@ -268,7 +268,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
 
     StoredObject object(metadata_transaction->generateObjectKeyForPath(path).serialize(), path);
-    std::vector<WriteBufferPtr> writers;
+    ForkWriteBuffer::WriteBufferPtrs writers;
     auto enabled_locations = cluster->getEnabledLocations();
     for (const auto & location : enabled_locations)
     {

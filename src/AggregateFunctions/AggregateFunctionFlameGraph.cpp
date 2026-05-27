@@ -415,7 +415,7 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = -size;
+            UInt64 abs_size = -static_cast<UInt64>(size);
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);
@@ -501,7 +501,7 @@ struct AggregateFunctionFlameGraphData
 
             for (auto * deallocation = entry.value.second.deallocation; deallocation; deallocation = deallocation->next)
             {
-                add(entry.value.first, -Int64(deallocation->size), nullptr, 0, arena);
+                add(entry.value.first, static_cast<Int64>(-deallocation->size), nullptr, 0, arena);
             }
         }
 

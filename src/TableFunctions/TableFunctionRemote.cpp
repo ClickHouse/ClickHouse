@@ -17,6 +17,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -61,7 +62,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
      */
     size_t max_args = is_cluster_function ? 4 : 6;
     NamedCollectionPtr named_collection;
-    std::vector<std::pair<std::string, ASTPtr>> complex_args;
+    VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> complex_args;
     if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args)))
     {
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
@@ -279,7 +280,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     {
         /// Create new cluster from the scratch
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-        std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+        Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         HostsByShard names;
         names.reserve(shards.size());
