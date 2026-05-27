@@ -65,7 +65,7 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (!is_supported_by_kernel) [[unlikely]]
         return;
 
-    auto [buf, len] = adjustToPageSize(buf_, len_, staticPageSize);
+    auto [buf, len] = adjustToPageSize(buf_, len_, ::getPageSize());
     ::madvise(buf, len, MADV_POPULATE_WRITE);
 #endif
 }
