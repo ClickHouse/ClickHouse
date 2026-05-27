@@ -21,6 +21,8 @@ def check():
     print("Clean up stopped containers")
     Shell.check("docker container prune -f", verbose=True)
     Shell.check("docker system prune", verbose=True)
+    print("Clean up all tagged-but-unused images")
+    Shell.check("docker image prune -a -f", verbose=True)
     return True
 
 
