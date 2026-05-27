@@ -292,6 +292,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         }
 
         table_name_to_path.erase(table_name);
+        snapshot_detached_tables.erase(table_name);
     }
 
     if (db_disk->existsFileOrDirectory(getPathSymlink(table_name)))

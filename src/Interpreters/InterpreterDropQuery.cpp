@@ -190,7 +190,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
         context_->checkAccess(AccessType::DROP_TABLE, table_id);
 
-        auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
+        auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
+        if (query.if_exists && !database)
+        {
+            return {};
+        }
         const auto table_name = table_id.getTableName();
 
         auto new_query_ptr = query.clone();

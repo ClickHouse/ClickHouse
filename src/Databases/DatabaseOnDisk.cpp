@@ -900,7 +900,11 @@ void DatabaseOnDisk::removeDetachedTableInfo(const StorageID & table_id)
 {
     dropTableFromSnapshotDetachedTables(table_id.table_name);
     setDetachedTableNotInUseForce(table_id.uuid);
-    removeTableFromPermanentlyDetachedTables(table_id.table_name);
+    {
+        LOG_DEBUG(log, "Remove table {} from permanently detached tables", table_id.table_name);
+        std::lock_guard lock(mutex);
+        removeTableFromPermanentlyDetachedTables(table_id.table_name);
+    }
 }
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr)
