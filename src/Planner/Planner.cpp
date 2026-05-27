@@ -973,23 +973,20 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     UsefulSets & useful_sets)
 {
     NameSet column_names_with_fill;
-    NameSet sort_prefix_column_names;
+    NameSet order_by_column_names;
     SortDescription fill_description;
 
     const auto & header = query_plan.getCurrentHeader();
 
     for (const auto & description : query_analysis_result.sort_description)
     {
+        order_by_column_names.insert(description.column_name);
         if (description.with_fill)
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
             fill_description.push_back(description);
             column_names_with_fill.insert(description.column_name);
-        }
-        else if (fill_description.empty())
-        {
-            sort_prefix_column_names.insert(description.column_name);
         }
     }
 
@@ -1019,10 +1016,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             for (const auto * input_node : interpolate_actions_dag.getInputs())
             {
-                if (column_names_with_fill.contains(input_node->result_name))
-                    continue;
-
-                if (sort_prefix_column_names.contains(input_node->result_name))
+                if (order_by_column_names.contains(input_node->result_name))
                     continue;
 
                 interpolate_actions_dag.getOutputs().push_back(input_node);
