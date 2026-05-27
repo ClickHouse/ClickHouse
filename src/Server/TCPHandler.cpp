@@ -2384,7 +2384,12 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        std::string data(salt);
+        /// `StringWithMemoryTracking` so the duplicate of the (potentially
+        /// large) query body that the hash needs goes through the throwing
+        /// memory-tracker path. With a plain `std::string` the append below
+        /// would allocate through `allocNoThrow` and could push the server
+        /// past `max_server_memory_usage` without throwing.
+        StringWithMemoryTracking data(salt);
         // For backward compatibility
         if (nonce.has_value())
             data += std::to_string(nonce.value());
