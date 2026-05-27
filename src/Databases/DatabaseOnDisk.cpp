@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsBool allow_experimental_drop_detached_table;
 }
 
 namespace ErrorCodes
@@ -959,7 +960,8 @@ void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
 
 void DatabaseOnDisk::checkTableNameLengthUnlocked(const String & database_name_, const String & table_name, ContextPtr context_)
 {
-    const size_t allowed_max_length = computeMaxTableNameLength(database_name_, context_);
+    const size_t allowed_max_length
+        = computeMaxTableNameLength(database_name_, context_, context_->getSettingsRef()[Setting::allow_experimental_drop_detached_table]);
     const size_t escaped_name_length = escapeForFileName(table_name).length();
     if (escaped_name_length > allowed_max_length)
     {

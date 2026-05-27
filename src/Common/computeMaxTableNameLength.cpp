@@ -15,7 +15,7 @@ namespace Setting
 extern const SettingsBool allow_experimental_drop_detached_table;
 };
 
-size_t computeMaxTableNameLength(const String & database_name, ContextPtr context)
+size_t computeMaxTableNameLength(const String & database_name, ContextPtr context, bool allow_experimental_drop_detached_table)
 {
     namespace fs = std::filesystem;
 
@@ -41,7 +41,7 @@ size_t computeMaxTableNameLength(const String & database_name, ContextPtr contex
     // Max path will look like this: ./metadata_dropped/{db_name}.{table_name}.{uuid}.{extension}.{detached}
     size_t max_to_drop = max_dropped_length - dot - escaped_db_name_length - dot - uuid_length - extension_length;
 
-    if (context->getSettingsRef()[Setting::allow_experimental_drop_detached_table])
+    if (allow_experimental_drop_detached_table)
     {
         const size_t detached_length = strlen(".detached");
         max_to_drop -= detached_length;

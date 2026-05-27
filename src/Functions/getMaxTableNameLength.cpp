@@ -2,12 +2,12 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/computeMaxTableNameLength.h>
 
@@ -21,14 +21,19 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLengthForDatabase final : public IFunction, public WithContext
+namespace Setting
+{
+extern const SettingsBool allow_experimental_drop_detached_table;
+}
+
+class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context_); }
 
     explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr context_)
-        : WithContext(context_)
+        : allow_experimental_drop_detached_table(context_->getSettingsRef()[Setting::allow_experimental_drop_detached_table])
     {
     }
     String getName() const override { return name; }
@@ -65,11 +70,13 @@ public:
         if (database_name.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect name for a database. It shouldn't be empty");
 
-        allowed_max_length = computeMaxTableNameLength(database_name, getContext());
+        allowed_max_length
+            = computeMaxTableNameLength(database_name, Context::getGlobalContextInstance(), allow_experimental_drop_detached_table);
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
 
 private:
+    const bool allow_experimental_drop_detached_table;
     const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column) const
     {
         if (const auto * col = checkAndGetColumnConst<ColumnString>(column))
@@ -82,23 +89,24 @@ private:
 
 REGISTER_FUNCTION(getMaxTableName)
 {
-    factory.registerFunction<FunctionGetMaxTableNameLengthForDatabase>(FunctionDocumentation{
-        .description=R"(Returns the maximum table name length in a specified database.)",
-        .syntax=R"(getMaxTableNameLengthForDatabase(database_name))",
-        .arguments={{"database_name", "The name of the specified database.", {"String"}}},
-        .returned_value={R"(Returns the length of the maximum table name, an Integer)"},
-        .examples{
-            {"typical",
-            "SELECT getMaxTableNameLengthForDatabase('default');",
-            R"(
+    factory.registerFunction(
+        "getMaxTableNameLengthForDatabase",
+        [](ContextPtr context) { return FunctionGetMaxTableNameLengthForDatabase::create(context); },
+        FunctionDocumentation{
+            .description = R"(Returns the maximum table name length in a specified database.)",
+            .syntax = R"(getMaxTableNameLengthForDatabase(database_name))",
+            .arguments = {{"database_name", "The name of the specified database.", {"String"}}},
+            .returned_value = {R"(Returns the length of the maximum table name, an Integer)"},
+            .examples{
+                {"typical",
+                 "SELECT getMaxTableNameLengthForDatabase('default');",
+                 R"(
             ┌─getMaxTableNameLengthForDatabase('default')─┐
             │                                         206 │
             └─────────────────────────────────────────────┘
-            )"
-        }},
-        .introduced_in = {25, 1},
-        .category = FunctionDocumentation::Category::Other
-    });
+            )"}},
+            .introduced_in = {25, 1},
+            .category = FunctionDocumentation::Category::Other});
 }
 
 }
