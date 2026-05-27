@@ -173,9 +173,15 @@ QueryTreeNodes findReferencedCorrelatedColumnsOutsideProjection(
 QueryTreeNodes tryStripExistsProjection(QueryNode & inner_query, const DataTypePtr & constant_data_type)
 {
     const auto & projection_node = inner_query.getProjectionNode();
+    /// `arrayJoin` in the projection expands or drops rows (a zero-length array
+    /// produces zero rows, so `EXISTS` should be `false` even when `FROM` is
+    /// non-empty). Replacing the projection with `SELECT 1` would make the
+    /// subquery non-empty whenever `FROM` has any row, silently changing the
+    /// `EXISTS` truth value, so leave the projection alone in that case.
     const bool projection_only_affects_output =
         !hasAggregateFunctionNodes(projection_node)
         && !hasWindowFunctionNodes(projection_node)
+        && !hasFunctionNode(projection_node, "arrayJoin")
         && !inner_query.hasGroupBy()
         && !inner_query.hasHaving()
         && !inner_query.isDistinct()
