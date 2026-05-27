@@ -43,7 +43,7 @@ SELECT {y:UInt32}; -- { serverError UNKNOWN_QUERY_PARAMETER }
 -- Both temporary tables: gone. Check via `system.tables` rather than by
 -- triggering UNKNOWN_TABLE — temporaries live in a hidden per-session
 -- database and disappear when the session-scoped mapping is cleared.
-SELECT count() FROM system.tables WHERE is_temporary AND name IN ('reset_session_tmp_1', 'reset_session_tmp_2');
+SELECT count() FROM system.tables WHERE database = '_temporary_and_external_tables' AND name IN ('reset_session_tmp_1', 'reset_session_tmp_2');
 -- Database: restored to whatever the connection was opened with — definitely not 'system'.
 SELECT currentDatabase() != 'system' AS not_system;
 
@@ -62,7 +62,7 @@ SELECT getSetting('max_threads'), {z:String}, * FROM reset_session_tmp_3;
 -- And another reset wipes the freshly-set state too.
 RESET SESSION;
 SELECT getSetting('max_threads') = 777 AS still_seven_seven_seven;
-SELECT count() FROM system.tables WHERE is_temporary AND name = 'reset_session_tmp_3';
+SELECT count() FROM system.tables WHERE database = '_temporary_and_external_tables' AND name = 'reset_session_tmp_3';
 
 -- If the current database is dropped mid-session, `RESET SESSION` must not
 -- throw — it should fall back to the user's profile default (or empty) rather
