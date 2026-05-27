@@ -79,6 +79,7 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char mt_alter_throw_in_start_mutation[];
 }
 
 namespace Setting
@@ -137,6 +138,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
+    extern const int FAULT_INJECTED;
 }
 
 namespace ActionLocks
@@ -540,8 +542,20 @@ void StorageMergeTree::alter(
             }
             catch (...)
             {
-                /// Best-effort rollback of on-disk metadata so a restart matches the data in parts.
-                LOG_ERROR(log, "In-memory metadata commit failed, rolling back on-disk metadata");
+                /// Best-effort rollback. Order matters: revert in-memory metadata under
+                /// the same mutex so concurrent merge selection cannot see the new column
+                /// names without the pending rename mutation; then revert on-disk metadata
+                /// (outside the mutex, to keep the M1->M2 edge broken).
+                LOG_ERROR(log, "In-memory metadata commit failed, rolling back");
+                try
+                {
+                    std::lock_guard background_lock(currently_processing_in_background_mutex);
+                    setProperties(old_metadata, new_metadata, false, local_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
+                }
                 try
                 {
                     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
@@ -743,6 +757,10 @@ Int64 StorageMergeTree::startMutation(
     /// that `(setProperties + current_mutations_by_version insert)` is atomic against
     /// background merge selection. File I/O happens under that lock here; acceptable
     /// because `alter` is rare and the atomicity is required (see #80648).
+    fiu_do_on(FailPoints::mt_alter_throw_in_start_mutation,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in startMutation");
+    });
     auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
     addPreparedMutationEntry(std::move(prepared));
