@@ -10,7 +10,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/FileRenamer.h>
-#include <Common/Logger.h>
 
 #include <atomic>
 #include <shared_mutex>
@@ -24,9 +23,6 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
-
-struct FileBucketInfo;
-using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
 class PullingPipelineExecutor;
 
@@ -43,38 +39,16 @@ public:
         const ConstraintsDescription & constraints;
         const String & comment;
         const std::string rename_after_processing;
-    };
-
-    struct ArchiveInfo
-    {
-        std::vector<std::string> paths_to_archives;
-        std::string path_in_archive; // used when reading a single file from archive
-        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
-
-        bool isSingleFileRead() const { return !filter; }
-    };
-
-    /// One or multiple files specified by user.
-    /// Multiple files can be specified by using globs (e.g. "file*.parquet").
-    /// The archive syntax is also supported (e.g. "archive*.zip::*.parquet").
-    struct FileSource
-    {
-        Strings paths;
-        bool with_globs = false;
-        size_t total_bytes_to_read = 0;
-        String path_for_partitioned_write;
-        std::optional<String> format_from_filenames; /// Set if we managed to figure out which file format is used from the names of the file(s).
-        std::optional<ArchiveInfo> archive_info; /// Set if the archive syntax is used.
-
-        static FileSource parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax = {});
+        std::string path_to_archive;
     };
 
     /// From file descriptor
     StorageFile(int table_fd_, CommonArguments args);
 
     /// From user's file
-    StorageFile(FileSource file_source_, CommonArguments args);
-    StorageFile(FileSource file_source_, bool distributed_processing_, CommonArguments args);
+    StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
+
+    StorageFile(const std::string & table_path_, const std::string & user_files_path, bool distributed_processing_, CommonArguments args);
 
     /// From table in database
     StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
@@ -110,6 +84,8 @@ public:
     bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
+    static Strings getPathsList(const String & table_path, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read);
+
     /// Check if the format supports reading only some subset of columns.
     /// Is is useful because such formats could effectively skip unknown columns
     /// So we can create a header of only required columns in read method and ask
@@ -125,13 +101,25 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
 
     bool supportsPartitionBy() const override { return true; }
+
+    struct ArchiveInfo
+    {
+        std::vector<std::string> paths_to_archives;
+        std::string path_in_archive; // used when reading a single file from archive
+        IArchiveReader::NameFilter filter; // used when files inside archive are defined with a glob
+
+        bool isSingleFileRead() const
+        {
+            return !filter;
+        }
+    };
 
     static ColumnsDescription getTableStructureFromFile(
         const String & format,
@@ -149,6 +137,15 @@ public:
         const std::optional<ArchiveInfo> & archive_info = std::nullopt);
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
+
+    static void parseFileSource(String source, String & filename, String & path_to_archive, bool allow_archive_path_syntax);
+
+    static ArchiveInfo getArchiveInfo(
+        const std::string & path_to_archive,
+        const std::string & file_in_archive,
+        const std::string & user_files_path,
+        const ContextPtr & context,
+        size_t & total_bytes_to_read);
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
@@ -251,11 +248,6 @@ public:
         }
 
         const String & getFileNameInArchive();
-
-        /// Returns the (possibly virtual-column-filtered) list of files this iterator
-        /// will produce. Only meaningful when not reading from an archive and not
-        /// using distributed_processing.
-        const std::vector<std::string> & getFiles() const { return files; }
 private:
         std::vector<std::string> files;
 
@@ -319,17 +311,6 @@ private:
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
-
-    /// Optional subset-of-file assignment. When set, the input format only reads
-    /// these buckets (e.g. for Parquet — only the listed row groups). This is how
-    /// a single big file is processed in parallel by multiple sources.
-    FileBucketInfoPtr file_bucket_info;
-
-    /// When this source has been assigned a specific (file, bucket) pair, it
-    /// reads only that one file (once) and ignores the shared FilesIterator.
-    /// Set together with `file_bucket_info`.
-    std::optional<String> fixed_file_path;
-    bool fixed_file_consumed = false;
 
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;

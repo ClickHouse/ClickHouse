@@ -42,7 +42,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
-    extern const int SYNTAX_ERROR;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -92,7 +91,7 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     if (buf.eof())
         out << " at end of stream.";
     else
-        out << " before: " << quote << std::string_view(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+        out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
     throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
 }
@@ -276,12 +275,6 @@ void readStringUntilEquals(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilCharsInto<'='>(s, buf);
-}
-
-void readStringUntilColon(String & s, ReadBuffer & buf)
-{
-    s.clear();
-    readStringUntilCharsInto<':'>(s, buf);
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
@@ -510,7 +503,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
             /// \u0000 - special case
             if (0 == memcmp(hex_code, "0000", 4))
             {
-                s.push_back(static_cast<char8_t>(0));
+                s.push_back(0);
                 return ReturnType(true);
             }
 
@@ -518,12 +511,12 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
 
             if (code_point <= 0x7F)
             {
-                s.push_back(static_cast<char8_t>(code_point));
+                s.push_back(code_point);
             }
             else if (code_point <= 0x07FF)
             {
-                s.push_back(static_cast<char8_t>(((code_point >> 6) & 0x1F) | 0xC0));
-                s.push_back(static_cast<char8_t>((code_point & 0x3F) | 0x80));
+                s.push_back(((code_point >> 6) & 0x1F) | 0xC0);
+                s.push_back((code_point & 0x3F) | 0x80);
             }
             else
             {
@@ -601,10 +594,10 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
                     {
                         UInt32 full_code_point = 0x10000 + (code_point - 0xD800) * 1024 + (second_code_point - 0xDC00);
 
-                        s.push_back(static_cast<char8_t>(((full_code_point >> 18) & 0x07) | 0xF0));
-                        s.push_back(static_cast<char8_t>(((full_code_point >> 12) & 0x3F) | 0x80));
-                        s.push_back(static_cast<char8_t>(((full_code_point >> 6) & 0x3F) | 0x80));
-                        s.push_back(static_cast<char8_t>((full_code_point & 0x3F) | 0x80));
+                        s.push_back(((full_code_point >> 18) & 0x07) | 0xF0);
+                        s.push_back(((full_code_point >> 12) & 0x3F) | 0x80);
+                        s.push_back(((full_code_point >> 6) & 0x3F) | 0x80);
+                        s.push_back((full_code_point & 0x3F) | 0x80);
                     }
                     else
                     {
@@ -625,9 +618,9 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
                 }
                 else
                 {
-                    s.push_back(static_cast<char8_t>(((code_point >> 12) & 0x0F) | 0xE0));
-                    s.push_back(static_cast<char8_t>(((code_point >> 6) & 0x3F) | 0x80));
-                    s.push_back(static_cast<char8_t>((code_point & 0x3F) | 0x80));
+                    s.push_back(((code_point >> 12) & 0x0F) | 0xE0);
+                    s.push_back(((code_point >> 6) & 0x3F) | 0x80);
+                    s.push_back((code_point & 0x3F) | 0x80);
                 }
             }
 
@@ -1025,7 +1018,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                 {
                     __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(next_pos));
                     auto eq = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(bytes, rc), _mm_cmpeq_epi8(bytes, nc)), _mm_cmpeq_epi8(bytes, dc));
-                    uint16_t bit_mask = static_cast<uint16_t>(_mm_movemask_epi8(eq));
+                    uint16_t bit_mask = _mm_movemask_epi8(eq);
                     if (bit_mask)
                     {
                         next_pos += std::countr_zero(bit_mask);
@@ -1310,7 +1303,6 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
 
 std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
 {
@@ -1399,11 +1391,11 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
         return ReturnType(false);
     };
 
-    auto append_digit = [&]<typename T>(T & x)
+    auto append_digit = [&](auto & x)
     {
         if (!buf.eof() && isNumericASCII(*buf.position()))
         {
-            x = static_cast<T>(x * 10 + (*buf.position() - '0'));
+            x = x * 10 + (*buf.position() - '0');
             ++buf.position();
             return true;
         }
@@ -1466,7 +1458,6 @@ template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char *
 
 
 template <typename ReturnType, bool dt64_mode>
-NO_SANITIZE_UNDEFINED
 ReturnType readDateTimeTextFallback(
     time_t & datetime,
     ReadBuffer & buf,
@@ -1631,7 +1622,6 @@ ReturnType readDateTimeTextFallback(
                     if (!isNumericASCII(*digit_pos))
                         return false;
                 }
-
                 datetime = datetime * 10 + *digit_pos - '0';
             }
         }
@@ -1656,7 +1646,6 @@ template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, cons
 template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
 
 template <typename ReturnType, bool t64_mode>
-NO_SANITIZE_UNDEFINED
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
@@ -1747,7 +1736,6 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
                     if (!isNumericASCII(*digit_pos))
                         return false;
                 }
-
                 time = time * 10 + *digit_pos - '0';
             }
         }
@@ -2026,47 +2014,6 @@ void skipToNextLineOrEOF(ReadBuffer & buf)
             ++buf.position();
             return;
         }
-    }
-}
-
-
-void skipWhitespaceAndSQLComments(ReadBuffer & buf)
-{
-    while (true)
-    {
-        skipWhitespaceIfAny(buf);
-        if (buf.eof())
-            break;
-        if (buf.buffer().end() - buf.position() < 2)
-            break;
-        if (buf.position()[0] == '-' && buf.position()[1] == '-')
-        {
-            buf.position() += 2;
-            skipToNextLineOrEOF(buf);
-        }
-        else if (buf.position()[0] == '/' && buf.position()[1] == '*')
-        {
-            buf.position() += 2;
-            while (!buf.eof())
-            {
-                char * star = find_first_symbols<'*'>(buf.position(), buf.buffer().end());
-                buf.position() = star;
-                if (star == buf.buffer().end())
-                    continue;
-                ++buf.position();
-                if (buf.eof())
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
-                if (*buf.position() == '/')
-                {
-                    ++buf.position();
-                    break;
-                }
-            }
-            if (buf.eof())
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
-        }
-        else
-            break;
     }
 }
 

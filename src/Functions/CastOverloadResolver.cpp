@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -21,32 +20,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-/// accurateCastOrNull wraps the result in Nullable to represent conversion failures.
-/// Types that cannot be inside Nullable (Array, Map, etc.) are not supported.
-/// The nested elements need to be Nullable-capable so that we can propagate NULLs which tell
-/// us whether the conversion is accurate or not.
-/// This check walks Tuple elements recursively to also reject cases like
-/// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
-static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
-{
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        for (const auto & element : tuple_type->getElements())
-            validateNestedTypesForAccurateCastOrNull(element);
-    }
-    else if (type->isNullable())
-    {
-        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
-    }
-    else if (!type->canBeInsideNullable() && !canContainNull(*type))
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
-            type->getName());
-    }
 }
 
 FunctionBasePtr createFunctionBaseCast(
@@ -111,21 +84,19 @@ public:
         ColumnWithTypeAndName from,
         DataTypePtr to,
         CastType cast_type,
-        std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context)
+        std::optional<CastDiagnostic> diagnostic)
     {
-        if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
-        {
-            validateNestedTypesForAccurateCastOrNull(to);
+        if (cast_type == CastType::accurateOrNull && !isVariant(to))
             to = makeNullable(to);
-        }
 
         ColumnsWithTypeAndName arguments;
         arguments.emplace_back(std::move(from));
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
+        /// We consistently use Saturate for internal toDateTime conversion to ensure monotonic so that index analysis is correct.
+        /// Reference: https://github.com/ClickHouse/ClickHouse/issues/73307
         return createFunctionBaseCast(
-            context, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            nullptr, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
@@ -159,21 +130,14 @@ protected:
         if (cast_type == CastType::accurateOrNull)
         {
             /// Variant handles NULLs by itself during conversions.
-            if (!canContainNull(*type))
-            {
-                /// Reject types inside Tuple that cannot handle accurateOrNull's
-                /// ColumnNullable failure mechanism (e.g., Array, Map).
-                validateNestedTypesForAccurateCastOrNull(type);
+            if (!isVariant(type))
                 return makeNullable(type);
-            }
         }
 
         if (internal)
             return type;
 
-        if (keep_nullable
-            && (arguments.front().type->isNullable() || arguments.front().type->isLowCardinalityNullable() || isDynamic(*arguments.front().type))
-            && type->canBeInsideNullable())
+        if (keep_nullable && arguments.front().type->isNullable() && type->canBeInsideNullable())
             return makeNullable(type);
 
         return type;
@@ -193,155 +157,19 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
+    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic));
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
 {
-    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("_CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, true, {}); }, {}, FunctionFactory::Case::Insensitive);
     /// Note: "internal" (not affected by null preserving setting) versions of accurate cast functions are unneeded.
 
-    /// CAST documentation
-    FunctionDocumentation::Description CAST_description = R"(
-Converts a value to a specified data type.
-Unlike the reinterpret function, CAST tries to generate the same value in the target type.
-If that is not possible, an exception is raised.
-    )";
-    FunctionDocumentation::Syntax CAST_syntax = R"(
-CAST(x, T)
-or CAST(x AS T)
-or x::T
-    )";
-    FunctionDocumentation::Arguments CAST_arguments = {
-        {"x", "A value of any type.", {"Any"}},
-        {"T", "The target data type.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue CAST_returned_value = {"Returns the converted value with the target data type.", {"Any"}};
-    FunctionDocumentation::Examples CAST_examples = {
-    {
-        "Basic usage",
-        R"(
-SELECT CAST(42, 'String')
-        )",
-        R"(
-┌─CAST(42, 'String')─┐
-│ 42                 │
-└────────────────────┘
-        )"
-    },
-    {
-        "Using AS syntax",
-        R"(
-SELECT CAST('2025-01-01' AS Date)
-        )",
-        R"(
-┌─CAST('2025-01-01', 'Date')─┐
-│                 2025-01-01 │
-└────────────────────────────┘
-        )"
-    },
-    {
-        "Using :: syntax",
-        R"(
-SELECT '123'::UInt32
-        )",
-        R"(
-┌─CAST('123', 'UInt32')─┐
-│                   123 │
-└───────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn CAST_introduced_in = {1, 1};
-    FunctionDocumentation::Category CAST_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation CAST_documentation = {CAST_description, CAST_syntax, CAST_arguments, {}, CAST_returned_value, CAST_examples, CAST_introduced_in, CAST_category};
-
-    /// accurateCast documentation
-    FunctionDocumentation::Description accurateCast_description = R"(
-Converts a value to a specified data type. Unlike [`CAST`](#CAST), `accurateCast` performs stricter type checking and throws an exception if the conversion would result in a loss of data precision or if the conversion is not possible.
-
-This function is safer than regular `CAST` as it prevents precision loss and invalid conversions.
-    )";
-    FunctionDocumentation::Syntax accurateCast_syntax = "accurateCast(x, T)";
-    FunctionDocumentation::Arguments accurateCast_arguments = {
-        {"x", "A value to convert.", {"Any"}},
-        {"T", "The target data type name.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue accurateCast_returned_value = {"Returns the converted value with the target data type.", {"Any"}};
-    FunctionDocumentation::Examples accurateCast_examples = {
-    {
-        "Successful conversion",
-        R"(
-SELECT accurateCast(42, 'UInt16')
-        )",
-        R"(
-┌─accurateCast(42, 'UInt16')─┐
-│                        42 │
-└───────────────────────────┘
-        )"
-    },
-    {
-        "String to number",
-        R"(
-SELECT accurateCast('123.45', 'Float64')
-        )",
-        R"(
-┌─accurateCast('123.45', 'Float64')─┐
-│                            123.45 │
-└───────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn accurateCast_introduced_in = {1, 1};
-    FunctionDocumentation::Category accurateCast_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCast_documentation = {accurateCast_description, accurateCast_syntax, accurateCast_arguments, {}, accurateCast_returned_value, accurateCast_examples, accurateCast_introduced_in, accurateCast_category};
-
-    /// accurateCastOrNull documentation
-    FunctionDocumentation::Description accurateCastOrNull_description = R"(
-Converts a value to a specified data type.
-Like [`accurateCast`](#accurateCast), but returns `NULL` instead of throwing an exception if the conversion cannot be performed accurately.
-
-This function combines the safety of [`accurateCast`](#accurateCast) with graceful error handling.
-    )";
-    FunctionDocumentation::Syntax accurateCastOrNull_syntax = "accurateCastOrNull(x, T)";
-    FunctionDocumentation::Arguments accurateCastOrNull_arguments = {
-        {"x", "A value to convert.", {"Any"}},
-        {"T", "The target data type name.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue accurateCastOrNull_returned_value = {"Returns the converted value with the target data type, or `NULL` if conversion is not possible.", {"Any"}};
-    FunctionDocumentation::Examples accurateCastOrNull_examples = {
-    {
-        "Successful conversion",
-        R"(
-SELECT accurateCastOrNull(42, 'String')
-        )",
-        R"(
-┌─accurateCastOrNull(42, 'String')─┐
-│ 42                               │
-└──────────────────────────────────┘
-        )"
-    },
-    {
-        "Failed conversion returns NULL",
-        R"(
-SELECT accurateCastOrNull('abc', 'UInt32')
-        )",
-        R"(
-┌─accurateCastOrNull('abc', 'UInt32')─┐
-│                                ᴺᵁᴸᴸ │
-└─────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn accurateCastOrNull_introduced_in = {1, 1};
-    FunctionDocumentation::Category accurateCastOrNull_category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation accurateCastOrNull_documentation = {accurateCastOrNull_description, accurateCastOrNull_syntax, accurateCastOrNull_arguments, {}, accurateCastOrNull_returned_value, accurateCastOrNull_examples, accurateCastOrNull_introduced_in, accurateCastOrNull_category};
-
-    factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, CAST_documentation, FunctionFactory::Case::Insensitive);
-    factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, accurateCast_documentation);
-    factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
+    factory.registerFunction("CAST", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::nonAccurate, false, {}); }, {}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction("accurateCast", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurate, false, {}); }, {});
+    factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, {});
 }
 
 }
