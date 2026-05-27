@@ -1,8 +1,3 @@
--- Tags: no-llvm-coverage
--- no-llvm-coverage: although `fuzzQuery` is called with an explicit seed, the fuzzer
--- accumulates state (`column_like` / `table_like`) across invocations, so the set of
--- branches taken inside `QueryFuzzer.cpp` still depends on what other tests ran before
--- this one in the same server process.
 
 SELECT * FROM fuzzQuery('SELECT 1', 500, 8956) LIMIT 0 FORMAT TSVWithNamesAndTypes;
 

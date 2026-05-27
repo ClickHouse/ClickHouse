@@ -293,8 +293,34 @@ if __name__ == "__main__":
                 else:
                     uncovered.append((active_rel, ln))
 
-    CONTEXT = 2  # lines before/after
+    CONTEXT = 2  # lines before/after each uncovered block
+    # If two uncovered lines are at most MERGE_GAP apart, fold them into a
+    # single block instead of printing two adjacent blocks whose CONTEXT
+    # windows would touch or overlap.  Picked so that nearby uncovered lines
+    # in the same function (e.g. lines 2013, 2018, 2022 of a 10-line body)
+    # render as one contiguous excerpt with the unaffected lines shown as
+    # plain context.
+    MERGE_GAP = 2 * CONTEXT + 2
     MAX_PRINT = 200  # max uncovered lines to print total
+
+    def _merge_blocks(sorted_lines: list[int]) -> list[tuple[int, int]]:
+        """Merge a sorted list of line numbers into (start, end) ranges.
+
+        Two adjacent line numbers are folded into the same range if their gap
+        is at most MERGE_GAP.  Merged ranges may contain lines that are not in
+        the input list — callers must use the original set to decide which
+        lines to mark with `>>` when rendering.
+        """
+        ranges: list[tuple[int, int]] = []
+        start = prev = sorted_lines[0]
+        for ln in sorted_lines[1:]:
+            if ln - prev <= MERGE_GAP:
+                prev = ln
+            else:
+                ranges.append((start, prev))
+                start = prev = ln
+        ranges.append((start, prev))
+        return ranges
 
     print("=" * 80)
     print("Changed-lines coverage summary")
@@ -337,30 +363,19 @@ if __name__ == "__main__":
                 print(f"  [source file not found: {abs_path}]")
                 continue
 
-            # sort + deduplicate
-            file_lines = sorted(set(by_file[rel]))
+            uncovered_set = set(by_file[rel])
+            blocks = _merge_blocks(sorted(uncovered_set))
 
-            # merge contiguous lines into blocks
-            blocks = []
-            start = prev = file_lines[0]
-
-            for ln in file_lines[1:]:
-                if ln == prev + 1:
-                    prev = ln
-                else:
-                    blocks.append((start, prev))
-                    start = prev = ln
-            blocks.append((start, prev))
-
-            # print blocks
             for block_start, block_end in blocks:
                 start_line = max(1, block_start - CONTEXT)
                 end_line = min(len(lines), block_end + CONTEXT)
 
                 print(f"\n--- uncovered block {block_start}-{block_end} ---")
 
+                # `>>` marks only the lines actually reported as uncovered; lines
+                # folded into the block by MERGE_GAP are shown as plain context.
                 for i in range(start_line, end_line + 1):
-                    prefix = ">>" if block_start <= i <= block_end else "  "
+                    prefix = ">>" if i in uncovered_set else "  "
                     code = lines[i - 1].rstrip("\n")
                     print(f"{prefix} {i:6d} | {code}")
     else:
@@ -430,23 +445,15 @@ if __name__ == "__main__":
                 print(f"  [source file not found: {abs_path}]")
                 continue
 
-            file_lines = sorted(set(by_file[rel]))
-            blocks = []
-            start = prev = file_lines[0]
-            for ln in file_lines[1:]:
-                if ln == prev + 1:
-                    prev = ln
-                else:
-                    blocks.append((start, prev))
-                    start = prev = ln
-            blocks.append((start, prev))
+            lbc_set = set(by_file[rel])
+            blocks = _merge_blocks(sorted(lbc_set))
 
             for block_start, block_end in blocks:
                 start_line = max(1, block_start - CONTEXT)
                 end_line = min(len(lines), block_end + CONTEXT)
                 print(f"\n--- lost coverage block {block_start}-{block_end} ---")
                 for i in range(start_line, end_line + 1):
-                    prefix = ">>" if block_start <= i <= block_end else "  "
+                    prefix = ">>" if i in lbc_set else "  "
                     code = lines[i - 1].rstrip("\n")
                     print(f"{prefix} {i:6d} | {code}")
     else:

@@ -1,7 +1,4 @@
--- Tags: no-fasttest, no-llvm-coverage
--- no-llvm-coverage: even with the fixed seed, `StorageFuzzQuery` shares accumulated fuzzer
--- state with other tests in the same server process, so the coverage of `QueryFuzzer.cpp`
--- branches it triggers is non-deterministic.
+-- Tags: no-fasttest
 -- Test: exercises `Storage FuzzQuery` engine creation paths registered by `registerStorageFuzzQuery`.
 -- Covers: src/Storages/StorageFuzzQuery.cpp:166-167 (empty-args), :171-173 (non-String column),
 --         and src/Storages/StorageFuzzQuery.cpp:131 (too many args via `getConfiguration`).
