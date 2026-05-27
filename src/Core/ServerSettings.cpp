@@ -1,6 +1,8 @@
 #include <Access/AccessControl.h>
 #include <Columns/IColumn.h>
 #include <Common/Jemalloc.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -1666,7 +1668,7 @@ struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     // settings which can be loaded from the the default profile, see also MAKE_DEPRECATED_BY_SERVER_CONFIG in src/Core/Settings.h
-    std::unordered_set<std::string> settings_from_profile_allowlist = {
+    UnorderedSetWithMemoryTracking<std::string> settings_from_profile_allowlist = {
         "background_pool_size",
         "background_merges_mutations_concurrency_ratio",
         "background_merges_mutations_scheduling_policy",
@@ -1742,7 +1744,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     /// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
     /// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
     /// current setting values, one needs to ask the components directly.
-    std::unordered_map<String, std::pair<String, ChangeableWithoutRestart>> changeable_settings
+    UnorderedMapWithMemoryTracking<String, std::pair<String, ChangeableWithoutRestart>> changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
