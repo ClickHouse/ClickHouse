@@ -3965,6 +3965,14 @@ static ColumnConst::Ptr deserializeConstant(
         {
             captured_column.type = decodeDataType(in);
             captured_column.column = deserializeConstant(*captured_column.type, in, registry, context);
+            /// `deserializeConstant` returns size-0 ColumnConsts to match the DAG node invariant,
+            /// but a `ColumnFunction` requires its captured columns to share its `elements_size`
+            /// (1 below) — `ColumnFunction::replicate` calls `replicate(offsets)` on each capture,
+            /// and `ColumnConst::replicate` throws when `s != offsets.size()`. Resize the captures
+            /// to size 1 here, mirroring `FunctionCaptureOverloadResolver::executeImpl`'s
+            /// constant-folding branch where the captures are `cloneResized(1)`-ed before the
+            /// `ColumnFunction` is created.
+            captured_column.column = captured_column.column->cloneResized(1);
         }
 
         auto function_expression = std::make_shared<FunctionExpression>(
@@ -3973,13 +3981,7 @@ static ColumnConst::Ptr deserializeConstant(
                 std::move(capture_dag),
                 ExpressionActionsSettings(context, CompileExpressions::yes)));
 
-        /// `deserializeConstant` (below) returns size-0 ColumnConsts for each captured column,
-        /// matching the size-0 invariant for DAG node columns. Build the ColumnFunction with
-        /// the same `elements_size=0` so that `ColumnFunction::replicate` (called during
-        /// `convertToFullColumnIfConst` at header time) doesn't get a size-1 ColumnFunction
-        /// trying to replicate size-0 ColumnConst captures — which would throw
-        /// "Size of offsets doesn't match size of column".
-        return ColumnConst::create(ColumnFunction::create(0, std::move(function_expression), std::move(captured_columns)), 0);
+        return ColumnConst::create(ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns)), 0);
     }
 
     auto column = type.createColumn();
