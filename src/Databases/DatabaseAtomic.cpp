@@ -108,6 +108,12 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     tryCreateMetadataSymlink();
 }
 
+UUID DatabaseAtomic::getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_name) const
+{
+    const String table_metadata_path = getObjectMetadataPath(table_name);
+    return DatabaseOnDisk::getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
+}
+
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
 {
     std::lock_guard lock(mutex);

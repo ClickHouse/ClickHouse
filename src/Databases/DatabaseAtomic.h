@@ -50,13 +50,14 @@ public:
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
     void dropTableImpl(ContextPtr context, const String & table_name, bool sync);
-    void dropDetachedTable(ContextPtr context, const String & table_name, bool sync) override;
+    void dropDetachedTable(ContextPtr context, const String & table_name, bool sync);
 
     void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
     StoragePtr detachTable(ContextPtr context, const String & name) override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
+    UUID getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_name) const;
 
     void drop(ContextPtr /*context*/) override;
 

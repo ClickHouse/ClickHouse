@@ -1,3 +1,4 @@
+#include <memory>
 #include <Access/Common/AccessRightsElement.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -192,17 +193,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         auto database = DatabaseCatalog::instance().getDatabase(table_id.getDatabaseName());
         const auto table_name = table_id.getTableName();
 
-        if (query.if_exists && !database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
-        {
-            return {};
-        }
-
-        if (database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
-        {
-            throw Exception(
-                ErrorCodes::UNKNOWN_TABLE, "Table {} must be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
-        }
-
         auto new_query_ptr = query.clone();
         if (!query.cluster.empty() && !maybeRemoveOnCluster(new_query_ptr, getContext()))
         {
@@ -216,11 +206,27 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
         }
 
-        database->dropDetachedTable(context_, table_name, query.sync);
+        if (query.if_exists && !database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
+        {
+            return {};
+        }
+        if (database->isTableExist(table_name, context_) && !database->isTableDetached(table_name))
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE, "Table {} must be detached for using DROP DETACHED TABLE", table_id.getNameForLogs());
+        }
+
+        auto actual_database = std::dynamic_pointer_cast<DatabaseAtomic>(database);
+        if (!actual_database)
+        {
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "DROP DETACHED TABLE is unsupported for Database{}", database->getEngineName());
+        }
+
+        actual_database->dropDetachedTable(context_, table_name, query.sync);
 
         if (query.sync)
         {
-            uuid_to_wait = database->tryGetTableUUID(table_id.table_name);
+            uuid_to_wait = actual_database->getTableUUIDFromDetachedMetadata(context_, table_name);
         }
         return {};
     }

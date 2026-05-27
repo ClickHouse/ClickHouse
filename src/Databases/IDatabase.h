@@ -330,12 +330,6 @@ public:
         const String & /*name*/,
         [[maybe_unused]] bool sync = false);
 
-    /// Delete the detached table from the database, drop table and delete the metadata.
-    virtual void dropDetachedTable( /// NOLINT
-        ContextPtr /*context*/,
-        const String & /*name*/,
-        bool /*sync*/);
-
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
     /// Note: ATTACH TABLE statement actually uses createTable method.
