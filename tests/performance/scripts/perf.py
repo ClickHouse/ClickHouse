@@ -691,9 +691,19 @@ if not args.use_existing_tables:
                 break
             i += 1
 
+        # When the dropped assignment was the first entry of the SETTINGS
+        # clause, consume the trailing comma (and any whitespace around it)
+        # too. The reverse scan for a preceding comma is not comment-aware
+        # and so a comment between `SETTINGS` and the dropped entry would
+        # otherwise leave a stray leading `,` after the cut.
+        if cut_start == name_start and i < n and query[i] == ",":
+            i += 1
+            while i < n and query[i] in " \t\r\n":
+                i += 1
+
         stripped = query[:cut_start] + query[i:]
-        # Clean up a leading `, ` that may remain when the dropped setting
-        # was the first one in the SETTINGS clause.
+        # Defensive cleanup of a leading `, ` that the structural cut above
+        # may have missed in unusual whitespace/comment shapes.
         stripped = re.sub(r"\bSETTINGS\s*,\s*", "SETTINGS ", stripped, flags=re.IGNORECASE)
         # Drop an empty SETTINGS clause (the only setting was the dropped one),
         # along with any whitespace that preceded the SETTINGS keyword.
