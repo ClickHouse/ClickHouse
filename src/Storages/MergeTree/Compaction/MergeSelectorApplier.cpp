@@ -26,6 +26,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_remove_small_parts_at_right;
+    extern const MergeTreeSettingsUInt64 merge_selector_min_age_to_disable_right_tail_heuristic;
     extern const MergeTreeSettingsBool merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once;
     extern const MergeTreeSettingsUInt64 merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent;
     extern const MergeTreeSettingsFloat merge_selector_base;
@@ -111,6 +112,8 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     simple_merge_settings.window_size = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_window_size];
     simple_merge_settings.max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
     simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
+    simple_merge_settings.merge_selector_min_age_to_disable_right_tail_heuristic
+        = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_min_age_to_disable_right_tail_heuristic];
     simple_merge_settings.base = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base];
     simple_merge_settings.min_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::min_parts_to_merge_at_once];
 

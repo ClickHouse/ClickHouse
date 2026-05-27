@@ -167,6 +167,8 @@ public:
           */
         bool enable_heuristic_to_remove_small_parts_at_right = true;
         double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
+        /// Zero means disabled.
+        size_t merge_selector_min_age_to_disable_right_tail_heuristic = 0;
 
         /** Heuristic:
           * Lower max_parts_to_merge_at_once automatically when number of parts in partition approaching parts_to_throw_insert

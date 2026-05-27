@@ -1220,12 +1220,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.6",
         {
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
             {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
+            {"merge_selector_min_age_to_disable_right_tail_heuristic", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

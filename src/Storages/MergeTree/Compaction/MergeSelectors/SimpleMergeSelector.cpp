@@ -27,9 +27,12 @@ public:
     {
     }
 
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
+    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t min_age, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
-        if (settings.enable_heuristic_to_remove_small_parts_at_right)
+        const bool should_remove_small_parts_at_right = settings.enable_heuristic_to_remove_small_parts_at_right
+            && (!settings.merge_selector_min_age_to_disable_right_tail_heuristic
+                || min_age < settings.merge_selector_min_age_to_disable_right_tail_heuristic);
+        if (should_remove_small_parts_at_right)
         {
             size_t size_delta = 0;
             size_t rows_delta = 0;
@@ -320,6 +323,7 @@ void selectWithinPartsRange(
                     range_end,
                     sum_size,
                     sum_rows,
+                    min_age,
                     begin == 0 ? 0 : parts[begin - 1].size,
                     settings);
         }
