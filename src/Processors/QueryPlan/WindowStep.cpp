@@ -102,6 +102,9 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                     streaming_default_values_);
             });
 
+        if (streams_fan_out)
+            pipeline.resize(num_threads);
+
         assertBlocksHaveEqualStructure(pipeline.getHeader(), *output_header,
             "WindowStep streaming transform for '" + window_description.window_name + "'");
         return;
