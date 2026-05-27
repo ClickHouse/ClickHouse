@@ -11,7 +11,12 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ColumnsDescription.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
@@ -19,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
+#include <fmt/ranges.h>
 #include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -37,6 +43,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace FailPoints
@@ -655,6 +662,110 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
         format_settings,
         configuration->format,
         configuration->compression_method);
+}
+
+namespace
+{
+
+/// Extract logical column names from a `PARTITION BY` AST. Supports the common
+/// shapes `PARTITION BY col` (ASTIdentifier) and `PARTITION BY (a, b)`
+/// (ASTFunction("tuple") wrapping ASTExpressionList of identifiers). Returns
+/// an empty list when `partition_by` is null. Throws on unsupported shapes
+/// (expressions other than plain column references), since the Delta protocol
+/// only models column-level partitioning.
+Names extractPartitionColumnNames(ASTPtr partition_by)
+{
+    if (!partition_by)
+        return {};
+
+    Names result;
+    auto append_if_identifier = [&](const ASTPtr & ast)
+    {
+        if (const auto * id = ast->as<ASTIdentifier>())
+        {
+            result.push_back(id->name());
+            return;
+        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Delta Lake PARTITION BY must be a plain column reference (or a tuple of them); got `{}`",
+            ast->formatForErrorMessage());
+    };
+
+    if (const auto * tuple = partition_by->as<ASTFunction>(); tuple && tuple->name == "tuple")
+    {
+        if (tuple->arguments)
+            for (const auto & child : tuple->arguments->children)
+                append_if_identifier(child);
+    }
+    else
+    {
+        append_if_identifier(partition_by);
+    }
+    return result;
+}
+
+}
+
+void DeltaLakeMetadataDeltaKernel::createTable(
+    const ObjectStoragePtr & object_storage_,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context,
+    const ColumnsDescription & columns,
+    ASTPtr partition_by,
+    bool if_not_exists)
+{
+    auto log = getLogger("DeltaLakeMetadataDeltaKernel");
+
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
+
+    if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "To enable delta lake writes (including CREATE TABLE), use allow_experimental_delta_lake_writes = 1");
+
+    /// If a `_delta_log` already exists at the location, treat the table as
+    /// existing: bail out cleanly under IF NOT EXISTS, otherwise refuse.
+    /// `listFiles` returns the .json commits; an empty `_delta_log` directory
+    /// (which the kernel will also refuse to overwrite) is conservatively
+    /// treated as existing.
+    const auto data_path = configuration_ptr->getRawPath().path;
+    const auto existing_commits = listFiles(*object_storage_, data_path, deltalake_metadata_directory, metadata_file_suffix);
+    if (!existing_commits.empty())
+    {
+        if (if_not_exists)
+        {
+            LOG_DEBUG(log, "Delta table already exists at `{}`, IF NOT EXISTS no-op", data_path);
+            return;
+        }
+        throw Exception(
+            ErrorCodes::TABLE_ALREADY_EXISTS,
+            "Delta table at `{}` already has a `_delta_log` with {} commit(s)",
+            data_path, existing_commits.size());
+    }
+
+    /// Qualify: a member function `getKernelHelper()` shadows the free
+    /// function inside this class's static methods.
+    auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
+    Names partition_columns = extractPartitionColumnNames(partition_by);
+
+    /// Use `getInsertable()` so ordinary + ephemeral columns are visible -- the
+    /// Delta protocol does not have a notion of materialized/alias columns.
+    /// `WriteTransaction::createTable` -> `buildKernelEngineSchema` consumes
+    /// this list and walks it through the `ffi::visit_field_*` visitor, which
+    /// is the same conversion shape used by the read-side helpers in
+    /// `getSchemaFromSnapshot.{h,cpp}` (just in the reverse direction).
+    auto schema_list = columns.getInsertable();
+
+    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
+    write_transaction->createTable(schema_list, partition_columns);
+
+    LOG_DEBUG(
+        log,
+        "Initialized Delta table at `{}` with {} column(s), partition columns: [{}]",
+        data_path, schema_list.size(), fmt::join(partition_columns, ", "));
 }
 
 void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const

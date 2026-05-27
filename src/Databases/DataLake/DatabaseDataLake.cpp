@@ -32,7 +32,9 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -714,6 +716,71 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /// because this table is actually stateless like a table function.
         /* is_table_function */true,
         /* lazy_init */true);
+}
+
+void DatabaseDataLake::createTable(
+    ContextPtr context_,
+    const String & /*name*/,
+    const StoragePtr & table,
+    const ASTPtr & query)
+{
+    /// Drives the v0.23.0 create-table FFI directly through
+    /// `DeltaLakeMetadataDeltaKernel::createTable` -> `WriteTransaction::createTable`,
+    /// which writes `_delta_log/00000000000000000000.json` with the kernel-built
+    /// Protocol + Metadata actions. Column types come from the storage's in-memory
+    /// metadata (already materialized by the parser before this point) and are
+    /// converted to the Delta `StructType` by `buildKernelEngineSchema` in
+    /// `getSchemaFromSnapshot.{h,cpp}` -- the same module that handles the reverse
+    /// kernel-to-ClickHouse conversion via `getTableSchemaFromSnapshot` /
+    /// `getWriteSchema`.
+    ///
+    /// Catalog-side registration (Unity / Glue `createTable` REST call) is not
+    /// invoked here: the existing `DataLake::ICatalog` implementations expose
+    /// only read-only Delta paths. Once a write-capable catalog client lands,
+    /// the call site for `catalog->createTable(...)` is right after the kernel
+    /// commit below.
+    auto * storage_object = dynamic_cast<StorageObjectStorage *>(table.get());
+    if (!storage_object)
+        return;
+
+    auto configuration = storage_object->getObjectStorageConfiguration();
+    if (!configuration || !configuration->isDataLakeConfiguration())
+        return;
+
+#if USE_DELTA_KERNEL_RS
+    /// Extract `partition_by` from the `CREATE TABLE` AST. The storage AST may
+    /// be absent (e.g. when ClickHouse re-creates a known table on attach) --
+    /// in that case fall through with no PARTITION BY.
+    ASTPtr partition_by;
+    if (const auto * create = query ? query->as<ASTCreateQuery>() : nullptr)
+    {
+        if (create->storage && create->storage->partition_by)
+            partition_by = create->storage->partition_by->ptr();
+    }
+
+    const auto & columns = storage_object->getInMemoryMetadataPtr(context_, /* bypass_metadata_cache */ false)->getColumns();
+
+    /// Always pass `if_not_exists=true` here: in the in-database create flow,
+    /// `StorageObjectStorage::ctor` -> `configuration->create()` may have
+    /// already driven `DeltaLakeMetadataDeltaKernel::createTable` from
+    /// storage-construction time, so the `_delta_log` is expected to already
+    /// be populated by the time we reach this point. The kernel call below
+    /// then no-ops; if storage construction was skipped instead (e.g. when
+    /// columns were resolved late by the catalog), it writes the commit now.
+    /// Genuine "table already exists" errors are surfaced separately by
+    /// `IDatabase::createTable` at the database registry level, so suppressing
+    /// the duplicate check here does not mask user-facing errors.
+    DeltaLakeMetadataDeltaKernel::createTable(
+        storage_object->getObjectStorage(),
+        configuration,
+        context_,
+        columns,
+        std::move(partition_by),
+        /* if_not_exists */ true);
+#else
+    (void)context_;
+    (void)query;
+#endif
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT

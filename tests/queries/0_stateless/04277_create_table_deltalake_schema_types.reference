@@ -1,0 +1,13 @@
+pre-create: no _delta_log
+post-create: initial commit exists
+0
+c_byte	Int8
+c_double	Float64
+c_float	Float32
+c_int	Int32
+c_long	Int64
+c_n_int	Nullable(Int32)
+c_n_str	Nullable(String)
+c_short	Int16
+c_string	String
+commit-json: contains all declared column names

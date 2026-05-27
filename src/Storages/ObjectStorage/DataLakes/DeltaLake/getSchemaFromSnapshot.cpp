@@ -550,6 +550,156 @@ DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi:
     return data.getSchemaResult().names_and_types;
 }
 
+/// =============================================================================
+/// CH -> kernel: schema visitor used by `ffi::get_create_table_builder`.
+///
+/// The kernel calls the function-pointer stored in `EngineSchema::visitor`
+/// once, passing back the opaque `schema` field as the user data. The visitor
+/// must call `ffi::visit_field_*` for every leaf type to register field IDs,
+/// then call `ffi::visit_field_struct` for the top-level struct (anonymous
+/// name) and return its ID.
+/// =============================================================================
+
+namespace
+{
+
+uintptr_t visitFieldFromClickHouseType(
+    ffi::KernelSchemaVisitorState * state,
+    const std::string & name,
+    const DB::DataTypePtr & full_type);
+
+uintptr_t visitElementFromClickHouseType(
+    ffi::KernelSchemaVisitorState * state,
+    const DB::DataTypePtr & full_type);
+
+uintptr_t visitFieldFromClickHouseType(
+    ffi::KernelSchemaVisitorState * state,
+    const std::string & name,
+    const DB::DataTypePtr & full_type)
+{
+    bool nullable = full_type->isNullable();
+    DB::DataTypePtr type = nullable ? DB::removeNullable(full_type) : full_type;
+    auto name_slice = KernelUtils::toDeltaString(name);
+
+    auto unwrap = [&](auto result, const char * label)
+    {
+        return KernelUtils::unwrapResult(result, label);
+    };
+
+    switch (type->getTypeId())
+    {
+        case DB::TypeIndex::Int8:
+            return unwrap(ffi::visit_field_byte(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_byte");
+        case DB::TypeIndex::Int16:
+            return unwrap(ffi::visit_field_short(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_short");
+        case DB::TypeIndex::Int32:
+            return unwrap(ffi::visit_field_integer(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_integer");
+        case DB::TypeIndex::Int64:
+            return unwrap(ffi::visit_field_long(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_long");
+        case DB::TypeIndex::Float32:
+            return unwrap(ffi::visit_field_float(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_float");
+        case DB::TypeIndex::Float64:
+            return unwrap(ffi::visit_field_double(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_double");
+        case DB::TypeIndex::UInt8:
+            /// ClickHouse stores Bool as UInt8 today.
+            return unwrap(ffi::visit_field_boolean(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_boolean");
+        case DB::TypeIndex::String:
+        case DB::TypeIndex::FixedString:
+            return unwrap(ffi::visit_field_string(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_string");
+        case DB::TypeIndex::Date:
+        case DB::TypeIndex::Date32:
+            return unwrap(ffi::visit_field_date(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_date");
+        case DB::TypeIndex::DateTime:
+        case DB::TypeIndex::DateTime64:
+            return unwrap(ffi::visit_field_timestamp(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_timestamp");
+        case DB::TypeIndex::Array:
+        {
+            const auto & array_type = assert_cast<const DB::DataTypeArray &>(*type);
+            auto element_id = visitElementFromClickHouseType(state, array_type.getNestedType());
+            return unwrap(
+                ffi::visit_field_array(state, name_slice, element_id, nullable, &KernelUtils::allocateError),
+                "visit_field_array");
+        }
+        case DB::TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DB::DataTypeMap &>(*type);
+            auto key_id = visitElementFromClickHouseType(state, map_type.getKeyType());
+            auto value_id = visitElementFromClickHouseType(state, map_type.getValueType());
+            return unwrap(
+                ffi::visit_field_map(state, name_slice, key_id, value_id, nullable, &KernelUtils::allocateError),
+                "visit_field_map");
+        }
+        case DB::TypeIndex::Tuple:
+        {
+            const auto & tuple_type = assert_cast<const DB::DataTypeTuple &>(*type);
+            const auto & element_types = tuple_type.getElements();
+            const auto & element_names = tuple_type.getElementNames();
+            std::vector<uintptr_t> child_ids;
+            child_ids.reserve(element_types.size());
+            for (size_t i = 0; i < element_types.size(); ++i)
+                child_ids.push_back(visitFieldFromClickHouseType(state, element_names[i], element_types[i]));
+            return unwrap(
+                ffi::visit_field_struct(state, name_slice, child_ids.data(), child_ids.size(), nullable, &KernelUtils::allocateError),
+                "visit_field_struct");
+        }
+        case DB::TypeIndex::Decimal32:
+        case DB::TypeIndex::Decimal64:
+        case DB::TypeIndex::Decimal128:
+        case DB::TypeIndex::Decimal256:
+            return unwrap(
+                ffi::visit_field_decimal(
+                    state, name_slice,
+                    static_cast<uint8_t>(DB::getDecimalPrecision(*type)),
+                    static_cast<uint8_t>(DB::getDecimalScale(*type)),
+                    nullable,
+                    &KernelUtils::allocateError),
+                "visit_field_decimal");
+        default:
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "ClickHouse type `{}` cannot be mapped to a Delta Lake type for CREATE TABLE",
+                type->getName());
+    }
+}
+
+uintptr_t visitElementFromClickHouseType(ffi::KernelSchemaVisitorState * state, const DB::DataTypePtr & full_type)
+{
+    /// For array elements / map keys & values the kernel expects a synthetic anonymous
+    /// field. We reuse `visitFieldFromClickHouseType` with an empty name.
+    return visitFieldFromClickHouseType(state, /* name */ "", full_type);
+}
+
+extern "C" uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSchemaVisitorState * state)
+{
+    const auto * schema_list = static_cast<const DB::NamesAndTypesList *>(schema_void);
+    std::vector<uintptr_t> field_ids;
+    field_ids.reserve(schema_list->size());
+    for (const auto & col : *schema_list)
+        field_ids.push_back(visitFieldFromClickHouseType(state, col.name, col.type));
+
+    /// Top-level struct has an empty name; the kernel ignores it for the root schema.
+    auto empty_name = KernelUtils::toDeltaString("");
+    return KernelUtils::unwrapResult(
+        ffi::visit_field_struct(
+            state, empty_name, field_ids.data(), field_ids.size(),
+            /* nullable */ false,
+            &KernelUtils::allocateError),
+        "visit_field_struct(top-level)");
+}
+
+}
+
+ffi::EngineSchema buildKernelEngineSchema(const DB::NamesAndTypesList & schema_list)
+{
+    /// `schema` is `void *`; the kernel never mutates it, but the FFI struct field
+    /// is non-const, so cast accordingly. The visitor reads only — there is no
+    /// thread safety concern.
+    return ffi::EngineSchema{
+        /* schema */  const_cast<DB::NamesAndTypesList *>(&schema_list),
+        /* visitor */ &kernelEngineSchemaVisitorTrampoline,
+    };
+}
+
 }
 
 #endif

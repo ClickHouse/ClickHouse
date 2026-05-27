@@ -37,6 +37,12 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot);
 
 DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine);
 
+/// Builds a delta-kernel `EngineSchema` view over a ClickHouse `NamesAndTypesList`.
+/// The returned struct stores a pointer to `schema_list`; the caller must keep
+/// `schema_list` alive for the duration of any FFI call that uses the returned value
+/// (e.g. `ffi::get_create_table_builder`).
+ffi::EngineSchema buildKernelEngineSchema(const DB::NamesAndTypesList & schema_list);
+
 }
 
 #endif

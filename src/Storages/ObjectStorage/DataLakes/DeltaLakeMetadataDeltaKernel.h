@@ -70,6 +70,24 @@ public:
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);
     }
 
+    /// Initialize a new Delta table at the configured location by writing the
+    /// `00000000000000000000.json` commit with Protocol + Metadata actions.
+    /// Drives the v0.23.0 create-table FFI via `WriteTransaction::createTable`,
+    /// which itself converts `ColumnsDescription` -> `StructType` through
+    /// `buildKernelEngineSchema` (in `getSchemaFromSnapshot.{h,cpp}`, alongside
+    /// the existing kernel <-> ClickHouse schema helpers).
+    /// No-op (or throws) when the location already has a `_delta_log`.
+    /// Direct entry point for both `DeltaLakeMetadata::createInitial`
+    /// (standalone `ENGINE = DeltaLake(...)`) and `DatabaseDataLake::createTable`
+    /// (Unity / catalog-managed paths).
+    static void createTable(
+        const ObjectStoragePtr & object_storage_,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        const ColumnsDescription & columns,
+        ASTPtr partition_by,
+        bool if_not_exists);
+
     std::optional<size_t> totalRows(ContextPtr) const override;
 
     std::optional<size_t> totalBytes(ContextPtr) const override;

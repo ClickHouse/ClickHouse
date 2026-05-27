@@ -19,6 +19,17 @@ public:
     /// Create a transcation.
     void create();
 
+    /// Create a brand-new Delta table at the configured location by writing the
+    /// initial `00000000000000000000.json` commit (Protocol + Metadata actions).
+    /// `schema` is the table schema in ClickHouse types; `partition_columns` is
+    /// the logical PARTITION BY column list. Throws if `_delta_log` already has
+    /// commits at the location.
+    ///
+    /// Note: partition columns are accepted for forward compatibility but not yet
+    /// persisted through the FFI -- the v0.23.0 `get_create_table_builder` does not
+    /// expose `with_data_layout(Partitioned)`. Tracking upstream support.
+    void createTable(const DB::NamesAndTypesList & schema, const DB::Names & partition_columns);
+
     struct CommitFile
     {
         std::string file_name;

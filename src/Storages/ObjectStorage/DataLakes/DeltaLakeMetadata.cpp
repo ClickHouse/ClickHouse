@@ -639,6 +639,39 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
     return isDeltaKernelEnabled(context, storage_type);
 }
 
+void DeltaLakeMetadata::createInitial(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context,
+    const std::optional<ColumnsDescription> & columns,
+    ASTPtr partition_by,
+    ASTPtr /*order_by*/,
+    bool if_not_exists,
+    std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+    const StorageID & /*table_id_*/)
+{
+#if USE_DELTA_KERNEL_RS
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr && isDeltaKernelEnabled(local_context, configuration_ptr->getType()))
+    {
+        if (!columns.has_value())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE TABLE for DeltaLake requires explicit column definitions");
+        DeltaLakeMetadataDeltaKernel::createTable(
+            object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
+        return;
+    }
+#else
+    (void)object_storage;
+    (void)configuration;
+    (void)local_context;
+    (void)columns;
+    (void)partition_by;
+    (void)if_not_exists;
+#endif
+    /// Non-kernel path: nothing to materialize on disk. The legacy JSON metadata
+    /// reader expects an existing `_delta_log` and there is no writer for it.
+}
+
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,

@@ -267,6 +267,55 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Commit version: {}", version);
 }
 
+void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const DB::Names & partition_columns)
+{
+    if (!partition_columns.empty())
+    {
+        /// The v0.23.0 FFI `get_create_table_builder` does not expose
+        /// `with_data_layout(DataLayout::Partitioned)` -- the kernel-side builder
+        /// supports it but no FFI setter is provided yet. Persist the columns in
+        /// ClickHouse's in-memory metadata; the actual delta log will be created
+        /// without `partitionColumns`. Matches the current INSERT-into-partitioned
+        /// limitation noted in `04259_create_table_deltalake_local.sh`.
+        LOG_INFO(log,
+            "PARTITION BY columns are not yet persisted into the Delta log "
+            "(kernel FFI does not expose with_data_layout): {}",
+            fmt::join(partition_columns, ", "));
+    }
+
+    auto * engine_builder = kernel_helper->createBuilder();
+    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+
+    auto engine_schema = DeltaLake::buildKernelEngineSchema(schema);
+
+    using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTableBuilder, ffi::free_create_table_builder>;
+    using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+
+    KernelCreateTableBuilder builder(DeltaLake::KernelUtils::unwrapResult(
+        ffi::get_create_table_builder(
+            DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
+            &engine_schema,
+            DeltaLake::KernelUtils::toDeltaString(engine_info),
+            engine.get()),
+        "get_create_table_builder"));
+
+    /// `create_table_builder_build` consumes the builder on both success and
+    /// failure paths inside the kernel, so release() is correct here.
+    KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_builder_build(builder.release(), engine.get()),
+        "create_table_builder_build"));
+
+    /// `create_table_commit` likewise consumes the transaction handle.
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_commit(create_txn.release(), engine.get()),
+        "create_table_commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
+
+    LOG_TEST(log, "Created table at version {}", version);
+}
+
 }
 
 #endif
