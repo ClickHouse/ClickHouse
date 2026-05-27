@@ -563,11 +563,11 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
     }
 }
 
-std::vector<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::getTasks()
+VectorWithMemoryTracking<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::getTasks()
 {
-    std::vector<TaskInfoSnapshot> result;
+    VectorWithMemoryTracking<TaskInfoSnapshot> result;
 
-    std::unordered_set<TaskInfoPtr> unique_tasks;
+    UnorderedSetWithMemoryTracking<TaskInfoPtr> unique_tasks;
 
     {
         /// Hold both locks simultaneously to get a consistent snapshot.

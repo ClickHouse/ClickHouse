@@ -7,6 +7,11 @@
 #include <mutex>
 #include <unordered_set>
 #include <vector>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/StorageID.h>
 #include <base/defines.h>
 #include <boost/noncopyable.hpp>
@@ -77,14 +82,14 @@ public:
         bool executing;
     };
 
-    std::vector<TaskInfoSnapshot> getTasks();
+    VectorWithMemoryTracking<TaskInfoSnapshot> getTasks();
 
 private:
     using TaskInfoPtr = std::shared_ptr<TaskInfo>;
-    using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>;
+    using DelayedTasks = MultiMapWithMemoryTracking<Poco::Timestamp, TaskInfoPtr>;
     /// BackgroundSchedulePool schedules a task on its own task queue, there's no need to construct/restore tracing context on this level.
     /// This is also how ThreadPool class treats the tracing context. See ThreadPool for more information.
-    using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
+    using Threads = VectorWithMemoryTracking<ThreadFromGlobalPoolNoTracingContextPropagation>;
 
     /// @param thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
     BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_);
@@ -111,14 +116,14 @@ private:
     {
         size_t num_running = 0;
         std::optional<size_t> runnable_list_pos;
-        std::deque<TaskInfoPtr> tasks;
+        DequeWithMemoryTracking<TaskInfoPtr> tasks;
 
     };
-    std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex);
-    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
+    UnorderedMapWithMemoryTracking<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex);
+    VectorWithMemoryTracking<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
     Threads threads;
     /// Tasks from tasks_groups are removed while executing, hold list of running tasks separately, for better introspection via system.background_schedule_pool.
-    std::unordered_set<TaskInfoPtr> running_tasks TSA_GUARDED_BY(tasks_mutex);
+    UnorderedSetWithMemoryTracking<TaskInfoPtr> running_tasks TSA_GUARDED_BY(tasks_mutex);
 
     /// Delayed tasks.
 
