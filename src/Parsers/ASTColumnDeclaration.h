@@ -81,6 +81,8 @@ private:
         }
     }
 
+    void resetChild(IndexSlot slot);
+
 public:
     bool hasChildren() const { return !children.empty(); }
     ASTPtr getType() const { return getChildOrNull(TYPE); }
@@ -94,6 +96,7 @@ public:
 
     void setType(ASTPtr && node) { setChild(TYPE, std::move(node)); }
     void setDefaultExpression(ASTPtr && node) { setChild(DEFAULT_EXPR, std::move(node)); }
+    void resetDefaultExpression() { resetChild(DEFAULT_EXPR); }
     void setComment(ASTPtr && node) { setChild(COMMENT, std::move(node)); }
     void setCodec(ASTPtr && node) { setChild(CODEC, std::move(node)); }
     void setStatisticsDesc(ASTPtr && node) { setChild(STATS, std::move(node)); }
