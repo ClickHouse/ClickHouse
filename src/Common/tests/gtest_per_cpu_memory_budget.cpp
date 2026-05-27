@@ -50,8 +50,7 @@ TEST(PerCPUMemoryBudget, BufferDelaysPerCPUTouch)
     resetTrackers();
 
     PerCPUMemoryBudget::PerCPUMemoryBudgetState state;
-    state.cpu = PerCPUMemoryBudget::currentCPU();
-    if (state.cpu < 0)
+    if (PerCPUMemoryBudget::currentCPU() < 0)
         GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
     constexpr UInt64 BUFFER_SIZE = PerCPUMemoryBudget::BUFFER_SIZE;
@@ -87,8 +86,7 @@ TEST(PerCPUMemoryBudget, AllocCrossingDetection)
     resetTrackers();
 
     PerCPUMemoryBudget::PerCPUMemoryBudgetState state;
-    state.cpu = PerCPUMemoryBudget::currentCPU();
-    if (state.cpu < 0)
+    if (PerCPUMemoryBudget::currentCPU() < 0)
         GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
     constexpr UInt64 SLICE = PerCPUMemoryBudget::SLICE;
@@ -107,8 +105,7 @@ TEST(PerCPUMemoryBudget, FreeCrossingDetection)
     resetTrackers();
 
     PerCPUMemoryBudget::PerCPUMemoryBudgetState state;
-    state.cpu = PerCPUMemoryBudget::currentCPU();
-    if (state.cpu < 0)
+    if (PerCPUMemoryBudget::currentCPU() < 0)
         GTEST_SKIP() << "Per-CPU machinery unavailable on this platform";
 
     constexpr UInt64 SLICE = PerCPUMemoryBudget::SLICE;

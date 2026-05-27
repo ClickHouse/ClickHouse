@@ -20,9 +20,15 @@ namespace DB::PerCPUMemoryBudget
 /// drag in librseq's heavy machinery.
 struct PerCPUMemoryBudgetState
 {
-    int    cpu = -1;          /// CPU we last successfully charged on; -1 = uninitialised
-    UInt64 nallocs = 0;       /// last-seen value of `nallocs[cpu]` for this thread
-    UInt64 nfrees  = 0;       /// last-seen value of `nfrees[cpu]`
+    /// Alloc and free track migration independently: each side remembers the
+    /// CPU on which its baseline (`nallocs` / `nfrees`) was captured, so a
+    /// migration observed by one side does not falsely mark the other side as
+    /// non-migrated on its next op (where its baseline still refers to the
+    /// previous CPU's counter and a bucket comparison would be meaningless).
+    int    alloc_cpu = -1;    /// CPU on which `nallocs` was last observed; -1 = uninitialised
+    int    free_cpu  = -1;    /// CPU on which `nfrees`  was last observed; -1 = uninitialised
+    UInt64 nallocs = 0;       /// last-seen value of `nallocs[alloc_cpu]` for this thread
+    UInt64 nfrees  = 0;       /// last-seen value of `nfrees[free_cpu]`
     UInt64 pending_alloc = 0; /// bytes accumulated locally since last per-CPU `nallocs` charge
     UInt64 pending_free  = 0; /// bytes accumulated locally since last per-CPU `nfrees`  charge
 };

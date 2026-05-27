@@ -185,22 +185,28 @@ ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
     }
 
     /// Migration detection happens *after* a successful charge — `cpu` is the
-    /// CPU we actually ended up on, regardless of any rseq retries.
-    bool migrated = (state.cpu != cpu);
-    state.cpu = cpu;
-
+    /// CPU we actually ended up on, regardless of any rseq retries. Each side
+    /// (alloc / free) tracks its own last-seen CPU so a migration discovered
+    /// by one side does not leave a stale, cross-CPU baseline on the other.
     /// `!=` (not `>`) on the SLICE-shifted bucket: monotone counters only
     /// ever advance or wrap, so any change of bucket is a crossing — and
     /// using `!=` makes the check correct across the unsigned wrap point.
+    /// On migration the bucket comparison would be apples-to-oranges (the
+    /// stored baseline was captured on a different CPU's counter), so we
+    /// force a flush via `migrated` rather than trusting `cross`.
     if constexpr (alloc)
     {
+        bool migrated = (state.alloc_cpu != cpu);
         bool cross = (next >> SLICE_LOG2) != (state.nallocs >> SLICE_LOG2);
+        state.alloc_cpu = cpu;
         state.nallocs = next;
         return migrated || cross;
     }
     else
     {
+        bool migrated = (state.free_cpu != cpu);
         bool cross = (next >> SLICE_LOG2) != (state.nfrees >> SLICE_LOG2);
+        state.free_cpu = cpu;
         state.nfrees = next;
         return migrated || cross;
     }
@@ -216,7 +222,7 @@ ALWAYS_INLINE bool charge(Int64 size, PerCPUMemoryBudgetState & state)
 /// Returns true when the caller should flush `untracked_memory` (a SLICE
 /// crossing on the per-CPU counter, or a CPU migration). Whenever the
 /// fast path returns false, the call has not touched the per-CPU layer at
-/// all — `state.cpu` is unchanged, no migration is observed.
+/// all — `state.{alloc,free}_cpu` is unchanged, no migration is observed.
 ALWAYS_INLINE inline bool chargeAlloc(Int64 size, PerCPUMemoryBudgetState & state)
 {
     state.pending_alloc += static_cast<UInt64>(size);
