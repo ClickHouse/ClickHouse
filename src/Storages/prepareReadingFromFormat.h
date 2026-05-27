@@ -52,7 +52,7 @@ namespace DB
         NamesAndTypesList file_columns;
         /// Columns which are read from path to data file.
         /// (Hive partition columns).
-        std::unordered_map<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
+        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> hive_partition_columns_to_read_from_file_path_map;
     };
 
     /// Get all needed information for reading from data in some input format.

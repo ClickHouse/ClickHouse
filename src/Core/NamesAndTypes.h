@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <initializer_list>
@@ -74,17 +76,17 @@ std::tuple_element_t<I, NameAndTypePair> & get(NameAndTypePair & name_and_type)
         return name_and_type.type;
 }
 
-using NamesAndTypes = std::vector<NameAndTypePair>;
+using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
 
-class NamesAndTypesList : public std::list<NameAndTypePair>
+class NamesAndTypesList : public ListWithMemoryTracking<NameAndTypePair>
 {
 public:
     NamesAndTypesList() = default;
 
-    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
+    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : ListWithMemoryTracking<NameAndTypePair>(init) {}
 
     template <typename Iterator>
-    NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
+    NamesAndTypesList(Iterator begin, Iterator end) : ListWithMemoryTracking<NameAndTypePair>(begin, end) {}
 
     void readText(ReadBuffer & buf, bool check_eof = true);
     void writeText(WriteBuffer & buf) const;
@@ -107,7 +109,7 @@ public:
     DataTypes getTypes() const;
 
     /// Creates a mapping from name to the type
-    std::unordered_map<std::string, DataTypePtr> getNameToTypeMap() const;
+    UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
 
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);
@@ -141,7 +143,7 @@ public:
     void writeTextWithNamesInStorage(WriteBuffer & buf) const;
 };
 
-using NamesAndTypesLists = std::vector<NamesAndTypesList>;
+using NamesAndTypesLists = VectorWithMemoryTracking<NamesAndTypesList>;
 
 }
 

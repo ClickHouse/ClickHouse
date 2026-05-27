@@ -17,6 +17,8 @@
 
 #include <Interpreters/Context.h>
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+
 namespace DB
 {
 
@@ -55,7 +57,7 @@ using ArrayJoinUsageMap = std::unordered_map<const IQueryTreeNode *, std::unorde
 using ArrayJoinNodeSet = std::unordered_set<const IQueryTreeNode *>;
 
 /// Map: (ArrayJoinNode raw ptr, column name) → post-pruning column DataType.
-using UpdatedTypeMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, DataTypePtr>>;
+using UpdatedTypeMap = std::unordered_map<const IQueryTreeNode *, UnorderedMapWithMemoryTracking<std::string, DataTypePtr>>;
 
 /// Map: (ArrayJoinNode raw ptr, column name, old 1-based index) → new 1-based index.
 using IndexRemapMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, std::unordered_map<UInt64, UInt64>>>;
