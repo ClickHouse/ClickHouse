@@ -41,6 +41,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
@@ -1978,7 +1979,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
     {
         auto executor = std::make_unique<ReaderExecutor>(
             source_reader, objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
             file_path);
@@ -2003,7 +2004,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
     {
         auto executor = std::make_unique<ReaderExecutor>(
             broken_source, objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
             file_path);
@@ -2062,7 +2063,7 @@ TEST_F(FileCacheTest, DiskCacheProviderHonoursFullRangeWhenBatchSizeIsOne)
 
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader, objects,
-        std::vector<std::shared_ptr<ICacheProvider>>{provider},
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider},
         /*window_size=*/30,
         /*min_bytes_for_seek=*/0,
         file_path);
@@ -2118,7 +2119,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
     {
         auto executor = std::make_unique<ReaderExecutor>(
             source_reader, objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/10,
             /*min_bytes_for_seek=*/0,
             file_path);
@@ -2135,7 +2136,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
     {
         auto executor = std::make_unique<ReaderExecutor>(
             source_reader, objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/10,
             /*min_bytes_for_seek=*/0,
             file_path);
@@ -2319,7 +2320,7 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
     {
         auto executor = std::make_unique<ReaderExecutor>(
             source, objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/20,
             /*min_bytes_for_seek=*/0,
             file_path);
@@ -2342,7 +2343,7 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
     {
         auto executor = std::make_unique<ReaderExecutor>(
             source, objects,
-            std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/20,
             /*min_bytes_for_seek=*/0,
             file_path);
@@ -2407,7 +2408,7 @@ namespace
         {
             auto executor = std::make_unique<ReaderExecutor>(
                 source_reader, objects,
-                std::vector<std::shared_ptr<ICacheProvider>>{provider},
+                VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider},
                 window_size, /*min_bytes_for_seek=*/0,
                 file_path);
             /// Wire a permissive buffer_limit so the executor's source reads
@@ -2578,7 +2579,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
 
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader, objects,
-        std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
         /*window_size=*/ReaderExecutor::DEFAULT_WINDOW_SIZE,
         /*min_bytes_for_seek=*/0,
         file_path);
@@ -2668,7 +2669,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
 
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader, objects,
-        std::vector<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
         /*window_size=*/16,
         /*min_bytes_for_seek=*/0,
         file_path);
@@ -2780,7 +2781,7 @@ TEST_F(FileCacheTest, ReaderExecutorClampsHitToRequestedWindow)
     /// trigger get() with a range no larger than the window, not the segment.
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader, objects,
-        std::vector<std::shared_ptr<ICacheProvider>>{recording},
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{recording},
         /*window_size=*/10,
         /*min_bytes_for_seek=*/0,
         file_path);

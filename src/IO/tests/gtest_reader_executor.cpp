@@ -14,6 +14,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <gtest/gtest.h>
@@ -453,7 +454,7 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
 TEST(ReaderExecutor, MergeRangesNoGap)
 {
     /// Adjacent ranges — should merge into one
-    std::vector<ByteRange> ranges = {{0, 100}, {100, 100}, {200, 100}};
+    VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {100, 100}, {200, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 50);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0);
@@ -463,7 +464,7 @@ TEST(ReaderExecutor, MergeRangesNoGap)
 TEST(ReaderExecutor, MergeRangesSmallGap)
 {
     /// Small gap (10 bytes) < min_gap (100) — merge
-    std::vector<ByteRange> ranges = {{0, 100}, {110, 100}};
+    VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {110, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 100);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0);
@@ -473,7 +474,7 @@ TEST(ReaderExecutor, MergeRangesSmallGap)
 TEST(ReaderExecutor, MergeRangesLargeGap)
 {
     /// Large gap (500 bytes) > min_gap (100) — don't merge
-    std::vector<ByteRange> ranges = {{0, 100}, {600, 100}};
+    VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {600, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 100);
     ASSERT_EQ(merged.size(), 2);
     EXPECT_EQ(merged[0].offset, 0);
@@ -485,7 +486,7 @@ TEST(ReaderExecutor, MergeRangesLargeGap)
 TEST(ReaderExecutor, MergeRangesMixed)
 {
     /// Three ranges: first two close, third far away
-    std::vector<ByteRange> ranges = {{0, 100}, {120, 100}, {1000, 100}};
+    VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {120, 100}, {1000, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 50);
     ASSERT_EQ(merged.size(), 2);
     EXPECT_EQ(merged[0].offset, 0);
@@ -497,7 +498,7 @@ TEST(ReaderExecutor, MergeRangesMixed)
 TEST(ReaderExecutor, MergeRangesZeroMinGap)
 {
     /// min_gap=0 — no merging
-    std::vector<ByteRange> ranges = {{0, 100}, {100, 100}};
+    VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {100, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 0);
     ASSERT_EQ(merged.size(), 2);
 }
@@ -708,7 +709,7 @@ TEST(ReaderExecutor, MergeRangesOverlapping)
     /// Without the saturating-subtraction fix, gap = sorted[i].offset - prev.end()
     /// underflows on overlap and the merge branch is skipped, leaving overlapping
     /// ranges in the output.
-    std::vector<ByteRange> ranges = {{0, 100}, {50, 100}};
+    VectorWithMemoryTracking<ByteRange> ranges = {{0, 100}, {50, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 10);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0u);
@@ -719,7 +720,7 @@ TEST(ReaderExecutor, MergeRangesContained)
 {
     /// One range fully contained in another. The union is the wider range;
     /// without the fix the underflow path emits both ranges.
-    std::vector<ByteRange> ranges = {{0, 200}, {50, 100}};
+    VectorWithMemoryTracking<ByteRange> ranges = {{0, 200}, {50, 100}};
     auto merged = ReaderExecutor::mergeRanges(ranges, 10);
     ASSERT_EQ(merged.size(), 1);
     EXPECT_EQ(merged[0].offset, 0u);
@@ -1795,7 +1796,7 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
 
     ReaderExecutor executor(
         source, objects,
-        std::vector<std::shared_ptr<ICacheProvider>>{tracker},
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{tracker},
         /*window_size=*/500);
 
     auto rope = executor.readNextWindow();

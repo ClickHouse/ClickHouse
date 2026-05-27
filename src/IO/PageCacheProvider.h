@@ -3,6 +3,7 @@
 #include <IO/ICacheProvider.h>
 #include <Common/PageCache.h>
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ private:
     /// legacy `CachedInMemoryReadBufferFromFile` behaviour for bypass-mode
     /// reads (background merges/mutations).
     bool bypass_if_missing;
-    std::vector<Block> blocks;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<Block> blocks;
     LoggerPtr log = getLogger("PageCacheHandle");
 };
 

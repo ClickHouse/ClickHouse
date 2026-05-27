@@ -6,14 +6,15 @@
 
 #include <memory>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
 struct CacheLookupResult
 {
-    std::vector<ByteRange> hit_ranges;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    std::vector<ByteRange> miss_ranges;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<ByteRange> hit_ranges;
+    VectorWithMemoryTracking<ByteRange> miss_ranges;
 
     bool allHit() const { return miss_ranges.empty(); }
     bool allMiss() const { return hit_ranges.empty(); }

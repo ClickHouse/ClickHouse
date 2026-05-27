@@ -11,6 +11,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <Common/VectorWithMemoryTracking.h>
 
 using namespace DB;
 
@@ -61,7 +62,7 @@ TEST(PipelineReadBuffer, ReadAll)
     objects.emplace_back("test", "", content.size());
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 20);
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 20);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -82,7 +83,7 @@ TEST(PipelineReadBuffer, SeekNegativeOffsetThrows)
     objects.emplace_back("test", "", content.size());
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 100);
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 100);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -103,7 +104,7 @@ TEST(PipelineReadBuffer, Seek)
     objects.emplace_back("test", "", content.size());
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 8);
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 8);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -122,7 +123,7 @@ TEST(PipelineReadBuffer, GetPosition)
     objects.emplace_back("test", "", 100);
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 30);
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 30);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -144,7 +145,7 @@ TEST(PipelineReadBuffer, TryGetFileSize)
     objects.emplace_back("test", "", 500);
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 100);
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 100);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -169,7 +170,7 @@ TEST(PipelineReadBuffer, TryGetFileSizeReturnsNulloptForUnknownSize)
     objects.emplace_back("test", "", StoredObject::UnknownSize);
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 100);
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 100);
 
     PipelineReadBuffer buf(std::move(executor));
 
@@ -235,7 +236,7 @@ TEST(PipelineReadBuffer, MMapSourceDoesNotReturnImmediateEof)
     objects.emplace_back("test", "", content.size());
 
     auto executor = std::make_unique<ReaderExecutor>(
-        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 1024);
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, 1024);
 
     PipelineReadBuffer buf(std::move(executor));
 

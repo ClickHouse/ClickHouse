@@ -4,6 +4,8 @@
 #include <deque>
 #include <memory>
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 class MemoryTracker;
 
@@ -132,7 +134,7 @@ public:
     bool covers(ByteRange req) const;
 
     /// Sub-ranges of `req` not reachable. Empty iff `covers(req)`.
-    std::vector<ByteRange> gaps(ByteRange req) const;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<ByteRange> gaps(ByteRange req) const;
 
     /// Number of bytes in `req` reachable from the cursor.
     size_t coveredBytes(ByteRange req) const;
@@ -171,11 +173,11 @@ public:
     /// The first node's `data()` is the buffer start; the cursor is at
     /// `data() + front_offset_for_test()`. No non-`const` overload —
     /// mutating the deque would silently break the sort invariant.
-    const std::deque<RopeNode> & getNodes() const { return nodes; }  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const DequeWithMemoryTracking<RopeNode> & getNodes() const { return nodes; }
 
     /// Read-only view of the disjoint coverage intervals. Mostly for
     /// tests; production callers should use `covers` / `gaps` / `range`.
-    const std::vector<ByteRange> & getIntervals() const { return intervals; }  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const VectorWithMemoryTracking<ByteRange> & getIntervals() const { return intervals; }
 
     /// Test-only: bytes already consumed inside `nodes.front()`.
     size_t frontOffsetForTest() const { return front_offset; }
@@ -195,8 +197,8 @@ private:
     /// is at least `bytes` (so we don't underflow).
     void extendIntervalsFront(size_t bytes);
 
-    std::deque<RopeNode> nodes;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    std::vector<ByteRange> intervals;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    DequeWithMemoryTracking<RopeNode> nodes;
+    VectorWithMemoryTracking<ByteRange> intervals;
 
     /// Bytes inside `nodes.front()` that have already been consumed by
     /// `advance` but whose buffer is still alive (the front node hasn't

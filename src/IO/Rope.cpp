@@ -1,6 +1,7 @@
 #include <IO/Rope.h>
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Defines.h>
 
 #include <algorithm>
@@ -272,9 +273,9 @@ size_t Rope::coveredBytes(ByteRange req) const
     return total;
 }
 
-std::vector<ByteRange> Rope::gaps(ByteRange req) const  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+VectorWithMemoryTracking<ByteRange> Rope::gaps(ByteRange req) const
 {
-    std::vector<ByteRange> result;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<ByteRange> result;
     if (req.size == 0)
         return result;
 

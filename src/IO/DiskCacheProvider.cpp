@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/errnoToString.h>
 #include <chrono>
 #include <cstring>
@@ -462,7 +463,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
                 "write_range=[{}, {}), data intervals={}",
                 write_range.offset, write_range.end(), data.getIntervals().size());
 
-        std::vector<char, AllocatorWithMemoryTracking<char>> flat_buf(contiguous);  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        VectorWithMemoryTracking<char> flat_buf(contiguous);
         data.copyTo(flat_buf.data(), write_range);
 
         segment.write(flat_buf.data(), contiguous, write_offset);

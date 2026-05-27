@@ -1,6 +1,7 @@
 #include <IO/OffsetMap.h>
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 
@@ -68,9 +69,9 @@ const StoredObject * OffsetMap::findObjectAt(size_t logical_offset, size_t * obj
     return nullptr;
 }
 
-std::vector<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logical_range) const  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+VectorWithMemoryTracking<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logical_range) const
 {
-    std::vector<PhysicalRange> result;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<PhysicalRange> result;
 
     for (const auto & seg : segments)
     {

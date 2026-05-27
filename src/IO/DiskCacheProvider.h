@@ -5,6 +5,7 @@
 #include <Interpreters/FileCache/FileCache.h>
 
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -53,7 +54,7 @@ private:
     /// re-fetches the matching segments and calls `increasePriority` on each
     /// — the executor keeps the handle alive until after every `put` so the
     /// bump always lands AFTER the inserts. See `~DiskCacheHandle`.
-    std::vector<ByteRange> hits_to_touch;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<ByteRange> hits_to_touch;
     LoggerPtr log = getLogger("DiskCacheHandle");
 };
 

@@ -2,6 +2,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace CurrentMetrics
 {
@@ -120,10 +121,10 @@ void SourceBufferLimit::updatePosition(size_t slot_id, size_t new_position)
         it->second.position = new_position;
 }
 
-std::vector<ActiveBufferInfo> SourceBufferLimit::getActive() const  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+VectorWithMemoryTracking<ActiveBufferInfo> SourceBufferLimit::getActive() const
 {
     std::lock_guard lock(mutex);
-    std::vector<ActiveBufferInfo> result;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<ActiveBufferInfo> result;
     result.reserve(registry.size());
     for (const auto & [_, info] : registry)
         result.push_back(info);

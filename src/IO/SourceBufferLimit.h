@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 #include <Common/Logger.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <chrono>
 #include <mutex>
@@ -95,7 +97,7 @@ public:
     size_t getCapacity() const;
 
     /// Observability: snapshot of all active slots.
-    std::vector<ActiveBufferInfo> getActive() const;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    VectorWithMemoryTracking<ActiveBufferInfo> getActive() const;
 
 private:
     friend class SourceBufferSlot;
@@ -106,7 +108,7 @@ private:
 
     mutable std::mutex mutex;
     size_t next_id = 0;
-    std::unordered_map<size_t, ActiveBufferInfo> registry;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<size_t, ActiveBufferInfo> registry;
 
     LoggerPtr log = getLogger("SourceBufferLimit");
 };
