@@ -319,3 +319,55 @@ TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesRightTailTrim)
     ASSERT_TRUE(selected.empty())
         << "small_parts_min_count must be enforced after right-tail trimming";
 }
+
+
+/// Regression test: `small_parts_min_count` must use the trimmed range's `max_age`, not
+/// the pre-trim `max_age`. If the right tail contains the only old part and trimming
+/// removes it, the surviving range is all-small-fresh and below `min_count` — exactly the
+/// case the setting must block. Using the pre-trim `max_age` would see "old" and let the
+/// merge through.
+///
+/// Scenario: seven fresh equal-sized small parts followed by one tiny old part at the
+/// right tail (< 1% of total size, so trimming will remove it). Pre-trim `max_age` is
+/// old, post-trim `max_age` is fresh.
+TEST(SimpleMergeSelector, SmallPartsMinCountUsesTrimmedMaxAge)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 5;
+    settings.small_parts_threshold = 10 * 1024 * 1024;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+    settings.enable_heuristic_to_remove_small_parts_at_right = true;
+
+    PartsRange parts;
+    auto add_part = [&](int64_t block, size_t size, time_t age)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", block);
+        auto info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = info,
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    };
+
+    /// 8 small parts: 7 x 1 MiB fresh + 1 x 8 KiB OLD at right tail.
+    /// Pre-trim max_age = 700 (bypasses the small-parts gate in `allow`).
+    /// Pre-trim sum_size = 7 MiB + 8 KiB; tail is < 1% of sum, so right-tail trimming
+    /// removes it, leaving a 7-part range that is all small and all fresh — exactly
+    /// what `small_parts_min_count = 8` is supposed to block.
+    for (int64_t i = 0; i < 7; ++i)
+        add_part(i, 1024 * 1024, 1);
+    add_part(7, 8 * 1024, 700);
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    /// With the fix, `max_age` is recomputed over the trimmed range (all fresh),
+    /// the gate fires, and the candidate is rejected. No other allowed range exists.
+    ASSERT_TRUE(selected.empty())
+        << "small_parts_min_count must use trimmed max_age, not pre-trim max_age";
+}
