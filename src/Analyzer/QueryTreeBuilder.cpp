@@ -23,7 +23,10 @@
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Core/Streaming/CursorTree.h>
+
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -955,11 +958,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             auto & table_expression = table_element.table_expression->as<ASTTableExpression &>();
             std::optional<TableExpressionModifiers> table_expression_modifiers;
 
-            if (table_expression.final || table_expression.sample_size)
+            if (table_expression.final || table_expression.sample_size || table_expression.stream_settings)
             {
                 bool has_final = table_expression.final;
                 std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
                 std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+                std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -973,7 +977,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     }
                 }
 
-                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio);
+                if (table_expression.stream_settings)
+                {
+                    stream_settings = TableExpressionModifiers::StreamSettings{};
+                    const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
+                    if (ast_stream_settings.settings.cursor_tree.has_value())
+                        stream_settings->cursor_tree = buildCursorTree(ast_stream_settings.settings.cursor_tree.value());
+                }
+
+                table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
             }
 
             if (table_expression.database_and_table_name)

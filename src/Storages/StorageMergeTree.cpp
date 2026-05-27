@@ -41,6 +41,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
@@ -236,6 +237,7 @@ void StorageMergeTree::startup()
     {
         cleanup_thread.start();
         background_operations_assignee.start();
+        background_streaming_assignee.start();
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
@@ -271,6 +273,7 @@ void StorageMergeTree::flushAndPrepareForShutdown()
 
     background_operations_assignee.finish();
     background_moves_assignee.finish();
+    background_streaming_assignee.finish();
 
     cleanup_thread.stop();
 
@@ -357,7 +360,7 @@ void StorageMergeTree::read(
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
-    auto plan = MergeTreeDataSelectExecutor(*this).read(
+    QueryPlanPtr plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,
@@ -369,6 +372,17 @@ void StorageMergeTree::read(
 
     if (plan)
         query_plan = std::move(*plan);
+}
+
+CursorPromotersMap StorageMergeTree::buildPromoters()
+{
+    const auto data_parts = getDataPartsVectorForInternalUsage();
+    std::map<String, PartBlockNumberRanges> partition_ranges;
+
+    for (const auto & part : data_parts)
+        partition_ranges[part->info.getPartitionId()].addPart(part->info.min_block, part->info.max_block);
+
+    return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const

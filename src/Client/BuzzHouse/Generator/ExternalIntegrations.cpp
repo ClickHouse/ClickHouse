@@ -1918,6 +1918,7 @@ bool DolorIntegration::performExternalCommand(
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
+    , worker(fcc.log)
 {
     if (fc.mysql_server.has_value())
     {

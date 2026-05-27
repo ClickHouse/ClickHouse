@@ -52,7 +52,7 @@ struct TraceLogElement;
 class InstrumentationManager
 {
 public:
-    using InstrumentedParameter = std::variant<String, Int64, Float64>;
+    using InstrumentedArgument = std::variant<String, Int64, Float64>;
 
     enum class HandlerType : UInt8
     {
@@ -70,7 +70,7 @@ public:
         String handler_name;
         Instrumentation::EntryType entry_type;
         String symbol;
-        std::vector<InstrumentedParameter> parameters;
+        std::vector<InstrumentedArgument> arguments;
 
         String toString() const;
         bool operator<(const InstrumentedPointInfo & other) const { return id < other.id; }
@@ -106,7 +106,7 @@ public:
 
     [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, Instrumentation::All, String> id);
     [[clang::xray_never_instrument]] static bool shouldPatchFunction(String function_to_patch, String full_qualified_function);
-    [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters);
+    [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedArgument> & arguments);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
     InstrumentedPoints getInstrumentedPoints() const;

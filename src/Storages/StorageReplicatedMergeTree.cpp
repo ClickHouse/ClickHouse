@@ -366,6 +366,12 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotStaticS
     return res;
 }
 
+CursorPromotersMap StorageReplicatedMergeTree::buildPromoters()
+{
+    auto zookeeper = getZooKeeper();
+    return queue.buildPromoters(zookeeper);
+}
+
 String StorageReplicatedMergeTree::getEndpointName() const
 {
     const MergeTreeSettings & settings = getContext()->getReplicatedMergeTreeSettings();
@@ -6004,6 +6010,7 @@ void StorageReplicatedMergeTree::partialShutdown()
         auto merge_lock = merger_mutator.merges_blocker.cancel();
         auto move_lock = parts_mover.moves_blocker.cancel();
         background_operations_assignee.finish();
+        background_streaming_assignee.finish();
     }
 
     LOG_TRACE(log, "Threads finished");

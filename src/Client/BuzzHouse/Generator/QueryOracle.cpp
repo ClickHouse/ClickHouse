@@ -217,7 +217,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
 
     ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
-        FUNCcount);
+        "count");
     gen.levels.clear();
     gen.ctes.clear();
     gen.setAllowNotDetermistic(true);
@@ -247,10 +247,10 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
-    sfc1->mutable_func()->set_catalog_func(FUNCifNull);
+    sfc1->mutable_func()->set_catalog_func("ifNull");
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
-    sfc2->mutable_func()->set_catalog_func(FUNCsum);
+    sfc2->mutable_func()->set_catalog_func("sum");
 
     ssc2->set_allocated_from(ssc1.release_from());
     if (ssc1.has_groupby())
@@ -418,7 +418,7 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
 
     /// Build sq1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
     ssc1->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
-        FUNCcount);
+        "count");
     ssc1->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
     finishSettings(sel1->mutable_setting_values());
     ts1->set_format(OutFormat::OUT_CSV);
@@ -493,7 +493,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
     }
     // count() result column
     ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
-        FUNCcount);
+        "count");
     // WHERE pred — copied from the stored USING predicate of the catalog policy.
     // In the fallback path (table gone, querying system.one) we cannot reuse column references
     // from the original table; use a constant TRUE predicate instead so the result is always 1.
@@ -551,10 +551,10 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
     SQLFuncCall * sfc1 = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
-    sfc1->mutable_func()->set_catalog_func(FUNCifNull);
+    sfc1->mutable_func()->set_catalog_func("ifNull");
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
-    sfc2->mutable_func()->set_catalog_func(FUNCcount);
+    sfc2->mutable_func()->set_catalog_func("count");
     sfc2->set_distinct(true);
     gen.generateExpression(rg, sfc2->add_args()->mutable_expr());
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
@@ -601,7 +601,7 @@ void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq
         ->mutable_comp_expr()
         ->mutable_func_call()
         ->mutable_func()
-        ->set_catalog_func(FUNCcount);
+        ->set_catalog_func("count");
 
     JoinedTableOrFunction * outer_jtf
         = outer_ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -722,7 +722,7 @@ void QueryOracle::dumpTableContent(
                 ->mutable_comp_expr()
                 ->mutable_func_call()
                 ->mutable_func()
-                ->set_catalog_func(FUNCcount);
+                ->set_catalog_func("count");
             break;
         case DumpOracleStrategy::INSERT_COUNT: {
             /// On the first step get the current count plus the rows to be inserted
@@ -730,7 +730,7 @@ void QueryOracle::dumpTableContent(
 
             nrows = rows_dist(rg.generator);
             bexpr->set_op(BinaryOperator::BINOP_PLUS);
-            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(FUNCcount);
+            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
             bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
         }
         break;
@@ -771,7 +771,7 @@ void QueryOracle::dumpTableContent(
                 ->mutable_comp_expr()
                 ->mutable_func_call()
                 ->mutable_func()
-                ->set_catalog_func(FUNCcount);
+                ->set_catalog_func("count");
         }
         break;
     }
@@ -956,8 +956,14 @@ void QueryOracle::dumpOracleIntermediateSteps(
 
 /// Dictionary oracle: dump all columns, compare full content
 void QueryOracle::dumpDictionaryContent(
-    RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & sq1, SQLQuery & sq2)
+    RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & reload, SQLQuery & sq1, SQLQuery & sq2)
 {
+    SystemCommand * sc = reload.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd();
+    d.setName(sc->mutable_reload_dictionary(), false);
+    const std::optional<String> & cluster = d.getCluster();
+    if (cluster.has_value())
+        sc->mutable_cluster()->set_cluster(cluster.value());
+
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     Select * sel = ts->mutable_sel();
@@ -1277,7 +1283,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         SQLFuncCall * fcall = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
         eca->mutable_col_alias()->set_column("explain");
-        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCREGEXP_REPLACE);
+        fcall->mutable_func()->set_catalog_func("REGEXP_REPLACE");
         fcall->add_args()
             ->mutable_expr()
             ->mutable_comp_expr()
@@ -1295,7 +1301,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         SQLFuncCall * fcall2 = uexpr->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
         uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
-        fcall2->mutable_func()->set_catalog_func(SQLFunc::FUNCmatch);
+        fcall2->mutable_func()->set_catalog_func("match");
         fcall2->add_args()
             ->mutable_expr()
             ->mutable_comp_expr()

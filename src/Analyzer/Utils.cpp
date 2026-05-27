@@ -4,6 +4,7 @@
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
@@ -49,7 +50,10 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Core/Streaming/CursorTree_fwd.h>
+
 #include <ranges>
+
 namespace DB
 {
 namespace Setting
@@ -458,6 +462,17 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+
+        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+        if (stream_settings.has_value())
+        {
+            ASTStreamSettings::StreamSettings ast_stream_settings;
+            if (stream_settings->cursor_tree)
+                ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
+
+            result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
+            result_table_expression->children.push_back(result_table_expression->stream_settings);
+        }
     }
 
     return result_table_expression;

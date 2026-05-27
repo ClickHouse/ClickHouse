@@ -37,12 +37,12 @@ StatementGenerator::StatementGenerator(
     , next_type_mask(fc.type_mask)
     , connections(conn)
     , supports_cloud_features(supports_cloud_features_)
-    , deterministic_funcs_limit(
-          static_cast<size_t>(
-              std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
-    , deterministic_aggrs_limit(
-          static_cast<size_t>(
-              std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
+    , det_funcs(fc.det_funcs)
+    , nondet_funcs(fc.nondet_funcs)
+    , common_funcs(fc.common_funcs)
+    , det_aggrs(fc.det_aggrs)
+    , simple_det_aggrs(fc.simple_det_aggrs)
+    , nondet_aggrs(fc.nondet_aggrs)
     , SQLGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
@@ -179,19 +179,17 @@ StatementGenerator::StatementGenerator(
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
-    for (size_t i = 0; i < deterministic_funcs_limit; i++)
+    /// Add single argument functions for non sargable predicates
+    for (const auto & entry : det_funcs)
     {
-        /// Add single argument functions for non sargable predicates
-        const CHFunction & next = CHFuncs[i];
-
-        if (next.min_lambda_param == 0 && next.min_args == 1)
+        if (entry.lambda_kind == LambdaKind::None && entry.min_args == 1)
         {
-            one_arg_funcs.push_back(next);
+            one_arg_funcs.push_back(entry);
         }
     }
-    for (const auto & entry : CommonCHFuncs)
+    for (const auto & entry : common_funcs)
     {
-        if (entry.min_lambda_param == 0 && entry.min_args == 1)
+        if (entry.lambda_kind == LambdaKind::None && entry.min_args == 1)
         {
             one_arg_funcs.push_back(entry);
         }
@@ -266,78 +264,78 @@ StatementGenerator::StatementGenerator(
         likeEngsInfinite.emplace_back(GenerateRandom);
     }
     dictFuncs = {
-        {SQLFunc::FUNCdictGet, 1},
-        {SQLFunc::FUNCdictGetAll, 1},
-        {SQLFunc::FUNCdictGetChildren, 0},
-        {SQLFunc::FUNCdictGetDescendants, 1},
-        {SQLFunc::FUNCdictGetHierarchy, 0},
-        {SQLFunc::FUNCdictGetInt32, 1},
-        {SQLFunc::FUNCdictGetInt32OrDefault, 2},
-        {SQLFunc::FUNCdictGetKeys, 1},
-        {SQLFunc::FUNCdictGetOrDefault, 2},
-        {SQLFunc::FUNCdictGetOrNull, 1},
-        {SQLFunc::FUNCdictHas, 0},
-        {SQLFunc::FUNCdictIsIn, 1},
+        {"dictGet", 1},
+        {"dictGetAll", 1},
+        {"dictGetChildren", 0},
+        {"dictGetDescendants", 1},
+        {"dictGetHierarchy", 0},
+        {"dictGetInt32", 1},
+        {"dictGetInt32OrDefault", 2},
+        {"dictGetKeys", 1},
+        {"dictGetOrDefault", 2},
+        {"dictGetOrNull", 1},
+        {"dictHas", 0},
+        {"dictIsIn", 1},
     };
     if ((fc.type_mask & allow_int8))
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetInt8, 1}, {SQLFunc::FUNCdictGetInt8OrDefault, 2}});
+        dictFuncs.insert({{"dictGetInt8", 1}, {"dictGetInt8OrDefault", 2}});
     }
     if ((fc.type_mask & allow_int16))
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetInt16, 1}, {SQLFunc::FUNCdictGetInt16OrDefault, 2}});
+        dictFuncs.insert({{"dictGetInt16", 1}, {"dictGetInt16OrDefault", 2}});
     }
     if ((fc.type_mask & allow_int64))
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetInt64, 1}, {SQLFunc::FUNCdictGetInt64OrDefault, 2}});
+        dictFuncs.insert({{"dictGetInt64", 1}, {"dictGetInt64OrDefault", 2}});
     }
     if ((fc.type_mask & allow_unsigned_int) != 0)
     {
         if ((fc.type_mask & allow_int8))
         {
-            dictFuncs.insert({{SQLFunc::FUNCdictGetUInt8, 1}, {SQLFunc::FUNCdictGetUInt8OrDefault, 2}});
+            dictFuncs.insert({{"dictGetUInt8", 1}, {"dictGetUInt8OrDefault", 2}});
         }
         if ((fc.type_mask & allow_int16))
         {
-            dictFuncs.insert({{SQLFunc::FUNCdictGetUInt16, 1}, {SQLFunc::FUNCdictGetUInt16OrDefault, 2}});
+            dictFuncs.insert({{"dictGetUInt16", 1}, {"dictGetUInt16OrDefault", 2}});
         }
-        dictFuncs.insert({{SQLFunc::FUNCdictGetUInt32, 1}, {SQLFunc::FUNCdictGetUInt32OrDefault, 2}});
+        dictFuncs.insert({{"dictGetUInt32", 1}, {"dictGetUInt32OrDefault", 2}});
         if ((fc.type_mask & allow_int64))
         {
-            dictFuncs.insert({{SQLFunc::FUNCdictGetUInt64, 1}, {SQLFunc::FUNCdictGetUInt64OrDefault, 2}});
+            dictFuncs.insert({{"dictGetUInt64", 1}, {"dictGetUInt64OrDefault", 2}});
         }
     }
     if (fc.fuzz_floating_points && (fc.type_mask & allow_float32) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetFloat32, 1}, {SQLFunc::FUNCdictGetFloat32OrDefault, 2}});
+        dictFuncs.insert({{"dictGetFloat32", 1}, {"dictGetFloat32OrDefault", 2}});
     }
     if (fc.fuzz_floating_points && (fc.type_mask & allow_float64) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetFloat64, 1}, {SQLFunc::FUNCdictGetFloat64OrDefault, 2}});
+        dictFuncs.insert({{"dictGetFloat64", 1}, {"dictGetFloat64OrDefault", 2}});
     }
     if ((fc.type_mask & allow_dates) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetDate, 1}, {SQLFunc::FUNCdictGetDateOrDefault, 2}});
+        dictFuncs.insert({{"dictGetDate", 1}, {"dictGetDateOrDefault", 2}});
     }
     if ((fc.type_mask & allow_datetimes) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetDateTime, 1}, {SQLFunc::FUNCdictGetDateTimeOrDefault, 2}});
+        dictFuncs.insert({{"dictGetDateTime", 1}, {"dictGetDateTimeOrDefault", 2}});
     }
     if ((fc.type_mask & allow_uuid) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetUUID, 1}, {SQLFunc::FUNCdictGetUUIDOrDefault, 2}});
+        dictFuncs.insert({{"dictGetUUID", 1}, {"dictGetUUIDOrDefault", 2}});
     }
     if ((fc.type_mask & allow_strings) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetString, 1}, {SQLFunc::FUNCdictGetStringOrDefault, 2}});
+        dictFuncs.insert({{"dictGetString", 1}, {"dictGetStringOrDefault", 2}});
     }
     if ((fc.type_mask & allow_ipv4) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetIPv4, 1}, {SQLFunc::FUNCdictGetIPv4OrDefault, 2}});
+        dictFuncs.insert({{"dictGetIPv4", 1}, {"dictGetIPv4OrDefault", 2}});
     }
     if ((fc.type_mask & allow_ipv6) != 0)
     {
-        dictFuncs.insert({{SQLFunc::FUNCdictGetIPv6, 1}, {SQLFunc::FUNCdictGetIPv6OrDefault, 2}});
+        dictFuncs.insert({{"dictGetIPv6", 1}, {"dictGetIPv6OrDefault", 2}});
     }
 }
 
@@ -619,7 +617,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     }
     cv->set_create_opt(
         replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
-    next.is_materialized = (!next.is_temp || rg.nextMediumNumber() < 26) && rg.nextBool();
+    next.is_materialized = !next.is_temp && rg.nextBool();
     cv->set_materialized(next.is_materialized);
     next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
@@ -628,7 +626,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
-        const bool has_to = !replace && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
+        const bool has_to = (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
         next.teng = MergeTree;
         if (!has_to)
@@ -699,14 +697,14 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 }
             }
         }
-        if (!replace && !next.is_deterministic && (next.is_refreshable = rg.nextBool()))
+        if (!next.is_deterministic && (next.is_refreshable = rg.nextBool()))
         {
             generateNextRefreshableView(rg, cv->mutable_refresh());
             cv->set_empty(rg.nextBool());
         }
         else
         {
-            cv->set_populate(!has_to && !replace && rg.nextSmallNumber() < 4);
+            cv->set_populate(!has_to && rg.nextSmallNumber() < 4);
         }
     }
     if (next.cols.empty())
@@ -3356,7 +3354,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
             generateAlter(rg, in_parallel, sq->mutable_alter());
             break;
         case SQLOp::SetValues:
-            generateSettingValues(rg, formatSettings, sq->mutable_setting_values());
+            generateSettingValues(rg, fc.allow_query_oracles ? serverSettings : formatSettings, sq->mutable_setting_values());
             break;
         case SQLOp::Attach:
             generateAttach(rg, sq->mutable_attach());

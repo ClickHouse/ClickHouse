@@ -225,6 +225,12 @@ auto getWasmEdgeVmConfig(WasmModule::Config cfg)
         WasmEdge_ConfigureSetMaxMemoryPage(config.get(), static_cast<uint32_t>(cfg.memory_limit / WASMEDGE_PAGE_SIZE));
     }
 
+    /// WasmEdge cost measuring must stay enabled because cancellation is delivered by
+    /// `WasmEdge_StatisticsSetCostLimit`, and the executor only honours that limit when
+    /// cost measuring is on. The default cost limit is UINT64_MAX (no budget), and a
+    /// finite budget is applied below only when `cfg.hasFiniteFuelLimit` is true.
+    /// Cancellation paths lower the limit to 0/1 to force `CostLimitExceeded`,
+    /// which works regardless of whether the initial budget was finite.
     WasmEdge_ConfigureStatisticsSetCostMeasuring(config.get(), true);
     WasmEdge_ConfigureStatisticsSetTimeMeasuring(config.get(), true);
 
@@ -287,7 +293,7 @@ public:
         , vm_cxt(WasmEdgeResourcePtrCreate<WasmEdge_VMCreate>(getWasmEdgeVmConfig(cfg).get(), nullptr))
     {
         auto * stat_ctx = WasmEdge_VMGetStatisticsContext(vm_cxt.get());
-        if (cfg.fuel_limit)
+        if (cfg.hasFiniteFuelLimit())
         {
             WasmEdge_StatisticsSetCostLimit(stat_ctx, cfg.fuel_limit);
         }
@@ -565,7 +571,10 @@ WasmEdgeRuntime::WasmEdgeRuntime()
     setLogLevel(LogsLevel::warning);
 }
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(
+    std::string_view module_name,
+    std::string_view wasm_code,
+    FuelMode /*fuel_mode*/) const
 {
     auto loader_ctx = WasmEdgeResourcePtrCreate<WasmEdge_LoaderCreate>(nullptr);
     WasmEdge_ASTModuleContext * ast_module_ptr = nullptr;
@@ -648,7 +657,10 @@ namespace DB::WebAssembly
 
 WasmEdgeRuntime::WasmEdgeRuntime() = default;
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view /* module_name */, std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(
+    std::string_view /* module_name */,
+    std::string_view /* wasm_code */,
+    FuelMode /*fuel_mode*/) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WasmEdge support is disabled");
 }

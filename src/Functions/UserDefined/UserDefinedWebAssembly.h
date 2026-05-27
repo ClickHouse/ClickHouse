@@ -35,6 +35,8 @@ class WebAssemblyFunctionSettings
 public:
     void trySet(const String & name, Field value);
     Field getValue(const String & name) const;
+    bool isFuelEnabled() const;
+    WebAssembly::FuelMode getFuelMode() const;
 
 private:
     UnorderedMapWithMemoryTracking<String, Field> settings;

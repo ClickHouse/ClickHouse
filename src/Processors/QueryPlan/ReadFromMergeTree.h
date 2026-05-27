@@ -502,6 +502,8 @@ private:
         const MergeTreeIndexBuildContextPtr & index_build_context,
         std::optional<ActionsDAG> & result_projection);
 
+    Pipe groupPartitionsByStreams(AnalysisResult & result);
+
     Pipe readByLayers(
         const RangesInDataParts & parts_with_ranges,
         SplitPartsByRanges split_parts,

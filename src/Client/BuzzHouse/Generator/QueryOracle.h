@@ -139,7 +139,8 @@ public:
         std::vector<SQLQuery> & intermediate_queries);
 
     /// Dump and read dictionary/view oracle (REATTACH / BACKUP_RESTORE)
-    void dumpDictionaryContent(RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & sq1, SQLQuery & sq2);
+    void dumpDictionaryContent(
+        RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & reload, SQLQuery & sq1, SQLQuery & sq2);
     void dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2);
     void dumpObjectIntermediateSteps(
         RandomGenerator & rg,
