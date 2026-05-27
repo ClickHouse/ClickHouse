@@ -54,22 +54,11 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
             return false;
-        /// `Map` is not safe as a primary key for the splitter.
-        ///
-        /// The primary key index is written via `SerializationMap::serializeBinary` with the
-        /// default (`basic`) per-type serialization, which writes the nested `Array(Tuple(K, V))`
-        /// in its in-memory positional order. Parts using `map_serialization_version_for_zero_level_parts = 'with_buckets'`
-        /// store the same data on disk by hashing keys into buckets and serializing each bucket
-        /// independently; when read back via `SerializationMap::deserializeBinaryBulkWithMultipleStreams`
-        /// + `collectMapFromBuckets`, the per-row key order reflects ascending bucket index, not the
-        /// original insertion order.
-        ///
-        /// The splitter compares index values (insertion order) against actual row values
-        /// (bucket order). Under positional `ColumnMap::compareAt`, these are different values,
-        /// so `FilterSortedStreamByRange` drops rows that would otherwise fall inside a layer's
-        /// PK range. Falling back to the single in-order merging pipe (the `!isSafePrimaryKey`
-        /// branch in `splitPartsWithRangesByPrimaryKey`) bypasses the layer split and the
-        /// intersecting/non-intersecting separation, both of which depend on this comparison.
+        /// `Map` is unsafe as a splitter primary key: the PK index uses insertion-order
+        /// `serializeBinary` while `with_buckets` parts write data in bucket-index order,
+        /// and positional `ColumnMap::compareAt` then disagrees on equality, dropping rows.
+        /// Disabled unconditionally because the per-part serialization version is not
+        /// visible here; `Map` PKs are rare, so the cost is acceptable.
         case TypeIndex::Map:
             return false;
         case TypeIndex::Array:
