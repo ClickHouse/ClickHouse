@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
@@ -396,7 +397,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     Strings local_paths_for_blob_storage_log;
-    std::vector<size_t> file_sizes_for_blob_storage_log;
+    VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
     if (blob_storage_log)
     {
         local_paths_for_blob_storage_log.reserve(objects.size());
