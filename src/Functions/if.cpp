@@ -272,7 +272,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
 };
 
 
-class FunctionIf final : public FunctionIfBase
+class FunctionIf : public FunctionIfBase
 {
 public:
     static constexpr auto name = "if";
@@ -856,24 +856,22 @@ private:
     }
 
     static ColumnPtr executeGeneric(
-        const ColumnUInt8 * cond_col,
-        const ColumnsWithTypeAndName & arguments,
-        const DataTypePtr & result_type,
-        size_t input_rows_count)
+        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, bool use_variant_when_no_common_type)
     {
-        /// Use `result_type` (the analyzer's declared return type) directly as the target.
-        /// Re-deriving a common type from the live argument types here can diverge from
-        /// `result_type` when other planner passes (for example `IfConstantConditionPass`
-        /// folding `if(1, X, Y)` to `X`) replace child nodes with semantically-equivalent
-        /// ones whose types still differ in flags that affect supertype inference
-        /// (such as `canUnsignedBeSigned` on `DataTypeUInt64`). See issue #105649.
+        /// Convert both columns to the common type (if needed).
         const ColumnWithTypeAndName & arg1 = arguments[1];
         const ColumnWithTypeAndName & arg2 = arguments[2];
 
-        ColumnPtr col_then = castColumn(arg1, result_type);
-        ColumnPtr col_else = castColumn(arg2, result_type);
+        DataTypePtr common_type;
+        if (use_variant_when_no_common_type)
+            common_type = getLeastSupertypeOrVariant(DataTypes{arg1.type, arg2.type});
+        else
+            common_type = getLeastSupertype(DataTypes{arg1.type, arg2.type});
 
-        MutableColumnPtr result_column = result_type->createColumn();
+        ColumnPtr col_then = castColumn(arg1, common_type);
+        ColumnPtr col_else = castColumn(arg2, common_type);
+
+        MutableColumnPtr result_column = common_type->createColumn();
         result_column->reserve(input_rows_count);
 
         bool then_is_const = isColumnConst(*col_then);
@@ -1412,7 +1410,7 @@ public:
         /// Using typed implementations may lead to incorrect result column type when
         /// resulting Variant is created by use_variant_when_no_common_type.
         if (isVariant(result_type))
-            return executeGeneric(cond_col, arguments, result_type, input_rows_count);
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
 
         auto call = [&](const auto & types) -> bool
         {
@@ -1473,7 +1471,7 @@ public:
             || (res = executeTuple(arguments, result_type, input_rows_count))
             || (res = executeMap(arguments, result_type, input_rows_count))))
         {
-            return executeGeneric(cond_col, arguments, result_type, input_rows_count);
+            return executeGeneric(cond_col, arguments, input_rows_count, use_variant_when_no_common_type);
         }
 
         return res;

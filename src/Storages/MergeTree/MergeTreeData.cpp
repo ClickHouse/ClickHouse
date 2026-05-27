@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -55,7 +54,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTHelpers.h>
@@ -1123,13 +1121,16 @@ void MergeTreeData::checkProperties(
                 true /* allow_nullable_key */,
                 local_context);
 
-            if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
+            if (projection.index_granularity || projection.index_granularity_bytes)
             {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
-                    "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
-                    projection.name);
+                if (!canUseAdaptiveGranularity())
+                {
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
+                        "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
+                        projection.name);
+                }
             }
             projections_names.insert(projection.name);
         }
@@ -1415,13 +1416,10 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 namespace
 {
 
-void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command, bool allow_clear = false)
+void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command)
 {
     if (command.type == AlterCommand::DROP_COLUMN)
     {
-        if (allow_clear && command.clear)
-            return;
-
         throw Exception(
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Trying to ALTER DROP {} ({}) column",
@@ -4544,9 +4542,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             checkSpecialColumnWithDataType<DataTypeUInt8>("sign", command);
         }
-        else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
+        else if (merging_params.columns_to_sum.end() != std::find(merging_params.columns_to_sum.begin(), merging_params.columns_to_sum.end(), command.column_name))
         {
-            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
+            checkSpecialColumn("columns to sum", command);
         }
 
         if (command.type == AlterCommand::MODIFY_QUERY)
@@ -4973,7 +4971,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     using PartStorageType = MergeTreeDataPartStorageType;
 
     String out_reason;
-    const auto settings = getSettings(projection ? &projection->settings_changes : nullptr);
+    const auto settings = getSettings(projection);
     if (!canUsePolymorphicParts(*settings, out_reason))
         return {PartType::Wide, PartStorageType::Full};
 
@@ -5687,12 +5685,9 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         }
         empty_info.level += 1;
 
-        const auto & source_part = parts_to_remove.front();
-        const auto & partition = source_part->partition;
+        const auto & partition = parts_to_remove.front()->partition;
         String empty_part_name = empty_info.getPartNameAndCheckFormat(format_version);
-        /// Use the source part's metadata so patch parts pick up patch-part metadata.
-        auto [new_data_part, tmp_dir_holder] = createEmptyPart(
-            empty_info, partition, empty_part_name, source_part->getMetadataSnapshot(), NO_TRANSACTION_PTR);
+        auto [new_data_part, tmp_dir_holder] = createEmptyPart(empty_info, partition, empty_part_name, NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
@@ -7659,15 +7654,14 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 
     for (const auto & command : commands)
     {
-        auto alter = command.ast();
-        if (!alter || !alter->partition)
+        if (!command.partition)
         {
             affected_partition_ids.clear();
             break;
         }
 
         affected_partition_ids.insert(
-            getPartitionIDFromQuery(ASTPtr(alter->partition), query_context)
+            getPartitionIDFromQuery(command.partition, query_context)
         );
     }
 
@@ -10130,29 +10124,24 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                 if (mutation_command.column_name == command.column_name)
                     throw_exception(mutation_name, action, "column", command.column_name);
 
-                auto alter = mutation_command.ast();
-                if (alter && alter->predicate)
+                if (mutation_command.predicate)
                 {
-                    auto query_tree = buildQueryTree(ASTPtr(alter->predicate), local_context);
+                    auto query_tree = buildQueryTree(mutation_command.predicate, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
                         throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
-                if (alter && alter->update_assignments)
+                for (const auto & [name, expr] : mutation_command.column_to_update_expression)
                 {
-                    for (const auto & child : alter->update_assignments->children)
-                    {
-                        const auto & assignment = child->as<ASTAssignment &>();
-                        if (assignment.column_name == command.column_name)
-                            throw_exception(mutation_name, action, "column", command.column_name);
+                    if (name == command.column_name)
+                        throw_exception(mutation_name, action, "column", command.column_name);
 
-                        auto query_tree = buildQueryTree(assignment.expression(), local_context);
-                        auto identifiers = collectIdentifiersFullNames(query_tree);
-                        if (identifiers.contains(command.column_name))
-                            throw_exception(mutation_name, action, "column", command.column_name);
-                    }
+                    auto query_tree = buildQueryTree(expr, local_context);
+                    auto identifiers = collectIdentifiersFullNames(query_tree);
+                    if (identifiers.contains(command.column_name))
+                        throw_exception(mutation_name, action, "column", command.column_name);
                 }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
@@ -10708,17 +10697,23 @@ MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataP
     return info;
 }
 
-MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings_changes) const
+MergeTreeSettingsPtr MergeTreeData::getSettings(ProjectionDescriptionRawPtr projection) const
 {
     auto data_settings = storage_settings.get();
-
-    if (settings_changes && !settings_changes->empty())
+    if (projection)
     {
-        auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
-        new_data_settings->applyChanges(*settings_changes);
-        return new_data_settings;
+        if ((projection->index_granularity && (*projection->index_granularity != (*data_settings)[MergeTreeSetting::index_granularity]))
+            || (projection->index_granularity_bytes
+                && (*projection->index_granularity_bytes != (*data_settings)[MergeTreeSetting::index_granularity_bytes])))
+        {
+            auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
+            if (projection->index_granularity)
+                (*new_data_settings)[MergeTreeSetting::index_granularity] = *projection->index_granularity;
+            if (projection->index_granularity_bytes)
+                (*new_data_settings)[MergeTreeSetting::index_granularity_bytes] = *projection->index_granularity_bytes;
+            data_settings = new_data_settings;
+        }
     }
-
     return data_settings;
 }
 
@@ -10839,8 +10834,9 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn)
+        const MergeTreeTransactionPtr & txn)
 {
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto settings = getSettings();
 
     auto block = metadata_snapshot->getSampleBlock();

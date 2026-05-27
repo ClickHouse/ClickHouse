@@ -161,7 +161,7 @@ namespace ErrorCodes
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
-class BuildStatisticsTransform final : public ISimpleTransform
+class BuildStatisticsTransform : public ISimpleTransform
 {
 public:
     BuildStatisticsTransform(
