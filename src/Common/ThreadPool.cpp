@@ -74,7 +74,13 @@ namespace
     {
         struct Entry
         {
-            std::string metric_name;
+            /// `std::string_view` pointing into `CurrentMetrics::names`, which is a
+            /// program-lifetime static `std::array<std::string_view, END>` of string
+            /// literals (see `src/Common/CurrentMetrics.cpp`). Storing the view rather
+            /// than copying into a `std::string` removes the only allocation from the
+            /// `add`/`remove` paths (apart from `unordered_map` bucket growth, which is
+            /// handled by the `try/catch` in `addLocalThreadPoolWorker`).
+            std::string_view metric_name;
             size_t live_workers = 0;
         };
         std::mutex mutex;
@@ -93,26 +99,53 @@ namespace
         return registry;
     }
 
-    void addLocalThreadPoolWorker(const void * pool, std::string_view metric_name)
+    /// MUST NOT throw: this runs from `ThreadFromThreadPool::ThreadFromThreadPool` AFTER
+    /// `thread = Thread(...)` has started a joinable `ThreadFromGlobalPoolImpl`. An exception
+    /// escaping here would unwind through `~ThreadFromGlobalPoolImpl`, which calls `abort()`
+    /// when the thread is still initialized (`src/Common/ThreadPool.h`), terminating the
+    /// process. The only operations that could throw are `std::mutex::lock` (effectively
+    /// never under normal conditions) and `unordered_map::operator[]` on bucket growth -
+    /// both are caught and swallowed. The cost of a missed registration is a single pool
+    /// not appearing in the diagnostic snapshot at `GlobalThreadPool::shutdown`; the pool
+    /// itself continues to function normally.
+    void addLocalThreadPoolWorker(const void * pool, std::string_view metric_name) noexcept
     {
-        auto & r = getLocalThreadPoolRegistry();
-        std::lock_guard lock(r.mutex);
-        auto & entry = r.pools[pool];
-        if (entry.metric_name.empty())
+        try
+        {
+            auto & r = getLocalThreadPoolRegistry();
+            std::lock_guard lock(r.mutex);
+            auto & entry = r.pools[pool];
             entry.metric_name = metric_name;
-        ++entry.live_workers;
+            ++entry.live_workers;
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Diagnostic-only: swallow allocation failures; see comment above.
+        }
     }
 
-    void removeLocalThreadPoolWorker(const void * pool)
+    /// MUST NOT throw, for the same reason as `addLocalThreadPoolWorker`: this runs from
+    /// `~ThreadFromThreadPool`, which is itself reached via stack unwinding when a
+    /// `ThreadPoolImpl` is destroyed. The only operation that could throw is
+    /// `std::mutex::lock`; lookup and erase on `unordered_map` are noexcept for pointer
+    /// keys.
+    void removeLocalThreadPoolWorker(const void * pool) noexcept
     {
-        auto & r = getLocalThreadPoolRegistry();
-        std::lock_guard lock(r.mutex);
-        auto it = r.pools.find(pool);
-        if (it == r.pools.end())
-            return;
-        chassert(it->second.live_workers > 0);
-        if (--it->second.live_workers == 0)
-            r.pools.erase(it);
+        try
+        {
+            auto & r = getLocalThreadPoolRegistry();
+            std::lock_guard lock(r.mutex);
+            auto it = r.pools.find(pool);
+            if (it == r.pools.end())
+                return;
+            chassert(it->second.live_workers > 0);
+            if (--it->second.live_workers == 0)
+                r.pools.erase(it);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Diagnostic-only: swallow lock-acquisition failures; see comment above.
+        }
     }
 
     /// Returns "<metric_name>x<live_worker_count>, ..." aggregated across pool
@@ -126,7 +159,9 @@ namespace
         std::lock_guard lock(r.mutex);
         if (r.pools.empty())
             return "(none)";
-        std::map<std::string, size_t> workers_per_metric;
+        /// Keys are `string_view`s into program-lifetime static storage, so no allocation
+        /// for the keys themselves.
+        std::map<std::string_view, size_t> workers_per_metric;
         for (const auto & [_, entry] : r.pools)
             workers_per_metric[entry.metric_name] += entry.live_workers;
         std::string result;
