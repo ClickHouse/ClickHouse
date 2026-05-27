@@ -6,6 +6,7 @@
 #include <Core/SettingsFields.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 
 namespace boost
@@ -84,7 +85,7 @@ struct MergeTreeSettings
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
     void applyChange(const SettingChange & change);
-    std::vector<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.

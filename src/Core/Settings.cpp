@@ -8402,7 +8402,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 private:
     void applyCompatibilitySetting(const String & compatibility);
 
-    std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
+    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -8663,9 +8663,9 @@ void Settings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-std::vector<std::string_view> Settings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->all())
     {
         setting_names.emplace_back(setting.getName());
@@ -8673,9 +8673,9 @@ std::vector<std::string_view> Settings::getAllRegisteredNames() const
     return setting_names;
 }
 
-std::vector<std::string_view> Settings::getAllAliasNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
 {
-    std::vector<std::string_view> alias_names;
+    VectorWithMemoryTracking<std::string_view> alias_names;
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & [_, aliases] : settings_to_aliases)
     {
@@ -8684,9 +8684,9 @@ std::vector<std::string_view> Settings::getAllAliasNames() const
     return alias_names;
 }
 
-std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->allChanged())
     {
         if (setting.getTier() == SettingsTierType::OBSOLETE)
@@ -8695,9 +8695,9 @@ std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
     return setting_names;
 }
 
-std::vector<std::string_view> Settings::getUnchangedNames() const
+VectorWithMemoryTracking<std::string_view> Settings::getUnchangedNames() const
 {
-    std::vector<std::string_view> setting_names;
+    VectorWithMemoryTracking<std::string_view> setting_names;
     for (const auto & setting : impl->allUnchanged())
     {
         setting_names.emplace_back(setting.getName());

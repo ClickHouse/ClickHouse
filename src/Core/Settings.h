@@ -8,6 +8,7 @@
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <string_view>
 #include <unordered_map>
@@ -151,10 +152,10 @@ struct Settings
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
-    std::vector<std::string_view> getAllRegisteredNames() const;
-    std::vector<std::string_view> getAllAliasNames() const;
-    std::vector<std::string_view> getChangedAndObsoleteNames() const;
-    std::vector<std::string_view> getUnchangedNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
+    VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
+    VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
 
     void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
