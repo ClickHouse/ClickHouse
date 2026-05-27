@@ -782,7 +782,7 @@ void DiskObjectStorage::prepareRead(
 
     /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
     /// Must be done before setSource, which stores read_settings in the pipeline.
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_settings.prefer_large_caller_buffer
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
         && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
         && file_cache_enabled;
 #if ENABLE_DISTRIBUTED_CACHE

@@ -43,7 +43,7 @@ ReadSettings ReadSettings::adjustBufferSize(size_t file_size) const
     res.local_fs_settings.buffer_size = std::min(std::max(1ul, file_size), local_fs_settings.buffer_size);
     res.remote_fs_settings.buffer_size = std::min(std::max(1ul, file_size), remote_fs_settings.buffer_size);
     /// Note, we do not touch `remote_fs_settings.large_buffer_size` since when
-    /// `filesystem_cache_settings.prefer_large_caller_buffer` is set the buffer
+    /// `filesystem_cache_settings.prefer_bigger_buffer_size` is set the buffer
     /// may grow up to `large_buffer_size`, but it will not exceed total file size.
     return res;
 }

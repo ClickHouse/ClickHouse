@@ -107,7 +107,9 @@ struct FilesystemCacheSettings
     bool allow_background_download_during_fetch = true;
     /// Hint to callers (DiskObjectStorage / StorageObjectStorageSource) to enlarge the remote-FS
     /// read buffer when this cache is active — reduces cache fragmentation. Not the cache's own buffer.
-    bool prefer_large_caller_buffer = true;
+    /// Name kept aligned with the public setting `filesystem_cache_prefer_bigger_buffer_size` and
+    /// the sister `DistributedCacheSettings::prefer_bigger_buffer_size`.
+    bool prefer_bigger_buffer_size = true;
     size_t reserve_space_wait_lock_timeout_milliseconds = 1000;
     size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_per_query_cache_write_limit = true;

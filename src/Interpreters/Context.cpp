@@ -7701,7 +7701,7 @@ ReadSettings Context::getReadSettings() const
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
     res.filesystem_cache_settings.allow_background_download_during_fetch
         = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
-    res.filesystem_cache_settings.prefer_large_caller_buffer = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
+    res.filesystem_cache_settings.prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
 
     res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
     res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
