@@ -88,16 +88,9 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
         argument.type = child.result_type;
         argument.name = child.result_name;
 
-        /// PLACEHOLDER carries a synthetic default-valued ColumnConst so that the DAG
-        /// invariant (Node::column is always ColumnConst) holds, but its value is not
-        /// the runtime value of the correlated column. Never treat it as a constant
-        /// argument, otherwise constant folding evaluates functions over the default
-        /// value (e.g. 0 for UInt64, NULL for Nullable) and bakes the wrong result in.
-        if (child.type == ActionsDAG::ActionType::PLACEHOLDER || !argument.column || !isColumnConst(*argument.column))
-        {
-            all_const = false;
-        }
-        else if (const auto * column_const = typeid_cast<const ColumnConst *>(argument.column.get()))
+        /// PLACEHOLDER nodes are never const-folded: `addPlaceholder` leaves `node.column`
+        /// unset, so the `column_const == nullptr` branch below catches them.
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(argument.column.get()))
         {
             if (const auto * column_set = typeid_cast<const ColumnSet *>(&column_const->getDataColumn()))
             {
@@ -107,6 +100,16 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
                 if (!future_set || !future_set->get())
                     all_const = false;
             }
+
+            /// Not every function is implemented correctly for size-0 constant arguments
+            /// (e.g. `moduloOrNull`). Resize to size 1 here so each function sees a
+            /// properly-shaped constant input.
+            if (column_const->empty())
+                argument.column = ColumnConst::create(column_const->getDataColumnPtr(), 1);
+        }
+        else
+        {
+            all_const = false;
         }
 
         arguments[i] = std::move(argument);
