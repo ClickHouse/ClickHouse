@@ -1278,7 +1278,7 @@ bool FileCache::doTryReserve(
 
     if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
-        failure_reason = ec.message();
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
         return false;
     }
 
