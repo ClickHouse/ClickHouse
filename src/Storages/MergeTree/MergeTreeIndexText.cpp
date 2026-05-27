@@ -424,7 +424,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     auto cardinalities_cache = condition_text.cardinalitiesCache();
     auto tokens_to_read = fillTokensFromCache(state);
 
-    if (tokens_to_read.empty())
+    if (tokens_to_read.empty() || analyzer->alwaysFalse())
     {
         cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
         return;
