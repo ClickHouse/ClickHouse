@@ -9,10 +9,10 @@ if [ "${OS}" = "Linux" ]
 then
     if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
     then
-        # The default build targets x86-64-v3 which requires AVX2, BMI1, BMI2, FMA, etc.
-        # On older hardware, fall back to the compat build (plain x86-64, SSE2 baseline).
-        # Check avx2 as a proxy, since every real CPU with AVX2 also has the other v3 features.
-        if grep -q avx2 /proc/cpuinfo
+        # Require at least x86-64 + SSE4.2 (introduced in 2006). On older hardware fall back to plain x86-64 (introduced in 1999) which
+        # guarantees at least SSE2. The caveat is that plain x86-64 builds are much less tested than SSE 4.2 builds.
+        HAS_SSE42=$(grep sse4_2 /proc/cpuinfo)
+        if [ "${HAS_SSE42}" ]
         then
             if ldd --version 2>&1 | grep -q musl
             then
@@ -99,3 +99,74 @@ echo "Successfully downloaded the ClickHouse binary, you can run it as:
 echo
 echo "You can also install it:
 sudo ./${clickhouse} install"
+
+# Also install clickhousectl, the CLI for ClickHouse local and Cloud.
+# Set CLICKHOUSE_ONLY=1 to skip.
+if [ -z "${CLICKHOUSE_ONLY}" ]
+then
+    chctl_target=
+    if [ "${OS}" = "Linux" ]
+    then
+        if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
+        then
+            chctl_target="x86_64-unknown-linux-musl"
+        elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+        then
+            chctl_target="aarch64-unknown-linux-musl"
+        fi
+    elif [ "${OS}" = "Darwin" ]
+    then
+        if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
+        then
+            chctl_target="x86_64-apple-darwin"
+        elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+        then
+            chctl_target="aarch64-apple-darwin"
+        fi
+    fi
+
+    if [ -n "${chctl_target}" ]
+    then
+        echo
+        echo "Fetching the latest clickhousectl release..."
+        chctl_tag=$(curl -fsSL "https://api.github.com/repos/ClickHouse/clickhousectl/releases/latest" \
+            | grep '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+
+        if [ -n "${chctl_tag}" ]
+        then
+            chctl_install_dir="${HOME}/.local/bin"
+            chctl_archive="clickhousectl-${chctl_target}-${chctl_tag}.tar.gz"
+            chctl_url="https://builds.clickhouse.com/clickhousectl/${chctl_archive}"
+            echo "Will download ${chctl_url} into ${chctl_install_dir}/clickhousectl"
+            chctl_tmp=$(mktemp -d)
+            if mkdir -p "${chctl_install_dir}" \
+                && curl -fsSL "${chctl_url}" -o "${chctl_tmp}/${chctl_archive}" \
+                && tar -xzf "${chctl_tmp}/${chctl_archive}" -C "${chctl_tmp}" \
+                && mv -f "${chctl_tmp}/clickhousectl-${chctl_target}-${chctl_tag}/clickhousectl" "${chctl_install_dir}/clickhousectl"
+            then
+                chmod a+x "${chctl_install_dir}/clickhousectl"
+                ln -sf "${chctl_install_dir}/clickhousectl" "${chctl_install_dir}/chctl"
+                echo
+                echo "Successfully installed clickhousectl to ${chctl_install_dir}/clickhousectl"
+                echo "Created alias: chctl -> clickhousectl"
+                case ":$PATH:" in
+                    *":${chctl_install_dir}:"*) ;;
+                    *)
+                        echo
+                        echo "NOTE: ${chctl_install_dir} is not in your PATH."
+                        echo "Add it by running:"
+                        echo
+                        echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
+                        echo
+                        echo "You may want to add that line to your shell profile (~/.bashrc, ~/.zshrc, etc.)"
+                        ;;
+                esac
+            else
+                echo "Warning: failed to download clickhousectl. Continuing."
+            fi
+            rm -rf "${chctl_tmp}"
+        else
+            echo "Warning: could not determine the latest clickhousectl release. Continuing."
+        fi
+    fi
+fi

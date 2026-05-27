@@ -19,15 +19,11 @@ configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_versi
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (ARCH_AMD64 AND NOT X86_ARCH_LEVEL VERSION_EQUAL 3)
-    # Multi-target dispatch (see `src/Common/TargetSpecific.h`) is only useful at
-    # the default x86-64-v3 level, where the default code uses AVX2 and the v4
-    # variants add AVX-512.  At other levels it causes problems:
-    #  - Below v3: FORCE_INLINE in DECLARE_*_SPECIFIC_CODE blocks leaks higher
-    #    ISA requirements into generic code.
-    #  - Above v3 (e.g. v4): the default code already includes AVX-512, and
-    #    multi-target macros may conflict with third-party libraries that do
-    #    their own ISA detection (e.g. StringZilla, see #99172).
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 2)
+    # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
+    # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
+    # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
+    # machinery and always use generic code. (The cleaner alternative is removing FORCE_INLINE but that impacts performance too much.)
     set(ENABLE_MULTITARGET_CODE OFF)
 endif()
 
@@ -158,6 +154,10 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+
+add_headers_and_sources(dbms Core/Streaming)
+add_headers_and_sources(dbms Storages/Streaming)
+add_headers_and_sources(dbms Storages/MergeTree/Streaming)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -316,13 +316,6 @@ add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
 add_object_library(clickhouse_interpreters_merge_tree_transaction Interpreters/MergeTreeTransaction)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
-
-# TODO: at v3 SLP-emitted YMM zero-stores in column construction add `vzeroupper`s around the
-# per-block dispatch and regress `generate_table_function #0/#1/#5` ~18% with no real win.
-if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
-    set_source_files_properties(Storages/StorageGenerateRandom.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
-endif()
-
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
@@ -361,12 +354,20 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
-${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
+${CMAKE_SOURCE_DIR}/programs/server/schema.html")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
+
+set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/webterminal.html")
 
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
@@ -418,14 +419,6 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
-
-# Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
-# At -Og with AVX2+ targets, the compiler miscompiles functions that combine
-# floating-point return values with ymm-based memset zero-initialization.
-# Force -O2 for this file in debug x86 builds to avoid the buggy codegen.
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
-    set_source_files_properties(Processors/QueryPlan/Optimizations/joinOrder.cpp PROPERTIES COMPILE_FLAGS "-O2")
-endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
@@ -602,7 +595,8 @@ target_link_libraries(
     dbms
     PUBLIC
         boost::circular_buffer
-        boost::heap)
+        boost::heap
+        boost::iostreams)
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect

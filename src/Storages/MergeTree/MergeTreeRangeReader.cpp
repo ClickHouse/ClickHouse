@@ -23,7 +23,11 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
-#if defined(__AVX2__)
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
+
+#if USE_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
 
@@ -482,6 +486,63 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
     }
 }
 
+MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
+{
+    if (rows_per_granule.empty())
+        return {};
+
+    /// The first i_start entries in rows_per_granule come from the in-progress range that was
+    /// already being read when startReadingChain began. Their mark numbers are derived from
+    /// in_progress_start_mark (set iff the stream was unfinished at entry). The remaining
+    /// entries belong to freshly started ranges recorded in started_ranges.
+    const size_t i_start = started_ranges.empty() ? rows_per_granule.size()
+                                                   : started_ranges[0].num_granules_read_before_start;
+
+    MarkRanges result;
+
+    auto emit = [&](size_t mark)
+    {
+        if (!result.empty() && result.back().end == mark)
+            ++result.back().end;
+        else
+            result.emplace_back(mark, mark + 1);
+    };
+
+    /// In-progress prefix: granules 0 .. i_start-1.
+    /// Their marks are in_progress_start_mark, in_progress_start_mark+1, ...
+    /// Each entry in rows_per_granule corresponds to exactly one mark advance
+    /// (stream.read or stream.toNextMark), so the simple offset holds.
+    if (in_progress_start_mark.has_value())
+    {
+        for (size_t i = 0; i < i_start; ++i)
+        {
+            if (rows_per_granule[i] == 0)
+                emit(*in_progress_start_mark + i);
+        }
+    }
+
+    /// New-range suffix: granules i_start .. rows_per_granule.size()-1.
+    size_t range_idx = 0;
+    for (size_t i = i_start; i < rows_per_granule.size(); ++i)
+    {
+        /// Advance to the started_range that contains granule i.
+        /// started_ranges[j].num_granules_read_before_start is the rows_per_granule index
+        /// of the first granule in range j, so we move forward while the next range
+        /// has already started at or before i.
+        while (range_idx + 1 < started_ranges.size()
+               && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
+            ++range_idx;
+
+        if (rows_per_granule[i] == 0)
+        {
+            size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
+            emit(started_ranges[range_idx].range.begin + offset);
+        }
+    }
+
+    return result;
+}
+
 std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
 {
     WriteBufferFromOwnString out;
@@ -769,19 +830,12 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
     }
     return count;
 }
-)
+) /// DECLARE_AVX512BW_SPECIFIC_CODE
 
-size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
-#if USE_MULTITARGET_CODE
-    /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
-    if (isArchSupported(TargetArch::x86_64_v4))
-        return TargetSpecific::x86_64_v4::numZerosInTail(begin, end);
-#endif
-
     size_t count = 0;
-
-#if defined(__AVX2__)
     const __m256i zero32 = _mm256_setzero_si256();
     while (end - begin >= 64)
     {
@@ -810,6 +864,49 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
         ++count;
     }
     return count;
+}
+) /// DECLARE_AVX2_SPECIFIC_CODE
+
+size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
+{
+#if USE_MULTITARGET_CODE
+    /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
+    if (isArchSupported(TargetArch::x86_64_v4))
+        return TargetSpecific::x86_64_v4::numZerosInTail(begin, end);
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::numZerosInTail(begin, end);
+#endif
+
+    size_t count = 0;
+
+#if defined(__SSE2__)
+    const __m128i zero16 = _mm_setzero_si128();
+    while (end - begin >= 64)
+    {
+        end -= 64;
+        const auto * pos = end;
+        UInt64 val =
+                static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                        _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
+                        zero16)))
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                        _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 16)),
+                        zero16))) << 16u)
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                        _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 32)),
+                        zero16))) << 32u)
+                | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
+                        _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
+                        zero16))) << 48u);
+        val = ~val;
+        if (val == 0)
+            count += 64;
+        else
+        {
+            count += std::countl_zero(val);
+            return count;
+        }
+    }
 #elif defined(__aarch64__) && defined(__ARM_NEON)
     const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
     while (end - begin >= 64)
@@ -838,13 +935,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
             return count;
         }
     }
-    while (end > begin && end[-1] == 0)
-    {
-        --end;
-        ++count;
-    }
-    return count;
-#else
+#endif
 
     while (end > begin && end[-1] == 0)
     {
@@ -852,7 +943,6 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
         ++count;
     }
     return count;
-#endif
 }
 
 MergeTreeRangeReader::MergeTreeRangeReader(
@@ -1020,7 +1110,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// to properly fill ReadRange for query condition cache.
     std::optional<size_t> current_mark;
     if (!stream.isFinished())
+    {
         current_mark = stream.current_mark;
+        result.in_progress_start_mark = stream.current_mark;
+    }
 
     /// There should be no delayed rows from the previous read request.
     /// (If it's so then the previous read request didn't call stream.finalize().)
@@ -1449,7 +1542,7 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
  * 1. https://www.felixcloutier.com/x86/pdep
  * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
  */
-#if defined(__BMI2__)
+DECLARE_X86_64_V3_SPECIFIC_CODE(
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
@@ -1483,7 +1576,7 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
         }
     }
 }
-#endif
+)
 
 /// Second filter size must be equal to number of 1s in the first filter.
 /// The result has size equal to first filter size and contains 1s only where both filters contain 1s.
@@ -1532,12 +1625,13 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     {
         TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
+    else if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        TargetSpecific::x86_64_v3::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+    }
     else
 #endif
     {
-#if defined(__BMI2__)
-        combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
-#else
         for (auto & val : first_data)
         {
             if (val)
@@ -1546,7 +1640,6 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
                 ++second_data;
             }
         }
-#endif
     }
 
     return mut_first;

@@ -111,6 +111,21 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
             {
                 match = matches[frame.node->children.at(0)];
             }
+            else if (frame.node->type == ActionsDAG::ActionType::FUNCTION
+                && frame.node->children.size() == 1
+                && (frame.node->function_base->getName() == "materialize"
+                    || frame.node->function_base->getName() == "identity"))
+            {
+                /// `materialize`/`identity` are no-op wrappers that do not change values, so
+                /// for matching purposes they behave like `ALIAS` - pass the match of the
+                /// wrapped node through. This lets `optimizeReadInOrder` see through the
+                /// `materialize(...)` wrappers that filter push-down can inject into a
+                /// `MergeTree` prewhere (e.g. for queries through `ReadFromMerge` after
+                /// `convertAndFilterSourceStream`). Without this, `materialize` only
+                /// contributes a non-strict monotonic match and the `ORDER BY` prefix that
+                /// can be served from the sorting key is truncated.
+                match = matches[frame.node->children.at(0)];
+            }
             else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
             {
                 //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;
@@ -609,15 +624,14 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 
 /// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
 /// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
-/// So it is left only to check that each output node depends only on the allowed set of nodes (`irreducible_nodes`).
+/// So it is left only to check that each key node depends only on the allowed set of nodes (`irreducible_nodes`).
 bool allOutputsDependsOnlyOnAllowedNodes(
-    const ActionsDAG & partition_actions, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
+    const ActionsDAG::NodeRawConstPtrs & key_nodes, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
 {
     NodeMap visited;
     bool res = true;
-    for (const auto & node : partition_actions.getOutputs())
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
+    for (const auto * node : key_nodes)
+        res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
     return res;
 }
 

@@ -86,7 +86,7 @@ public:
     enum class IndexType : uint8_t
     {
         None,
-        PartitionMinMax,
+        MinMax,
         Partition,
         PrimaryKey,
         Skip,
@@ -333,7 +333,9 @@ public:
     bool isVectorColumnReplaced() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
-    bool requestOutputEachPartitionThroughSeparatePort();
+    bool requestOutputEachPartitionThroughSeparatePortForAggregation();
+    bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
+
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
@@ -499,6 +501,8 @@ private:
         AnalysisResult & result,
         const MergeTreeIndexBuildContextPtr & index_build_context,
         std::optional<ActionsDAG> & result_projection);
+
+    Pipe groupPartitionsByStreams(AnalysisResult & result);
 
     Pipe readByLayers(
         const RangesInDataParts & parts_with_ranges,
