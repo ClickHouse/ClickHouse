@@ -532,7 +532,7 @@ private:
             .visit_not = &visitFunction<DB::FunctionNot>,
             .visit_is_null = &visitFunction<DB::FunctionIsNull>,
             .visit_to_json = &throwNotImplemented<TO_JSON>,
-            .visit_parse_json = &throwNotImplementedParseJson,
+            .visit_parse_json = &throwNotImplementedParseJSON,
             .visit_map_to_struct = &throwNotImplemented<MAP_TO_STRUCT>,
             .visit_lt = &throwNotImplemented<LT>,
             .visit_gt = &throwNotImplemented<GT>,
@@ -594,7 +594,7 @@ private:
         });
     }
 
-    static void throwNotImplementedParseJson(
+    static void throwNotImplementedParseJSON(
         void * data,
         uintptr_t sibling_list_id,
         uintptr_t child_list_id,
@@ -609,7 +609,7 @@ private:
         {
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
-                "Method parsejson not implemented");
+                "Method ParseJSON not implemented");
         });
     }
 

@@ -257,11 +257,12 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
-    ffi::ExclusiveCommittedTransaction * committed = DeltaLake::KernelUtils::unwrapResult(
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
         ffi::commit(transaction.release(), engine.get()),
-        "commit");
-    auto version = ffi::committed_transaction_version(&committed);
-    ffi::free_committed_transaction(committed);
+        "commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
 }

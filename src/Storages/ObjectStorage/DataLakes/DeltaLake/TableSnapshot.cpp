@@ -651,7 +651,9 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
 
     struct StatsVisitor
     {
-        ffi::SharedExternEngine * engine = nullptr;
+        explicit StatsVisitor(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+
+        ffi::SharedExternEngine * const engine;
         size_t total_data_files = 0;
         size_t total_bytes = 0;
         /// Not all writers add rows count to metadata
@@ -700,8 +702,7 @@ TableSnapshot::SnapshotStats TableSnapshot::getSnapshotStatsImpl() const
         }
     };
 
-    StatsVisitor visitor;
-    visitor.engine = state->engine.get();
+    StatsVisitor visitor(state->engine.get());
 
     while (true)
     {
@@ -769,15 +770,21 @@ TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & he
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
-    ffi::MutableFfiSnapshotBuilder * snapshot_builder = KernelUtils::unwrapResult(
+    using KernelSnapshotBuilder = KernelPointerWrapper<ffi::MutableFfiSnapshotBuilder, ffi::free_snapshot_builder>;
+    KernelSnapshotBuilder snapshot_builder(KernelUtils::unwrapResult(
         ffi::get_snapshot_builder(
             KernelUtils::toDeltaString(helper_.getTableLocation()),
             engine.get()),
-        "get_snapshot_builder");
+        "get_snapshot_builder"));
     if (snapshot_version_.has_value())
-        ffi::snapshot_builder_set_version(&snapshot_builder, snapshot_version_.value());
+    {
+        auto * builder_handle = snapshot_builder.get();
+        ffi::snapshot_builder_set_version(&builder_handle, snapshot_version_.value());
+    }
+    /// `snapshot_builder_build` consumes the handle, so release() prevents the RAII destructor
+    /// from double-freeing on success. The destructor still frees on early exception paths.
     snapshot = KernelUtils::unwrapResult(
-        ffi::snapshot_builder_build(snapshot_builder),
+        ffi::snapshot_builder_build(snapshot_builder.release()),
         "snapshot_builder_build");
 
     snapshot_version = ffi::version(snapshot.get());

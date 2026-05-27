@@ -77,9 +77,7 @@ DB::NamesAndTypesList TableChanges::getSchemaUnlocked() const
         return schema.value();
 
     using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
-    /// getTableChanges() also lazily builds the engine, so it must run before we read engine.
-    auto * tc = getTableChanges().get();
-    KernelSharedSchema kernel_schema(ffi::table_changes_schema(tc));
+    KernelSharedSchema kernel_schema(ffi::table_changes_schema(getTableChanges().get()));
     schema = convertToClickHouseSchema(kernel_schema.get(), engine.get());
 
     LOG_TRACE(log, "Table schema: {}, source header: {}", schema->toString(), header.dumpNames());
@@ -157,14 +155,11 @@ DB::Chunk TableChanges::next()
         ffi::scan_table_changes_next(getTableChangesScanIterator().get()),
         "scan_table_changes_next");
 
-    if (!ffi_arrow_data || ffi_arrow_data->array.length == 0)
-    {
-        if (ffi_arrow_data)
-            ffi::free_arrow_ffi_data(ffi_arrow_data);
+    if (!ffi_arrow_data)
         return {};
-    }
-
     SCOPE_EXIT({ ffi::free_arrow_ffi_data(ffi_arrow_data); });
+    if (ffi_arrow_data->array.length == 0)
+        return {};
 
     auto record_batch = arrow::ImportRecordBatch(
         reinterpret_cast<ArrowArray *>(&ffi_arrow_data->array),

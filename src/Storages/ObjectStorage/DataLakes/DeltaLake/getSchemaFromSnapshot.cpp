@@ -81,6 +81,11 @@ class SchemaVisitorData
     friend class SchemaVisitor;
 
 public:
+    /// `engine_` is required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
+    /// Pass `nullptr` for visit paths that don't need engine-bound FFI calls
+    /// (e.g. partition column extraction).
+    explicit SchemaVisitorData(ffi::SharedExternEngine * engine_ = nullptr) : engine(engine_) {}
+
     struct SchemaResult
     {
         DB::NamesAndTypesList names_and_types;
@@ -88,10 +93,6 @@ public:
     };
     SchemaResult getSchemaResult();
     const DB::Names & getPartitionColumns() const { return partition_columns; }
-
-    /// Engine handle required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
-    /// Public so the free top-level helpers (getTableSchemaFromSnapshot etc.) can set it.
-    ffi::SharedExternEngine * engine = nullptr;
 
 private:
     struct Field;
@@ -144,6 +145,8 @@ private:
     /// because they are not stored in the actual data,
     /// but instead in data paths directories.
     DB::Names partition_columns;
+    /// Engine handle required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
+    ffi::SharedExternEngine * engine;
 
     const LoggerPtr log = getLogger("SchemaVisitor");
 
@@ -513,8 +516,7 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
 std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
     ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
-    data.engine = engine;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitTableSchema(snapshot, data);
     auto result = data.getSchemaResult();
     return {result.names_and_types, result.physical_names_map};
@@ -522,16 +524,14 @@ std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
 
 DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
-    data.engine = engine;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitReadSchema(scan, data);
     return data.getSchemaResult().names_and_types;
 }
 
 DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
-    data.engine = engine;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitWriteSchema(write_context, data);
     return data.getSchemaResult().names_and_types;
 }
@@ -545,8 +545,7 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
 
 DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
-    data.engine = engine;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitSchema(schema, data);
     return data.getSchemaResult().names_and_types;
 }
