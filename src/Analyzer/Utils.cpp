@@ -463,12 +463,12 @@ static ASTPtr convertIntoTableExpressionAST(
         if (sample_offset_ratio.has_value())
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
 
-        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+        const auto & stream_settings = table_expression_modifiers->getStreamingSettings();
         if (stream_settings.has_value())
         {
-            ASTStreamSettings::StreamSettings ast_stream_settings;
-            if (stream_settings->cursor_tree)
-                ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
+            ASTStreamSettings ast_stream_settings;
+            if (stream_settings->cursor)
+                ast_stream_settings.cursor = cursorTreeToMap(stream_settings->cursor);
 
             result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
             result_table_expression->children.push_back(result_table_expression->stream_settings);
