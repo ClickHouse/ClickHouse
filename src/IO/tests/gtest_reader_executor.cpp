@@ -1134,7 +1134,7 @@ TEST(PageCacheProvider, BypassMissDoesNotPolluteCache)
     constexpr size_t inject_eviction = false;
 
     /// Step 1: bypass=true. Put bytes into block [0, 4096).
-    PageCacheProvider bypass_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/true);
+    PageCacheProvider bypass_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/true, /*file_size_in_bytes=*/block_size);
     {
         auto handle = bypass_provider.lookup(StoredObject{}, /*object_file_offset=*/0, ByteRange{0, block_size});
         auto status = handle->status();
@@ -1153,7 +1153,7 @@ TEST(PageCacheProvider, BypassMissDoesNotPolluteCache)
 
     /// Step 2: lookup via a NON-bypass provider on the same file/block.
     /// Should be a MISS — bypass mode did not register the bytes.
-    PageCacheProvider observer_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false);
+    PageCacheProvider observer_provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
     {
         auto handle = observer_provider.lookup(StoredObject{}, /*object_file_offset=*/0, ByteRange{0, block_size});
         auto status = handle->status();
@@ -1187,7 +1187,7 @@ TEST(PageCacheProvider, NonBypassMissPopulatesCache)
     constexpr size_t block_size = 4096;
     constexpr size_t inject_eviction = false;
 
-    PageCacheProvider provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false);
+    PageCacheProvider provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
     {
         auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, block_size});
@@ -1204,6 +1204,65 @@ TEST(PageCacheProvider, NonBypassMissPopulatesCache)
         auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, block_size});
         EXPECT_EQ(handle->status().hit_ranges.size(), 1u)
             << "non-bypass put must register the cell so subsequent lookups hit";
+    }
+}
+
+TEST(PageCacheProvider, TailBlockSizedToFile)
+{
+    /// File size 1500, block size 1024. The tail block must be sized to the
+    /// 476 real bytes, NOT to a full 1024-byte block. With the cell sized to
+    /// real data, `get` has no past-EOF region to ever serve back (regardless
+    /// of what range the caller asks for), and `put` cannot leave a zero-filled
+    /// trailing gap that a subsequent reader could mistake for file content.
+    using namespace DB;
+    constexpr size_t cache_capacity = 1ull << 20;
+    auto cache = std::make_shared<PageCache>(
+        std::chrono::milliseconds(2000), "LRU", 0.5,
+        /*min_size_in_bytes=*/cache_capacity,
+        /*max_size_in_bytes=*/cache_capacity,
+        /*free_memory_ratio=*/0.0,
+        /*num_shards=*/1);
+
+    PageCacheFile file;
+    file.path = "test-tail-clamp";
+    file.file_version = "v1";
+
+    constexpr size_t file_size = 1500;
+    constexpr size_t block_size = 1024;
+    constexpr bool inject_eviction = false;
+    PageCacheProvider provider(cache, file, block_size, inject_eviction, /*bypass_if_missing=*/false, file_size);
+
+    /// Populate both blocks.
+    {
+        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{0, file_size});
+        auto status = handle->status();
+        ASSERT_EQ(status.miss_ranges.size(), 2u);
+        EXPECT_EQ(status.miss_ranges[0].size, 1024u);
+        EXPECT_EQ(status.miss_ranges[1].offset, 1024u);
+        EXPECT_EQ(status.miss_ranges[1].size, 476u) << "tail block must be sized to valid bytes";
+
+        Rope data;
+        auto buf0 = std::make_shared<OwnedRopeBuffer>(1024);
+        std::memset(buf0->data(), '0', 1024);
+        data.append(RopeNode{buf0, 0, 1024, 0});
+        auto buf1 = std::make_shared<OwnedRopeBuffer>(476);
+        std::memset(buf1->data(), '1', 476);
+        data.append(RopeNode{buf1, 0, 476, 1024});
+        handle->put(ByteRange{0, 1024}, data.slice(ByteRange{0, 1024}));
+        handle->put(ByteRange{1024, 476}, data.slice(ByteRange{1024, 476}));
+    }
+
+    /// Now read across the tail block with a range that would extend past EOF
+    /// if the cell were full block_size. Even an explicit attempt to read
+    /// [1024, 2048) returns only 476 bytes — the cell physically has no more.
+    {
+        auto handle = provider.lookup(StoredObject{}, 0, ByteRange{1024, block_size});
+        auto status = handle->status();
+        ASSERT_EQ(status.hit_ranges.size(), 1u);
+        EXPECT_EQ(status.hit_ranges[0].size, 476u);
+
+        Rope rope = handle->get(ByteRange{1024, block_size});
+        EXPECT_EQ(rope.totalBytes(), 476u);
     }
 }
 

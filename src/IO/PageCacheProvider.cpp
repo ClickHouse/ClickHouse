@@ -12,21 +12,31 @@ PageCacheHandle::PageCacheHandle(
     PageCachePtr cache_,
     size_t block_size,
     bool inject_eviction_,
-    bool bypass_if_missing_)
+    bool bypass_if_missing_,
+    size_t file_size_in_bytes)
     : file(std::move(file_))
     , cache(std::move(cache_))
     , inject_eviction(inject_eviction_)
     , bypass_if_missing(bypass_if_missing_)
 {
-    /// Split the requested range into block-aligned chunks.
+    /// Split the requested range into block-aligned chunks. The tail block's
+    /// size is clamped to the file's actual byte length so the cell carries
+    /// only valid bytes — same trick as `CachedInMemoryReadBufferFromFile`
+    /// (`min(block_size, file_size - cache_range.offset)`). With cells sized
+    /// to their real-data length, the cell has no past-EOF region for `get`
+    /// to ever serve, and `put` can't leave a zero-filled trailing gap that
+    /// a later reader could mistake for file content.
     size_t aligned_start = (requested.offset / block_size) * block_size;
     size_t aligned_end = ((requested.end() + block_size - 1) / block_size) * block_size;
+    if (aligned_end > file_size_in_bytes)
+        aligned_end = ((file_size_in_bytes + block_size - 1) / block_size) * block_size;
 
     SipHash base_hash = file.baseHash();
 
     for (size_t offset = aligned_start; offset < aligned_end; offset += block_size)
     {
-        PageCacheByteRange byte_range{offset, block_size};
+        size_t this_block_size = std::min(block_size, file_size_in_bytes - offset);
+        PageCacheByteRange byte_range{offset, this_block_size};
         UInt128 key_hash = byte_range.hash(base_hash);
 
         auto cell = cache->get(key_hash, inject_eviction);
@@ -117,23 +127,28 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
             inject_eviction,
             [&](const PageCache::MappedPtr & new_cell)
             {
-                /// Copy the rope's coverage of this block into the cache
-                /// cell in logical-offset order. `Rope::copyTo` walks the
-                /// rope's nodes (which `Rope::append` keeps sorted) and
-                /// writes each byte at `node.logical_offset - block.offset`
-                /// inside `new_cell` — so the cell is filled correctly even
-                /// when the rope's nodes came from a mix of cache hits and
-                /// source reads at arbitrary positions inside the block.
+                /// `Rope::copyTo(dst, req)` writes bytes at offsets relative
+                /// to `req.offset`. Passing `covered` here puts bytes at
+                /// `cell[lo - covered.offset]`, which only matches the
+                /// block-relative layout `cell[lo - block_range.offset]` when
+                /// `covered.offset == block_range.offset` — i.e. the slice
+                /// starts exactly at the block boundary.
                 ///
-                /// Previously this loop walked nodes in iteration order and
-                /// memcpy'd sequentially, which corrupted the cell whenever a
-                /// partial PageCache hit and a source-read fill arrived as
-                /// non-monotonic nodes.
+                /// The executor guarantees this: `PageCacheHandle::status()`
+                /// reports each miss as a full block range, and
+                /// `ReaderExecutor::readPhysicalWindow` source-fetches those
+                /// ranges in full, so the rope handed to `put` always starts
+                /// at the block boundary. Partial-at-end (covered.size <
+                /// block_range.size, e.g. EOF) is allowed; partial-at-start is
+                /// not. The zero-fill below also assumes start-aligned data.
                 Rope slice = data.slice(block_range);
                 ByteRange covered = slice.range();
                 size_t pos = covered.size;
                 if (pos > 0)
+                {
+                    chassert(covered.offset == block_range.offset);
                     slice.copyTo(new_cell->data(), covered);
+                }
 
                 /// If data didn't fully cover the block (e.g. end of file),
                 /// zero the remaining bytes.
@@ -172,7 +187,7 @@ std::unique_ptr<ICacheHandle> PageCacheProvider::lookup(
     /// space the `PageCacheHandle` uses internally — pass it through
     /// unchanged.
     return std::make_unique<PageCacheHandle>(
-        file, range_in_file, cache, block_size, inject_eviction, bypass_if_missing);
+        file, range_in_file, cache, block_size, inject_eviction, bypass_if_missing, file_size_in_bytes);
 }
 
 }

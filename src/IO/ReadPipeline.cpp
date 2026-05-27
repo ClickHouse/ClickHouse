@@ -271,7 +271,25 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// file-level cache: derive a single `PageCacheFile` from the front
     /// object (or custom path/version) and let the provider use it for
     /// every lookup, regardless of which `StoredObject` is being accessed.
-    if (memory_cache && memory_cache->cache)
+    ///
+    /// Skipped when any object has unknown size. PageCache cells are sized
+    /// to the file's actual byte length so the tail block has no past-EOF
+    /// region; that calibration needs the total size up front. Master's
+    /// `CachedInMemoryReadBufferFromFile` makes the same call by requiring
+    /// `file_size.value()` everywhere.
+    bool any_unknown_size = false;
+    size_t total_file_size = 0;
+    for (const auto & obj : source->objects)
+    {
+        if (obj.bytes_size == StoredObject::UnknownSize)
+        {
+            any_unknown_size = true;
+            break;
+        }
+        total_file_size += obj.bytes_size;
+    }
+
+    if (memory_cache && memory_cache->cache && !any_unknown_size)
     {
         const auto & pcs = memory_cache->page_cache_settings;
         PageCacheFile cache_file;
@@ -283,7 +301,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
             std::move(cache_file),
             pcs.page_cache_block_size,
             pcs.page_cache_inject_eviction,
-            pcs.read_from_page_cache_if_exists_otherwise_bypass_cache));
+            pcs.read_from_page_cache_if_exists_otherwise_bypass_cache,
+            total_file_size));
     }
 
     /// FileCache (disk) — goes second in chain. Pass the stage's

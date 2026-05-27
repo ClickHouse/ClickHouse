@@ -37,7 +37,8 @@ public:
         PageCachePtr cache,
         size_t block_size,
         bool inject_eviction,
-        bool bypass_if_missing);
+        bool bypass_if_missing,
+        size_t file_size_in_bytes);
 
     CacheLookupResult status() const override;
     Rope get(ByteRange range) override;
@@ -77,17 +78,27 @@ private:
 class PageCacheProvider : public ICacheProvider
 {
 public:
+    /// `file_size_in_bytes` must be the authoritative byte length of the
+    /// underlying file. The handle uses it to clamp the tail block's
+    /// `PageCacheByteRange::size` to `min(block_size, file_size - offset)`,
+    /// so the cache cell is allocated to its actual valid-byte length and
+    /// has no past-EOF region that could be served on a future read.
+    /// PageCache requires known size — sources with unknown size must not be
+    /// wrapped in this provider (matches master's `CachedInMemoryReadBufferFromFile`,
+    /// which calls `file_size.value()` everywhere).
     PageCacheProvider(
         PageCachePtr cache_,
         PageCacheFile file_,
         size_t block_size_,
         bool inject_eviction_,
-        bool bypass_if_missing_)
+        bool bypass_if_missing_,
+        size_t file_size_in_bytes_)
         : cache(std::move(cache_))
         , file(std::move(file_))
         , block_size(block_size_)
         , inject_eviction(inject_eviction_)
         , bypass_if_missing(bypass_if_missing_)
+        , file_size_in_bytes(file_size_in_bytes_)
     {
     }
 
@@ -103,6 +114,7 @@ private:
     size_t block_size;
     bool inject_eviction;
     bool bypass_if_missing;
+    size_t file_size_in_bytes;
 };
 
 }
