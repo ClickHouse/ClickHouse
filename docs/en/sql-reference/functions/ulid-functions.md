@@ -6,6 +6,8 @@ title: 'Functions for working with ULIDs'
 doc_type: 'reference'
 ---
 
+# Functions for working with ULIDs
+
 :::note
 The documentation below is generated from the `system.functions` system table.
 :::

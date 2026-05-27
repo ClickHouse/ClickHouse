@@ -16,7 +16,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionCurrentSchemas final : public IFunction
+class FunctionCurrentSchemas : public IFunction
 {
     const String db_name;
 
