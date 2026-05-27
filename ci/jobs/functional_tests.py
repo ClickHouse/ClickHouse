@@ -140,6 +140,56 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
 }
 
 
+def invert_bugfix_validation_status(test_result: Result) -> None:
+    """Invert FAIL/OK in `test_result.results` for bugfix validation.
+
+    On master HEAD a regression test for the bug is expected to FAIL; the
+    inverter flips that to OK so the job reads as "bug reproduced". A clean
+    OK means the test does not catch the bug and is flipped to FAIL with
+    "Failed to reproduce the bug".
+
+    When the run ended in `Result.Status.ERROR` (runner did not finish,
+    e.g. server crash without proper exit code, Python exception,
+    infrastructure outage) the per-test list is empty or partial and the
+    pre-inversion `ERROR` already tells the truth. Preserve it instead of
+    overwriting with "Failed to reproduce the bug". See #105789.
+
+    The aggregate check is not enough: `FTResultsProcessor` can leave the
+    top-level status `OK` while still emitting `ERROR` per-test rows
+    (parser failure for a single test, unexpected runner termination
+    propagated as a row). A mix of `FAIL` + `ERROR` rows would otherwise
+    set `has_failure = True` from the `FAIL` rows and call `set_success`,
+    masking the `ERROR` and flipping the job to green. Treat any per-row
+    `ERROR` the same as an aggregate `ERROR`. Mirrors the `has_error`
+    dominant guard in `integration_test_job.py`.
+    """
+    if test_result.status == Result.Status.ERROR or any(
+        r.status == Result.Status.ERROR for r in test_result.results
+    ):
+        for r in test_result.results:
+            r.set_label(Result.Label.XFAIL)
+        print(
+            "Bugfix validation inconclusive: the test runner did not "
+            "finish; preserving ERROR rather than reporting "
+            "'Failed to reproduce the bug'."
+        )
+        return
+
+    has_failure = False
+    for r in test_result.results:
+        r.set_label(Result.Label.XFAIL)
+        if r.status == Result.Status.FAIL:
+            r.status = Result.Status.OK
+            has_failure = True
+        elif r.status == Result.Status.OK:
+            r.status = Result.Status.FAIL
+    if not has_failure:
+        print("Failed to reproduce the bug")
+        test_result.set_failed().set_info("Failed to reproduce the bug")
+    else:
+        test_result.set_success()
+
+
 def main():
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
@@ -842,48 +892,7 @@ def main():
 
     # invert result status for bugfix validation
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
-        # If any result is `ERROR`, treat it as a harness/infrastructure
-        # problem (parser failure, unexpected runner termination, etc.) and
-        # skip inversion entirely. Otherwise a mix of `FAIL` + `ERROR` rows
-        # would set `has_failure = True` from the `FAIL` rows and call
-        # `set_success`, masking the `ERROR` and flipping the job to green.
-        # Mirrors the `has_error`-dominant guard in `integration_test_job.py`.
-        #
-        # Include the aggregate `test_result.is_error()`: `FTResultsProcessor`
-        # can set the top-level status to `ERROR` (e.g. `not s.success_finish`
-        # on unexpected runner termination) even when all parsed per-test rows
-        # are `FAIL`/`OK`. Without this, a harness-level failure could still
-        # invert `FAIL` to `OK` and flip the job to green.
-        has_error = test_result.is_error() or any(
-            r.status == Result.Status.ERROR for r in test_result.results
-        )
-        if has_error:
-            print("Bugfix validation: ERROR result is present, skipping status inversion")
-        else:
-            has_failure = False
-            for r in test_result.results:
-                r.set_label(Result.Label.XFAIL)
-                # Invert only explicit reproduction signals (`FAIL`).
-                # Crashes are reported as a separate `Server died` / fatal-message
-                # entry with `FAIL` status, so they still flip the job to success
-                # via this branch. Generic `ERROR` is left untouched because in
-                # `FTResultsProcessor` it can also represent parser failures or
-                # unexpected runner termination, which must not be treated as a
-                # successful bug reproduction.
-                if r.status == Result.Status.FAIL:
-                    r.status = Result.Status.OK
-                    has_failure = True
-                elif r.status == Result.Status.OK:
-                    r.status = Result.Status.FAIL
-            if not has_failure:
-                print("Failed to reproduce the bug")
-                test_result.set_failed().set_info("Failed to reproduce the bug")
-            else:
-                # For bugfix validation, the expected behavior is:
-                # - At least one test must fail (bug reproduced); crashes show up
-                #   as a `FAIL` `Server died` / fatal-message entry
-                # - The overall Tests result is treated as success in that case
-                test_result.set_success()
+        invert_bugfix_validation_status(test_result)
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
