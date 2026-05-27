@@ -210,6 +210,9 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
 
 TYPED_TEST(CoordinationTest, TestApplyUncommittedStateRejectsZeroLogIndex)
 {
+#ifndef DEBUG_OR_SANITIZER_BUILD
+    /// `LOGICAL_ERROR` aborts in debug/sanitizer builds, so we can only test
+    /// the throwing path in release builds.
     using namespace DB;
     using namespace Coordination;
 
@@ -233,6 +236,7 @@ TYPED_TEST(CoordinationTest, TestApplyUncommittedStateRejectsZeroLogIndex)
         /*log_idx=*/0);
 
     EXPECT_THROW(source.applyUncommittedState(target, 0), DB::Exception);
+#endif
 }
 
 TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
