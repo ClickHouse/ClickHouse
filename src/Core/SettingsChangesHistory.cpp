@@ -39,17 +39,32 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "26.6",
+        {
+            {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
+            {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},
+            {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
+            {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},
+            {"enable_streaming_queries", false, false, "New setting"},
+            {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
+            {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
+            {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
+            {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
+            {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+        });
         addSettingsChanges(settings_changes_history, "26.5",
         {
+            {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
+            {"optimize_trivial_group_by_limit_query", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."},
             {"date_time_input_format", "basic", "best_effort", "Better usability"},
             {"cast_string_to_date_time_mode", "basic", "best_effort", "Better usability"},
             {"paimon_target_snapshot_id", -1, -1, "New setting."},
             {"max_consume_snapshots", 0, 0, "New setting."},
             {"allow_experimental_paimon_storage_engine", false, false, "New setting."},
-
             {"optimize_dictget_tuple_element", false, true, "Rewrite tupleElement(dictGet(..., tuple_of_attrs, ...), N) into a single-attribute dictGet call."},
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"enable_software_prefetch_in_join", false, true, "Enable use of software prefetch in hash join probe phase."},
             {"shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms", 50, 50, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
             {"shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms", 1000, 1000, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
             {"shared_merge_tree_sequential_consistency_parts_update_max_retries", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
@@ -78,10 +93,22 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
+            {"query_plan_use_logical_join_step", true, true, "Obsolete setting, the logical join step is now always used."},
+            {"query_plan_use_new_logical_join_step", true, true, "Obsolete setting, the logical join step is now always used."},
+            {"query_plan_top_k_through_join", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."},
             {"allow_experimental_unique_key", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables"},
+            {"system_metric_log_show_zero_values_in_histograms", false, false, "New setting controlling whether zero-valued histogram data is written to the histograms nested column of system.metric_log."},
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"query_cache_for_subqueries", false, false, "New setting to enable propagation of `use_query_cache` into all subqueries. Without it, subqueries are only cached on explicit per-subquery `SETTINGS use_query_cache = true` opt-in."},
+            {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
+            {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
+            {"iceberg_max_number_datafiles_to_compact", 1000, 1000, "New setting"},
+            {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
+            {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
+            {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
+            {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -137,6 +164,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
+            {"defer_partition_pruning_after_final", false, true, "Gates the FINAL planner's unconditional skipping of partition pruning when the partition-key column is not in the sorting key. The behavior change itself shipped silently in 26.3 via https://github.com/ClickHouse/ClickHouse/pull/98242; this entry retroactively documents it so `compatibility = '26.2'` restores the pre-regression behavior (0 = prune before FINAL, fast; 1 = defer pruning, correctness-safe)."},
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
             {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
@@ -188,7 +216,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
-            {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
             {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
             {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
@@ -265,7 +292,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
-            {"apply_row_policy_after_final", false, false, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
             {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
@@ -309,7 +335,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
-            {"allow_experimental_alias_table_engine", false, false, "New setting"},
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
@@ -320,6 +345,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
+            {"apply_row_policy_after_final", true, true, "Setting was added as a fix for the post-#87303 regression where row policies and PREWHERE were applied before FINAL. PR #91065 introduced the setting and PR #97279 made the correctness-safe true the default. Recorded as {true, true} so compatibility never reverts to the pre-fix false behavior."},
             {"allow_special_serialization_kinds_in_output_formats", false, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
             {"enable_lazy_columns_replication", false, false, "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
@@ -1195,7 +1221,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-
+            {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
+            {"add_minmax_index_for_block_number_column", false, false, "New setting."},
+            {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
+            {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

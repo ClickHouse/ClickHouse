@@ -131,7 +131,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 }
 
 
-class SyncKillQuerySource : public ISource
+class SyncKillQuerySource final : public ISource
 {
 public:
     SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
