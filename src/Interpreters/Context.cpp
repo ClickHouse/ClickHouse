@@ -2006,29 +2006,40 @@ void Context::resetToUserDefaults()
     const String user_default_database = defaults.user->default_database;
 
     /// Decide the target database eagerly so the locked section never has to
-    /// recover from a failed `setCurrentDatabaseWithLock`. We prefer the database
-    /// the connection was opened with (captured by `rememberDatabaseAtSessionStart`)
-    /// and fall back to the user's profile default. If neither database exists
-    /// any more (admin dropped it between session start and reset), fall back
-    /// to empty rather than letting the reset fail outright.
-    String target_database = database_at_session_start.value_or(user_default_database);
-    if (!target_database.empty())
+    /// recover from a failed `setCurrentDatabaseWithLock`. Fall back chain:
+    ///   1. the database the connection was opened with (captured by
+    ///      `rememberDatabaseAtSessionStart`);
+    ///   2. the user's profile default;
+    ///   3. empty (matches a freshly-authenticated session for a user with no
+    ///      default database).
+    /// Each candidate is probed against the catalog so a dropped database
+    /// neither breaks the reset nor shadows the next fallback.
+    auto database_exists = [](const String & db) -> bool
     {
+        if (db.empty())
+            return false;
         try
         {
-            DatabaseCatalog::instance().assertDatabaseExists(target_database);
+            DatabaseCatalog::instance().assertDatabaseExists(db);
+            return true;
         }
         catch (const Exception & e)
         {
-            /// The database went away between session start and reset (admin
-            /// dropped it). Fall back to empty rather than failing the reset.
-            /// Any other failure (catalog internal error, permission issue)
-            /// is genuinely surprising — let it propagate.
+            /// The database went away (admin dropped it). Fall through to the
+            /// next candidate. Any other failure (catalog internal error,
+            /// permission issue) is genuinely surprising — let it propagate.
             if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
                 throw;
-            target_database.clear();
+            return false;
         }
-    }
+    };
+
+    String target_database;
+    if (database_at_session_start.has_value() && database_exists(*database_at_session_start))
+        target_database = *database_at_session_start;
+    else if (database_exists(user_default_database))
+        target_database = user_default_database;
+    /// else: empty.
 
     /// Snapshot the auth-server settings under a shared lock to avoid a data
     /// race with a hypothetical concurrent setSettingsFromAuthServer.
@@ -2041,14 +2052,34 @@ void Context::resetToUserDefaults()
     /// Pre-compute the post-reset settings into a local instance so any failure
     /// from constraint checks or applying changes happens before we mutate the
     /// live context. The session is then either fully reset or not reset at all.
-    Settings new_settings;
-    auto new_profiles_state = defaults.enabled_profiles->getConstraintsAndProfileIDs({});
-    {
-        SettingsChanges all_changes = defaults.enabled_profiles->settings;
-        all_changes.insert(all_changes.end(), auth_settings_snapshot.begin(), auth_settings_snapshot.end());
-        new_settings.applyChanges(all_changes);
-        new_profiles_state->constraints.check(new_settings, auth_settings_snapshot, SettingSource::QUERY);
-    }
+    ///
+    /// The construction mirrors the real post-authentication pipeline so that
+    /// reset reproduces the actual post-auth state — not a fresh-defaults
+    /// approximation of it:
+    ///   1. Start from the global context's current settings (re-derived now,
+    ///      so admin edits to server-level defaults take effect immediately).
+    ///      This matches `createCopy(global_context)` at session creation.
+    ///   2. Apply the user's profile changes + quirks + sanity clamp, the way
+    ///      `setCurrentProfilesWithLock` (with `check_constraints=false`)
+    ///      does at login.
+    ///   3. Apply the auth-server settings with the same constraint-check /
+    ///      apply / quirks pipeline `Session::makeSessionContext` runs after
+    ///      `setUser`.
+    /// The constraint chain is built on top of the global context's existing
+    /// constraints, matching how `setCurrentProfilesWithLock` chains them.
+    Settings new_settings = getGlobalContext()->getSettingsCopy();
+    new_settings.applyChanges(defaults.enabled_profiles->settings);
+    applySettingsQuirks(new_settings);
+    if (auto type = getApplicationType();
+        type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
+        doSettingsSanityCheckClamp(new_settings, getLogger("SettingsSanity"));
+
+    auto new_profiles_state = defaults.enabled_profiles->getConstraintsAndProfileIDs(
+        getGlobalContext()->getSettingsConstraintsAndCurrentProfiles());
+
+    new_profiles_state->constraints.check(new_settings, auth_settings_snapshot, SettingSource::QUERY);
+    new_settings.applyChanges(auth_settings_snapshot);
+    applySettingsQuirks(new_settings);
 
     /// Take ownership of fields whose destructors do non-trivial work and run
     /// those destructors after we drop the lock. `TemporaryTableHolder::~`
@@ -2068,10 +2099,7 @@ void Context::resetToUserDefaults()
         external_roles.reset();
         need_recalculate_access = true;
 
-        if (target_database.empty())
-            current_database.clear();
-        else
-            current_database = target_database;
+        current_database = target_database;
 
         tables_to_drop.swap(external_tables_mapping);
         scalars_to_drop.swap(scalars);
