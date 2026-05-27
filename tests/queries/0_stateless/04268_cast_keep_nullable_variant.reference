@@ -1,0 +1,53 @@
+-- Variant with cast_keep_nullable, single type and NULLs:
+-- toFloat64:
+1	Nullable(Float64)
+3	Nullable(Float64)
+\N	Nullable(Float64)
+-- CAST to Float64:
+1	Nullable(Float64)
+3	Nullable(Float64)
+\N	Nullable(Float64)
+-- toUInt32:
+1	Nullable(UInt32)
+3	Nullable(UInt32)
+\N	Nullable(UInt32)
+-- toInt8:
+1	Nullable(Int8)
+3	Nullable(Int8)
+\N	Nullable(Int8)
+-- toString:
+1	Nullable(String)
+3	Nullable(String)
+\N	Nullable(String)
+-- CAST to String:
+1	Nullable(String)
+3	Nullable(String)
+\N	Nullable(String)
+-- Variant with multiple types and NULLs:
+-- toString on multiple variant types:
+1	Nullable(String)
+42	Nullable(String)
+hello	Nullable(String)
+\N	Nullable(String)
+\N	Nullable(String)
+-- Variant single type no NULLs (optimization path):
+1	Nullable(Float64)
+2	Nullable(Float64)
+3	Nullable(Float64)
+1	Nullable(String)
+2	Nullable(String)
+3	Nullable(String)
+-- Variant all NULLs (optimization path):
+\N	Nullable(Float64)
+\N	Nullable(Float64)
+\N	Nullable(String)
+\N	Nullable(String)
+-- Variant without cast_keep_nullable:
+-- toFloat64/toString always wrap in Nullable:
+1	Nullable(Float64)
+3	Nullable(Float64)
+\N	Nullable(Float64)
+1	Nullable(String)
+3	Nullable(String)
+\N	Nullable(String)
+-- CAST throws on NULL without cast_keep_nullable:

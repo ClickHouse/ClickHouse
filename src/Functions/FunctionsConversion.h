@@ -2800,12 +2800,16 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
-    /// Variant and Dynamic hold NULLs natively via NULL_DISCRIMINATOR, so they
-    /// do not need Nullable wrapping. `canBeInsideNullable` returns false for them
-    /// (meaning they cannot be *wrapped* in Nullable), but that does not mean they
-    /// cannot represent NULL — so we must exclude them from the throw check.
-    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type);
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        bool throw_on_null = false);
+};
 
+struct ConvertImplFromVariantToColumn
+{
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -2960,6 +2964,17 @@ public:
     {
         NullPresence null_presence = getNullPresense(arguments);
 
+        /// Dynamic and Variant can contain NULLs just like Nullable,
+        /// so we treat them the same way: always wrap the result in Nullable.
+        for (const auto & arg : arguments)
+        {
+            if (isDynamic(*arg.type) || isVariant(*arg.type))
+            {
+                null_presence.has_nullable = true;
+                break;
+            }
+        }
+
         if (null_presence.has_null_constant)
         {
             return makeNullable(std::make_shared<DataTypeNothing>());
@@ -2971,15 +2986,7 @@ public:
             return makeNullable(return_type);
         }
 
-        auto return_type = getReturnTypeImplRemovedNullable(arguments);
-
-        if (settings.cast_keep_nullable
-            && !arguments.empty()
-            && canContainNull(*arguments.front().type)
-            && return_type->canBeInsideNullable())
-            return makeNullable(return_type);
-
-        return return_type;
+        return getReturnTypeImplRemovedNullable(arguments);
     }
 
     DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
@@ -3103,7 +3110,16 @@ public:
         /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
         /// For now, here's a workaround.
         DataTypePtr result_type = weird_result_type;
-        if (getNullPresense(arguments).has_nullable && !isNullableOrLowCardinalityNullable(result_type))
+        auto null_presence = getNullPresense(arguments);
+        for (const auto & arg : arguments)
+        {
+            if (isDynamic(*arg.type) || isVariant(*arg.type))
+            {
+                null_presence.has_nullable = true;
+                break;
+            }
+        }
+        if (null_presence.has_nullable && !isNullableOrLowCardinalityNullable(result_type))
             result_type = std::make_shared<DataTypeNullable>(std::move(result_type));
 
         try
@@ -3158,6 +3174,24 @@ public:
                         else
                         {
                             result_null_map = std::move(dynamic_null_map);
+                        }
+                    }
+                    else if (isVariant(*arg.type))
+                    {
+                        const auto & column_variant = assert_cast<const ColumnVariant &>(*arg.column);
+                        auto variant_null_map = column_variant.createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*variant_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(variant_null_map);
                         }
                     }
                 }
@@ -3239,6 +3273,12 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
+        /// When to_nullable is true, the caller (executeImpl's nullable branch) already
+        /// extracted the null map and will wrap the result in Nullable, so we should not
+        /// throw on NULL — just insertDefault and let the null map handle it.
+        /// When to_nullable is false and the result type cannot contain NULL, we must throw.
+        bool throw_on_null = !to_nullable && !canContainNull(*result_type);
+
         if (isDynamic(from_type))
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
@@ -3247,8 +3287,18 @@ private:
             };
 
             return ConvertImplFromDynamicToColumn::execute(
-                arguments, result_type, input_rows_count, nested_convert,
-                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
+                arguments, result_type, input_rows_count, nested_convert, throw_on_null);
+        }
+
+        if (isVariant(from_type))
+        {
+            auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
+            {
+                return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
+            };
+
+            return ConvertImplFromVariantToColumn::execute(
+                arguments, result_type, input_rows_count, nested_convert, throw_on_null);
         }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool

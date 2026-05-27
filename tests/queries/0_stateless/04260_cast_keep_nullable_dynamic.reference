@@ -18,3 +18,12 @@
 1	Nullable(String)
 3	Nullable(String)
 \N	Nullable(String)
+-- Dynamic without cast_keep_nullable:
+-- toFloat64/toString always wrap in Nullable:
+1	Nullable(Float64)
+3	Nullable(Float64)
+\N	Nullable(Float64)
+1	Nullable(String)
+3	Nullable(String)
+\N	Nullable(String)
+-- CAST throws on NULL without cast_keep_nullable:

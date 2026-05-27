@@ -54,16 +54,6 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 namespace detail
 {
 
-bool ConvertImplFromDynamicToColumn::shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type)
-{
-    return keep_nullable
-        && !result_type->isNullable()
-        && !result_type->isLowCardinalityNullable()
-        && !isVariant(*result_type)
-        && !isDynamic(*result_type)
-        && !result_type->canBeInsideNullable();
-}
-
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -183,6 +173,128 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
             {
                 res->insertDefault();
             }
+        }
+        else
+        {
+            if (cast_variant_columns[global_discr])
+            {
+                size_t offset = cast_variant_columns_is_const[global_discr] ? 0 : offsets[i];
+                res->insertFrom(*cast_variant_columns[global_discr], offset);
+            }
+            else
+            {
+                res->insertDefault();
+            }
+        }
+    }
+
+    return res;
+}
+
+ColumnPtr ConvertImplFromVariantToColumn::execute(
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & result_type,
+    size_t input_rows_count,
+    const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+    bool throw_on_null)
+{
+    const auto & variant_column = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments.front().type);
+    const auto & variant_types = variant_type.getVariants();
+
+    /// Optimization: if all rows are NULLs, return early.
+    if (variant_column.hasOnlyNulls())
+    {
+        if (throw_on_null && input_rows_count > 0)
+            throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                "Cannot convert NULL value to non-Nullable type");
+        auto res = result_type->createColumn();
+        res->insertManyDefaults(input_rows_count);
+        return res;
+    }
+
+    /// Optimization: if there is only one variant and no NULLs, convert it directly.
+    if (auto single_discr = variant_column.getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls())
+    {
+        ColumnsWithTypeAndName new_args = arguments;
+        new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(*single_discr), variant_types[*single_discr], ""};
+        auto res = nested_convert(new_args, result_type);
+        return res ? res : result_type->createColumnConstWithDefaultValue(input_rows_count);
+    }
+
+    /// Optimization: if there is only one variant but with NULLs, convert the variant
+    /// and expand the result back to the original size.
+    if (auto single_discr = variant_column.getGlobalDiscriminatorOfOneNoneEmptyVariant())
+    {
+        if (throw_on_null)
+            throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                "Cannot convert NULL value to non-Nullable type");
+
+        auto global_discr = *single_discr;
+        auto local_discr = variant_column.localDiscriminatorByGlobal(global_discr);
+        const auto & local_discriminators = variant_column.getLocalDiscriminators();
+
+        /// Build filter: 1 for variant rows, 0 for NULL rows.
+        PaddedPODArray<UInt8> filter;
+        filter.reserve(input_rows_count);
+        for (size_t i = 0; i != input_rows_count; ++i)
+            filter.push_back(local_discriminators[i] == local_discr);
+
+        /// Convert the single variant column directly (it's already compact).
+        ColumnsWithTypeAndName new_args = arguments;
+        new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_types[global_discr], ""};
+        /// Filter other arguments to match non-NULL rows.
+        size_t variant_size = variant_column.getVariantPtrByGlobalDiscriminator(global_discr)->size();
+        for (size_t i = 1; i < new_args.size(); ++i)
+            new_args[i].column = new_args[i].column->filter(filter, variant_size);
+
+        auto nested_result = nested_convert(new_args, result_type);
+        if (!nested_result)
+        {
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(input_rows_count);
+            return res;
+        }
+
+        nested_result = nested_result->convertToFullColumnIfConst();
+
+        /// Expand the result back to original size, filling filtered-out rows with defaults.
+        nested_result->assumeMutable()->expand(filter, false);
+        return nested_result;
+    }
+
+    /// General case: multiple variants. Convert each variant separately and assemble row-by-row.
+    const auto & local_discriminators = variant_column.getLocalDiscriminators();
+    const auto & offsets = variant_column.getOffsets();
+
+    std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
+    std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
+    for (size_t i = 0; i != variant_types.size(); ++i)
+    {
+        if (variant_column.getVariantPtrByGlobalDiscriminator(i)->empty())
+            continue;
+
+        ColumnsWithTypeAndName new_args = arguments;
+        new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
+        cast_variant_columns[i] = nested_convert(new_args, result_type);
+        if (cast_variant_columns[i] && isColumnConst(*cast_variant_columns[i]))
+        {
+            cast_variant_columns[i] = assert_cast<const ColumnConst &>(*cast_variant_columns[i]).getDataColumnPtr();
+            cast_variant_columns_is_const[i] = true;
+        }
+    }
+
+    auto res = result_type->createColumn();
+    res->reserve(input_rows_count);
+    for (size_t i = 0; i != input_rows_count; ++i)
+    {
+        auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            if (throw_on_null)
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot convert NULL value to non-Nullable type");
+            res->insertDefault();
         }
         else
         {
@@ -1384,9 +1496,10 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
     }
 
     return [variant_wrappers, variant_types, to_type]
-           (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+           (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
+        bool throw_on_null = !col_nullable && !canContainNull(*result_type);
 
         /// First, cast each variant to the result type.
         std::vector<ColumnPtr> cast_variant_columns;
@@ -1411,7 +1524,12 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         {
             auto global_discr = column_variant.globalDiscriminatorByLocal(local_discriminators[i]);
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR || !cast_variant_columns[global_discr])
+            {
+                if (throw_on_null)
+                    throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                        "Cannot convert NULL value to non-Nullable type");
                 res->insertDefault();
+            }
             else
                 res->insertFrom(*cast_variant_columns[global_discr], column_variant.offsetAt(i));
         }
@@ -1633,13 +1751,14 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
         return wrapper(args, result_type, nullptr, args[0].column->size());
     };
 
-    bool keep_nullable = settings.cast_keep_nullable;
-    return [nested_convert, keep_nullable]
-           (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+    return [nested_convert]
+           (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
+        /// If col_nullable is set, the caller already handles NULLs, so don't throw.
+        /// Otherwise, throw when the result type cannot represent NULL.
+        bool throw_on_null = !col_nullable && !canContainNull(*result_type);
         return ConvertImplFromDynamicToColumn::execute(
-            arguments, result_type, input_rows_count, nested_convert,
-            ConvertImplFromDynamicToColumn::shouldThrowOnNull(keep_nullable, result_type));
+            arguments, result_type, input_rows_count, nested_convert, throw_on_null);
     };
 }
 
