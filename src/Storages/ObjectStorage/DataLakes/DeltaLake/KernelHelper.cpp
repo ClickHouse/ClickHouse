@@ -68,7 +68,14 @@ ffi::EngineBuilder * IKernelHelper::createBuilder() const
     catch (...)
     {
         /// The Rust FFI has no free_engine_builder; builder_build consumes it.
-        ffi::builder_build(builder);
+        /// The returned ExternResult owns either an engine handle (Ok) or an
+        /// error allocation (Err) — both must be released to avoid leaks.
+        try
+        {
+            auto engine = KernelUtils::unwrapResult(ffi::builder_build(builder), "createBuilder(cleanup)");
+            ffi::free_engine(engine);
+        }
+        catch (...) {} // NOLINT: preserve the original exception
         throw;
     }
 
