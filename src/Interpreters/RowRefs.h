@@ -118,13 +118,13 @@ struct RowRefList : RowRef
                 ++position;
                 if (position >= batch->size)
                 {
-                    Batch * next = batch->next;
+                    Batch * next_batch = batch->next;
                     /// Prefetch one batch ahead in the RowRefList chain (locality 0, read-only):
-                    /// each Batch holds up to MAX_SIZE=7 RowRefs, so by the time we finish `next`
-                    /// the line for `next->next` should already be in L1.
-                    if (next && next->next)
-                        __builtin_prefetch(next->next, 0, 0);
-                    batch = next;
+                    /// each Batch holds up to MAX_SIZE=7 RowRefs, so by the time we finish `next_batch`
+                    /// the line for `next_batch->next` should already be in L1.
+                    if (next_batch && next_batch->next)
+                        __builtin_prefetch(next_batch->next, 0, 0);
+                    batch = next_batch;
                     position = 0;
                 }
             }
