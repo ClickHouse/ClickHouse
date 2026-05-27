@@ -33,7 +33,11 @@ public:
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.
-    virtual ffi::EngineBuilder * createBuilder() const = 0;
+    ffi::EngineBuilder * createBuilder() const;
+
+protected:
+    /// Override to set storage-specific options on the builder.
+    virtual void configureBuilder(ffi::EngineBuilder *) const {}
 };
 
 using KernelHelperPtr = std::shared_ptr<IKernelHelper>;

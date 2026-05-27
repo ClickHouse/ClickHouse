@@ -53,6 +53,28 @@ void setBuilderOptionChecked(ffi::EngineBuilder * builder, const std::string & n
 
 }
 
+ffi::EngineBuilder * IKernelHelper::createBuilder() const
+{
+    ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
+        ffi::get_engine_builder(
+            KernelUtils::toDeltaString(getTableLocation()),
+            &KernelUtils::allocateError),
+        "get_engine_builder");
+
+    try
+    {
+        configureBuilder(builder);
+    }
+    catch (...)
+    {
+        /// The Rust FFI has no free_engine_builder; builder_build consumes it.
+        ffi::builder_build(builder);
+        throw;
+    }
+
+    return builder;
+}
+
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
 {
@@ -81,14 +103,9 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
-    ffi::EngineBuilder * createBuilder() const override
+private:
+    void configureBuilder(ffi::EngineBuilder * builder) const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
-                KernelUtils::toDeltaString(table_location),
-                &KernelUtils::allocateError),
-            "get_engine_builder");
-
         auto set_option = [&](const std::string & name, const std::string & value)
         {
             setBuilderOptionChecked(builder, name, value);
@@ -130,11 +147,8 @@ public:
             "has access_key_id: {}, has secret_access_key: {}, has token: {}",
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
             !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
-
-        return builder;
     }
 
-private:
     DB::S3::URI url;
     const std::string table_location;
     const std::shared_ptr<const DB::S3::Client> client;
@@ -166,14 +180,9 @@ public:
 
     const std::string & getDataPath() const override { return data_path; }
 
-    ffi::EngineBuilder * createBuilder() const override
+private:
+    void configureBuilder(ffi::EngineBuilder * builder) const override
     {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
-                KernelUtils::toDeltaString(table_location),
-                &KernelUtils::allocateError),
-            "get_engine_builder");
-
         auto set_option = [&](const std::string & name, const std::string & value)
         {
             setBuilderOptionChecked(builder, name, value);
@@ -293,11 +302,8 @@ public:
             log,
             "Using azure container: {}, data_path: {}",
             endpoint.container_name, data_path);
-
-        return builder;
     }
 
-private:
     const DB::AzureBlobStorage::ConnectionParams connection_params;
     const std::string table_location;
     const std::string data_path;
@@ -329,24 +335,14 @@ public:
 
     const std::string & getDataPath() const override { return path; }
 
-    ffi::EngineBuilder * createBuilder() const override
-    {
-        ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(
-                KernelUtils::toDeltaString(table_location),
-                &KernelUtils::allocateError),
-            "get_engine_builder");
-
-        return builder;
-    }
-
 private:
     const std::string table_location;
     const std::string path;
 
     static std::string getTableLocation(const std::string & path)
     {
-        return "file://" + path + "/";
+        // Don't add double slash at the end of the path
+        return "file://" + path + (path.ends_with('/') ? "" : "/");
     }
 };
 }
