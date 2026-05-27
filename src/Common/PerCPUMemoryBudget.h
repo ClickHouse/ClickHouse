@@ -49,8 +49,8 @@
 namespace DB::PerCPUMemoryBudget
 {
 
-constexpr UInt64 SLICE = 4 * 1024 * 1024;
-constexpr int    SLICE_LOG2 = 22;
+constexpr UInt64 SLICE = 8 * 1024 * 1024;
+constexpr int    SLICE_LOG2 = 23;
 static_assert(SLICE == (UInt64{1} << SLICE_LOG2));
 
 /// Per-thread accumulator before touching the per-CPU counter. Larger means
