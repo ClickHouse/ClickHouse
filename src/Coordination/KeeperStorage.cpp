@@ -1326,6 +1326,20 @@ typename KeeperStorage<Container>::UncommittedStateForSnapshot KeeperStorage<Con
 }
 
 template<typename Container>
+void KeeperStorage<Container>::detachMatchingDeltasNoexcept(
+    std::list<Delta> & source,
+    std::list<Delta> & destination,
+    const std::unordered_set<int64_t> & zxids_to_apply) noexcept
+{
+    for (auto it = source.begin(); it != source.end();)
+    {
+        auto current = it++;
+        if (zxids_to_apply.contains(current->zxid))
+            destination.splice(destination.end(), source, current);
+    }
+}
+
+template<typename Container>
 typename KeeperStorage<Container>::UncommittedStateForSnapshot KeeperStorage<Container>::detachUncommittedStateAfter(int64_t last_log_idx)
 {
     UncommittedStateForSnapshot result;
@@ -1337,15 +1351,7 @@ typename KeeperStorage<Container>::UncommittedStateForSnapshot KeeperStorage<Con
 
     {
         std::lock_guard lock(uncommitted_state.deltas_mutex);
-        /// After the first splice, this loop must not do throwing work. It
-        /// relies on single-element `std::list::splice` being `noexcept` and
-        /// integer set lookup not allocating.
-        for (auto it = uncommitted_state.deltas.begin(); it != uncommitted_state.deltas.end();)
-        {
-            auto current = it++;
-            if (zxids_to_apply.contains(current->zxid))
-                result.deltas.splice(result.deltas.end(), uncommitted_state.deltas, current);
-        }
+        detachMatchingDeltasNoexcept(uncommitted_state.deltas, result.deltas, zxids_to_apply);
     }
 
     return result;

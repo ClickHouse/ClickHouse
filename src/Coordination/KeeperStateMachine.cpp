@@ -2,6 +2,7 @@
 #include <cerrno>
 #include <chrono>
 #include <exception>
+#include <string>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
 #include <Disks/IDisk.h>
@@ -22,6 +23,7 @@
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
+#include <base/scope_guard.h>
 #include <sys/mman.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
@@ -721,11 +723,16 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 {
     LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
 
+    bool snapshot_apply_finished = false;
+    SCOPE_EXIT({
+        if (!snapshot_apply_finished)
+            ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
+    });
+
     const auto validate_snapshot_to_apply = [&](const SnapshotMetadataPtr & current_snapshot_meta)
     {
         if (!current_snapshot_meta)
         {
-            ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Required to apply snapshot with last log index {}, but no latest snapshot metadata is available",
@@ -733,7 +740,6 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         }
         if (s.get_last_log_idx() > current_snapshot_meta->get_last_log_idx())
         {
-            ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
@@ -744,8 +750,9 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         {
             LOG_INFO(
                 log,
-                "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot",
-                current_snapshot_meta->get_last_log_idx());
+                "A snapshot with a larger last log index ({}) was created, skipping applying snapshot with last log index {}",
+                current_snapshot_meta->get_last_log_idx(),
+                s.get_last_log_idx());
             return false;
         }
 
@@ -754,16 +761,25 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
     if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
     {
+        /// Apply received snapshots in three phases to reduce peak memory:
+        /// 1. Under `snapshots_lock`, validate metadata and pin the snapshot file.
+        /// 2. Outside locks, read the file and validate its metadata prefix.
+        /// 3. Under `snapshots_lock` and exclusive storage lock, detach the
+        ///    uncommitted tail, drop old storage, deserialize replacement
+        ///    storage, replay the tail, and publish it.
+        /// Any failure after `storage.reset` is not recoverable, so it terminates.
         SnapshotFileInfoPtr snapshot_file_info;
         {
             std::lock_guard lock(snapshots_lock);
             if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            {
+                snapshot_apply_finished = true;
                 return true;
+            }
 
             snapshot_file_info = getSnapshotPinUnlocked(s.get_last_log_idx());
             if (!snapshot_file_info)
             {
-                ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Required to apply snapshot with last log index {}, but snapshot file info is not available",
@@ -775,7 +791,6 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
         if (snapshot_meta_from_buffer->get_last_log_idx() != s.get_last_log_idx())
         {
-            ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Required to apply snapshot with last log index {}, but snapshot buffer metadata has last log index {}",
@@ -786,24 +801,19 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
         {
             std::lock_guard lock(snapshots_lock);
             if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            {
+                snapshot_apply_finished = true;
                 return true;
+            }
 
             {
                 KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
 
-                auto uncommitted_tail = [&]
-                {
-                    try
-                    {
-                        return storage->detachUncommittedStateAfter(s.get_last_log_idx());
-                    }
-                    catch (...)
-                    {
-                        ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
-                        throw;
-                    }
-                }();
+                auto uncommitted_tail = storage->detachUncommittedStateAfter(s.get_last_log_idx());
 
+                const std::string latest_snapshot_meta_index_before_reset = latest_snapshot_meta
+                    ? std::to_string(latest_snapshot_meta->get_last_log_idx())
+                    : "(None)";
                 storage.reset();
 
                 try
@@ -832,13 +842,12 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                 }
                 catch (...)
                 {
-                    ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
                     LOG_FATAL(
                         log,
                         "Failed to apply snapshot {} after dropping old `KeeperMemoryStorage` "
-                        "(latest snapshot metadata index: {}): {}. Terminating to avoid inconsistent Keeper state",
+                        "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
                         s.get_last_log_idx(),
-                        latest_snapshot_meta ? latest_snapshot_meta->get_last_log_idx() : 0,
+                        latest_snapshot_meta_index_before_reset,
                         getCurrentExceptionMessage(true, true, false));
                     std::terminate();
                 }
@@ -853,7 +862,10 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     {
         std::lock_guard lock(snapshots_lock);
         if (!validate_snapshot_to_apply(latest_snapshot_meta))
+        {
+            snapshot_apply_finished = true;
             return true;
+        }
 
         SnapshotDeserializationResult<Storage> snapshot_deserialization_result
             = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
@@ -881,6 +893,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
     keeper_context->setLastCommitIndex(s.get_last_log_idx());
+    snapshot_apply_finished = true;
     return true;
 }
 

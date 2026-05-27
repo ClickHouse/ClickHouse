@@ -619,7 +619,11 @@ public:
         bool empty() const { return transactions.empty(); }
     };
 
+    /// Collect uncommitted transactions and deltas with `log_idx > last_log_idx`.
     UncommittedStateForSnapshot copyUncommittedStateAfter(int64_t last_log_idx) const;
+
+    /// Like `copyUncommittedStateAfter`, but removes the returned transactions
+    /// and deltas from this storage instead of copying them.
     UncommittedStateForSnapshot detachUncommittedStateAfter(int64_t last_log_idx);
     void applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot);
 
@@ -631,6 +635,10 @@ private:
         int64_t last_log_idx,
         UncommittedStateForSnapshot & result,
         std::unordered_set<int64_t> & zxids_to_apply) const;
+    static void detachMatchingDeltasNoexcept(
+        std::list<Delta> & source,
+        std::list<Delta> & destination,
+        const std::unordered_set<int64_t> & zxids_to_apply) noexcept;
 
 public:
     Coordination::Error commit(DeltaRange deltas);
