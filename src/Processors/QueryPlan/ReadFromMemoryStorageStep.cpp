@@ -76,28 +76,27 @@ protected:
         {
             if (materialized_cte)
             {
-                /// If the materialization was never planned, the planner is
-                /// wrong - fail fast with a clear LOGICAL_ERROR. Otherwise
-                /// block until `MaterializingCTETransform` fulfils the promise
-                /// (set_value on success, set_exception on cancellation or
-                /// abnormal exit). The get() rethrows the writer's exception
-                /// if materialization failed, which propagates up as the
-                /// query's terminal error - much better than silently reading
-                /// from a half-populated `StorageMemory`.
-                if (!materialized_cte->is_materialization_planned.load(std::memory_order_acquire))
+                /// Fail-fast invariant: by the time `MemorySource::generate`
+                /// runs, `DelayedPortsProcessor` (inserted by
+                /// `MaterializingCTEsStep::updatePipeline` via
+                /// `addPipelineBefore`) has already gated this reader on the
+                /// corresponding `MaterializingCTETransform` finishing. If we
+                /// observe `is_built == false` here, the planner failed to
+                /// wire the gate - fail loudly rather than block in the
+                /// `build_future.get()` below or read from a half-populated
+                /// `StorageMemory`.
+                if (!materialized_cte->is_built.load(std::memory_order_acquire))
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Reading from materialized CTE '{}' that has not been planned",
+                        "Reading from materialized CTE '{}' before its materialization completed - "
+                        "DelayedPortsProcessor gate is missing in the query plan",
                         materialized_cte->cte_name);
 
-                /// `build_future` is a shared_future: `get()` rethrows the
-                /// same stored exception object to every concurrent waiter.
-                /// The outer execution layer routinely mutates exceptions
-                /// in-flight (e.g. `addMessage` while unwinding through
-                /// `executeQueryImpl`), which would race on the shared
-                /// `Exception` instance across readers of the same CTE.
-                /// Re-create a fresh per-waiter `Exception` so later
-                /// concurrent mutation is safe. Pattern parallel to
-                /// `CreatingSetsTransform::startSubquery`.
+                /// Defence in depth - kept temporarily so any path the new
+                /// assertion above does not catch still surfaces the writer's
+                /// failure rather than silently reading empty data. Removed
+                /// once the full test bucket has run cleanly without firing
+                /// the assertion (see task plan
+                /// 2026-05-26-materialized-cte-topology-sync.md).
                 try
                 {
                     materialized_cte->build_future.get();
