@@ -16,6 +16,7 @@ import sys
 import time
 import traceback
 import xml.etree.ElementTree as et
+from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 
 import clickhouse_driver
@@ -399,6 +400,12 @@ all_connections = [
     clickhouse_driver.Client(**server, settings_is_important=True) for server in servers
 ]
 
+# Long-lived workers to fan out per-connection commands (SYSTEM JEMALLOC PURGE
+# etc.) in parallel so both servers see the same operation at the same wall
+# clock moment.
+purge_pool = ThreadPoolExecutor(max_workers=max(1, len(all_connections)))
+
+
 for i, s in enumerate(servers):
     ssl_status = "SSL" if s["secure"] else "no-SSL"
     print(f'server\t{i}\t{s["host"]}\t{s["port"]}\t{s["user"]}\t{ssl_status}')
@@ -480,14 +487,18 @@ if not args.use_existing_tables:
 
 
 def purge_jemalloc_on_all_connections(reason):
-    for conn_index, c in enumerate(all_connections):
+    def purge_one(indexed_conn):
+        conn_index, c = indexed_conn
         try:
             c.execute("SYSTEM JEMALLOC PURGE")
-            print(f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}\t{reason}")
+            return f"purging jemalloc arenas\t{conn_index}\t{c.last_query.elapsed}\t{reason}"
         except KeyboardInterrupt:
             raise
         except:
-            continue
+            return None
+    for line in purge_pool.map(purge_one, enumerate(all_connections)):
+        if line:
+            print(line)
 
 
 if args.jemalloc_purge != "disabled":
