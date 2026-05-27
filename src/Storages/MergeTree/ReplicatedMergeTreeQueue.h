@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
@@ -449,6 +450,9 @@ public:
 
     /// Returns functor which used by MergeTreeMergerMutator to select parts for merge
     std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> getMergePredicate(zkutil::ZooKeeperPtr & zookeeper, std::optional<PartitionIdsHint> && partition_ids_hint);
+
+    /// Build the per-partition cursor promoter map for streaming reads.
+    CursorPromotersMap buildPromoters(zkutil::ZooKeeperPtr & zookeeper);
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version,
                                          Strings & mutation_ids) const;
