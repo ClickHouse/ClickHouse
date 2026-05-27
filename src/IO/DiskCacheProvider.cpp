@@ -130,39 +130,84 @@ DiskCacheHandle::DiskCacheHandle(
 CacheLookupResult DiskCacheHandle::status() const
 {
     CacheLookupResult result;
-    if (!holder)
-        return result;
 
-    /// Translate segments' object-local ranges to file-level for the caller.
-    for (const auto & segment : *holder)
+    /// Walk segments in ascending order and classify hit/miss. Sub-ranges of
+    /// `requested_range` not covered by any segment are added to `miss_ranges`
+    /// so the executor falls back to the source for them. This matters for
+    /// `read_from_filesystem_cache_if_exists_otherwise_bypass_cache=1`: in
+    /// that mode the ctor uses `cache->get` (read-only), which returns only
+    /// segments that already exist — gaps between them, or a null `holder`,
+    /// are common and must surface as misses. Non-bypass mode uses
+    /// `cache->getOrSet` which materialises EMPTY segments across the whole
+    /// requested range, so the gap-fill is a no-op there but stays as a
+    /// defensive invariant (e.g. when the request extends past `object_size`).
+    chassert(requested_range.offset >= object_file_offset);
+    const size_t req_obj_start = requested_range.offset - object_file_offset;
+    const size_t req_obj_end = req_obj_start + requested_range.size;
+
+    size_t cursor = req_obj_start;  /// object-local; first byte not yet classified
+
+    auto emit_gap_to = [&](size_t gap_end_obj)
     {
-        const auto & seg_range = segment->range();
-        ByteRange r{seg_range.left + object_file_offset, seg_range.size()};
+        size_t clamped = std::min(gap_end_obj, req_obj_end);
+        if (clamped > cursor)
+            result.miss_ranges.push_back(ByteRange{
+                cursor + object_file_offset, clamped - cursor});
+        cursor = std::max(cursor, clamped);
+    };
 
-        auto state = segment->state();
-        if (state == FileSegmentState::DOWNLOADED)
+    if (holder)
+    {
+        for (const auto & segment : *holder)
         {
-            result.hit_ranges.push_back(r);
-        }
-        else if (state == FileSegmentState::PARTIALLY_DOWNLOADED
-              || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-        {
-            /// A partial segment has a contiguous downloaded prefix
-            /// `[seg.left, current_write_offset)` that is safe to read; the
-            /// tail still needs to be sourced. Honouring this is what
-            /// makes small files (file_size < segment_size) cacheable —
-            /// their last segment is necessarily a partial fill.
-            size_t cwo_file = segment->getCurrentWriteOffset() + object_file_offset;
-            if (cwo_file > r.offset)
-                result.hit_ranges.push_back(ByteRange{r.offset, cwo_file - r.offset});
-            if (cwo_file < r.end())
-                result.miss_ranges.push_back(ByteRange{cwo_file, r.end() - cwo_file});
-        }
-        else
-        {
-            result.miss_ranges.push_back(r);
+            const auto & seg_range = segment->range();
+
+            /// Pre-segment gap within the requested range → miss.
+            emit_gap_to(seg_range.left);
+
+            /// No more segments overlap the request — stop walking; tail
+            /// gap is emitted after the loop.
+            if (seg_range.left >= req_obj_end)
+                break;
+
+            /// Translate segment's object-local range to file-level for the
+            /// caller. Segments may extend past `requested_range`; the
+            /// executor clamps hits to its piece and intentionally keeps
+            /// segment-sized misses to let the next cache or the source
+            /// populate this cache fully.
+            ByteRange r{seg_range.left + object_file_offset, seg_range.size()};
+
+            auto state = segment->state();
+            if (state == FileSegmentState::DOWNLOADED)
+            {
+                result.hit_ranges.push_back(r);
+            }
+            else if (state == FileSegmentState::PARTIALLY_DOWNLOADED
+                  || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+            {
+                /// A partial segment has a contiguous downloaded prefix
+                /// `[seg.left, current_write_offset)` that is safe to read; the
+                /// tail still needs to be sourced. Honouring this is what
+                /// makes small files (file_size < segment_size) cacheable —
+                /// their last segment is necessarily a partial fill.
+                size_t cwo_file = segment->getCurrentWriteOffset() + object_file_offset;
+                if (cwo_file > r.offset)
+                    result.hit_ranges.push_back(ByteRange{r.offset, cwo_file - r.offset});
+                if (cwo_file < r.end())
+                    result.miss_ranges.push_back(ByteRange{cwo_file, r.end() - cwo_file});
+            }
+            else
+            {
+                result.miss_ranges.push_back(r);
+            }
+
+            cursor = std::max(cursor, seg_range.left + seg_range.size());
         }
     }
+
+    /// Tail gap past the last segment (or the whole request if `holder` was null).
+    emit_gap_to(req_obj_end);
+
     return result;
 }
 

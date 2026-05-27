@@ -2231,7 +2231,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialPutSegmentIsCacheable)
     auto after_put = handle2->status();
 
     /// Aggregate hits / misses (FileCache may split into multiple segments).
-    auto total_size = [](const std::vector<ByteRange> & rs)
+    auto total_size = [](const auto & rs)
     {
         size_t s = 0;
         for (const auto & r : rs)
@@ -2356,6 +2356,107 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
         /// or some hybrid instead of "HELLO").
         ASSERT_EQ(result.str(), data);
     }
+}
+
+/// Bypass mode (`read_from_filesystem_cache_if_exists_otherwise_bypass_cache=1`)
+/// uses `cache->get` (read-only) instead of `getOrSet`, so the returned holder
+/// contains only segments that already exist. `DiskCacheHandle::status` must
+/// still report sub-ranges of the requested range that no segment covers
+/// (including the case where the holder is null) as `miss_ranges`, otherwise
+/// `ReaderExecutor` silently skips those bytes and returns truncated data.
+TEST_F(FileCacheTest, DiskCacheProviderBypassReportsUncoveredRangesAsMiss)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path3;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_bypass_gaps", settings);
+    cache->initialize();
+
+    const std::string file_path = fs::current_path() / "test_dc_bypass_gaps";
+    const std::string data = "AAAAAAAAAA" "BBBBBBBBBB" "CCCCCCCCCC";  /// 3 × 10 bytes
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings non_bypass_settings;
+    non_bypass_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    /// Prime the cache with the middle segment only — read `[10, 20)` through
+    /// a normal (non-bypass) provider.
+    {
+        auto provider = std::make_shared<DiskCacheProvider>(cache, non_bypass_settings);
+        auto source_reader = std::make_shared<LocalSourceReader>();
+
+        StoredObjects objects;
+        objects.emplace_back(file_path, "", data.size());
+
+        auto executor = std::make_unique<ReaderExecutor>(
+            source_reader, objects,
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider},
+            /*window_size=*/10,
+            /*min_bytes_for_seek=*/0,
+            file_path);
+
+        PipelineReadBuffer buf(std::move(executor));
+        buf.seek(10, SEEK_SET);
+
+        char out[10];
+        ASSERT_EQ(buf.read(out, 10), 10u);
+        ASSERT_EQ(std::string(out, 10), "BBBBBBBBBB");
+    }
+
+    /// Now lookup [0, 30) in BYPASS mode. Only [10, 20) is cached; the
+    /// surrounding two 10-byte ranges must surface as misses.
+    FilesystemCacheSettings bypass_settings;
+    bypass_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
+    bypass_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto bypass_provider = std::make_shared<DiskCacheProvider>(cache, bypass_settings);
+
+    StoredObject object{file_path, "", data.size()};
+    auto handle = bypass_provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, 30});
+    ASSERT_NE(handle, nullptr);
+
+    auto status = handle->status();
+
+    /// Aggregate, since FileCache may split ranges into multiple segments
+    /// internally.
+    auto total = [](const auto & rs)
+    {
+        size_t s = 0;
+        for (const auto & r : rs)
+            s += r.size;
+        return s;
+    };
+    ASSERT_EQ(total(status.hit_ranges), 10u);
+    ASSERT_EQ(total(status.miss_ranges), 20u);
+
+    /// And the hit covers the middle slot.
+    ASSERT_FALSE(status.hit_ranges.empty());
+    ASSERT_EQ(status.hit_ranges[0].offset, 10u);
+
+    /// Bonus: a lookup for a range that has NO overlap with the one cached
+    /// segment must report the entire range as a miss (holder may be null
+    /// in this case).
+    auto tail_handle = bypass_provider->lookup(object, /*object_file_offset=*/0, ByteRange{20, 10});
+    ASSERT_NE(tail_handle, nullptr);
+    auto tail_status = tail_handle->status();
+    ASSERT_EQ(total(tail_status.hit_ranges), 0u);
+    ASSERT_EQ(total(tail_status.miss_ranges), 10u);
+    ASSERT_FALSE(tail_status.miss_ranges.empty());
+    ASSERT_EQ(tail_status.miss_ranges[0].offset, 20u);
 }
 
 namespace
