@@ -22,7 +22,6 @@ namespace Setting
 {
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
-    extern const SettingsBool vector_search_with_rescoring;
 }
 
 namespace ErrorCodes
@@ -167,11 +166,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         return;
 
     /// These two optimizations conflict:
-    /// - vector search lookups with disabled rescoring
+    /// - vector search lookups
     /// - PREWHERE
     /// The former is more impactful, therefore disable PREWHERE if both may be used.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
+    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value())
         return;
 
     /// Extract column compressed sizes

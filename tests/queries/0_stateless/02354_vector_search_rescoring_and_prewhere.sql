@@ -77,8 +77,6 @@ WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1,
-         optimize_move_to_prewhere = 0,
-         query_plan_optimize_prewhere = 0,
          query_plan_optimize_lazy_materialization = 0,
          query_plan_execute_functions_after_sorting = 0;
 
@@ -90,8 +88,6 @@ ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1,
          vector_search_index_fetch_multiplier = 3,
-         optimize_move_to_prewhere = 0,
-         query_plan_optimize_prewhere = 0,
          query_plan_optimize_lazy_materialization = 0,
          query_plan_execute_functions_after_sorting = 0;
 
