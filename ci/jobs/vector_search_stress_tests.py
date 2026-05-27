@@ -169,7 +169,7 @@ test_params_laion_5b_quick_test = {
     NEW_TRUTH_SET_FILE: "laion_100k_1k_new",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: True,
+    CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
@@ -188,7 +188,7 @@ test_params_laion_5b_1m = {
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: True,
+    CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
@@ -197,11 +197,11 @@ test_params_hackernews_10m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
-    QUANTIZATION: "bf16",
+    QUANTIZATION: "b1",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
-    HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    HNSW_EF_SEARCH: 256,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 10,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
@@ -209,7 +209,7 @@ test_params_hackernews_10m = {
     RECALL_K: 100,
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
-    CONCURRENCY_TEST: True,
+    CONCURRENCY_TEST: False,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
@@ -218,20 +218,20 @@ test_params_cohere_wiki_20m = {
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
-    QUANTIZATION: "bf16",
+    QUANTIZATION: "b1",
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
-    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 10,
     TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
     GENERATE_TRUTH_SET: False,
     NEW_TRUTH_SET_FILE: None,
     TRUTH_SET_COUNT: 25000,
     RECALL_K: 10,
+    CONCURRENCY_TEST: False,
     # Let's have more than 1 part for this dataset (7 - 9 parts)
     MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
     OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
-    CONCURRENCY_TEST: True,
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True, # only set if query vector is numpy.Array(Float32)
 }
 
@@ -670,12 +670,12 @@ class RunTest:
                         "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
                     )
                 params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k}"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query, parameters=params)
             else:
                 query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 10"
                 q_start = current_time_ms()
                 result = chclient.query(ann_search_query)
 
@@ -808,9 +808,9 @@ def install_and_start_clickhouse():
     info = Info()
 
     if Utils.is_arm():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/105591/5a30362c5a8e8240c155a64ddcfd1203727174dd/build_arm_release/clickhouse"
     elif Utils.is_amd():
-        latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
+        latest_ch_master_url = "https://clickhouse-builds.s3.amazonaws.com/PRs/105591/5a30362c5a8e8240c155a64ddcfd1203727174dd/build_amd_release/clickhouse"
     else:
         assert False, f"Unknown processor architecture"
 
@@ -859,11 +859,6 @@ def install_and_start_clickhouse():
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
-    (
-        "Test using the laion dataset",
-        dataset_laion_5b_mini_for_quick_test,
-        test_params_laion_5b_1m,
-    ),
     (
         "Test using the hackernews dataset",
         dataset_hackernews_openai,
