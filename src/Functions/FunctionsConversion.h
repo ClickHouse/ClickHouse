@@ -3160,6 +3160,13 @@ public:
                     }
                     else if (isDynamic(*arg.type))
                     {
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
                         const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arg.column);
                         auto dynamic_null_map = column_dynamic.getVariantColumn().createNullMap();
                         if (result_null_map)
@@ -3178,6 +3185,13 @@ public:
                     }
                     else if (isVariant(*arg.type))
                     {
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                            continue;
+                        }
                         const auto & column_variant = assert_cast<const ColumnVariant &>(*arg.column);
                         auto variant_null_map = column_variant.createNullMap();
                         if (result_null_map)
