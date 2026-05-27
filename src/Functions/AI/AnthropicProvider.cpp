@@ -111,7 +111,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty())
+    if (!api_key.empty()) /// not all providers need API key
         http_request.set("x-api-key", api_key);
     http_request.set("anthropic-version", api_version);
     http_request.setContentLength(body.size());
