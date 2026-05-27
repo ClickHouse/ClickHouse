@@ -5,6 +5,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
 #include <memory>
@@ -111,6 +112,15 @@ public:
     /// Set source with a custom buffer creator (for testing or custom backends).
     void setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
 
+    /// Source whose creator returns a buffer that is already a complete reader —
+    /// e.g. a packed-archive file view that internally wraps its own real-file
+    /// reader (with caches, decryption, prefetch applied to the underlying
+    /// `disk->readFile` call). The pipeline must NOT wrap such a source with
+    /// the executor or any stage; `build()` returns whatever the creator
+    /// produces unchanged. Calling any `needX` setter after this is a contract
+    /// violation and trips a `chassert` in `build()`.
+    void setAlreadyCompleteSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
+
     /// -- Gather stage (ReadBufferFromRemoteFSGather) --
     /// Joins multiple stored objects into a single seekable buffer.
     /// Required for object storage where one logical file maps to multiple blobs.
@@ -188,6 +198,10 @@ private:
         StoredObjects objects;
         std::variant<ObjectStorageSource, LocalFileSource, BackupSource, CustomSource> source;
         ReadSettings read_settings;
+        /// Set by `setAlreadyCompleteSource`. Tells `build()` to invoke the
+        /// CustomSource creator and return the buffer unchanged — no executor,
+        /// no stage wraps. See the setter's doc for the contract.
+        bool already_complete = false;
     };
 
     struct FilesystemCacheStage
@@ -230,13 +244,13 @@ private:
 
     std::optional<SourceStage> source;
     bool gather = false;
-    std::vector<FilesystemCacheStage> filesystem_caches;
+    VectorWithMemoryTracking<FilesystemCacheStage> filesystem_caches;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     std::shared_ptr<SourceBufferLimit> buffer_limit;
-    std::vector<DecryptionStage> decryption_stages;
+    VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.

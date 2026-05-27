@@ -89,6 +89,16 @@ void ReadPipeline::setSource(BufferCreator creator, StoredObjects objects, const
         .read_settings = read_settings};
 }
 
+void ReadPipeline::setAlreadyCompleteSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings)
+{
+    chassert(!source.has_value(), "ReadPipeline: source is already set");
+    source = SourceStage{
+        .objects = std::move(objects),
+        .source = CustomSource{.creator = std::move(creator)},
+        .read_settings = read_settings,
+        .already_complete = true};
+}
+
 void ReadPipeline::needGather()
 {
     gather = true;
@@ -185,6 +195,28 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// Empty objects = zero-blob file.
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
+
+    /// `setAlreadyCompleteSource` registers a creator whose returned buffer
+    /// is itself a complete reader — typically a packed-archive file view that
+    /// internally wraps its own `disk->readFile` (with caches, decryption,
+    /// prefetch already applied to the underlying I/O). Wrapping again with the
+    /// executor or any stage would be both pointless overhead and incorrect
+    /// (e.g. trips `ReadBufferFromFileView`'s swap-state pattern when the
+    /// executor uses external-buffer mode). Stages must NOT be configured on
+    /// such a pipeline; the assertion below catches accidental misuse.
+    if (source->already_complete)
+    {
+        chassert(!gather && !memory_cache && filesystem_caches.empty()
+                 && !async_prefetch && decryption_stages.empty() && !distributed_cache
+                 && !prefetch_pool && !buffer_limit,
+                 "ReadPipeline: setAlreadyCompleteSource is incompatible with any stage");
+        const auto & custom = std::get<CustomSource>(source->source);
+        return custom.creator(
+            source->objects.front(),
+            source->read_settings,
+            /*use_external_buffer=*/false,
+            /*restrict_seek=*/false);
+    }
 
     /// Capture the query id once here (on the calling thread, which has the
     /// query context). Subsequent cached-buffer creations happen lazily inside
