@@ -2,6 +2,7 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecMultiple.h>
+#include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <base/unaligned.h>
@@ -9,6 +10,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int CORRUPTED_DATA;
+}
 
 using Checksum = CityHash_v1_0_2::uint128;
 
@@ -25,6 +31,14 @@ getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, U
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer.data());
     size_compressed = unalignedLoad<UInt32>(&compressed_buffer[1]);
     size_decompressed = unalignedLoad<UInt32>(&compressed_buffer[5]);
+
+    if (size_compressed < header_size)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Compressed block header reports compressed size {} which is less than the {}-byte header",
+            size_compressed,
+            static_cast<UInt32>(header_size));
+
     if (method == static_cast<uint8_t>(CompressionMethodByte::Multiple))
     {
         compressed_buffer.resize(1);
@@ -36,8 +50,17 @@ getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, U
         for (auto byte : codecs_bytes)
             codecs.push_back(CompressionCodecFactory::instance().get(byte));
 
+        const size_t bytes_consumed = read_buffer.count() - starting_bytes;
+
+        if (size_compressed < bytes_consumed)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Compressed block header reports compressed size {} smaller than the {} bytes already consumed for the chain",
+                size_compressed,
+                bytes_consumed);
+
         if (skip_to_next_block)
-            read_buffer.ignore(size_compressed - (read_buffer.count() - starting_bytes));
+            read_buffer.ignore(size_compressed - bytes_consumed);
 
         return std::make_shared<CompressionCodecMultiple>(codecs);
     }
