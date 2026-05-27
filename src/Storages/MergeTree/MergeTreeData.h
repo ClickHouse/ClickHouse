@@ -34,7 +34,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 #include <boost/multi_index_container.hpp>
@@ -1135,8 +1135,8 @@ public:
 
     /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will get consistent settings.
-    /// When `projection` is provided, apply projection-level overrides on top of the table settings.
-    MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
+    /// When `settings_changes` is provided, apply the overrides on top of the table settings.
+    MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
     StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
@@ -1237,9 +1237,12 @@ public:
     size_t getTotalMergesWithTTLInMergeList() const;
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
+    /// `metadata_snapshot` must come from the source part being covered
+    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
-        const String & new_part_name, const MergeTreeTransactionPtr & txn);
+        const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
