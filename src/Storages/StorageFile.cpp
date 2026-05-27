@@ -1661,7 +1661,6 @@ Chunk StorageFileSource::generate()
                     .last_modified = current_file_last_modified,
                 }, getContext(), storage->format_settings);
 
-
             return chunk;
         }
 
