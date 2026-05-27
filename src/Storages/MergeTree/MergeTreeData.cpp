@@ -56,6 +56,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTHelpers.h>
@@ -7659,14 +7660,15 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 
     for (const auto & command : commands)
     {
-        if (!command.partition)
+        auto alter = command.ast();
+        if (!alter || !alter->partition)
         {
             affected_partition_ids.clear();
             break;
         }
 
         affected_partition_ids.insert(
-            getPartitionIDFromQuery(command.partition, query_context)
+            getPartitionIDFromQuery(ASTPtr(alter->partition), query_context)
         );
     }
 
@@ -10129,24 +10131,29 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                 if (mutation_command.column_name == command.column_name)
                     throw_exception(mutation_name, action, "column", command.column_name);
 
-                if (mutation_command.predicate)
+                auto alter = mutation_command.ast();
+                if (alter && alter->predicate)
                 {
-                    auto query_tree = buildQueryTree(mutation_command.predicate, local_context);
+                    auto query_tree = buildQueryTree(ASTPtr(alter->predicate), local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))
                         throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
-                for (const auto & [name, expr] : mutation_command.column_to_update_expression)
+                if (alter && alter->update_assignments)
                 {
-                    if (name == command.column_name)
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                    for (const auto & child : alter->update_assignments->children)
+                    {
+                        const auto & assignment = child->as<ASTAssignment &>();
+                        if (assignment.column_name == command.column_name)
+                            throw_exception(mutation_name, action, "column", command.column_name);
 
-                    auto query_tree = buildQueryTree(expr, local_context);
-                    auto identifiers = collectIdentifiersFullNames(query_tree);
-                    if (identifiers.contains(command.column_name))
-                        throw_exception(mutation_name, action, "column", command.column_name);
+                        auto query_tree = buildQueryTree(assignment.expression(), local_context);
+                        auto identifiers = collectIdentifiersFullNames(query_tree);
+                        if (identifiers.contains(command.column_name))
+                            throw_exception(mutation_name, action, "column", command.column_name);
+                    }
                 }
             }
             else if (command.type == AlterCommand::DROP_STATISTICS)
