@@ -4,8 +4,6 @@
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
-SET compile_expressions = 0;
-SET compile_sort_description = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -76,9 +74,7 @@ FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS vector_search_with_rescoring = 1,
-         query_plan_optimize_lazy_materialization = 0,
-         query_plan_execute_functions_after_sorting = 0;
+SETTINGS vector_search_with_rescoring = 1;
 
 SELECT 'With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)';
 SELECT id
@@ -87,9 +83,7 @@ WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1,
-         vector_search_index_fetch_multiplier = 3,
-         query_plan_optimize_lazy_materialization = 0,
-         query_plan_execute_functions_after_sorting = 0;
+         vector_search_index_fetch_multiplier = 3;
 
 SELECT 'Check that explicit PREWHERE disables the optimization';
 -- Expect no _distance column in result
@@ -100,9 +94,7 @@ SELECT trimLeft(explain) AS explain FROM (
     PREWHERE attr1 > 110
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 4
-    SETTINGS vector_search_with_rescoring = 1,
-             query_plan_optimize_lazy_materialization = 0,
-             query_plan_execute_functions_after_sorting = 0
+    SETTINGS vector_search_with_rescoring = 1
     )
 WHERE (explain LIKE '%_distance%');
 
@@ -112,9 +104,7 @@ FROM tab
 PREWHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS vector_search_with_rescoring = 1,
-         query_plan_optimize_lazy_materialization = 0,
-         query_plan_execute_functions_after_sorting = 0;
+SETTINGS vector_search_with_rescoring = 1;
 
 SELECT 'Select all 20 neighbours with the rescoring optimization, distances got from vector index';
 SELECT id, attr1, attr2
