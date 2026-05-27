@@ -45,7 +45,14 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
 {
-    return __real_aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
+    size_t alignment = static_cast<size_t>(align);
+#if !USE_JEMALLOC
+    /// POSIX `aligned_alloc` requires alignment >= `sizeof(void *)` (strictly enforced on macOS).
+    /// Mirror libc++'s `operator_new_aligned_impl` in `contrib/llvm-project/libcxx/src/new.cpp`.
+    if (alignment < sizeof(void *))
+        alignment = sizeof(void *);
+#endif
+    return __real_aligned_alloc(alignment, alignUp(size, alignment));
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
