@@ -118,7 +118,8 @@ void BackgroundJobsAssignee::start()
     std::lock_guard lock(holder_mutex);
     if (!holder)
     {
-        switch (type) {
+        switch (type)
+        {
         case Type::DataProcessing:
         case Type::Moving:
             holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
