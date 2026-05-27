@@ -630,33 +630,65 @@ if not args.use_existing_tables:
             cut_start = j
 
         # Scan from the start of the value to find its end at the next
-        # top-level comma or semicolon (or end of query).
+        # top-level comma or semicolon (or end of query). Mirror the
+        # name-scan state machine so commas inside string/backtick
+        # literals or inside `--`, `#`, `/* */` comments are ignored.
         i = value_start
         quote = None
+        line_comment = False
+        block_comment = False
         depth = 0
         while i < n:
             c = query[i]
+            next_c = query[i + 1] if i + 1 < n else ""
+            if line_comment:
+                if c == "\n":
+                    line_comment = False
+                i += 1
+                continue
+            if block_comment:
+                if c == "*" and next_c == "/":
+                    block_comment = False
+                    i += 2
+                    continue
+                i += 1
+                continue
             if quote is not None:
                 if c == "\\" and i + 1 < n:
                     i += 2
                     continue
                 if c == quote:
                     # `''` inside a single-quoted string is an escaped quote.
-                    if quote == "'" and i + 1 < n and query[i + 1] == "'":
+                    if quote == "'" and next_c == "'":
                         i += 2
                         continue
                     quote = None
-            else:
-                if c in "'\"`":
-                    quote = c
-                elif c in "([{":
-                    depth += 1
-                elif c in ")]}":
-                    if depth == 0:
-                        break
-                    depth -= 1
-                elif depth == 0 and c in ",;":
+                i += 1
+                continue
+            if (c == "-" and next_c == "-") or c == "#":
+                line_comment = True
+                i += 1
+                continue
+            if c == "/" and next_c == "*":
+                block_comment = True
+                i += 2
+                continue
+            if c in "'\"`":
+                quote = c
+                i += 1
+                continue
+            if c in "([{":
+                depth += 1
+                i += 1
+                continue
+            if c in ")]}":
+                if depth == 0:
                     break
+                depth -= 1
+                i += 1
+                continue
+            if depth == 0 and c in ",;":
+                break
             i += 1
 
         stripped = query[:cut_start] + query[i:]
