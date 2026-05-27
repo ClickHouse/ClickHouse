@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 namespace
 {
-    using ArrayInfo = std::unordered_map<size_t, PostgreSQLArrayInfo>;
+    using ArrayInfo = UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo>;
 
     ArrayInfo createArrayInfos(const NamesAndTypesList & columns, const ExternalResultDescription & columns_description)
     {

@@ -37,7 +37,7 @@ private:
 
         const Block & getSampleBlock() const { return table_description.sample_block; }
 
-        using ArrayInfo = std::unordered_map<size_t, PostgreSQLArrayInfo>;
+        using ArrayInfo = UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo>;
 
         const StoragePtr storage;
         const ExternalResultDescription table_description;

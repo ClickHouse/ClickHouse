@@ -4468,7 +4468,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             auto to_invert_ranges = rpn_stack.top();
             rpn_stack.pop();
 
-            std::vector<Ranges> reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
+            auto reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
 
             if (reverted_ranges.size() == 1)
                 rpn_stack.emplace(std::move(reverted_ranges[0]));

@@ -18,7 +18,7 @@ struct StorageID;
 struct YTsaurusStorageConfiguration
 {
     YTsaurusSettings settings;
-    std::vector<String> http_proxy_urls{};
+    VectorWithMemoryTracking<String> http_proxy_urls{};
     String cypress_path{};
     String oauth_token{};
     std::optional<String> ytsaurus_columns_description{};
