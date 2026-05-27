@@ -137,7 +137,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.try_infer_numbers_from_strings = settings[Setting::input_format_csv_try_infer_numbers_from_strings];
     format_settings.csv.try_infer_strings_from_quoted_tuples = settings[Setting::input_format_csv_try_infer_strings_from_quoted_tuples];
     format_settings.column_binary.disable_preallocation = settings[Setting::column_binary_disable_preallocation];
-    format_settings.column_binary.disable_repeat_detection = settings[Setting::column_binary_disable_repeat_detection];
     format_settings.hive_text.fields_delimiter = settings[Setting::input_format_hive_text_fields_delimiter];
     format_settings.hive_text.collection_items_delimiter = settings[Setting::input_format_hive_text_collection_items_delimiter];
     format_settings.hive_text.map_keys_delimiter = settings[Setting::input_format_hive_text_map_keys_delimiter];

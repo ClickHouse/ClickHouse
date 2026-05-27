@@ -44,9 +44,7 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
         uint32_t col_rows = is_const ? 1u : static_cast<uint32_t>(rows);
 
         ColumnarV1::ColDescriptor desc{};
-        // detect_repeats=false: skip detectPeriod() here — conservative upper bound only.
-        // The actual consume() pass runs detectPeriod() once and may write fewer bytes.
-        cursor = ColumnarV1::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, desc, false);
+        cursor = ColumnarV1::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, desc);
     }
 
     return cursor;
