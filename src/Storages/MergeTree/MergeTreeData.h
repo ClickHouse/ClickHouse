@@ -28,6 +28,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/Streaming/CursorPromoter.h>
+#include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -1242,9 +1243,12 @@ public:
     size_t getTotalMergesWithTTLInMergeList() const;
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
+    /// `metadata_snapshot` must come from the source part being covered
+    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
-        const String & new_part_name, const MergeTreeTransactionPtr & txn);
+        const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
+        const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1322,6 +1326,9 @@ public:
 
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
+
+    /// Used for streaming queries registration.
+    mutable StreamSubscriptionManager subscription_manager;
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 

@@ -15,14 +15,14 @@ insert_opts=(
 
 $STREAMING_CLIENT -q "DROP TABLE IF EXISTS t_streaming_test"
 $STREAMING_CLIENT -q "CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS $STREAMING_TABLE_SETTINGS"
-$CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO t_streaming_test select number, number from numbers(100)"
-
-echo "=== Test Streaming cursor shift reading ==="
 
 # start stream
 read -r fifo_1 pid_1 < <(spawn $STREAMING_CLIENT -q "SELECT toString(_block_number) || toString(_block_offset) FROM t_streaming_test STREAM CURSOR {'all': {'block_number': 8, 'block_offset': 5}}")
 
+echo "=== Test Streaming cursor shift reading ==="
+
 # 86 -> 109 (block 8 offsets 6..9; block 9 offsets 0..9; block 10 offsets 0..9)
+$CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO t_streaming_test select number, number from numbers(100)" &
 read_until "$fifo_1" "109"
 
 # stop reading by killing client job

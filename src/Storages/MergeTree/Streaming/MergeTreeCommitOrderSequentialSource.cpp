@@ -16,6 +16,7 @@
 
 #include <IO/WriteBufferFromString.h>
 
+#include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
 
@@ -84,6 +85,21 @@ ClassifiedPartitions getPartitionsClassification(
     }
 
     return classification;
+}
+
+std::string explainPlan(const QueryPlan & plan)
+{
+    WriteBufferFromOwnString plan_buffer;
+    ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
+    plan.explainPlan(plan_buffer, explain_options);
+    return plan_buffer.str();
+}
+
+std::string explainPipeline(const Pipe & pipe)
+{
+    WriteBufferFromOwnString pipeline_buffer;
+    printPipeline(pipe.getProcessors(), pipeline_buffer);
+    return pipeline_buffer.str();
 }
 
 struct PipeWithResources
@@ -300,13 +316,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     QueryPlanOptimizationSettings opt_settings(context);
     unified.optimize(opt_settings);
 
-    if (log->test())
-    {
-        WriteBufferFromOwnString plan_buffer;
-        ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
-        unified.explainPlan(plan_buffer, explain_options);
-        LOG_TEST(log, "Unified snapshot plan:\n{}", plan_buffer.str());
-    }
+    LOG_TEST(log, "Unified snapshot plan:\n{}", explainPlan(unified));
 
     auto builder = unified.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
 
@@ -316,12 +326,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     if (!stream_settings.watermark)
         result.pipe.resize(1);
 
-    if (log->test())
-    {
-        WriteBufferFromOwnString pipeline_buffer;
-        printPipeline(result.pipe.getProcessors(), pipeline_buffer);
-        LOG_TEST(log, "Unified snapshot pipeline:\n{}", pipeline_buffer.str());
-    }
+    LOG_TEST(log, "Unified snapshot pipeline:\n{}", explainPipeline(result.pipe));
 
     return result;
 }

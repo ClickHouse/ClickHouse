@@ -20,7 +20,7 @@ public:
     bool hasSubtree(const String & key) const;
     const CursorTreeNodePtr & getSubtree(const String & key) const;
     CursorTreeNodePtr & setSubtree(const String & key, CursorTreeNodePtr tree);
-    CursorTreeNodePtr & next(const String & key);
+    CursorTreeNodePtr & getSubtreeOrCreate(const String & key);
 
     bool hasValue(const String & key) const;
     Int64 getValue(const String & key) const;
@@ -36,8 +36,5 @@ public:
 private:
     Data data;
 };
-
-Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
-CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree);
 
 }

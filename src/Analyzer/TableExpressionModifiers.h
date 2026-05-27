@@ -107,7 +107,27 @@ inline bool operator==(const WatermarkSettings & lhs, const WatermarkSettings & 
 
 inline bool operator==(const StreamingSettings & lhs, const StreamingSettings & rhs)
 {
-    return lhs.cursor == rhs.cursor && lhs.watermark == rhs.watermark;
+    /// Compare cursors
+    {
+        if ((lhs.cursor == nullptr) != (rhs.cursor == nullptr))
+            return false;
+
+        if (lhs.cursor)
+            if (cursorTreeToMap(lhs.cursor) != cursorTreeToMap(rhs.cursor))
+                return false;
+    }
+
+    /// Compare watermarks
+    {
+        if ((lhs.watermark == nullptr) != (rhs.watermark == nullptr))
+            return false;
+
+        if (lhs.watermark)
+            if (*lhs.watermark != *rhs.watermark)
+                return false;
+    }
+
+    return true;
 }
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)

@@ -72,16 +72,19 @@ const CursorTreeNodePtr & CursorTreeNode::getSubtree(const String & key) const
 
 CursorTreeNodePtr & CursorTreeNode::setSubtree(const String & key, CursorTreeNodePtr tree)
 {
-    auto & cell = data[key] = std::move(tree);
-    return std::get<CursorTreeNodePtr>(cell);
+    data[key] = std::move(tree);
+    return std::get<CursorTreeNodePtr>(data[key]);
 }
 
-CursorTreeNodePtr & CursorTreeNode::next(const String & key)
+CursorTreeNodePtr & CursorTreeNode::getSubtreeOrCreate(const String & key)
 {
     auto it = data.find(key);
 
     if (it == data.end())
         return setSubtree(key, std::make_shared<CursorTreeNode>());
+
+    if (std::holds_alternative<Int64>(it->second))
+        throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Trying to extract value by key: '{}'", key);
 
     return std::get<CursorTreeNodePtr>(it->second);
 }
@@ -152,6 +155,7 @@ CursorTreeNode::Data::const_iterator CursorTreeNode::end() const
 
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr)
 {
+    chassert(ptr != nullptr);
     std::map<String, Int64> collapsed_tree = collapseTree(ptr.get());
     Map result;
 
@@ -176,7 +180,7 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
 
         CursorTreeNode * node = root.get();
         for (size_t i = 0; i + 1 < path.size(); ++i)
-            node = node->next(path[i]).get();
+            node = node->getSubtreeOrCreate(path[i]).get();
 
         node->setValue(path.back(), value);
     }
