@@ -8192,8 +8192,7 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
-Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel.
-Set to 0 for no limit.
+Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_memory, 128_MiB, R"(
 Memory limit in bytes per WebAssembly UDF instance.
