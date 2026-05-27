@@ -56,6 +56,35 @@ WITH
     toUInt8(7) AS resolution
 SELECT h3PolygonToCellsWithContainment(ring, resolution, 0.9); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- flags: native integer types other than UInt8/UInt32 use accurate cast to UInt32
+WITH
+    [(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)] AS ring,
+    7 AS resolution
+SELECT length(h3PolygonToCellsWithContainment(ring, resolution, toInt16(2)))
+    = length(h3PolygonToCellsWithContainment(ring, resolution, 2));
+
+WITH
+    [(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)] AS ring,
+    7 AS resolution
+SELECT length(h3PolygonToCellsWithContainment(ring, resolution, toUInt16(1)))
+    = length(h3PolygonToCellsWithContainment(ring, resolution, 1));
+
+WITH
+    [(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)] AS ring,
+    7 AS resolution
+SELECT length(h3PolygonToCellsWithContainment(materialize(ring), materialize(resolution), materialize(toInt32(0))))
+    = length(h3PolygonToCellsWithContainment(ring, resolution, 0));
+
+SELECT h3PolygonToCellsWithContainment(
+    [(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)],
+    7,
+    toInt8(-1)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+SELECT h3PolygonToCellsWithContainment(
+    [(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)],
+    7,
+    toInt32(5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 SELECT h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 4); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

@@ -20,6 +20,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <constants.h>
 #include <h3api.h>
 
@@ -176,7 +177,7 @@ public:
             if (is_const_geometry)
                 const_multi_polygon = to_multi_polygon(std::move(geometries[0]));
 
-            std::vector<H3Index> hindex_vec;
+            VectorWithMemoryTracking<H3Index> hindex_vec;
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
@@ -208,16 +209,16 @@ public:
                 const size_t row_start_offset = current_offset;
                 for (const auto & polygon : multi_polygon)
                 {
-                    std::vector<LatLng> exterior;
+                    VectorWithMemoryTracking<LatLng> exterior;
                     exterior.reserve(polygon.outer().size());
                     for (const auto & point : polygon.outer())
                         exterior.push_back(toH3LatLng(toRadianPoint(point)));
 
-                    std::vector<std::vector<LatLng>> holes;
+                    VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holes;
                     holes.reserve(polygon.inners().size());
                     for (const auto & inner : polygon.inners())
                     {
-                        std::vector<LatLng> hole;
+                        VectorWithMemoryTracking<LatLng> hole;
                         hole.reserve(inner.size());
                         for (const auto & point : inner)
                             hole.push_back(toH3LatLng(toRadianPoint(point)));
@@ -282,16 +283,16 @@ private:
     class GeoPolygonContainer
     {
     private:
-        std::vector<LatLng> mainLoopVerts;
-        std::vector<std::vector<LatLng>> holeVerts;
+        VectorWithMemoryTracking<LatLng> mainLoopVerts;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holeVerts;
 
         mutable GeoLoop mutableMainLoop;
         mutable GeoPolygon mutablePolygon;
-        mutable std::vector<GeoLoop> mutableHoles;
+        mutable VectorWithMemoryTracking<GeoLoop> mutableHoles;
 
     public:
-        explicit GeoPolygonContainer(std::vector<LatLng> && mainLoop,
-                                     std::vector<std::vector<LatLng>> && holes = {})
+        explicit GeoPolygonContainer(VectorWithMemoryTracking<LatLng> && mainLoop,
+                                     VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> && holes = {})
             : mainLoopVerts(std::move(mainLoop)), holeVerts(std::move(holes)) {}
 
         const GeoPolygon * unwrap() const
