@@ -80,6 +80,8 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
+#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -699,6 +701,7 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Moving, getContext())
+    , background_streaming_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Streaming, getContext())
 {
     metadata_.setVirtuals(createVirtuals(metadata_.hasPartitionKey() ? &metadata_.partition_key : nullptr));
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
@@ -788,11 +791,11 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * p
     desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral(PartitionIdColumn::name, PartitionIdColumn::type, "Name of partition", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral(PartDataVersionColumn::name, std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral(PartDataVersionColumn::name, PartDataVersionColumn::type, "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
@@ -3968,6 +3971,7 @@ void MergeTreeData::renameInMemory(const StorageID & new_table_id)
     /// after a rename (e.g., when system log tables are renamed during upgrade).
     background_operations_assignee.updateStorageID(new_table_id);
     background_moves_assignee.updateStorageID(new_table_id);
+    background_streaming_assignee.updateStorageID(new_table_id);
 }
 
 void MergeTreeData::dropAllData()
@@ -4251,6 +4255,25 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
+    /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
+    if (subscription_manager.hasSome())
+    {
+        const auto forbidden_commands = {
+            AlterCommand::ADD_COLUMN,
+            AlterCommand::DROP_COLUMN,
+            AlterCommand::MODIFY_COLUMN,
+            AlterCommand::RENAME_COLUMN,
+            AlterCommand::ADD_PROJECTION,
+            AlterCommand::DROP_PROJECTION,
+            AlterCommand::MODIFY_ORDER_BY,
+            AlterCommand::MODIFY_SAMPLE_BY,
+        };
+
+        for (const auto & cmd : commands)
+            if (std::ranges::contains(forbidden_commands, cmd.type))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
+    }
+
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
@@ -8802,6 +8825,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
     clear();
 
     data.preactive_parts_cv.notify_all();
+    data.triggerStreamingSubscriptionEnrichment();
 
     return total_covered_parts;
 }
@@ -10944,6 +10968,34 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 bool MergeTreeData::allowRemoveStaleMovingParts() const
 {
     return ConfigHelper::getBool(getContext()->getConfigRef(), "allow_remove_stale_moving_parts", /* default_ = */ true);
+}
+
+void MergeTreeData::triggerStreamingSubscriptionEnrichment() const
+{
+    background_streaming_assignee.trigger();
+}
+
+bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
+{
+    if (subscription_manager.isEmpty())
+        return false;
+
+    auto promoters = buildPromoters();
+
+    LocalPartsByPartition local_parts;
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+        local_parts[part->info.getPartitionId()].push_back(part->info);
+
+    bool any_enriched = false;
+    subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
+    {
+        any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
+    });
+
+    if (any_enriched)
+        assignee.trigger();
+
+    return any_enriched;
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()

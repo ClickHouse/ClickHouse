@@ -5,6 +5,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
 #include <memory>
@@ -221,11 +222,11 @@ private:
 
     std::optional<SourceStage> source;
     bool gather = false;
-    std::vector<FilesystemCacheStage> filesystem_caches;
+    VectorWithMemoryTracking<FilesystemCacheStage> filesystem_caches;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
-    std::vector<DecryptionStage> decryption_stages;
+    VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.

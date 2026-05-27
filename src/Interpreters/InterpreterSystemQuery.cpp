@@ -2187,12 +2187,12 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     /// query.handler_name -- handler to be set for the function
     /// query.function_name -- name of the function to be patched - rename in query to function name
     /// query.entry_type -- entry type: None, Entry or Exit
-    /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    /// query.arguments -- arguments for the handler. should be one of the following: string, int, float
     try
     {
         if (add)
         {
-            InstrumentationManager::instance().patchFunction(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
+            InstrumentationManager::instance().patchFunction(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_arguments);
         }
         else
         {
