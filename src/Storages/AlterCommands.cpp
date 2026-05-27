@@ -496,7 +496,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_REFRESH;
-        command.refresh = command_ast->refresh;
+        command.refresh = command_ast->refresh->ptr();
         return command;
     }
     if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)

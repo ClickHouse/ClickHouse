@@ -3512,6 +3512,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
 
         fuzz(with_union->list_of_selects);
+
+        /// Duplicate ASTPtr siblings in a UNION are invalid fuzzer output. If such sharing
+        /// reaches the analyzer, the resulting QueryTree can also contain shared nodes;
+        /// when the planner then registers column identifiers in the shared GlobalPlannerContext,
+        /// the second branch throws a LOGICAL_ERROR ("Column identifier is already registered").
+        /// Normalize any duplicate siblings by cloning them.
+        {
+            std::unordered_set<IAST *> seen;
+            for (auto & member : union_members)
+                if (!seen.insert(member.get()).second)
+                    member = member->clone();
+        }
+
         /// Fuzzing SELECT query to EXPLAIN query randomly.
         /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
         if (fuzz_rand() % 20 == 0 && current_ast_depth <= 1)

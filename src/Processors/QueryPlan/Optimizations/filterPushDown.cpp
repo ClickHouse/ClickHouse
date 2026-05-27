@@ -746,12 +746,29 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, ActionsDAG pre_filter_dag)
     {
         projectDagInputs(pre_filter_dag);
+
+        /// Snapshot ARRAY_JOIN nodes from `pre_filter_dag` so we can drop them
+        /// after the merge: `removeUnusedActions` would keep them via its
+        /// row-changing carve-out, but they are re-evaluated by `JoinStepLogical`'s
+        /// per-side Pre Join Actions above, causing duplicate row expansion.
+        /// `mergeInplace` uses `list::splice`, so pointer identity stays valid.
+        std::unordered_set<const ActionsDAG::Node *> array_joins_from_pre_filter;
+        for (const auto & node : pre_filter_dag.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+                array_joins_from_pre_filter.insert(&node);
+        }
+
         filter_dag = ActionsDAG::merge(std::move(pre_filter_dag), std::move(filter_dag));
         auto & outputs = filter_dag.getOutputs();
         outputs.resize(1);
 
         projectDagInputs(filter_dag);
         filter_dag.removeUnusedActions();
+
+        if (!array_joins_from_pre_filter.empty())
+            filter_dag.removeNodes(array_joins_from_pre_filter);
+
         return filter_dag;
     };
 
