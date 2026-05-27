@@ -480,7 +480,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         }
 
         ReadSettings read_settings;
-        read_settings.disableCachesAndLogging();
+        read_settings.disableCaches();
         read_settings.remote_fs_settings.prefetch = false;
         read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
 

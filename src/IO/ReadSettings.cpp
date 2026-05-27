@@ -47,7 +47,7 @@ ReadSettings ReadSettings::adjustBufferSize(size_t file_size) const
     return res;
 }
 
-void ReadSettings::disableCachesAndLogging()
+void ReadSettings::disableCaches()
 {
     enable_filesystem_cache = false;
     read_through_distributed_cache = false;

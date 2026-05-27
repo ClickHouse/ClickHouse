@@ -153,9 +153,10 @@ struct ReadSettings
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 
-    /// Verification/metadata-read mode: disable every read-side cache and the
-    /// per-operation logs. Used by checkDataPart, restore, and iceberg metadata reads.
-    void disableCachesAndLogging();
+    /// Verification/metadata-read mode: disable every read-side cache (and the
+    /// cache-stage logs that come with them). Used by `checkDataPart`,
+    /// restore, and iceberg metadata reads.
+    void disableCaches();
 
     /// Configure the remote-FS source for reading a small object-storage file
     /// (sets threadpool method, disables prefetch, shrinks the buffer). Used by
