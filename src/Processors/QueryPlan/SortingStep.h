@@ -103,7 +103,12 @@ public:
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const override { return result_description; }
+    const SortDescription & getSortDescription() const override
+    {
+        if (type == Type::MergeOnly)
+            return merge_sort_description;
+        return result_description;
+    }
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
 
