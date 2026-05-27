@@ -62,7 +62,7 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
         assert "old_parts_lifetime = 123" in show_create, (node.name, show_create)
         assert "mixed-on-cluster" in show_create, (node.name, show_create)
 
-    # MODIFY COMMENT + RESET SETTING — same shape, mixed setting / comment kinds.
+    # MODIFY COMMENT + RESET SETTING - same shape, mixed setting / comment kinds.
     ch1.query(
         database="test_db",
         sql="ALTER TABLE mixed_alter ON CLUSTER 'cluster' MODIFY COMMENT 'second-mixed', RESET SETTING old_parts_lifetime",
@@ -76,7 +76,7 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
         assert "old_parts_lifetime = 123" not in show_create, (node.name, show_create)
         assert "second-mixed" in show_create, (node.name, show_create)
 
-    # COMMENT COLUMN + MODIFY SETTING — column-comment variant.
+    # COMMENT COLUMN + MODIFY SETTING - column-comment variant.
     ch1.query(
         database="test_db",
         sql="ALTER TABLE mixed_alter ON CLUSTER 'cluster' COMMENT COLUMN x 'x-col-comment', MODIFY SETTING old_parts_lifetime = 234",
