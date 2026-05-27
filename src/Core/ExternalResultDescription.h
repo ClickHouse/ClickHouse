@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 
 
@@ -42,7 +43,7 @@ struct ExternalResultDescription
     };
 
     Block sample_block;
-    std::vector<std::pair<ValueType, bool /* is_nullable */>> types;
+    VectorWithMemoryTracking<std::pair<ValueType, bool /* is_nullable */>> types;
 
     ExternalResultDescription() = default;
     explicit ExternalResultDescription(const Block & sample_block_);

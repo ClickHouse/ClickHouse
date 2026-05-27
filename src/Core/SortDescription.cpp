@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -151,7 +152,7 @@ static LoggerPtr getLogger()
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
 {
-    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
+    static UnorderedMapWithMemoryTracking<UInt128, UInt64, UInt128Hash> counter;
     static std::mutex mutex;
 
     if (!description.compile_sort_description || sort_description_types.empty())
