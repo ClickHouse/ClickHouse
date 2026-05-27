@@ -1,13 +1,13 @@
 #pragma once
 
-#include <cstdlib>
 #include <new>
 #include <base/defines.h>
 
 #include <Common/AllocationInterceptors.h>
 #include <Common/Concepts.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/ProfileEvents.h>
 
 #if defined(OS_LINUX)
 #    include <malloc.h>
@@ -45,14 +45,7 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
 
 inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align) noexcept
 {
-    size_t alignment = static_cast<size_t>(align);
-#if !USE_JEMALLOC
-    /// POSIX `aligned_alloc` requires alignment >= `sizeof(void *)` (strictly enforced on macOS).
-    /// Mirror libc++'s `operator_new_aligned_impl` in `contrib/llvm-project/libcxx/src/new.cpp`.
-    if (alignment < sizeof(void *))
-        alignment = sizeof(void *);
-#endif
-    return __real_aligned_alloc(alignment, alignUp(size, alignment));
+    return __real_aligned_alloc(static_cast<size_t>(align), alignUp(size, static_cast<size_t>(align)));
 }
 
 inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
@@ -126,7 +119,7 @@ template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, TAlign... align)
 {
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
     return actual_size;
