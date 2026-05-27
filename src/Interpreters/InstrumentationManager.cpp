@@ -78,26 +78,26 @@ String entryTypeToString(EntryType entry_type)
 String InstrumentationManager::InstrumentedPointInfo::toString() const
 {
     String entry_type_str = entryTypeToString(entry_type);
-    String parameters_str;
+    String arguments_str;
 
-    parameters_str = ", parameters [";
-    for (size_t i = 0; i < parameters.size(); ++i)
+    arguments_str = ", arguments [";
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        const auto & param = parameters[i];
-        if (std::holds_alternative<String>(param))
-            parameters_str += fmt::format("{}", std::get<String>(param));
-        else if (std::holds_alternative<Int64>(param))
-            parameters_str += fmt::format("{}", std::get<Int64>(param));
-        else if (std::holds_alternative<Float64>(param))
-            parameters_str += fmt::format("{}", std::get<Float64>(param));
+        const auto & arg = arguments[i];
+        if (std::holds_alternative<String>(arg))
+            arguments_str += fmt::format("{}", std::get<String>(arg));
+        else if (std::holds_alternative<Int64>(arg))
+            arguments_str += fmt::format("{}", std::get<Int64>(arg));
+        else if (std::holds_alternative<Float64>(arg))
+            arguments_str += fmt::format("{}", std::get<Float64>(arg));
 
-        if (i < parameters.size() - 1)
-            parameters_str += ", ";
+        if (i < arguments.size() - 1)
+            arguments_str += ", ";
     }
-    parameters_str += "]";
+    arguments_str += "]";
 
     return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
-        id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
+        id, function_id, function_name, handler_name, entry_type_str, symbol, arguments_str);
 }
 
 InstrumentationManager::InstrumentationManager()
@@ -192,7 +192,7 @@ bool InstrumentationManager::shouldPatchFunction(String function_to_patch, Strin
     return false;
 }
 
-void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters)
+void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedArgument> & arguments)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 
@@ -237,7 +237,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     {
         patchFunctionIfNeeded(function_id);
 
-        InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
+        InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, arguments};
         LOG_INFO(logger, "Adding instrumentation point for {}", info.toString());
         instrumented_points.emplace(std::move(info));
         instrumented_point_ids++;
@@ -440,30 +440,30 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
     static thread_local pcg64_fast random_generator{randomSeed()};
 
-    const auto & params = instrumented_point.parameters;
-    if (params.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
+    const auto & args = instrumented_point.arguments;
+    if (args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for sleep instrumentation");
 
-    auto get_value = [](auto param)
+    auto get_value = [](auto arg)
     {
-        if (std::holds_alternative<Int64>(param))
-            return static_cast<Float64>(std::get<Int64>(param));
-        else if (std::holds_alternative<Float64>(param))
-            return std::get<Float64>(param);
+        if (std::holds_alternative<Int64>(arg))
+            return static_cast<Float64>(std::get<Int64>(arg));
+        else if (std::holds_alternative<Float64>(arg))
+            return std::get<Float64>(arg);
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric argument (Int64 or Float64) for sleep, but got something else");
     };
 
     Int64 duration_ms = -1;
 
-    if (params.size() == 1)
+    if (args.size() == 1)
     {
-        duration_ms = static_cast<Int64>(1000 * get_value(params[0]));
+        duration_ms = static_cast<Int64>(1000 * get_value(args[0]));
     }
     else
     {
-        auto min = get_value(params[0]);
-        auto max = get_value(params[1]);
+        auto min = get_value(args[0]);
+        auto max = get_value(args[1]);
 
         std::uniform_real_distribution<> distrib(min, max);
         duration_ms = static_cast<Int64>(1000 * distrib(random_generator));
@@ -485,18 +485,18 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
 void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
-    const auto & params = instrumented_point.parameters;
-    if (params.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
+    const auto & args = instrumented_point.arguments;
+    if (args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for log instrumentation");
 
-    if (params.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
+    if (args.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one argument for log instrumentation, but got {}", args.size());
 
-    const auto & param = params[0];
+    const auto & arg = args[0];
 
-    if (std::holds_alternative<String>(param))
+    if (std::holds_alternative<String>(arg))
     {
-        String logger_info = std::get<String>(param);
+        String logger_info = std::get<String>(arg);
         StackTrace stack_trace;
         String stack_trace_str = StackTrace::toString(stack_trace.getFramePointers().data(), stack_trace.getOffset(), stack_trace.getSize() - stack_trace.getOffset());
 
