@@ -7,10 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 disk_name="s3_cache_02944_lru"
 
-# Exercises the legacy `CachedOnDiskReadBufferFromFile` reader.
-# A companion test `04267_dynamically_change_filesystem_cache_size_reader_executor.sh`
-# runs the same scenario with `use_reader_executor=1`.
-ch="$CLICKHOUSE_CLIENT --use_reader_executor=0"
+# Exercises the new `ReaderExecutor` pipeline on the same scenario as
+# `02944_dynamically_change_filesystem_cache_size.sh` (which forces the
+# legacy reader). Cache occupancy after a partially-cached re-populate
+# differs in the journey but converges to the same observable totals.
+ch="$CLICKHOUSE_CLIENT --use_reader_executor=1"
 
 $ch --query "SYSTEM CLEAR FILESYSTEM CACHE"
 $ch --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"

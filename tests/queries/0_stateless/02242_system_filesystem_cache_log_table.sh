@@ -7,6 +7,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `system.filesystem_cache_log` emission patterns this test asserts match the
+# legacy `CachedOnDiskReadBufferFromFile` reader. The new `ReaderExecutor` pipeline
+# may re-open a cached segment within the same query (substreams of the same
+# column hitting one segment), which is semantically correct but produces extra
+# `READ_FROM_CACHE` entries. Cache_log under the executor is covered elsewhere.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --use_reader_executor=0"
+
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
