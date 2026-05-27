@@ -1960,7 +1960,7 @@ class FunctionBinaryArithmetic : public IFunction
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName arguments = args;
-        bool is_swapped = isNumber(args[0].type); /// Defines the order of arguments (If array is first argument - is_swapped = false)
+        bool is_swapped = isNumber(removeNullable(args[0].type)); /// Defines the order of arguments (If array is first argument - is_swapped = false)
 
         const auto * return_type_array = checkAndGetDataType<DataTypeArray>(removeNullable(result_type).get());
         if (!return_type_array)
@@ -2369,12 +2369,12 @@ public:
         /// *OrNull variants use division_or_null / modulo_or_null flags, not division/modulo — include them here.
         if constexpr (is_multiply || is_division || is_division_or_null)
         {
-            if (detail::isArrayOrNullableArray(*arguments[0]) && isNumber(arguments[1]))
+            if (detail::isArrayOrNullableArray(*arguments[0]) && isNumber(removeNullable(arguments[1])))
             {
                 const auto & array_type = static_cast<const DataTypeArray &>(*removeNullable(arguments[0]));
                 DataTypes new_arguments {
                         array_type.getNestedType(),
-                        arguments[1],
+                        removeNullable(arguments[1]),
                 };
                 auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
                 if constexpr (is_division_or_null)
@@ -2389,11 +2389,11 @@ public:
                     return makeNullable(array_result);
                 return array_result;
             }
-            if (isNumber(arguments[0]) && detail::isArrayOrNullableArray(*arguments[1]))
+            if (isNumber(removeNullable(arguments[0])) && detail::isArrayOrNullableArray(*arguments[1]))
             {
                 const auto & array_type = static_cast<const DataTypeArray &>(*removeNullable(arguments[1]));
                 DataTypes new_arguments {
-                        arguments[0],
+                        removeNullable(arguments[0]),
                         array_type.getNestedType(),
                 };
                 auto array_result = std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));

@@ -35,3 +35,9 @@ FORMAT Null;
 
 SELECT throwIf(intDivOrNull(CAST([5, 7] AS Nullable(Array(Int32))), 2) != [2, 3])
 FORMAT Null;
+
+SELECT throwIf(toTypeName(divideOrNull(CAST([1, 2] AS Nullable(Array(Int8))), CAST(2 AS Nullable(UInt8)))) != 'Nullable(Array(Nullable(Float64)))')
+FORMAT Null;
+
+SELECT throwIf(divideOrNull(CAST([1, 2] AS Nullable(Array(Int8))), CAST(2 AS Nullable(UInt8))) != [0.5, 1])
+FORMAT Null;
