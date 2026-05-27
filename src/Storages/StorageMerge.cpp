@@ -1737,6 +1737,18 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans()
     return plans;
 }
 
+std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    std::vector<QueryPlan *> plans;
+    plans.reserve(child_plans->size());
+    for (auto & child_plan : *child_plans)
+        plans.push_back(child_plan.plan.isInitialized() ? &child_plan.plan : nullptr);
+
+    return plans;
+}
+
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
     ColumnSizeByName column_sizes;
