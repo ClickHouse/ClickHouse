@@ -426,7 +426,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
     if (tokens_to_read.empty() || analyzer->alwaysFalse())
     {
-        cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+        cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
         return;
     }
 
@@ -481,7 +481,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
         if (analyzer->alwaysFalse())
         {
-            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+            cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
             return;
         }
 
@@ -502,12 +502,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
         if (analyzer->alwaysFalse())
         {
-            cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+            cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
             return;
         }
     }
 
-    cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
+    cardinalities_cache->update(analyzer->getAllTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
@@ -677,8 +677,11 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
 
 void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)
 {
+    if (analyzer->alwaysFalse())
+        return;
+
     using enum PostingsSerialization::Flags;
-    const auto & token_infos = analyzer->getTokenInfos();
+    const auto & token_infos = analyzer->getAllTokenInfos();
 
     /// Process regular tokens.
     for (const auto & [token, token_info] : token_infos)
@@ -764,7 +767,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return true;
 
     const auto & query_builder = analyzer->getQueryBuilder(query);
-    /// See `hasAnyTokensImpl` for the rationale behind this asymmetric bypass check.
+    /// Pattern bypass means analysis is incomplete, so conservatively return true
     if (query_builder.is_bypassed && !query.patterns.empty())
         return true;
 

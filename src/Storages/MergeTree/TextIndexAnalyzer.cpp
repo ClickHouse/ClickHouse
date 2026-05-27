@@ -1,8 +1,6 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
-
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
-
 #include <cmath>
 
 namespace ProfileEvents
@@ -22,15 +20,13 @@ namespace ErrorCodes
 void TextIndexAnalyzer::QueryBuilder::markFailed()
 {
     is_failed = true;
-    rows_range.reset();
     postings.reset();
 }
 
 void TextIndexAnalyzer::QueryBuilder::markBypassed()
 {
     is_bypassed = true;
-    /// Intentionally keep `postings`/`rows_range`: after full analysis the granule filter still
-    /// uses them, and for mid-flight pattern bypass the filter short-circuits via `query.patterns`.
+    postings.reset();
 }
 
 void TextIndexAnalyzer::QueryBuilder::addMissingToken()
@@ -139,7 +135,7 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
 
 void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
-    token_infos[token] = token_info;
+    all_token_infos[token] = token_info;
     if (token_info->embedded_postings)
         tokens_with_postings.emplace(token);
 
@@ -183,6 +179,11 @@ bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const
     return it != queries_by_token.end() && !it->second.empty();
 }
 
+bool TextIndexAnalyzer::hasReadPostings(std::string_view token) const
+{
+    return tokens_with_postings.contains(token);
+}
+
 void TextIndexAnalyzer::bypassPatternQueries()
 {
     QueryHashes all_pattern_queries;
@@ -224,11 +225,7 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
             {
                 auto it = query_builder.tokens.find(token);
                 if (it == query_builder.tokens.end())
-                {
-                    /// In `All` mode a missing token would have failed the query via `addMissingToken`,
-                    /// so this is unreachable for active queries — but stay defensive.
                     return 0;
-                }
 
                 if (hasReadPostings(token))
                     continue;
@@ -298,13 +295,8 @@ void TextIndexAnalyzer::analyzeCardinalitiesAndBypassHints(double selectivity_th
         }
         else
         {
-            /// Discarded `Hint` queries are inert from now on for further token processing.
-            /// Drop them from the per-token query lookup so subsequent token-driven analysis
-            /// (e.g. pattern token discovery) doesn't reactivate them, and so the reader's
-            /// `isTokenNeeded` check stops requesting their tokens. The granule-level filter
-            /// in `mayBeTrueOnGranule` distinguishes this case (token-only bypass) from
-            /// pattern bypass via `query.patterns.empty()` and still consults the preserved
-            /// `postings`/`rows_range`.
+            /// Drop the query from `queries_by_token` so pattern discovery and `isTokenNeeded`
+            /// stop reactivating it; `postings`/`rows_range` are preserved for `mayBeTrueOnGranule`.
             query_builder.markBypassed();
             ProfileEvents::increment(ProfileEvents::TextIndexDiscardHint);
 
@@ -384,9 +376,9 @@ size_t TextIndexAnalyzer::memoryUsageBytes() const
     for (const auto & [_, hashes] : queries_by_pattern)
         result += estimateAbslFlatContainerBytes(hashes);
 
-    /// token_infos: map<String, TokenPostingsInfoPtr>.
-    result += estimateAbslFlatContainerBytes(token_infos);
-    for (const auto & [key, _] : token_infos)
+    /// all_token_infos: map<String, TokenPostingsInfoPtr>.
+    result += estimateAbslFlatContainerBytes(all_token_infos);
+    for (const auto & [key, _] : all_token_infos)
         result += key.capacity();
 
     /// missing_tokens: set<String>.

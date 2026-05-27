@@ -56,11 +56,8 @@ private:
     void createEmptyColumns(Columns & columns) const;
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
 
-    /// Returns combined postings per column for the given mark, restricted to `slice_range`.
-    /// The slice is the actual read window inside the mark and may be narrower than the full
-    /// mark range when `rows_offset > 0` or when `max_rows_to_read` stops inside the mark.
-    /// Postings must be clipped to this slice because `fillColumn` assumes every index falls
-    /// inside [from_row, from_row + num_rows).
+    /// Returns combined postings per column for the given mark, clipped to `slice_range`
+    /// (the actual read window, which may be narrower than the mark on partial-mark reads).
     std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
@@ -88,7 +85,6 @@ private:
     void classifyVirtualColumns();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
-    /// Lazy-mode counterpart of `fillColumn`: runs cursor kernels without materializing the per-mark `PostingList`.
     void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows);
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
 
@@ -138,10 +134,8 @@ private:
     /// Cleared on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
     absl::flat_hash_map<String, absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 
-    /// Per-column synthetic cursor that wraps `query_builder.postings` (the analyzer-folded
-    /// OR/AND of all embedded and single-block tokens). Combined alongside large-posting
-    /// stream cursors so small tokens contribute via one already-decoded bitmap instead of
-    /// one stream cursor per token. Cleared on the same triggers as `lazy_cursors`.
+    /// Per-column synthetic cursor over the analyzer-folded postings of small/embedded tokens,
+    /// combined with large-posting stream cursors. Cleared on the same triggers as `lazy_cursors`.
     absl::flat_hash_map<String, PostingListCursorPtr> prebuilt_cursors;
 };
 

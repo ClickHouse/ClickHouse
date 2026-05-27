@@ -1149,8 +1149,8 @@ void lazyUnionPostingLists(
     UInt8 * out = data.data() + column_offset;
 
     /// Sort by descending density so the densest cursor fills the output buffer first.
-    std::vector<PostingListCursorPtr> sorted_cursors = cursors;
-    std::stable_sort(sorted_cursors.begin(), sorted_cursors.end(),
+    auto sorted_cursors = cursors;
+    std::ranges::stable_sort(sorted_cursors,
         [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
         { return a->density() > b->density(); });
 
@@ -1197,8 +1197,8 @@ void lazyIntersectPostingLists(
     }
 
     /// Sort cursors by ascending cardinality so the sparsest cursor leads the leapfrog.
-    std::vector<PostingListCursorPtr> sorted_cursors = cursors;
-    std::sort(sorted_cursors.begin(), sorted_cursors.end(),
+    auto sorted_cursors = cursors;
+    std::ranges::sort(sorted_cursors,
         [](const PostingListCursorPtr & a, const PostingListCursorPtr & b)
         { return a->cardinality() < b->cardinality(); });
 

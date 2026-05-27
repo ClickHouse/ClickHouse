@@ -108,8 +108,7 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
 
     /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
-    /// pure-token queries — pattern predicates take the eager materialize path
-    /// (`buildPostingsForMark` + `fillColumn`).
+    /// pure-token queries — pattern predicates take the eager materialize path.
     auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
 
@@ -267,12 +266,11 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
         else if (query_builder.is_failed)
         {
             /// Query is definitely false (e.g. a required token in All mode is missing).
-            /// Don't mark as always-true; `buildPostingsForQuery` will return empty postings.
             continue;
         }
         else if (query_builder.is_bypassed)
         {
-            if (search_query->patterns.empty())
+            if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
             {
                 is_always_true[i] = true;
             }
@@ -293,7 +291,7 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 void MergeTreeReaderTextIndex::initializePostingStreams()
 {
     const auto & analyzer = granule->getAnalyzer();
-    const auto & token_infos = analyzer.getTokenInfos();
+    const auto & token_infos = analyzer.getAllTokenInfos();
 
     auto data_part = getDataPart();
     auto substream = index.index->getSubstreams()[2];
@@ -492,11 +490,8 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
     if (!mark_range.has_value())
         return result;
 
-    /// Clip the slice to the mark range. `fillColumn` assumes posting indices fall inside
-    /// [slice_range.begin, slice_range.end] (the read window passed by `readRows`), so we
-    /// must filter postings to this narrower range — not the full mark range — to keep
-    /// indices in bounds on partial-mark reads (`rows_offset > 0` or `max_rows_to_read`
-    /// stops inside the mark).
+    /// Clip to `slice_range`, not the full mark, so postings stay in bounds on partial-mark
+    /// reads (`rows_offset > 0` or `max_rows_to_read` stops inside the mark).
     auto effective_range = mark_range->intersectWith(slice_range);
     if (!effective_range.has_value())
         return result;
@@ -606,7 +601,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
 void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
 {
     const auto & analyzer = granule->getAnalyzer();
-    const auto & token_infos = analyzer.getTokenInfos();
+    const auto & token_infos = analyzer.getAllTokenInfos();
 
     for (const auto & [token, token_info] : token_infos)
     {
@@ -662,10 +657,6 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     if (query_builder.is_failed)
         return;
 
-    /// Synthetic cursor wraps `query_builder.postings` — the analyzer's pre-folded OR/AND
-    /// across all embedded + single-block tokens — collapsing `num_small` token cursors into one.
-    /// `addPostings` folds with the same direction the kernel applies (All=AND, Any=OR).
-
     std::vector<PostingListCursorPtr> cursors;
     cursors.reserve(query_builder.tokens.size());
 
@@ -691,7 +682,6 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     if (query_builder.needReadPostings())
     {
         auto & column_cursors = lazy_cursors[column_name];
-        cursors.reserve(query_builder.tokens.size() + 1);
 
         for (const auto & [token, token_info] : query_builder.tokens)
         {

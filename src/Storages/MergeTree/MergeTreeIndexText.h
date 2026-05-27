@@ -209,7 +209,6 @@ struct TokenPostingsInfo
     absl::InlinedVector<RowsRange, 1> ranges;
     PostingListPtr embedded_postings;
 
-    bool hasEmbeddedPostings() const { return embedded_postings != nullptr; }
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
     size_t bytesAllocated() const;
@@ -314,7 +313,6 @@ struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
-    /// Out-of-line because `TextIndexAnalyzer` is forward-declared and held via `std::unique_ptr`.
     ~MergeTreeIndexGranuleText() override;
 
     const MergeTreeIndexTextParams & getParams() const { return params; }
