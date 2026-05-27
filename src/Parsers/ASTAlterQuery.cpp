@@ -658,6 +658,22 @@ bool ASTAlterQuery::isCommentAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
+bool ASTAlterQuery::isSettingsOrCommentAlter() const
+{
+    if (!command_list || command_list->children.empty())
+        return false;
+    for (const auto & child : command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::MODIFY_SETTING
+            && command.type != ASTAlterCommand::RESET_SETTING
+            && command.type != ASTAlterCommand::COMMENT_COLUMN
+            && command.type != ASTAlterCommand::MODIFY_COMMENT)
+            return false;
+    }
+    return true;
+}
+
 bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
 {
     if (command_list)

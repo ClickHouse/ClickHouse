@@ -272,6 +272,10 @@ public:
 
     bool isCommentAlter() const;
 
+    /// All commands modify settings or comments (any mix of MODIFY SETTING /
+    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT).
+    bool isSettingsOrCommentAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
