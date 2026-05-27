@@ -249,8 +249,14 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     /// Diagnostic only: register local pools so that `GlobalThreadPool::shutdown` can list
     /// the live ones and identify the subsystem responsible for any "Hung check failed,
     /// possible deadlock found" caused by a leaked local pool.
+    /// `CurrentMetrics::end()` is accepted as a placeholder by `ThreadPool` (see test pools
+    /// such as `gtest_uniq_exact_parallel_merge.cpp`); `getName` indexes the names array
+    /// of size `END`, so skip registration in that case.
     if constexpr (!std::is_same_v<Thread, std::thread>)
-        registerLocalThreadPool(this, CurrentMetrics::getName(metric_threads));
+    {
+        if (metric_threads < CurrentMetrics::end())
+            registerLocalThreadPool(this, CurrentMetrics::getName(metric_threads));
+    }
 }
 
 template <typename Thread>
