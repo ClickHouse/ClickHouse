@@ -30,16 +30,12 @@ node_no_relaunch = cluster.add_instance(
     stay_alive=True,
 )
 
-# Three "disabled" variants
+# Two "disabled" variants
 node_explicit_off = cluster.add_instance(
     "explicit_off",
     main_configs=["configs/enable_off.xml"],
 )
 node_default = cluster.add_instance("default")
-node_gate_off = cluster.add_instance(
-    "gate_off",
-    main_configs=["configs/gate_off.xml"],
-)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -124,7 +120,6 @@ def test_failpoint_confirmed_oom():
 
 def test_manual_sigkill_no_evidence():
     node = node_enabled
-    node.query("SYSTEM DISABLE FAILPOINT oom_canary_force_oom_evidence")
     crash_log_oom_count_before = crash_log_oom_count(node)
     canary = find_canary(node)
     assert canary is not None
@@ -148,8 +143,8 @@ def test_relaunch_false_stops_after_one_kill():
 
 @pytest.mark.parametrize(
     "node",
-    [node_explicit_off, node_default, node_gate_off],
-    ids=["explicit_off", "default", "gate_off"],
+    [node_explicit_off, node_default],
+    ids=["explicit_off", "default"],
 )
 def test_canary_disabled_variants(node):
     assert node.contains_in_log("OOM canary is disabled")

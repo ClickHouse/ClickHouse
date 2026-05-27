@@ -12,6 +12,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <fmt/format.h>
+
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -21,17 +23,36 @@
 namespace
 {
 
+/// Errors during setup are written directly to stderr via `fmt::print` rather
+/// than `LOG_*` macros: the canary is exec'd via `posix_spawn /proc/self/exe`
+/// and never initializes `BaseDaemon` / Poco logger. stderr is inherited from
+/// the server process, so messages reach the same destination the parent uses.
 [[noreturn]] void runCanary(size_t size_bytes, pid_t parent_pid)
 {
+    /// Block all signals up-front so only SIGKILL (unblockable) can terminate
+    /// us — from the OOM killer, from parent death (pdeathsig), or from the
+    /// parent's explicit shutdown. Done first to close the signal-delivery
+    /// window between exec and the rest of the setup.
+    sigset_t full_mask;
+    ::sigfillset(&full_mask); // NOLINT(concurrency-mt-unsafe)
+    ::sigprocmask(SIG_SETMASK, &full_mask, nullptr); // NOLINT(concurrency-mt-unsafe)
+
     /// Ask the kernel to send SIGKILL when the parent exits, so the canary
     /// cannot outlive the server.
     if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0)
+    {
+        fmt::print(stderr, "OOM canary child: prctl(PR_SET_PDEATHSIG) failed: errno={}\n", errno);
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
+    }
 
     /// Close the race between exec and prctl: if the parent already exited,
     /// getppid returns the new (subreaper) pid instead of the original.
     if (::getppid() != parent_pid)
+    {
+        fmt::print(stderr, "OOM canary child: parent already exited (got ppid={}, expected {})\n",
+            ::getppid(), parent_pid);
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
+    }
 
     /// Drop any non-CLOEXEC fds inherited across exec.
     int max_fd = static_cast<int>(::sysconf(_SC_OPEN_MAX));
@@ -47,8 +68,9 @@ namespace
         DB::writeString("1000", out);
         out.finalize();
     }
-    catch (const std::exception &)
+    catch (const std::exception & e)
     {
+        fmt::print(stderr, "OOM canary child: writing /proc/self/oom_score_adj failed: {}\n", e.what());
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
     }
 
@@ -72,13 +94,6 @@ namespace
     /// killer's heuristic. Requires CAP_IPC_LOCK or sufficient RLIMIT_MEMLOCK;
     /// if unavailable, the pages remain allocated but become swap candidates.
     ::mlock(mem, size_bytes);
-
-    /// Block all signals before pause so only SIGKILL (unblockable) can
-    /// terminate us — from the OOM killer, from parent death (pdeathsig),
-    /// or from the parent's explicit shutdown.
-    sigset_t full_mask;
-    ::sigfillset(&full_mask); // NOLINT(concurrency-mt-unsafe)
-    ::sigprocmask(SIG_SETMASK, &full_mask, nullptr); // NOLINT(concurrency-mt-unsafe)
 
     for (;;)
         ::pause();

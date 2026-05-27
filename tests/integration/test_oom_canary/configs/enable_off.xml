@@ -1,4 +1,3 @@
 <clickhouse>
     <oom_canary_enable>0</oom_canary_enable>
-    <allow_experimental_oom_canary>1</allow_experimental_oom_canary>
 </clickhouse>

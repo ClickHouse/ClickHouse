@@ -1,4 +1,4 @@
-#include <Common/OOMCanary.h>
+#include <Common/OOMCanary/OOMCanary.h>
 
 #if defined(OS_LINUX)
 
@@ -13,6 +13,8 @@
 #include <Common/StackTrace.h>
 #include <Common/FramePointers.h>
 #include <Common/Jemalloc.h>
+#include <Common/MemoryTracker.h>
+#include <Common/formatReadable.h>
 #include <base/errnoToString.h>
 #include <base/cgroupsv2.h>
 #include <IO/WriteHelpers.h>
@@ -328,7 +330,8 @@ void OOMCanary::onCanaryOOM()
     /// one step does not skip the next.
 
     LOG_FATAL(log, "OOM canary killed by SIGKILL with cgroup OOM evidence. "
-        "System is under severe memory pressure.");
+        "System is under severe memory pressure. Total tracked memory: {}, RSS: {}",
+        ReadableSize(total_memory_tracker.get()), ReadableSize(total_memory_tracker.getRSS()));
 
     /// Purge jemalloc arenas
     try

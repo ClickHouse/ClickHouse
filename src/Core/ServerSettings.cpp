@@ -1495,17 +1495,12 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0) \
     DECLARE(Int32, oom_score, getDefaultOomScore(), R"(On Linux systems this can control the behavior of OOM killer.)", 0) \
-    DECLARE(Bool, allow_experimental_oom_canary, false, R"(
-    Experimental gate for the OOM canary feature.
-    Must be enabled in addition to `oom_canary_enable` for the canary to actually start.
-    The canary installs high-impact server behavior (global query cancellation, merge cancellation,
-    `system.crash_log` writes) and is gated until production validation is complete.
-    The OOM response requires cgroup v2 `memory.events` OOM-kill evidence.
-    )", 0) \
     DECLARE(Bool, oom_canary_enable, false, R"(
-    Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
+    Experimental. Enable the OOM canary: a sacrificial child process that attracts the Linux OOM killer
     before the main ClickHouse server process, giving the server a chance to shed load.
-    Requires `allow_experimental_oom_canary` to also be set to `true`.
+    The OOM response requires cgroup v2 `memory.events` OOM-kill evidence and may run global query
+    cancellation, merge cancellation, and `system.crash_log` writes. Behavior may change between
+    ClickHouse versions until production validation is complete.
     )", 0) \
     DECLARE(UInt64, oom_canary_size, 104857600, R"(
     Size in bytes of the memory region that the OOM canary child process allocates and locks.

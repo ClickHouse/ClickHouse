@@ -30,7 +30,7 @@
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
-#include <Common/OOMCanary.h>
+#include <Common/OOMCanary/OOMCanary.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -409,7 +409,6 @@ namespace ServerSetting
     extern const ServerSettingsString google_protos_path;
     extern const ServerSettingsString filesystem_caches_path;
     extern const ServerSettingsInt32 oom_score;
-    extern const ServerSettingsBool allow_experimental_oom_canary;
     extern const ServerSettingsBool oom_canary_enable;
     extern const ServerSettingsUInt64 oom_canary_size;
     extern const ServerSettingsBool oom_canary_relaunch;
@@ -1842,9 +1841,7 @@ try
 
 #if defined(OS_LINUX)
     std::optional<OOMCanary> oom_canary;
-    /// Require both the experimental gate and the feature toggle.
-    if (server_settings[ServerSetting::allow_experimental_oom_canary]
-        && server_settings[ServerSetting::oom_canary_enable])
+    if (server_settings[ServerSetting::oom_canary_enable])
     {
         OOMCanary::Config canary_config;
         canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
@@ -1859,8 +1856,7 @@ try
         LOG_INFO(log, "OOM canary is disabled");
     }
 #else
-    if (server_settings[ServerSetting::allow_experimental_oom_canary]
-        && server_settings[ServerSetting::oom_canary_enable])
+    if (server_settings[ServerSetting::oom_canary_enable])
         LOG_WARNING(log, "OOM canary is only supported on Linux, ignoring");
 #endif
 
@@ -3226,6 +3222,9 @@ try
 #endif
         };
 
+        /// Wrapping the call to OOM canary stop in a lambda lets us write
+        /// the OS_LINUX guard outside the SCOPE_EXIT_SAFE macro argument list,
+        /// avoiding -Wembedded-directive.
         auto stop_oom_canary = [&]{
 #if defined(OS_LINUX)
             if (oom_canary)
