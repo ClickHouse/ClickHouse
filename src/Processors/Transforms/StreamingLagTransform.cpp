@@ -1,59 +1,11 @@
 #include <Processors/Transforms/StreamingLagTransform.h>
 
-#include <bit>
-#include <cstring>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Common/SipHash.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
 {
-
-/// Hash a single column value using compareAt-compatible semantics.
-/// For Float32/Float64, canonicalizes NaN payloads and signed zero so that
-/// logically equal values (as defined by compareAt) always produce the same hash.
-static void hashColumnValueCanonical(const IColumn & col, size_t row, SipHash & hash)
-{
-    if (const auto * f64 = typeid_cast<const ColumnVector<Float64> *>(&col))
-    {
-        Float64 v = f64->getData()[row];
-        UInt64 bits = std::bit_cast<UInt64>(v);
-        if ((bits & 0x7FF0000000000000ULL) == 0x7FF0000000000000ULL && (bits & 0x000FFFFFFFFFFFFFULL) != 0)
-            bits = 0x7FF8000000000000ULL; /// canonical quiet NaN
-        else if (bits == 0x8000000000000000ULL)
-            bits = 0x0ULL;               /// -0.0 → +0.0
-        hash.update(bits);
-    }
-    else if (const auto * f32 = typeid_cast<const ColumnVector<Float32> *>(&col))
-    {
-        Float32 v = f32->getData()[row];
-        UInt32 bits = std::bit_cast<UInt32>(v);
-        if ((bits & 0x7F800000UL) == 0x7F800000UL && (bits & 0x007FFFFFUL) != 0)
-            bits = 0x7FC00000UL;         /// canonical quiet NaN
-        else if (bits == 0x80000000UL)
-            bits = 0x0UL;               /// -0.0 → +0.0
-        hash.update(bits);
-    }
-    else if (const auto * nullable = typeid_cast<const ColumnNullable *>(&col))
-    {
-        const UInt8 is_null = nullable->getNullMapData()[row];
-        hash.update(is_null);
-        if (!is_null)
-            hashColumnValueCanonical(nullable->getNestedColumn(), row, hash);
-    }
-    else if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&col))
-    {
-        hashColumnValueCanonical(*lc->getDictionary().getNestedColumn(),
-                                 lc->getIndexes().getUInt(row), hash);
-    }
-    else
-    {
-        col.updateHashWithValue(row, hash);
-    }
-}
 
 StreamingLagTransform::StreamingLagTransform(
     const SharedHeader & input_header_,
@@ -107,7 +59,7 @@ void StreamingLagTransform::transform(Chunk & chunk)
     {
         SipHash prefix_hasher;
         for (size_t idx : prefix_col_indices_)
-            hashColumnValueCanonical(*block.getByPosition(idx).column, row, prefix_hasher);
+            block.getByPosition(idx).column->updateHashWithValue(row, prefix_hasher);
         const UInt128 prefix_hash = prefix_hasher.get128();
 
         if (first_row_ || prefix_hash != current_prefix_hash_)
@@ -119,7 +71,7 @@ void StreamingLagTransform::transform(Chunk & chunk)
 
         SipHash suffix_hasher;
         for (size_t idx : suffix_col_indices_)
-            hashColumnValueCanonical(*block.getByPosition(idx).column, row, suffix_hasher);
+            block.getByPosition(idx).column->updateHashWithValue(row, suffix_hasher);
         const UInt128 suffix_key = suffix_hasher.get128();
 
         auto it = state_map_.find(suffix_key);
