@@ -58,7 +58,6 @@ void ReadSettings::disableCachesAndLogging()
     page_cache_settings.cache.reset();
     filesystem_cache_settings.enable_log = false;
     enable_filesystem_read_prefetches_log = false;
-    remote_fs_settings.enable_blob_storage_log = false;
 }
 
 void ReadSettings::useForSmallRemoteRead(size_t buffer_size)
