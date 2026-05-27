@@ -1,0 +1,27 @@
+Equality/inequality matchers:
+1
+0
+1
+0
+Regex matcher:
+1
+0
+1
+0
+Empty tag value:
+1
+0
+0
+All tags in array:
+1
+All tags as pairs:
+1
+Non-const tag value:
+api	1
+api-v1	1
+api-v2	1
+db	0
+web	0
+Map(String, String) instead of array:
+1
+Non-instant selector is rejected:
