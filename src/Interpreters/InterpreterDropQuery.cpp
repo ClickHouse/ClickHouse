@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
@@ -195,6 +196,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         {
             return {};
         }
+        if (!database)
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName()));
+        }
+
         const auto table_name = table_id.getTableName();
 
         auto new_query_ptr = query.clone();
