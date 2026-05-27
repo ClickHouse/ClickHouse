@@ -259,7 +259,10 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         /// distributed_ddl_output_mode = '*_only_active', although it may be still busy with previous queries.
         /// Provide a way to identify such replicas to avoid waiting for them until they catch up.
         UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] <= new_max_log_ptr;
+        /// Strictly less-than: with `<=`, a `max_replication_lag_to_enqueue` of `0` makes
+        /// `max_log_ptr + 0 <= new_max_log_ptr` always true (since `max_log_ptr` only grows),
+        /// which would mark a fully caught-up replica as unsynced even when it is not lagging.
+        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < new_max_log_ptr;
         LOG_INFO(log, "Finishing replica initialization, our_log_ptr={}, max_log_ptr={}, unsynced_after_recovery={}", max_log_ptr, new_max_log_ptr, unsynced_after_recovery.load());
         if (unsynced_after_recovery)
             active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
@@ -623,7 +626,12 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     {
         UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
         LOG_TRACE(log, "Replica was not fully synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
-        chassert(our_log_ptr < max_log_ptr);
+        /// `<=` rather than `<`: the replica may have already caught up between when
+        /// `unsynced_after_recovery` was set and when this entry is processed, and the
+        /// `became_synced` check just below already treats `our_log_ptr == max_log_ptr`
+        /// as a synced state. Stale or non-atomic `max_log_ptr` reads in ZooKeeper can
+        /// also briefly produce equality here.
+        chassert(our_log_ptr <= max_log_ptr);
         bool became_synced = our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
         {
