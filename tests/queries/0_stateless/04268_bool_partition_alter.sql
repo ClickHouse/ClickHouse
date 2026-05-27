@@ -1,6 +1,3 @@
--- Tags: no-shared-merge-tree
--- SMT does not support DETACH/ATTACH PARTITION
-
 -- Test that ALTER TABLE operations work correctly with Bool partition keys.
 -- Bool partition values must produce the same partition ID whether they come
 -- from the INSERT path (UInt64 Field) or the ALTER query path (was Bool Field).
