@@ -570,7 +570,7 @@ struct FormatSettings
 
     struct
     {
-        String input_table_name = "";
+        String input_table_name;
         String output_table_name = "table";
     } sqlite{};
 
