@@ -1100,7 +1100,7 @@ public:
     /// Set current_database for global context. We don't validate that database
     /// exists because it should be set before databases loading.
     void setCurrentDatabaseNameInGlobalContext(const String & name);
-    void setCurrentQueryId(std::string_view query_id);
+    void setCurrentQueryId(const String & query_id);
 
     void killCurrentQuery() const;
     bool isCurrentQueryKilled() const;

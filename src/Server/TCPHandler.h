@@ -58,10 +58,8 @@ using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTa
 /// State of query processing.
 struct QueryState
 {
-    /// Identifier of the query. Uses `StringWithMemoryTracking` so the
-    /// resize on receive goes through the throwing memory-tracker path
-    /// (same rationale as `query` below).
-    StringWithMemoryTracking query_id;
+    /// Identifier of the query.
+    String query_id;
 
     ContextMutablePtr query_context;
 

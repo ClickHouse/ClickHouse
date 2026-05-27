@@ -2272,7 +2272,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     if (part_uuids_to_ignore.has_value())
         state->part_uuids_to_ignore = std::move(part_uuids_to_ignore);
 
-    readStringBinary(state->query_id, *in);
+    readStringBinary(state->query_id, *in, MAX_HELLO_STRING_SIZE);
 
     /// In interserver mode,
     /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
