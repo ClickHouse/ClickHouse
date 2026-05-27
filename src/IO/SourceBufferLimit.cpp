@@ -1,5 +1,6 @@
 #include <IO/SourceBufferLimit.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace CurrentMetrics
@@ -10,17 +11,20 @@ namespace CurrentMetrics
 namespace DB
 {
 
-SourceBufferSlot::SourceBufferSlot(std::shared_ptr<SourceBufferLimit> limit_, size_t slot_id_)
+SourceBufferSlot::SourceBufferSlot(std::shared_ptr<SourceBufferLimit> limit_, size_t slot_id_, const ActiveBufferInfo * info_)
     : limit(std::move(limit_))
     , slot_id(slot_id_)
+    , info(info_)
 {
 }
 
 SourceBufferSlot::SourceBufferSlot(SourceBufferSlot && other) noexcept
     : limit(std::move(other.limit))
     , slot_id(other.slot_id)
+    , info(other.info)
 {
     other.slot_id = 0;
+    other.info = nullptr;
 }
 
 SourceBufferSlot & SourceBufferSlot::operator=(SourceBufferSlot && other) noexcept
@@ -31,7 +35,9 @@ SourceBufferSlot & SourceBufferSlot::operator=(SourceBufferSlot && other) noexce
             limit->release(slot_id);
         limit = std::move(other.limit);
         slot_id = other.slot_id;
+        info = other.info;
         other.slot_id = 0;
+        other.info = nullptr;
     }
     return *this;
 }
@@ -67,7 +73,11 @@ size_t SourceBufferLimit::getCapacity() const
     return max_slots;
 }
 
-std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(std::shared_ptr<SourceBufferLimit> self, const String & object_path, const String & query_id)
+std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(
+    std::shared_ptr<SourceBufferLimit> self,
+    const String & object_path,
+    const String & local_path,
+    const String & query_id)
 {
     std::lock_guard lock(mutex);
 
@@ -79,15 +89,20 @@ std::optional<SourceBufferSlot> SourceBufferLimit::tryAcquire(std::shared_ptr<So
     }
 
     size_t id = next_id++;
-    registry[id] = ActiveBufferInfo{
+    auto [it, inserted] = registry.emplace(id, ActiveBufferInfo{
         .object_path = object_path,
+        .local_path = local_path,
         .query_id = query_id,
         .position = 0,
-        .acquired_time = std::chrono::steady_clock::now()};
+        .acquired_time = std::chrono::steady_clock::now()});
+    chassert(inserted);
 
     CurrentMetrics::add(CurrentMetrics::LiveSourceBuffers);
     LOG_TRACE(log, "tryAcquire: got slot {} for {} ({}/{})", id, object_path, registry.size(), max_slots);
-    return SourceBufferSlot(std::move(self), id);
+    /// `&it->second` is a stable pointer for the registry entry's lifetime
+    /// (unordered_map guarantees pointer stability across rehash; the entry
+    /// is erased only by `release`, which is called from this slot's dtor).
+    return SourceBufferSlot(std::move(self), id, &it->second);
 }
 
 void SourceBufferLimit::release(size_t slot_id)

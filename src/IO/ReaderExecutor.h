@@ -196,10 +196,10 @@ private:
     /// short-circuits to EOF without re-issuing a read.
     bool reached_eof = false;
 
-    /// Live buffer: keeps a connection open for sequential reads.
+    /// Live buffer: keeps a connection open for sequential reads. The
+    /// object path lives inside `slot.objectPath()` (one source of truth).
     struct LiveBuffer
     {
-        String object_path;
         size_t current_position = 0;
         std::unique_ptr<ReadBufferFromFileBase> buffer;
         SourceBufferSlot slot;
@@ -215,12 +215,18 @@ private:
     /// in readFromSource), and we use a 1 MiB read window because the live
     /// buffer streams 1 MiB at a time anyway. The slot is consumed (moved
     /// into live_buffer) on the first source read of this window; if the
-    /// open fails it's released here.
+    /// open fails it's released here. The reserved-for-path lives in
+    /// `pre_acquired_slot->objectPath()`.
     std::optional<SourceBufferSlot> pre_acquired_slot;
-    String pre_acquired_slot_path;
 
-    /// First object's path — used by pre-acquire to ask the right slot key.
-    /// Empty for executors with no objects (no-op fallback path).
+    /// Drop `pre_acquired_slot` if it was reserved for a different object
+    /// than `target_path`. No-op when no slot is held or the path already
+    /// matches. Call before `readFromSource` for a known object or before
+    /// `seek` lands in a different object — otherwise the stale slot stays
+    /// held until executor destruction while `readFromSource`'s fallback
+    /// quietly acquires a SECOND slot, halving effective
+    /// `max_remote_read_connections` capacity.
+    void releaseStalePreAcquiredSlot(const String & target_path);
 
 #if USE_SSL
     /// Decryption

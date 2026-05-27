@@ -299,18 +299,23 @@ void ReaderExecutor::ensurePreAcquiredSlot()
     if (!object)
         return;
 
-    auto slot = buffer_limit->tryAcquire(buffer_limit, object->remote_path, String(CurrentThread::getQueryId()));
+    auto slot = buffer_limit->tryAcquire(buffer_limit, object->remote_path, object->local_path, String(CurrentThread::getQueryId()));
     if (slot)
     {
         LOG_TRACE(log, "ensurePreAcquiredSlot: got slot for {}", object->remote_path);
         pre_acquired_slot.emplace(std::move(*slot));
-        pre_acquired_slot_path = object->remote_path;
         ProfileEvents::increment(ProfileEvents::ReaderExecutorBufferSlotAcquired);
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::ReaderExecutorBufferSlotFailed);
     }
+}
+
+void ReaderExecutor::releaseStalePreAcquiredSlot(const String & target_path)
+{
+    if (pre_acquired_slot && pre_acquired_slot->objectPath() != target_path)
+        pre_acquired_slot.reset();
 }
 
 namespace
@@ -707,6 +712,14 @@ void ReaderExecutor::seek(size_t new_position)
     }
 
     discardPrefetch();
+    /// Pre-acquired slot is keyed to the old position's object. If the new
+    /// position lies in a different object (or no object at all), drop the
+    /// slot so the next read doesn't acquire a second slot while the stale
+    /// one stays held. Pairs with the path-mismatch reset in `readFromSource`.
+    if (const auto * new_obj = offset_map.findObjectAt(new_position + data_start_offset))
+        releaseStalePreAcquiredSlot(new_obj->remote_path);
+    else
+        releaseStalePreAcquiredSlot(String{});
     /// Drop the over-read buffer on seek: the live connection is about to be
     /// invalidated anyway (the next source-read won't continue from
     /// live_buffer's position), so the speculative bytes lose their pairing
@@ -809,7 +822,7 @@ Rope ReaderExecutor::readFromSource(
 {
     /// Try live buffer: reuse open connection for sequential reads.
     if (live_buffer
-        && live_buffer->object_path == object.remote_path
+        && live_buffer->slot.objectPath() == object.remote_path
         && live_buffer->current_position == offset)
     {
         LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
@@ -828,23 +841,28 @@ Rope ReaderExecutor::readFromSource(
     if (live_buffer)
     {
         LOG_TRACE(log, "readFromSource: closing live buffer for {} (was at {}), need {}:{}",
-            live_buffer->object_path, live_buffer->current_position, object.remote_path, offset);
+            live_buffer->slot.objectPath(), live_buffer->current_position, object.remote_path, offset);
         live_buffer.reset();
     }
+
+    /// Pre-acquired slot keyed to a different object — drop it. Otherwise
+    /// the matching-path branch below would skip it and the `else if
+    /// (buffer_limit)` fallback would acquire a SECOND slot while the stale
+    /// one stays held until executor destruction.
+    releaseStalePreAcquiredSlot(object.remote_path);
 
     /// Try to acquire a slot for a new live buffer. If `pre_acquired_slot`
     /// was set by the caller (readNextWindow / maybeTriggerPrefetch) and
     /// matches this object, reuse it instead of asking buffer_limit again.
     std::optional<SourceBufferSlot> slot;
-    if (pre_acquired_slot && pre_acquired_slot_path == object.remote_path)
+    if (pre_acquired_slot && pre_acquired_slot->objectPath() == object.remote_path)
     {
         slot.emplace(std::move(*pre_acquired_slot));
         pre_acquired_slot.reset();
-        pre_acquired_slot_path.clear();
     }
     else if (buffer_limit)
     {
-        slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, String(CurrentThread::getQueryId()));
+        slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, object.local_path, String(CurrentThread::getQueryId()));
     }
 
     if (slot)
@@ -856,7 +874,6 @@ Rope ReaderExecutor::readFromSource(
                 opened->seek(offset, SEEK_SET);
 
             live_buffer.emplace(LiveBuffer{
-                .object_path = object.remote_path,
                 .current_position = offset,
                 .buffer = std::move(opened),
                 .slot = std::move(*slot),
@@ -1141,7 +1158,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             /// continuation on the next call. We collect the bytes that fell
             /// before AND after `physical_window` via two `slice` calls.
             const bool live_used = live_buffer.has_value()
-                && live_buffer->object_path == pr.object.remote_path
+                && live_buffer->slot.objectPath() == pr.object.remote_path
                 && live_buffer->current_position == pr.object_offset + pr.size;
             if (live_used)
             {
@@ -1240,7 +1257,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     /// Private to the transient (so concurrent `readBigAt` calls don't race
     /// with each other or with the parent's `next()`/`seek()`):
     ///   - `position`, `live_buffer`, `prefetch_handle`, `prefetch_range`,
-    ///     `pre_acquired_slot`, `pre_acquired_slot_path`,
+    ///     `pre_acquired_slot`,
     ///     `stats`, `creator_query_id`, `reader_executor_log` ptr.
     ///
     /// Intentionally NOT propagated (the transient runs without them):

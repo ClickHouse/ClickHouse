@@ -71,11 +71,22 @@ public:
     /// read. Defaults to `pool_size * 10`.
     explicit PrefetchThreadPool(size_t pool_size, size_t queue_size = 0);
 
+    virtual ~PrefetchThreadPool() = default;
+
     /// Submit a task. Returns a handle to the scheduled task on success, or
     /// `nullptr` if the pool's queue is full / scheduling otherwise failed.
     /// The caller treats a nullptr return as "do it synchronously when you
     /// need the result" — no exception is propagated.
-    std::unique_ptr<PrefetchHandle> submit(std::function<Rope()> task);
+    ///
+    /// Virtual so tests can install a mock that controls timing (e.g. drop
+    /// every submission) without spinning up real workers.
+    virtual std::unique_ptr<PrefetchHandle> submit(std::function<Rope()> task);
+
+protected:
+    /// Test-only constructor: skips ThreadPool initialization so a mock
+    /// subclass can override `submit` without paying for real workers.
+    struct NoWorkers {};
+    explicit PrefetchThreadPool(NoWorkers);
 
 private:
     ThreadPool pool;

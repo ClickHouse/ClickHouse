@@ -43,6 +43,17 @@ PrefetchThreadPool::PrefetchThreadPool(size_t pool_size, size_t queue_size)
 {
 }
 
+PrefetchThreadPool::PrefetchThreadPool(NoWorkers)
+    : pool(
+        CurrentMetrics::end(),
+        CurrentMetrics::end(),
+        CurrentMetrics::end(),
+        /*max_threads_=*/0,
+        /*max_free_threads_=*/0,
+        /*queue_size_=*/0)
+{
+}
+
 std::unique_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()> task)
 {
     auto shared = std::make_shared<PrefetchHandle::SharedState>();
