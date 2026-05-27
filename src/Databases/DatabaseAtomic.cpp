@@ -278,7 +278,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         table_name_to_path.erase(table_name);
     }
 
-    if (db_disk->existsFile(getPathSymlink(table_name)))
+    if (db_disk->existsFileOrDirectory(getPathSymlink(table_name)))
     {
         LOG_TRACE(log, "Remove symlink for {}", table_name);
         tryRemoveSymlink(table_name);
