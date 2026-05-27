@@ -358,7 +358,7 @@ public:
     struct MinMaxIndex
     {
         /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        std::vector<Range> hyperrectangle;
+        Ranges hyperrectangle;
         bool initialized = false;
 
     public:

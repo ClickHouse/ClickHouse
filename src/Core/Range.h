@@ -2,6 +2,7 @@
 
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 /** Range between fields, used for index analysis
   * (various arithmetic on intervals of various forms).
@@ -39,7 +40,7 @@ struct FieldRef : public Field
 struct Range;
 
 /// A series of ranges which may overlap.
-using Ranges = std::vector<Range>;
+using Ranges = VectorWithMemoryTracking<Range>;
 
 /** Range with open or closed ends; possibly unbounded.
   */
@@ -120,7 +121,7 @@ Range intersect(const Range & a, const Range & b);
 
 /** Hyperrectangle is a product of ranges: each range across each coordinate.
   */
-using Hyperrectangle = std::vector<Range>;
+using Hyperrectangle = VectorWithMemoryTracking<Range>;
 
 Hyperrectangle intersect(const Hyperrectangle & a, const Hyperrectangle & b);
 String toString(const Hyperrectangle & x);
