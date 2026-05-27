@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Poco/String.h>
@@ -15,6 +16,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
+
+#include <limits>
 
 
 namespace DB
@@ -288,6 +291,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP PAGE CACHE", Type::CLEAR_PAGE_CACHE},
             {"DROP SCHEMA CACHE", Type::CLEAR_SCHEMA_CACHE},
             {"DROP FORMAT SCHEMA CACHE", Type::CLEAR_FORMAT_SCHEMA_CACHE},
+            {"DROP AVRO SCHEMA CACHE", Type::CLEAR_AVRO_SCHEMA_CACHE},
             {"DROP S3 CLIENT CACHE", Type::CLEAR_S3_CLIENT_CACHE},
         };
 
@@ -575,10 +579,30 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_VIRTUAL_PARTS_UPDATE:
         case Type::STOP_REDUCE_BLOCKING_PARTS:
         case Type::START_REDUCE_BLOCKING_PARTS:
+        case Type::SYNC_MERGES:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
+
+        case Type::SCHEDULE_MERGE:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                return false;
+            if (!ParserKeyword{Keyword::PARTS}.ignore(pos, expected))
+                return false;
+            ParserList parser_list(std::make_unique<ParserStringLiteral>(),
+                                   std::make_unique<ParserToken>(TokenType::Comma),
+                                   /*allow_empty=*/false);
+            ASTPtr parts;
+            if (!parser_list.parse(pos, parts, expected))
+                return false;
+            res->scheduled_merge_parts = parts;
+            res->children.push_back(parts);
+            break;
+        }
 
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:
@@ -939,7 +963,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
             {
-                expected.add(pos, "handler name (LOG or PROFILE)");
+                expected.add(pos, "handler name (LOG, SLEEP, or PROFILE)");
                 return false;
             }
 
@@ -969,23 +993,36 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
 
-            ASTPtr params_ast;
-            while (ParserLiteral{}.parse(pos, params_ast, expected))
+            ASTPtr arg_ast;
+            while (ParserLiteral{}.parse(pos, arg_ast, expected))
             {
-                const auto & value = params_ast->as<ASTLiteral &>().value;
+                const auto & value = arg_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<String>());
                 else if (value.getType() == Field::Types::Int64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
                 else if (value.getType() == Field::Types::UInt64)
-                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                {
+                    UInt64 uint_value = value.safeGet<UInt64>();
+                    if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    {
+                        expected.add(pos, "integer literal not exceeding Int64 maximum");
+                        return false;
+                    }
+                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
+                }
                 else if (value.getType() == Field::Types::Float64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
+                else
+                {
+                    expected.add(pos, "string, integer, or float literal argument");
+                    return false;
+                }
             }
 
-            if (res->instrumentation_parameters.empty())
+            if (res->instrumentation_arguments.empty())
             {
-                expected.add(pos, "at least one parameter (string literal)");
+                expected.add(pos, "at least one argument (string, integer, or float literal)");
                 return false;
             }
 

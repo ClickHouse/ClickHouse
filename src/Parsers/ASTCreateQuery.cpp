@@ -62,6 +62,8 @@ ASTPtr ASTStorage::clone() const
         res->set(res->sample_by, sample_by->clone());
     if (ttl_table)
         res->set(res->ttl_table, ttl_table->clone());
+    if (unique_key)
+        res->set(res->unique_key, unique_key->clone());
 
     if (settings)
         res->set(res->settings, settings->clone());
@@ -102,6 +104,14 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
             nested_frame.need_parens = true;
         order_by->format(ostr, s, state, nested_frame);
     }
+    if (unique_key)
+    {
+        ostr << s.nl_or_ws << "UNIQUE KEY ";
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(unique_key); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        unique_key->format(ostr, s, state, nested_frame);
+    }
     if (sample_by)
     {
         ostr << s.nl_or_ws << "SAMPLE BY ";
@@ -135,6 +145,7 @@ void ASTStorage::normalizeChildrenOrder()
     if (partition_by) children.emplace_back(partition_by);
     if (primary_key) children.emplace_back(primary_key);
     if (order_by) children.emplace_back(order_by);
+    if (unique_key) children.emplace_back(unique_key);
     if (sample_by) children.emplace_back(sample_by);
     if (ttl_table) children.emplace_back(ttl_table);
     if (settings) children.emplace_back(settings);
@@ -143,7 +154,7 @@ void ASTStorage::normalizeChildrenOrder()
 
 bool ASTStorage::isExtendedStorageDefinition() const
 {
-    return partition_by || primary_key || order_by || sample_by || settings;
+    return partition_by || primary_key || order_by || unique_key || sample_by || settings;
 }
 
 
@@ -322,8 +333,6 @@ String ASTCreateQuery::getID(char delim) const
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     if (database && !table)
     {
         ostr
@@ -552,9 +561,12 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (targets)
     {
-        targets->formatTarget(ViewTarget::Data, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Tags, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Metrics, ostr, settings, state, frame);
+        for (const auto & target : targets->targets)
+        {
+            /// `To` and `Inner` are formatted separately above (for materialized / window views).
+            if ((target.kind != ViewTarget::To) && (target.kind != ViewTarget::Inner))
+                ASTViewTargets::formatTarget(target, ostr, settings, state, frame);
+        }
     }
 
     if (dictionary)
@@ -691,6 +703,20 @@ void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr s
     if (!targets)
         set(targets, make_intrusive<ASTViewTargets>());
     targets->setInnerEngine(target_kind, storage_def);
+}
+
+ASTColumns * ASTCreateQuery::getTargetInnerColumns(ViewTarget::Kind target_kind) const
+{
+    if (targets)
+        return targets->getInnerColumns(target_kind);
+    return nullptr;
+}
+
+void ASTCreateQuery::setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr columns_ast)
+{
+    if (!targets)
+        set(targets, make_intrusive<ASTViewTargets>());
+    targets->setInnerColumns(target_kind, columns_ast);
 }
 
 bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
