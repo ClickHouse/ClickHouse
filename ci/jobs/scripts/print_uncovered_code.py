@@ -296,13 +296,26 @@ if __name__ == "__main__":
     CONTEXT = 2  # lines before/after
     MAX_PRINT = 200  # max uncovered lines to print total
 
+    print("=" * 80)
+    print("Changed-lines coverage summary")
+    print("=" * 80)
+    print(
+        "Denominator: lines added/modified by this PR in C/C++ source files that "
+        "LCOV considers coverable (excludes blank lines, braces, comments, "
+        "header-only declarations, and error-path noise such as `LOGICAL_ERROR`, "
+        "`UNREACHABLE()`, `abort()`)."
+    )
+    print(
+        "Numerator: of those coverable lines, the number actually executed by the "
+        "test suite during this coverage run."
+    )
     if total == 0:
         msg = "N/A (no coverable changed lines)"
-        print(f"PR changed-lines coverage: {msg}")
+        print(f"  PR changed C/C++ lines covered by tests: {msg}")
     else:
         pct = 100.0 * covered / total
         msg = f"{pct:.2f}% ({covered}/{total})"
-        print(msg)
+        print(f"  PR changed C/C++ lines covered by tests: {msg}")
 
     if uncovered:
         print("\nUncovered changed code (with context):\n")
@@ -447,14 +460,41 @@ if __name__ == "__main__":
     lbc_count = len(lbc_lines)
     lbc_fn_count = len(lbc_fns)
 
-    parts = [msg]
+    # Build a self-describing summary line so readers know what each number means.
+    #
+    # The first segment reports how many of the C/C++ lines this PR added/modified
+    # are actually exercised by the test suite under coverage instrumentation
+    # (lines that are not coverable at all — comments, headers without bodies,
+    # blank lines, error paths matched by _NOISE_PATTERNS — are excluded from the
+    # denominator).
+    #
+    # The second segment, if present, reports lines/functions that *were* covered
+    # on the master baseline but are *no longer* covered in this PR build. This
+    # commonly indicates that the PR removed or weakened a test that previously
+    # exercised those branches. See `print_uncovered_code.log` for the full
+    # block-by-block listing.
+    parts: list[str] = []
+    if total == 0:
+        parts.append("Changed C/C++ lines coverable by tests: 0 (nothing to score)")
+    else:
+        parts.append(
+            f"Changed C/C++ lines covered by tests: {covered}/{total} ({pct:.2f}%)"
+        )
+
     if lbc_count > 0 or lbc_fn_count > 0:
-        lbc_details = []
+        lbc_details: list[str] = []
         if lbc_count > 0:
             lbc_details.append(f"{lbc_count} line(s)")
         if lbc_fn_count > 0:
             lbc_details.append(f"{lbc_fn_count} function(s)")
-        parts.append(f"lost baseline coverage: {', '.join(lbc_details)}")
+        parts.append(
+            "Lost baseline coverage "
+            "(was covered on master, now uncovered in this PR): "
+            f"{', '.join(lbc_details)}"
+        )
+    else:
+        parts.append("Lost baseline coverage: none")
+
     full_msg = " | ".join(parts)
 
     r = Result.create_from(
