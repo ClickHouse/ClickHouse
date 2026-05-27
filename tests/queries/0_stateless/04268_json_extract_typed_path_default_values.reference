@@ -1,0 +1,23 @@
+JSONExtractRaw
+0	""
+42	"hello"
+0	""
+JSONHas
+1	1
+1	1
+1	1
+JSONExtractInt
+0
+42
+0
+absent typed path
+0	""
+1	1
+Nullable typed path JSONExtractRaw
+null	null
+0	""
+42	"hello"
+Nullable typed path JSONHas
+1	1
+1	1
+1	1
