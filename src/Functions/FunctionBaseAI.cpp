@@ -227,6 +227,9 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
+            if (quota.checkQuotas())
+                break;
+
             try
             {
                 AIRequest ai_request;

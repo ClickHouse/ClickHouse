@@ -217,6 +217,9 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
+                if (quota.checkQuotas())
+                    break;
+
                 try
                 {
                     /// update api_calls/quotas before call so failed calls are still added to total
