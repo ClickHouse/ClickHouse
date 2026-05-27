@@ -22,6 +22,11 @@ MaterializingCTETransform::MaterializingCTETransform(
 
 MaterializingCTETransform::~MaterializingCTETransform()
 {
+    /// Destructor must not throw. `PushingPipelineExecutor::cancel` can throw
+    /// (e.g. on a sink finish or a downstream destruction failure), so the
+    /// exception is logged and swallowed. No reader/writer-handshake fallback
+    /// is needed - ordering is enforced by `DelayedPortsProcessor` at the
+    /// scheduler level, not by anything this destructor does.
     if (executor)
     {
         try
