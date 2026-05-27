@@ -224,6 +224,12 @@ public:
         data(place).merged_uncompressed_size = uncompressed_size;
         data(place).merged_compressed_size = compressed_size;
 
+        /// Reset buffers so that a repeated insertResultInto without an
+        /// intervening add (unchanged window frame) does not re-count the
+        /// already-persisted finalized bytes.
+        data(place).compressed_buf.reset();
+        data(place).null_buf.reset();
+
         Float64 ratio = 0;
         if (compressed_size > 0)
             ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);

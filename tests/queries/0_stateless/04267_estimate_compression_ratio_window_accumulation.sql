@@ -10,7 +10,7 @@
 -- With the fix, each row reflects all values from the frame start.
 SELECT
     number,
-    estimateCompressionRatio()(repeat('a', number * 100 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
+    estimateCompressionRatio(repeat('a', number * 100 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
 FROM numbers(5)
 ORDER BY number;
 
@@ -18,6 +18,27 @@ ORDER BY number;
 -- (i.e. the ratio changes on every row, proving accumulation works).
 SELECT uniq(ratio) = 10
 FROM (
-    SELECT estimateCompressionRatio()(repeat('x', number * 50 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
+    SELECT estimateCompressionRatio(repeat('x', number * 50 + 1)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
     FROM numbers(10)
 );
+
+-- Regression test: unchanged window frames with duplicate ORDER BY keys.
+-- When consecutive rows share the same ORDER BY value, the window frame is
+-- unchanged and insertResultInto is called again without an intervening add.
+-- Without resetting buffers after persisting, the finalized bytes would be
+-- re-counted, inflating the ratio for later rows in the same group.
+-- Use varying data sizes per group so that double-counting would change the
+-- ratio (uniform data masks the bug because numerator and denominator scale
+-- equally). Each group must have exactly 1 distinct ratio.
+SELECT
+    val,
+    uniq(ratio)
+FROM (
+    SELECT
+        number % 3 AS val,
+        estimateCompressionRatio(repeat('b', (number % 3 + 1) * 500)) OVER (ORDER BY number % 3 RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ratio
+    FROM numbers(9)
+)
+GROUP BY val
+ORDER BY val
+SETTINGS max_block_size = 1;
