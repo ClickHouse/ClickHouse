@@ -1229,8 +1229,9 @@ void FuzzConfig::validateClickHouseHealth()
                 " countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
                 " countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),"
                 " countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),"
-                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],"
-                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12)])) AS t"
+                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),"
+                " countIf(message ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],"
+                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12),toUInt64(13)])) AS t"
                 " FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60)) tlog)"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
@@ -1245,6 +1246,10 @@ void FuzzConfig::validateClickHouseHealth()
                 " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
+                " UNION ALL "
+                "(SELECT count() x, 14 y FROM \"system\".\"replicas\""
+                " WHERE queue_oldest_time != toDateTime('1970-01-01 00:00:00')"
+                " AND queue_oldest_time < now() - toIntervalSecond(60))"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 fuzzer_out_file.generic_string())))
@@ -1264,7 +1269,9 @@ void FuzzConfig::validateClickHouseHealth()
                "replication queue exception(s)",
                "LOGICAL_ERROR(s) in text_log",
                "CORRUPTED_DATA(s) in text_log",
-               "CHECKSUM_DOESNT_MATCH error(s) in text_log"};
+               "CHECKSUM_DOESNT_MATCH error(s) in text_log",
+               "DATA_AFTER_MERGE_DIFF_FROM_EXPECTED error(s) in text_log",
+               "stuck replication queue entrie(s)"};
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
@@ -1277,7 +1284,9 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)"};
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "database", "table", "queue_oldest_time" FROM "system"."replicas" WHERE queue_oldest_time != toDateTime('1970-01-01 00:00:00') AND queue_oldest_time < now() - toIntervalSecond(60) LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
