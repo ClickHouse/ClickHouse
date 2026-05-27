@@ -255,6 +255,40 @@ void mergeCorrelatedColumns(QueryTreeNodes & target, const QueryTreeNodes & sour
             target.push_back(node);
     }
 }
+
+/// Recursively strip safe projections inside an `EXISTS` subquery subtree. Returns
+/// the subset of `node`'s correlated columns that survives stripping. For a
+/// `QueryNode` defers to `tryStripExistsProjection`. For a `UnionNode` of a safe
+/// mode (`UNION_ALL` / `UNION_DISTINCT` / `UNION_DEFAULT`) recurses into every
+/// branch (which may itself be a `QueryNode` or another `UnionNode`) and
+/// recomputes the union's correlated columns as the deduplicated union of
+/// surviving per-branch references. For `INTERSECT` / `EXCEPT` (where row VALUES
+/// across branches matter) returns the existing correlated columns unchanged so
+/// the subtree is left intact. Same fallback for any other node type.
+QueryTreeNodes tryStripExistsProjectionInSubquery(QueryTreeNodePtr & node, const DataTypePtr & constant_data_type)
+{
+    if (auto * inner_query = node->as<QueryNode>())
+        return tryStripExistsProjection(*inner_query, constant_data_type);
+
+    if (auto * inner_union = node->as<UnionNode>())
+    {
+        if (!isUnionModeSafeForExistsProjectionStripping(inner_union->getUnionMode())
+            || !inner_union->isCorrelated())
+            return inner_union->getCorrelatedColumns().getNodes();
+
+        QueryTreeNodes union_still_correlated;
+        for (auto & branch : inner_union->getQueries().getNodes())
+        {
+            auto branch_still_correlated = tryStripExistsProjectionInSubquery(branch, constant_data_type);
+            mergeCorrelatedColumns(union_still_correlated, branch_still_correlated);
+        }
+
+        inner_union->getCorrelatedColumns().getNodes() = union_still_correlated;
+        return union_still_correlated;
+    }
+
+    return {};
+}
 }
 
 /// Checks if node is a NULL constant
@@ -875,50 +909,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         ///
         /// Same logic applies to `UNION ALL` / `UNION DISTINCT` branches: the
         /// union is non-empty iff at least one branch is non-empty, which depends
-        /// only on row counts, not on projection values. `INTERSECT` and `EXCEPT`
-        /// branch semantics depend on row values across branches, so stripping
-        /// would change `EXISTS` truth value there and is not applied.
+        /// only on row counts, not on projection values. The helper recurses
+        /// through nested `UnionNode` branches so mixed-mode shapes (e.g.
+        /// `(UNION DISTINCT) UNION ALL ...`) are also covered. `INTERSECT` and
+        /// `EXCEPT` branch semantics depend on row values across branches, so
+        /// stripping is skipped on those subtrees.
         auto & inner_join_tree = new_exists_subquery->getJoinTree();
-        if (auto * inner_query = inner_join_tree->as<QueryNode>())
-        {
-            auto still_correlated = tryStripExistsProjection(*inner_query, constant_data_type);
-            new_exists_subquery->getCorrelatedColumns().getNodes() = std::move(still_correlated);
-        }
-        else if (auto * inner_union = inner_join_tree->as<UnionNode>())
-        {
-            if (isUnionModeSafeForExistsProjectionStripping(inner_union->getUnionMode())
-                && inner_union->isCorrelated())
-            {
-                auto & branches = inner_union->getQueries().getNodes();
-
-                /// Only strip when every branch is a `QueryNode` so the rewrite stays
-                /// uniform. Nested `UnionNode` branches are rare in resolved trees and
-                /// left untouched for safety.
-                bool all_branches_are_query_nodes = true;
-                for (const auto & branch : branches)
-                {
-                    if (!branch->as<QueryNode>())
-                    {
-                        all_branches_are_query_nodes = false;
-                        break;
-                    }
-                }
-
-                if (all_branches_are_query_nodes)
-                {
-                    QueryTreeNodes union_still_correlated;
-                    for (auto & branch : branches)
-                    {
-                        auto branch_still_correlated = tryStripExistsProjection(
-                            branch->as<QueryNode &>(), constant_data_type);
-                        mergeCorrelatedColumns(union_still_correlated, branch_still_correlated);
-                    }
-
-                    inner_union->getCorrelatedColumns().getNodes() = union_still_correlated;
-                    new_exists_subquery->getCorrelatedColumns().getNodes() = std::move(union_still_correlated);
-                }
-            }
-        }
+        auto still_correlated = tryStripExistsProjectionInSubquery(inner_join_tree, constant_data_type);
+        new_exists_subquery->getCorrelatedColumns().getNodes() = std::move(still_correlated);
 
         if (new_exists_subquery->isCorrelated())
         {
