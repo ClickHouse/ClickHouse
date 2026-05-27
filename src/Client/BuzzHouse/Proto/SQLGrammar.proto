@@ -2151,7 +2151,7 @@ message RemoveColumnProperty {
         CODEC = 4;
         COMMENT = 5;
         TTL = 6;
-        //SETTINGS = 7;
+        SETTINGS = 7;
     }
     required ColumnPath col = 1;
     required ColumnProperties property = 2;
