@@ -485,7 +485,9 @@ Chunk StorageURLSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -495,7 +497,8 @@ Chunk StorageURLSource::generate()
                     .path = curr_uri.getPath(),
                     .size = current_file_size,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
