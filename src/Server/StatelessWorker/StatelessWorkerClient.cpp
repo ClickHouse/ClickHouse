@@ -27,6 +27,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
     ReadSettings read_settings;
+    /// Not safe to retry: worker would schedule a duplicate task.
     read_settings.http_settings.max_tries = 1;
     read_settings.http_settings.retry_initial_backoff_ms = 500;
     read_settings.http_settings.retry_max_backoff_ms = 1000;
@@ -89,8 +90,9 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
     ReadSettings read_settings;
-    read_settings.http_settings.max_tries = 1;
-    read_settings.http_settings.retry_initial_backoff_ms = 500;
+    /// Safe to retry: read-only.
+    read_settings.http_settings.max_tries = 3;
+    read_settings.http_settings.retry_initial_backoff_ms = 200;
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
@@ -131,8 +133,9 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     timeouts.send_timeout = Poco::Timespan(5 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(5 * 1000 * 1000);
     ReadSettings read_settings;
-    read_settings.http_settings.max_tries = 1;
-    read_settings.http_settings.retry_initial_backoff_ms = 500;
+    /// Safe to retry: idempotent.
+    read_settings.http_settings.max_tries = 3;
+    read_settings.http_settings.retry_initial_backoff_ms = 200;
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
@@ -167,8 +170,9 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
     timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
     ReadSettings read_settings;
-    read_settings.http_settings.max_tries = 1;
-    read_settings.http_settings.retry_initial_backoff_ms = 500;
+    /// Safe to retry: idempotent.
+    read_settings.http_settings.max_tries = 3;
+    read_settings.http_settings.retry_initial_backoff_ms = 200;
     read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
