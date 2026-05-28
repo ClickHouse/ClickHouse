@@ -733,6 +733,15 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     const FilterByNameFunction & filter_by_table_name,
     bool skip_not_loaded) const
 {
+    return getTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {});
+}
+
+DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool skip_not_loaded,
+    const TablesFilter & tables_filter) const
+{
     Tables tables;
     DB::Names iceberg_tables;
 
@@ -740,7 +749,10 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables();
+        if (tables_filter.namespace_hint && !tables_filter.namespace_hint->empty())
+            iceberg_tables = getCatalog()->getTables(*tables_filter.namespace_hint);
+        else
+            iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
@@ -823,9 +835,18 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 }
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIterator(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool skip_not_loaded) const
+{
+    return getLightweightTablesIteratorWithHint(context_, filter_by_table_name, skip_not_loaded, /*tables_filter*/ {});
+}
+
+std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIteratorWithHint(
     ContextPtr /*context_*/,
     const FilterByNameFunction & filter_by_table_name,
-    bool /*skip_not_loaded*/) const
+    bool /*skip_not_loaded*/,
+    const TablesFilter & tables_filter) const
 {
     DB::Names iceberg_tables;
     std::vector<LightWeightTableDetails> result;
@@ -834,7 +855,10 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables();
+        if (tables_filter.namespace_hint && !tables_filter.namespace_hint->empty())
+            iceberg_tables = getCatalog()->getTables(*tables_filter.namespace_hint);
+        else
+            iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {

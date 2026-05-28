@@ -90,6 +90,17 @@ DB::Names UnityCatalog::getTables() const
     return result;
 }
 
+DB::Names UnityCatalog::getTables(const std::string & namespace_name) const
+{
+    /// Unity schemas are flat — a hint with a `.` cannot map to a single schema.
+    /// Fall back to the full-list + in-memory filter to keep correctness for any
+    /// matching tables that live in a parent schema.
+    if (namespace_name.find('.') != std::string::npos)
+        return ICatalog::getTables(namespace_name);
+
+    return getTablesForSchema(namespace_name);
+}
+
 void UnityCatalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,

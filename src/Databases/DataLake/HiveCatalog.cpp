@@ -119,6 +119,25 @@ DB::Names HiveCatalog::getTables() const
     return result;
 }
 
+DB::Names HiveCatalog::getTables(const std::string & namespace_name) const
+{
+    /// HMS databases are flat — a hint with a `.` cannot map to a single database.
+    /// Fall back to the full-list + in-memory filter for correctness.
+    if (namespace_name.find('.') != std::string::npos)
+        return ICatalog::getTables(namespace_name);
+
+    DB::Names current_tables;
+    {
+        std::lock_guard lock(client_mutex);
+        client.get_all_tables(current_tables, namespace_name);
+    }
+    DB::Names result;
+    result.reserve(current_tables.size());
+    for (const auto & table : current_tables)
+        result.push_back(namespace_name + "." + table);
+    return result;
+}
+
 bool HiveCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     Apache::Hadoop::Hive::Table table;

@@ -449,6 +449,18 @@ DB::Names PaimonRestCatalog::getTables() const
     return tables;
 }
 
+DB::Names PaimonRestCatalog::getTables(const std::string & namespace_name) const
+{
+    /// Paimon REST databases are flat — a hint with a `.` cannot map to a single
+    /// database. Fall back to the full-list + in-memory filter for correctness.
+    if (namespace_name.find('.') != std::string::npos)
+        return ICatalog::getTables(namespace_name);
+
+    DB::Names tables;
+    forEachTables(namespace_name, tables, {});
+    return tables;
+}
+
 bool PaimonRestCatalog::existsTable(const String & database_name, const String & table_name) const
 {
     try

@@ -309,6 +309,21 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
+DB::Names ICatalog::getTables(const std::string & namespace_name) const
+{
+    /// Default fallback: fetch the entire catalog and filter in memory.
+    /// Catalogs that natively support per-namespace listing override this
+    /// to issue a scoped API call instead.
+    DB::Names result;
+    const std::string prefix = namespace_name + ".";
+    for (auto & full_name : getTables())
+    {
+        if (full_name.starts_with(prefix))
+            result.push_back(std::move(full_name));
+    }
+    return result;
+}
+
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "createTable is not implemented");

@@ -154,6 +154,13 @@ public:
     /// Contains full namespaces in names.
     virtual DB::Names getTables() const = 0;
 
+    /// Fetch the table-name list scoped to a single namespace (dot-separated path,
+    /// e.g. "ns1.ns2"). Returned names are still fully-qualified, just like
+    /// `getTables`. The default implementation falls back to the full list and
+    /// filters in memory; catalogs that support per-namespace listing should
+    /// override this to call the scoped catalog API directly.
+    virtual DB::Names getTables(const std::string & namespace_name) const;
+
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
         const std::string & namespace_naem,

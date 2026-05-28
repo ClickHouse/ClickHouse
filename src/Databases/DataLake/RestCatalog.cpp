@@ -628,7 +628,7 @@ bool RestCatalog::empty() const
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
-        const auto tables = getTables(namespace_name, /* limit */1);
+        const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
         found_table = !tables.empty();
         return found_table;
     };
@@ -654,7 +654,7 @@ DB::Names RestCatalog::getTables() const
             runner.enqueueAndKeepTrack(
             [=, &tables, &mutex, this]
             {
-                auto tables_in_namespace = getTables(current_namespace);
+                auto tables_in_namespace = listTablesInNamespace(current_namespace);
                 std::lock_guard lock(mutex);
                 std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
             });
@@ -663,6 +663,51 @@ DB::Names RestCatalog::getTables() const
         Namespaces namespaces;
         getNamespacesRecursive(
             /* base_namespace */"", /// Empty base namespace means starting from root.
+            namespaces,
+            /* stop_condition */{},
+            /* execute_func */execute_for_each_namespace);
+
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
+    return tables;
+}
+
+DB::Names RestCatalog::getTables(const std::string & namespace_name) const
+{
+    /// Scoped variant used by SHOW TABLES / system.tables namespace push-down.
+    /// Walk the sub-tree rooted at `namespace_name` (the namespace itself, plus all
+    /// descendants) and aggregate tables from each level. Avoids the full-catalog
+    /// scan that `getTables()` does when the caller only needs tables under a
+    /// specific namespace prefix.
+    if (namespace_name.empty())
+        return getTables();
+
+    auto & pool = getContext()->getIcebergCatalogThreadpool();
+    DB::Names tables;
+    std::mutex mutex;
+
+    {
+        DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
+
+        auto execute_for_each_namespace = [&](const std::string & current_namespace)
+        {
+            runner.enqueueAndKeepTrack(
+            [=, &tables, &mutex, this]
+            {
+                auto tables_in_namespace = listTablesInNamespace(current_namespace);
+                std::lock_guard lock(mutex);
+                std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
+            });
+        };
+
+        /// Query the requested namespace itself first.
+        execute_for_each_namespace(namespace_name);
+
+        /// Then walk every sub-namespace below it.
+        Namespaces namespaces;
+        getNamespacesRecursive(
+            namespace_name,
             namespaces,
             /* stop_condition */{},
             /* execute_func */execute_for_each_namespace);
@@ -868,7 +913,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     }
 }
 
-DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace, size_t limit) const
 {
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";

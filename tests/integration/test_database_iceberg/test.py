@@ -286,6 +286,55 @@ def test_list_tables(started_cluster):
     )
 
 
+def test_namespace_filter_pushdown(started_cluster):
+    """
+    Verify that `system.tables` predicates that fully bind the namespace
+    (`name = '<ns>.<table>'`, `name LIKE '<ns>.%'`) only fetch the table list
+    from the targeted namespace instead of enumerating the whole catalog.
+    See issue #105022.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace_1 = f"{root_namespace}.target.scope"
+    namespace_2 = f"{root_namespace}.other.scope"
+    namespace_1_tables = ["scoped_a", "scoped_b"]
+    namespace_2_tables = ["other_a", "other_b"]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    for namespace in [namespace_1, namespace_2]:
+        catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    for table in namespace_1_tables:
+        create_table(catalog, namespace_1, table)
+    for table in namespace_2_tables:
+        create_table(catalog, namespace_2, table)
+
+    expected_ns1 = "\n".join(sorted(f"{namespace_1}.{t}" for t in namespace_1_tables))
+
+    # Case-sensitive LIKE pushdown.
+    assert (
+        expected_ns1
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name LIKE '{namespace_1}.%' ORDER BY name "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+    # Equality pushdown for a fully-qualified table name.
+    one_table = f"{namespace_1}.{namespace_1_tables[0]}"
+    assert (
+        one_table
+        == node.query(
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name = '{one_table}' ORDER BY name "
+            "SETTINGS show_data_lake_catalogs_in_system_tables = true"
+        ).strip()
+    )
+
+
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]
 

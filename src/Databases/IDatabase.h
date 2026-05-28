@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 
@@ -43,6 +44,19 @@ class IRestoreCoordination;
 struct LightWeightTableDetails
 {
     String name;
+};
+
+/// Optional hint passed to getTablesIterator that lets the caller push down
+/// part of the WHERE predicate to the database implementation. The hint is
+/// purely advisory: implementations that ignore it must still return correct
+/// results. Currently used by DataLake catalogs (Iceberg REST, Glue, Unity,
+/// Hive, Paimon REST) to fetch tables from a single namespace instead of
+/// enumerating every table in the catalog.
+struct TablesFilter
+{
+    /// Namespace prefix (dot-separated, without trailing dot), as extracted
+    /// from `name = '<ns>.<table>'` or `name LIKE '<ns>.%'` predicates.
+    std::optional<String> namespace_hint;
 };
 
 class IDatabaseTablesIterator
@@ -275,6 +289,19 @@ public:
     /// Wait for all tables to be loaded and started up. If `skip_not_loaded` is true, then not yet loaded or not yet started up (at the moment of iterator creation) tables are excluded.
     virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const = 0; /// NOLINT
 
+    /// Same as getTablesIterator, but accepts a structured hint with an
+    /// optional namespace prefix. Implementations that can push the hint down
+    /// to an external catalog (e.g. DataLake) override this; the default
+    /// implementation simply forwards to getTablesIterator.
+    virtual DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & /*tables_filter*/) const
+    {
+        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
+    }
+
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
     virtual std::vector<LightWeightTableDetails> getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
@@ -288,6 +315,17 @@ public:
         }
 
         return result;
+    }
+
+    /// Lightweight tables iterator with a TablesFilter hint. Default delegates
+    /// to the existing getLightweightTablesIterator (ignoring the hint).
+    virtual std::vector<LightWeightTableDetails> getLightweightTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & /*tables_filter*/) const
+    {
+        return getLightweightTablesIterator(context, filter_by_table_name, skip_not_loaded);
     }
 
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(

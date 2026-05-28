@@ -31,6 +31,8 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Columns/ColumnConst.h>
+#include <Functions/IFunction.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -47,6 +49,132 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+}
+
+namespace
+{
+
+/// Try to read a constant string column attached to `node` and return its single value.
+std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
+{
+    if (!node || node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+        return {};
+    if (!isColumnConst(*node->column) || node->column->empty())
+        return {};
+    Field field = (*node->column)[0];
+    if (field.getType() != Field::Types::String)
+        return {};
+    return field.safeGet<String>();
+}
+
+/// LIKE patterns use `%` and `_` as wildcards, and `\\` as an escape character.
+/// Return the longest literal prefix that contains no unescaped wildcards.
+/// If any escape is encountered we bail out (return nullopt) to avoid mis-extracting
+/// a namespace when the literal segment is non-trivial.
+std::optional<String> getLiteralPrefixOfLikePattern(const String & pattern)
+{
+    String literal;
+    literal.reserve(pattern.size());
+    for (size_t i = 0; i < pattern.size(); ++i)
+    {
+        char c = pattern[i];
+        if (c == '%' || c == '_')
+            return literal;
+        if (c == '\\')
+            return {}; /// Be conservative around escapes.
+        literal += c;
+    }
+    return literal;
+}
+
+/// Given a literal string of the form `<ns1>.<ns2>...<nsk>.<rest>` (or just `<ns1>...<nsk>.`),
+/// return the namespace path `<ns1>.<ns2>...<nsk>` (everything before the last `.`).
+/// Returns nullopt if there is no `.` in the literal.
+std::optional<String> namespacePrefixBeforeLastDot(const String & literal)
+{
+    auto pos = literal.rfind('.');
+    if (pos == std::string::npos)
+        return {};
+    return literal.substr(0, pos);
+}
+
+/// Walk the predicate DAG looking for top-level conjuncts of the form
+/// `name = '<ns>.<table>'` or `name LIKE '<ns>.%'` and extract the most
+/// specific (longest) namespace prefix that is guaranteed to bound the
+/// matched rows. Only case-sensitive LIKE is considered — `ilike` and
+/// patterns with escapes are skipped to avoid false negatives.
+std::optional<String> extractNamespaceHint(const ActionsDAG::Node * predicate)
+{
+    if (!predicate)
+        return {};
+
+    /// Collect top-level conjuncts.
+    std::vector<const ActionsDAG::Node *> conjuncts;
+    const auto * node = predicate;
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children[0];
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base
+        && node->function_base->getName() == "and")
+    {
+        for (const auto * child : node->children)
+            conjuncts.push_back(child);
+    }
+    else
+    {
+        conjuncts.push_back(node);
+    }
+
+    std::optional<String> result;
+    for (const auto * conjunct : conjuncts)
+    {
+        while (conjunct->type == ActionsDAG::ActionType::ALIAS && !conjunct->children.empty())
+            conjunct = conjunct->children[0];
+
+        if (conjunct->type != ActionsDAG::ActionType::FUNCTION
+            || !conjunct->function_base
+            || conjunct->children.size() != 2)
+            continue;
+
+        const auto & fn_name = conjunct->function_base->getName();
+
+        const auto * lhs = conjunct->children[0];
+        const auto * rhs = conjunct->children[1];
+
+        /// Accept either `name <op> 'lit'` or `'lit' <op> name`.
+        bool lhs_is_name = (lhs->type == ActionsDAG::ActionType::INPUT && lhs->result_name == "name");
+        bool rhs_is_name = (rhs->type == ActionsDAG::ActionType::INPUT && rhs->result_name == "name");
+        if (!lhs_is_name && !rhs_is_name)
+            continue;
+        const auto * lit_node = lhs_is_name ? rhs : lhs;
+
+        auto literal = tryReadConstString(lit_node);
+        if (!literal)
+            continue;
+
+        std::optional<String> hint;
+        if (fn_name == "equals")
+        {
+            hint = namespacePrefixBeforeLastDot(*literal);
+        }
+        else if (fn_name == "like")
+        {
+            auto literal_prefix = getLiteralPrefixOfLikePattern(*literal);
+            if (literal_prefix)
+                hint = namespacePrefixBeforeLastDot(*literal_prefix);
+        }
+
+        if (hint && !hint->empty())
+        {
+            if (!result || hint->size() > result->size())
+                result = std::move(hint);
+        }
+    }
+
+    return result;
+}
+
 }
 
 namespace detail
@@ -83,6 +211,11 @@ ColumnPtr getFilteredTables(
     MutableColumnPtr engine_column;
 
     auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+
+    TablesFilter tables_filter;
+    if (dag)
+        tables_filter.namespace_hint = extractNamespaceHint(dag->getOutputs().at(0));
+
     if (dag)
     {
         bool filter_by_engine = false;
@@ -124,9 +257,10 @@ ColumnPtr getFilteredTables(
         {
             if (engine_column || uuid_column)
             {
-                auto table_it = database->getTablesIterator(context,
+                auto table_it = database->getTablesIteratorWithHint(context,
                                                                        /* filter_by_table_name */ {},
-                                                                       /* skip_not_loaded */ false);
+                                                                       /* skip_not_loaded */ false,
+                                                                       tables_filter);
                 for (; table_it->isValid(); table_it->next())
                 {
                     const auto & table = table_it->table();
@@ -141,9 +275,10 @@ ColumnPtr getFilteredTables(
             }
             else
             {
-                auto table_details = database->getLightweightTablesIterator(context,
+                auto table_details = database->getLightweightTablesIteratorWithHint(context,
                                                                       /* filter_by_table_name */ {},
-                                                                      /* skip_not_loaded */ false);
+                                                                      /* skip_not_loaded */ false,
+                                                                      tables_filter);
                 for (const auto & table_detail : table_details)
                 {
                     table_column->insert(table_detail.name);
@@ -275,12 +410,14 @@ public:
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr tables_,
-        ContextPtr context_)
+        ContextPtr context_,
+        TablesFilter tables_filter_)
         : ISource(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , context(Context::createCopy(context_))
+        , tables_filter(std::move(tables_filter_))
     {
         size_t size = tables_->size();
         tables.reserve(size);
@@ -330,9 +467,10 @@ protected:
     /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
-        auto table_details = database->getLightweightTablesIterator(context,
+        auto table_details = database->getLightweightTablesIteratorWithHint(context,
                                 /* filter_by_table_name */ {},
-                                /* skip_not_loaded */ false);
+                                /* skip_not_loaded */ false,
+                                tables_filter);
 
         size_t count = 0;
 
@@ -532,9 +670,10 @@ protected:
             }
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context,
+                tables_it = database->getTablesIteratorWithHint(context,
                         /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false);
+                        /* skip_not_loaded */ false,
+                        tables_filter);
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
@@ -972,6 +1111,7 @@ private:
     bool done = false;
     DatabasePtr database;
     std::string database_name;
+    TablesFilter tables_filter;
 };
 
 class ReadFromSystemTables : public SourceStepWithFilter
@@ -1007,6 +1147,7 @@ private:
 
     ColumnPtr filtered_databases_column;
     ColumnPtr filtered_tables_column;
+    TablesFilter tables_filter;
 };
 
 void StorageSystemTables::readImpl(
@@ -1040,12 +1181,22 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 
     filtered_databases_column = detail::getFilteredDatabases(predicate, context);
     filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, false);
+
+    /// Extract the namespace hint from the `name` predicate so downstream
+    /// databases (DataLake catalogs) can fetch only the relevant namespace
+    /// instead of enumerating the entire catalog.
+    Block sample{
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
+    if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context))
+        tables_filter.namespace_hint = extractNamespaceHint(dag->getOutputs().at(0));
 }
 
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
+        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context, std::move(tables_filter)));
     pipeline.init(std::move(pipe));
 }
 

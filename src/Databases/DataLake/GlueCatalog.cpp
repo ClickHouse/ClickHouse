@@ -283,6 +283,18 @@ DB::Names GlueCatalog::getTables() const
     return result;
 }
 
+DB::Names GlueCatalog::getTables(const std::string & namespace_name) const
+{
+    /// Glue databases are flat — they cannot contain nested namespaces. A hint that
+    /// itself contains a `.` (e.g. extracted from `name LIKE 'a.b.%'`) doesn't map to
+    /// a single Glue database, so fall back to the in-memory filter on the full list
+    /// to preserve correctness for any matching tables that live in a parent database.
+    if (namespace_name.find('.') != std::string::npos)
+        return ICatalog::getTables(namespace_name);
+
+    return getTablesForDatabase(namespace_name);
+}
+
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
     Aws::Glue::Model::GetTableRequest request;
