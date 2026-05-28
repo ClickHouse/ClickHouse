@@ -501,7 +501,28 @@ void ReaderExecutor::initDecryption()
 
     /// Read all headers in one call through the cache chain.
     Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset});
-    chassert(header_rope.totalBytes() == data_start_offset);
+
+    /// Size-known: the guards above ensure `total_source_size >= data_start_offset`
+    /// and `readPhysicalWindow` itself throws `CANNOT_READ_ALL_DATA` on a
+    /// short return, so `header_rope.totalBytes() == data_start_offset` here.
+    ///
+    /// Size-unknown: `offset_map.totalSize()` returns the sentinel, so neither
+    /// guard above triggers. `readPhysicalWindow` is tolerant of short
+    /// source returns (it latches `reached_eof` instead of throwing), so the
+    /// rope can be shorter than requested. Promote what was a debug-only
+    /// `chassert` to a release-mode check:
+    ///   - `totalBytes() == 0` → treat as the empty-file fallback (same as
+    ///     the size-known empty branch above).
+    ///   - `0 < totalBytes() < data_start_offset` → corrupted/truncated.
+    if (offset_map.hasUnknownSize() && header_rope.totalBytes() == 0)
+    {
+        LOG_DEBUG(log, "initDecryption: unknown-size source returned 0 bytes (empty object), skipping");
+        return;
+    }
+    if (header_rope.totalBytes() != data_start_offset)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Encrypted source returned {} header bytes, expected {} (corrupted/truncated)",
+            header_rope.totalBytes(), data_start_offset);
 
     /// Parse each header sequentially. For stacked encryption (N>=2 layers)
     /// the on-disk layout is `[h0_plain, outer.encrypt(h1), outer.encrypt(
