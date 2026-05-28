@@ -165,21 +165,13 @@ QueryTreeNodes findReferencedCorrelatedColumnsOutsideProjection(
     return result;
 }
 
-/// Replace `inner_query`'s projection with `SELECT 1` when it is safe for `EXISTS`
-/// semantics (no aggregate or window functions in the projection and no
-/// row-count-affecting clauses). Returns the subset of the original correlated
-/// columns that survives stripping. When stripping is not safe, returns the
-/// query's existing correlated columns unchanged.
-QueryTreeNodes tryStripExistsProjection(QueryNode & inner_query, const DataTypePtr & constant_data_type)
+/// True if `inner_query`'s projection is safe to replace with `SELECT 1` for `EXISTS`
+/// semantics. `arrayJoin` and aggregates/`GROUP BY`/etc. change row count, so
+/// stripping them would silently change `EXISTS` truth value.
+bool isExistsQueryNodeStrippable(const QueryNode & inner_query)
 {
     const auto & projection_node = inner_query.getProjectionNode();
-    /// `arrayJoin` in the projection expands or drops rows (a zero-length array
-    /// produces zero rows, so `EXISTS` should be `false` even when `FROM` is
-    /// non-empty). Replacing the projection with `SELECT 1` would make the
-    /// subquery non-empty whenever `FROM` has any row, silently changing the
-    /// `EXISTS` truth value, so leave the projection alone in that case.
-    const bool projection_only_affects_output =
-        !hasAggregateFunctionNodes(projection_node)
+    return !hasAggregateFunctionNodes(projection_node)
         && !hasWindowFunctionNodes(projection_node)
         && !hasFunctionNode(projection_node, "arrayJoin")
         && !inner_query.hasGroupBy()
@@ -189,10 +181,12 @@ QueryTreeNodes tryStripExistsProjection(QueryNode & inner_query, const DataTypeP
         && !inner_query.hasOrderBy()
         && !inner_query.hasQualify()
         && !inner_query.hasInterpolate();
+}
 
-    if (!projection_only_affects_output || !inner_query.isCorrelated())
-        return inner_query.getCorrelatedColumns().getNodes();
-
+/// Replace `inner_query`'s projection with `SELECT 1` and recompute the surviving
+/// correlated columns. Caller MUST have verified strippability.
+QueryTreeNodes stripExistsQueryNodeProjection(QueryNode & inner_query, const DataTypePtr & constant_data_type)
+{
     auto previous_correlated_columns = inner_query.getCorrelatedColumns().getNodes();
 
     inner_query.getProjection().getNodes()
@@ -205,6 +199,17 @@ QueryTreeNodes tryStripExistsProjection(QueryNode & inner_query, const DataTypeP
 
     inner_query.getCorrelatedColumns().getNodes() = still_correlated;
     return still_correlated;
+}
+
+/// Replace `inner_query`'s projection with `SELECT 1` when it is safe for `EXISTS`
+/// semantics. Returns the subset of the original correlated columns that
+/// survives stripping. When stripping is not safe or the query is uncorrelated,
+/// returns the query's existing correlated columns unchanged.
+QueryTreeNodes tryStripExistsProjection(QueryNode & inner_query, const DataTypePtr & constant_data_type)
+{
+    if (!isExistsQueryNodeStrippable(inner_query) || !inner_query.isCorrelated())
+        return inner_query.getCorrelatedColumns().getNodes();
+    return stripExistsQueryNodeProjection(inner_query, constant_data_type);
 }
 
 /// Returns true if `mode` is a UNION variant for which stripping `EXISTS` subquery
@@ -256,15 +261,58 @@ void mergeCorrelatedColumns(QueryTreeNodes & target, const QueryTreeNodes & sour
     }
 }
 
-/// Recursively strip safe projections inside an `EXISTS` subquery subtree. Returns
-/// the subset of `node`'s correlated columns that survives stripping. For a
-/// `QueryNode` defers to `tryStripExistsProjection`. For a `UnionNode` of a safe
-/// mode (`UNION_ALL` / `UNION_DISTINCT` / `UNION_DEFAULT`) recurses into every
-/// branch (which may itself be a `QueryNode` or another `UnionNode`) and
-/// recomputes the union's correlated columns as the deduplicated union of
-/// surviving per-branch references. For `INTERSECT` / `EXCEPT` (where row VALUES
-/// across branches matter) returns the existing correlated columns unchanged so
-/// the subtree is left intact. Same fallback for any other node type.
+/// True if the entire subtree under an `EXISTS` body is safe to strip: every
+/// leaf `QueryNode` projection is strippable and every internal `UnionNode` is a
+/// safe UNION mode. Used as an all-or-nothing gate so stripping a `UnionNode`
+/// cannot leave its branches with mismatched projection widths.
+bool isExistsSubquerySubtreeStrippable(const QueryTreeNodePtr & node)
+{
+    if (const auto * inner_query = node->as<QueryNode>())
+        return isExistsQueryNodeStrippable(*inner_query);
+    if (const auto * inner_union = node->as<UnionNode>())
+    {
+        if (!isUnionModeSafeForExistsProjectionStripping(inner_union->getUnionMode()))
+            return false;
+        for (const auto & branch : inner_union->getQueries().getNodes())
+            if (!isExistsSubquerySubtreeStrippable(branch))
+                return false;
+        return true;
+    }
+    return false;
+}
+
+/// Uniformly strip every leaf `QueryNode` projection in a verified-strippable
+/// subtree (mutates regardless of per-branch correlation so siblings keep equal
+/// widths). Caller MUST have verified the subtree via `isExistsSubquerySubtreeStrippable`.
+QueryTreeNodes stripExistsProjectionSubtree(QueryTreeNodePtr & node, const DataTypePtr & constant_data_type)
+{
+    if (auto * inner_query = node->as<QueryNode>())
+        return stripExistsQueryNodeProjection(*inner_query, constant_data_type);
+    if (auto * inner_union = node->as<UnionNode>())
+    {
+        QueryTreeNodes union_still_correlated;
+        for (auto & branch : inner_union->getQueries().getNodes())
+        {
+            auto branch_still_correlated = stripExistsProjectionSubtree(branch, constant_data_type);
+            mergeCorrelatedColumns(union_still_correlated, branch_still_correlated);
+        }
+        inner_union->getCorrelatedColumns().getNodes() = union_still_correlated;
+        return union_still_correlated;
+    }
+    return {};
+}
+
+/// Recursively strip safe projections inside an `EXISTS` subquery subtree.
+///
+/// For a `QueryNode` body, defers to `tryStripExistsProjection` (per-query
+/// gate: only mutate if strippable AND correlated).
+///
+/// For a `UnionNode` body, applies an all-or-nothing strategy: mutate only when
+/// the union is correlated AND every branch (recursively through nested
+/// `UnionNode`s of safe modes) is strippable. Mixed-eligibility unions leave the
+/// whole subtree intact -- per-branch stripping would yield mismatched
+/// projection widths and `UnionNode::computeProjectionColumns` would later
+/// raise `UNION different number of columns` at planning time.
 QueryTreeNodes tryStripExistsProjectionInSubquery(QueryTreeNodePtr & node, const DataTypePtr & constant_data_type)
 {
     if (auto * inner_query = node->as<QueryNode>())
@@ -272,19 +320,12 @@ QueryTreeNodes tryStripExistsProjectionInSubquery(QueryTreeNodePtr & node, const
 
     if (auto * inner_union = node->as<UnionNode>())
     {
-        if (!isUnionModeSafeForExistsProjectionStripping(inner_union->getUnionMode())
-            || !inner_union->isCorrelated())
+        if (!inner_union->isCorrelated())
+            return inner_union->getCorrelatedColumns().getNodes();
+        if (!isExistsSubquerySubtreeStrippable(node))
             return inner_union->getCorrelatedColumns().getNodes();
 
-        QueryTreeNodes union_still_correlated;
-        for (auto & branch : inner_union->getQueries().getNodes())
-        {
-            auto branch_still_correlated = tryStripExistsProjectionInSubquery(branch, constant_data_type);
-            mergeCorrelatedColumns(union_still_correlated, branch_still_correlated);
-        }
-
-        inner_union->getCorrelatedColumns().getNodes() = union_still_correlated;
-        return union_still_correlated;
+        return stripExistsProjectionSubtree(node, constant_data_type);
     }
 
     return {};
@@ -911,9 +952,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// union is non-empty iff at least one branch is non-empty, which depends
         /// only on row counts, not on projection values. The helper recurses
         /// through nested `UnionNode` branches so mixed-mode shapes (e.g.
-        /// `(UNION DISTINCT) UNION ALL ...`) are also covered. `INTERSECT` and
-        /// `EXCEPT` branch semantics depend on row values across branches, so
-        /// stripping is skipped on those subtrees.
+        /// `(UNION DISTINCT) UNION ALL ...`) are also covered, but applies an
+        /// all-or-nothing rule: it only strips a `UnionNode` subtree when EVERY
+        /// branch is strippable. Stripping just a subset would yield mismatched
+        /// projection widths across branches and later raise `UNION different
+        /// number of columns` at planning time. `INTERSECT` and `EXCEPT` branch
+        /// semantics depend on row values across branches, so a subtree
+        /// containing either of them is also left intact.
         auto & inner_join_tree = new_exists_subquery->getJoinTree();
         auto still_correlated = tryStripExistsProjectionInSubquery(inner_join_tree, constant_data_type);
         new_exists_subquery->getCorrelatedColumns().getNodes() = std::move(still_correlated);
