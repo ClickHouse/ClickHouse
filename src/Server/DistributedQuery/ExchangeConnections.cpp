@@ -2,9 +2,16 @@
 #include <mutex>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/FutureConnection.h>
+#include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
 
 void ExchangeConnections::addConnection(const String & query_id, const String & exchange_stream_id, Poco::Net::StreamSocket socket)
 {
@@ -56,6 +63,45 @@ FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, 
         chassert(!element);
         element = std::make_shared<FutureConnection>();
         return element;
+    }
+}
+
+void ExchangeConnections::cleanupQuery(const String & query_id)
+{
+    std::vector<FutureConnectionPtr> to_cancel;
+    {
+        std::lock_guard lock(mutex);
+        for (auto it = pending_connections.begin(); it != pending_connections.end();)
+        {
+            if (it->first.first == query_id)
+            {
+                to_cancel.push_back(it->second);
+                it = pending_connections.erase(it);
+            }
+            else
+                ++it;
+        }
+    }
+
+    if (to_cancel.empty())
+        return;
+
+    LOG_TRACE(log, "Cleaning up {} pending exchange connections for query id {}", to_cancel.size(), query_id);
+
+    auto exception = std::make_exception_ptr(
+        Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id));
+    for (auto & future : to_cancel)
+    {
+        /// `cancel` may throw if the promise was already satisfied by a concurrent
+        /// addConnection/getConnection pairing; swallow so other waiters still get woken.
+        try
+        {
+            future->cancel(exception);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "FutureConnection cancel");
+        }
     }
 }
 

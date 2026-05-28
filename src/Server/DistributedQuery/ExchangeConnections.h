@@ -36,6 +36,12 @@ public:
     /// Returns immediately without blocking.
     FutureConnectionPtr getConnection(const String & query_id, const String & exchange_stream_id);
 
+    /// Remove all pending entries that belong to the given query and wake any
+    /// waiters on them with a cancellation exception. Called from the
+    /// distributed-query cleanup path so connections that never paired up do
+    /// not leak `FutureConnection`s/eventfds across the lifetime of the server.
+    void cleanupQuery(const String & query_id);
+
 private:
     std::mutex mutex;
     using ConnectionKey = std::pair<String, String>; /// query_id, exchange_stream_id

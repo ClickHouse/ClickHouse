@@ -772,6 +772,13 @@ public:
     void cleanup() override
     {
         running_tasks.cancel();
+#ifdef OS_LINUX
+        /// Drop any still-pending exchange connection slots that belong to this query
+        /// (the peer was cancelled or never arrived). Without this they would leak
+        /// FutureConnection/eventfd entries in the ExchangeConnections singleton for
+        /// the lifetime of the server.
+        ExchangeConnections::instance()->cleanupQuery(toString(unique_query_id));
+#endif
     }
 
 protected:

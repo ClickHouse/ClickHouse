@@ -68,6 +68,18 @@ void FutureConnection::setSocket(Poco::Net::Socket socket)
     chassert(written == sizeof(value));
 }
 
+void FutureConnection::cancel(std::exception_ptr exception)
+{
+    LOG_TRACE(log, "Cancelling FutureConnection");
+
+    /// Set the promise exception, promise can be set only once.
+    promise.set_exception(std::move(exception));
+
+    uint64_t value = 1;
+    ssize_t written = write(event_fd, &value, sizeof(value));
+    chassert(written == sizeof(value));
+}
+
 }
 
 #endif

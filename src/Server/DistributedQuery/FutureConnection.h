@@ -32,6 +32,11 @@ public:
     /// Should be called only once, subsequent calls will throw an exception.
     void setSocket(Poco::Net::Socket socket);
 
+    /// Wake the waiter with an exception. Used to cancel a still-pending
+    /// connection (e.g. when the owning query is being torn down).
+    /// At-most-once like `setSocket`.
+    void cancel(std::exception_ptr exception);
+
 private:
     static int createEventFd();
 
