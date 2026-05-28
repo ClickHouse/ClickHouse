@@ -12,6 +12,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Core/UUID.h>
 
 
 namespace DB

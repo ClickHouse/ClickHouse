@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Interpreters/StorageID.h>
+#include <Core/UUID.h>
 
 namespace Poco::JSON { class Object; }
 

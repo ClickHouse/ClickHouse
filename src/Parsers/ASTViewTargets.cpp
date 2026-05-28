@@ -7,6 +7,7 @@
 #include <Parsers/CommonParsers.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
+#include <Core/UUID.h>
 
 
 namespace DB
