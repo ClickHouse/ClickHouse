@@ -1107,6 +1107,9 @@ class GH:
             # which job(s) the labels came from without adding extra weight.
             for name, links_md in self.extra_links:
                 body += f"- {name}: {links_md}\n"
+            # Blank line so a following table isn't parsed as list continuation.
+            if self.extra_links:
+                body += "\n"
             if self.failed_results:
                 if len(self.failed_results) > 15:
                     body += (
