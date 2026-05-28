@@ -298,6 +298,24 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     return result;
 }
 
+/// True if the table expression carries modifiers that prevent answering a
+/// `SELECT count()` from whole-table statistics. `FINAL`, sampling and `STREAM`
+/// all reshape the row set under the count, so the rewrite must be skipped.
+bool hasTrivialCountIncompatibleModifiers(
+    const TableNode * table_node, const TableFunctionNode * table_function_node)
+{
+    auto disqualifies = [](const std::optional<TableExpressionModifiers> & m)
+    {
+        return m.has_value()
+            && (m->hasFinal() || m->hasSampleSizeRatio() || m->hasSampleOffsetRatio() || m->hasStream());
+    };
+    if (table_node && disqualifies(table_node->getTableExpressionModifiers()))
+        return true;
+    if (table_function_node && disqualifies(table_function_node->getTableExpressionModifiers()))
+        return true;
+    return false;
+}
+
 /// Returns the effective row policy filter for the table, or nullptr if the
 /// table has no row policies for the current user or the combined filter is
 /// always-true. Mirrors the effective-filter check used by
@@ -347,16 +365,7 @@ bool applyTrivialCountIfPossible(
     if (query_context->getCurrentTransaction())
         return false;
 
-    /// can't apply if FINAL
-    if (table_node && table_node->getTableExpressionModifiers().has_value() &&
-        (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio() || table_node->getTableExpressionModifiers()->hasStream()))
-        return false;
-    if (table_function_node && table_function_node->getTableExpressionModifiers().has_value()
-        && (table_function_node->getTableExpressionModifiers()->hasFinal()
-            || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio()
-            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()
-            || table_function_node->getTableExpressionModifiers()->hasStream()))
+    if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
         return false;
 
     // TODO: It's possible to optimize count() given only partition predicates
@@ -462,14 +471,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     if (query_context->getCurrentTransaction())
         return false;
 
-    if (table_node && table_node->getTableExpressionModifiers().has_value() &&
-        (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
-        return false;
-    if (table_function_node && table_function_node->getTableExpressionModifiers().has_value()
-        && (table_function_node->getTableExpressionModifiers()->hasFinal()
-            || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio()
-            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+    if (hasTrivialCountIncompatibleModifiers(table_node, table_function_node))
         return false;
 
     /// `WHERE` is required for classification; `GROUP BY` / `PREWHERE` / `HAVING` /
