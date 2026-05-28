@@ -4,10 +4,13 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <IO/MMappedFileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/SourceBufferLimit.h>
 #include <IO/S3Defines.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -1319,7 +1322,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(NonZeroUInt64, reader_executor_prefetch_pool_size, 8, R"(Number of threads in the shared prefetch pool for `ReaderExecutor` (experimental `use_reader_executor` setting).)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_prefetch_queue_size, 80, R"(Maximum number of prefetch tasks (running + queued) for the shared `ReaderExecutor` prefetch pool. `submit` returns immediately (with nullptr handle) when this limit is reached; the executor falls back to a synchronous read.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_memory_pressure_level_1_pct, 75, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L1 sizes. Must satisfy `level_1 < level_2 < level_3`; out-of-order values are sorted before use. See [[MemoryPressureMonitor]] for the level table.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_level_1_pct, 75, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L1 sizes. Each level must be in `[0, 100]` and the three values must satisfy `level_1 <= level_2 <= level_3`; out-of-range or out-of-order values are rejected with `BAD_ARGUMENTS` at startup or on `SYSTEM RELOAD CONFIG`. See [[MemoryPressureMonitor]] for the level table.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_memory_pressure_level_2_pct, 90, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L2 sizes.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_memory_pressure_level_3_pct, 95, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L3 sizes (CRITICAL — smallest window and block).)", EXPERIMENTAL) \
 \
@@ -1879,6 +1882,17 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+
+            /// `ReaderExecutor` settings applied live in `Server.cpp` reload
+            /// path — report the live values from their owning components.
+            {"max_remote_read_connections",
+             {std::to_string(context->getSourceBufferLimit()->getCapacity()), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_level_1_pct",
+             {std::to_string(memoryPressureMonitor().getThresholds().l1_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_level_2_pct",
+             {std::to_string(memoryPressureMonitor().getThresholds().l2_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_level_3_pct",
+             {std::to_string(memoryPressureMonitor().getThresholds().l3_pct), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

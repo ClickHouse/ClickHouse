@@ -18,6 +18,18 @@ enum class MemoryPressureLevel : uint8_t
 
 inline constexpr int memoryPressureLevelCount() { return 4; }
 
+/// Snapshot of the three `Elevated` / `High` / `Critical` thresholds as
+/// percent of `total_memory_tracker.getHardLimit()`. Returned by
+/// `IMemoryPressureMonitor::getThresholds` so observability surfaces
+/// (e.g. `system.server_settings`) can report the live values, which can
+/// drift from the on-disk config after `SYSTEM RELOAD CONFIG`.
+struct MemoryPressureThresholds
+{
+    UInt64 l1_pct;
+    UInt64 l2_pct;
+    UInt64 l3_pct;
+};
+
 /// Pressure → level mapping is the monitor's job. The mapping of level →
 /// concrete sizes (read window, block) lives with the consumer (e.g.
 /// `ReaderExecutor`). The interface intentionally exposes only the level
@@ -38,6 +50,11 @@ public:
     /// `UInt64` (the server-settings type) so out-of-range inputs reach the
     /// validator instead of silently wrapping through `uint8_t`.
     virtual void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) = 0;
+
+    /// Snapshot of the currently-active thresholds. Used by
+    /// `system.server_settings` to report the live (post-reload) values
+    /// rather than the originally configured ones.
+    virtual MemoryPressureThresholds getThresholds() const = 0;
 };
 
 /// Internal state machine reused by both impls. Owns the level + cooldown
@@ -50,6 +67,7 @@ public:
 
     MemoryPressureLevel sample(double pressure, uint64_t now_ns);
     void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct);
+    MemoryPressureThresholds getThresholds() const;
 
 private:
     std::atomic<uint8_t> level{0};
@@ -66,6 +84,7 @@ class MemoryPressureMonitor final : public IMemoryPressureMonitor
 public:
     MemoryPressureLevel currentLevel() override;
     void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
+    MemoryPressureThresholds getThresholds() const override { return machine.getThresholds(); }
 
 private:
     PressureLevelMachine machine;
@@ -89,6 +108,7 @@ public:
 
     MemoryPressureLevel currentLevel() override;
     void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct) override { machine.setThresholds(l1_pct, l2_pct, l3_pct); }
+    MemoryPressureThresholds getThresholds() const override { return machine.getThresholds(); }
 
 private:
     std::atomic<double> pressure;

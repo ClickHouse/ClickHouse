@@ -72,6 +72,19 @@ void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3
     threshold_l3.store(static_cast<uint8_t>(l3_pct), std::memory_order_relaxed);
 }
 
+MemoryPressureThresholds PressureLevelMachine::getThresholds() const
+{
+    /// Independent atomic loads — a concurrent `setThresholds` could
+    /// interleave between them, but observability tolerates a transient
+    /// inconsistent snapshot. The setter validates atomicity of the
+    /// (l1, l2, l3) triple at set time; observers only get loose ordering.
+    return {
+        threshold_l1.load(std::memory_order_relaxed),
+        threshold_l2.load(std::memory_order_relaxed),
+        threshold_l3.load(std::memory_order_relaxed),
+    };
+}
+
 namespace
 {
 
