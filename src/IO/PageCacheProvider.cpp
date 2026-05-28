@@ -1,10 +1,16 @@
 #include <IO/PageCacheProvider.h>
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <cstring>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 PageCacheHandle::PageCacheHandle(
     PageCacheFile file_,
@@ -127,31 +133,44 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
             inject_eviction,
             [&](const PageCache::MappedPtr & new_cell)
             {
-                /// `Rope::copyTo(dst, req)` writes bytes at offsets relative
-                /// to `req.offset`. Passing `covered` here puts bytes at
-                /// `cell[lo - covered.offset]`, which only matches the
-                /// block-relative layout `cell[lo - block_range.offset]` when
-                /// `covered.offset == block_range.offset` — i.e. the slice
-                /// starts exactly at the block boundary.
+                /// `Rope::copyTo(dst, req)` writes bytes at `dst[lo - req.offset]`
+                /// for each byte at logical offset `lo`. The cell expects
+                /// block-relative layout `cell[lo - block_range.offset]`, so
+                /// `req.offset` must equal `block_range.offset` — otherwise the
+                /// bytes land at the wrong cell offset and a later `get` would
+                /// serve corrupted data.
                 ///
-                /// The executor guarantees this: `PageCacheHandle::status()`
-                /// reports each miss as a full block range, and
-                /// `ReaderExecutor::readPhysicalWindow` source-fetches those
-                /// ranges in full, so the rope handed to `put` always starts
-                /// at the block boundary. Partial-at-end (covered.size <
-                /// block_range.size, e.g. EOF) is allowed; partial-at-start is
-                /// not. The zero-fill below also assumes start-aligned data.
+                /// The executor contracts that `data` starts at the block
+                /// boundary and is internally contiguous: each `put` is fed by
+                /// a single source read covering exactly one miss range, which
+                /// `status()` reports as a full block. Partial-at-end
+                /// (`covered.size < block_range.size`, e.g. EOF) is allowed;
+                /// leading or internal gaps are not. Throw rather than silently
+                /// poison the cache when the contract is violated.
                 Rope slice = data.slice(block_range);
                 ByteRange covered = slice.range();
                 size_t pos = covered.size;
                 if (pos > 0)
                 {
-                    chassert(covered.offset == block_range.offset);
-                    slice.copyTo(new_cell->data(), covered);
+                    if (covered.offset != block_range.offset)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "PageCacheHandle::put: data does not start at block boundary: "
+                            "block=[{}, {}), covered=[{}, {})",
+                            block_range.offset, block_range.end(), covered.offset, covered.end());
+
+                    ByteRange to_copy{block_range.offset, pos};
+                    if (!slice.covers(to_copy))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "PageCacheHandle::put: data has internal gaps within block [{}, {})",
+                            block_range.offset, block_range.end());
+
+                    slice.copyTo(new_cell->data(), to_copy);
                 }
 
-                /// If data didn't fully cover the block (e.g. end of file),
-                /// zero the remaining bytes.
+                /// File-size-aware cell sizing in the ctor normally makes
+                /// `pos == new_cell->size()`. The zero-fill below defends
+                /// against unexpected short coverage so the cell never
+                /// returns pre-allocation buffer bytes.
                 if (pos < new_cell->size())
                     std::memset(new_cell->data() + pos, 0, new_cell->size() - pos);
 
