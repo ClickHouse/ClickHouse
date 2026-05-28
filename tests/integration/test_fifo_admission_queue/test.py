@@ -30,6 +30,9 @@ node = cluster.add_instance(
     main_configs=["configs/server.xml"],
 )
 
+# main_configs are mounted under /etc/clickhouse-server/config.d/.
+SERVER_CONFIG_PATH = "/etc/clickhouse-server/config.d/server.xml"
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -84,6 +87,60 @@ def wait_for_query_finish(node, query_id, timeout=60):
             return
         time.sleep(0.2)
     raise RuntimeError(f"Query {query_id} still running after {timeout}s")
+
+
+def wait_for_queue_length(node, expected, timeout=30):
+    """Poll the Prometheus QueryAdmissionQueueLength metric until it equals `expected`.
+
+    Uses the Prometheus endpoint so it works even when all query slots are busy.
+    """
+    start = time.monotonic()
+    last = None
+    while time.monotonic() - start < timeout:
+        last = get_prometheus_metric(node, "QueryAdmissionQueueLength")
+        if last == expected:
+            return
+        time.sleep(0.1)
+    raise RuntimeError(
+        f"Admission queue length did not reach {expected} within {timeout}s (last={last})"
+    )
+
+
+def set_max_concurrent_queries(node, value):
+    """Change `max_concurrent_queries` in the config file at runtime.
+
+    The change is applied by the background `ConfigReloader` thread (see
+    `config_reload_interval_ms` in the test config), which calls
+    `ProcessList::setMaxSize`. We deliberately do NOT issue `SYSTEM RELOAD CONFIG`:
+    that is a regular query and, when the admission queue is full, it would block
+    in the queue itself — so it cannot be used to relieve admission pressure.
+    The background reloader runs in a separate thread and is not gated by admission.
+    """
+    node.replace_in_config(
+        SERVER_CONFIG_PATH,
+        "<max_concurrent_queries>[0-9]*</max_concurrent_queries>",
+        f"<max_concurrent_queries>{value}</max_concurrent_queries>",
+    )
+
+
+def wait_for_max_concurrent_queries(node, expected, timeout=30):
+    """Wait until the background reloader has applied max_concurrent_queries=expected.
+
+    Issues a plain SELECT against system.server_settings, so it must only be
+    called when query slots are free (otherwise it would queue in admission).
+    """
+    start = time.monotonic()
+    last = None
+    while time.monotonic() - start < timeout:
+        last = node.query(
+            "SELECT value FROM system.server_settings WHERE name = 'max_concurrent_queries'"
+        ).strip()
+        if last == str(expected):
+            return
+        time.sleep(0.1)
+    raise RuntimeError(
+        f"max_concurrent_queries did not become {expected} within {timeout}s (last={last})"
+    )
 
 
 def test_all_queued_queries_admitted(started_cluster):
@@ -596,3 +653,173 @@ def test_no_timeout_when_both_zero(started_cluster):
     assert waiter_result[0] == "waited_ok", (
         f"Expected 'waited_ok', got: {waiter_result[0]}"
     )
+
+
+def test_runtime_unlimit_drains_admission_queue(started_cluster):
+    """
+    Verify that switching `max_concurrent_queries` to 0 (unlimited) at runtime
+    drains queued waiters instead of stranding them until `queue_max_wait_ms`.
+
+    Without `setMaxSize` draining the queue on config reload, finishing queries
+    decrement `admission_running` (they don't transfer the slot) and new queries
+    bypass admission entirely when `max_size == 0`, so existing waiters would be
+    stuck until their timeout. Here the blockers keep running, so the only way
+    the waiters can finish is by being drained on reload.
+
+    Strategy:
+    1. Saturate both slots with long blockers
+    2. Submit 3 waiters — they enter the admission queue
+    3. Reload config with max_concurrent_queries=0 (unlimited)
+    4. All 3 waiters drain and finish quickly, while blockers still run
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"unlimit_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_ids = [f"unlimit_waiter_{prefix}_{i}" for i in range(3)]
+
+    pool = Pool(10)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    def run_waiter(qid):
+        node.query(
+            "SELECT 1 FORMAT Null",
+            settings={"queue_max_wait_ms": 60000},
+            query_id=qid,
+        )
+
+    try:
+        # Baseline limit must be active before we saturate it (slots are free here).
+        wait_for_max_concurrent_queries(node, 2)
+
+        for qid in blocker_ids:
+            pool.apply_async(run_blocker, (qid,))
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        for qid in waiter_ids:
+            pool.apply_async(run_waiter, (qid,))
+
+        # All 3 waiters should be queued (both slots are held by blockers).
+        wait_for_queue_length(node, 3)
+
+        # Switch to unlimited at runtime — the background reloader must drain the
+        # queue even though the blockers keep holding their slots (the blockers
+        # never finish on their own within the test, so the drain is the only path).
+        set_max_concurrent_queries(node, 0)
+
+        # Waiters drain and finish; the queue empties.
+        wait_for_queue_length(node, 0)
+        for qid in waiter_ids:
+            wait_for_query_finish(node, qid)
+
+        node.query("SYSTEM FLUSH LOGS")
+        id_list = ", ".join(f"'{qid}'" for qid in waiter_ids)
+        finished = node.query(
+            f"""
+            SELECT count()
+            FROM system.query_log
+            WHERE query_id IN ({id_list}) AND type = 'QueryFinish'
+            """
+        ).strip()
+        assert int(finished) == len(waiter_ids), (
+            f"Expected all {len(waiter_ids)} waiters to finish after unlimiting, got {finished}"
+        )
+    finally:
+        # KILL QUERY bypasses admission, so it works even with a full queue.
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        pool.close()
+        pool.join()
+        # Restore the original limit and confirm it before the next test runs.
+        set_max_concurrent_queries(node, 2)
+        wait_for_max_concurrent_queries(node, 2)
+
+
+def test_runtime_increase_preserves_fifo(started_cluster):
+    """
+    Verify that raising `max_concurrent_queries` at runtime hands the freed
+    slots to the oldest queued waiters first (FIFO is not violated).
+
+    Strategy:
+    1. Saturate both slots with long blockers
+    2. Submit 3 waiters one at a time, confirming each enters the queue before
+       the next, so the FIFO order is deterministically waiter_0 < 1 < 2
+    3. Raise max_concurrent_queries from 2 to 3 — exactly one slot opens for the
+       queue, so exactly one waiter (the oldest) must be admitted
+    4. Verify the oldest waiter is now running and the two younger ones are still
+       queued (queue length 2)
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"fifo_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_ids = [f"fifo_waiter_{prefix}_{i}" for i in range(3)]
+
+    pool = Pool(10)
+
+    def run_long(qid):
+        # Long-running so an admitted waiter keeps holding its slot, which lets
+        # us observe exactly which waiter was admitted.
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    try:
+        # Baseline limit must be active before we saturate it (slots are free here).
+        wait_for_max_concurrent_queries(node, 2)
+
+        for qid in blocker_ids:
+            pool.apply_async(run_long, (qid,))
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        # Submit waiters one at a time, establishing a deterministic FIFO order.
+        for i, qid in enumerate(waiter_ids):
+            pool.apply_async(run_long, (qid,))
+            wait_for_queue_length(node, i + 1)
+
+        # Raise the limit by one: admission_running is 2 (blockers), so exactly
+        # one waiter — the oldest — is drained from the front of the queue.
+        set_max_concurrent_queries(node, 3)
+
+        # The oldest waiter must now be running.
+        wait_for_query_start(node, waiter_ids[0])
+
+        # The two younger waiters must still be queued, not overtaken.
+        wait_for_queue_length(node, 2)
+        for qid in waiter_ids[1:]:
+            running = node.query(
+                f"SELECT count() FROM system.processes WHERE query_id = '{qid}'"
+            ).strip()
+            assert running == "0", (
+                f"Waiter {qid} was admitted out of FIFO order (oldest must go first)"
+            )
+    finally:
+        # Drain the queue (unlimited) so every remaining waiter is admitted and
+        # therefore appears in system.processes — a queued waiter is not yet
+        # killable, so killing before draining would let cleanup block on the
+        # 30s sleep.
+        set_max_concurrent_queries(node, 0)
+        for qid in waiter_ids:
+            try:
+                wait_for_query_start(node, qid, timeout=10)
+            except RuntimeError:
+                pass  # already finished or never admitted
+        for qid in blocker_ids + waiter_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        pool.close()
+        pool.join()
+        # Restore the original limit and confirm it before the next test runs.
+        set_max_concurrent_queries(node, 2)
+        wait_for_max_concurrent_queries(node, 2)

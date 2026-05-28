@@ -2,6 +2,10 @@
     <max_concurrent_queries>2</max_concurrent_queries>
     <enable_query_admission_queue>true</enable_query_admission_queue>
     <admission_queue_alive_check_interval_ms>500</admission_queue_alive_check_interval_ms>
+    <!-- Pick up runtime config changes quickly so the admission-queue drain tests
+         (which rely on the background ConfigReloader, not `SYSTEM RELOAD CONFIG`)
+         are snappy. -->
+    <config_reload_interval_ms>1000</config_reload_interval_ms>
     <prometheus>
         <endpoint>/metrics</endpoint>
         <port>9363</port>
