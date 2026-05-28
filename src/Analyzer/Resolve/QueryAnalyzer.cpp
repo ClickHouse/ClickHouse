@@ -4347,11 +4347,16 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                         break;
                     }
 
-                    ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                    column.name = identifier_node->getIdentifier().getFullName();
-                    /// Change ephemeral columns to default columns.
-                    column.default_desc.kind = ColumnDefaultKind::Default;
-                    structure_hint.add(std::move(column));
+                    const auto & identifier_name = identifier_node->getIdentifier().getFullName();
+                    /// If the same identifier appears more than once, use the type from the first occurrence.
+                    if (!structure_hint.has(identifier_name))
+                    {
+                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
+                        column.name = identifier_name;
+                        /// Change ephemeral columns to default columns.
+                        column.default_desc.kind = ColumnDefaultKind::Default;
+                        structure_hint.add(std::move(column));
+                    }
                 }
 
                 /// Once we hit asterisk we want to find end of the range covered by asterisk
