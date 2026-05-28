@@ -244,6 +244,10 @@ public:
     /// to `materialize(Const)`, keeping the column type non-Const at runtime
     void pushMaterializeOutwardForConstants();
 
+    /// Resolve `name` to a Const column, looking through `materialize(...)` and ALIASes
+    /// Returns nullptr if `name` does not reach a const
+    ColumnPtr tryGetConstantColumnByName(const std::string & name) const;
+
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs
     /// * If there is a node from new_inputs keys, replace it to INPUT
