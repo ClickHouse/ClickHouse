@@ -410,211 +410,152 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         return 0;
     }
 
-    /// `range` and `data`'s nodes are in file-level coordinates;
-    /// `FileCache::FileSegment::range()` is object-local. Translate the
-    /// caller's range into object-local for the overlap math and shift `data`
-    /// into object-local so `Rope::copyTo` sees matching coordinates.
+    /// `FileSegment::range()` is object-local; translate `range` and shift
+    /// `data` so `Rope::copyTo` sees matching coordinates.
     chassert(range.offset >= object_file_offset);
     ByteRange range_in_object{range.offset - object_file_offset, range.size};
     data.shift(-static_cast<ssize_t>(object_file_offset));
 
+    /// Popping after each segment lets the cache evict it for later reserves;
+    /// see `02944_dynamically_change_filesystem_cache_size`.
     size_t bytes_written = 0;
-
-    /// Walk the ctor `holder` front-to-back. Segments are stored in
-    /// ascending-offset order, and `ReaderExecutor` issues `put` calls in
-    /// the same order (one per `status().miss_ranges` element, also sorted).
-    /// So the segment we want to write to is always at `holder->front()`.
-    ///
-    /// `completeAndPopFront` after each processed segment is the load-bearing
-    /// detail: without it, the cache holds every segment overlapping the
-    /// originally-requested range as "non-releasable", so
-    /// `FileCache::reserve` for a later segment can't evict any earlier
-    /// segment to make room (`max_size` / `max_elements` would block).
-    /// Popping releases the segment from `holder` — the cache is still the
-    /// owner via its metadata map; eviction can take it whenever it needs to.
-    /// See `02944_dynamically_change_filesystem_cache_size` for the
-    /// regression this fixes when 13 segments must fit into a 10-element cache.
     while (!holder->empty())
     {
         auto & segment = holder->front();
         const auto & seg_range = segment.range();
 
-        /// Segment ends before this `put`'s range starts. Either it was
-        /// already processed by an earlier `put`, or it's a hit `get()`
-        /// has already read from. Either way we are done with it — pop.
         if (seg_range.right + 1 <= range_in_object.offset)
         {
             holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
             continue;
         }
-
-        /// Segment starts at or past this `put`'s range. Leave it in
-        /// `holder` for a later `put` (or for the handle's destructor when
-        /// no more puts come).
         if (seg_range.left >= range_in_object.end())
             break;
 
-        /// Segment overlaps `range`. Only EMPTY / PARTIALLY_DOWNLOADED accept
-        /// writes; everything else (a stray hit in our range, DETACHED, …)
-        /// gets popped without writing.
-        const auto state = segment.state();
-        if (state != FileSegmentState::EMPTY && state != FileSegmentState::PARTIALLY_DOWNLOADED)
-        {
-            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-            continue;
-        }
-
-        ByteRange seg_r{seg_range.left, seg_range.size()};
-
-        /// Try to become the downloader.
-        auto downloader_id = segment.getOrSetDownloader();
-        if (!segment.isDownloader())
-        {
-            LOG_TRACE(log, "DiskCacheHandle::put: not downloader for [{}, {}], downloader={}",
-                seg_range.left, seg_range.right, downloader_id);
-            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-            continue;
-        }
-
-        /// `FileSegment::write` is append-only: bytes must be written at
-        /// `getCurrentWriteOffset()`. For EMPTY this equals `seg_r.offset`;
-        /// for PARTIALLY_DOWNLOADED it is where the previous downloader
-        /// stopped. We can only contribute when our data starts at or
-        /// before that point — otherwise we would have to leave a hole,
-        /// which the segment does not allow.
-        size_t write_offset = segment.getCurrentWriteOffset();
-        size_t write_end_max = std::min(seg_r.end(), range_in_object.end());
-
-        if (write_offset >= write_end_max || write_offset < range_in_object.offset)
-        {
-            segment.completePartAndResetDownloader();
-            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-            continue;
-        }
-
-        /// Find the contiguous prefix of `data` starting at `write_offset`.
-        /// If `data` has a gap right at `write_offset`, nothing to do.
-        /// If `data` skips a tail (e.g. boundary segment at EOF, or a
-        /// hole in the middle of the read window), write only the prefix
-        /// and leave the segment PARTIALLY_DOWNLOADED for later continuation.
-        ByteRange target{write_offset, write_end_max - write_offset};
-        size_t contiguous = target.size;
-        auto data_gaps = data.gaps(target);
-        if (!data_gaps.empty())
-        {
-            size_t first_gap_offset = data_gaps.front().offset;
-            contiguous = (first_gap_offset > write_offset) ? (first_gap_offset - write_offset) : 0;
-        }
-
-        if (contiguous == 0)
-        {
-            segment.completePartAndResetDownloader();
-            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-            continue;
-        }
-
-        /// Reserve only the bytes we will actually write — partial fills
-        /// are recoverable via `status`/`get` honouring the downloaded
-        /// prefix.
-        std::string failure_reason;
-        bool reserved = segment.reserve(
-            contiguous,
-            cache_settings.reserve_space_wait_lock_timeout_milliseconds,
-            failure_reason);
-
-        if (!reserved)
-        {
-            LOG_TRACE(log, "DiskCacheHandle::put: reserve failed for [{}, {}]: {}",
-                seg_range.left, seg_range.right, failure_reason);
-            segment.completePartAndResetDownloader();
-            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
-            continue;
-        }
-
-        /// Flatten the contiguous slice of `data` (now in object-local
-        /// coords) directly into a buffer for `segment->write()`.
-        ///
-        /// Hard-check the contiguity invariant before writing: a violation
-        /// here would mean we are about to commit uninitialized (zero) bytes
-        /// to the cache file. `Rope::copyTo` chasserts the same property,
-        /// but chassert is a no-op in release builds — this throw fires
-        /// regardless and turns a silent cache-poisoning into a clean
-        /// `LOGICAL_ERROR` that the executor can surface.
-        ByteRange write_range{write_offset, contiguous};
-        if (!data.covers(write_range))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DiskCacheHandle::put: data does not contiguously cover the range being written: "
-                "write_range=[{}, {}), data intervals={}",
-                write_range.offset, write_range.end(), data.getIntervals().size());
-
-        VectorWithMemoryTracking<char> flat_buf(contiguous);
-        data.copyTo(flat_buf.data(), write_range);
-
-        /// Mirror `CachedOnDiskReadBufferFromFile::writeCache` error handling.
-        /// `FileSegment::write` throws `ErrnoException` on disk failure and
-        /// leaves the segment in `PARTIALLY_DOWNLOADED_NO_CONTINUATION`.
-        ///   - `ENOSPC` (errno 28) / quota exceeded (errno 122): always fail
-        ///     open; the query continues without this segment in the cache.
-        ///   - Other I/O errors: respect `cache->skipCacheOnDiskFailure()`;
-        ///     if set, log and skip; otherwise rethrow as
-        ///     `CACHE_CANNOT_WRITE_TO_CACHE_DISK`. Pre-fix this just threw
-        ///     `ErrnoException` and failed the query — even with
-        ///     `skip_cache_on_disk_failure = true`.
-        bool written_ok = false;
-        try
-        {
-            segment.write(flat_buf.data(), contiguous, write_offset);
-            written_ok = true;
-        }
-        catch (ErrnoException & e)
-        {
-            const int code = e.getErrno();
-            const bool is_no_space_left = code == /* No space left on device */28
-                || code == /* Quota exceeded */122;
-            chassert(segment.state() == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-            if (is_no_space_left)
-            {
-                LOG_INFO(log, "DiskCacheHandle::put: insert into cache skipped due to insufficient disk space: {}",
-                    e.displayText());
-            }
-            else if (cache->skipCacheOnDiskFailure())
-            {
-                LOG_ERROR(log, "DiskCacheHandle::put: insert into cache skipped due to disk IO error: {}",
-                    e.displayText());
-            }
-            else
-            {
-                throw Exception(ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK,
-                    "Filesystem cache disk IO error (errno {}): {}. "
-                    "Consider setting skip_cache_on_disk_failure=true in cache config.",
-                    code, e.displayText());
-            }
-        }
-
-        /// Release downloader role and pop the segment regardless of write
-        /// outcome. On failure the segment is left in
-        /// `PARTIALLY_DOWNLOADED_NO_CONTINUATION`, so the assertion inside
-        /// `completePartAndResetDownloader` (state is DOWNLOADING or
-        /// NO_CONTINUATION) still holds. Popping is the load-bearing detail
-        /// that keeps the cache able to evict for subsequent reserves —
-        /// see the comment on the outer `while (!holder->empty())` loop.
-        segment.completePartAndResetDownloader();
-        if (written_ok)
-        {
-            bytes_written += contiguous;
-            LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}] at offset {}",
-                contiguous, seg_range.left, seg_range.right, write_offset);
-
-            if (cache_log)
-                appendCacheLogEntry(
-                    *cache_log, segment, origin,
-                    FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
-                    source_file_path, requested_range);
-        }
+        bytes_written += writeToSegment(segment, range_in_object, data);
         holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
     }
-
     return bytes_written;
+}
+
+size_t DiskCacheHandle::writeToSegment(FileSegment & segment, ByteRange range_in_object, const Rope & data)
+{
+    const auto & seg_range = segment.range();
+
+    const auto state = segment.state();
+    if (state != FileSegmentState::EMPTY && state != FileSegmentState::PARTIALLY_DOWNLOADED)
+        return 0;
+
+    const auto downloader_id = segment.getOrSetDownloader();
+    if (!segment.isDownloader())
+    {
+        LOG_TRACE(log, "DiskCacheHandle::put: not downloader for [{}, {}], downloader={}",
+            seg_range.left, seg_range.right, downloader_id);
+        return 0;
+    }
+
+    /// `FileSegment::write` is append-only — start at `getCurrentWriteOffset`.
+    const size_t write_offset = segment.getCurrentWriteOffset();
+    const size_t seg_end = seg_range.right + 1;
+    const size_t write_end_max = std::min<size_t>(seg_end, range_in_object.end());
+    if (write_offset >= write_end_max || write_offset < range_in_object.offset)
+    {
+        segment.completePartAndResetDownloader();
+        return 0;
+    }
+
+    /// A gap inside `data` caps the write; the segment stays
+    /// PARTIALLY_DOWNLOADED for continuation.
+    const ByteRange target{write_offset, write_end_max - write_offset};
+    size_t contiguous = target.size;
+    if (auto data_gaps = data.gaps(target); !data_gaps.empty())
+    {
+        const size_t first_gap_offset = data_gaps.front().offset;
+        contiguous = (first_gap_offset > write_offset) ? (first_gap_offset - write_offset) : 0;
+    }
+    if (contiguous == 0)
+    {
+        segment.completePartAndResetDownloader();
+        return 0;
+    }
+
+    /// Validate + flatten before `reserve`: `reserve` sets `queue_iterator`
+    /// and an exception after that point trips the framework's
+    /// `EMPTY ⇒ !queue_iterator` invariant during holder cleanup.
+    const ByteRange write_range{write_offset, contiguous};
+    if (!data.covers(write_range))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "DiskCacheHandle::put: data does not contiguously cover the range being written: "
+            "write_range=[{}, {}), data intervals={}",
+            write_range.offset, write_range.end(), data.getIntervals().size());
+
+    VectorWithMemoryTracking<char> flat_buf(contiguous);
+    data.copyTo(flat_buf.data(), write_range);
+
+    std::string failure_reason;
+    const bool reserved = segment.reserve(
+        contiguous,
+        cache_settings.reserve_space_wait_lock_timeout_milliseconds,
+        failure_reason);
+    if (!reserved)
+    {
+        LOG_TRACE(log, "DiskCacheHandle::put: reserve failed for [{}, {}]: {}",
+            seg_range.left, seg_range.right, failure_reason);
+        segment.completePartAndResetDownloader();
+        return 0;
+    }
+
+    const bool written_ok = tryWriteToSegment(segment, flat_buf.data(), contiguous, write_offset);
+    segment.completePartAndResetDownloader();
+
+    if (!written_ok)
+        return 0;
+
+    LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}] at offset {}",
+        contiguous, seg_range.left, seg_range.right, write_offset);
+    if (cache_log)
+        appendCacheLogEntry(
+            *cache_log, segment, origin,
+            FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
+            source_file_path, requested_range);
+    return contiguous;
+}
+
+bool DiskCacheHandle::tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset)
+{
+    /// `FileSegment::write` leaves the segment in
+    /// `PARTIALLY_DOWNLOADED_NO_CONTINUATION` on `ErrnoException`.
+    /// Disk-full / quota are always treated as fail-open; other errors
+    /// honour `skipCacheOnDiskFailure`.
+    try
+    {
+        segment.write(data, size, offset);
+        return true;
+    }
+    catch (ErrnoException & e)
+    {
+        const int code = e.getErrno();
+        const bool is_no_space_left = code == 28 || code == 122;
+        chassert(segment.state() == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        if (is_no_space_left)
+        {
+            LOG_INFO(log, "DiskCacheHandle::put: insert into cache skipped due to insufficient disk space: {}",
+                e.displayText());
+        }
+        else if (cache->skipCacheOnDiskFailure())
+        {
+            LOG_ERROR(log, "DiskCacheHandle::put: insert into cache skipped due to disk IO error: {}",
+                e.displayText());
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK,
+                "Filesystem cache disk IO error (errno {}): {}. "
+                "Consider setting skip_cache_on_disk_failure=true in cache config.",
+                code, e.displayText());
+        }
+        return false;
+    }
 }
 
 

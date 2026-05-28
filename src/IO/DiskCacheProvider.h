@@ -36,6 +36,9 @@ public:
     size_t put(ByteRange range, Rope data) override;
 
 private:
+    size_t writeToSegment(FileSegment & segment, ByteRange range_in_object, const Rope & data);
+    bool tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset);
+
     FileCachePtr cache;
     FileCacheKey cache_key;
     FileCacheOriginInfo origin;
