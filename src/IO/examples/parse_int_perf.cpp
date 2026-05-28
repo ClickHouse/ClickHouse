@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromVector.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 static UInt64 rdtsc()
@@ -43,8 +44,8 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
         size_t n = std::stol(argv[1]);
         chassert(n > 0);
 
-        std::vector<T> data(n);
-        std::vector<T> data2(n);
+        DB::VectorWithMemoryTracking<T> data(n);
+        DB::VectorWithMemoryTracking<T> data2(n);
 
         {
             Stopwatch watch;
@@ -58,11 +59,11 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
                       << static_cast<double>(data.size()) * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s." << std::endl;
         }
 
-        std::vector<char> formatted;
+        DB::VectorWithMemoryTracking<char> formatted;
         formatted.reserve(n * 21);
 
         {
-            auto wb = DB::WriteBufferFromVector<std::vector<char>>(formatted);
+            auto wb = DB::WriteBufferFromVector<DB::VectorWithMemoryTracking<char>>(formatted);
             Stopwatch watch;
 
             UInt64 tsc = rdtsc();

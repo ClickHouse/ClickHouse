@@ -111,6 +111,21 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
             {
                 match = matches[frame.node->children.at(0)];
             }
+            else if (frame.node->type == ActionsDAG::ActionType::FUNCTION
+                && frame.node->children.size() == 1
+                && (frame.node->function_base->getName() == "materialize"
+                    || frame.node->function_base->getName() == "identity"))
+            {
+                /// `materialize`/`identity` are no-op wrappers that do not change values, so
+                /// for matching purposes they behave like `ALIAS` - pass the match of the
+                /// wrapped node through. This lets `optimizeReadInOrder` see through the
+                /// `materialize(...)` wrappers that filter push-down can inject into a
+                /// `MergeTree` prewhere (e.g. for queries through `ReadFromMerge` after
+                /// `convertAndFilterSourceStream`). Without this, `materialize` only
+                /// contributes a non-strict monotonic match and the `ORDER BY` prefix that
+                /// can be served from the sorting key is truncated.
+                match = matches[frame.node->children.at(0)];
+            }
             else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
             {
                 //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;

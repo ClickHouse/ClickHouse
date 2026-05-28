@@ -676,8 +676,11 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     auto access_granted = [&]
     {
-        if constexpr (throw_if_denied)
-            context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
+        /// Record every granted access, regardless of whether the caller is the throwing entry point
+        /// (`checkAccess` / `checkGrantOption`) or the non-throwing one (`isGranted`, used internally by
+        /// `checkAccessWithFilter`). Without this, an `isGranted`-driven success leaves no trace in
+        /// system.query_log.used_privileges even though the privilege was effectively required by the query.
+        context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
         return true;
     };
 

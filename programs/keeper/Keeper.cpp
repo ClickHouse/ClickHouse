@@ -674,7 +674,7 @@ try
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
