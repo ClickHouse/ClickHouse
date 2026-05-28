@@ -3288,40 +3288,6 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
     }
 }
 
-#if USE_CLIENT_AI
-void ClientBase::initAIProvider()
-{
-    try {
-        AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
-
-        // Create the AI client and get metadata about how it was created
-        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
-
-        // If no configuration was found, don't initialize the AI generator
-        if (ai_result.no_configuration_found || !ai_result.client.has_value())
-        {
-            return;
-        }
-
-        // Store metadata for later use
-        ai_inferred_from_env = ai_result.inferred_from_env;
-        ai_provider_name = ai_result.provider;
-
-        // Create a query executor that uses the connection
-        auto query_executor = [this](const std::string & query) -> std::string
-        {
-            return executeQueryForSingleString(query);
-        };
-
-        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client.value()), query_executor, error_stream);
-    }
-    catch (const std::exception & e)
-    {
-        auto logger = getLogger("ClientBase");
-        LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
-    }
-}
-
 std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
     if (!connection)
@@ -3402,6 +3368,40 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     catch (const std::exception &)
     {
         return "";
+    }
+}
+
+#if USE_CLIENT_AI
+void ClientBase::initAIProvider()
+{
+    try {
+        AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
+
+        // Create the AI client and get metadata about how it was created
+        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
+
+        // If no configuration was found, don't initialize the AI generator
+        if (ai_result.no_configuration_found || !ai_result.client.has_value())
+        {
+            return;
+        }
+
+        // Store metadata for later use
+        ai_inferred_from_env = ai_result.inferred_from_env;
+        ai_provider_name = ai_result.provider;
+
+        // Create a query executor that uses the connection
+        auto query_executor = [this](const std::string & query) -> std::string
+        {
+            return executeQueryForSingleString(query);
+        };
+
+        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client.value()), query_executor, error_stream);
+    }
+    catch (const std::exception & e)
+    {
+        auto logger = getLogger("ClientBase");
+        LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
     }
 }
 
