@@ -16,7 +16,7 @@ namespace ErrorCodes
 /// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
-class FunctionTimeSeriesStoreTags : public IFunction
+class FunctionTimeSeriesStoreTags final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesStoreTags";
@@ -85,7 +85,7 @@ public:
         if constexpr (id_is_nullable)
         {
             auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<std::optional<IDType>>(name, arguments, 0);
-            std::vector<IDType> valid_ids;
+            VectorWithMemoryTracking<IDType> valid_ids;
             valid_ids.reserve(ids.size());
             for (size_t i = 0; i != ids.size(); ++i)
             {
