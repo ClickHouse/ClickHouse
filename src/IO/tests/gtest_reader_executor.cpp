@@ -544,6 +544,22 @@ namespace
         return out;
     }
 
+    /// Same as `aesCtrEncrypt` but keyed at an arbitrary stream offset —
+    /// needed when reproducing a legacy stacked-encryption write where an
+    /// outer layer's keystream covers `[inner_header (64), inner_ciphertext]`
+    /// at offsets `[0, inner_ciphertext_size + 64)`. CTR is position-
+    /// addressable, so encrypting two contiguous chunks at adjacent offsets
+    /// produces the same ciphertext as encrypting the concatenation.
+    String aesCtrEncryptAt(const String & key, FileEncryption::InitVector iv,
+        size_t stream_offset, const char * data, size_t size)
+    {
+        FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
+        enc.setOffset(stream_offset);
+        String out(size, '\0');
+        enc.decrypt(data, size, out.data());
+        return out;
+    }
+
     /// Build the on-disk encrypted byte stream:
     ///   Header(64 bytes) + ciphertext
     String makeEncryptedFile(const String & key, FileEncryption::InitVector iv, const String & plaintext)
@@ -642,9 +658,17 @@ TEST(ReaderExecutor, DecryptRopeRoundtripsSmallPayload)
 
 TEST(ReaderExecutor, DecryptRopeMultiLayer)
 {
-    /// Two encryption layers stacked: outer header + inner header +
-    /// double-encrypted ciphertext. `decryptRope` must apply both layers
-    /// (in declaration order) to recover the plaintext.
+    /// Two encryption layers stacked, in the layout that a legacy
+    /// `DiskEncrypted`-over-`DiskEncrypted` configuration actually
+    /// produces on write:
+    ///   [outer_h_plain]            -- 64 bytes, in clear
+    ///   [outer.encrypt(inner_h)]   -- 64 bytes, ciphertext (NOT plaintext)
+    ///   [outer.encrypt(inner.encrypt(plaintext))]
+    /// The outer encryption keystream covers the inner header AND payload
+    /// — i.e. outer's keystream offset for user-byte P is `P + 64`, while
+    /// inner's is `P`. `initDecryption` must peel the outer layer off the
+    /// inner header bytes before parsing them; `decryptRope` must apply
+    /// per-layer keystream offsets to recover the plaintext.
 
     String key_inner(16, 'i');
     String key_outer(16, 'o');
@@ -653,11 +677,38 @@ TEST(ReaderExecutor, DecryptRopeMultiLayer)
 
     const String plaintext(ReaderExecutor::ROPE_BLOCK_SIZE + 500, 'X');
 
-    /// First encrypt with inner key, then with outer key — that's what a
-    /// stacked encrypted-disk-over-encrypted-disk produces on write.
-    String once = aesCtrEncrypt(key_inner, iv_inner, plaintext);
-    String twice = aesCtrEncrypt(key_outer, iv_outer, once);
+    /// 1. Serialize the inner header bytes.
+    String inner_h_bytes;
+    {
+        WriteBufferFromString wb(inner_h_bytes);
+        FileEncryption::Header inner_h;
+        inner_h.algorithm = FileEncryption::Algorithm::AES_128_CTR;
+        inner_h.key_fingerprint = FileEncryption::calculateKeyFingerprint(key_inner);
+        inner_h.init_vector = iv_inner;
+        inner_h.write(wb);
+        wb.finalize();
+    }
+    ASSERT_EQ(inner_h_bytes.size(), FileEncryption::Header::kSize);
 
+    /// 2. Inner-encrypt the plaintext at inner keystream offset 0.
+    const String inner_ciphertext = aesCtrEncrypt(key_inner, iv_inner, plaintext);
+
+    /// 3. Outer-encrypt `inner_h_bytes` and `inner_ciphertext` as one
+    ///    contiguous stream — `inner_h_bytes` at outer-keystream offset 0,
+    ///    `inner_ciphertext` at outer-keystream offset 64. CTR is
+    ///    position-addressable so this matches the result of outer-
+    ///    encrypting the concatenation in one shot.
+    const String outer_h_ciphertext = aesCtrEncryptAt(
+        key_outer, iv_outer,
+        /*stream_offset=*/0,
+        inner_h_bytes.data(), inner_h_bytes.size());
+    const String outer_payload_ciphertext = aesCtrEncryptAt(
+        key_outer, iv_outer,
+        /*stream_offset=*/FileEncryption::Header::kSize,
+        inner_ciphertext.data(), inner_ciphertext.size());
+
+    /// 4. Assemble the file: plaintext outer header, ciphertext inner
+    ///    header, ciphertext payload.
     String file_bytes;
     {
         WriteBufferFromString wb(file_bytes);
@@ -666,14 +717,10 @@ TEST(ReaderExecutor, DecryptRopeMultiLayer)
         outer_h.key_fingerprint = FileEncryption::calculateKeyFingerprint(key_outer);
         outer_h.init_vector = iv_outer;
         outer_h.write(wb);
-        FileEncryption::Header inner_h;
-        inner_h.algorithm = FileEncryption::Algorithm::AES_128_CTR;
-        inner_h.key_fingerprint = FileEncryption::calculateKeyFingerprint(key_inner);
-        inner_h.init_vector = iv_inner;
-        inner_h.write(wb);
         wb.finalize();
     }
-    file_bytes += twice;
+    file_bytes += outer_h_ciphertext;
+    file_bytes += outer_payload_ciphertext;
 
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", file_bytes}});
@@ -682,8 +729,9 @@ TEST(ReaderExecutor, DecryptRopeMultiLayer)
 
     ReaderExecutor executor(source, objects, {},
         /*window_size=*/plaintext.size() + 2048);
-    /// Layers are applied in addDecryptionLayer order — outer first, inner
-    /// second — which mirrors how the read path peels them off.
+    /// Layers are added outermost-first, innermost-last — same order the
+    /// stacked-disk prepareRead chain produces (each layer recurses into
+    /// its delegate before appending its own `needDecryption`).
     executor.addDecryptionLayer("/outer", 0,
         [&](UInt128, const String &) { return key_outer; });
     executor.addDecryptionLayer("/inner", 0,

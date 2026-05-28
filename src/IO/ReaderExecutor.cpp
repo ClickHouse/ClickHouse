@@ -503,22 +503,54 @@ void ReaderExecutor::initDecryption()
     Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset});
     chassert(header_rope.totalBytes() == data_start_offset);
 
-    /// Parse each header sequentially from the rope.
+    /// Parse each header sequentially. For stacked encryption (N>=2 layers)
+    /// the on-disk layout is `[h0_plain, outer.encrypt(h1), outer.encrypt(
+    /// inner.encrypt(h2)), ..., outer.encrypt(...inner.encrypt(payload))]`
+    /// — i.e. only `h0` is plaintext; every later header is encrypted by all
+    /// the layers above it. To recover `hi` we must peel layers `0..i-1` from
+    /// its 64-byte block before parsing.
+    ///
+    /// For header `i`, layer `j < i`'s keystream offset is `(i - 1 - j) * 64`:
+    /// layer 0 is keyed by `(i-1)*64` (every previous layer was peeled from
+    /// physical bytes `64..i*64`, leaving its stream at offset `(i-1)*64`
+    /// when we reach header `i`), layer 1 by `(i-2)*64`, …, layer `i-1` by
+    /// `0`. Matches the per-layer-offset rule we use for payload bytes in
+    /// `decryptRope` — see the comment there.
+    VectorWithMemoryTracking<FileEncryption::Encryptor> initialized_encryptors;
+    initialized_encryptors.reserve(decryption_layers.size());
     size_t offset = 0;
-    for (auto & layer : decryption_layers)
+    for (size_t i = 0; i < decryption_layers.size(); ++i)
     {
-        Rope one_header = header_rope.slice(ByteRange{offset, FileEncryption::Header::kSize});
-        chassert(one_header.totalBytes() == FileEncryption::Header::kSize);
+        auto & layer = decryption_layers[i];
 
-        /// Header is 64 bytes — fits in a single node after slice.
-        const auto & nodes = one_header.getNodes();
-        chassert(nodes.size() == 1);
-        ReadBufferFromMemory rb(nodes[0].data(), nodes[0].size);
+        /// Copy the header's 64 bytes into a mutable buffer so we can
+        /// decrypt in place across the already-initialized layers.
+        std::array<char, FileEncryption::Header::kSize> hdr_bytes{};
+        {
+            Rope slice = header_rope.slice(ByteRange{offset, FileEncryption::Header::kSize});
+            chassert(slice.totalBytes() == FileEncryption::Header::kSize);
+            slice.copyTo(hdr_bytes.data(), ByteRange{offset, FileEncryption::Header::kSize});
+        }
 
+        for (size_t j = 0; j < initialized_encryptors.size(); ++j)
+        {
+            const size_t layer_keystream_offset = (i - 1 - j) * FileEncryption::Header::kSize;
+            initialized_encryptors[j].setOffset(layer_keystream_offset);
+            initialized_encryptors[j].decrypt(hdr_bytes.data(), hdr_bytes.size(), hdr_bytes.data());
+        }
+
+        ReadBufferFromMemory rb(hdr_bytes.data(), hdr_bytes.size());
         FileEncryption::Header header;
         header.read(rb);
         layer.key = layer.key_finder(header.key_fingerprint, layer.path);
         decryption_headers.push_back(std::move(header));
+
+        /// Materialise this layer's encryptor for the next iteration to use.
+        initialized_encryptors.emplace_back(
+            decryption_headers.back().algorithm,
+            layer.key,
+            decryption_headers.back().init_vector);
+
         offset += FileEncryption::Header::kSize;
 
         LOG_DEBUG(log, "initDecryption: parsed header for {}, algorithm={}",
@@ -594,10 +626,21 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
             out_pos += take;
         }
 
-        for (auto & enc : encryptors)
+        /// Per-layer keystream offset: for stacked encryption (N >= 2),
+        /// each layer's encrypted stream contains the headers of all inner
+        /// layers BEFORE the user-visible payload. Layer `i` (0 = outermost,
+        /// N-1 = innermost) keys its CTR keystream at
+        /// `user_offset + (N - 1 - i) * Header::kSize`; the innermost layer
+        /// uses the user offset directly. Single-layer encryption collapses
+        /// to `user_offset` for the one layer, same as before. See
+        /// `ReadBufferFromEncryptedFile::nextImpl` (legacy) for the
+        /// equivalent formula expressed across nested buffers.
+        for (size_t i = 0; i < encryptors.size(); ++i)
         {
-            enc.setOffset(logical_offset + pos);
-            enc.decrypt(buf->data(), chunk, buf->data());
+            const size_t layer_keystream_offset = logical_offset + pos
+                + (encryptors.size() - 1 - i) * FileEncryption::Header::kSize;
+            encryptors[i].setOffset(layer_keystream_offset);
+            encryptors[i].decrypt(buf->data(), chunk, buf->data());
         }
 
         result.append(RopeNode{buf, 0, chunk, logical_offset + pos});
