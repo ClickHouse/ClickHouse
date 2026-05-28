@@ -398,11 +398,25 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
     if (!holder)
         return 0;
 
-    /// In bypass mode the ctor used `cache->get` so EMPTY segments don't exist
-    /// here, but be explicit: never populate the cache when the caller asked
-    /// us to leave it alone.
     if (cache_settings.read_if_exists_otherwise_bypass)
+    {
+        if (cache_log)
+        {
+            chassert(range.offset >= object_file_offset);
+            const ByteRange range_in_object{range.offset - object_file_offset, range.size};
+            for (const auto & segment : *holder)
+            {
+                const auto & seg = segment->range();
+                if (seg.right + 1 <= range_in_object.offset || seg.left >= range_in_object.end())
+                    continue;
+                appendCacheLogEntry(
+                    *cache_log, *segment, origin,
+                    FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
+                    source_file_path, requested_range);
+            }
+        }
         return 0;
+    }
 
     /// `range` and `data`'s nodes are in file-level coordinates;
     /// `FileCache::FileSegment::range()` is object-local. Translate the
