@@ -1,7 +1,9 @@
 #include <IO/ReaderExecutor.h>
+#include <IO/BufferSourceReader.h>
 #include <IO/ISourceReader.h>
 #include <IO/ICacheProvider.h>
 #include <IO/PrefetchThreadPool.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/SourceBufferLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
@@ -2023,3 +2025,54 @@ TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
     auto r3 = executor.readNextWindow();
     EXPECT_TRUE(r3.empty());
 }
+
+/// `ReadBufferFromOwnMemoryFile` (used by `BackupInMemory::readFile`, and
+/// anywhere a fully-buffered in-memory blob is exposed as a file-shaped
+/// buffer) pre-loads its content into `working_buffer` at construction;
+/// its `nextImpl` returns false at first call. With the default
+/// `supportsExternalBufferMode() = true` from `ReadBuffer`, the executor's
+/// `readIntoBlock` would call `set(dest, chunk)` + `next()`, observe
+/// `next() == false`, return 0 — and the executor would treat the source
+/// as truncated (throw `CANNOT_READ_ALL_DATA` for known-size, latch
+/// `reached_eof` for unknown-size), silently dropping the in-memory bytes.
+///
+/// `ReadBufferFromMemoryFileBase` overrides `supportsExternalBufferMode()`
+/// to `false` so `readIntoBlock` falls back to `buf.read(dest, n)`, which
+/// copies from `working_buffer`. This test exercises the full path:
+/// `BufferSourceReader` whose factory hands back a `ReadBufferFromOwnMemoryFile`,
+/// driven through `ReaderExecutor`, expects every byte through.
+TEST(ReaderExecutor, MemoryBackedFileBufferIsReadFully)
+{
+    constexpr size_t total = 128;
+    String content(total, 0);
+    for (size_t i = 0; i < total; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<BufferSourceReader>(
+        [content](const StoredObject &) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return std::make_unique<ReadBufferFromOwnMemoryFile>("memfile", content);
+        },
+        "MemorySource");
+
+    StoredObjects objects;
+    objects.emplace_back("memfile", "", total);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/32, /*min_bytes_for_seek=*/0);
+
+    /// Drive multiple windows to make sure subsequent reads also work,
+    /// not just the first. Pre-fix the very first read would throw
+    /// `CANNOT_READ_ALL_DATA` because `total_read == 0 < pr.size`.
+    String collected;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        size_t base = collected.size();
+        collected.resize(base + rope.range().size);
+        rope.copyTo(collected.data() + base, rope.range());
+    }
+    EXPECT_EQ(collected, content) << "memory-backed file buffer must deliver all bytes through the executor";
+}
+

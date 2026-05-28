@@ -2358,6 +2358,121 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
     }
 }
 
+/// Stacked `CachedObjectStorage` over `CachedObjectStorage`: each layer's
+/// `prepareRead` delegates to the wrapped storage first and then appends
+/// its own cache stage, so `ReadPipeline::filesystem_caches` ends up
+/// inner-to-outer (`[inner, outer]`). The legacy single-object builder
+/// wraps caches inside-out, which makes the OUTER layer the FIRST one a
+/// read traverses: outer hit serves directly, miss falls through to inner,
+/// then to source. Mirror that order on the executor path —
+/// `ReadPipeline::tryBuildReaderExecutor` reverse-iterates so the
+/// outermost provider lands at `caches[0]`, which is what the executor
+/// queries first.
+///
+/// This test exercises the contract directly at the executor level: pass
+/// `{outer, inner}` in the cache vector with the outer pre-populated, and
+/// confirm the inner is never touched. A broken source asserts no source
+/// read occurs (would mean the outer hit was missed and the request
+/// fell through).
+TEST_F(FileCacheTest, DiskCacheProviderStackedQueryOrderOuterFirst)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    auto make_cache = [](const String & name, const String & path)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = path;
+        settings[FileCacheSetting::max_file_segment_size] = 10;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 20;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        auto cache = std::make_shared<DB::FileCache>(name, settings);
+        cache->initialize();
+        return cache;
+    };
+
+    auto outer_cache = make_cache("dc_outer", cache_base_path);
+    auto inner_cache = make_cache("dc_inner", cache_base_path2);
+
+    /// Set up a 30-byte source file. Used only for the warm-up read; the
+    /// real test runs with a broken source.
+    const std::string file_path = fs::current_path() / "test_dc_stacked_order";
+    const std::string data = "AAAAAAAAAA" "BBBBBBBBBB" "CCCCCCCCCC";  /// 3 x 10
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// Warm-up: populate the outer cache (only) with all three segments.
+    {
+        auto outer_provider = std::make_shared<DiskCacheProvider>(outer_cache, cache_settings);
+        auto source_reader = std::make_shared<LocalSourceReader>();
+
+        auto executor = std::make_unique<ReaderExecutor>(
+            source_reader, objects,
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider},
+            /*window_size=*/30,
+            /*min_bytes_for_seek=*/0,
+            file_path);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    /// Sanity: outer has 3 segments, inner has none.
+    assertEqual(outer_cache->dumpQueue(),
+        {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+    assertEqual(inner_cache->dumpQueue(), {});
+
+    /// Real test: stack `{outer, inner}` — the executor must query outer
+    /// first. A broken source asserts no source read happens; an empty
+    /// inner cache after the read asserts inner was never consulted as
+    /// the next layer either.
+    auto outer_provider = std::make_shared<DiskCacheProvider>(outer_cache, cache_settings);
+    auto inner_provider = std::make_shared<DiskCacheProvider>(inner_cache, cache_settings);
+    auto broken_source = std::make_shared<BufferSourceReader>(
+        [](const StoredObject &) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source must not be called when outer cache covers the range");
+        },
+        "BrokenSource");
+
+    {
+        auto executor = std::make_unique<ReaderExecutor>(
+            broken_source, objects,
+            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider, inner_provider},
+            /*window_size=*/30,
+            /*min_bytes_for_seek=*/0,
+            file_path);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    /// Inner stays empty: outer hit fully served the read, the inner
+    /// layer (which would have populated if it had seen a miss) was
+    /// never consulted.
+    /// Inner must still be empty: outer hit fully served the read; the
+    /// inner layer (which would have populated if it had seen a miss)
+    /// was never consulted.
+    assertEqual(inner_cache->dumpQueue(), {});
+}
+
 /// Bypass mode (`read_from_filesystem_cache_if_exists_otherwise_bypass_cache=1`)
 /// uses `cache->get` (read-only) instead of `getOrSet`, so the returned holder
 /// contains only segments that already exist. `DiskCacheHandle::status` must
