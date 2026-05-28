@@ -929,21 +929,31 @@ void ClientBase::initClientContext(ContextMutablePtr context)
     client_context->setQueryKindInitial();
     client_context->setQueryKind(query_kind);
     client_context->setQueryParameters(query_parameters);
+}
 
+void ClientBase::snapshotConnectionBaseline()
+{
     /// Snapshot the database / settings / query-parameter values the client
-    /// started with — before any in-session `USE` / `SET` / `SET param_*` can
-    /// mutate them. Command-line overrides like `--max_threads N` and
-    /// `--param_x=...` have already been applied to the client state by this
-    /// point, so they end up in the snapshot. `RESET SESSION` restores from
-    /// these. One-shot: subsequent `initClientContext` calls (after a
-    /// reconnect) must not overwrite with post-reset/post-`SET` state.
-    if (!connect_snapshot_taken)
-    {
-        default_database_at_connect = default_database;
-        settings_at_connect = std::make_unique<Settings>(client_context->getSettingsCopy());
-        query_parameters_at_connect = query_parameters;
-        connect_snapshot_taken = true;
-    }
+    /// started with — before any in-session `USE` / `SET` / `SET param_*`
+    /// can mutate them. Subclasses call this once their startup mutations
+    /// are applied, which can be later than `initClientContext`:
+    ///   - `Client::main` runs `processConfig` and
+    ///     `adjustSettings(client_context)` after `processOptions` has
+    ///     already called `initClientContext`. `processConfig` applies
+    ///     `--inline-insert-data` and `adjustSettings` overrides Pretty
+    ///     output limits when stdout is not a TTY.
+    ///   - `LocalServer` sets `implicit_table_at_top_level` after
+    ///     `initClientContext`.
+    /// Capturing inside `initClientContext` would miss all of the above
+    /// and leave `RESET SESSION` restoring an incomplete baseline. One-shot:
+    /// subsequent calls (e.g. after a reconnect) must not overwrite the
+    /// snapshot with post-reset / post-`SET` state.
+    if (connect_snapshot_taken)
+        return;
+    default_database_at_connect = default_database;
+    settings_at_connect = std::make_unique<Settings>(client_context->getSettingsCopy());
+    query_parameters_at_connect = query_parameters;
+    connect_snapshot_taken = true;
 }
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)

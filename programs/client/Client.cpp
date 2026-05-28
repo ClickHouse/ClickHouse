@@ -360,6 +360,13 @@ try
     processConfig();
     adjustSettings(client_context);
 
+    /// Pin the post-`processConfig` / post-`adjustSettings` settings as
+    /// the connection baseline `RESET SESSION` returns to. Earlier than
+    /// this is too early: `processConfig` applies `--inline-insert-data`
+    /// and `adjustSettings` overrides Pretty output limits, and both run
+    /// after `processOptions` already called `initClientContext`.
+    snapshotConnectionBaseline();
+
     initTTYBuffer(
         toProgressOption(config().getString("progress", "default")), toProgressOption(config().getString("progress-table", "default")));
     initKeystrokeInterceptor();

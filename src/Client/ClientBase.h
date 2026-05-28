@@ -303,6 +303,19 @@ protected:
     /// Initializes the client context.
     void initClientContext(ContextMutablePtr context);
 
+    /// Lock in the current `default_database`, `Settings`, and
+    /// `query_parameters` on `client_context` as the connection baseline
+    /// `RESET SESSION` restores to. Subclasses call this once their
+    /// startup-time mutations (command-line / config / `adjustSettings` /
+    /// any post-`initClientContext` `setSetting`) are settled — taking
+    /// the snapshot inside `initClientContext` is too early because
+    /// `Client::main` runs `processConfig` and `adjustSettings(client_context)`
+    /// after `processOptions` has already constructed the context, and
+    /// `LocalServer` sets `implicit_table_at_top_level` after
+    /// `initClientContext` too. One-shot: subsequent calls (e.g. after a
+    /// reconnect) are no-ops.
+    void snapshotConnectionBaseline();
+
     void setDefaultFormatsAndCompressionFromConfiguration();
 
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
@@ -319,11 +332,12 @@ protected:
 
     String default_database;
     /// Snapshot of the connection-start values for `default_database`,
-    /// the post-command-line `Settings`, and `query_parameters`, captured
-    /// on the first `initClientContext` call. `RESET SESSION` restores
-    /// from these. `connect_snapshot_taken` guards the one-shot capture
-    /// so reconnects don't overwrite the snapshot with the post-reconnect
-    /// (and therefore post-`SET`/post-`USE`) state.
+    /// the post-command-line / post-`adjustSettings` `Settings`, and
+    /// `query_parameters`, captured by `snapshotConnectionBaseline`.
+    /// `RESET SESSION` restores from these. `connect_snapshot_taken`
+    /// guards the one-shot capture so reconnects don't overwrite the
+    /// snapshot with the post-reconnect (and therefore post-`SET` /
+    /// post-`USE`) state.
     bool connect_snapshot_taken = false;
     std::optional<String> default_database_at_connect;
     String query_id;
