@@ -5,6 +5,15 @@ t_us	Time64(6)
 01:02:03.456	01:02:03.456789
 === INSERT into matching-scale Time64 columns (session_timezone = Asia/Shanghai) ===
 01:02:03.456	01:02:03.456789
+=== Explicit type hints with scale conversion ===
+TIME_MILLIS -> Time      	01:02:03
+TIME_MILLIS -> Time64(0) 	01:02:03
+TIME_MILLIS -> Time64(6) 	01:02:03.456000
+TIME_MILLIS -> Time64(9) 	01:02:03.456000000
+TIME_MICROS -> Time      	01:02:03
+TIME_MICROS -> Time64(0) 	01:02:03
+TIME_MICROS -> Time64(3) 	01:02:03.456
+TIME_MICROS -> Time64(9) 	01:02:03.456789000
 === Writer: ClickHouse Time / Time64 -> Avro TIME_* (schema check) ===
 schema OK
 === Writer round-trip via ClickHouse read-back ===

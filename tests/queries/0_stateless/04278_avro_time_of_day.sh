@@ -54,6 +54,23 @@ $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -mn -q "
     SELECT * FROM test_avro_time;
 "
 
+echo "=== Explicit type hints with scale conversion ==="
+# t_ms (TIME_MILLIS, ms-since-midnight) read with different ClickHouse target types:
+# the reader must rescale ms-resolution to the requested target scale.
+$CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -mn -q "
+    SELECT 'TIME_MILLIS -> Time      ' AS k, toString(t_ms) FROM file('$DATA_FILE', 'Avro', 't_ms Time, t_us Time64(6)');
+    SELECT 'TIME_MILLIS -> Time64(0) ' AS k, toString(t_ms) FROM file('$DATA_FILE', 'Avro', 't_ms Time64(0), t_us Time64(6)');
+    SELECT 'TIME_MILLIS -> Time64(6) ' AS k, toString(t_ms) FROM file('$DATA_FILE', 'Avro', 't_ms Time64(6), t_us Time64(6)');
+    SELECT 'TIME_MILLIS -> Time64(9) ' AS k, toString(t_ms) FROM file('$DATA_FILE', 'Avro', 't_ms Time64(9), t_us Time64(6)');
+"
+# t_us (TIME_MICROS, us-since-midnight) read with several target types.
+$CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -mn -q "
+    SELECT 'TIME_MICROS -> Time      ' AS k, toString(t_us) FROM file('$DATA_FILE', 'Avro', 't_ms Time64(3), t_us Time');
+    SELECT 'TIME_MICROS -> Time64(0) ' AS k, toString(t_us) FROM file('$DATA_FILE', 'Avro', 't_ms Time64(3), t_us Time64(0)');
+    SELECT 'TIME_MICROS -> Time64(3) ' AS k, toString(t_us) FROM file('$DATA_FILE', 'Avro', 't_ms Time64(3), t_us Time64(3)');
+    SELECT 'TIME_MICROS -> Time64(9) ' AS k, toString(t_us) FROM file('$DATA_FILE', 'Avro', 't_ms Time64(3), t_us Time64(9)');
+"
+
 # ---------------------------------------------------------------
 # Writer: ClickHouse Time / Time64(3) / Time64(6) -> Avro TIME_*.
 # Verify both the schema (logical type + physical type) and the values.
