@@ -441,12 +441,26 @@ ExchangeLookupPtr createExchangeLookup(
     ExchangeLookupPtr streaming_exchanges;
 #ifdef OS_LINUX
     auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
-    streaming_exchanges = streaming_exchange_port != 0 ?
-        createStreamingExchangeLookup(query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port)) :
-        std::make_shared<ExchangeViaChunks>(query_id);
+    if (streaming_exchange_port != 0)
+    {
+        streaming_exchanges = createStreamingExchangeLookup(
+            query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port));
+    }
+    else
+    {
+        /// ExchangeViaChunks is in-memory and process-local, so workers placed on
+        /// different hosts would never see each other's chunks and the receiver
+        /// would wait forever. Only allow it when execution is forced to be local
+        /// (handled above); otherwise require an operator-configured streaming
+        /// port or force a Persisted exchange kind.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Streaming exchange requires `distributed_query.streaming_exchange_port` to be configured; "
+            "set the port, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
+            "`distributed_plan_execute_locally` for in-process testing");
+    }
 #else
     UNUSED(exchanges_, exchange_stream_sources, context);
-    streaming_exchanges = std::make_shared<ExchangeViaChunks>(query_id);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming exchanges are only supported on Linux");
 #endif
     auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
 
