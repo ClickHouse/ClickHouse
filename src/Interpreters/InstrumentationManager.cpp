@@ -61,10 +61,7 @@ static Float64 getSleepArgumentValue(const InstrumentationManager::InstrumentedA
 
 static void validateSleepArguments(const std::vector<InstrumentationManager::InstrumentedArgument> & args)
 {
-    if (args.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for sleep instrumentation");
-
-    if (args.size() != 1 && args.size() != 2)
+    if (args.size() == 0 || args.size() > 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected one or two arguments for sleep instrumentation, but got {}", args.size());
 
     auto min = getSleepArgumentValue(args[0]);
