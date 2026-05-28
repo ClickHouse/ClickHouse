@@ -1,10 +1,5 @@
 -- Granule-level pruning for sparse-encoded columns in `planning` mode trims
 -- `MarkRanges` per part from the predicate column's offsets stream.
---
--- The query-condition-cache is keyed by `(table_uuid, part_name, condition_hash)`,
--- and this test uses a per-test database, so cache entries don't leak between
--- parallel test runs. Hence no `SYSTEM DROP QUERY CONDITION CACHE` (which is
--- server-wide) and no `no-parallel`.
 
 DROP TABLE IF EXISTS t_granule_prune;
 
