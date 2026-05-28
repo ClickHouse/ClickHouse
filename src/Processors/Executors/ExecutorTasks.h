@@ -98,7 +98,7 @@ public:
     // If non-local tasks were added, wake up one thread to process them.
     SpawnStatus pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, bool collect_work_intervals, ReadProgressCallback * callback);
     void fill(Queue & queue, Queue & async_queue);
 
     /// Release CPU slots
@@ -122,6 +122,8 @@ public:
     ExecutionThreadContext & getThreadContext(size_t thread_num) { return *executor_contexts[thread_num]; }
 
     String dump();
+
+    size_t getNumThreads() const { return num_threads; }
 };
 
 }

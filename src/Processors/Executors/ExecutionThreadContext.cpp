@@ -1,6 +1,8 @@
+#include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <base/types.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -89,12 +91,13 @@ bool ExecutionThreadContext::executeTask()
         span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor()->getUniqID());
         span->addAttribute("thread_number", thread_number);
     }
+
     std::optional<Stopwatch> execution_time_watch;
 
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors)
+    if (profile_processors || collect_work_intervals)
         execution_time_watch.emplace();
 #endif
 
@@ -107,6 +110,11 @@ bool ExecutionThreadContext::executeTask()
     {
         node->exception = std::current_exception();
     }
+
+    if (collect_work_intervals)
+        work_intervals.emplace_back(execution_time_watch->getStart(), 
+                                    execution_time_watch->elapsedNanoseconds(),
+                                    node->processors_id);
 
     if (profile_processors)
     {
@@ -127,6 +135,11 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
 {
     if (exception)
         std::rethrow_exception(exception);
+}
+
+WorkIntervals ExecutionThreadContext::takeWorkIntervals()
+{
+    return std::move(work_intervals);
 }
 
 }

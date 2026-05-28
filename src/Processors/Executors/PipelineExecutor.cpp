@@ -1,3 +1,4 @@
+#include <iterator>
 #include <memory>
 #include <IO/WriteBufferFromString.h>
 #include <Common/ISlotControl.h>
@@ -13,6 +14,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
+#include <Processors/Executors/ExecutionThreadContext.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
@@ -233,6 +235,32 @@ bool PipelineExecutor::checkTimeLimit()
 void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 {
     read_progress_callback = std::move(callback);
+}
+
+void PipelineExecutor::setCollectWorkIntervals(bool collect_work_intervals_)
+{
+    collect_work_intervals = collect_work_intervals_;
+}
+
+WorkIntervals PipelineExecutor::takeWorkIntervals()
+{
+    if (!collect_work_intervals)
+        return {}; 
+    
+    WorkIntervals result;
+
+    for (size_t thread_ind = 0; thread_ind < tasks.getNumThreads(); ++thread_ind)
+    {
+        auto working_interval_from_context = tasks.getThreadContext(thread_ind).takeWorkIntervals();
+
+        for (auto & interval : working_interval_from_context)
+            interval.start_of_interval_ns -= query_start_ns;
+
+        result.insert(result.end(), 
+                std::make_move_iterator(working_interval_from_context.begin()),
+                std::make_move_iterator(working_interval_from_context.end()));
+    }
+    return result;
 }
 
 void PipelineExecutor::finalizeExecution()
@@ -539,6 +567,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     cpu_slots = allocateCPU(num_threads, concurrency_control);
 
+    query_start_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+
     Queue queue;
     Queue async_queue;
     graph->initializeExecution(queue, async_queue);
@@ -546,7 +576,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, collect_work_intervals, read_progress_callback.get());
     tasks.fill(queue, async_queue);
 
     if (num_threads > 1)

@@ -311,6 +311,17 @@ public:
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
     uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
 
+    struct PortDataCounters
+    {
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+
+    /// The getter can be used only after running the query, for counting 
+    /// the exact number of rows/bytes per port
+    /// Should be used only on the pors belonging to the processor
+    PortDataCounters getPortDataCounters(const Port & port) const;
+
     struct ProcessorDataStats
     {
         size_t input_rows = 0;

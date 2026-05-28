@@ -6,6 +6,16 @@
 namespace DB
 {
 
+
+struct WorkInterval
+{
+    UInt64 start_of_interval_ns;
+    UInt64 duration_of_interval_ns;
+    UInt64 processor_id;
+};
+
+using WorkIntervals = std::vector<WorkInterval>;
+
 class ReadProgressCallback;
 
 /// Context for each executing thread of PipelineExecutor.
@@ -26,6 +36,9 @@ private:
     /// Callback for read progress.
     ReadProgressCallback * read_progress_callback = nullptr;
 
+    /// The intervals for computing the time per step in EXPLAIN ANALYZE
+    std::vector<WorkInterval> work_intervals;
+
 public:
 #ifndef NDEBUG
     /// Time for different processing stages.
@@ -38,6 +51,7 @@ public:
     const size_t thread_number;
     const bool profile_processors;
     const bool trace_processors;
+    const bool collect_work_intervals;
 
     /// There is a performance optimization that schedules a task to the current thread, avoiding global task queue.
     /// Optimization decreases contention on global task queue but may cause starvation.
@@ -62,12 +76,18 @@ public:
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
+    WorkIntervals takeWorkIntervals();
+
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool collect_work_intervals_ = false, ReadProgressCallback * callback)
         : read_progress_callback(callback)
+        , collect_work_intervals(collect_work_intervals_)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
         , trace_processors(trace_processors_)
-    {}
+    {
+        if (collect_work_intervals)
+            work_intervals.reserve(1024ul);
+    }
 };
 
 }

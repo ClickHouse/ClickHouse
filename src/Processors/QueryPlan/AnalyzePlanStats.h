@@ -3,11 +3,14 @@
 #include <utility>
 #include <unordered_map>
 #include <string>
+#include <algorithm>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+#include <Common/formatReadable.h>
+#include <base/types.h>
 #include <boost/container_hash/hash.hpp>
 
 
@@ -16,6 +19,7 @@ namespace DB
 
 struct AnalyzeStats
 {
+    UInt64 total_query_time = 0;
     UInt64 sum_elapsed_ns = 0;
     /// TODO: how to account for input wait time
     /// among several processors?
@@ -31,6 +35,7 @@ struct AnalyzeStats
 
 class AnalyzeStepsStats
 {
+    using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
 public: 
     explicit AnalyzeStepsStats(const QueryPipeline & pipeline);
 
@@ -40,9 +45,9 @@ public:
 private:
 
     std::unordered_map<
-        std::pair<const IQueryPlanStep *, size_t>, 
+        StepAndGroup, 
         AnalyzeStats,
-        boost::hash<std::pair<const IQueryPlanStep *, size_t>>
+        boost::hash<StepAndGroup>
     > steps_to_stats; 
 };
 }

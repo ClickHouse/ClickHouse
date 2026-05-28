@@ -559,7 +559,7 @@ void QueryPlan::explainPlan(
     size_t max_description_length,
     const std::string & parent_tree_prefix,
     bool is_last_child_plan,
-    const AnalyzeStepsStats * steps_to_stats) const
+    AnalyzeStepsStats * steps_to_stats) const
 {
     checkInitialized();
 
@@ -575,6 +575,10 @@ void QueryPlan::explainPlan(
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
+
+        if (steps_to_stats)
+            return node;
+
         while (settings.compact && node->step->getName() == "Expression" && !node->children.empty())
             node = node->children[0];
         return node;

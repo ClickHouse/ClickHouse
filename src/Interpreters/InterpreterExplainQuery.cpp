@@ -325,7 +325,6 @@ struct QueryAnalyzeSettings
     {
         {"header", query_plan_options.header},
         {"description", query_plan_options.description},
-        {"actions", query_plan_options.actions},
         {"indexes", query_plan_options.indexes},
         {"indices", query_plan_options.indexes},
         {"projections", query_plan_options.projections},
@@ -333,8 +332,6 @@ struct QueryAnalyzeSettings
         {"distributed", query_plan_options.distributed},
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
-        {"compact", query_plan_options.compact},
-        {"pretty", query_plan_options.pretty},
         {"optimize", optimize},
     };
 
@@ -831,6 +828,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             CompletedPipelineExecutor executor(pipeline);
 
+            Stopwatch watch;
             /// TODO: this function might throw -- wrap into try catch loop
             executor.execute();
 
@@ -841,7 +839,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             0, 
             query_context->getSettingsRef()[Setting::query_plan_max_step_description_length],
             "",
-            0,
+            false,
             &steps_to_stats);
         }
     }

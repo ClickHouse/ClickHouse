@@ -80,6 +80,10 @@ public:
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
 
+    void setCollectWorkIntervals(bool collect_work_intervals_);
+
+    WorkIntervals takeWorkIntervals();
+
 private:
     ExecutingGraphPtr graph;
 
@@ -90,6 +94,7 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
+    UInt64 query_start_ns = 0;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -98,6 +103,7 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
+    bool collect_work_intervals = false;
 
     std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
