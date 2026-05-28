@@ -1768,7 +1768,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
-            if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
+            const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
+            if (column_const && !column_const->getDataColumn().isDummy() &&
                 !hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin") &&
                 /// Sanity check: do not convert large columns to constants
                 column->byteSize() < 1_MiB)

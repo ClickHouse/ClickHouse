@@ -734,7 +734,7 @@ namespace
         }
         else if (node->type == ActionsDAG::ActionType::COLUMN)
         {
-            if (isColumnConst(*node->column) && node->result_type->canBeUsedInBooleanContext())
+            if (node->result_type->canBeUsedInBooleanContext())
             {
                 if (!node->column->getBool(0))
                     return DisjunctionList{};

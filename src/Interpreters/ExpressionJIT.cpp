@@ -310,7 +310,7 @@ static FunctionBasePtr compile(
 
 static bool isCompilableConstant(const ActionsDAG::Node & node)
 {
-    return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
+    return node.column && canBeNativeType(*node.result_type);
 }
 
 static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)

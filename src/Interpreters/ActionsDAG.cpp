@@ -1906,11 +1906,11 @@ ActionsDAG ActionsDAG::makeConvertingActions(
         /// Check constants.
         if (const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get()))
         {
-            if (const auto * src_const = typeid_cast<const ColumnConst *>(dst_node->column.get()))
+            if (dst_node->column)
             {
                 if (ignore_constant_values)
                     dst_node = &actions_dag.addColumn(res_const->getPtr(), res_elem.type, res_elem.name);
-                else if (res_const->getField() != src_const->getField())
+                else if (res_const->getField() != dst_node->column->getField())
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot convert column `{}` because it is constant but values of constants are different in source and result",
