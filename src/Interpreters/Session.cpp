@@ -577,6 +577,9 @@ ContextMutablePtr Session::makeSessionContext()
     /// Stash the auth-server settings on the session context so `RESET SESSION`
     /// can replay them without re-authenticating.
     session_context->setSettingsFromAuthServer(settings_from_auth_server);
+    /// Pin the authenticated user as the baseline `RESET SESSION` returns to,
+    /// so a subsequent in-session `EXECUTE AS` cannot survive a reset.
+    session_context->rememberAuthenticatedUser();
 
     recordLoginSuccess(session_context);
 
@@ -658,7 +661,16 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     /// session never had — diverging from "the state right after this
     /// session's authentication" the docs promise.
     if (new_named_session_created)
+    {
         session_context->setSettingsFromAuthServer(settings_from_auth_server);
+        /// Pin the authenticated user only when the named session is newly
+        /// created. A reused named session already has the original
+        /// authenticated id baked in; re-pinning on every reuse would
+        /// overwrite the baseline with whatever user the current reuse came
+        /// in as (which is the same in practice today, but the invariant
+        /// belongs with the rest of the create-only login pipeline above).
+        session_context->rememberAuthenticatedUser();
+    }
 
     recordLoginSuccess(session_context);
 

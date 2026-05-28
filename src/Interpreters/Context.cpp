@@ -1989,18 +1989,40 @@ void Context::rememberDatabaseAtSessionStart()
     database_at_session_start = current_database;
 }
 
+void Context::rememberAuthenticatedUser()
+{
+    std::lock_guard lock(mutex);
+    authenticated_user_id = user_id;
+    authenticated_current_user_name = client_info.current_user;
+    authenticated_initial_user_name = client_info.initial_user;
+}
+
 void Context::resetToUserDefaults()
 {
     /// Read all the early-rejection state under a shared lock. Every other
     /// access to `user_id`, `session_context`, and `merge_tree_transaction` in
     /// this class is mutex-guarded; matching that convention keeps the next
     /// reader from having to relearn which fields are racy.
+    ///
+    /// The user to reset *to* is the authenticated-user baseline, not the
+    /// current `user_id` — if an in-session `EXECUTE AS` impersonated the
+    /// session, the current id points at the impersonation target and
+    /// re-deriving defaults from it would leave the connection silently
+    /// impersonating the previous user across the reset. The authenticated
+    /// id is captured by `rememberAuthenticatedUser` at session creation,
+    /// before any impersonation is possible. Fall back to the current
+    /// `user_id` only on a context that pre-dates the baseline (e.g. a
+    /// `clickhouse-local` session that never went through `Session`).
     std::optional<UUID> snapshot_user_id;
+    String snapshot_current_user_name;
+    String snapshot_initial_user_name;
     bool is_session_context;
     bool inside_transaction;
     {
         SharedLockGuard lock(mutex);
-        snapshot_user_id = user_id;
+        snapshot_user_id = authenticated_user_id.has_value() ? authenticated_user_id : user_id;
+        snapshot_current_user_name = authenticated_user_id.has_value() ? authenticated_current_user_name : client_info.current_user;
+        snapshot_initial_user_name = authenticated_user_id.has_value() ? authenticated_initial_user_name : client_info.initial_user;
         is_session_context = (session_context.lock().get() == this);
         inside_transaction = static_cast<bool>(merge_tree_transaction);
     }
@@ -2149,6 +2171,16 @@ void Context::resetToUserDefaults()
 
         *settings = std::move(new_settings);
         settings_constraints_and_current_profiles = std::move(new_profiles_state);
+
+        /// Restore the authenticated user as the session's `user_id`. If an
+        /// in-session `EXECUTE AS` had impersonated the session, this undoes
+        /// it. Mirror the ClientInfo name fields so `currentUser()` /
+        /// `initialUser()` report the authenticated identity after reset.
+        /// `setCurrentRolesWithLock` and the access-control snapshot below
+        /// must run against the restored id, so do this first.
+        setUserIDWithLock(*snapshot_user_id, lock);
+        client_info.current_user = snapshot_current_user_name;
+        client_info.initial_user = snapshot_initial_user_name;
 
         setCurrentRolesWithLock(defaults.default_roles, lock);
         external_roles.reset();

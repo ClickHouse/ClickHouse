@@ -382,6 +382,17 @@ protected:
     /// restore target for `RESET SESSION`.
     std::optional<String> database_at_session_start;
 
+    /// The authenticated user's `user_id` captured at session start, before
+    /// any in-session `EXECUTE AS` impersonation can mutate `user_id` away
+    /// from it. `RESET SESSION` re-derives defaults from this id and
+    /// restores the `ClientInfo` user names below to the authenticated
+    /// user, so a pooled connection returned after `EXECUTE AS` cannot be
+    /// handed to the next borrower still impersonating the previous
+    /// target. Captured via `rememberAuthenticatedUser`.
+    std::optional<UUID> authenticated_user_id;
+    String authenticated_current_user_name;
+    String authenticated_initial_user_name;
+
     /// Callbacks fired at the end of `resetToUserDefaults`. Protocol handlers
     /// register here to drop session-scoped state that lives outside `Context`
     /// (e.g. MySQL/Postgres prepared statements, cached socket timeouts).
@@ -893,6 +904,14 @@ public:
     /// value rather than to the user's profile default, so a client that opened
     /// the connection with `--database X` lands back in `X` after the reset.
     void rememberDatabaseAtSessionStart();
+
+    /// Snapshot the current `user_id` and `ClientInfo` user names as the
+    /// authenticated-user baseline that `RESET SESSION` returns the session
+    /// to. To be called by `Session` exactly once per session, right after
+    /// `setUser` has installed the freshly-authenticated user. Without this
+    /// baseline, `resetToUserDefaults` would re-derive defaults from
+    /// whatever `EXECUTE AS` may have impersonated the session into.
+    void rememberAuthenticatedUser();
 
     /// Restore the session context to the state it had right after the
     /// authentication and handshake: re-derives profiles / roles from access
