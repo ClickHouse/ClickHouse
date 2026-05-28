@@ -167,18 +167,7 @@ ReaderExecutor::ReaderExecutor(
 ReaderExecutor::~ReaderExecutor()
 {
     discardPrefetch();
-    for (auto & handle : abandoned_prefetches)
-    {
-        try
-        {
-            std::ignore = handle->get();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Abandoned prefetch task threw at destruction");
-        }
-    }
-    abandoned_prefetches.clear();
+    drainAbandonedPrefetches(/*wait_finished=*/true);
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheHitBytes, stats.cache_hit_bytes);
@@ -372,7 +361,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (!prefetch_pool || prefetch_handle || atEnd())
         return;
 
-    drainFinishedAbandonedPrefetches();
+    drainAbandonedPrefetches();
 
     size_t logical_size = totalSize();
 
@@ -405,7 +394,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
 void ReaderExecutor::discardPrefetch()
 {
-    drainFinishedAbandonedPrefetches();
+    drainAbandonedPrefetches();
 
     auto local_handle = std::move(prefetch_handle);
     if (!local_handle)
@@ -420,13 +409,13 @@ void ReaderExecutor::discardPrefetch()
     abandoned_prefetches.push_back(std::move(local_handle));
 }
 
-void ReaderExecutor::drainFinishedAbandonedPrefetches()
+void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)
 {
     abandoned_prefetches.erase(
         std::remove_if(abandoned_prefetches.begin(), abandoned_prefetches.end(),
-            [this](std::unique_ptr<PrefetchHandle> & h)
+            [this, wait_finished](std::unique_ptr<PrefetchHandle> & h)
             {
-                if (!h->isFinished())
+                if (!wait_finished && !h->isFinished())
                     return false;
                 try
                 {

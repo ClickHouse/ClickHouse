@@ -145,7 +145,7 @@ private:
     void maybeTriggerPrefetch();
     void discardPrefetch();
 
-    void drainFinishedAbandonedPrefetches();
+    void drainAbandonedPrefetches(bool wait_finished = false);
 
     /// EOF detection has two cases:
     ///   - size known: `position >= totalSize()`.
