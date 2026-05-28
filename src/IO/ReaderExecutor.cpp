@@ -1257,6 +1257,20 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         live_buffer.reset();
     }
 
+    /// Release any pre_acquired_slot that this window didn't consume.
+    /// `ensurePreAcquiredSlot` is called eagerly before each window in case
+    /// a source read is coming, but a fully-cache-hit window (or a prefetch
+    /// `submit` that returned `nullptr`) leaves the slot held even though we
+    /// never opened a buffer. Without this, sustained warm-cache traffic
+    /// accumulates a phantom slot per executor for its whole lifetime —
+    /// consuming `max_remote_read_connections` quota and showing a fake row
+    /// in `system.remote_read_connections`. The next
+    /// `readNextWindow` / `maybeTriggerPrefetch` will re-acquire if it
+    /// expects a source read. If the read instead promoted to live,
+    /// `pre_acquired_slot` is already empty (moved into `live_buffer.slot`).
+    if (pre_acquired_slot && !live_buffer)
+        pre_acquired_slot.reset();
+
     /// Trim to the originally requested physical window.
     auto sliced = result.slice(physical_window);
 
