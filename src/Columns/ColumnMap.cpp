@@ -113,6 +113,13 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
+UInt64 ColumnMap::getNumberOfDefaultRows() const
+{
+    /// One vcall, served by `ColumnArray::getNumberOfDefaultRows`. The IColumnHelper
+    /// default would call `isDefaultAt` per row.
+    return nested->getNumberOfDefaultRows();
+}
+
 std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());

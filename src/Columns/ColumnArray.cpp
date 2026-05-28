@@ -197,6 +197,17 @@ bool ColumnArray::isDefaultAt(size_t n) const
     return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
+UInt64 ColumnArray::getNumberOfDefaultRows() const
+{
+    /// Avoid the per-row cross-TU call to `isDefaultAt` of the IColumnHelper default;
+    /// inline the offsets comparison so the loop vectorises.
+    const auto & offsets_data = getOffsets();
+    const size_t num_rows = offsets_data.size();
+    UInt64 result = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+        result += static_cast<UInt64>(offsets_data[i] == offsets_data[static_cast<ssize_t>(i) - 1]);
+    return result;
+}
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
