@@ -612,6 +612,7 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
+            font-size: 100%;
         }
 
         .copy-balloon
@@ -654,6 +655,7 @@
             padding: 0.25rem 0.65rem;
             cursor: pointer;
             position: relative;
+            font-size: 100%;
         }
 
         #download
@@ -731,10 +733,17 @@
             cursor: pointer;
             font-weight: bold;
 
-            &:hover {
+            &:hover,
+            &:focus-visible {
                 background-color: var(--button-active-color);
                 color: var(--button-active-text-color);
             }
+        }
+
+        #download-format:focus-visible
+        {
+            border-color: var(--border-color-selected);
+            box-shadow: inset 0 0 0 1px var(--border-color-selected);
         }
 
         #theme
@@ -900,19 +909,19 @@
                 <button type="button" class="shadow" id="run-all">Run all</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
                 <query-progress id="query-progress"></query-progress>
-                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
+                <button type="button" id="copy-div" class="shadow" title="Copy raw result to clipboard" aria-label="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                     </svg>
-                </div>
-                <div id="download-div" class="shadow">
+                </button>
+                <button type="button" id="download-div" class="shadow" title="Download query result" aria-label="Download query result">
                     <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                </div>
+                </button>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </form>
@@ -923,7 +932,7 @@
             </a>
             <a id="cloud-logo" href="https://clickhouse.cloud/">&#9729;</a>
         </p>
-        <div id="download-dropdown">
+        <div id="download-dropdown" role="dialog" aria-label="Download query result">
             <div>
                 <div class="download-option">
                     <label for="download-format">Format:</label>
@@ -4375,6 +4384,8 @@ document.getElementById('download-div').addEventListener('click', function(e) {
 
         dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
         dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+
+        document.getElementById('download-format').focus();
     }
 });
 
@@ -4383,10 +4394,39 @@ document.getElementById('download-dropdown').addEventListener('click', function(
     e.stopPropagation();
 });
 
+// Keyboard handling inside the download dropdown: focus trap + Escape to close
+document.getElementById('download-dropdown').addEventListener('keydown', function(e) {
+    const dropdown = document.getElementById('download-dropdown');
+
+    if (!dropdown.classList.contains('show')) return;
+
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        dropdown.classList.remove('show');
+        document.getElementById('download-div').focus();
+        return;
+    }
+
+    if (e.key === 'Tab') {
+        const formatSelect = document.getElementById('download-format');
+        const downloadButton = document.getElementById('download-button');
+
+        if (e.shiftKey && document.activeElement === formatSelect) {
+            e.preventDefault();
+            downloadButton.focus();
+        } else if (!e.shiftKey && document.activeElement === downloadButton) {
+            e.preventDefault();
+            formatSelect.focus();
+        }
+    }
+});
+
 // Close dropdown when clicking outside
 document.addEventListener('click', function() {
     const dropdown = document.getElementById('download-dropdown');
-    dropdown.classList.remove('show');
+    if (dropdown.classList.contains('show')) {
+        dropdown.classList.remove('show');
+    }
 });
 
 // Handle "Other" format selection
@@ -4471,6 +4511,7 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     // Close dropdown
     document.getElementById('download-dropdown').classList.remove('show');
+    document.getElementById('download-div').focus();
 });
 
 // Web Terminal integration
