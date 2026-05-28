@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/98823.
 #
