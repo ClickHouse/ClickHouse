@@ -1,33 +1,57 @@
 explicit single
-id	UInt8					
-value_diff_sum	UInt8					
-value_2	UInt8					
-time	UInt8					
+id	UInt8
+value_diff_sum	UInt8
+value_2	UInt8
+time	UInt8
 1	10	20	5
 2	11	21	6
 explicit list
-id	UInt8					
-value_diff_sum	UInt8					
-value_2_diff_sum	UInt8					
-time	UInt8					
+id	UInt8
+value_diff_sum	UInt8
+value_2_diff_sum	UInt8
+time	UInt8
 1	10	20	5
 2	11	21	6
 replace and rename
-id	UInt8					
-value_plus_ten	UInt16					
-value_2	UInt8					
-time	UInt8					
+id	UInt8
+value_plus_ten	UInt16
+value_2	UInt8
+time	UInt8
 1	20	20	5
 2	21	21	6
+aggregation apply and rename
+id_sum	UInt64
+value_sum	UInt64
+value_2_sum	UInt64
+time_sum	UInt64
+3	21	41	11
 lambda rename after apply
-id_str	String					
-value_str	String					
-value_2_str	String					
+id_str	String
+value_str	String
+value_2_str	String
 1	10	20
 2	11	21
 lambda rename after chained apply
-id_plus_one_str	String					
-value_plus_one_str	String					
-value_2_plus_one_str	String					
+id_plus_one_str	String
+value_plus_one_str	String
+value_2_plus_one_str	String
 2	11	21
 3	12	22
+lambda rename with if
+id_renamed	UInt8
+value_renamed	UInt8
+special_value	UInt8
+1	10	20
+2	11	21
+columns matcher lambda rename
+metric_	UInt8
+metric_2	UInt8
+10	20
+11	21
+qualified asterisk rename
+id	UInt8
+renamed_value	UInt8
+value_2	UInt8
+time	UInt8
+1	10	20	5
+2	11	21	6
