@@ -54,11 +54,6 @@ extern const int FILE_DOESNT_EXIST;
 extern const int CANNOT_PARSE_NUMBER;
 }
 
-namespace Setting
-{
-extern const SettingsBool use_paimon_metadata_files_cache;
-}
-
 PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
 {
     Paimon::getValueFromJSON(id, json_object, "id");
@@ -106,11 +101,12 @@ PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const Str
     , log(getLogger("PaimonTableClient"))
 {}
 
-ReadSettings PaimonTableClient::getPaimonMetadataReadSettings() const
+ReadSettings PaimonTableClient::getPaimonMetadataReadSettings(bool disable_filesystem_cache) const
 {
-    auto context = getContext();
-    auto read_settings = context->getReadSettings();
-    if (context->getSettingsRef()[Setting::use_paimon_metadata_files_cache] && context->getPaimonMetadataFilesCache())
+    auto read_settings = getContext()->getReadSettings();
+    /// Do not utilize filesystem cache if more precise cache enabled.
+    /// This mirrors the Iceberg pattern in StatelessMetadataFileGetter.cpp.
+    if (disable_filesystem_cache)
         read_settings.enable_filesystem_cache = false;
     return read_settings;
 }
@@ -286,12 +282,12 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
     return PaimonSnapshot(snapshot_json);
 }
 
-std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String manifest_list_path)
+std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String manifest_list_path, bool disable_filesystem_cache)
 {
     /// read manifest list file
     auto context = getContext();
     RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
-    auto read_settings = getPaimonMetadataReadSettings();
+    auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
     auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log, read_settings);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_list_path), getFormatSettings(getContext()));
@@ -307,7 +303,7 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
 }
 
 PaimonManifest
-PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name)
+PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name, bool disable_filesystem_cache)
 {
     String manifest_file_name(manifest_path.begin() + manifest_path.find_last_of('/') + 1, manifest_path.end());
     if (manifest_file_name.starts_with("index-manifest-"))
@@ -315,7 +311,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
 
     auto context = getContext();
     RelativePathWithMetadata object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
-    auto read_settings = getPaimonMetadataReadSettings();
+    auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
     auto manifest_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_path), getFormatSettings(getContext()));
 

@@ -80,6 +80,9 @@ public:
     /// Update state using COW pattern, non-blocking for reads
     void update(const ContextPtr & local_context) override;
 
+    /// Invalidate metadata cache entries for this table on DROP.
+    void drop(ContextPtr local_context) override;
+
     /// Extract state from storage_metadata for snapshot isolation
     /// For incremental read mode, this returns only new data since last committed snapshot
     ObjectIterator iterate(

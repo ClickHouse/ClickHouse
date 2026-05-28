@@ -433,12 +433,13 @@ public:
     std::pair<Int32, String> getTableSchemaInfoById(Int32 schema_id) const;
     std::optional<std::pair<Int64, String>> getLatestTableSnapshotInfo();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
-    PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name);
-    std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path);
+    PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name, bool disable_filesystem_cache = false);
+    std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path, bool disable_filesystem_cache = false);
 private:
-    /// When the Paimon metadata files cache is enabled, the filesystem cache is intentionally
-    /// disabled for metadata reads to avoid storing the same bytes twice (once raw, once parsed).
-    ReadSettings getPaimonMetadataReadSettings() const;
+    /// Build ReadSettings for metadata reads.  When the caller knows that the
+    /// in-memory Paimon metadata cache is active it passes disable_filesystem_cache=true
+    /// so the same bytes are not stored twice (once raw in fs cache, once parsed in memory).
+    ReadSettings getPaimonMetadataReadSettings(bool disable_filesystem_cache) const;
 
     const ObjectStoragePtr object_storage;
     const String table_location;

@@ -94,6 +94,16 @@ public:
         return table_cache_key_prefix + "/" + file_path;
     }
 
+    /// Remove all cached entries whose key starts with the given prefix.
+    /// Called on DROP TABLE to eagerly free memory instead of waiting for LRU eviction.
+    void removeByPrefix(const String & prefix)
+    {
+        Base::remove([&](const String & key, const MappedPtr & /*mapped*/)
+        {
+            return key.starts_with(prefix);
+        });
+    }
+
     template <typename LoadFunc>
     std::vector<PaimonManifestFileMeta> getOrSetManifestList(const String & key, LoadFunc && load_fn)
     {

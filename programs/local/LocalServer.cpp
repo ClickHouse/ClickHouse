@@ -130,6 +130,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString paimon_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble paimon_metadata_files_cache_size_ratio;
     extern const ServerSettingsString parquet_metadata_cache_policy;
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
@@ -1050,6 +1054,17 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+
+    String paimon_metadata_files_cache_policy = server_settings[ServerSetting::paimon_metadata_files_cache_policy];
+    size_t paimon_metadata_files_cache_size = server_settings[ServerSetting::paimon_metadata_files_cache_size];
+    size_t paimon_metadata_files_cache_max_entries = server_settings[ServerSetting::paimon_metadata_files_cache_max_entries];
+    double paimon_metadata_files_cache_size_ratio = server_settings[ServerSetting::paimon_metadata_files_cache_size_ratio];
+    if (paimon_metadata_files_cache_size > max_cache_size)
+    {
+        paimon_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(paimon_metadata_files_cache_size));
+    }
+    global_context->setPaimonMetadataFilesCache(paimon_metadata_files_cache_policy, paimon_metadata_files_cache_size, paimon_metadata_files_cache_max_entries, paimon_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
     String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];

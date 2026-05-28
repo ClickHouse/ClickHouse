@@ -171,6 +171,12 @@ DataLakeMetadataPtr PaimonMetadata::create(
             LOG_WARNING(stream_log, "Replica {} not activated for Paimon incremental read (maybe already active elsewhere)", replica_name);
     }
 
+    /// Cache decision is intentionally latched here at metadata construction time.
+    /// PaimonPersistentComponents is immutable and shared across queries, so cache_ptr
+    /// is determined once and never re-evaluated during update().  This is the same
+    /// pattern used by IcebergMetadata (and all DataLake metadata that returns
+    /// supportsUpdate() == true).  To change cache behavior for an existing table,
+    /// the user must DROP + re-CREATE the table with the desired setting.
     PaimonMetadataFilesCachePtr cache_ptr = nullptr;
     if (local_context->getSettingsRef()[Setting::use_paimon_metadata_files_cache])
         cache_ptr = local_context->getPaimonMetadataFilesCache();
@@ -327,6 +333,10 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
 
 void PaimonMetadata::update(const ContextPtr & /*local_context*/)
 {
+    /// NOTE: This method only refreshes the snapshot state.  It does NOT re-evaluate
+    /// use_paimon_metadata_files_cache because cache_ptr lives in the immutable
+    /// PaimonPersistentComponents (same design as IcebergMetadata::update).
+
     /// 1. Load new state outside any lock (I/O operations)
     auto new_state = loadLatestState();
     if (!new_state)
@@ -354,6 +364,15 @@ void PaimonMetadata::update(const ContextPtr & /*local_context*/)
         "Paimon table state updated: snapshot_id {} -> {}",
         old_state ? old_state->snapshot_id : -1,
         new_state->snapshot_id);
+}
+
+void PaimonMetadata::drop(ContextPtr /*local_context*/)
+{
+    if (persistent_components.hasMetadataCache())
+    {
+        LOG_DEBUG(log, "Invalidating Paimon metadata cache entries with prefix: {}", persistent_components.table_cache_key_prefix);
+        persistent_components.metadata_cache->removeByPrefix(persistent_components.table_cache_key_prefix);
+    }
 }
 
 NamesAndTypesList PaimonMetadata::getTableSchema(ContextPtr /*local_context*/) const
@@ -448,7 +467,7 @@ std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String
         auto load_manifest_list = [log_ptr, client, manifest_list_path]()
         {
             LOG_TRACE(log_ptr, "Loading manifest list (cache miss): {}", manifest_list_path);
-            return client->getManifestMeta(manifest_list_path);
+            return client->getManifestMeta(manifest_list_path, /*disable_filesystem_cache=*/true);
         };
         return persistent_components.metadata_cache->getOrSetManifestList(cache_key, load_manifest_list);
     }
@@ -472,7 +491,7 @@ PaimonManifest PaimonMetadata::getManifest(const String & manifest_path, Int64 s
         auto load_manifest = [log_ptr, client, manifest_path, schema, partition_default_name]()
         {
             LOG_TRACE(log_ptr, "Loading manifest (cache miss): {}", manifest_path);
-            return client->getDataManifest(manifest_path, *schema, partition_default_name);
+            return client->getDataManifest(manifest_path, *schema, partition_default_name, /*disable_filesystem_cache=*/true);
         };
         return persistent_components.metadata_cache->getOrSetManifest(cache_key, load_manifest);
     }
