@@ -47,6 +47,9 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"prefetch_hits", std::make_shared<DataTypeUInt64>(), "Number of windows served by an in-flight prefetch."},
         {"prefetch_cancelled", std::make_shared<DataTypeUInt64>(), "Number of prefetches cancelled before their worker ran."},
         {"prefetch_pool_full", std::make_shared<DataTypeUInt64>(), "Number of times `PrefetchThreadPool::submit` returned `nullptr` (queue full)."},
+        {"prefetch_discarded_running", std::make_shared<DataTypeUInt64>(), "Number of times `discardPrefetch` blocked on `get()` because the worker had already started; everything the worker produced is wasted."},
+        {"prefetch_discard_wait_microseconds", std::make_shared<DataTypeUInt64>(), "Time blocked in `discardPrefetch::get` waiting for a running prefetch to finish before its result was thrown away."},
+        {"prefetch_discarded_bytes", std::make_shared<DataTypeUInt64>(), "Bytes the worker delivered in the rope that `discardPrefetch` threw away."},
     };
 }
 
@@ -82,6 +85,9 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(prefetch_hits);
     columns[i++]->insert(prefetch_cancelled);
     columns[i++]->insert(prefetch_pool_full);
+    columns[i++]->insert(prefetch_discarded_running);
+    columns[i++]->insert(prefetch_discard_wait_us);
+    columns[i++]->insert(prefetch_discarded_bytes);
 }
 
 }

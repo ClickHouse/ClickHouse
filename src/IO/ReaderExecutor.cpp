@@ -35,6 +35,9 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchHits;
     extern const Event ReaderExecutorPrefetchCancelled;
     extern const Event ReaderExecutorPrefetchPoolFull;
+    extern const Event ReaderExecutorPrefetchDiscardedRunning;
+    extern const Event ReaderExecutorPrefetchDiscardWaitMicroseconds;
+    extern const Event ReaderExecutorPrefetchDiscardedBytes;
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
     extern const Event ReaderExecutorOverReadOverflow;
@@ -186,6 +189,9 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchHits, stats.prefetch_hits);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchCancelled, stats.prefetch_cancelled);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, stats.prefetch_pool_full);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedRunning, stats.prefetch_discarded_running);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardWaitMicroseconds, stats.prefetch_discard_wait_us);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedBytes, stats.prefetch_discarded_bytes);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadBytes, stats.over_read_bytes);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadServedBytes, stats.over_read_served_bytes);
 
@@ -195,6 +201,7 @@ ReaderExecutor::~ReaderExecutor()
         "get_us={} populate_us={} src_us={} decrypt_us={} "
         "prefetch_wait_us={} sync_read_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
+        "prefetch_discarded_running={} prefetch_discard_wait_us={} prefetch_discarded_bytes={} "
         "over_read={} over_read_served={}",
         stats.cache_hit_bytes, stats.cache_miss_bytes,
         stats.cache_populated_bytes, stats.allocated_bytes,
@@ -203,6 +210,7 @@ ReaderExecutor::~ReaderExecutor()
         stats.source_read_us, stats.decrypt_us,
         stats.prefetch_wait_us, stats.sync_read_us,
         stats.prefetch_hits, stats.prefetch_cancelled, stats.prefetch_pool_full,
+        stats.prefetch_discarded_running, stats.prefetch_discard_wait_us, stats.prefetch_discarded_bytes,
         stats.over_read_bytes, stats.over_read_served_bytes);
 
     if (reader_executor_log)
@@ -234,6 +242,9 @@ ReaderExecutor::~ReaderExecutor()
         elem.prefetch_hits = stats.prefetch_hits;
         elem.prefetch_cancelled = stats.prefetch_cancelled;
         elem.prefetch_pool_full = stats.prefetch_pool_full;
+        elem.prefetch_discarded_running = stats.prefetch_discarded_running;
+        elem.prefetch_discard_wait_us = stats.prefetch_discard_wait_us;
+        elem.prefetch_discarded_bytes = stats.prefetch_discarded_bytes;
         reader_executor_log->add(std::move(elem));
     }
 }
@@ -402,11 +413,31 @@ void ReaderExecutor::discardPrefetch()
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
 
-    /// Retain the handle so the destructor can wait on its worker — the
-    /// worker's `ThreadGroupSwitcher` attach must not race the submitter's
-    /// `QueryScope` teardown.
-    local_handle->tryCancel();
-    abandoned_prefetches.push_back(std::move(local_handle));
+    /// `tryCancel` succeeded: the worker hadn't started yet. Stash the
+    /// handle for the destructor to wait on — the worker, when it picks
+    /// the task up, takes the cancellation-exception path and never
+    /// touches this executor's mutable state.
+    if (local_handle->tryCancel())
+    {
+        abandoned_prefetches.push_back(std::move(local_handle));
+        return;
+    }
+
+    /// `tryCancel` lost the race — the worker is mid-`readPhysicalWindow`,
+    /// mutating `live_buffer`, `over_read_buffer`, `reached_eof`, `stats`
+    /// via the captured `this`. Block so the caller can safely overwrite
+    /// that state on return. Everything the worker produced is wasted.
+    ++stats.prefetch_discarded_running;
+    StopwatchAccumulator wait_scope(stats.prefetch_discard_wait_us);
+    try
+    {
+        auto rope = local_handle->get();
+        stats.prefetch_discarded_bytes += rope.totalBytes();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Discarded prefetch task threw");
+    }
 }
 
 void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)

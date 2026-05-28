@@ -821,6 +821,9 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchHits, "Number of times a ReaderExecutor read was served by an in-flight prefetch.", ValueType::Number) \
     M(ReaderExecutorPrefetchCancelled, "Number of times a ReaderExecutor prefetch was cancelled before its worker started.", ValueType::Number) \
     M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submit returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
+    M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's discardPrefetch blocked on a running prefetch's get() because tryCancel lost the race; the work the worker did is wasted.", ValueType::Number) \
+    M(ReaderExecutorPrefetchDiscardWaitMicroseconds, "Time blocked in ReaderExecutor's discardPrefetch waiting for a running prefetch to finish before throwing its result away.", ValueType::Microseconds) \
+    M(ReaderExecutorPrefetchDiscardedBytes, "Bytes a running ReaderExecutor prefetch delivered before discardPrefetch threw the rope away.", ValueType::Bytes) \
     M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a SourceBufferLimit slot for a live-buffer read.", ValueType::Number) \
     M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a SourceBufferLimit slot.", ValueType::Number) \
     M(ReaderExecutorOverReadOverflow, "Number of times ReaderExecutor dropped its retained over-read buffer (and the matching live connection) because the buffer exceeded `window_size`; signals a non-sequential access pattern that wasn't consuming the lookahead.", ValueType::Number) \

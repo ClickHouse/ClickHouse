@@ -41,6 +41,9 @@ struct ReaderExecutorLogElement
     UInt64 prefetch_hits = 0;
     UInt64 prefetch_cancelled = 0;
     UInt64 prefetch_pool_full = 0;
+    UInt64 prefetch_discarded_running = 0;
+    UInt64 prefetch_discard_wait_us = 0;
+    UInt64 prefetch_discarded_bytes = 0;
 
     static std::string name() { return "ReaderExecutorLog"; }
 

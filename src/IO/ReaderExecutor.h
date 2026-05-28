@@ -285,6 +285,12 @@ private:
         size_t prefetch_hits = 0;
         size_t prefetch_cancelled = 0;
         size_t prefetch_pool_full = 0;
+        /// Discarding a running prefetch: `discardPrefetch` blocked on
+        /// `get()` because `tryCancel` lost the race against the worker.
+        /// All work the worker did is thrown away.
+        size_t prefetch_discarded_running = 0;
+        UInt64 prefetch_discard_wait_us = 0;
+        size_t prefetch_discarded_bytes = 0;
         /// Bytes source-read PAST the requested window and retained in
         /// `over_read_buffer` for a potential future call. Pair this with
         /// `over_read_served_bytes` to measure how often the speculation
