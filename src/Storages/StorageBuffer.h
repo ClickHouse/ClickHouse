@@ -199,7 +199,7 @@ private:
     StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
-    std::optional<BackgroundSchedulePoolTaskHolder> flush_handle;
+    BackgroundSchedulePoolTaskHolder flush_handle;
 
     static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;
 };
