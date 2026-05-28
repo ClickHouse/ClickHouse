@@ -159,11 +159,11 @@ std::optional<Float64> ColumnStatistics::estimateLess(const Field & val) const
     if (stats.contains(StatisticsType::TDigest))
         if (auto result = stats.at(StatisticsType::TDigest)->estimateLess(val))
             return result;
-    if (stats.contains(StatisticsType::MinMax))
-        if (auto result = stats.at(StatisticsType::MinMax)->estimateLess(val))
-            return result;
     if (stats.contains(StatisticsType::Basic))
         if (auto result = stats.at(StatisticsType::Basic)->estimateLess(val))
+            return result;
+    if (stats.contains(StatisticsType::MinMax))
+        if (auto result = stats.at(StatisticsType::MinMax)->estimateLess(val))
             return result;
     return std::nullopt;
 }
@@ -204,7 +204,9 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         UInt64 cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
         if (cardinality == 0 || rows == 0)
             return 0;
-        return static_cast<Float64>(rows) / static_cast<Float64>(cardinality); /// assume uniform distribution
+        /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
+        /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
+        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
     }
 
     return std::nullopt;

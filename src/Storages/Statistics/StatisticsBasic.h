@@ -56,7 +56,7 @@ private:
     UInt64 null_count = 0;
     UInt64 row_count = 0;
 
-    DataTypePtr data_type; /// stored with Nullable removed
+    DataTypePtr data_type; /// stored with LowCardinality and Nullable removed
     bool tracks_numeric = false;
     bool tracks_string = false;
     bool tracks_null = false;

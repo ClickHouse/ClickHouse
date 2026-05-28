@@ -88,11 +88,10 @@ const NullMap * tryGetNullMap(const IColumn & column)
 
 StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
-    , data_type(removeNullable(data_type_))
+    , data_type(removeLowCardinalityAndNullable(removeNullable(data_type_)))
 {
-    auto inner = removeLowCardinalityAndNullable(removeNullable(data_type_));
-    tracks_numeric = inner->isValueRepresentedByNumber();
-    tracks_string = isStringOrFixedString(inner);
+    tracks_numeric = data_type->isValueRepresentedByNumber();
+    tracks_string = isStringOrFixedString(data_type);
     tracks_null = isNullableOrLowCardinalityNullable(data_type_);
 }
 
