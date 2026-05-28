@@ -101,7 +101,7 @@ DiskCacheHandle::DiskCacheHandle(
     /// that loop and the request size is already bounded by the executor's
     /// window (≤ a few segments per call), so disabling the limit here is
     /// both correct and bounded.
-    if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (cache_settings.read_if_exists_otherwise_bypass)
     {
         holder = cache->get(
             cache_key,
@@ -120,7 +120,7 @@ DiskCacheHandle::DiskCacheHandle(
             CreateFileSegmentSettings{},
             /*file_segments_limit=*/0,
             origin,
-            cache_settings.filesystem_cache_boundary_alignment);
+            cache_settings.boundary_alignment);
     }
 
     LOG_TRACE(log, "DiskCacheHandle: requested file [{}, {}) = obj [{}, {}), got {} segments",
@@ -370,7 +370,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
     /// In bypass mode the ctor used `cache->get` so EMPTY segments don't exist
     /// here, but be explicit: never populate the cache when the caller asked
     /// us to leave it alone.
-    if (cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
+    if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
 
     /// `range` and `data`'s nodes are in file-level coordinates;
@@ -482,7 +482,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         std::string failure_reason;
         bool reserved = segment.reserve(
             contiguous,
-            cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds,
+            cache_settings.reserve_space_wait_lock_timeout_milliseconds,
             failure_reason);
 
         if (!reserved)
