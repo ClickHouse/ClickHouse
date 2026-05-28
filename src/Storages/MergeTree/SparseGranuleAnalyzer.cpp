@@ -207,7 +207,11 @@ analyzeSparseColumnGranules(
         bool ok = false;
     };
 
-    auto process_chunk = [&](const MarkRange & chunk) -> ChunkResult
+    const auto storage_settings_ptr = storage.getSettings();
+    auto mark_cache_keepalive = storage.getContext()->getMarkCache();
+    auto * mark_cache_raw = mark_cache_keepalive.get();
+
+    auto process_chunk = [part, cols, storage_snapshot, storage_settings_ptr, mark_cache_keepalive, mark_cache_raw, part_info, log, column_name](const MarkRange & chunk) -> ChunkResult
     {
         ChunkResult r;
         r.range = chunk;
@@ -218,11 +222,11 @@ analyzeSparseColumnGranules(
             part_info,
             cols,
             storage_snapshot,
-            storage.getSettings(),
+            storage_settings_ptr,
             MarkRanges{chunk},
             /*virtual_fields=*/{},
             /*uncompressed_cache=*/nullptr,
-            storage.getContext()->getMarkCache().get(),
+            mark_cache_raw,
             /*deserialization_prefixes_cache=*/nullptr,
             MergeTreeReaderSettings::createFromSettings(),
             /*avg_value_size_hints=*/{},
@@ -299,23 +303,23 @@ analyzeSparseColumnGranules(
     }
     else
     {
-        auto & pool = getIOThreadPool().get();
-        std::vector<std::future<ChunkResult>> futures;
-        futures.reserve(chunks.size());
+        using RunnerT = ThreadPoolCallbackRunnerLocal<ChunkResult>;
+        RunnerT runner(getIOThreadPool().get(), ThreadName::MERGETREE_READ);
+        std::vector<std::shared_ptr<RunnerT::Task>> task_handles;
+        task_handles.reserve(chunks.size());
         for (size_t i = 0; i < chunks.size(); ++i)
         {
             const auto chunk = chunks[i];
-            futures.push_back(scheduleFromThreadPoolUnsafe<ChunkResult>(
-                [&, chunk]() { return process_chunk(chunk); },
-                pool, ThreadName::MERGETREE_READ));
+            task_handles.push_back(runner.enqueueAndGiveOwnership(
+                [process_chunk, chunk]() { return process_chunk(chunk); }));
         }
-        /// `f.get()` rethrows any worker exception; treat that as "abandon analysis"
+        /// `future.get()` rethrows any worker exception; treat that as "abandon analysis"
         /// rather than letting it escape, same as the synchronous catch in `process_chunk`.
-        for (size_t i = 0; i < futures.size(); ++i)
+        for (size_t i = 0; i < task_handles.size(); ++i)
         {
             try
             {
-                results[i] = futures[i].get();
+                results[i] = task_handles[i]->future.get();
             }
             catch (...)
             {
