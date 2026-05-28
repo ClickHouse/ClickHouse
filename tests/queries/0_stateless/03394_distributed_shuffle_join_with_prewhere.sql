@@ -2,7 +2,7 @@ SET distributed_plan_optimize_exchanges = 1;
 
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree()
 ORDER BY tuple()
-SETTINGS auto_statistics_types = 'tdigest,countmin,uniq,minmax';
+SETTINGS auto_statistics_types = 'tdigest,uniq,minmax';
 
 SET materialize_statistics_on_insert = 1;
 

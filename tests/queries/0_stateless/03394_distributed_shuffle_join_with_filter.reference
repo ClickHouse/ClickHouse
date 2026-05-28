@@ -4,7 +4,7 @@ Expression ((Project names + Projection))
     GatherExchange
       Aggregating (partial)
         ScatterExchange (any)
-          Expression (((Before GROUP BY + ) + Discarding unused columns))
+          Expression ((Before GROUP BY + ))
             GatherExchange
               JoinLogical
                 ScatterExchange (by hash([__table1.src_ip]))
@@ -21,7 +21,7 @@ Expression ((Project names + Projection))
   MergingAggregated (merge)
     GatherExchange
       Aggregating (partial)
-        Expression (((Before GROUP BY + ) + Discarding unused columns))
+        Expression ((Before GROUP BY + ))
           JoinLogical
             ShuffleExchange (by hash([__table1.src_ip]))
               Expression
