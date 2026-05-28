@@ -5672,6 +5672,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
+Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
+)", 0) \
     DECLARE(Bool, optimize_dictget_tuple_element, true, R"(
 Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('dict', 'b', key)` to avoid fetching unnecessary dictionary attributes. Supports positional (`.1`, `.2`, ...) and named (`.b`) access, and also applies to `dictGetOrDefault` when the default argument is a constant tuple or a `tuple(...)` of constants.
 )", 0) \
@@ -7919,6 +7922,12 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
     DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
 Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_streaming_queries, false, R"(
+Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
+When off, any table expression using the `STREAM` modifier is rejected
+at plan-build time. This is the umbrella gate for the streaming-queries
+feature; additional capabilities may be gated by their own settings.
+)", EXPERIMENTAL) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
@@ -8181,8 +8190,7 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
-Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel.
-Set to 0 for no limit.
+Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_memory, 128_MiB, R"(
 Memory limit in bytes per WebAssembly UDF instance.
@@ -8213,15 +8221,22 @@ If true (default), an AI function call that fails permanently after exhausting a
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
 Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of input tokens, since the number of input tokens of a call are not known in advance. Set to 0 to disable.
+
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
+
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
 If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
+Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
