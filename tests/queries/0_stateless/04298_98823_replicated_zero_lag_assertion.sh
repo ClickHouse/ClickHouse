@@ -16,6 +16,13 @@
 # is correctly reported as synced and `system.clusters.unsynced_after_recovery`
 # is `0`.
 
+# Same pattern as 03206_replication_lag_metric.sh: querying system.clusters
+# below calls DatabaseReplicated::tryGetReplicasInfo, which can transiently
+# log <Error> from a ZNONODE on max_log_ptr while the DDL worker is still
+# initializing. Suppress those forwarded server logs so the flaky-check
+# stderr gate does not trip.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
