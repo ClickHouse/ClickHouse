@@ -283,7 +283,13 @@ private:
         /// distort hit-rate math.
         size_t over_read_served_bytes = 0;
     };
-    Stats stats;
+    /// `mutable` so the `const` `decryptRope` can accumulate `decrypt_us`.
+    /// `decryptRope`'s `const` documents thread-safety for parallel calls
+    /// from prefetch workers (decryption_layers/decryption_headers stay
+    /// immutable post-init); stats are observability, not state, and
+    /// writes from worker + foreground are serialized via the prefetch
+    /// future's `get()` happens-before edge (same model as `source_read_us`).
+    mutable Stats stats;
 
     /// Bytes that were source-read into a separate `OwnedRopeBuffer` but landed
     /// outside the caller's `physical_window` — only retained when the

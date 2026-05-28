@@ -539,6 +539,13 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
     if (total == 0)
         return {};
 
+    /// Account decryption CPU time. Without this, `stats.decrypt_us` stays
+    /// `0` for encrypted reads and the
+    /// `ReaderExecutorDecryptMicroseconds` ProfileEvent +
+    /// `system.reader_executor_log.decrypt_microseconds` column read as
+    /// `0` even when this loop decrypts every byte of the window.
+    StopwatchAccumulator decrypt_scope(stats.decrypt_us);
+
     /// Mirror the reading-side iteration pattern: one block at a time.
     ///
     /// The naive shape — allocate all destination blocks, copy the whole input
