@@ -370,26 +370,28 @@ struct CosineDistance
     }
 };
 
-/// Pre-convert input data to ResultType before passing to the SIMD kernel.
-/// This lets the kernel template use only <Kernel, ResultType> instead of
-/// <Kernel, ResultType, LeftType, RightType>, reducing MULTITARGET instantiations
-/// from 6 kernels * 2 result types * 11 left * 11 right * 3 arch = 4356
-/// to just 6 * 2 * 3 = 36. Without this, the .o file exceeds the 50 MB CI limit.
-/// When InputType already matches ResultType, no copy is made.
-template <typename ResultType, typename InputType>
-std::pair<const ResultType *, PaddedPODArray<ResultType>>
-castData(const PaddedPODArray<InputType> & data)
-{
-    if constexpr (std::is_same_v<ResultType, InputType>)
-        return {data.data(), {}};
-    else
-    {
-        PaddedPODArray<ResultType> converted(data.size());
-        for (size_t i = 0; i < data.size(); ++i)
-            converted[i] = static_cast<ResultType>(data[i]);
-        return {converted.data(), std::move(converted)};
-    }
-}
+template <typename ResultType, typename LeftType, typename RightType>
+constexpr bool is_native_distance_type = std::is_same_v<ResultType, LeftType> && std::is_same_v<ResultType, RightType>;
+
+template <typename LeftType, typename RightType, typename A, typename B>
+constexpr bool is_unordered_pair = (std::is_same_v<LeftType, A> && std::is_same_v<RightType, B>)
+    || (std::is_same_v<LeftType, B> && std::is_same_v<RightType, A>);
+
+/// Common mixed-type pairs that warrant SIMD specialisation. Selection mirrors
+/// real-world vector-search workloads:
+///   - UInt8 <-> Float32/Float64: quantised embeddings stored as UInt8 to save
+///     space, queried against Float32/Float64 query vectors (typical for ANN).
+///   - Float32 <-> Float64: cross-precision lookup (e.g. Float64 client query
+///     against Float32 server-side storage).
+/// Other mixed pairs fall through to the baseline (non-MULTITARGET) instantiation
+/// of executeDistanceMixedImpl. The set is deliberately tiny: extending to the
+/// full 11x11 numeric Cartesian product would explode MULTITARGET instantiations
+/// to 11*11*6*2*3 = 4356 .text copies and push arrayDistance.o past the 50 MB
+/// CI object-size limit.
+template <typename LeftType, typename RightType>
+constexpr bool is_common_mixed_pair = is_unordered_pair<LeftType, RightType, UInt8, Float32>
+    || is_unordered_pair<LeftType, RightType, UInt8, Float64>
+    || is_unordered_pair<LeftType, RightType, Float32, Float64>;
 
 /// Multi-target hot loop for non-const x non-const path.
 /// The MULTITARGET macro generates _x86_64_v4, _x86_64_v3, and default versions
@@ -463,6 +465,85 @@ void executeDistance(
     executeDistanceImpl<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
 }
 
+/// Streaming mixed-type path. It casts individual elements inside the hot loop
+/// and never materialises converted full-column buffers.
+///
+/// One MULTITARGET definition serves both common and uncommon pairs:
+///   - Common pairs (see is_common_mixed_pair) call executeDistanceMixedImpl_x86_64_v3/v4
+///     for SIMD acceleration.
+///   - Other mixed pairs fall back to the baseline (non-MULTITARGET) instantiation
+///     of executeDistanceMixedImpl, keeping LeftType x RightType x ISA explosion bounded.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+    void NO_INLINE
+), executeDistanceMixedImpl, MULTITARGET_FUNCTION_BODY((
+    const LeftType * __restrict data_x,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+    constexpr size_t unroll_count = 128 / sizeof(ResultType);
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        const auto off = offsets[row];
+        const size_t count = off - prev;
+
+        typename Kernel::template State<ResultType> partial[unroll_count];
+        size_t i = 0;
+        const size_t unrolled_end = count / unroll_count * unroll_count;
+
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                Kernel::template accumulate<ResultType>(
+                    partial[s],
+                    static_cast<ResultType>(data_x[prev + i + s]),
+                    static_cast<ResultType>(data_y[prev + i + s]),
+                    params);
+
+        typename Kernel::template State<ResultType> state;
+        for (size_t s = 0; s < unroll_count; ++s)
+            Kernel::template combine<ResultType>(state, partial[s], params);
+
+        for (; i < count; ++i)
+            Kernel::template accumulate<ResultType>(
+                state,
+                static_cast<ResultType>(data_x[prev + i]),
+                static_cast<ResultType>(data_y[prev + i]),
+                params);
+
+        result[row] = Kernel::finalize(state, params);
+        prev = off;
+    }
+}))
+
+template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+void executeDistanceMixed(
+    const LeftType * __restrict data_x,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+#if USE_MULTITARGET_CODE
+    if constexpr (is_common_mixed_pair<LeftType, RightType>)
+    {
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return executeDistanceMixedImpl_x86_64_v4<Kernel, ResultType, LeftType, RightType>(
+                data_x, data_y, offsets, result, row_count, params);
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return executeDistanceMixedImpl_x86_64_v3<Kernel, ResultType, LeftType, RightType>(
+                data_x, data_y, offsets, result, row_count, params);
+    }
+#endif
+    executeDistanceMixedImpl<Kernel, ResultType, LeftType, RightType>(data_x, data_y, offsets, result, row_count, params);
+}
+
 
 /// Multi-target hot loop for const x non-const path.
 /// data_x is the constant array (repeated for every row), data_y varies per row.
@@ -533,6 +614,83 @@ void executeDistanceConst(
         return executeDistanceConstImpl_x86_64_v3<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
 #endif
     executeDistanceConstImpl<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
+}
+
+/// const-left mirror of executeDistanceMixedImpl. Same MULTITARGET strategy:
+/// common pairs get x86_64_v3/v4 instances, other pairs reuse the baseline.
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+    void NO_INLINE
+), executeDistanceConstMixedImpl, MULTITARGET_FUNCTION_BODY((
+    const LeftType * __restrict data_x,
+    size_t array_size,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+    constexpr size_t unroll_count = 128 / sizeof(ResultType);
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        const auto off = offsets[row];
+        const size_t count = off - prev;
+        chassert(count == array_size);
+
+        typename Kernel::template State<ResultType> partial[unroll_count];
+        size_t i = 0;
+        const size_t unrolled_end = array_size / unroll_count * unroll_count;
+
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                Kernel::template accumulate<ResultType>(
+                    partial[s],
+                    static_cast<ResultType>(data_x[i + s]),
+                    static_cast<ResultType>(data_y[prev + i + s]),
+                    params);
+
+        typename Kernel::template State<ResultType> state;
+        for (size_t s = 0; s < unroll_count; ++s)
+            Kernel::template combine<ResultType>(state, partial[s], params);
+
+        for (; i < array_size; ++i)
+            Kernel::template accumulate<ResultType>(
+                state,
+                static_cast<ResultType>(data_x[i]),
+                static_cast<ResultType>(data_y[prev + i]),
+                params);
+
+        result[row] = Kernel::finalize(state, params);
+        prev = off;
+    }
+}))
+
+template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+void executeDistanceConstMixed(
+    const LeftType * __restrict data_x,
+    size_t array_size,
+    const RightType * __restrict data_y,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+#if USE_MULTITARGET_CODE
+    if constexpr (is_common_mixed_pair<LeftType, RightType>)
+    {
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return executeDistanceConstMixedImpl_x86_64_v4<Kernel, ResultType, LeftType, RightType>(
+                data_x, array_size, data_y, offsets, result, row_count, params);
+        if (isArchSupported(TargetArch::x86_64_v3))
+            return executeDistanceConstMixedImpl_x86_64_v3<Kernel, ResultType, LeftType, RightType>(
+                data_x, array_size, data_y, offsets, result, row_count, params);
+    }
+#endif
+    executeDistanceConstMixedImpl<Kernel, ResultType, LeftType, RightType>(
+        data_x, array_size, data_y, offsets, result, row_count, params);
 }
 
 
@@ -697,11 +855,12 @@ private:
         auto col_res = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        const auto [ptr_x, buf_x] = castData<ResultType>(data_x);
-        const auto [ptr_y, buf_y] = castData<ResultType>(data_y);
-
-        executeDistance<Kernel, ResultType>(
-            ptr_x, ptr_y, offsets_x.data(), result_data.data(), input_rows_count, kernel_params);
+        if constexpr (is_native_distance_type<ResultType, LeftType, RightType>)
+            executeDistance<Kernel, ResultType>(
+                data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count, kernel_params);
+        else
+            executeDistanceMixed<Kernel, ResultType, LeftType, RightType>(
+                data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count, kernel_params);
 
         return col_res;
     }
@@ -786,12 +945,12 @@ private:
         }
 #endif
 
-        /// Generic fallback: pre-convert to ResultType then use MULTITARGET auto-vectorized kernel.
-        const auto [ptr_x, buf_x] = castData<ResultType>(data_x);
-        const auto [ptr_y, buf_y] = castData<ResultType>(data_y);
-
-        executeDistanceConst<Kernel, ResultType>(
-            ptr_x, offsets_x[0], ptr_y, offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
+        if constexpr (is_native_distance_type<ResultType, LeftType, RightType>)
+            executeDistanceConst<Kernel, ResultType>(
+                data_x.data(), offsets_x[0], data_y.data(), offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
+        else
+            executeDistanceConstMixed<Kernel, ResultType, LeftType, RightType>(
+                data_x.data(), offsets_x[0], data_y.data(), offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
 
         return result;
     }

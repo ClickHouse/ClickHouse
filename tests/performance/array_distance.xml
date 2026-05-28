@@ -1,0 +1,128 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>array_size</name>
+            <values>
+                <value>16</value>
+                <value>256</value>
+                <value>4096</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE array_distance_float32
+        (
+            id UInt64,
+            v Array(Float32)
+        )
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE array_distance_mixed
+        (
+            id UInt64,
+            u8 Array(UInt8),
+            f64 Array(Float64)
+        )
+        ENGINE = Memory;
+    </create_query>
+
+    <fill_query>
+        INSERT INTO array_distance_float32
+        SELECT
+            number,
+            arrayMap(i -> toFloat32((number + i) % 257), range(4096))
+        FROM numbers(100000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO array_distance_mixed
+        SELECT
+            number,
+            arrayMap(i -> toUInt8((number + i) % 256), range(4096)),
+            arrayMap(i -> toFloat64((number + i) % 257), range(4096))
+        FROM numbers(100000);
+    </fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>
+        SELECT sum(d)
+        FROM
+        (
+            SELECT L1Distance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
+            FROM array_distance_float32
+        )
+    </query>
+
+    <query>
+        SELECT sum(d)
+        FROM
+        (
+            SELECT L2Distance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
+            FROM array_distance_float32
+        )
+    </query>
+
+    <query>
+        SELECT sum(d)
+        FROM
+        (
+            SELECT L2SquaredDistance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
+            FROM array_distance_float32
+        )
+    </query>
+
+    <query>
+        SELECT sum(d)
+        FROM
+        (
+            SELECT LinfDistance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
+            FROM array_distance_float32
+        )
+    </query>
+
+    <query>
+        SELECT sum(d)
+        FROM
+        (
+            SELECT cosineDistance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
+            FROM array_distance_float32
+        )
+    </query>
+
+    <query>
+        SELECT sum(d)
+        FROM
+        (
+            SELECT L2Distance(arrayResize(u8, {array_size}), arrayResize(f64, {array_size})) AS d
+            FROM array_distance_mixed
+        )
+    </query>
+
+    <query>
+        SELECT sum(d)
+        FROM
+        (
+            SELECT cosineDistance(arrayResize(u8, {array_size}), arrayResize(f64, {array_size})) AS d
+            FROM array_distance_mixed
+        )
+    </query>
+
+    <query>
+        WITH (SELECT arrayResize(u8, {array_size}) FROM array_distance_mixed LIMIT 1) AS needle
+        SELECT sum(d)
+        FROM
+        (
+            SELECT L2Distance(needle, arrayResize(f64, {array_size})) AS d
+            FROM array_distance_mixed
+        )
+    </query>
+
+    <drop_query>DROP TABLE array_distance_float32</drop_query>
+    <drop_query>DROP TABLE array_distance_mixed</drop_query>
+</test>
