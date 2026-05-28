@@ -67,15 +67,12 @@ SELECT arrayBottomK(3, ['alpha', NULL, 'gamma', NULL, 'beta']::Array(LowCardinal
 SELECT toTypeName(arrayTopK(3, ['alpha', NULL, 'beta']::Array(LowCardinality(Nullable(String)))));
 SELECT toTypeName(arrayBottomK(3, ['alpha', NULL, 'beta']::Array(LowCardinality(Nullable(String)))));
 
-SELECT '-- Negative K is clamped to 0 (returns empty array):';
-SELECT arrayTopK(-1, [1, 5, 2, 7, 3]);
-SELECT arrayBottomK(-1, [1, 5, 2, 7, 3]);
-SELECT arrayTopK(-100, [1, NULL, 2]);
-SELECT arrayTopK(materialize(toInt32(-3)), [1, 5, 2]);
-
 SELECT '-- Errors:';
 SELECT arrayTopK([1, 2, 3]);                              -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT arrayBottomK([1, 2, 3]);                           -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT arrayTopK('foo', [1, 2, 3]);                       -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayTopK(2, [1, 2, 3], [1]);                      -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayTopK(2, [1, 2, 3], 3);                        -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT arrayTopK(-1, [1, 5, 2, 7, 3]);                    -- { serverError BAD_ARGUMENTS }
+SELECT arrayBottomK(-1, [1, 5, 2, 7, 3]);                 -- { serverError BAD_ARGUMENTS }
+SELECT arrayTopK(materialize(toInt32(-3)), [1, 5, 2]);    -- { serverError BAD_ARGUMENTS }

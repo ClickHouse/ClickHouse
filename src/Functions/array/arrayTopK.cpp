@@ -8,6 +8,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/castTypeToEither.h>
 #include <base/sort.h>
 
 
@@ -16,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -35,10 +37,11 @@ struct Less
 
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if constexpr (IsAscending)
-            return column.compareAt(lhs, rhs, column, 1) < 0;
-        else
-            return column.compareAt(lhs, rhs, column, -1) > 0;
+        int c = column.compareAt(lhs, rhs, column, IsAscending ? 1 : -1);
+        if (c != 0)
+            return IsAscending ? c < 0 : c > 0;
+        /// Make the result deterministic: equal elements keep their original order.
+        return lhs < rhs;
     }
 };
 
@@ -52,21 +55,26 @@ struct GenericLess
 
     bool operator()(size_t lhs, size_t rhs) const
     {
-        if constexpr (IsAscending)
-            return column.compareAt(lhs, rhs, column, 1) < 0;
-        else
-            return column.compareAt(lhs, rhs, column, -1) > 0;
+        int c = column.compareAt(lhs, rhs, column, IsAscending ? 1 : -1);
+        if (c != 0)
+            return IsAscending ? c < 0 : c > 0;
+        /// Make the result deterministic: equal elements keep their original order.
+        return lhs < rhs;
     }
 };
 
-/// Reads K[row] from the K column and clamps negatives (signed columns) to 0.
-size_t readK(const IColumn & k_column, bool k_is_signed, size_t row)
+/// Reads K[row] from the K column and rejects negatives (signed columns).
+size_t readK(const IColumn & k_column, bool k_is_signed, size_t row, const char * function_name)
 {
     const UInt64 k = k_column.getUInt(row);
     /// For a signed K column, a negative value is reinterpreted as a huge UInt64 with the high bit set;
-    /// detect that and clamp to 0.
+    /// detect that and throw.
     if (k_is_signed && k > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-        return 0;
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Argument K of function {} must be non-negative, got {}",
+            function_name,
+            static_cast<Int64>(k));
     return k;
 }
 
@@ -77,7 +85,8 @@ ColumnPtr applyComparator(
     const IColumn & k_column,
     bool k_is_signed,
     const ColumnArray & source,
-    const IColumn & mapped)
+    const IColumn & mapped,
+    const char * function_name)
 {
     const auto & offsets = source.getOffsets();
     const size_t size = offsets.size();
@@ -100,14 +109,14 @@ ColumnPtr applyComparator(
 
     /// Smaller reserve when K is constant.
     if (isColumnConst(k_column))
-        indexes.reserve(std::min(readK(k_column, k_is_signed, 0) * size, nested_size));
+        indexes.reserve(std::min(readK(k_column, k_is_signed, 0, function_name) * size, nested_size));
     else
         indexes.reserve(nested_size);
 
     auto result_offsets_column = ColumnArray::ColumnOffsets::create(size);
     auto & result_offsets = result_offsets_column->getData();
 
-    PaddedPODArray<size_t> row_indices;
+    IColumn::Permutation row_indices;
     ColumnArray::Offset current_offset = 0;
     ColumnArray::Offset result_offset = 0;
 
@@ -116,7 +125,7 @@ ColumnPtr applyComparator(
     {
         const auto next_offset = offsets[i];
 
-        const size_t k = readK(k_column, k_is_signed, i);
+        const size_t k = readK(k_column, k_is_signed, i, function_name);
         if (!k)
         {
             result_offsets[i] = result_offset;
@@ -159,7 +168,8 @@ ColumnPtr dispatchByColumn(
     const IColumn & k_column,
     bool k_is_signed,
     const ColumnArray & source,
-    const IColumn & mapped)
+    const IColumn & mapped,
+    const char * function_name)
 {
     /// A constant lambda (e.g. `(x) -> NULL`) gives `mapped` as `ColumnConst(Nullable(...))`.
     /// Materialize it so the `Nullable` peel below and the null-map access in `applyComparator` work uniformly.
@@ -170,33 +180,39 @@ ColumnPtr dispatchByColumn(
     if (const auto * mapped_nullable = checkAndGetColumn<ColumnNullable>(mapped_full.get()))
         mapped_data = &mapped_nullable->getNestedColumn();
 
-#define DISPATCH(TYPE) \
-    if (checkAndGetColumn<TYPE>(mapped_data)) \
-    { \
-        using LessT = Less<IsAscending, TYPE>; \
-        return applyComparator<LessT>(k_column, k_is_signed, source, *mapped_full); \
-    }
+    /// Try using specialized comparator Less<>.
+    ColumnPtr result;
+    bool dispatched = castTypeToEither<
+        ColumnUInt8,
+        ColumnUInt16,
+        ColumnUInt32,
+        ColumnUInt64,
+        ColumnInt8,
+        ColumnInt16,
+        ColumnInt32,
+        ColumnInt64,
+        ColumnFloat32,
+        ColumnFloat64,
+        ColumnDateTime64,
+        ColumnDecimal<Decimal32>,
+        ColumnDecimal<Decimal64>,
+        ColumnDecimal<Decimal128>,
+        ColumnDecimal<Decimal256>,
+        ColumnString,
+        ColumnFixedString>(
+        mapped_data,
+        [&](const auto & column)
+        {
+            using ColumnT = std::decay_t<decltype(column)>;
+            result = applyComparator<Less<IsAscending, ColumnT>>(k_column, k_is_signed, source, *mapped_full, function_name);
+            return true;
+        });
 
-    DISPATCH(ColumnUInt8)
-    DISPATCH(ColumnUInt16)
-    DISPATCH(ColumnUInt32)
-    DISPATCH(ColumnUInt64)
-    DISPATCH(ColumnInt8)
-    DISPATCH(ColumnInt16)
-    DISPATCH(ColumnInt32)
-    DISPATCH(ColumnInt64)
-    DISPATCH(ColumnFloat32)
-    DISPATCH(ColumnFloat64)
-    DISPATCH(ColumnDateTime64)
-    DISPATCH(ColumnDecimal<Decimal32>)
-    DISPATCH(ColumnDecimal<Decimal64>)
-    DISPATCH(ColumnDecimal<Decimal128>)
-    DISPATCH(ColumnDecimal<Decimal256>)
-    DISPATCH(ColumnString)
-    DISPATCH(ColumnFixedString)
-#undef DISPATCH
+    if (dispatched)
+        return result;
 
-    return applyComparator<GenericLess<IsAscending>>(k_column, k_is_signed, source, *mapped_full);
+    /// Fall back to GenericLess<>.
+    return applyComparator<GenericLess<IsAscending>>(k_column, k_is_signed, source, *mapped_full, function_name);
 }
 
 }
@@ -207,16 +223,18 @@ ColumnPtr ArrayTopKImpl<IsAscending>::execute(
     ColumnPtr mapped,
     const ColumnWithTypeAndName * fixed_arguments)
 {
+    const char * function_name = IsAscending ? "arrayBottomK" : "arrayTopK";
+
     if (!fixed_arguments)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected fixed arguments to get K for {}",
-            IsAscending ? "arrayBottomK" : "arrayTopK");
+            function_name);
 
     const IColumn & k_column = *fixed_arguments[0].column;
-    const bool k_is_signed = WhichDataType(fixed_arguments[0].type.get()).isNativeInt();
+    const bool k_is_signed = isNativeInt(*fixed_arguments[0].type);
 
-    return dispatchByColumn<IsAscending>(k_column, k_is_signed, array, *mapped);
+    return dispatchByColumn<IsAscending>(k_column, k_is_signed, array, *mapped, function_name);
 }
 
 REGISTER_FUNCTION(ArrayTopK)
@@ -238,7 +256,7 @@ See also `arrayBottomK`, which returns the K smallest elements instead.
     FunctionDocumentation::Syntax syntax = "arrayTopK([f,] K, arr [, arr1, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
         {"f(arr[, arr1, ... ,arrN])", "Optional. A lambda function to compute the sort key for each element.", {"Lambda function"}},
-        {"K", "The number of largest elements to return.", {"(U)Int*"}},
+        {"K", "The number of largest elements to return.", {"(U)Int8/16/32/64"}},
         {"arr", "An array.", {"Array(T)"}},
         {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}}
     };
@@ -283,7 +301,7 @@ also keeps the remaining elements in unspecified order, and does not skip nulls.
     FunctionDocumentation::Syntax syntax = "arrayBottomK([f,] K, arr [, arr1, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
         {"f(arr[, arr1, ... ,arrN])", "Optional. A lambda function to compute the sort key for each element.", {"Lambda function"}},
-        {"K", "The number of smallest elements to return.", {"(U)Int*"}},
+        {"K", "The number of smallest elements to return.", {"(U)Int8/16/32/64"}},
         {"arr", "An array.", {"Array(T)"}},
         {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}}
     };

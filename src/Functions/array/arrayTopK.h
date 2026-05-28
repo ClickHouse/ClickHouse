@@ -52,7 +52,7 @@ struct ArrayTopKImpl
                 "Expected fixed arguments to get K for {}", name);
 
         WhichDataType which(fixed_arguments[0].type.get());
-        if (!which.isNativeInteger())
+        if (!isNativeInteger(*fixed_arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of the K argument of function {} (must be a native integer: UInt8/16/32/64 or Int8/16/32/64)",
@@ -77,9 +77,8 @@ struct NameArrayBottomK
 
 /// `arrayBottomK` returns the K smallest elements in ascending order.
 /// `arrayTopK` returns the K largest elements in descending order.
-/// Both use `partial_sort` internally; in the presence of ties in the sort key
-/// the choice among equal keys is unspecified.
-using FunctionArrayBottomK = FunctionArrayMapped<ArrayTopKImpl</* IsAscending = */ true>, NameArrayBottomK, /* IsDeterministic = */ false>;
-using FunctionArrayTopK = FunctionArrayMapped<ArrayTopKImpl</* IsAscending = */ false>, NameArrayTopK, /* IsDeterministic = */ false>;
+/// Equal elements keep their the original order, so the result is deterministic.
+using FunctionArrayBottomK = FunctionArrayMapped<ArrayTopKImpl</* IsAscending = */ true>, NameArrayBottomK, /* IsDeterministic = */ true>;
+using FunctionArrayTopK = FunctionArrayMapped<ArrayTopKImpl</* IsAscending = */ false>, NameArrayTopK, /* IsDeterministic = */ true>;
 
 }

@@ -56,9 +56,4 @@ Array(String)
 ['alpha','beta','gamma']
 Array(String)
 Array(String)
--- Negative K is clamped to 0 (returns empty array):
-[]
-[]
-[]
-[]
 -- Errors:
