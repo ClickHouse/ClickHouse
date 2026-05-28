@@ -408,7 +408,16 @@ SelectivityInfo JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edg
     auto [op, lhs, rhs] = edge.asBinaryPredicate();
 
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return SelectivityInfo{};
+    {
+        /// Non-equality predicates (e.g. `a.v < b.v`) are handled as residual/post-join
+        /// filters, so the DP does not estimate their selectivity here and keeps `value`
+        /// at the default `1.0`. Leaving the estimate trusted would let a join that
+        /// silently ignores a semantics-affecting predicate cross the trust boundary as
+        /// if fully stats-backed and influence upstream join ordering / build-side
+        /// decisions. Per the design contract the estimate must be demoted to untrusted.
+        info.trusted = false;
+        return info;
+    }
 
     UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());

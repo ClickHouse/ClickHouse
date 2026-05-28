@@ -1,0 +1,4 @@
+Join: o[100] ⋈ sub
+ResultRows: unknown
+Join: a[1000] ⋈ b[1000]
+ResultRows: 1000
