@@ -75,14 +75,16 @@ namespace
     /// This is SQL version of the function convertScalarToK() taking a ScalarType.
     ASTPtr convertScalarToK(ASTPtr scalar)
     {
-        /// toUInt64(if(x < 0, 0, x))
-        /// Pre-clamping negatives is important so that -Inf does not trigger an exception.
-        /// For NaN, `NaN < 0` is false, so the value is passed through to `toUInt64` which throws.
+        /// accurateCast(floor(if(x < 0, 0, x)), 'UInt64')
+        /// Pre-clamping negatives is important so that negative values (including -Inf) do not trigger an exception.
+        /// For NaN and +Inf, `x < 0` is false, so the value is passed through to `accurateCast`
+        /// which throws on values that don't fit into UInt64.
         auto clamped = makeASTFunction("if",
             makeASTFunction("less", scalar, make_intrusive<ASTLiteral>(0.0)),
             make_intrusive<ASTLiteral>(0.0),
             scalar->clone());
-        return makeASTFunction("toUInt64", std::move(clamped));
+        auto floored = makeASTFunction("floor", std::move(clamped));
+        return makeASTFunction("accurateCast", std::move(floored), make_intrusive<ASTLiteral>("UInt64"));
     }
 
     /// Result of `getK`. If `is_array` is false, `ast` is a UInt64 scalar expression that evaluates
