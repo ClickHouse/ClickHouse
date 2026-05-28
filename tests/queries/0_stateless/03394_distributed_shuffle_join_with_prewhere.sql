@@ -24,7 +24,8 @@ SET
 SET enable_join_runtime_filters=1;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0; join order opt skipped → no [N] row counts in EXPLAIN output
+SET query_plan_optimize_join_order_limit = 10;
+SET use_statistics = 1, use_statistics_cache = 1;
 
 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
 
