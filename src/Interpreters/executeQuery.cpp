@@ -29,6 +29,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTResetSessionQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/parseQuery.h>
@@ -1723,8 +1724,12 @@ static BlockIO executeQueryImpl(
 
             if (!get_result_from_query_result_cache())
             {
-                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
+                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots.
+                /// `RESET SESSION` is excluded because (a) it rejects active transactions itself and (b) it must be able to clear an
+                /// `implicit_transaction = 1` set by the previous borrower of a pooled connection — wrapping it in an implicit
+                /// transaction would make that case (and clean-session idempotency) unreachable.
+                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction]
+                    && !(out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTResetSessionQuery>())))
                 {
                     try
                     {

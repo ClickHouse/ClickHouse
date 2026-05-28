@@ -2143,7 +2143,13 @@ void Context::resetToUserDefaults()
 
     /// Fire handler-registered hooks outside the lock so callbacks can take
     /// their own locks without re-entering ours. A throwing callback must not
-    /// prevent other handlers from cleaning up — log and continue.
+    /// prevent other handlers from cleaning up (otherwise one broken hook
+    /// could leave another handler's session-scoped state dirty), but the
+    /// reset as a whole must still fail — a partially-reset connection going
+    /// back to a pool as "clean" would silently re-leak the very state we
+    /// were called to drop. So: keep going through every callback, capturing
+    /// the first exception, then rethrow it after the loop.
+    std::exception_ptr first_callback_exception;
     for (auto & callback : callbacks_snapshot)
     {
         try
@@ -2153,8 +2159,12 @@ void Context::resetToUserDefaults()
         catch (...)
         {
             tryLogCurrentException("Context::resetToUserDefaults");
+            if (!first_callback_exception)
+                first_callback_exception = std::current_exception();
         }
     }
+    if (first_callback_exception)
+        std::rethrow_exception(first_callback_exception);
 }
 
 void Context::addSessionResetCallback(SessionResetCallback callback)
