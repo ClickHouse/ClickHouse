@@ -195,7 +195,7 @@ public:
     /// Returns whether a sample at `sample_timestamp` is past the sliding-window cutoff for grid point `current_timestamp`.
     bool isSampleOutOfWindow(const TimestampType sample_timestamp, const TimestampType current_timestamp) const
     {
-        /// Use `Int128` so the addition does not signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
+        /// Compare as Int128 to avoid signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
         const Int128 sum =
             static_cast<Int128>(static_cast<Int64>(sample_timestamp)) +
             static_cast<Int128>(static_cast<Int64>(window));
