@@ -86,8 +86,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_none_mixed"
 #        and explicit `ATTACH` can still load such tables. We use the deprecated
 #        Ordinary engine because the Atomic engine forbids the full-spec
 #        `ATTACH TABLE name (cols) ENGINE = ...` form used to simulate a metadata
-#        replay. For each table we count occurrences of the rejection error; the
-#        expected count is 0 (rejection did not fire).
+#        replay. For each table we check (a) that the rejection error string was
+#        not printed (grep -c expects 0) and (b) that the table actually exists
+#        in the catalog afterwards (EXISTS expects 1). The positive assertion (b)
+#        guards against ATTACH failing for any unrelated reason, where grep alone
+#        would still print 0.
 ORD_DB="${TABLE_PREFIX}_ord"
 ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
     CREATE DATABASE ${ORD_DB} ENGINE = Ordinary
@@ -97,11 +100,13 @@ ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
     ATTACH TABLE ${ORD_DB}.t_attach_lzma (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_lzma', 'Parquet', 'lzma')
 " 2>&1 | grep -c "not supported by data lake engines" || true
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ORD_DB}.t_attach_lzma"
 
 ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
     ATTACH TABLE ${ORD_DB}.t_attach_gzip (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_gzip', 'Parquet', 'gzip')
 " 2>&1 | grep -c "not supported by data lake engines" || true
+${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ORD_DB}.t_attach_gzip"
 
 # Cleanup.
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${ORD_DB} SYNC"
