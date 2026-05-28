@@ -280,6 +280,19 @@ bool PostgreSQLHandler::startup()
         if (!start_up_msg->database.empty())
             session->sessionContext()->setCurrentDatabase(start_up_msg->database);
         session->sessionContext()->rememberDatabaseAtSessionStart();
+
+        /// Drop prepared statements on `RESET SESSION`. The manager is
+        /// protocol-local — it tracks names handed out via `PREPARE`, which
+        /// the client won't be able to address after reset anyway. Reassign
+        /// to a fresh instance to drop every entry; the handler is
+        /// single-threaded per connection so no extra synchronisation is
+        /// needed. Outlives the session (`SCOPE_EXIT({ session.reset(); })`),
+        /// so capturing `this` is safe.
+        session->sessionContext()->addSessionResetCallback(
+            [this]
+            {
+                prepared_statements_manager = PostgreSQLProtocol::PostgresPreparedStatements::PreparedStatemetsManager(std::nullopt);
+            });
     }
     catch (const Exception & exc)
     {

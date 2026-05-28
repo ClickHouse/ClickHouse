@@ -382,6 +382,14 @@ protected:
     /// restore target for `RESET SESSION`.
     std::optional<String> database_at_session_start;
 
+    /// Callbacks fired at the end of `resetToUserDefaults`. Protocol handlers
+    /// register here to drop session-scoped state that lives outside `Context`
+    /// (e.g. MySQL/Postgres prepared statements, cached socket timeouts).
+    /// Registration happens once at session creation; the session context
+    /// outlives any query context, so callbacks see a stable handler.
+    using SessionResetCallback = std::function<void()>;
+    std::vector<SessionResetCallback> session_reset_callbacks;
+
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
 
@@ -888,6 +896,13 @@ public:
     /// Preserves user identity, client info, and the handshake-negotiated
     /// output format.
     void resetToUserDefaults();
+
+    /// Register a callback to be invoked at the end of `resetToUserDefaults`.
+    /// Protocol handlers use this to drop their own session-scoped state
+    /// (prepared statements, cached socket timeouts) that `Context` doesn't
+    /// own. The callback is invoked outside `Context::mutex`; the registered
+    /// closure must not call back into `Context::resetToUserDefaults`.
+    void addSessionResetCallback(SessionResetCallback callback);
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;

@@ -620,6 +620,14 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     {
         new_session_context->setUser(*user_id, external_roles);
         max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
+
+        /// Apply auth-server settings on top of the user's profile, mirroring
+        /// the unnamed-session path. Only on the newly-created branch: an
+        /// existing named session has already had this applied (or has been
+        /// further mutated by `SET` since), and reapplying every reuse would
+        /// stomp on those changes.
+        new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+        new_session_context->applySettingsChanges(settings_from_auth_server);
     }
     else
     {
@@ -643,8 +651,9 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         max_sessions_for_user);
 
     /// Stash the auth-server settings so `RESET SESSION` can replay them, same
-    /// as in the unnamed-session path. The settings themselves are applied
-    /// elsewhere (or, today, not applied for named sessions — pre-existing).
+    /// as in the unnamed-session path. For named sessions, also apply them
+    /// above on the newly-created branch so reset is idempotent on a clean
+    /// session.
     session_context->setSettingsFromAuthServer(settings_from_auth_server);
 
     recordLoginSuccess(session_context);

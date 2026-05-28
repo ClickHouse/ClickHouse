@@ -359,6 +359,34 @@ def test_prepared_statement(started_cluster):
         cur.execute("EXECUTE select_test(1);")
 
 
+def test_reset_session_drops_prepared_statements(started_cluster):
+    """`RESET SESSION` must drop names registered via `PREPARE`."""
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        autocommit=True,
+    )
+    cur = ch.cursor()
+    cur.execute("DROP TABLE IF EXISTS reset_prep_test;")
+    cur.execute("CREATE TABLE reset_prep_test (id Int32) ENGINE = Memory;")
+    cur.execute("INSERT INTO reset_prep_test (id) VALUES (7);")
+
+    cur.execute("PREPARE pickup AS SELECT id FROM reset_prep_test WHERE id = $1;")
+    cur.execute("EXECUTE pickup(7);")
+    assert cur.fetchall() == [(7,)]
+
+    cur.execute("RESET SESSION;")
+
+    with pytest.raises(Exception):
+        cur.execute("EXECUTE pickup(7);")
+
+    cur.execute("DROP TABLE reset_prep_test;")
+
+
 def test_copy_command(started_cluster):
     node = cluster.instances["node"]
 

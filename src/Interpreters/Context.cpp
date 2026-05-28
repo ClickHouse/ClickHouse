@@ -2115,6 +2115,7 @@ void Context::resetToUserDefaults()
     Scalars scalars_to_drop;
     Scalars special_scalars_to_drop;
 
+    std::vector<SessionResetCallback> callbacks_snapshot;
     {
         std::lock_guard lock(mutex);
 
@@ -2131,9 +2132,35 @@ void Context::resetToUserDefaults()
         scalars_to_drop.swap(scalars);
         special_scalars_to_drop.swap(special_scalars);
         query_parameters.clear();
+
+        /// Snapshot under the lock so the invocation below sees a stable set
+        /// even if a concurrent `addSessionResetCallback` races. Snapshotting
+        /// is cheap — these vectors hold a handful of entries.
+        callbacks_snapshot = session_reset_callbacks;
     }
     /// `tables_to_drop`, `scalars_to_drop`, `special_scalars_to_drop` destructors
     /// run here, outside the lock.
+
+    /// Fire handler-registered hooks outside the lock so callbacks can take
+    /// their own locks without re-entering ours. A throwing callback must not
+    /// prevent other handlers from cleaning up — log and continue.
+    for (auto & callback : callbacks_snapshot)
+    {
+        try
+        {
+            callback();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("Context::resetToUserDefaults");
+        }
+    }
+}
+
+void Context::addSessionResetCallback(SessionResetCallback callback)
+{
+    std::lock_guard lock(mutex);
+    session_reset_callbacks.push_back(std::move(callback));
 }
 
 std::shared_ptr<const User> Context::getUser() const

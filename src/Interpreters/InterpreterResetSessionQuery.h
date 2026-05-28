@@ -18,6 +18,12 @@ public:
 
     BlockIO execute() override;
 
+    /// Reset itself doesn't run any query work — opt out of the
+    /// `throw_on_unsupported_query_inside_transaction` gate so that
+    /// `executeQuery` lets us through to `Context::resetToUserDefaults`,
+    /// which is where the actual in-transaction rejection lives.
+    bool supportsTransactions() const override { return true; }
+
 private:
     ASTPtr query_ptr;
 };
