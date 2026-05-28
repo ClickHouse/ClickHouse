@@ -182,7 +182,8 @@ analyzeSparseColumnGranules(
     {
         if (range.begin >= range.end)
             continue;
-        for (size_t cursor = range.begin; cursor < range.end; )
+        size_t cursor = range.begin;
+        while (cursor < range.end)
         {
             const size_t end = std::min(cursor + chunk_marks, range.end);
             chunks.push_back(MarkRange{cursor, end});
