@@ -99,7 +99,7 @@ private:
     BSONSizeT current_document_size;
 };
 
-class BSONEachRowSchemaReader : public IRowWithNamesSchemaReader
+class BSONEachRowSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_);

@@ -22,7 +22,12 @@
 #include <stdexcept>
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace stl {
+
+using DB::VectorWithMemoryTracking;
+
 
 inline bool est(const float* y, size_t n, size_t len, int ideg, float xs, float* ys, size_t nleft, size_t nright, float* w, bool userw, const float* rw) {
     auto range = ((float) n) - 1.0;
@@ -312,11 +317,11 @@ inline void stl(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_
         throw std::invalid_argument("low_pass_length must be odd");
     }
 
-    auto work1 = std::vector<float>(n + 2 * np);
-    auto work2 = std::vector<float>(n + 2 * np);
-    auto work3 = std::vector<float>(n + 2 * np);
-    auto work4 = std::vector<float>(n + 2 * np);
-    auto work5 = std::vector<float>(n + 2 * np);
+    auto work1 = VectorWithMemoryTracking<float>(n + 2 * np);
+    auto work2 = VectorWithMemoryTracking<float>(n + 2 * np);
+    auto work3 = VectorWithMemoryTracking<float>(n + 2 * np);
+    auto work4 = VectorWithMemoryTracking<float>(n + 2 * np);
+    auto work5 = VectorWithMemoryTracking<float>(n + 2 * np);
 
     auto userw = false;
     size_t k = 0;
@@ -341,9 +346,9 @@ inline void stl(const float* y, size_t n, size_t np, size_t ns, size_t nt, size_
     }
 }
 
-inline float var(const std::vector<float>& series) {
+inline float var(const VectorWithMemoryTracking<float>& series) {
     auto mean = std::accumulate(series.begin(), series.end(), 0.0) / series.size();
-    std::vector<float> tmp;
+    VectorWithMemoryTracking<float> tmp;
     tmp.reserve(series.size());
     for (auto v : series) {
         tmp.push_back(pow(v - mean, 2));
@@ -351,8 +356,8 @@ inline float var(const std::vector<float>& series) {
     return std::accumulate(tmp.begin(), tmp.end(), 0.0) / (series.size() - 1);
 }
 
-inline float strength(const std::vector<float>& component, const std::vector<float>& remainder) {
-    std::vector<float> sr;
+inline float strength(const VectorWithMemoryTracking<float>& component, const VectorWithMemoryTracking<float>& remainder) {
+    VectorWithMemoryTracking<float> sr;
     sr.reserve(remainder.size());
     for (size_t i = 0; i < remainder.size(); i++) {
         sr.push_back(component[i] + remainder[i]);
@@ -362,10 +367,10 @@ inline float strength(const std::vector<float>& component, const std::vector<flo
 
 class StlResult {
 public:
-    std::vector<float> seasonal;
-    std::vector<float> trend;
-    std::vector<float> remainder;
-    std::vector<float> weights;
+    VectorWithMemoryTracking<float> seasonal;
+    VectorWithMemoryTracking<float> trend;
+    VectorWithMemoryTracking<float> remainder;
+    VectorWithMemoryTracking<float> weights;
 
     float seasonal_strength() const {
         return strength(seasonal, remainder);
@@ -452,7 +457,7 @@ public:
     }
 
     StlResult fit(const float* y, size_t n, size_t np);
-    StlResult fit(const std::vector<float>& y, size_t np);
+    StlResult fit(const VectorWithMemoryTracking<float>& y, size_t np);
 };
 
 inline StlParams params() {
@@ -470,10 +475,10 @@ inline StlResult StlParams::fit(const float* y, size_t n, size_t np) {
     auto itdeg = this->itdeg_;
 
     auto res = StlResult {
-        std::vector<float>(n),
-        std::vector<float>(n),
-        std::vector<float>(),
-        std::vector<float>(n)
+        VectorWithMemoryTracking<float>(n),
+        VectorWithMemoryTracking<float>(n),
+        VectorWithMemoryTracking<float>(),
+        VectorWithMemoryTracking<float>(n)
     };
 
     auto ildeg = this->ildeg_.value_or(itdeg);
@@ -512,7 +517,7 @@ inline StlResult StlParams::fit(const float* y, size_t n, size_t np) {
     return res;
 }
 
-inline StlResult StlParams::fit(const std::vector<float>& y, size_t np) {
+inline StlResult StlParams::fit(const VectorWithMemoryTracking<float>& y, size_t np) {
     return StlParams::fit(y.data(), y.size(), np);
 }
 
