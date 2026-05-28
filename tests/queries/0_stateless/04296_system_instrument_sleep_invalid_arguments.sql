@@ -20,3 +20,27 @@ SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_typ
 SELECT 'negative_max';
 SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 -1; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[0,-1]';
+
+SELECT 'nan_duration';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY nan; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[nan]';
+
+SELECT 'inf_duration';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY inf; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[inf]';
+
+SELECT 'oversized_duration';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 1e20; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[100000000000000000000]';
+
+SELECT 'nan_min';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY nan 1; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[nan,1]';
+
+SELECT 'inf_max';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 inf; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[0,inf]';
+
+SELECT 'oversized_max';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1e20; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[0,100000000000000000000]';

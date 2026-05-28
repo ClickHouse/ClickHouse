@@ -7,3 +7,15 @@ negative_min
 0
 negative_max
 0
+nan_duration
+0
+inf_duration
+0
+oversized_duration
+0
+nan_min
+0
+inf_max
+0
+oversized_max
+0
