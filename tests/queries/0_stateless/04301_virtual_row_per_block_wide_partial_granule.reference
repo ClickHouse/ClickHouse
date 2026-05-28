@@ -1,0 +1,4 @@
+desc PK monotonic	1
+asc PK monotonic	1
+desc CounterID2 ordered	1
+asc CounterID2 ordered	1

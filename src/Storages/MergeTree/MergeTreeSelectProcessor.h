@@ -195,7 +195,9 @@ private:
     bool read_in_reverse_order = false;
     std::optional<ChunkAndProgress> pending_virtual_row;
 
-    ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
+    ChunkAndProgress makeVirtualRowChunk(const MergeTreeReadTask & current_task, Block pk_block) const;
+    ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges, size_t num_read_rows) const;
+    ChunkAndProgress buildVirtualRowFromChunk(const MergeTreeReadTask & current_task, const Chunk & data_chunk) const;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

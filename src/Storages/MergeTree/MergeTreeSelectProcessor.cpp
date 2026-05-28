@@ -311,14 +311,41 @@ void MergeTreeSelectProcessor::setVirtualRowConversions(
     read_in_reverse_order = read_in_reverse_order_;
 }
 
+ChunkAndProgress MergeTreeSelectProcessor::makeVirtualRowChunk(
+    const MergeTreeReadTask & current_task, Block pk_block) const
+{
+    const auto & data_part = current_task.getInfo().data_part;
+
+    Columns empty_columns;
+    empty_columns.reserve(result_header.columns());
+    for (size_t i = 0; i < result_header.columns(); ++i)
+        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
+
+    Chunk chunk(std::move(empty_columns), 0);
+    auto part_level = data_part->info.level;
+    chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
+
+    return {std::move(chunk), 0, 0, false, {}};
+}
+
 ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
-    const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const
+    const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges, size_t num_read_rows) const
 {
     if (!virtual_row_conversions || read_mark_ranges.empty())
         return {};
 
     const auto & data_part = current_task.getInfo().data_part;
     const auto & index = data_part->getIndex();
+
+    /// The index-based key only correctly bounds the next chunk's data when this chunk's
+    /// physical reads exactly cover the granules listed in `read_mark_ranges`. When the
+    /// chunk started or ended mid-granule (possible only for wide parts, which allow
+    /// partial-granule reads), some rows of those granules live in adjacent chunks, so
+    /// `index[next_mark]` would be a much looser bound than the actual next data and
+    /// would mis-signal `MergingSortedTransform` to deprioritize this source.
+    size_t expected_rows = data_part->index_granularity->getRowsCountInRanges(read_mark_ranges);
+    if (num_read_rows != expected_rows)
+        return {};
 
     /// Forward order: the source will next produce data starting at back().end.
     /// Reverse order: MergeTreeInReverseOrderSelectAlgorithm returns chunks in reverse.
@@ -345,18 +372,50 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
         column->insert((*(*index)[j])[next_mark]);
         pk_columns.push_back({std::move(column), header_col.type, header_col.name});
     }
-    Block pk_block(std::move(pk_columns));
+    return makeVirtualRowChunk(current_task, Block(std::move(pk_columns)));
+}
 
-    Columns empty_columns;
-    empty_columns.reserve(result_header.columns());
-    for (size_t i = 0; i < result_header.columns(); ++i)
-        empty_columns.push_back(result_header.getByPosition(i).type->createColumn()->cloneEmpty());
+ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromChunk(
+    const MergeTreeReadTask & current_task, const Chunk & data_chunk) const
+{
+    if (!virtual_row_conversions || data_chunk.getNumRows() == 0)
+        return {};
 
-    Chunk chunk(std::move(empty_columns), 0);
-    auto part_level = data_part->info.level;
-    chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(part_level, pk_block, virtual_row_conversions));
+    size_t num_pk_columns = pk_block_header.columns();
 
-    return {std::move(chunk), 0, 0, false, {}};
+    /// PK columns must be present in `result_header` (i.e. the query selects them or they
+    /// were pulled in for sorting). Without them we cannot extract a tight boundary key.
+    std::vector<size_t> pk_positions;
+    pk_positions.reserve(num_pk_columns);
+    for (size_t j = 0; j < num_pk_columns; ++j)
+    {
+        const auto & pk_col_name = pk_block_header.getByPosition(j).name;
+        if (!result_header.has(pk_col_name))
+            return {};
+        pk_positions.push_back(result_header.getPositionByName(pk_col_name));
+    }
+
+    /// Forward: data is in ascending PK order. Last row's PK is the MAX value the merge
+    ///   just saw from this source, so it is a tight lower bound on the next data's PK.
+    /// Reverse: chunks are read forward (ascending PK) and emitted last-row-first by
+    ///   `ReverseTransform` downstream. After the chunk's reversed data is consumed, the
+    ///   next emitted value is bounded above by the chunk's FIRST forward row's PK.
+    size_t source_row = read_in_reverse_order ? 0 : (data_chunk.getNumRows() - 1);
+
+    const auto & data_columns = data_chunk.getColumns();
+    ColumnsWithTypeAndName pk_columns;
+    pk_columns.reserve(num_pk_columns);
+    for (size_t j = 0; j < num_pk_columns; ++j)
+    {
+        const auto & header_col = pk_block_header.getByPosition(j);
+        auto column = header_col.column->cloneEmpty();
+        /// Source may be wrapped (sparse, const, low-cardinality, replicated). `insertFrom`
+        /// requires a representation compatible with the destination, so fully materialize.
+        ColumnPtr source_column = data_columns[pk_positions[j]]->convertToFullIfNeeded();
+        column->insertFrom(*source_column, source_row);
+        pk_columns.push_back({std::move(column), header_col.type, header_col.name});
+    }
+    return makeVirtualRowChunk(current_task, Block(std::move(pk_columns)));
 }
 
 ChunkAndProgress MergeTreeSelectProcessor::read()
@@ -429,13 +488,20 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         auto result = readCurrentTask(*task, *algorithm);
 
-        /// Emit a virtual row update after each block, carrying the next mark's PK boundary.
+        /// Emit a virtual row update after each block, carrying the next chunk's PK boundary.
         /// This allows MergingSortedTransform to reprioritize sources when:
         /// - PREWHERE filters all rows (merge gets updated position without actual data)
         /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
+        ///
+        /// Prefer extracting the boundary key from the chunk's actual data — it is always a
+        /// tight, correct bound on the next data's PK regardless of granule alignment.
+        /// Fall back to the index-based boundary when the chunk has no surviving data (e.g.
+        /// PREWHERE filtered everything) or when the PK columns are not part of the result.
         if (virtual_row_conversions && !result.is_finished)
         {
-            auto vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges);
+            auto vrow = buildVirtualRowFromChunk(*task, result.chunk);
+            if (!vrow.chunk)
+                vrow = buildVirtualRowFromIndex(*task, result.read_mark_ranges, result.num_read_rows);
             if (vrow.chunk)
                 pending_virtual_row.emplace(std::move(vrow));
         }
