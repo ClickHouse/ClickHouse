@@ -45,7 +45,6 @@ public:
     /// Destructor must be out-of-line because LiveBuffer holds unique_ptr<ReadBufferFromFileBase>.
     ~ReaderExecutor();
 
-    /// Read the next window starting at the current position.
     /// Returns an empty Rope at EOF.
     Rope readNextWindow();
 
@@ -130,8 +129,8 @@ private:
         const StoredObject & object, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
 
-    /// Read from the live buffer into the pre-allocated `blocks`.
-    /// Uses set() + next() — data goes directly from network into block memory.
+    /// Uses `set()` + `next()` so data lands directly in block memory instead
+    /// of being copied through the live buffer's internal working buffer.
     Rope readFromLiveBufferIntoRope(
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
 
@@ -145,6 +144,19 @@ private:
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
+
+    /// EOF detection has two cases:
+    ///   - size known: `position >= totalSize()`.
+    ///   - size unknown: the source's short return latches `reached_eof`.
+    /// Seek backward clears `reached_eof` so the source can re-deliver.
+    /// `over_read_buffer` is consulted so a short return cannot drop bytes
+    /// the previous source-read pulled past `physical_window`.
+    bool atEnd() const
+    {
+        if (!over_read_buffer.empty())
+            return false;
+        return reached_eof || (!offset_map.hasUnknownSize() && position >= offset_map.totalSize());
+    }
 
     /// Try to acquire a buffer_limit slot up front so the next source read can
     /// be promoted to live without re-checking. When a slot is held (either

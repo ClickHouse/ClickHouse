@@ -10,7 +10,6 @@ namespace DB
 {
 
 /// Maps logical file offsets to (object, offset-within-object).
-/// Replaces ReadBufferFromRemoteFSGather as the offset translator.
 class OffsetMap
 {
 public:
@@ -21,11 +20,9 @@ public:
         size_t size;
     };
 
-    /// Build from a list of StoredObjects. Objects are concatenated
-    /// in order to form the logical file.
+    /// Objects are concatenated in their input order to form the logical file.
     void build(const StoredObjects & objects);
 
-    /// Map a logical range to physical ranges.
     /// A single logical range may span multiple objects.
     VectorWithMemoryTracking<PhysicalRange> map(ByteRange logical_range) const;
 
@@ -38,11 +35,7 @@ public:
 
     size_t totalSize() const { return total_size; }
 
-    /// True iff the single stored object had `bytes_size == UnknownSize`
-    /// at `build` time. Consumers (`ReaderExecutor::readNextWindow`) use
-    /// this to switch to streaming-until-EOF behaviour instead of
-    /// trusting `totalSize` as the EOF marker.
-    bool hasUnknownSize() const { return has_unknown_size; }
+    bool hasUnknownSize() const { return total_size == StoredObject::UnknownSize; }
 
 private:
     struct Segment
@@ -55,7 +48,6 @@ private:
 
     VectorWithMemoryTracking<Segment> segments;
     size_t total_size = 0;
-    bool has_unknown_size = false;
 };
 
 }

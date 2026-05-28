@@ -12,8 +12,8 @@ namespace DB
 
 class FilesystemCacheLog;
 
-/// ICacheHandle for FileCache (filesystem/disk cache).
-/// Holds a FileSegmentsHolder — segments stay pinned until the handle is destroyed.
+/// Holds a `FileSegmentsHolder` for the request's lifetime so the segments
+/// referenced by `status` / `get` stay pinned across the handle's calls.
 class DiskCacheHandle : public ICacheHandle
 {
 public:
@@ -110,10 +110,8 @@ public:
 private:
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
-    /// Pipeline's local-read throttler, forwarded into each
-    /// `DiskCacheHandle` so cache-file reads in `get` honour
-    /// `max_local_read_bandwidth`. The pre-fix raw `pread` path bypassed
-    /// the throttler entirely.
+    /// Forwarded into each `DiskCacheHandle` so cache-file reads in `get`
+    /// honour `max_local_read_bandwidth`.
     ThrottlerPtr local_throttler;
     std::shared_ptr<FilesystemCacheLog> cache_log;
     std::optional<FileCacheKey> custom_cache_key;

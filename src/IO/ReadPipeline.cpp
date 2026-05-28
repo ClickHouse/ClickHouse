@@ -270,12 +270,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         return pipeline_buf;
 
     auto impl = gather
-        ? buildGatherStage(query_id)        // Stages 1+2+3 (+3.5 DC)
-        : buildSingleObjectStage(query_id); // Stages 1+2 (+2.5 DC)
+        ? buildGatherStage(query_id)
+        : buildSingleObjectStage(query_id);
 
-    impl = wrapMemoryCache(std::move(impl));   // Stage 4
-    impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
-    impl = wrapDecryption(std::move(impl));    // Stage 6 (encryption)
+    impl = wrapMemoryCache(std::move(impl));
+    impl = wrapAsyncPrefetch(std::move(impl));
+    impl = wrapDecryption(std::move(impl));
 
     return impl;
 }
@@ -286,9 +286,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     if (!settings.use_reader_executor)
         return nullptr;
 
-    /// Build a source reader appropriate for the source variant. Falls back to
-    /// nullptr (and the caller picks the legacy path) for source types we do not
-    /// support yet.
+    /// Returns nullptr (so the caller falls back to the legacy path) for
+    /// source variants the executor does not yet support.
     std::shared_ptr<ISourceReader> source_reader;
     size_t min_bytes_for_seek = ReaderExecutor::DEFAULT_MIN_BYTES_FOR_SEEK;
 
@@ -434,10 +433,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
 {
-    /// -- Stages 1+2+3: Source + FilesystemCache + Gather --
-    /// Object storage path: wrap per-object buffers with optional filesystem cache,
-    /// then join all objects via ReadBufferFromRemoteFSGather.
-
     const auto & settings = source->read_settings;
 
     const auto * obj_source = std::get_if<ObjectStorageSource>(&source->source);
@@ -531,9 +526,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
     if (!use_external_buffer && total_objects_size > 0 && total_objects_size != StoredObject::UnknownSize)
         buffer_size = std::min(buffer_size, total_objects_size);
 
-    /// -- Stage 3.5: Distributed cache --
-    /// When enabled, reads go through distributed cache servers with fallback to
-    /// direct object storage reads via a Gather reader.
 #if ENABLE_DISTRIBUTED_CACHE
     if (distributed_cache)
     {
@@ -584,9 +576,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(const std::string & query_id) const
 {
-    /// -- Stages 1+2 (+2.5 DC) without gather --
-    /// Single-object path (e.g. StorageObjectStorageSource, local disk).
-    /// No gather wrapping — preserves readBigAt support for the parquet prefetcher.
+    /// Single-object path: no gather wrapping, which preserves `readBigAt` for
+    /// the parquet prefetcher (`ReadBufferFromRemoteFSGather` does not support it).
     ///
     /// Three mutually exclusive sub-paths, each returns its own final impl:
     ///   1. distributed_cache  → DC owns the chain, source impl is never built.
@@ -606,7 +597,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     /// Inner cache layers always use external buffer (the outer cache calls set()).
     bool use_ext_buf = memory_cache.has_value() || async_prefetch.has_value();
 
-    /// -- Stage 2.5 (non-gather): Distributed cache --
     /// When DC is active it owns the whole chain and assigns `impl` outright.
     /// Filesystem cache + DC without gather is rejected: a filesystem-cache layer
     /// built above would be unreachable (DC would replace it). The gather path
@@ -651,8 +641,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 /* use_external_buffer */ true, /* restrict_seek */ false);
         };
 
-        /// DC uses external buffer mode when a downstream stage (memory cache or
-        /// async prefetch) wraps it — consistent with the gather path above.
         auto impl = DistributedCache::readWithDistributedCache(
             object.local_path,
             source->objects,
@@ -666,7 +654,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     }
 #endif
 
-    /// -- Stages 1+2: Source + FilesystemCache(s) (single-object, no DC, no gather) --
     if (!filesystem_caches.empty())
     {
         /// The impl buffer (source reader inside the cache) must always use external buffer mode.
@@ -741,8 +728,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             };
         }
 
-        /// Build the outermost CachedOnDiskReadBufferFromFile.
-        /// The impl_creator now produces the full inner cache chain.
         const auto & outermost = filesystem_caches.back();
         auto fs_cache_settings = outermost.cache_settings;
         auto cache_key = outermost.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
@@ -766,7 +751,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             settings.local_throttler);
     }
 
-    /// -- Stage 1 only: Source (no cache, no DC, no gather) --
     return std::visit(Overloaded{
         [&](const ObjectStorageSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
@@ -790,7 +774,6 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
-    /// -- Stage 4: Memory cache --
     if (!memory_cache || !memory_cache->page_cache_settings.cache)
         return impl;
 
@@ -813,9 +796,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapMemoryCache(std::uniqu
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
-    /// -- Stage 5: Async prefetch --
-    /// Only applied when a caller explicitly requests it via `needAsyncPrefetch`.
-    /// Today that's `DiskObjectStorage::prepareRead` (for remote reads with
+    /// Applied only when callers request it via `needAsyncPrefetch`:
+    /// `DiskObjectStorage::prepareRead` (remote reads with
     /// `remote_fs_method=threadpool` or distributed cache) and
     /// `StorageObjectStorageSource`. Local reads do not use this stage — they
     /// rely on `createReadBufferFromFileBase` (which can itself be async at the
@@ -859,7 +841,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapDecryption(std::unique_ptr<ReadBufferFromFileBase> impl) const
 {
-    /// -- Stage 6: Decryption (may have multiple layers for double encryption) --
+    /// Multiple layers exist when an encrypted source is wrapped in another
+    /// encrypted layer (double encryption).
 #if USE_SSL
     for (const auto & dec : decryption_stages)
     {

@@ -17,7 +17,6 @@ void OffsetMap::build(const StoredObjects & objects)
 {
     segments.clear();
     total_size = 0;
-    has_unknown_size = false;
 
     for (const auto & obj : objects)
     {
@@ -33,7 +32,6 @@ void OffsetMap::build(const StoredObjects & objects)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "OffsetMap: unknown-size object is only supported in single-object pipelines (got {} objects)",
                     objects.size());
-            has_unknown_size = true;
             total_size = StoredObject::UnknownSize;
             segments.push_back(Segment{
                 .object = obj,

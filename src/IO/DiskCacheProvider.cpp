@@ -257,19 +257,14 @@ Rope DiskCacheHandle::get(ByteRange range)
             continue;
         size_t overlap_size = overlap_end - overlap_start;
 
-        /// Read from local file via the standard `createReadBufferFromFileBase`
-        /// path so cache-hit reads pick up the same accounting the legacy
-        /// reader had: `max_local_read_bandwidth` (via
-        /// `local_read_settings.local_throttler`), `OpenedFileCache*` /
+        /// Read via `createReadBufferFromFileBase` so cache-hit reads pick up
+        /// `max_local_read_bandwidth` (via `local_throttler`), `OpenedFileCache*` /
         /// `ReadBufferFromFileDescriptorRead*` ProfileEvents, and any future
-        /// file-read instrumentation. The raw `::open`+`::pread` path skipped
-        /// all of this.
+        /// file-read instrumentation that hangs off that factory.
         ///
-        /// Zero-copy: `buffer_size = 0` in `local_read_settings` means the
-        /// reader allocates no internal buffer. We `set(buf->data(), n)` to
-        /// rewire `working_buffer` at our `OwnedRopeBuffer` memory, and `next`
-        /// calls `pread` directly into it. Same memory shape as the previous
-        /// raw `::pread`, with the buffer wrapper around it.
+        /// Zero-copy: `buffer_size = 0` makes the reader skip its internal
+        /// buffer; `set(buf->data(), n)` below rewires `working_buffer` to
+        /// `OwnedRopeBuffer` memory so `pread` writes directly into it.
         ///
         /// The segment is pinned by the holder, so the file is guaranteed to
         /// exist for the lifetime of this handle; any failure here is a hard
@@ -281,13 +276,10 @@ Rope DiskCacheHandle::get(ByteRange range)
 
         auto buf = std::make_shared<OwnedRopeBuffer>(overlap_size);
 
-        /// Narrow per-call `ReadSettings`: everything is fixed except the
-        /// caller-supplied throttler. `buffer_size = 0` + external-buffer
-        /// drive below means the reader allocates no internal buffer and
-        /// `pread` writes directly into `buf->data()`. Same pattern as
-        /// legacy `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`
-        /// (see the long comment there for which fields are deliberately
-        /// NOT propagated and why).
+        /// `ReadSettings` for the cache-file read are fully fixed except for
+        /// the throttler. See `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`
+        /// for the canonical explanation of which fields are deliberately
+        /// NOT propagated from the caller's settings and why.
         ReadSettings cache_file_read_settings;
         cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
         cache_file_read_settings.local_fs_settings.buffer_size = 0;

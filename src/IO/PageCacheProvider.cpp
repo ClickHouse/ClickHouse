@@ -113,9 +113,8 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
         if (block_range.end() <= range.offset || block_range.offset >= range.end())
             continue;
 
-        /// Use getOrSet with a load lambda that copies from the provided Rope.
         /// First-writer-wins: if another thread cached this block concurrently,
-        /// getOrSet returns the existing cell and doesn't call load.
+        /// `getOrSet` returns the existing cell and does not call the load lambda.
         bool loaded = false;
         size_t loaded_bytes = 0;
         /// `detached_if_missing` (= `bypass_if_missing`) makes

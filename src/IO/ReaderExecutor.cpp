@@ -159,10 +159,6 @@ ReaderExecutor::ReaderExecutor(
 {
     CurrentMetrics::add(CurrentMetrics::ReaderExecutorActive);
     offset_map.build(stored_objects);
-    /// Capture in the ctor — the executor may be destroyed on a worker thread
-    /// whose `CurrentThread` is no longer attached to the query, in which
-    /// case `getQueryId()` would return empty at destruction time and
-    /// `system.reader_executor_log` rows would be unfindable.
     creator_query_id = String(CurrentThread::getQueryId());
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, caches.size());
@@ -173,8 +169,6 @@ ReaderExecutor::~ReaderExecutor()
     discardPrefetch();
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
-    /// Flush per-executor stats to global ProfileEvents (visible in
-    /// `system.query_log.ProfileEvents`) and emit a single triage line.
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheHitBytes, stats.cache_hit_bytes);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheMissBytes, stats.cache_miss_bytes);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulatedBytes, stats.cache_populated_bytes);
@@ -216,13 +210,13 @@ ReaderExecutor::~ReaderExecutor()
         elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         elem.query_id = creator_query_id;
         elem.source_file_path = log_file_path;
-        /// User-visible (logical) bytes — matches `cache_hit_bytes`/
-        /// `cache_miss_bytes` units and the `totalSize` accessor that
-        /// `PipelineReadBuffer::getFileSize` exposes. For encrypted reads
-        /// this is physical minus the header prefix; using the raw
-        /// `offset_map.totalSize()` here would over-report by
-        /// `data_start_offset` bytes.
-        elem.total_size = totalSize();
+        /// Logical (user-visible) bytes — `totalSize()` subtracts
+        /// `data_start_offset` for encrypted reads so the value lines up
+        /// with `cache_hit_bytes` / `cache_miss_bytes`. `nullopt` when the
+        /// underlying object had `StoredObject::UnknownSize`.
+        elem.total_size = offset_map.hasUnknownSize()
+            ? std::optional<UInt64>{}
+            : std::optional<UInt64>{totalSize()};
         elem.cache_hit_bytes = stats.cache_hit_bytes;
         elem.cache_miss_bytes = stats.cache_miss_bytes;
         elem.cache_populated_bytes = stats.cache_populated_bytes;
@@ -296,11 +290,6 @@ void ReaderExecutor::ensurePreAcquiredSlot()
     if (live_buffer || pre_acquired_slot || !buffer_limit)
         return;
 
-    /// Pre-acquire for the object the next source read will actually hit, not
-    /// blindly for the first object. Otherwise a seek into a later object
-    /// would acquire a slot for object A that `readFromSource` can't consume
-    /// (it sees object B), forcing it to acquire a *second* slot — and the
-    /// first slot then stays pinned for the executor's lifetime.
     const size_t physical_position = position + data_start_offset;
     const StoredObject * object = offset_map.findObjectAt(physical_position);
     if (!object)
@@ -328,9 +317,6 @@ void ReaderExecutor::releaseStalePreAcquiredSlot(const String & target_path)
 namespace
 {
 
-/// Level → (window, block) table. Lives with the reader (the only consumer
-/// of these sizes) — the monitor itself is size-agnostic. Indexed by
-/// `static_cast<size_t>(MemoryPressureLevel)`.
 struct WindowAndBlock
 {
     size_t window_bytes;
@@ -353,16 +339,10 @@ WindowAndBlock sizesAtCurrentPressure()
 
 size_t ReaderExecutor::effectiveWindowSize() const
 {
-    /// Live path streams one block at a time via the live buffer's next() — a
-    /// larger window just inflates the in-flight rope without any throughput
-    /// gain. Cap to `effectiveBlockSize()` in that mode but never grow past
-    /// the caller-configured `window_size` (tests pin it small on purpose).
-    /// Stateless path benefits from the larger batch read to amortise the
-    /// HTTP setup cost of a fresh underlying buffer.
-    ///
-    /// Both paths additionally clamp against the current memory-pressure
-    /// level — under memory pressure the executor shrinks per-call
-    /// allocations before the server's hard limit fires.
+    /// On the live path the buffer streams one block at a time, so a wider
+    /// window only inflates the in-flight rope; clamp to `effectiveBlockSize`.
+    /// The stateless path keeps the full window to amortise HTTP setup.
+    /// Both clamp against the memory-pressure ceiling.
     const size_t pressure_window = sizesAtCurrentPressure().window_bytes;
     if (live_buffer || pre_acquired_slot)
         return std::min({window_size, effectiveBlockSize(), pressure_window});
@@ -377,16 +357,10 @@ size_t ReaderExecutor::effectiveBlockSize() const
 
 void ReaderExecutor::maybeTriggerPrefetch()
 {
-    if (!prefetch_pool || prefetch_handle || reached_eof)
+    if (!prefetch_pool || prefetch_handle || atEnd())
         return;
 
     size_t logical_size = totalSize();
-    /// Size-known: bail at EOF. Size-unknown: `logical_size == MAX` so
-    /// `position >= logical_size` never fires; we instead rely on
-    /// `reached_eof` (checked above) and the fact that
-    /// `effectiveWindowSize()` doesn't depend on `logical_size`.
-    if (!offset_map.hasUnknownSize() && position >= logical_size)
-        return;
 
     ensurePreAcquiredSlot();
     size_t next_size = offset_map.hasUnknownSize()
@@ -404,8 +378,6 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     if (!handle)
     {
-        /// Prefetch pool's queue is full. The next readNextWindow will do a
-        /// synchronous fetch — that's the correct fallback under overload.
         LOG_TRACE(log, "Prefetch: pool queue full, will fetch synchronously on next read");
         ++stats.prefetch_pool_full;
         return;
@@ -419,13 +391,10 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
 void ReaderExecutor::discardPrefetch()
 {
-    /// Take ownership of the handle BEFORE we touch it. If a previous
-    /// `readNextWindow` already consumed the future (e.g. by throwing the
-    /// worker's exception up the stack without resetting `prefetch_handle`),
-    /// the future's internal `__state_` pointer is already null and a second
-    /// `get()` would segfault inside `pthread_mutex_lock`. Moving out first
-    /// guarantees we never call `get()` on a half-consumed handle from the
-    /// destructor.
+    /// `std::future::get` detaches the associated state on its first call —
+    /// even when the worker threw. Move `prefetch_handle` out before touching
+    /// it so a thrown `get` cannot leave a consumed future behind for a later
+    /// `discardPrefetch` to call `get` on again.
     auto local_handle = std::move(prefetch_handle);
     if (!local_handle)
         return;
@@ -444,11 +413,6 @@ void ReaderExecutor::discardPrefetch()
             }
             catch (...)
             {
-                /// We're discarding the prefetch — either from the destructor (where
-                /// throwing is forbidden) or from seek (where the lambda's failure is
-                /// orthogonal to the seek). Log and swallow either way; the next
-                /// readNextWindow will surface a fresh exception if the underlying
-                /// I/O is still broken.
                 tryLogCurrentException(log, "Discarded prefetch task threw");
             }
         }
@@ -499,21 +463,12 @@ void ReaderExecutor::initDecryption()
     LOG_DEBUG(log, "initDecryption: reading {} headers ({} bytes)",
         decryption_layers.size(), data_start_offset);
 
-    /// Read all headers in one call through the cache chain.
     Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset});
 
-    /// Size-known: the guards above ensure `total_source_size >= data_start_offset`
-    /// and `readPhysicalWindow` itself throws `CANNOT_READ_ALL_DATA` on a
-    /// short return, so `header_rope.totalBytes() == data_start_offset` here.
-    ///
-    /// Size-unknown: `offset_map.totalSize()` returns the sentinel, so neither
-    /// guard above triggers. `readPhysicalWindow` is tolerant of short
-    /// source returns (it latches `reached_eof` instead of throwing), so the
-    /// rope can be shorter than requested. Promote what was a debug-only
-    /// `chassert` to a release-mode check:
-    ///   - `totalBytes() == 0` → treat as the empty-file fallback (same as
-    ///     the size-known empty branch above).
-    ///   - `0 < totalBytes() < data_start_offset` → corrupted/truncated.
+    /// Under size-unknown sources `readPhysicalWindow` latches `reached_eof`
+    /// on short returns instead of throwing, so an empty rope means
+    /// "empty object" (same as the size-known empty branch above) and a
+    /// partial rope means corrupted/truncated.
     if (offset_map.hasUnknownSize() && header_rope.totalBytes() == 0)
     {
         LOG_DEBUG(log, "initDecryption: unknown-size source returned 0 bytes (empty object), skipping");
@@ -524,19 +479,10 @@ void ReaderExecutor::initDecryption()
             "Encrypted source returned {} header bytes, expected {} (corrupted/truncated)",
             header_rope.totalBytes(), data_start_offset);
 
-    /// Parse each header sequentially. For stacked encryption (N>=2 layers)
-    /// the on-disk layout is `[h0_plain, outer.encrypt(h1), outer.encrypt(
-    /// inner.encrypt(h2)), ..., outer.encrypt(...inner.encrypt(payload))]`
-    /// — i.e. only `h0` is plaintext; every later header is encrypted by all
-    /// the layers above it. To recover `hi` we must peel layers `0..i-1` from
-    /// its 64-byte block before parsing.
-    ///
-    /// For header `i`, layer `j < i`'s keystream offset is `(i - 1 - j) * 64`:
-    /// layer 0 is keyed by `(i-1)*64` (every previous layer was peeled from
-    /// physical bytes `64..i*64`, leaving its stream at offset `(i-1)*64`
-    /// when we reach header `i`), layer 1 by `(i-2)*64`, …, layer `i-1` by
-    /// `0`. Matches the per-layer-offset rule we use for payload bytes in
-    /// `decryptRope` — see the comment there.
+    /// Stacked encryption layout: only `h0` is plaintext; every later header
+    /// is wrapped by all layers above it (`[h0, enc0(h1), enc0(enc1(h2)), ...]`).
+    /// Parsing `hi` peels layers `0..i-1` at their current keystream offsets —
+    /// same per-layer stepping as the payload path; see `decryptRope`.
     VectorWithMemoryTracking<FileEncryption::Encryptor> initialized_encryptors;
     initialized_encryptors.reserve(decryption_layers.size());
     size_t offset = 0;
@@ -592,29 +538,14 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
     if (total == 0)
         return {};
 
-    /// Account decryption CPU time. Without this, `stats.decrypt_us` stays
-    /// `0` for encrypted reads and the
-    /// `ReaderExecutorDecryptMicroseconds` ProfileEvent +
-    /// `system.reader_executor_log.decrypt_microseconds` column read as
-    /// `0` even when this loop decrypts every byte of the window.
     StopwatchAccumulator decrypt_scope(stats.decrypt_us);
 
-    /// Mirror the reading-side iteration pattern: one block at a time.
+    /// Stream block-by-block: decrypting the whole rope at once would hold
+    /// every output buffer live simultaneously, doubling peak memory. CTR
+    /// mode is position-addressable, so per-block `setOffset` gives the same
+    /// keystream as a single-shot decrypt.
     ///
-    /// The naive shape — allocate all destination blocks, copy the whole input
-    /// rope into them, decrypt across all blocks — doubles peak memory for the
-    /// duration of this call. We instead stream block-by-block:
-    ///   1. Allocate one output block.
-    ///   2. Copy this block's encrypted bytes out of the front of `rope`.
-    ///   3. Decrypt in place across all layers.
-    ///   4. Append to result and `advance` the input rope so its
-    ///      `OwnedRopeBuffer`s can be released if we hold the only reference.
-    ///
-    /// CTR mode is fully position-addressable, so `setOffset(logical_offset +
-    /// pos)` gives the same keystream as decrypting the whole range at once.
-
-    /// Encryptors are reused across blocks — cheaper than constructing one
-    /// per block per layer.
+    /// Encryptors are constructed once and reused across blocks.
     VectorWithMemoryTracking<FileEncryption::Encryptor> encryptors;
     encryptors.reserve(decryption_layers.size());
     for (size_t i = 0; i < decryption_layers.size(); ++i)
@@ -631,11 +562,9 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
         const size_t chunk = std::min(block, total - pos);
         auto buf = std::make_shared<OwnedRopeBuffer>(chunk);
 
-        /// Drain `chunk` bytes from the front of `rope` via peek/advance.
-        /// This avoids reasoning about the physical-vs-logical offset gap
-        /// (the encryption header at `data_start_offset`) — the cursor
-        /// just walks the encrypted bytes in order, regardless of which
-        /// absolute file offset they happen to live at.
+        /// Drain by peek/advance from the rope's front: the cursor walks the
+        /// encrypted bytes in order, so the physical-vs-logical header offset
+        /// (`data_start_offset`) never needs to be reasoned about here.
         size_t out_pos = 0;
         while (out_pos < chunk)
         {
@@ -647,15 +576,13 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
             out_pos += take;
         }
 
-        /// Per-layer keystream offset: for stacked encryption (N >= 2),
-        /// each layer's encrypted stream contains the headers of all inner
-        /// layers BEFORE the user-visible payload. Layer `i` (0 = outermost,
-        /// N-1 = innermost) keys its CTR keystream at
-        /// `user_offset + (N - 1 - i) * Header::kSize`; the innermost layer
-        /// uses the user offset directly. Single-layer encryption collapses
-        /// to `user_offset` for the one layer, same as before. See
-        /// `ReadBufferFromEncryptedFile::nextImpl` (legacy) for the
-        /// equivalent formula expressed across nested buffers.
+        /// Per-layer keystream offset: with `N` layers (0 = outermost,
+        /// N-1 = innermost), layer `i`'s stream contains the inner layers'
+        /// headers ahead of the payload, so its CTR offset for `user_offset`
+        /// is `user_offset + (N - 1 - i) * Header::kSize`. The innermost
+        /// layer uses `user_offset` directly. See
+        /// `ReadBufferFromEncryptedFile::nextImpl` for the same formula
+        /// expressed across nested buffers.
         for (size_t i = 0; i < encryptors.size(); ++i)
         {
             const size_t layer_keystream_offset = logical_offset + pos
@@ -680,33 +607,16 @@ Rope ReaderExecutor::readNextWindow()
 
     if (prefetch_handle)
     {
-        /// Consume the prefetched rope BEFORE applying the EOF gate. For an
-        /// unknown-size source the prefetch worker can set `reached_eof`
-        /// from inside `readPhysicalWindow` (short return) while still
-        /// returning a partial rope with the real final bytes. Treating
-        /// `reached_eof` as authoritative here would `discardPrefetch` and
-        /// drop those bytes — they would never be served to the caller.
-        /// `maybeTriggerPrefetch` already refuses to schedule another
-        /// prefetch once `reached_eof` is set, so the next call lands in
-        /// the no-prefetch branch and short-circuits to EOF correctly.
-        /// Take ownership of the handle BEFORE calling `tryCancel` / `get`.
-        /// `std::future::get` detaches the future's associated state as its
-        /// very first step (even if the worker stored an exception), so a
-        /// thrown `get` would leave `prefetch_handle` non-null but pointing
-        /// at an already-consumed future. A later
-        /// `~ReaderExecutor → discardPrefetch → get` would then segfault
-        /// dereferencing the detached null state pointer (the crash we saw
-        /// in stress test as a SIGSEGV at offset 0x28, the
-        /// `__assoc_state::__mut_` slot).
+        /// Consume the prefetched rope BEFORE applying the EOF gate: an
+        /// unknown-size prefetch worker may latch `reached_eof` while
+        /// still returning the file's final bytes — gating on `atEnd()`
+        /// first would `discardPrefetch` and drop those bytes.
+        /// Move-before-touch: same future-consumption contract as
+        /// `discardPrefetch`.
         auto local_handle = std::move(prefetch_handle);
 
         if (local_handle->tryCancel())
         {
-            /// Worker hadn't picked up the task — cancel and read from the
-            /// current position with a full window. If a seek landed inside
-            /// the prefetched range we'd otherwise re-read the pre-seek bytes
-            /// only to discard them; starting at `position` instead lets us
-            /// return a full window of useful data.
             LOG_TRACE(log, "readNextWindow: prefetch was queued, cancelling and reading from position {}", position);
             ++stats.prefetch_cancelled;
 
@@ -722,9 +632,8 @@ Rope ReaderExecutor::readNextWindow()
         }
         else
         {
-            /// Worker already running or done — wait. If a seek landed inside
-            /// the prefetched window, trim the prefix so rope.range().offset
-            /// matches `position`.
+            /// If a seek landed inside the prefetched window, trim the prefix
+            /// below so `rope.range().offset` matches `position`.
             LOG_TRACE(log, "readNextWindow: waiting on prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
             StopwatchAccumulator wait_scope(stats.prefetch_wait_us);
             rope = local_handle->get();
@@ -741,27 +650,14 @@ Rope ReaderExecutor::readNextWindow()
     }
     else
     {
-        /// EOF detection has two flavours:
-        ///   1. Size-known: `position >= totalSize` is authoritative.
-        ///   2. Size-unknown (`offset_map.hasUnknownSize()`): we can only
-        ///      learn EOF from the source returning fewer bytes than asked
-        ///      for. `reached_eof` is set in the read path when that happens
-        ///      and consulted here so subsequent calls don't re-issue a
-        ///      doomed read.
-        /// The pending-prefetch branch above intentionally bypasses this
-        /// gate — see its comment for the unknown-size race.
-        const bool size_known_eof = !offset_map.hasUnknownSize() && position >= logical_size;
-        if (size_known_eof || reached_eof)
+        if (atEnd())
         {
             LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
-            /// Release scarce per-stream resources as soon as the caller
-            /// hits EOF — there's no reason to hold an open connection /
-            /// `SourceBufferLimit` slot just because the caller hasn't
-            /// dropped the `PipelineReadBuffer` yet. If they later seek
-            /// back and read again, we'll re-open and re-acquire.
+            /// Release per-stream resources at EOF instead of waiting for
+            /// the caller to drop the `PipelineReadBuffer`. A subsequent
+            /// seek-back will re-open and re-acquire.
             live_buffer.reset();
             pre_acquired_slot.reset();
-            over_read_buffer = Rope{};
             return {};
         }
 
@@ -800,30 +696,20 @@ void ReaderExecutor::seek(size_t new_position)
     }
 
     discardPrefetch();
-    /// Pre-acquired slot is keyed to the old position's object. If the new
-    /// position lies in a different object (or no object at all), drop the
-    /// slot so the next read doesn't acquire a second slot while the stale
-    /// one stays held. Pairs with the path-mismatch reset in `readFromSource`.
+    /// `pre_acquired_slot` is keyed to the old object. Drop it when the new
+    /// position lands in a different (or no) object — pairs with the
+    /// path-mismatch reset in `readFromSource`.
     if (const auto * new_obj = offset_map.findObjectAt(new_position + data_start_offset))
         releaseStalePreAcquiredSlot(new_obj->remote_path);
     else
         releaseStalePreAcquiredSlot(String{});
-    /// Drop the over-read buffer on seek: the live connection is about to be
-    /// invalidated anyway (the next source-read won't continue from
-    /// live_buffer's position), so the speculative bytes lose their pairing
-    /// with the live connection and we can't reuse them productively.
+    /// `over_read_buffer` is paired with the live connection's position; the
+    /// upcoming source-read will not continue from `live_buffer`, so the
+    /// speculative bytes can no longer be reused.
     over_read_buffer = {};
     position = new_position;
-    /// Clear the unknown-size EOF latch: a seek backward might land in a
-    /// region the source can re-deliver. We learn EOF again from the next
-    /// short return.
     reached_eof = false;
 
-    /// Start prefetching the new window right away so the next `readNextWindow`
-    /// can hit a warm prefetch instead of paying full source-read latency
-    /// synchronously. `maybeTriggerPrefetch` is a no-op when there is no
-    /// `prefetch_pool` (transient `readBigAt` executor) or when we are already
-    /// at EOF, so this is safe to call unconditionally.
     maybeTriggerPrefetch();
 }
 
@@ -838,11 +724,9 @@ VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::alloc
     auto split_it = splits.begin();
     while (pos < size)
     {
-        /// Advance past any splits already passed.
         while (split_it != splits.end() && *split_it <= pos)
             ++split_it;
 
-        /// Next mandatory boundary: either the next split or the end.
         const size_t boundary = (split_it != splits.end()) ? std::min(*split_it, size) : size;
         const size_t chunk = std::min(block_size, boundary - pos);
         blocks.push_back(std::make_shared<OwnedRopeBuffer>(chunk));
@@ -851,18 +735,15 @@ VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::alloc
     return blocks;
 }
 
-/// Read up to `chunk` bytes into `dest`. Uses zero-copy set()+next() when the
-/// underlying buffer honors the external-buffer pointer (synchronous impls);
-/// falls back to explicit read() for impls that do not (asynchronous readers
-/// like pread_threadpool/io_uring read into their own allocation and assume
-/// memory.size() == internal_buffer.size(), so set()+next() would corrupt
-/// the heap whenever chunk exceeds the buffer's constructor-time size).
-/// Returns bytes read; 0 means EOF. May return less than `chunk` only when
-/// the underlying source reached EOF — short positive `next` returns are
-/// looped over so the caller (readPhysicalWindow) does not misinterpret a
-/// partial fill as `actual < pr.size` and spuriously throw
-/// `CANNOT_READ_ALL_DATA` (size-known) or latch `reached_eof`
-/// (size-unknown) when more bytes are still available.
+/// Zero-copy set()+next() path when the buffer supports it. Asynchronous
+/// readers (`pread_threadpool`, io_uring) read into their own allocation
+/// assuming `memory.size() == internal_buffer.size()`, so `set()` would
+/// corrupt the heap when `chunk` exceeds the buffer's constructor-time size —
+/// for those, fall back to `read()`.
+///
+/// Returned value is `0` only when the source signals EOF. Short positive
+/// `next` returns are looped so a partial fill never reaches the caller as
+/// `actual < pr.size`.
 static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 {
     if (buf.supportsExternalBufferMode())
@@ -870,10 +751,9 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
         size_t total = 0;
         while (total < chunk)
         {
-            /// Re-arm the external buffer for the still-unfilled tail. The
-            /// source's internal position has already advanced by `total`
-            /// from the previous iteration, so each `next` reads into the
-            /// next slot in `dest` and the bytes land contiguously.
+            /// Re-arm at `dest + total`: the source's internal position has
+            /// advanced by `total` already, so successive `next` calls land
+            /// contiguously in `dest`.
             buf.set(dest + total, chunk - total);
             if (!buf.next())
                 break;
@@ -886,8 +766,6 @@ static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
         return total;
     }
 
-    /// Fallback: copy out of the buffer's own memory. `ReadBuffer::read`
-    /// already loops internally via `!eof()`.
     return buf.read(dest, chunk);
 }
 
@@ -916,8 +794,6 @@ Rope ReaderExecutor::readFromLiveBufferIntoRope(
         total_read += got;
     }
 
-    /// Blocks not referenced from rope (file ended before consuming all of them)
-    /// drop their refcount to 0 when `blocks` goes out of scope here.
     return rope;
 }
 
@@ -925,7 +801,6 @@ Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
 {
-    /// Try live buffer: reuse open connection for sequential reads.
     if (live_buffer
         && live_buffer->slot.objectPath() == object.remote_path
         && live_buffer->current_position == offset)
@@ -942,7 +817,6 @@ Rope ReaderExecutor::readFromSource(
         return rope;
     }
 
-    /// Live buffer doesn't match — close it if present.
     if (live_buffer)
     {
         LOG_TRACE(log, "readFromSource: closing live buffer for {} (was at {}), need {}:{}",
@@ -950,15 +824,11 @@ Rope ReaderExecutor::readFromSource(
         live_buffer.reset();
     }
 
-    /// Pre-acquired slot keyed to a different object — drop it. Otherwise
-    /// the matching-path branch below would skip it and the `else if
-    /// (buffer_limit)` fallback would acquire a SECOND slot while the stale
-    /// one stays held until executor destruction.
+    /// `pre_acquired_slot` keyed to a different object: drop it now, otherwise
+    /// the `buffer_limit` fallback below would acquire a SECOND slot and the
+    /// stale one would stay held until executor destruction.
     releaseStalePreAcquiredSlot(object.remote_path);
 
-    /// Try to acquire a slot for a new live buffer. If `pre_acquired_slot`
-    /// was set by the caller (readNextWindow / maybeTriggerPrefetch) and
-    /// matches this object, reuse it instead of asking buffer_limit again.
     std::optional<SourceBufferSlot> slot;
     if (pre_acquired_slot && pre_acquired_slot->objectPath() == object.remote_path)
     {
@@ -997,12 +867,10 @@ Rope ReaderExecutor::readFromSource(
                 object.remote_path, total_read, live_buffer->current_position);
             return rope;
         }
-        /// open() failed — `slot` drops here, releasing the buffer_limit reservation.
     }
 
-    /// Fallback: open a fresh connection without storing it as live_buffer
-    /// (slot was unavailable). The opened buffer is dropped when this
-    /// function returns.
+    /// No slot available — open a one-shot connection without storing it as
+    /// `live_buffer`. Dropped when this function returns.
     ProfileEvents::increment(ProfileEvents::LiveSourceBufferFallbacks);
 
     auto opened = source->open(object);
@@ -1030,7 +898,6 @@ Rope ReaderExecutor::readFromSource(
         total_read += got;
     }
 
-    /// Blocks not referenced from rope drop their refcount to 0 when this function returns.
     return rope;
 }
 
@@ -1040,34 +907,20 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
     Rope result;
     IntervalSet covered;   /// disjoint logical bytes already materialised in `result`
-    /// Both vectors hold cache handles until the end of this function so
-    /// `~ICacheHandle` (which does the deferred LRU bump for hits) runs
-    /// AFTER every `put` below. Splitting on whether the handle has misses
-    /// (so we know which to iterate for `put`) is a layout detail — both
-    /// are destroyed together in scope exit. See `~DiskCacheHandle` for the
-    /// deferred-bump rationale.
+    /// Both vectors live to scope exit so `~ICacheHandle` (which does the
+    /// deferred LRU bump) runs AFTER every `put` below — see `~DiskCacheHandle`.
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> miss_handles;
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> hit_only_handles;
 
-    /// Over-read pre-check: bytes the previous `readPhysicalWindow` source-read
-    /// just past its requested window (with `live_buffer` advancing through
-    /// them) and we retained in their own `OwnedRopeBuffer`. Serving them here
-    /// lets the live buffer reuse kick in for the remainder — the source-read
-    /// will start at the exact byte where live_buffer is positioned.
-    /// We move the served slices into `result` and immediately drop them from
-    /// `over_read_buffer` (the only future use was the current call), keeping
-    /// only the still-future-relevant tail.
+    /// Over-read pre-check: bytes the previous source-read pulled past its
+    /// window (advancing `live_buffer` through them) and we kept in
+    /// `over_read_buffer`. Serving them here lets the live-buffer reuse path
+    /// take over the rest of the window — the upcoming source-read starts at
+    /// the exact byte where `live_buffer` is positioned.
     if (!over_read_buffer.empty())
     {
-        /// Two-step trim via `Rope::slice`:
-        ///   1. Intersection with `physical_window` -> serve into `result`.
-        ///      Don't bump `cache_hit_bytes`: these bytes were already
-        ///      accounted as `cache_miss_bytes` in the source-read that
-        ///      produced them.
-        ///   2. Anything strictly after `physical_window.end()` -> retain as
-        ///      the new `over_read_buffer`. Anything before it is dropped
-        ///      (sequential reads move forward; `seek` would have cleared
-        ///      the buffer already).
+        /// Don't bump `cache_hit_bytes`: these bytes were already accounted
+        /// as `cache_miss_bytes` in the source-read that produced them.
         Rope served = over_read_buffer.slice(physical_window);
         for (const auto & node : served.getNodes())
             covered.add(ByteRange{node.logical_offset, node.size});
@@ -1076,22 +929,18 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         LOG_TRACE(log, "readPhysicalWindow: over-read served {} bytes", served_bytes);
         result.append(std::move(served));
 
-        /// Half-open `[physical_window.end(), +∞)` — using a sufficiently
-        /// large size avoids overflow (`ByteRange::end()` does `offset + size`).
+        /// Half-open `[physical_window.end(), +∞)`. `size_t::max()/2` avoids
+        /// `offset + size` overflow inside `ByteRange::end()`.
         const size_t tail_size = std::numeric_limits<size_t>::max() / 2;
         over_read_buffer = over_read_buffer.slice(
             ByteRange{physical_window.end(), tail_size});
     }
 
     /// Walk the cache chain. Each cache reports hits/misses at its own
-    /// granularity (which may extend beyond the requested range). Hits are
-    /// appended to `result` only for the not-yet-covered subranges so that
-    /// `result` stays disjoint even when a lower cache's hit overlaps a
-    /// higher cache's hit. Misses propagate to the next cache.
-    /// Only walk the cache chain for parts not already served by over-read.
-    /// (If `covered` is empty, this returns the whole window; if over_read
-    /// covered everything, returns empty and the cache+source loops below are
-    /// no-ops.)
+    /// granularity (which may extend past the requested range). Hits are
+    /// appended only for not-yet-covered subranges so `result` stays disjoint
+    /// even when a lower cache hit overlaps a higher cache hit. Misses
+    /// propagate to the next cache.
     VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(physical_window);
     for (auto & cache : caches)
     {
@@ -1100,11 +949,9 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         for (const auto & r : remaining)
         {
             /// Split `r` by object boundaries so each `cache->lookup` carries
-            /// a single `StoredObject` and the cache provider can derive a
-            /// per-object key / origin (etag-keyed cache identity, segment
-            /// key-type classification, ...). The handles still report
-            /// hits / misses in FILE-LEVEL coordinates — the per-object
-            /// translation lives entirely inside the cache provider.
+            /// a single `StoredObject` and the provider can derive a per-object
+            /// key / origin. Handles still report ranges in file-level
+            /// coordinates — the per-object translation lives inside the provider.
             auto pieces = offset_map.map(r);
             size_t piece_file_start = r.offset;
             for (const auto & pr : pieces)
@@ -1121,14 +968,11 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                     LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})",
                         cache->name(), hit.offset, hit.end());
 
-                    /// `hit` is the cache's *segment* range (typically
-                    /// `max_file_segment_size`, default 4 MiB). Our actual
-                    /// request is `piece_range`. Clamp to the intersection so
-                    /// `handle->get` doesn't allocate buffer memory for
-                    /// segment bytes outside the piece. Miss ranges are
-                    /// intentionally left segment-sized: the wider miss is
-                    /// what enables the next cache layer (or the source) to
-                    /// fully populate this cache via `put`.
+                    /// `hit` is the cache's segment range; `piece_range` is
+                    /// the actual request. Clamp `get` to the intersection to
+                    /// avoid allocating buffer memory for segment bytes outside
+                    /// the request. Misses stay segment-sized so the next layer
+                    /// (or the source) can fully populate this cache via `put`.
                     size_t lo = std::max(hit.offset, piece_range.offset);
                     size_t hi = std::min(hit.end(), piece_range.end());
                     if (lo >= hi)
@@ -1160,12 +1004,6 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                     still_missing.push_back(miss);
                 }
 
-                /// Keep the handle alive until the end of `readPhysicalWindow`
-                /// — `~DiskCacheHandle` does the deferred LRU bump for each
-                /// hit served by `get`, and we want that to fire AFTER every
-                /// `put` below. If the handle has neither hits nor misses we
-                /// could drop it now, but keeping all handles together costs
-                /// nothing.
                 if (!status.miss_ranges.empty())
                     miss_handles.push_back(std::move(handle));
                 else if (any_hit_done)
@@ -1190,9 +1028,6 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         LOG_TRACE(log, "readPhysicalWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
             remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
 
-    /// Fetch from source. Allocate destination blocks before opening
-    /// connections; try the live buffer for sequential reads and fall back
-    /// to stateless reads otherwise.
     for (const auto & fr : fetch_ranges)
     {
         auto physical_ranges = offset_map.map(fr);
@@ -1203,11 +1038,10 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             LOG_TRACE(log, "readPhysicalWindow: source read object={}, offset={}, size={}",
                 pr.object.remote_path, pr.object_offset, pr.size);
 
-            /// Split the allocation at the user-window edges so user-data
-            /// blocks and over-read blocks live in separate `OwnedRopeBuffer`s.
-            /// When the caller drops the returned rope, the user-data buffer's
-            /// refcount drops to zero immediately — even if we retain
-            /// over-read blocks in `over_read_buffer` for a later request.
+            /// Split at the user-window edges so user-data and over-read bytes
+            /// land in separate `OwnedRopeBuffer`s — when the caller drops the
+            /// returned rope, the user-data buffer's refcount falls to zero
+            /// even if `over_read_buffer` still holds the tail block.
             VectorWithMemoryTracking<size_t> splits;
             const size_t pr_lo = logical_pos;
             const size_t pr_hi = logical_pos + pr.size;
@@ -1225,17 +1059,9 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             size_t actual = source_rope.totalBytes();
             stats.cache_miss_bytes += actual;
-            /// Short-return handling:
-            ///   - Size known: `offset_map.totalSize` is authoritative.
-            ///     A short read means the source can't deliver bytes the
-            ///     map already promised — failing fast is the only safe
-            ///     choice (otherwise subsequent logical offsets would
-            ///     shift, or `readNextWindow` would loop with
-            ///     `position` stuck).
-            ///   - Size unknown: the short return IS the EOF marker.
-            ///     We record it via `reached_eof`, treat the request
-            ///     range as covering only the actual bytes, and let
-            ///     subsequent calls return empty.
+            /// Size-known short reads are fatal (the map promised those bytes;
+            /// silently shrinking would shift later logical offsets). Size-unknown
+            /// short reads are the only way to learn EOF — latch `reached_eof`.
             if (actual != pr.size)
             {
                 if (!offset_map.hasUnknownSize())
@@ -1245,10 +1071,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 reached_eof = true;
             }
 
-            /// Append only the parts of source_rope not already in `result`.
-            /// Use `actual` (not `pr.size`) so the recorded range matches what
-            /// the source actually delivered — relevant only when
-            /// `reached_eof` is set, since otherwise `actual == pr.size`.
+            /// Use `actual` so the recorded range tracks what the source
+            /// actually delivered — diverges from `pr.size` only at EOF.
             ByteRange pr_range{logical_pos, actual};
             auto uncovered = covered.subtract(pr_range);
             for (const auto & sub : uncovered)
@@ -1257,23 +1081,20 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 covered.add(sub);
             }
 
-            /// Retain over-read (bytes outside `physical_window`) only when the
-            /// source-read advanced the live connection past this pr — otherwise
-            /// the connection is closed and the bytes can't pair with a
-            /// continuation on the next call. We collect the bytes that fell
-            /// before AND after `physical_window` via two `slice` calls.
-            const bool live_used = live_buffer.has_value()
-                && live_buffer->slot.objectPath() == pr.object.remote_path
-                && live_buffer->current_position == pr.object_offset + pr.size;
-            if (live_used)
+            /// Retain whatever the source delivered past `physical_window.end()`
+            /// — the over-read pre-check on the next call serves these bytes
+            /// regardless of `live_buffer` state. Critical for unknown-size
+            /// EOF inside a cache-widened miss: bytes between
+            /// `physical_window.end()` and the actual file end would otherwise
+            /// be dropped before the caller could read them.
+            /// A pre-window prefix is always dropped (sequential reads move
+            /// forward; the over-read pre-check would discard it anyway).
+            /// The overflow guard at the end of this function bounds total
+            /// retention to `window_size`.
+            Rope tail = source_rope.slice(
+                ByteRange{physical_window.end(), std::numeric_limits<size_t>::max() / 2});
+            if (!tail.empty())
             {
-                /// Only the tail (bytes past `physical_window.end()`) is worth
-                /// retaining. A pre-window prefix would already be behind the
-                /// next call's `physical_window.offset` and would be dropped by
-                /// the over-read pre-check anyway (sequential reads move
-                /// forward).
-                Rope tail = source_rope.slice(
-                    ByteRange{physical_window.end(), std::numeric_limits<size_t>::max() / 2});
                 stats.over_read_bytes += tail.totalBytes();
                 over_read_buffer.append(std::move(tail));
             }
@@ -1282,10 +1103,9 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         }
     }
 
-    /// Fill caches with disjoint slices of `result`. `result.slice(miss)` is
-    /// disjoint by construction (every byte was appended via the covered
-    /// guard), so `put` always receives a rope whose totalBytes == miss.size
-    /// when the source covered the whole miss range, or less at EOF.
+    /// `result` is disjoint by construction (every append went through the
+    /// `covered` guard), so each slice handed to `put` has at most one node
+    /// per byte. The slice may be shorter than `miss.size` at EOF.
     for (auto & handle : miss_handles)
     {
         auto status = handle->status();
@@ -1302,16 +1122,9 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         }
     }
 
-    /// `Rope` maintains sorted node order on every `append`, so no explicit
-    /// sort is needed here.
-
-    /// Overflow guard: if the retained over-read exceeds `window_size`, the
-    /// access pattern isn't matching what we speculated (callers aren't
-    /// consuming our lookahead within a window). Drop both the buffer and the
-    /// live connection — keeping live_buffer would just delay the inevitable
-    /// reset (the next call needs bytes before its position anyway). The
-    /// `ReaderExecutorOverReadOverflow` ProfileEvent tracks how often this
-    /// fires so a steady stream of overflows surfaces in `system.query_log`.
+    /// Over-read past `window_size` means the caller is not consuming our
+    /// lookahead — drop both the buffer and `live_buffer` (the next call
+    /// will need bytes before the connection's position anyway).
     if (over_read_buffer.totalBytes() > window_size)
     {
         LOG_TRACE(log, "readPhysicalWindow: over-read buffer overflow ({} > {}), dropping it and live_buffer",
@@ -1321,32 +1134,20 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         live_buffer.reset();
     }
 
-    /// Release any pre_acquired_slot that this window didn't consume.
-    /// `ensurePreAcquiredSlot` is called eagerly before each window in case
-    /// a source read is coming, but a fully-cache-hit window (or a prefetch
-    /// `submit` that returned `nullptr`) leaves the slot held even though we
-    /// never opened a buffer. Without this, sustained warm-cache traffic
-    /// accumulates a phantom slot per executor for its whole lifetime —
-    /// consuming `max_remote_read_connections` quota and showing a fake row
-    /// in `system.remote_read_connections`. The next
-    /// `readNextWindow` / `maybeTriggerPrefetch` will re-acquire if it
-    /// expects a source read. If the read instead promoted to live,
-    /// `pre_acquired_slot` is already empty (moved into `live_buffer.slot`).
+    /// Release the slot if this window didn't open a connection — a fully
+    /// warm-cache window would otherwise accumulate a phantom slot per
+    /// executor, consuming `max_remote_read_connections` quota and showing
+    /// up in `system.remote_read_connections`. (If the read promoted to live,
+    /// `pre_acquired_slot` is already empty — moved into `live_buffer.slot`.)
     if (pre_acquired_slot && !live_buffer)
         pre_acquired_slot.reset();
 
-    /// Trim to the originally requested physical window.
     auto sliced = result.slice(physical_window);
 
-    /// Hard-check the contiguity invariant on what we hand back to the
-    /// caller. Bytes returned by `readPhysicalWindow` must form a single
-    /// contiguous run starting at `physical_window.offset` — anything else
-    /// would mean a hole in the data the caller is about to interpret as
-    /// consecutive file content. Under known-size reads the run covers
-    /// the full window; under unknown-size with EOF, it may end early
-    /// (still contiguous from the front). This catches any regression
-    /// where a cache layer, source short-read, or merge logic leaves the
-    /// assembled rope with a gap.
+    /// The returned bytes must form a single contiguous run from
+    /// `physical_window.offset` — a hole would shift the caller's offset
+    /// interpretation. Under EOF the run may end early but stays
+    /// contiguous from the front.
     const auto & ivs = sliced.getIntervals();
     if (ivs.size() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1361,31 +1162,12 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position) const
 {
-    /// Shared with the parent (immutable or thread-safe to share):
-    ///   - `source` (concurrent `open()` is OK; required by `canReadAt()`)
-    ///   - `stored_objects`, `cache_key`, `window_size`, `min_bytes_for_seek`
-    ///   - `caches` (each `ICacheProvider` is internally thread-safe)
-    ///   - `decryption_layers`, `decryption_headers`, `data_start_offset`
-    ///     (set once in `initDecryption`, never mutated)
-    ///   - `buffer_limit`: shared so the transient's live connection counts
-    ///     against the server-wide budget. Within one `readBigAt` the
-    ///     transient keeps its slot for the whole request and reuses the
-    ///     open connection across windows; on slot exhaustion it falls back
-    ///     to one-shot reads, same as the parent under pressure.
-    ///
-    /// Private to the transient (so concurrent `readBigAt` calls don't race
-    /// with each other or with the parent's `next()`/`seek()`):
-    ///   - `position`, `live_buffer`, `prefetch_handle`, `prefetch_range`,
-    ///     `pre_acquired_slot`,
-    ///     `stats`, `creator_query_id`, `reader_executor_log` ptr.
-    ///
-    /// Intentionally NOT propagated (the transient runs without them):
-    ///   - `prefetch_pool`: a one-shot read can't amortise prefetch latency;
-    ///     sharing the parent's pool would let a transient steal slots from a
-    ///     concurrently-running sequential reader.
-    ///   - `reader_executor_log`: the transient's stats land in global
-    ///     `ProfileEvents` via the destructor anyway; we don't want a row per
-    ///     `readBigAt` in `system.reader_executor_log`.
+    /// `buffer_limit` is shared so the transient's live connection counts
+    /// against the server-wide budget. `prefetch_pool` and
+    /// `reader_executor_log` are intentionally NOT propagated: a one-shot
+    /// `readBigAt` can't amortise prefetch latency (and would steal slots
+    /// from a concurrent sequential reader), and per-call log rows would
+    /// spam `system.reader_executor_log`.
     auto t = std::make_unique<ReaderExecutor>(
         source, stored_objects, caches,
         window_size, min_bytes_for_seek, log_file_path);

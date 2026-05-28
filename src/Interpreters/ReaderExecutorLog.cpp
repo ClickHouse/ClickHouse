@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/ColumnsDescription.h>
@@ -25,7 +26,7 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
 
         {"query_id", std::make_shared<DataTypeString>(), "Id of the query that created this `ReaderExecutor`."},
         {"source_file_path", std::make_shared<DataTypeString>(), "Cache-key path the executor was reading. Typically the first object's `remote_path`."},
-        {"total_size", std::make_shared<DataTypeUInt64>(), "Total logical size in bytes the executor was set up to read across all objects."},
+        {"total_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Total logical size in bytes the executor was set up to read across all objects. `NULL` when the underlying object had no known size (e.g. S3 HEAD without `Content-Length`)."},
 
         {"cache_hit_bytes", std::make_shared<DataTypeUInt64>(), "Bytes served from cache layers."},
         {"cache_miss_bytes", std::make_shared<DataTypeUInt64>(), "Bytes fetched from source."},
@@ -57,7 +58,10 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(query_id);
     columns[i++]->insert(source_file_path);
-    columns[i++]->insert(total_size);
+    if (total_size.has_value())
+        columns[i++]->insert(*total_size);
+    else
+        columns[i++]->insertDefault();
 
     columns[i++]->insert(cache_hit_bytes);
     columns[i++]->insert(cache_miss_bytes);

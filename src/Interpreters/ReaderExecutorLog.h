@@ -17,7 +17,10 @@ struct ReaderExecutorLogElement
 
     String query_id;
     String source_file_path;
-    UInt64 total_size = 0;
+    /// `nullopt` when the underlying object had `StoredObject::UnknownSize`
+    /// (e.g. S3 HEAD without `Content-Length`); the executor cannot report
+    /// a meaningful logical file size in that case.
+    std::optional<UInt64> total_size;
 
     UInt64 cache_hit_bytes = 0;
     UInt64 cache_miss_bytes = 0;

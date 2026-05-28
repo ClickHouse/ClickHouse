@@ -96,20 +96,15 @@ public:
     ReadPipeline(ReadPipeline &&) = default;
     ReadPipeline & operator=(ReadPipeline &&) = default;
 
-    /// -- Source stage --
-    /// Each setter takes ReadSettings which are stored alongside the source
-    /// and used by build() for buffer sizing and readObject() calls.
-
-    /// Set source from an object storage.
+    /// Each source setter stores its `ReadSettings` on the pipeline; `build()`
+    /// reads them for buffer sizing and the eventual `readObject` call.
     void setSource(ObjectStoragePtr storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint = {});
 
-    /// Set source from a local file path.
     void setLocalFileSource(String path, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint = {});
 
-    /// Set source from a backup.
     void setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings);
 
-    /// Set source with a custom buffer creator (for testing or custom backends).
+    /// Custom buffer creator — used by tests and custom backends.
     void setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
 
     /// Source whose creator returns a buffer that is already a complete reader —
@@ -121,13 +116,11 @@ public:
     /// violation and trips a `chassert` in `build()`.
     void setAlreadyCompleteSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
 
-    /// -- Gather stage (ReadBufferFromRemoteFSGather) --
-    /// Joins multiple stored objects into a single seekable buffer.
-    /// Required for object storage where one logical file maps to multiple blobs.
-    /// Not needed for local disk where one file = one file.
+    /// Joins multiple stored objects into a single seekable buffer via
+    /// `ReadBufferFromRemoteFSGather`. Required when one logical file maps to
+    /// multiple blobs (object storage); not needed for local disk.
     void needGather();
 
-    /// -- Filesystem cache stage --
     void needFilesystemCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
     /// Overload with a custom cache key and origin, bypassing the default `FileCacheKey::fromPath` derivation.
@@ -139,8 +132,8 @@ public:
         FilesystemCacheSettings cache_settings,
         std::shared_ptr<FilesystemCacheLog> cache_log = nullptr);
 
-    /// -- Memory cache stage --
-    /// The cache pointer travels inside `page_cache_settings.cache`; a null cache disables the stage.
+    /// The cache pointer travels inside `page_cache_settings.cache`; a null
+    /// `cache` disables the stage.
     void needMemoryCache(String cache_path_prefix, PageCacheSettings page_cache_settings);
 
     /// Overload with a fully custom page cache key (path + file_version), bypassing the default
@@ -151,44 +144,36 @@ public:
         String custom_file_version,
         PageCacheSettings page_cache_settings);
 
-    /// -- Distributed cache stage (sits between Gather and MemoryCache) --
-    /// Implementation is in the DistributedCache module (ENABLE_DISTRIBUTED_CACHE).
-    /// When enabled, reads go through the distributed cache with fallback to Gather.
-    /// Also affects: use_page_cache condition and min_bytes_for_seek in AsyncPrefetch.
-    /// @param include_credentials_in_cache_key  When true, object storage credentials are
-    ///        included in the cache key hash. Set to true for table engine reads (s3(...), etc.)
-    ///        where different users may access the same path with different credentials.
+    /// Sits between Gather and MemoryCache. Reads go through the distributed
+    /// cache with fallback to Gather. Also alters the `use_page_cache`
+    /// condition and the `min_bytes_for_seek` value used in AsyncPrefetch.
+    /// @param include_credentials_in_cache_key  When true, object storage
+    ///        credentials are mixed into the cache key. Set for table-engine
+    ///        reads (`s3(...)` etc.) where different users may access the
+    ///        same path with different credentials.
     void needDistributedCache(bool include_credentials_in_cache_key = false);
 
-    /// -- Async prefetch stage --
     void needAsyncPrefetch(
         IAsynchronousReader & reader,
         AsyncReadCountersPtr async_read_counters = nullptr,
         FilesystemReadPrefetchesLogPtr prefetches_log = nullptr);
 
-    /// -- Prefetch pool (for ReaderExecutor path) --
+    /// Used only by the `ReaderExecutor` path.
     void needPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
 
-    /// -- Source buffer limit (for ReaderExecutor live buffer optimization) --
+    /// Used only by the `ReaderExecutor` live-buffer optimization.
     void needBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
 
-    /// -- Decryption stage --
-    /// The key_finder callback is called at build time with the key fingerprint
-    /// read from the encryption header. It must return the decryption key.
+    /// `key_finder` is invoked at build time with the key fingerprint parsed
+    /// from the encryption header and must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
-    /// -- Build the final ReadBuffer chain --
-    /// Uses the ReadSettings stored in the source stage.
     std::unique_ptr<ReadBufferFromFileBase> build() const;
 
-    /// Returns a human-readable description of active stages,
-    /// e.g. "Source -> FilesystemCache -> Gather -> Async".
     String describe() const;
 
-    /// Creates a copy of this pipeline (all stages are preserved).
     ReadPipeline clone() const;
 
-    /// Queries.
     bool hasSource() const { return source.has_value(); }
     const StoredObjects & getStoredObjects() const;
 
@@ -251,9 +236,9 @@ private:
     std::shared_ptr<SourceBufferLimit> buffer_limit;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
 
-    /// build() helpers: one per logical stage group.
-    /// Each helper reads private state and returns the (partial) impl buffer.
-    /// `query_id` is captured once on the calling thread before any stage runs.
+    /// `query_id` is captured once on the calling thread before any stage
+    /// runs, then threaded into helpers (which may run on a worker).
+    ///
     /// Experimental `ReaderExecutor` path. Returns nullptr when the setting is off
     /// or the source variant is not supported, so the caller falls back to the
     /// legacy matryoshka pipeline. When it returns a buffer, `build` must NOT

@@ -34,8 +34,8 @@ class ICacheHandle
 public:
     virtual ~ICacheHandle() = default;
 
-    /// What's cached, what's not (in this cache's granularity), in
-    /// file-level coordinates.
+    /// Reports `hit_ranges` / `miss_ranges` in file-level coordinates at this
+    /// cache's granularity.
     virtual CacheLookupResult status() const = 0;
 
     /// Read cached data as a rope slice. `range` must be within

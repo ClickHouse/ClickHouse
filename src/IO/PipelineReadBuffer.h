@@ -11,8 +11,6 @@ namespace DB
 
 class ReaderExecutor;
 
-/// Thin ReadBufferFromFileBase wrapping a ReaderExecutor.
-/// Walks rope nodes from the executor, exposing them as the working buffer.
 class PipelineReadBuffer : public ReadBufferFromFileBase
 {
 public:
