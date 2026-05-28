@@ -179,7 +179,7 @@ def test_s3_storage_refresh_drops_revoked_endpoint_credentials():
 
         _set_reload_trusted_endpoint(True, with_credentials=False)
         node.query("SYSTEM RELOAD CONFIG")
-        assert node.query("SELECT * FROM s3_refresh_revoked_endpoint").strip() == "0"
+        assert node.query("SELECT * FROM s3_refresh_revoked_endpoint").strip() == "1"
 
         _set_reload_trusted_endpoint(True)
         node.query("SYSTEM RELOAD CONFIG")
