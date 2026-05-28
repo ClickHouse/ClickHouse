@@ -3,6 +3,8 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Storages/StorageSnapshot.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -16,15 +18,12 @@ namespace DB
 namespace
 {
 
-/// `Field::operator==` is type-strict: `Field(UInt64{0})` (how literal `0` parses)
-/// doesn't compare equal to `Field(Int64{0})` (Int16's default). Convert through
-/// the column's data type so both sides share a `Types::Which` before comparing.
-///
-/// Nullable types intentionally do not strip the wrapper: for a Nullable column the
-/// per-column `num_defaults` counts NULLs (see `ColumnNullable::isDefaultAt`), so a
-/// predicate like `col = 0` is not equivalent to "row is default". Comparing against
-/// the Nullable default (`NULL`) makes such predicates fall through here so the
-/// classifier rejects them, leaving only `isNull` / `isNotNull` as the safe forms.
+/// `Field::operator==` is type strict: `Field(UInt64{0})` (how literal `0` parses)
+/// does not compare equal to `Field(Int64{0})` (Int16's default). Convert through
+/// the column's data type so both sides share the same `Types::Which` before
+/// comparing. The Nullable wrapper is kept on purpose: for a Nullable column the
+/// per column `num_defaults` counts NULLs, so a literal like `0` does not match the
+/// Nullable default (`NULL`) and the predicate falls through here.
 bool constantEqualsTypeDefault(const Field & value, const DataTypePtr & type)
 {
     Field converted = convertFieldToType(value, *type);
@@ -33,17 +32,18 @@ bool constantEqualsTypeDefault(const Field & value, const DataTypePtr & type)
     return converted == type->getDefault();
 }
 
-/// Range predicates on unsigned integers (`col > 0` etc.) match all non-default rows.
+/// Range predicates on unsigned integers like `col > 0` match all non default rows.
 /// For Nullable(UInt) the predicate evaluates to NULL on NULL rows, which `WHERE`
-/// treats as false - so it really means "non-NULL AND > 0", not "non-default".
-/// Reject Nullable to avoid that mismatch.
+/// treats as false, so the meaning is "non NULL and > 0" rather than "non default".
+/// Reject Nullable to avoid the mismatch.
 bool isUnsignedInteger(const DataTypePtr & type)
 {
     return !type->isNullable() && WhichDataType(*type).isUInt();
 }
 
-/// Same reasoning as `isUnsignedInteger`: `empty(col)` / `notEmpty(col)` on a Nullable
-/// String return NULL for NULL rows, which is not "row is default" (= NULL).
+/// Same reasoning as `isUnsignedInteger`: `empty(col)` and `notEmpty(col)` on a
+/// Nullable String return NULL for NULL rows, which is not the same as "row is
+/// default" for the per column stat.
 bool isStringLike(const DataTypePtr & type)
 {
     return !type->isNullable() && WhichDataType(*type).isString();
@@ -65,6 +65,42 @@ tryAsColumnRef(const QueryTreeNodePtr & node, const QueryTreeNodePtr & expected_
     if (!source || source.get() != expected_table_expression.get())
         return std::nullopt;
     return ColumnRef{col->getColumnName(), col->getColumnType()};
+}
+
+/// `WHERE n IS NULL` is rewritten by the analyzer to `WHERE n.null`, a UInt8
+/// `ColumnNode` for the `.null` subcolumn of `n` (1 for NULL, 0 otherwise). The
+/// rewrite uses the simple `NameAndTypePair(name, type)` constructor and does not
+/// set `subcolumn_delimiter_position`, so `isSubcolumn()` is false here. Match by
+/// name suffix and type, confirm the base column is Nullable in storage, and bail
+/// out when a literal top level column named `<base>.null` exists (in that case
+/// the analyzer leaves `isNull` alone and any `WHERE n.null` we see refers to the
+/// literal column).
+std::optional<String>
+tryAsNullSubcolumnOf(const QueryTreeNodePtr & node, const QueryTreeNodePtr & expected_table_expression)
+{
+    static constexpr std::string_view kNullSuffix = ".null";
+    const auto * col = node->as<ColumnNode>();
+    if (!col)
+        return std::nullopt;
+    auto source = col->getColumnSourceOrNull();
+    if (!source || source.get() != expected_table_expression.get())
+        return std::nullopt;
+    const auto & nt = col->getColumn();
+    if (!WhichDataType(nt.type).isUInt8() || !nt.name.ends_with(kNullSuffix))
+        return std::nullopt;
+    String base = nt.name.substr(0, nt.name.size() - kNullSuffix.size());
+    const auto * table_node = expected_table_expression->as<TableNode>();
+    if (!table_node)
+        return std::nullopt;
+    const auto & snapshot = *table_node->getStorageSnapshot();
+    auto base_in_storage = snapshot.tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), base);
+    if (!base_in_storage || !base_in_storage->type->isNullable())
+        return std::nullopt;
+    /// A real top level column named exactly `<base>.null` takes precedence over the
+    /// synthesised subcolumn.
+    if (snapshot.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All), nt.name).has_value())
+        return std::nullopt;
+    return base;
 }
 
 std::optional<Field> tryAsConstantValue(const QueryTreeNodePtr & node)
@@ -103,6 +139,12 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     if (!predicate)
         return std::nullopt;
 
+    /// The analyzer rewrites `n IS NULL` to a bare `n.null` ColumnNode (not wrapped
+    /// in an `isNull` function), so recognise that form before requiring a function
+    /// node.
+    if (auto base = tryAsNullSubcolumnOf(predicate, table_expression_node))
+        return RecognisedSparsityPredicate{*base, SparsityPredicateClass::MatchesDefault};
+
     const auto * func = predicate->as<FunctionNode>();
     if (!func)
         return std::nullopt;
@@ -112,6 +154,16 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
 
     if (args.size() == 1)
     {
+        /// `n IS NOT NULL` becomes `not(n.null)` after the analyzer rewrites
+        /// `isNotNull`. Recognise it before the generic single argument column ref
+        /// path.
+        if (name == "not")
+        {
+            if (auto base = tryAsNullSubcolumnOf(args[0], table_expression_node))
+                return RecognisedSparsityPredicate{*base, SparsityPredicateClass::MatchesNonDefault};
+            return std::nullopt;
+        }
+
         auto col = tryAsColumnRef(args[0], table_expression_node);
         if (!col)
             return std::nullopt;

@@ -78,9 +78,13 @@ void SerializationInfo::Data::add(const IColumn & column)
 
 void SerializationInfo::Data::add(const Data & other)
 {
+    /// On the first contribution into a fresh `Data` take exactness from `other`.
+    /// The default value of `exact_num_defaults` is false and would otherwise pin
+    /// the merged result to non exact even when every input is exact.
+    bool was_empty = (num_rows == 0);
     num_rows += other.num_rows;
     num_defaults += other.num_defaults;
-    exact_num_defaults = exact_num_defaults && other.exact_num_defaults;
+    exact_num_defaults = was_empty ? other.exact_num_defaults : (exact_num_defaults && other.exact_num_defaults);
 }
 
 void SerializationInfo::Data::remove(const Data & other)
@@ -92,9 +96,14 @@ void SerializationInfo::Data::remove(const Data & other)
 
 void SerializationInfo::Data::addDefaults(size_t length)
 {
-    /// Exactness is preserved: every added row is known to be a default.
+    /// Every added row is known to be a default. Seed exactness on the first
+    /// contribution so a part synthesised entirely from defaults reports exact
+    /// stats.
+    bool was_empty = (num_rows == 0);
     num_rows += length;
     num_defaults += length;
+    if (was_empty)
+        exact_num_defaults = true;
 }
 
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
@@ -294,6 +303,15 @@ void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) 
 
     writeChar(',', out);
     writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
+
+    /// Only emit the key when true. A missing key reads back as false, so writing
+    /// `"exact_num_defaults": false` would just add noise to `serialization.json`
+    /// for parts that don't carry exact counts.
+    if (data.exact_num_defaults)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_EXACT_NUM_DEFAULTS, true, out);
+    }
 }
 
 void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
@@ -308,8 +326,8 @@ void SerializationInfo::toJSON(Poco::JSON::Object & object) const
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
-    /// Only emit the key when true: a missing key reads back as `false` (see `fromJSON`),
-    /// so writing `"exact_num_defaults": false` would just add noise to `serialization.json`
+    /// Only emit the key when true. A missing key reads back as false, so writing
+    /// `"exact_num_defaults": false` would just add noise to `serialization.json`
     /// for parts that don't carry exact counts.
     if (data.exact_num_defaults)
         object.set(KEY_EXACT_NUM_DEFAULTS, true);
