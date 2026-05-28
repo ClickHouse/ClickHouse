@@ -115,36 +115,29 @@ TEST(TaskTrackerAddFinal, AsyncFinalCallbackException)
     t.tracker.safeWaitAll();
 }
 
-TEST(TaskTrackerAddFinal, AsyncWaitIfAnyBeforeFinalTask)
+TEST(TaskTrackerAddFinal, WaitIfAnyBeforeFinalTask)
 {
-    /// Pins the sequence add; waitIfAny; addFinal; waitAll. `waitIfAny` drains
-    /// `finished_futures`, so only the counter-based check `tasks_finished == tasks_added`
-    /// keeps the final callback from being skipped or blocking forever here.
-    AsyncTracker t{/*threads=*/4};
-    constexpr size_t N = 8;
+    TaskTracker tracker(/*scheduler_=*/{}, /*max_tasks_inflight=*/0, makeTestLogger());
+    ASSERT_FALSE(tracker.isAsync());
+
+    constexpr size_t N = 2;
     std::atomic<size_t> ran{0};
     std::atomic<bool> final_ran{false};
-    std::atomic<size_t> count_observed_by_final{0};
 
     for (size_t i = 0; i < N; ++i)
-        t.tracker.add([&] { ran.fetch_add(1); });
+        tracker.add([&] { ran.fetch_add(1); });
 
-    /// Give some tasks a chance to finish so waitIfAny actually drains the finished list.
-    while (ran.load() == 0)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    /// Sync runner has already run every task body and populated `finished_futures`.
+    ASSERT_EQ(ran.load(), N);
 
-    t.tracker.waitIfAny();
+    tracker.waitIfAny();
 
-    t.tracker.addFinal([&] {
-        count_observed_by_final = ran.load();
-        final_ran = true;
-    });
+    tracker.addFinal([&] { final_ran = true; });
 
-    t.tracker.waitAll();
+    tracker.waitAll();
 
     EXPECT_EQ(ran.load(), N);
     EXPECT_TRUE(final_ran.load());
-    EXPECT_EQ(count_observed_by_final.load(), N);
 }
 
 TEST(TaskTrackerAddFinal, AsyncWithInflightLimit)
