@@ -32,6 +32,22 @@ The user's profiles are re-read from access control on every `RESET SESSION` cal
 
 `RESET SESSION` on an already-clean session is a no-op.
 
+## Behavior with active transactions {#behavior-with-active-transactions}
+
+`RESET SESSION` does **not** silently roll back an active transaction. If the session is inside a transaction (i.e. `BEGIN` was issued and the transaction has not yet been committed or rolled back), `RESET SESSION` is rejected with `INVALID_TRANSACTION` and the transaction is left untouched.
+
+Connection-pool implementations that issue `RESET SESSION` before returning a connection to the pool must first `COMMIT` or `ROLLBACK` any open transaction. The intent is to avoid silently discarding writes a client believed it had open.
+
+## Behavior with prepared statements {#behavior-with-prepared-statements}
+
+Protocol-local prepared statement handles are invalidated by `RESET SESSION` and must be re-prepared by the client:
+
+- MySQL wire protocol: handles created with `COM_STMT_PREPARE` are dropped.
+- PostgreSQL wire protocol: server-side prepared statements (`PREPARE name AS ...` / extended-query `Parse` messages) are dropped.
+- Arrow Flight: prepared statement handles owned by the current session are dropped. Sessionless Arrow Flight calls (no `x-clickhouse-session-id` header) treat `RESET SESSION` as a no-op for prepared statements, since there is no session boundary to scope the reset to.
+
+Connection-pool implementations that reuse server-side prepared statement handles across `RESET SESSION` must re-prepare them after the reset.
+
 ## Comparison with PostgreSQL {#comparison-with-postgresql}
 
 The behaviour is closest to PostgreSQL's `DISCARD ALL`. PostgreSQL's `RESET ALL` only restores settings (`GUC` parameters) and does not drop temporary tables or other session state; `RESET SESSION` in ClickHouse is broader.
