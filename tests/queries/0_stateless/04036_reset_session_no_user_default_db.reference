@@ -1,4 +1,4 @@
-start db non-empty:	1
-after USE:	system
+pre-reset session db:	system
 after reset non-empty:	1
-after reset matches start:	1
+after reset matches global default:	1
+after reset is NOT system:	1
