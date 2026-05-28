@@ -14,9 +14,11 @@ namespace ErrorCodes
 
 MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_ns)
 {
-    const double t1 = threshold_l1.load(std::memory_order_relaxed) / 100.0;
-    const double t2 = threshold_l2.load(std::memory_order_relaxed) / 100.0;
-    const double t3 = threshold_l3.load(std::memory_order_relaxed) / 100.0;
+    std::lock_guard lk(mutex);
+
+    const double t1 = threshold_l1 / 100.0;
+    const double t2 = threshold_l2 / 100.0;
+    const double t3 = threshold_l3 / 100.0;
 
     uint8_t raw_level = 0;
     if (pressure >= t3)
@@ -26,28 +28,22 @@ MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_n
     else if (pressure >= t1)
         raw_level = 1;
 
-    const uint8_t cur = level.load(std::memory_order_relaxed);
-
-    if (raw_level >= cur)
+    if (raw_level >= level)
     {
         /// Snap up immediately; refresh the "still elevated" timestamp.
-        if (raw_level > cur)
-            level.store(raw_level, std::memory_order_relaxed);
-        last_at_or_above_ns.store(now_ns, std::memory_order_relaxed);
+        if (raw_level > level)
+            level = raw_level;
+        last_at_or_above_ns = now_ns;
     }
-    else if (cur > 0)
+    else if (level > 0 && now_ns >= last_at_or_above_ns + COOLDOWN_NS)
     {
         /// Step down by ONE level per cooldown — a CRITICAL → NORMAL recovery
-        /// therefore needs ≥ 3 × COOLDOWN_NS of sustained low pressure.
-        const uint64_t last = last_at_or_above_ns.load(std::memory_order_relaxed);
-        if (now_ns >= last + COOLDOWN_NS)
-        {
-            level.store(cur - 1, std::memory_order_relaxed);
-            last_at_or_above_ns.store(now_ns, std::memory_order_relaxed);
-        }
+        /// needs ≥ 3 × COOLDOWN_NS of sustained low pressure.
+        level -= 1;
+        last_at_or_above_ns = now_ns;
     }
 
-    return static_cast<MemoryPressureLevel>(level.load(std::memory_order_relaxed));
+    return static_cast<MemoryPressureLevel>(level);
 }
 
 void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct)
@@ -67,22 +63,16 @@ void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3
             "level_1={}, level_2={}, level_3={}",
             l1_pct, l2_pct, l3_pct);
 
-    threshold_l1.store(static_cast<uint8_t>(l1_pct), std::memory_order_relaxed);
-    threshold_l2.store(static_cast<uint8_t>(l2_pct), std::memory_order_relaxed);
-    threshold_l3.store(static_cast<uint8_t>(l3_pct), std::memory_order_relaxed);
+    std::lock_guard lk(mutex);
+    threshold_l1 = static_cast<uint8_t>(l1_pct);
+    threshold_l2 = static_cast<uint8_t>(l2_pct);
+    threshold_l3 = static_cast<uint8_t>(l3_pct);
 }
 
 MemoryPressureThresholds PressureLevelMachine::getThresholds() const
 {
-    /// Independent atomic loads — a concurrent `setThresholds` could
-    /// interleave between them, but observability tolerates a transient
-    /// inconsistent snapshot. The setter validates atomicity of the
-    /// (l1, l2, l3) triple at set time; observers only get loose ordering.
-    return {
-        threshold_l1.load(std::memory_order_relaxed),
-        threshold_l2.load(std::memory_order_relaxed),
-        threshold_l3.load(std::memory_order_relaxed),
-    };
+    std::lock_guard lk(mutex);
+    return {threshold_l1, threshold_l2, threshold_l3};
 }
 
 namespace

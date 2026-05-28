@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 namespace DB
 {
@@ -70,11 +71,17 @@ public:
     MemoryPressureThresholds getThresholds() const;
 
 private:
-    std::atomic<uint8_t> level{0};
-    std::atomic<uint64_t> last_at_or_above_ns{0};
-    std::atomic<uint8_t> threshold_l1{75};
-    std::atomic<uint8_t> threshold_l2{90};
-    std::atomic<uint8_t> threshold_l3{95};
+    /// `sample` is a read-modify-write across `(level, last_at_or_above_ns)`
+    /// and `setThresholds` publishes three values that must be visible as a
+    /// triple. Guard both with one mutex so a concurrent `sample` cannot
+    /// observe a mixed level/timestamp pair (collapsing multiple cooldown
+    /// steps into one) or a half-applied threshold ladder.
+    mutable std::mutex mutex;
+    uint8_t level{0};
+    uint64_t last_at_or_above_ns{0};
+    uint8_t threshold_l1{75};
+    uint8_t threshold_l2{90};
+    uint8_t threshold_l3{95};
 };
 
 /// Production implementation — reads `total_memory_tracker` (used / hard
