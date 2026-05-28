@@ -972,7 +972,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     UsefulSets & useful_sets)
 {
-    NameSet column_names_with_fill;
     NameSet order_by_column_names;
     SortDescription fill_description;
 
@@ -986,7 +985,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
             fill_description.push_back(description);
-            column_names_with_fill.insert(description.column_name);
         }
     }
 
