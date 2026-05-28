@@ -158,17 +158,17 @@ size_t PipelineReadBuffer::readBigAt(
             const size_t copy = std::min(node.size, want - total_copied);
             std::memcpy(to + total_copied, node.data(), copy);
             total_copied += copy;
-
-            /// `progress_callback(m)` publishes bytes-so-far and returns
-            /// true to ask us to stop — typically from
-            /// `ParallelReadBuffer` when another worker fulfilled the
-            /// request or an emergency stop fired. Call per copied node
-            /// (1 MiB granularity at default ROPE_BLOCK_SIZE) so
-            /// cancellation interrupts inside the window rather than
-            /// after `want` bytes are fully copied.
-            if (progress_callback && progress_callback(total_copied))
-                return total_copied;
         }
+
+        /// `progress_callback(m)` publishes bytes-so-far and returns
+        /// true to ask us to stop — typically from `ParallelReadBuffer`
+        /// when another worker fulfilled the request or an emergency
+        /// stop fired. Call once per window (8 MiB at the default
+        /// `DEFAULT_WINDOW_SIZE`) so cancellation interrupts before
+        /// committing to the next source/cache walk without paying for
+        /// a callback per copied node.
+        if (progress_callback && progress_callback(total_copied))
+            return total_copied;
     }
     return total_copied;
 }
