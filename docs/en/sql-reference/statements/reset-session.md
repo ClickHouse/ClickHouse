@@ -21,10 +21,11 @@ The statement:
 
 - Resets all session-level settings to the user's profile defaults plus any settings supplied by the authentication server.
 - Restores the current roles to the user's default roles and drops any externally-granted roles applied at session start.
-- Restores the current database. The candidate chain is: the database the connection was opened with (captured by the native, MySQL, and PostgreSQL handlers at handshake; HTTP, gRPC, and `clickhouse-local` skip this step), then the user's `DEFAULT DATABASE`, then the server's current database (matching what a fresh authentication leaves in place when the user has no profile default). The first existing candidate is selected, so an admin-dropped database does not break the reset.
+- Restores the current database. The candidate chain is: the database the connection was opened with (captured by the native, MySQL, and PostgreSQL handlers at handshake; HTTP, gRPC, Arrow Flight, and `clickhouse-local` skip this step because they have no equivalent handshake hook), then the user's `DEFAULT DATABASE`, then the server's current database (matching what a fresh authentication leaves in place when the user has no profile default). The first existing candidate is selected, so an admin-dropped database does not break the reset.
 - Drops every temporary table created in the session.
 - Clears all query parameters set with `SET param_name = ...`.
 - Clears all scalars sent over the protocol.
+- Drops every in-memory backup created in the session with `BACKUP ... TO Memory(name)`. Subsequent `RESTORE ... FROM Memory(name)` calls fail with `BACKUP_NOT_FOUND` and the name becomes reusable.
 
 The authenticated user identity, the connection's client information, and the output format negotiated at handshake (e.g. `MySQLWire`, `PostgreSQLWire`) are preserved.
 
