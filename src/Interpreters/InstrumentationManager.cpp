@@ -26,6 +26,7 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <thread>
 #include <random>
 #include <ranges>
@@ -47,6 +48,7 @@ extern const int LOGICAL_ERROR;
 static constexpr String SLEEP_HANDLER = "sleep";
 static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
+static constexpr Float64 MAX_SLEEP_DURATION_SECONDS = static_cast<Float64>(std::numeric_limits<Int64>::max()) / 1000.0;
 
 static auto logger = getLogger("InstrumentationManager");
 
@@ -65,6 +67,9 @@ static Float64 validateSleepArgumentValue(const InstrumentationManager::Instrume
     auto value = getSleepArgumentValue(arg);
     if (!std::isfinite(value))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be finite");
+
+    if (value > MAX_SLEEP_DURATION_SECONDS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must not exceed {} seconds", MAX_SLEEP_DURATION_SECONDS);
 
     return value;
 }
