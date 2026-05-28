@@ -2,6 +2,7 @@
 #include <cerrno>
 #include <chrono>
 #include <exception>
+#include <optional>
 #include <string>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperCommon.h>
@@ -809,11 +810,11 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
             {
                 KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
 
-                auto uncommitted_tail = storage->detachUncommittedStateAfter(s.get_last_log_idx());
+                std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
+                if (latest_snapshot_meta)
+                    latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
 
-                const std::string latest_snapshot_meta_index_before_reset = latest_snapshot_meta
-                    ? std::to_string(latest_snapshot_meta->get_last_log_idx())
-                    : "(None)";
+                auto uncommitted_tail = storage->detachUncommittedStateAfter(s.get_last_log_idx());
                 storage.reset();
 
                 try
@@ -847,7 +848,7 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
                         "Failed to apply snapshot {} after dropping old `KeeperMemoryStorage` "
                         "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
                         s.get_last_log_idx(),
-                        latest_snapshot_meta_index_before_reset,
+                        latest_snapshot_meta_index_before_reset ? std::to_string(*latest_snapshot_meta_index_before_reset) : "(None)",
                         getCurrentExceptionMessage(true, true, false));
                     std::terminate();
                 }
