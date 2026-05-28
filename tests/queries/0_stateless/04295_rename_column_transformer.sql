@@ -57,4 +57,12 @@ SELECT * RENAME (value AS x, value AS y) FROM rename_column_transformer; -- { se
 SELECT * RENAME (concat(col, '_renamed')) FROM rename_column_transformer; -- { clientError SYNTAX_ERROR }
 SELECT * RENAME value AS renamed APPLY toString FROM rename_column_transformer; -- { clientError SYNTAX_ERROR }
 
+SET allow_experimental_analyzer = 0;
+
+SELECT 'legacy analyzer explicit list';
+DESCRIBE (SELECT * RENAME (value AS value_diff_sum, value_2 AS value_2_diff_sum) FROM rename_column_transformer);
+SELECT * RENAME (value AS value_diff_sum, value_2 AS value_2_diff_sum) FROM rename_column_transformer ORDER BY id;
+
+SELECT * RENAME (col -> concat(col, '_renamed')) FROM rename_column_transformer; -- { serverError UNSUPPORTED_METHOD }
+
 DROP TABLE rename_column_transformer;

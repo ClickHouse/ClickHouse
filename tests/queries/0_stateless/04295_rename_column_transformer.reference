@@ -55,3 +55,10 @@ value_2	UInt8
 time	UInt8
 1	10	20	5
 2	11	21	6
+legacy analyzer explicit list
+id	UInt8
+value_diff_sum	UInt8
+value_2_diff_sum	UInt8
+time	UInt8
+1	10	20	5
+2	11	21	6
