@@ -29,6 +29,7 @@
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
@@ -568,26 +569,57 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
 
 #if USE_EMBEDDED_COMPILER
 
-static CHJIT & getJITInstance()
+namespace
 {
-    static CHJIT jit;
-    return jit;
+    std::mutex aggregator_jit_mutex;
+    /// Shared ownership: in-flight compiles and cache-holder entries both keep their own copy.
+    /// `resetAggregatorJITInstance` only drops this slot's reference; the CHJIT itself dies once
+    /// every user has released its handle, so concurrent operations can never use a destroyed instance.
+    std::shared_ptr<CHJIT> aggregator_jit_instance;
+}
+
+static std::shared_ptr<CHJIT> getJITInstancePtr()
+{
+    std::lock_guard lock(aggregator_jit_mutex);
+    if (!aggregator_jit_instance)
+        aggregator_jit_instance = std::make_shared<CHJIT>();
+    return aggregator_jit_instance;
+}
+
+void resetAggregatorJITInstance()
+{
+    std::lock_guard lock(aggregator_jit_mutex);
+    aggregator_jit_instance.reset();
 }
 
 class CompiledAggregateFunctionsHolder final : public CompiledExpressionCacheEntry
 {
 public:
-    explicit CompiledAggregateFunctionsHolder(CompiledAggregateFunctions compiled_function_)
+    explicit CompiledAggregateFunctionsHolder(CompiledAggregateFunctions compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_aggregate_functions(compiled_function_)
+        , jit_owner(std::move(jit_owner_))
     {}
 
     ~CompiledAggregateFunctionsHolder() override
     {
-        getJITInstance().deleteCompiledModule(compiled_aggregate_functions.compiled_module);
+        try
+        {
+            /// Use the JIT instance that compiled this module, not the current global —
+            /// `resetAggregatorJITInstance` may have swapped the global since.
+            jit_owner->deleteCompiledModule(compiled_aggregate_functions.compiled_module);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     CompiledAggregateFunctions compiled_aggregate_functions;
+
+private:
+    /// Keeps the CHJIT that owns our `JITModuleMemoryManager` alive until eviction.
+    std::shared_ptr<CHJIT> jit_owner;
 };
 
 #endif
@@ -604,11 +636,11 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
         .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
         .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
-    , thread_pool{
+    , thread_pool(std::make_unique<ThreadPool>(
           CurrentMetrics::AggregatorThreads,
           CurrentMetrics::AggregatorThreadsActive,
           CurrentMetrics::AggregatorThreadsScheduled,
-          params.max_threads}
+          params.max_threads))
 {
     memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
 
@@ -690,6 +722,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 #endif
 }
 
+Aggregator::~Aggregator() = default;
+
 #if USE_EMBEDDED_COMPILER
 
 void Aggregator::compileAggregateFunctionsIfNeeded()
@@ -751,8 +785,9 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
     auto compile = [&] ()
     {
         LOG_TRACE(log, "Compile expression {}", functions_description);
-        auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
-        return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
+        auto jit_owner = getJITInstancePtr();
+        auto compiled_aggregate_functions = compileAggregateFunctions(*jit_owner, functions_to_compile, functions_description);
+        return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions), std::move(jit_owner));
     };
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
@@ -2627,7 +2662,7 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+    ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -2841,7 +2876,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         {
             if (!is_aggregate_function_compiled[i])
                 aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
+                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
         }
 
         return;
@@ -2851,7 +2886,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         aggregate_functions[i]->mergeAndDestroyBatch(
-            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
+            dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], *thread_pool, is_cancelled, arena);
     }
 }
 
@@ -2980,7 +3015,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
         {
             auto data_vec = collect_data_vec(i);
-            aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+            aggregate_functions[i]->parallelizeMergePrepare(data_vec, *thread_pool, is_cancelled);
         }
     }
 
@@ -2992,7 +3027,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyDataImpl(
         if (aggregate_functions[i]->isAbleToParallelizeMerge())
         {
             auto data_vec = collect_data_vec(i);
-            aggregate_functions[i]->parallelizeMergeMulti(data_vec, thread_pool, is_cancelled, res->aggregates_pool);
+            aggregate_functions[i]->parallelizeMergeMulti(data_vec, *thread_pool, is_cancelled, res->aggregates_pool);
         }
         else
         {
@@ -3265,7 +3300,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             places.get(),
             offsets_of_aggregate_states[j],
             aggregate_columns_data[j]->data(),
-            thread_pool,
+            *thread_pool,
             is_cancelled,
             aggregates_pool);
     }
@@ -3450,12 +3485,12 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
             if (aggregate_functions[i]->isParallelizeMergePrepareNeeded())
             {
                 AggregateDataPtrs data_vec{res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row]};
-                aggregate_functions[i]->parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+                aggregate_functions[i]->parallelizeMergePrepare(data_vec, *thread_pool, is_cancelled);
             }
 
             if (aggregate_functions[i]->isAbleToParallelizeMerge())
                 aggregate_functions[i]->merge(
-                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], thread_pool, is_cancelled, result.aggregates_pool);
+                    res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], *thread_pool, is_cancelled, result.aggregates_pool);
             else
                 aggregate_functions[i]->merge(
                     res + offsets_of_aggregate_states[i], (*aggregate_columns_data[i])[row], result.aggregates_pool);
@@ -3627,7 +3662,7 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
+            ThreadPoolCallbackRunnerLocal<void> runner(*thread_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)
