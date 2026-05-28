@@ -395,7 +395,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         if (impl && offset_ > position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_read_min_bytes_for_seek)
+            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;
@@ -504,7 +504,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
-    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
+    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 

@@ -523,6 +523,7 @@ endif()
 
 target_link_libraries(dbms PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies

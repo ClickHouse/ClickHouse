@@ -1108,10 +1108,14 @@ class GH:
             for name, links_md in self.extra_links:
                 body += f"- {name}: {links_md}\n"
             if self.failed_results:
+                # Blank line so the failure section isn't parsed as continuation
+                # of the Summary paragraph or the preceding bullet list.
+                body += "\n"
                 if len(self.failed_results) > 15:
-                    body += (
-                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
-                    )
+                    # Unindented + terminated with a blank line, otherwise the
+                    # 4-space indent turns this into an indented code block that
+                    # swallows the table that follows.
+                    body += f"*15 failures out of {len(self.failed_results)} shown*:\n\n"
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"

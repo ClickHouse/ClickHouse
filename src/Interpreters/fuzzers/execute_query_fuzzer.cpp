@@ -7,6 +7,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>

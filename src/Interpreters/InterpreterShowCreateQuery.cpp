@@ -13,6 +13,7 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 namespace DB
 {

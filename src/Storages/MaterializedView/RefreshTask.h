@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/UUID.h>
 #include <IO/Progress.h>
 
 #include <random>

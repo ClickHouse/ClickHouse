@@ -7292,9 +7292,9 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
-Enables showing data lake catalogs in system tables.
-)", 0) \
+    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
+Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+)", 0, show_data_lake_catalogs_in_system_tables) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \

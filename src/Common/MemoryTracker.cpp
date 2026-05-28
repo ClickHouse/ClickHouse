@@ -276,7 +276,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
 
     if (_sample_probability < 0)
-        _sample_probability = sample_probability;
+        _sample_probability = sample_probability.load(std::memory_order_relaxed);
 
     if (!isSizeOkForSampling(size))
         _sample_probability = 0;
@@ -329,7 +329,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             .memory_context = level,
             .memory_blocked_context = memory_blocked_context,
         });
-        setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
+        const auto step = profiler_step.load(std::memory_order_relaxed);
+        setOrRaiseProfilerLimit((will_be + step - 1) / step * step);
         allocation_traced = true;
     }
 
@@ -596,7 +597,7 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 {
     if (_sample_probability < 0)
-        _sample_probability = sample_probability;
+        _sample_probability = sample_probability.load(std::memory_order_relaxed);
 
     if (!isSizeOkForSampling(size))
         _sample_probability = 0;
@@ -759,7 +760,9 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
 bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
 {
     /// We can avoid comparison min_allocation_size_bytes with zero, because we cannot have 0 bytes allocation/deallocation
-    return ((max_allocation_size_bytes == 0 || size <= max_allocation_size_bytes) && size >= min_allocation_size_bytes);
+    const auto max_size = max_allocation_size_bytes.load(std::memory_order_relaxed);
+    const auto min_size = min_allocation_size_bytes.load(std::memory_order_relaxed);
+    return ((max_size == 0 || size <= max_size) && size >= min_size);
 }
 
 void MemoryTracker::setParent(MemoryTracker * elem)

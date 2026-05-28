@@ -2,6 +2,7 @@
 
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>

@@ -9,6 +9,7 @@
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 
 
@@ -171,9 +172,13 @@ WHERE
 
 BlockIO InterpreterShowColumnsQuery::execute()
 {
+    const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
+    String database = getContext()->resolveDatabase(query.database);
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
 
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }

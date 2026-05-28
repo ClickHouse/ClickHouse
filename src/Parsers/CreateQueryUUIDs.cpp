@@ -1,6 +1,7 @@
 #include <Parsers/CreateQueryUUIDs.h>
 
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>

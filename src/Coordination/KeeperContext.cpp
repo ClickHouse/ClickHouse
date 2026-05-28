@@ -23,6 +23,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include "config.h"
+#include <Core/UUID.h>
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>

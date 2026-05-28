@@ -857,7 +857,7 @@ try
     {
         DB::ReadPipeline pipeline;
         DB::ReadSettings read_settings;
-        read_settings.remote_fs_method = DB::RemoteFSReadMethod::read;
+        read_settings.remote_fs_settings.method = DB::RemoteFSReadMethod::read;
         dos->prepareRead(file_name, read_settings, std::nullopt, pipeline);
 
         String desc = pipeline.describe();

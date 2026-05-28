@@ -3,6 +3,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Core/UUID.h>
 
 namespace DB
 {

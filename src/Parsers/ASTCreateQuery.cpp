@@ -9,6 +9,7 @@
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Core/UUID.h>
 
 
 namespace DB

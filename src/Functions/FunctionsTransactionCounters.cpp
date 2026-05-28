@@ -6,6 +6,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/TransactionLog.h>
+#include <Core/UUID.h>
 
 
 namespace DB
