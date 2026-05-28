@@ -75,10 +75,28 @@ void ReadPipeline::setLocalFileSource(String path, StoredObjects objects, const 
 void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings)
 {
     chassert(!source.has_value(), "ReadPipeline: source is already set");
+    /// Backups produce their own file reader (memory-backed via
+    /// `ReadBufferFromOwnMemoryFile` for `BackupInMemory`, or disk-backed
+    /// elsewhere). Treat the source as already-complete so neither the
+    /// executor nor the legacy stage assembly wraps it. Wrapping a
+    /// memory-backed backup buffer with the executor would lose data —
+    /// the buffer's `nextImpl` does not honor an external-buffer pointer.
+    /// Disk-backed backups already carry their own seek/read semantics; the
+    /// executor's caching/prefetch is uniformly unhelpful at the backup
+    /// boundary.
+    auto creator = [backup, captured_path = std::move(path)](
+        const StoredObject & /*object*/,
+        const ReadSettings & /*settings*/,
+        bool /*use_external_buffer*/,
+        bool /*restrict_seek*/) -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return backup->readFile(captured_path);
+    };
     source = SourceStage{
         .objects = std::move(objects),
-        .source = BackupSource{.backup = std::move(backup), .path = std::move(path)},
-        .read_settings = read_settings};
+        .source = CustomSource{.creator = std::move(creator)},
+        .read_settings = read_settings,
+        .already_complete = true};
 }
 
 void ReadPipeline::setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings)

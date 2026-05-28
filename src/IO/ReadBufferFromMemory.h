@@ -67,6 +67,16 @@ protected:
         return getPositionImpl();
     }
 
+    /// Memory-backed file buffers expose the whole content in `working_buffer`
+    /// at construction; there is no producer behind `nextImpl` that would
+    /// honor an external buffer pointer. Reporting `true` (the
+    /// `ReadBuffer` default) would make `ReaderExecutor::readIntoBlock`
+    /// invoke `set(dest, n)` + `next()` and observe an immediate EOF,
+    /// losing the in-memory bytes. Mirror the MMap buffers — opt out so
+    /// callers fall back to `read(dest, n)` which copies from
+    /// `working_buffer`.
+    bool supportsExternalBufferMode() const override { return false; }
+
 private:
     friend class ReadBufferFromMemoryHelper<ReadBufferFromMemoryFileBase>;
 
