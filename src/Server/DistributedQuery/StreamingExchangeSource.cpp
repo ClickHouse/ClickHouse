@@ -53,7 +53,10 @@ void StreamingExchangeSource::connect()
     LOG_TRACE(log, "Connecting to {}:{} for query id {} exchange stream {}", host, port, query_id, stream_name);
     socket = std::make_unique<Poco::Net::StreamSocket>();
     Poco::Net::SocketAddress address(host, port);
-    socket->connect(address);
+    /// Apply a connect timeout so a blackholed or filtered peer cannot stall the worker
+    /// thread for the default kernel connect timeout (minutes) and ignore cancellation.
+    Poco::Timespan connect_timeout(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, 0);
+    socket->connect(address, connect_timeout);
     socket->setReceiveBufferSize(10 * 1024 * 1024);
 }
 
