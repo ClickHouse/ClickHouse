@@ -13,6 +13,9 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Core/Joins.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
@@ -48,7 +51,14 @@ extern const int TOO_MANY_BYTES;
 namespace
 {
 
-/// Set of known non-deterministic function names that would invalidate oracle checks.
+/// Backstop list of function names that invalidate oracle checks. Most regular
+/// functions are picked up dynamically via `FunctionFactory::tryGet`'s
+/// `isDeterministic` (no list maintenance needed there). This set covers what
+/// `FunctionFactory` does not reach: table functions (registered in
+/// `TableFunctionFactory`), and aggregate functions whose metamorphic
+/// `State`/`Merge` rewrite legitimately produces a different value than direct
+/// evaluation (so they aren't "non-deterministic functions" in the
+/// `system.functions` sense, but they are unsafe for oracle equality).
 const std::unordered_set<String> non_deterministic_functions = {
     "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
     "randBernoulli", "randExponential", "randChiSquared", "randStudentT",
@@ -159,26 +169,51 @@ String stripAggregateCombinators(String name)
     return name;
 }
 
-/// Walk an AST tree and check if any ASTFunction has a name in the given set.
-/// We strip aggregate combinator suffixes before the lookup so e.g.
-/// `first_valueOrNull` matches the `first_value` entry in the blocklist —
-/// the fuzzer routinely mutates aggregates into `*OrNull`/`*Distinct`/`*State`
-/// chains and exact-name matching would miss those.
-bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast)
+/// Walk an AST tree and check whether any `ASTFunction` references something
+/// non-deterministic. The primary source of truth is `FunctionFactory` —
+/// every regular function exposes `isDeterministic`, so newly-added
+/// non-deterministic functions are caught automatically without needing to
+/// touch the local list. The static `non_deterministic_functions` set above
+/// is the backstop for two cases `FunctionFactory` cannot reach:
+///   1. Table functions (`file`, `url`, `s3`, `numbers`, ...) — registered in
+///      `TableFunctionFactory`; would slip through as scalar calls otherwise.
+///   2. Aggregate functions whose `State`/`Merge` rewrite legitimately
+///      diverges from direct evaluation (`any`, `topK`, `quantile*`, `sum` on
+///      floats, ...) — semantically deterministic but unsafe for our exact
+///      equality oracle.
+/// We strip aggregate combinator suffixes before lookup so e.g.
+/// `first_valueOrNull` resolves to `first_value` — the fuzzer routinely
+/// appends `*OrNull`/`*Distinct`/`*State` chains and neither
+/// `FunctionFactory::tryGet` nor the backstop set knows the chained name.
+bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & context)
 {
     if (!ast)
         return false;
 
     if (const auto * func = ast->as<ASTFunction>())
     {
+        const String stripped = stripAggregateCombinators(func->name);
         if (non_deterministic_functions.contains(func->name)
-            || non_deterministic_functions.contains(stripAggregateCombinators(func->name)))
+            || non_deterministic_functions.contains(stripped))
             return true;
+
+        for (const auto & name : {std::cref(func->name), std::cref(stripped)})
+        {
+            if (const auto resolver = FunctionFactory::instance().tryGet(name.get(), context))
+                if (!resolver->isDeterministic())
+                    return true;
+            if (UserDefinedSQLFunctionFactory::instance().tryGet(name.get()))
+                /// SQL UDF determinism is not introspectable — treat as non-deterministic.
+                return true;
+            if (const auto udf_exec = UserDefinedExecutableFunctionFactory::tryGet(name.get(), context))
+                if (!udf_exec->isDeterministic())
+                    return true;
+        }
     }
 
     for (const auto & child : ast->children)
     {
-        if (hasNonDeterministicFunctionsImpl(child))
+        if (hasNonDeterministicFunctionsImpl(child, context))
             return true;
     }
     return false;
@@ -498,9 +533,9 @@ bool QueryOracleChecker::hasAggregates(const ASTSelectQuery & select)
 }
 
 
-bool QueryOracleChecker::hasNonDeterministicFunctions(const ASTPtr & ast)
+bool QueryOracleChecker::hasNonDeterministicFunctions(const ASTPtr & ast, const ContextPtr & context)
 {
-    return hasNonDeterministicFunctionsImpl(ast);
+    return hasNonDeterministicFunctionsImpl(ast, context);
 }
 
 
@@ -692,7 +727,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     if (hasAggregates(select) || select.groupBy() || select.having())
         return false;
 
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -814,7 +849,7 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     if (hasAggregates(select) || select.groupBy() || select.having())
         return false;
 
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -911,7 +946,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
             return false;
     }
 
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -996,7 +1031,7 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     if (!isSafeForOracle(select))
         return false;
 
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -1080,7 +1115,7 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     if (!isSafeForOracle(select))
         return false;
 
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     ASTPtr having_pred = select.having()->clone();
@@ -1161,7 +1196,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     if (!isSafeForOracle(select))
         return false;
 
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     auto query_ast = select.clone();
@@ -1258,7 +1293,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     if (select.having())
         return false;
 
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     /// Collect aggregate functions from the SELECT list.
@@ -1527,7 +1562,7 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
 
     /// ARRAY JOIN / PASTE JOIN are safe here because we don't change structure.
     /// But window functions and non-deterministic results aren't reproducible.
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     /// `hasNonDeterministicFunctions` is name-based and does not filter general
@@ -1644,7 +1679,7 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
 
     if (!select.tables())
         return false;
-    if (hasNonDeterministicFunctions(select.clone()))
+    if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
     /// PREWHERE produces false positives with suspicious type coercions.

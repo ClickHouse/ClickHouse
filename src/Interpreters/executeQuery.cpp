@@ -2301,10 +2301,6 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                             throw; /// Oracle mismatch — propagate to abort the server
                         tryLogCurrentException("ASTFuzzer");
                     }
-                    catch (...)
-                    {
-                        tryLogCurrentException("ASTFuzzer");
-                    }
                 });
         }
     }

@@ -2923,9 +2923,13 @@ void QueryFuzzer::fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children)
 
 void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
 {
-    /// In oracle mode, never remove WHERE — it's needed for all TLP oracles.
-    /// HAVING removal is also suppressed to keep TLP HAVING testable.
-    if (fuzz_rand() % 50 == 0 && !(oracle_mode && (expr == ASTSelectQuery::Expression::WHERE || expr == ASTSelectQuery::Expression::HAVING)))
+    /// In oracle mode, never remove the topmost query's WHERE/HAVING — both are
+    /// needed for TLP partitioning and TLP HAVING tests. Sub-query WHERE/HAVING
+    /// are fine to drop: the oracle only checks the outermost query shape.
+    const bool topmost = current_ast_depth <= 1;
+    const bool block_remove_for_oracle = oracle_mode && topmost
+        && (expr == ASTSelectQuery::Expression::WHERE || expr == ASTSelectQuery::Expression::HAVING);
+    if (fuzz_rand() % 50 == 0 && !block_remove_for_oracle)
     {
         /// Remove the predicate
         sel->setExpression(expr, {});

@@ -85,8 +85,11 @@ private:
     /// Check if a SELECT query is structurally safe for oracle testing.
     static bool isSafeForOracle(const ASTSelectQuery & select);
 
-    /// Check if the AST contains non-deterministic functions.
-    static bool hasNonDeterministicFunctions(const ASTPtr & ast);
+    /// Check if the AST contains non-deterministic functions. Uses
+    /// `FunctionFactory::isDeterministic` as the primary source of truth and
+    /// falls back to a small list of table-function and oracle-unsafe-aggregate
+    /// names for the cases the factory does not cover.
+    static bool hasNonDeterministicFunctions(const ASTPtr & ast, const ContextPtr & context);
 
     /// Strip ORDER BY, LIMIT, LIMIT BY, SETTINGS, INTERPOLATE from a cloned ASTSelectQuery.
     static void stripOrderAndLimit(ASTSelectQuery & select);
