@@ -2,6 +2,7 @@
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
@@ -146,6 +147,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsUInt64 thread_pool_queue_size;
@@ -907,6 +909,9 @@ void LocalServer::processConfig()
             static_cast<int64_t>(std::min(raw, int64_max)),
             std::memory_order_relaxed);
     }
+
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
+        server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
