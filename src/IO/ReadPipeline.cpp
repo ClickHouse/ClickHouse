@@ -342,8 +342,19 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// `custom_cache_key` / `custom_origin` through so the provider can
     /// honour caller-specified cache identity (etag-keyed flow,
     /// `Data` / `System` origin classification) per-object.
-    for (const auto & dc : filesystem_caches)
+    ///
+    /// Iterate `filesystem_caches` in reverse: `CachedObjectStorage::prepareRead`
+    /// pushes the wrapped storage's caches first and its own cache last, so
+    /// the vector is stored inner-to-outer. The legacy builder
+    /// (`buildSingleObjectStage`) wraps the source from inside out, which
+    /// makes the outermost cache the FIRST one a read traverses — outer
+    /// hit serves directly, miss falls through to inner, then source. The
+    /// executor queries `caches[0]` first, so reversing here matches that
+    /// outer-first query order. Single-cache pipelines (the common case)
+    /// are unaffected — reversing a one-element range is a no-op.
+    for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
     {
+        const auto & dc = *it;
         if (dc.cache)
         {
             executor_caches.push_back(std::make_shared<DiskCacheProvider>(
