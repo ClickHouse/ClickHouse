@@ -32,8 +32,13 @@ ${CLICKHOUSE_CLIENT} -m -q "
 "
 
 # Open the session with --database=DB_A so the TCP handshake captures DB_A as
-# database_at_session_start. Inside the session, drop DB_A and reset.
-${CLICKHOUSE_CLIENT} --user "${USER}" --database "${DB_A}" -m -q "
+# database_at_session_start. `${CLICKHOUSE_CLIENT}` already includes
+# `--database=${CLICKHOUSE_DATABASE}`; rewrite it to point at DB_A so we don't
+# end up with two `--database` flags (which the client rejects). See
+# 01160_table_dependencies.sh for the same pattern.
+CLICKHOUSE_CLIENT_DB_A=$(echo "${CLICKHOUSE_CLIENT}" | sed "s/--database=${CLICKHOUSE_DATABASE}/--database=${DB_A}/g")
+
+${CLICKHOUSE_CLIENT_DB_A} --user "${USER}" -m -q "
     SELECT 'connection-start db is A:', currentDatabase() = '${DB_A}';
     USE system;
     DROP DATABASE ${DB_A};
