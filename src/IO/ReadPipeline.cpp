@@ -40,6 +40,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -234,7 +235,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             || async_prefetch || !decryption_stages.empty() || distributed_cache
             || prefetch_pool || buffer_limit)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "ReadPipeline: setAlreadyCompleteSource is incompatible with any stage: "
                 "gather={}, memory_cache={}, filesystem_caches={}, async_prefetch={}, "
                 "decryption_stages={}, distributed_cache={}, prefetch_pool={}, buffer_limit={}",
