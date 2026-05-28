@@ -32,8 +32,15 @@ namespace
         const FileCacheOriginInfo & origin,
         FilesystemCacheLogElement::CacheType cache_type,
         const String & source_file_path,
-        ByteRange requested_range)
+        ByteRange requested_range,
+        size_t object_file_offset)
     {
+        /// `seg_range` and `source_file_path` are object-local. The handle
+        /// keeps `requested_range` in file-level coordinates; translate it
+        /// so the whole log row sits in one frame (matches legacy
+        /// `CachedOnDiskReadBufferFromFile` per-object logging).
+        const size_t requested_local_offset = requested_range.offset >= object_file_offset
+            ? requested_range.offset - object_file_offset : 0;
         const auto seg_range = segment.range();
         FilesystemCacheLogElement elem
         {
@@ -41,7 +48,7 @@ namespace
             .query_id = std::string(CurrentThread::getQueryId()),
             .source_file_path = source_file_path,
             .file_segment_range = { seg_range.left, seg_range.right },
-            .requested_range = { requested_range.offset, requested_range.end() },
+            .requested_range = { requested_local_offset, requested_local_offset + requested_range.size },
             .cache_type = cache_type,
             .file_segment_key = segment.key().toString(),
             .file_segment_offset = segment.offset(),
@@ -332,7 +339,7 @@ Rope DiskCacheHandle::get(ByteRange range)
             appendCacheLogEntry(
                 *cache_log, *segment, origin,
                 FilesystemCacheLogElement::CacheType::READ_FROM_CACHE,
-                source_file_path, requested_range);
+                source_file_path, requested_range, object_file_offset);
     }
     return result;
 }
@@ -404,7 +411,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
                 appendCacheLogEntry(
                     *cache_log, *segment, origin,
                     FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
-                    source_file_path, requested_range);
+                    source_file_path, requested_range, object_file_offset);
             }
         }
         return 0;
@@ -517,7 +524,7 @@ size_t DiskCacheHandle::writeToSegment(FileSegment & segment, ByteRange range_in
         appendCacheLogEntry(
             *cache_log, segment, origin,
             FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
-            source_file_path, requested_range);
+            source_file_path, requested_range, object_file_offset);
     return contiguous;
 }
 
