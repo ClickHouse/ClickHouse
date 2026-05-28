@@ -7,6 +7,8 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <stack>
+
 namespace DB
 {
 
@@ -155,55 +157,86 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
     return plans;
 }
 
-void removeTopLevelDelayedMaterializingCTEsStep(QueryPlan & plan)
+/// Strip *every* `DelayedMaterializingCTEsStep` node from `plan`'s tree,
+/// wherever it sits — at the root, under a single wrapper step (e.g.
+/// `CreatingSetStep` planted by `FutureSetFromSubquery::build`), or
+/// arbitrarily deep, including the per-branch safety-nets that
+/// `buildPlanForQueryNode` plants below each branch of a `UnionStep` /
+/// `IntersectOrExceptStep` in addition to the union-level one planted by
+/// `buildPlanForUnionNode`.
+///
+/// Called from `DelayedCreatingSetsStep::makePlansForSets` when attaching a
+/// pre-built IN-subquery plan for *runtime* set construction. The strip is
+/// what guarantees the outer query plan's `resolveMaterializingCTEs` wins
+/// `is_materialization_planned.exchange(true)` for every referenced CTE — if
+/// any `DelayedMaterializingCTEsStep` survives in the sub-plan tree, the
+/// sub-plan's recursive `plan->optimize` will claim the CTE first, attach the
+/// writer somewhere inside the sub-plan tree (in the worst case inside a
+/// single `UnionStep` branch), and leave the outer-plan step degenerate. That
+/// loses the lazy back-pressure path through the outer `MaterializingCTEsStep`'s
+/// `DelayedPortsProcessor` that gates every reader in the sub-plans
+/// (including readers on the "main" side of inner `CreatingSets` gates,
+/// which are only `setNeeded` after the outer gate first wakes them - see
+/// `DelayedPortsProcessor::prepare` lines 130-138).
+///
+/// Nested `DelayedCreatingSetsStep` source plans are *not* touched: their
+/// plans live in `subqueries`, not as children of any node in the immediate
+/// tree, so a tree walk of the immediate plan does not reach them. Their
+/// own safety-nets remain available for their own `buildSetInplace` /
+/// `buildOrderedSetInplace` consumers.
+void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan)
 {
-    /// Strip *all* consecutive `DelayedMaterializingCTEsStep` nodes from the
-    /// top of `plan`'s materialization chain. The Planner stacks one per
-    /// dependency level when `force_materialize_cte` is set
-    /// (`addBuildSubqueriesForMaterializedCTEsIfNeeded` pushes one step per
-    /// `ctes_by_level` entry on top of the plan), so an IN-subquery that
-    /// transitively references a chain of CTEs has multiple safety-net steps
-    /// stacked. We must strip them all — leaving any one in place would let
-    /// the inner step claim the corresponding CTE in the wrong scope when the
-    /// recursive `plan->optimize` below invokes `resolveMaterializingCTEs`.
-    ///
-    /// When called from `DelayedCreatingSetsStep::makePlansForSets`, the plan
-    /// has already been wrapped by `FutureSetFromSubquery::build` with a
-    /// `CreatingSetStep` at the root, so the safety-net chain begins at the
-    /// root's single child. Otherwise the chain starts at the root itself.
+    /// Strip any `DelayedMaterializingCTEsStep` chain at the root via
+    /// `replaceRootNode`. We loop because consecutive root-level safety-nets
+    /// can be stacked (one per dependency level when
+    /// `addBuildSubqueriesForMaterializedCTEsIfNeeded` pushes one step per
+    /// `ctes_by_level` entry).
+    while (true)
+    {
+        auto * root = plan.getRootNode();
+        if (!root)
+            return;
+        if (!typeid_cast<DelayedMaterializingCTEsStep *>(root->step.get()))
+            break;
+        if (root->children.size() != 1)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected DelayedMaterializingCTEsStep to have exactly one child, got {}",
+                root->children.size());
+        plan.replaceRootNode(root->children.front());
+    }
+
     auto * root = plan.getRootNode();
     if (!root)
         return;
 
-    QueryPlan::Node * parent_of_target = nullptr;
-    QueryPlan::Node * target = root;
-    if (!typeid_cast<DelayedMaterializingCTEsStep *>(target->step.get()))
+    /// Walk every node below the root; for each child pointer, while the
+    /// referenced child is a `DelayedMaterializingCTEsStep`, replace the
+    /// pointer with its single grandchild. The orphaned step's `Node`
+    /// remains in `QueryPlan::nodes` (memory is owned by the list) but is
+    /// no longer reachable from the root.
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(root);
+    while (!stack.empty())
     {
-        /// Skip past one wrapper step (e.g. `CreatingSetStep` from
-        /// `FutureSetFromSubquery::build`) to reach the safety-net chain
-        /// below it.
-        if (root->children.size() != 1)
-            return;
-        if (!typeid_cast<DelayedMaterializingCTEsStep *>(root->children.front()->step.get()))
-            return;
-        parent_of_target = root;
-        target = root->children.front();
-    }
+        auto * node = stack.top();
+        stack.pop();
 
-    while (typeid_cast<DelayedMaterializingCTEsStep *>(target->step.get()))
-    {
-        if (target->children.size() != 1)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected DelayedMaterializingCTEsStep to have exactly one child, got {}",
-                target->children.size());
+        for (auto & child : node->children)
+        {
+            while (typeid_cast<DelayedMaterializingCTEsStep *>(child->step.get()))
+            {
+                if (child->children.size() != 1)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected DelayedMaterializingCTEsStep to have exactly one child, got {}",
+                        child->children.size());
+                child = child->children.front();
+            }
+        }
 
-        auto * next = target->children.front();
-        if (parent_of_target)
-            parent_of_target->children[0] = next;
-        else
-            plan.replaceRootNode(next);
-        target = next;
+        for (auto * child : node->children)
+            stack.push(child);
     }
 }
 

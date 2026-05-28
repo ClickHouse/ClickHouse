@@ -217,24 +217,31 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
         if (!plan)
             continue;
 
-        /// The set's plan was built by the Planner under `forceMaterializeCTE`,
-        /// which plants a safety-net `DelayedMaterializingCTEsStep` at the top of
-        /// the source plan to allow `buildSetInplace` / `buildOrderedSetInplace`
-        /// to materialize the referenced CTEs synchronously. Here we are
-        /// attaching the plan for *runtime* set construction; at runtime, the
-        /// outer `MaterializingCTEsStep` in the main query plan will materialize
-        /// each referenced CTE before this set's pipeline runs (the
-        /// MaterializingCTEsStep wraps the main pipeline whose CreatingSetsStep
-        /// runs this set's pipeline via `addPipelineBefore`). The safety-net
-        /// here is therefore redundant — strip it so the runtime plan stays
-        /// lean.
+        /// The set's plan was built by the Planner under
+        /// `forceMaterializeCTE`, which plants a safety-net
+        /// `DelayedMaterializingCTEsStep` per dependency level on the
+        /// source plan so that `buildSetInplace` / `buildOrderedSetInplace`
+        /// can materialize the referenced CTEs synchronously if that path
+        /// fires first. Here we are attaching the plan for *runtime* set
+        /// construction; for the runtime path, we want the outer plan's
+        /// `MaterializingCTEsStep` to be the single canonical writer site
+        /// so its `DelayedPortsProcessor` lazily gates every reader,
+        /// including readers that sit on the "main" (always-eventually-pulled)
+        /// side of an inner `CreatingSets` gate. The outer plan can only
+        /// win that role if no surviving `DelayedMaterializingCTEsStep`
+        /// inside this sub-plan claims `is_materialization_planned` first
+        /// via the recursive `plan->optimize(...)` below — that includes
+        /// per-branch safety-nets planted by `buildPlanForQueryNode` below
+        /// each `UnionStep` / `IntersectOrExceptStep` branch, which sit
+        /// *below* the union-level safety-net.
         ///
-        /// Important: do NOT recurse into nested `DelayedCreatingSetsStep`
-        /// source plans. Nested IN-subqueries may be consumed by
-        /// `buildSetInplace` / `buildOrderedSetInplace` during the
-        /// `plan->optimize(...)` below, and those paths *need* the safety-net
-        /// to claim and materialize the CTE inplace.
-        removeTopLevelDelayedMaterializingCTEsStep(*plan);
+        /// So strip every `DelayedMaterializingCTEsStep` in this sub-plan
+        /// tree, not just the top contiguous chain. Nested
+        /// `DelayedCreatingSetsStep` source plans (held in
+        /// `subqueries`, not as children of any node in this tree) are
+        /// untouched — they keep their safety-nets for their own
+        /// `buildSetInplace` / `buildOrderedSetInplace` consumers.
+        removeAllDelayedMaterializingCTEsStep(*plan);
 
         plan->optimize(optimization_settings);
         plans.emplace_back(std::move(plan));
