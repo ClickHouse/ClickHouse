@@ -135,6 +135,18 @@ extern const int LOGICAL_ERROR;
 extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
+namespace
+{
+/// stream_id alone is not unique within a query: the planner may read the same table in
+/// different coordination modes (e.g. Default for a sharded-aggregator subquery and
+/// WithOrder for an in-order subquery). Compose the map key with the mode so each
+/// (stream_id, mode) pair gets its own coordinator instance.
+String coordinatorMapKey(const String & stream_id, CoordinationMode mode)
+{
+    return fmt::format("{}|{}", stream_id, magic_enum::enum_name(mode));
+}
+}
+
 class ParallelReplicasReadingCoordinator::ImplInterface
 {
 public:
@@ -1203,21 +1215,14 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
                 "Old replicas without stream_id support should have been filtered out at connection time",
                 request.replica_num);
 
-        auto coordinator = getCoordinator(request.stream_id);
+        auto coordinator = getCoordinator(request.stream_id, request.mode);
         if (!coordinator)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Got read request from replica {} for stream {} without ranges announcement",
+                "Got read request from replica {} for stream {} in mode {} without ranges announcement",
                 request.replica_num,
-                request.stream_id);
-
-        if (request.mode != coordinator->getCoordinationMode())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Replica {} decided to read in {} mode, not in {}. This is a bug",
-                request.replica_num,
-                magic_enum::enum_name(request.mode),
-                magic_enum::enum_name(coordinator->getCoordinationMode()));
+                request.stream_id,
+                magic_enum::enum_name(request.mode));
 
         const auto replica_num = request.replica_num;
         const auto request_stream_id = request.stream_id;
@@ -1311,31 +1316,22 @@ void ParallelReplicasReadingCoordinator::markReplicaAsUnavailable(size_t replica
 std::shared_ptr<ParallelReplicasReadingCoordinator::ImplInterface>
 ParallelReplicasReadingCoordinator::getOrCreateCoordinator(const String & stream_id, CoordinationMode mode)
 {
-    const auto & key = stream_id;
+    const auto key = coordinatorMapKey(stream_id, mode);
     auto it = stream_to_coordinator.find(key);
     if (it != stream_to_coordinator.end())
-    {
-        if (mode != it->second->getCoordinationMode())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Coordination mode mismatch for stream {}: got {}, expected {}",
-                key,
-                magic_enum::enum_name(mode),
-                magic_enum::enum_name(it->second->getCoordinationMode()));
         return it->second;
-    }
 
     std::shared_ptr<ImplInterface> coordinator;
     switch (mode)
     {
         case CoordinationMode::Default:
-            coordinator = std::make_shared<DefaultCoordinator>(replicas_count, mode, key);
+            coordinator = std::make_shared<DefaultCoordinator>(replicas_count, mode, stream_id);
             break;
         case CoordinationMode::WithOrder:
-            coordinator = std::make_shared<InOrderCoordinator>(replicas_count, mode, key);
+            coordinator = std::make_shared<InOrderCoordinator>(replicas_count, mode, stream_id);
             break;
         case CoordinationMode::ReverseOrder:
-            coordinator = std::make_shared<InOrderCoordinator>(replicas_count, mode, key);
+            coordinator = std::make_shared<InOrderCoordinator>(replicas_count, mode, stream_id);
             break;
     }
 
@@ -1351,7 +1347,7 @@ ParallelReplicasReadingCoordinator::getOrCreateCoordinator(const String & stream
     LOG_DEBUG(
         getLogger("ParallelReplicasReadingCoordinator"),
         "Created coordinator for stream {} with mode {}, total streams: {}",
-        key,
+        stream_id,
         magic_enum::enum_name(mode),
         stream_to_coordinator.size());
 
@@ -1396,10 +1392,9 @@ bool ParallelReplicasReadingCoordinator::isReadingCompleted() const
 }
 
 std::shared_ptr<ParallelReplicasReadingCoordinator::ImplInterface>
-ParallelReplicasReadingCoordinator::getCoordinator(const String & stream_id) const
+ParallelReplicasReadingCoordinator::getCoordinator(const String & stream_id, CoordinationMode mode) const
 {
-    const auto & key = stream_id;
-    auto it = stream_to_coordinator.find(key);
+    auto it = stream_to_coordinator.find(coordinatorMapKey(stream_id, mode));
     if (it != stream_to_coordinator.end())
         return it->second;
     return nullptr;
