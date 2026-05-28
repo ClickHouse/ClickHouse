@@ -17,6 +17,8 @@
 
 #include <Common/logger_useful.h>
 
+#include <poll.h>
+
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/Net/SSLException.h>
@@ -115,9 +117,31 @@ bool HTTPServerRequest::checkPeerConnected() const
 {
     try
     {
-        char b;
-        if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
-            return false;
+        /// For SSL connections, we cannot use recv(MSG_PEEK) on the raw socket because
+        /// a graceful TLS shutdown sends a close_notify alert followed by TCP FIN.
+        /// The close_notify bytes remain in the TCP receive buffer (since nobody consumes them
+        /// at the TLS layer), so recv(MSG_PEEK) always returns > 0 even though the peer
+        /// has disconnected. Instead, use poll with POLLRDHUP to detect the TCP half-close
+        /// that follows the TLS close_notify.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/96737
+#ifdef POLLRDHUP
+        if (secure)
+        {
+            struct pollfd pfd;
+            pfd.fd = socket->sockfd();
+            pfd.events = POLLRDHUP;
+            pfd.revents = 0;
+            int rc = poll(&pfd, 1, 0);
+            if (rc > 0 && (pfd.revents & (POLLRDHUP | POLLHUP | POLLERR | POLLNVAL)))
+                return false;
+        }
+        else
+#endif
+        {
+            char b;
+            if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
+                return false;
+        }
     }
     catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
     {
