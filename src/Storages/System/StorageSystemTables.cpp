@@ -69,8 +69,7 @@ std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
 
 /// LIKE patterns use `%` and `_` as wildcards, and `\\` as an escape character.
 /// Return the longest literal prefix that contains no unescaped wildcards.
-/// If any escape is encountered we bail out (return nullopt) to avoid mis-extracting
-/// a namespace when the literal segment is non-trivial.
+/// Escaped characters (`\%`, `\_`, `\\`, etc.) are folded into the literal.
 std::optional<String> getLiteralPrefixOfLikePattern(const String & pattern)
 {
     String literal;
@@ -81,7 +80,15 @@ std::optional<String> getLiteralPrefixOfLikePattern(const String & pattern)
         if (c == '%' || c == '_')
             return literal;
         if (c == '\\')
-            return {}; /// Be conservative around escapes.
+        {
+            /// A trailing backslash isn't a valid LIKE pattern; treat it as
+            /// the end of the safely-extractable literal.
+            if (i + 1 >= pattern.size())
+                return literal;
+            literal += pattern[i + 1];
+            ++i;
+            continue;
+        }
         literal += c;
     }
     return literal;

@@ -16,6 +16,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
+#include <utility>
+
 
 namespace DB
 {
@@ -30,6 +32,56 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
     : WithMutableContext(context_)
     , query_ptr(query_ptr_)
 {
+}
+
+namespace
+{
+
+/// Escape characters that are wildcards in SQL LIKE (`%` and `_`) and the
+/// escape character itself (`\`) so the value is matched literally.
+String escapeForLikeLiteral(const String & s)
+{
+    String result;
+    result.reserve(s.size());
+    for (char c : s)
+    {
+        if (c == '%' || c == '_' || c == '\\')
+            result += '\\';
+        result += c;
+    }
+    return result;
+}
+
+/// Split a dotted FROM identifier like `mycatalog.ns1.ns2` into a `(database,
+/// namespace_prefix)` pair by taking the longest prefix that is an existing
+/// DataLake catalog. For ordinary databases this is a no-op so the existing
+/// "database does not exist" error keeps surfacing for typos.
+/// Returns `(resolved, "")` when no proper prefix matches.
+std::pair<String, String> splitDatabaseAndNamespacePrefix(const String & resolved)
+{
+    auto & catalog = DatabaseCatalog::instance();
+    if (catalog.isDatabaseExist(resolved))
+        return {resolved, {}};
+
+    /// Walk from the longest prefix to the shortest, preferring the most
+    /// specific match (e.g. for `a.b.c` try `a.b` before `a`).
+    size_t pos = std::string::npos;
+    while (true)
+    {
+        pos = resolved.rfind('.', pos);
+        if (pos == std::string::npos || pos == 0)
+            break;
+
+        String db_candidate = resolved.substr(0, pos);
+        if (catalog.isDatalakeCatalog(db_candidate) && catalog.isDatabaseExist(db_candidate))
+            return {std::move(db_candidate), resolved.substr(pos + 1)};
+
+        --pos;
+    }
+
+    return {resolved, {}};
+}
+
 }
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
@@ -162,7 +214,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String resolved = getContext()->resolveDatabase(query.getFrom());
+
+    /// Allow `SHOW TABLES FROM \`<db>.<ns1>.<ns2>\`` for DataLake catalogs.
+    /// The dotted suffix maps to a catalog namespace and becomes part of the
+    /// `name LIKE` predicate, which the system.tables push-down then forwards
+    /// to the catalog (see issue #105022).
+    auto [database, namespace_prefix] = splitDatabaseAndNamespacePrefix(resolved);
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
@@ -192,14 +250,41 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else
         rewritten_query << "database = " << DB::quote << database;
 
+    /// Prefix used to anchor every name predicate (LIKE, ILIKE, or NOT ...) to
+    /// the requested catalog namespace, so the optimizer can pick the
+    /// namespace up via the system.tables push-down.
+    const String namespace_like_prefix
+        = namespace_prefix.empty() ? String{} : escapeForLikeLiteral(namespace_prefix) + ".";
+
     if (!query.like.empty())
+    {
         rewritten_query
             << " AND name "
             << (query.not_like ? "NOT " : "")
             << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
-            << DB::quote << query.like;
+            << DB::quote << (namespace_like_prefix + query.like);
+
+        /// A NOT LIKE filter alone does not restrict the result to the
+        /// namespace — add an explicit anchor when both are present.
+        if (query.not_like && !namespace_prefix.empty())
+            rewritten_query
+                << " AND name LIKE "
+                << DB::quote << (namespace_like_prefix + "%");
+    }
     else if (query.where_expression)
+    {
         rewritten_query << " AND (" << query.where_expression->formatWithSecretsOneLine() << ")";
+        if (!namespace_prefix.empty())
+            rewritten_query
+                << " AND name LIKE "
+                << DB::quote << (namespace_like_prefix + "%");
+    }
+    else if (!namespace_prefix.empty())
+    {
+        rewritten_query
+            << " AND name LIKE "
+            << DB::quote << (namespace_like_prefix + "%");
+    }
 
     /// (*)
     rewritten_query << " ORDER BY name ";
@@ -231,7 +316,11 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
     auto rewritten_query = getRewrittenQuery();
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String resolved = getContext()->resolveDatabase(query.getFrom());
+    /// Resolve the actual database name when the FROM clause embeds a namespace
+    /// path (e.g. `SHOW TABLES FROM \`mycatalog.ns1.ns2\``), so the datalake
+    /// override below still fires.
+    auto [database, namespace_prefix] = splitDatabaseAndNamespacePrefix(resolved);
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

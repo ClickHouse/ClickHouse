@@ -334,6 +334,26 @@ def test_namespace_filter_pushdown(started_cluster):
         ).strip()
     )
 
+    # `SHOW TABLES FROM <catalog>.<ns>` rewrites to the same tightened predicate
+    # as the equivalent `SELECT ... LIKE '<ns>.%'` form. Result names are still
+    # fully qualified with the namespace path, just like the SELECT variant.
+    assert (
+        expected_ns1
+        == node.query(
+            f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}`"
+        ).strip()
+    )
+
+    # SHOW TABLES FROM ... LIKE 'foo': the LIKE pattern is anchored to the namespace,
+    # so it matches `<ns>.<foo>` rather than only `<foo>`.
+    one_table_short = namespace_1_tables[0]
+    assert (
+        f"{namespace_1}.{one_table_short}"
+        == node.query(
+            f"SHOW TABLES FROM `{CATALOG_NAME}.{namespace_1}` LIKE '{one_table_short}'"
+        ).strip()
+    )
+
 
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]
