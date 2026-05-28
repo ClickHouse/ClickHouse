@@ -3,14 +3,18 @@
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/98823.
 #
-# With `max_replication_lag_to_enqueue` set to `0`, `initializeReplication`
-# used the condition `max_log_ptr + 0 <= new_max_log_ptr` (always true,
-# because `max_log_ptr` is monotonically non-decreasing in ZooKeeper) to
-# decide whether the replica was unsynced. As a result, a freshly-recovered
-# replica that was actually fully caught up was marked as unsynced, and the
-# `chassert(our_log_ptr < max_log_ptr)` in `initAndCheckTask` would fire as
-# soon as `our_log_ptr` reached `max_log_ptr` while `unsynced_after_recovery`
-# was still set.
+# In `initializeReplication`, the post-recovery unsynced check was
+#     max_log_ptr + max_replication_lag_to_enqueue <= new_max_log_ptr
+# With `max_replication_lag_to_enqueue` set to `0` the condition becomes
+#     max_log_ptr <= new_max_log_ptr
+# which is always true (max_log_ptr in ZooKeeper is monotonically non-decreasing).
+# A freshly-recovered, fully caught-up replica was therefore mis-marked as
+# unsynced, and the next DDL would trip `chassert(our_log_ptr < max_log_ptr)`
+# in `initAndCheckTask`, aborting the server in debug and sanitizer builds.
+#
+# With the fix the comparison is strict-less-than, so a caught-up replica
+# is correctly reported as synced and `system.clusters.unsynced_after_recovery`
+# is `0`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,35 +22,43 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 db="rdb_zero_lag_${CLICKHOUSE_DATABASE}"
 
-# Silence Replicated DDL status rows to keep the test output deterministic.
-CH="${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none"
-
-${CH} -q "DROP DATABASE IF EXISTS ${db} SYNC"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db} SYNC"
 
 # Create the Replicated database with the zero replication-lag threshold that
-# triggered the assertion in the issue.
-${CH} -q "
+# triggered the assertion in the original report. The fresh path means the
+# replica's recovery completes with our_log_ptr == max_log_ptr (caught up).
+${CLICKHOUSE_CLIENT} -q "
     CREATE DATABASE ${db}
     ENGINE = Replicated('/test/${CLICKHOUSE_DATABASE}/rdb_zero_lag', 's1', 'r1')
     SETTINGS max_replication_lag_to_enqueue = 0
 "
 
-# Reproduce the exact pattern from the bug report: an intermediate DDL that
-# fails at parse time (so it never reaches the DDL queue) followed by a normal
-# DDL. With `--ignore-error` the client keeps going through the parse failure,
-# matching the original reproducer.
-${CH} --ignore-error -q "
-    CREATE TABLE ${db}.t0 ENGINE = Join(SEMI, RIGHT, c0);
-    CREATE TABLE ${db}.t1 (c0 Int) ENGINE = MergeTree ORDER BY tuple();
-" 2>/dev/null
+# Wait until the DDL worker has finished `initializeReplication`. The active
+# node in ZooKeeper is created at the end of that function, so once
+# `is_active = 1` the in-memory `unsynced_after_recovery` flag is set.
+for _ in $(seq 1 100); do
+    is_active=$(${CLICKHOUSE_CLIENT} -q "SELECT is_active FROM system.clusters WHERE cluster = '${db}' LIMIT 1")
+    if [ "${is_active}" = "1" ]; then
+        break
+    fi
+    sleep 0.1
+done
 
-# Also exercise the normal happy path that previously tripped the
-# `our_log_ptr < max_log_ptr` assertion as soon as the replica caught up.
-${CH} -q "CREATE TABLE ${db}.t2 (s String) ENGINE = MergeTree ORDER BY s"
-${CH} -q "INSERT INTO ${db}.t2 VALUES ('a'), ('b')"
+# For a caught-up replica `unsynced_after_recovery` must be 0. On the buggy
+# master it is 1 because the comparison was non-strict.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT unsynced_after_recovery
+    FROM system.clusters
+    WHERE cluster = '${db}'
+"
 
-# If the server is still up and the data is correct, the bug is fixed.
-${CH} -q "SELECT count() FROM ${db}.t1"
-${CH} -q "SELECT count() FROM ${db}.t2"
+# Also exercise the post-recovery DDL path: with the bug, scheduling any new
+# task would hit `chassert(our_log_ptr < max_log_ptr)` in `initAndCheckTask`
+# during the race between entry creation and `max_log_ptr` update. With the
+# fix the assertion is `<=` and the path is harmless. INSERT exercises the
+# DDL queue, then SELECT confirms the server is alive and serving queries.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "CREATE TABLE ${db}.t (n Int) ENGINE = MergeTree ORDER BY n"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${db}.t VALUES (1), (2), (3)"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${db}.t"
 
-${CH} -q "DROP DATABASE IF EXISTS ${db} SYNC"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db} SYNC"
