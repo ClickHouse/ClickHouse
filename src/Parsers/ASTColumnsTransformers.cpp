@@ -423,4 +423,80 @@ void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)
     children = r.readChildrenOfType<ASTColumnsReplaceTransformer::Replacement>("ColumnsReplaceTransformer");
 }
 
+void ASTColumnsRenameTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    ostr << "RENAME ";
+
+    if (lambda)
+    {
+        ostr << "(";
+        lambda->format(ostr, settings, state, frame);
+        ostr << ")";
+        return;
+    }
+
+    if (source_names.size() > 1)
+        ostr << "(";
+
+    for (size_t i = 0; i < source_names.size(); ++i)
+    {
+        if (i != 0)
+            ostr << ", ";
+
+        ostr << backQuoteIfNeed(source_names[i]) << " AS " << backQuoteIfNeed(target_names[i]);
+    }
+
+    if (source_names.size() > 1)
+        ostr << ")";
+}
+
+void ASTColumnsRenameTransformer::appendColumnName(WriteBuffer & ostr) const
+{
+    writeCString("RENAME ", ostr);
+
+    if (lambda)
+    {
+        writeChar('(', ostr);
+        lambda->appendColumnName(ostr);
+        writeChar(')', ostr);
+        return;
+    }
+
+    if (source_names.size() > 1)
+        writeChar('(', ostr);
+
+    for (size_t i = 0; i < source_names.size(); ++i)
+    {
+        if (i != 0)
+            writeCString(", ", ostr);
+
+        writeProbablyBackQuotedString(source_names[i], ostr);
+        writeCString(" AS ", ostr);
+        writeProbablyBackQuotedString(target_names[i], ostr);
+    }
+
+    if (source_names.size() > 1)
+        writeChar(')', ostr);
+}
+
+void ASTColumnsRenameTransformer::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    hash_state.update(source_names.size());
+    for (size_t i = 0; i < source_names.size(); ++i)
+    {
+        hash_state.update(source_names[i].size());
+        hash_state.update(source_names[i]);
+        hash_state.update(target_names[i].size());
+        hash_state.update(target_names[i]);
+    }
+
+    if (lambda)
+        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
+
+    hash_state.update(lambda_arg.size());
+    hash_state.update(lambda_arg);
+
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 }
