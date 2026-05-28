@@ -550,7 +550,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
 
             bool whitespace = false;
-            for (const auto & param : instrumentation_parameters)
+            for (const auto & arg : instrumentation_arguments)
             {
                 if (!whitespace)
                     ostr << ' ';
@@ -563,7 +563,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                         ostr << ' ' << quoteString(value);
                     else
                         ostr << ' ' << value;
-                }, param);
+                }, arg);
             }
             break;
         }

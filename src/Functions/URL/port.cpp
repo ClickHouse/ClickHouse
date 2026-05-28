@@ -122,14 +122,14 @@ private:
     }
 };
 
-struct FunctionPort : public FunctionPortImpl<false>
+struct FunctionPort final : public FunctionPortImpl<false>
 {
     static constexpr auto name = "port";
     String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
 };
 
-struct FunctionPortRFC : public FunctionPortImpl<true>
+struct FunctionPortRFC final : public FunctionPortImpl<true>
 {
     static constexpr auto name = "portRFC";
     String getName() const override { return name; }

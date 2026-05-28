@@ -3327,15 +3327,17 @@ When enabled, ClickHouse will provide exact value for rows_before_limit_at_least
 When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
 )", 0) \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
-Limits the number of rows in the hash table that is used when joining tables.
+Limits the number of rows in the right-side data structure (typically a hash
+table) used when joining tables.
 
-This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join](/engines/table-engines/special/join) table engine.
 
-If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use the
-[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
+If a query contains multiple joins, ClickHouse checks this setting for every
+intermediate result. When the limit is reached, the action depends on the
+chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+that setting for the per-algorithm behavior (spill, re-partition, switch, or
+throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
 
 Possible values:
 
@@ -3343,15 +3345,17 @@ Possible values:
 - `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-The maximum size in number of bytes of the hash table used when joining tables.
+The maximum size in bytes of the right-side data structure (typically a hash
+table) used when joining tables.
 
 This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join table engine](/engines/table-engines/special/join).
 
-If the query contains joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use
-the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
+If a query contains multiple joins, ClickHouse checks this setting for every
+intermediate result. When the limit is reached, the action depends on the
+chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+that setting for the per-algorithm behavior (spill, re-partition, switch, or
+throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
 
 Possible values:
 
@@ -3359,15 +3363,22 @@ Possible values:
 - 0 — Memory control is disabled.
 )", 0) \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-Defines what action ClickHouse performs when any of the following join limits is reached:
+Defines what action ClickHouse performs when a join reaches any of the following limits:
 
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
+This setting is honored only by the `hash` and `parallel_hash`
+[`join_algorithm`](/operations/settings/settings#join_algorithm) values. Other
+algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
+limits differently — by spilling to disk, re-partitioning, or switching
+strategy — see
+[`join_algorithm`](/operations/settings/settings#join_algorithm).
+
 Possible values:
 
-- `THROW` — ClickHouse throws an exception and breaks operation.
-- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+- `THROW` — ClickHouse throws an exception and stops the query.
+- `BREAK` — ClickHouse stops the query and does not throw an exception.
 
 Default value: `THROW`.
 
@@ -3976,6 +3987,16 @@ Possible values:
 **See Also**
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
+)", 0) \
+    DECLARE(Bool, enable_sharding_aggregator, false, R"(
+Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
+
+This is efficient for high-cardinality keys with evenly distributed data, but may suffer from highly skewed key distributions or queries with very few distinct keys.
+
+Possible values:
+
+- 0 — Sharded aggregation optimization is disabled.
+- 1 — Sharded aggregation optimization is enabled.
 )", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
@@ -5496,6 +5517,14 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, query_cache_for_subqueries, false, R"(
+If turned on, subquery results may be written to and read from the [query cache](../query-cache.md). This enables propagation of `use_query_cache` into all subqueries.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
@@ -5651,6 +5680,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
+Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
+)", 0) \
     DECLARE(Bool, optimize_dictget_tuple_element, true, R"(
 Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('dict', 'b', key)` to avoid fetching unnecessary dictionary attributes. Supports positional (`.1`, `.2`, ...) and named (`.b`) access, and also applies to `dictGetOrDefault` when the default argument is a constant tuple or a `tuple(...)` of constants.
 )", 0) \
@@ -5741,6 +5773,9 @@ Enable independent aggregation of partitions on separate threads when partition 
 )", 0) \
     DECLARE(Bool, force_aggregate_partitions_independently, false, R"(
 Force the use of optimization when it is applicable, but heuristics decided not to use it
+)", 0) \
+    DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
+Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
 )", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
 Maximal number of partitions in table to apply optimization
@@ -6037,6 +6072,16 @@ Possible values:
     DECLARE(Bool, query_plan_merge_filters, true, R"(
 Allow to merge filters in the query plan.
 )", 0) \
+    DECLARE(Bool, query_plan_push_limit_by_into_sort, true, R"(
+Toggles a query-plan-level optimization for `ORDER BY ... LIMIT BY` queries. When `LIMIT BY` columns are a prefix of the `ORDER BY` clause, each parallel sorted stream applies `LIMIT BY` before the streams are merged into one, reducing rows processed by the final merge and later pipeline stages. Speeds up queries where `LIMIT BY` discards a large fraction of rows.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
@@ -6064,6 +6109,12 @@ Allow to convert `JOIN` to subquery with `IN` if output columns tied to only lef
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
+)", 0) \
+    DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
+Run a second `PREWHERE` promotion pass after later query plan optimizations may have
+deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
+`JOIN`, projection rewrites). When an existing `PREWHERE` is already present, the new
+filter is `AND`-merged into it instead of staying as a separate filter step.
 )", 0) \
     DECLARE(Bool, query_plan_execute_functions_after_sorting, true, R"(
 Toggles a query-plan-level optimization which moves expressions after sorting steps.
@@ -6193,13 +6244,14 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
+)", 0) \
+    DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
+Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
+)", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
-Use logical join step in query plan.
-Note: setting `query_plan_use_new_logical_join_step` is deprecated, use `query_plan_use_logical_join_step` instead.
-)", 0, query_plan_use_logical_join_step) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
@@ -6578,6 +6630,19 @@ If is not zero, limit the number of reading streams for MergeTree table.
     \
     DECLARE(Bool, force_grouping_standard_compatibility, true, R"(
 Make GROUPING function to return 1 when argument is not used as an aggregation key
+)", 0) \
+    \
+    DECLARE(Bool, allow_rank_dense_rank_arguments, false, R"(
+Allow passing arguments to the `RANK` and `DENSE_RANK` window functions for backward compatibility.
+
+Per SQL standard, `RANK` and `DENSE_RANK` take zero arguments — they rank rows based on the
+`OVER (ORDER BY ...)` window only. In ClickHouse versions before 26.5, queries such as
+`RANK(x) OVER (...)` silently accepted and ignored the argument, which led to user confusion
+(the visible argument suggested it influenced the ranking, but it did not).
+
+When this setting is `false` (the default), `RANK` and `DENSE_RANK` reject any arguments and
+throw `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`. When set to `true`, the legacy lenient behavior is
+restored — arguments are silently ignored, matching the pre-26.5 behavior.
 )", 0) \
     \
     DECLARE(Bool, schema_inference_use_cache_for_file, true, R"(
@@ -7865,6 +7930,12 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
     DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
 Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_streaming_queries, false, R"(
+Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
+When off, any table expression using the `STREAM` modifier is rejected
+at plan-build time. This is the umbrella gate for the streaming-queries
+feature; additional capabilities may be gated by their own settings.
+)", EXPERIMENTAL) \
      \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
 Allows using statistics to optimize queries
@@ -7914,6 +7985,18 @@ Using the text index header cache can significantly reduce latency and increase 
     DECLARE(Bool, use_text_index_postings_cache, false, R"(
 Whether to use a cache of deserialized text index posting lists.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
+    DECLARE(Bool, allow_experimental_text_index_lazy_apply, false, R"(
+If set to true, allow using the lazy posting list apply mode for text index queries.
+)", EXPERIMENTAL) \
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
+Controls how posting lists are applied during text index queries.
+'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
+'lazy' uses cursor-based on-demand decoding (requires V2 index format and allow_experimental_text_index_lazy_apply).
+)", 0) \
+    DECLARE(Float, text_index_density_threshold, 0.2f, R"(
+Density threshold for algorithm selection in lazy posting list mode.
+Below threshold: leapfrog intersection. At or above: brute-force bitmap.
 )", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
@@ -8088,9 +8171,6 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", EXPERIMENTAL, evaluation_time) \
-    DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
-Allow to create table with the Alias engine.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL) \
@@ -8118,8 +8198,7 @@ Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
-Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel.
-Set to 0 for no limit.
+Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, webassembly_udf_max_memory, 128_MiB, R"(
 Memory limit in bytes per WebAssembly UDF instance.
@@ -8150,15 +8229,22 @@ If true (default), an AI function call that fails permanently after exhausting a
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
 Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of input tokens, since the number of input tokens of a call are not known in advance. Set to 0 to disable.
+
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
+
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
 If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
+Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
@@ -8189,6 +8275,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, false) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -8277,7 +8364,9 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
-    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false)
+    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
+    MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
+    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
