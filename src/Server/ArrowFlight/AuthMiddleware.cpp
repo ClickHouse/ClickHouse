@@ -257,6 +257,19 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         else
             session->makeSessionContext(session_id, parseSessionTimeout(server.context()->getConfigRef(), session_timeout), session_check == "1");
 
+        /// Drop Arrow Flight prepared statement handles on `RESET SESSION`.
+        /// Handles live on the server-wide `CallsData`, not on `Context`, so
+        /// without this hook a session that ran `CreatePreparedStatement`
+        /// could continue resolving the old handle via `CommandPreparedStatementQuery`
+        /// after the reset — violating the post-authentication baseline.
+        /// `calls_data` outlives every session (it's owned by `ArrowFlightServer`),
+        /// so capturing by reference is safe.
+        session->sessionContext()->addSessionResetCallback(
+            [&calls_data_ref = calls_data, username, session_id](Context &)
+            {
+                calls_data_ref.closeAllPreparedStatements(username, session_id);
+            });
+
         if (auth)
             token = token_storage.getToken(username, password);
 
