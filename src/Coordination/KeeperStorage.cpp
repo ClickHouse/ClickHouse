@@ -2058,8 +2058,8 @@ std::list<KeeperStorageBase::Delta> preprocess(
     const Coordination::ZooKeeperRemoveRequest & zk_request,
     Storage & storage,
     int64_t zxid,
-    int64_t /* session_id */,
-    int64_t /* time */,
+    int64_t session_id,
+    int64_t time,
     uint64_t * /* digest */,
     const KeeperContext & keeper_context)
 {
@@ -2124,6 +2124,14 @@ std::list<KeeperStorageBase::Delta> preprocess(
             return {};
 
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+    }
+    /// ZK `deleteContainer` semantics: re-check the node is still a TTL node and
+    /// still expired. Catches delete+recreate (same version=0) and Set-refreshed
+    /// destroy_time, which the plain version check above misses.
+    if (zk_request.try_remove && session_id == keeper_internal_ttl_garbage_collector_session_id)
+    {
+        if (!node->destroy_time.has_value() || time < *node->destroy_time)
+            return {};
     }
     if (node->numChildren() != 0)
     {

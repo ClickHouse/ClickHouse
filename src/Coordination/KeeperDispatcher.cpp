@@ -268,7 +268,6 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
 {
     DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
 
-    int64_t time = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     while (!keeper_context->isShutdownCalled())
     {
         try
@@ -290,7 +289,7 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
                         if (putRequest(request, keeper_internal_ttl_garbage_collector_session_id, /*use_xid_64=*/ false))
                         {
                             ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsEnqueued);
-                            LOG_TRACE(log, "Garbage collector: Remove request enqueued, path: {}, time: {}", path, time);
+                            LOG_TRACE(log, "Garbage collector: Remove request enqueued, path: {}", path);
                         }
                         else
                         {

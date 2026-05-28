@@ -1897,7 +1897,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
     remove_request->path = "/ttl_node";
     remove_request->version = -1;
     remove_request->try_remove = true;
-    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, /*time=*/0, ++zxid);
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, /*time=*/ttl_ms + 1, ++zxid);
     auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
     ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
 
@@ -2012,6 +2012,78 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
 
     EXPECT_NE(storage.container.find("/ttl_node"), storage.container.end());
     EXPECT_TRUE(storage.ttl_paths.contains("/ttl_node"));
+}
+
+TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t ttl_ms = 5000;
+    const int64_t create_time = 0;
+
+    /// Create a TTL node.
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/ttl_node";
+    create_request->include_ttl = true;
+    create_request->ttl = ttl_ms;
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid);
+    auto create_responses = storage.processRequest(create_request, session_id, zxid);
+    ASSERT_EQ(create_responses[0].response->error, Error::ZOK);
+
+    /// TTL GC collects the expired node.
+    auto expired = storage.collectExpiredTTLPaths(create_time + ttl_ms + 1, 1000000);
+    ASSERT_EQ(expired.size(), 1u);
+    EXPECT_EQ(expired[0].first, "/ttl_node");
+    const int32_t collected_version = expired[0].second;
+
+    /// Before the GC's TryRemove commits, the client deletes and recreates
+    /// the node as a regular (non-TTL) node. The fresh node has version=0,
+    /// same as the value the GC collected for the previous incarnation.
+    auto delete_request = std::make_shared<ZooKeeperRemoveRequest>();
+    delete_request->path = "/ttl_node";
+    delete_request->version = -1;
+    storage.preprocessRequest(delete_request, session_id, create_time + ttl_ms + 2, ++zxid);
+    auto delete_responses = storage.processRequest(delete_request, session_id, zxid);
+    ASSERT_EQ(delete_responses[0].response->error, Error::ZOK);
+
+    auto recreate_request = std::make_shared<ZooKeeperCreateRequest>();
+    recreate_request->path = "/ttl_node";
+    recreate_request->data = "fresh";
+    storage.preprocessRequest(recreate_request, session_id, create_time + ttl_ms + 3, ++zxid);
+    auto recreate_responses = storage.processRequest(recreate_request, session_id, zxid);
+    ASSERT_EQ(recreate_responses[0].response->error, Error::ZOK);
+
+    {
+        auto node_it = storage.container.find("/ttl_node");
+        ASSERT_NE(node_it, storage.container.end());
+        EXPECT_EQ(node_it->value.stats.version, collected_version);
+        EXPECT_FALSE(node_it->value.destroy_time.has_value());
+    }
+
+    /// The stale TryRemove commits and must be a no-op — matching real ZK,
+    /// which rejects deleteContainer when the current node is not TTL-eligible.
+    auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+    remove_request->path = "/ttl_node";
+    remove_request->version = collected_version;
+    remove_request->try_remove = true;
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 4, ++zxid);
+    auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
+    ASSERT_EQ(remove_responses.size(), 1u);
+    ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+
+    auto node_after_it = storage.container.find("/ttl_node");
+    ASSERT_NE(node_after_it, storage.container.end());
+    EXPECT_FALSE(node_after_it->value.destroy_time.has_value());
+    EXPECT_EQ(std::string{node_after_it->value.getData()}, "fresh");
+    EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
 }
 
 #endif
