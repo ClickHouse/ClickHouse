@@ -33,6 +33,10 @@ SELECT 'oversized_duration';
 SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 1e20; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[100000000000000000000]';
 
+SELECT 'rounded_boundary_duration';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 9223372036854776; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[9223372036854776]';
+
 SELECT 'nan_min';
 SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY nan 1; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[nan,1]';
@@ -44,3 +48,7 @@ SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_typ
 SELECT 'oversized_max';
 SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1e20; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[0,100000000000000000000]';
+
+SELECT 'rounded_boundary_range';
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 9223372036854776 9223372036854776; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM system.instrumentation WHERE handler = 'sleep' AND entry_type = 'Entry' AND toString(arguments) = '[9223372036854776,9223372036854776]';

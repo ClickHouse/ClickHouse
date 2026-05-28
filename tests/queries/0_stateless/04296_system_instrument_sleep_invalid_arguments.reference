@@ -13,9 +13,13 @@ inf_duration
 0
 oversized_duration
 0
+rounded_boundary_duration
+0
 nan_min
 0
 inf_max
 0
 oversized_max
+0
+rounded_boundary_range
 0

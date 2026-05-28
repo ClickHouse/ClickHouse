@@ -48,7 +48,6 @@ extern const int LOGICAL_ERROR;
 static constexpr String SLEEP_HANDLER = "sleep";
 static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
-static constexpr Float64 MAX_SLEEP_DURATION_SECONDS = static_cast<Float64>(std::numeric_limits<Int64>::max()) / 1000.0;
 
 static auto logger = getLogger("InstrumentationManager");
 
@@ -62,14 +61,25 @@ static Float64 getSleepArgumentValue(const InstrumentationManager::InstrumentedA
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric argument (Int64 or Float64) for sleep, but got something else");
 }
 
+static Int64 getSleepDurationMilliseconds(Float64 seconds)
+{
+    if (!std::isfinite(seconds))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be finite");
+
+    if (seconds < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+
+    const auto milliseconds = static_cast<long double>(seconds) * 1000.0L;
+    if (milliseconds > static_cast<long double>(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration is too large to represent in milliseconds");
+
+    return static_cast<Int64>(milliseconds);
+}
+
 static Float64 validateSleepArgumentValue(const InstrumentationManager::InstrumentedArgument & arg)
 {
     auto value = getSleepArgumentValue(arg);
-    if (!std::isfinite(value))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be finite");
-
-    if (value > MAX_SLEEP_DURATION_SECONDS)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must not exceed {} seconds", MAX_SLEEP_DURATION_SECONDS);
+    getSleepDurationMilliseconds(value);
 
     return value;
 }
@@ -80,14 +90,10 @@ static void validateSleepArguments(const std::vector<InstrumentationManager::Ins
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected one or two arguments for sleep instrumentation, but got {}", args.size());
 
     auto min = validateSleepArgumentValue(args[0]);
-    if (min < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
 
     if (args.size() == 2)
     {
         auto max = validateSleepArgumentValue(args[1]);
-        if (max < 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
 
         if (min > max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep minimum duration must be less than or equal to maximum duration");
@@ -491,11 +497,11 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
     const auto & args = instrumented_point.arguments;
     validateSleepArguments(args);
 
-    Int64 duration_ms = -1;
+    Int64 duration_ms;
 
     if (args.size() == 1)
     {
-        duration_ms = static_cast<Int64>(1000 * getSleepArgumentValue(args[0]));
+        duration_ms = getSleepDurationMilliseconds(getSleepArgumentValue(args[0]));
     }
     else
     {
@@ -503,11 +509,8 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
         auto max = getSleepArgumentValue(args[1]);
 
         std::uniform_real_distribution<> distrib(min, max);
-        duration_ms = static_cast<Int64>(1000 * distrib(random_generator));
+        duration_ms = getSleepDurationMilliseconds(distrib(random_generator));
     }
-
-    if (duration_ms < 0)
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
 
     LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {} ms", instrumented_point.function_name, instrumented_point.function_id, duration_ms);
     auto now = std::chrono::system_clock::now();
