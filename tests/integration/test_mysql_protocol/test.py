@@ -948,6 +948,54 @@ def setup_java_client(started_cluster, binary: Literal["true", "false"]):
     )
 
 
+def test_reset_session_drops_prepared_statements(started_cluster):
+    """`RESET SESSION` must drop statements registered via `COM_STMT_PREPARE`.
+
+    The MySQL binary protocol hands out statement ids on `COM_STMT_PREPARE`
+    and the client refers to them on `COM_STMT_EXECUTE`. Those live on the
+    handler, not on `Context`, so the post-authentication baseline contract
+    only holds if the handler drops them when reset fires.
+    """
+    import struct
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="default",
+        password="123",
+        database="default",
+        port=server_port,
+    )
+
+    # `pymysql` exposes the raw command path. `0x16 = COM_STMT_PREPARE`.
+    client._execute_command(0x16, "SELECT 1")
+    # The handler's PREPARE_OK response starts with the OK marker (`0x00`)
+    # then a little-endian 4-byte statement id.
+    prepare_response = client._read_packet().read_all()
+    assert prepare_response[0:1] == b"\x00", f"unexpected prepare response: {prepare_response!r}"
+    statement_id = struct.unpack_from("<I", prepare_response, 1)[0]
+
+    # `RESET SESSION` over `COM_QUERY`.
+    cursor = client.cursor()
+    cursor.execute("RESET SESSION")
+    cursor.close()
+
+    # `COM_STMT_EXECUTE` with the now-stale id must fail. Build the packet
+    # by hand because `_execute_command` assumes its payload is a SQL string.
+    # The payload after the command byte is: statement_id(4) + flags(1) +
+    # iteration_count(4).
+    execute_payload = struct.pack("<BIBI", 0x17, statement_id, 0, 1)
+    # MySQL packet header: 3-byte little-endian length + 1-byte sequence id.
+    # Each command starts a fresh packet sequence at id 0.
+    header = struct.pack("<I", len(execute_payload))[:3] + b"\x00"
+    client._next_seq_id = 0
+    client._write_bytes(header + execute_payload)
+
+    with pytest.raises(pymysql.err.OperationalError):
+        client._read_packet()
+
+    client.close()
+
+
 def test_mysql_dotnet_client(started_cluster):
     node = cluster.instances["node"]
 

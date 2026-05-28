@@ -10,6 +10,15 @@ namespace DB
 
 BlockIO InterpreterResetSessionQuery::execute()
 {
+    /// gRPC requests without `session_id` (and other paths that build a
+    /// query context directly from the global context) never create a
+    /// session context: every bit of mutable state lives on the query
+    /// context and dies with it. There is nothing to reset to a
+    /// post-authentication baseline, so treat this as a no-op rather than
+    /// throwing `THERE_IS_NO_SESSION`. This matches the documented
+    /// "already-clean session" contract.
+    if (!getContext()->hasSessionContext())
+        return {};
     getContext()->getSessionContext()->resetToUserDefaults();
     return {};
 }
