@@ -1,4 +1,5 @@
 object_path	String
+local_path	String
 query_id	String
 position	UInt64
 elapsed_seconds	Float64
