@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Chunk.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -38,6 +39,20 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
 void ReadFromDistributedPlanSource::onCancel() noexcept
 {
     *cancellation_flag = true;
+
+    /// Actively tear down the executor so remote worker tasks and exchange waiters
+    /// stop now. Without this the local flag is only observed when `tryGenerate`
+    /// is next entered; if the pipeline is being cancelled, that may never happen
+    /// and the remote work keeps running until an unrelated failure or shutdown.
+    try
+    {
+        if (distributed_query_executor)
+            distributed_query_executor->cleanup();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }
