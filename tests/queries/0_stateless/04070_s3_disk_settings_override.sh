@@ -5,13 +5,15 @@
 # flaky check, the same test runs many times concurrently; the parallel
 # `SYSTEM RELOAD CONFIG` calls serialize inside the server and a single
 # instance has been observed waiting ~3 minutes before its reload starts,
-# blowing the 180s per-test budget even though the actual reload work is
-# fast. Serializing this test removes the queueing.
+# blowing the `clickhouse-test` flaky-check `TEST_MAX_RUN_TIME_IN_SECONDS`
+# per-test budget even though the actual reload work is fast. Serializing
+# this test removes the queueing.
 # Tag no-random-settings: SYSTEM RELOAD CONFIG combined with multipart S3 upload
-# can exceed the flaky-check 180s timeout in debug builds when random settings
-# (e.g. heavy filesystem cache injection, large reduce_blocking_parts_sleep_ms)
-# inflate per-step latency. The bug under test is about config reload settings
-# priority and is independent of these random settings.
+# can exceed the flaky-check `TEST_MAX_RUN_TIME_IN_SECONDS` cap in debug builds
+# when random settings (e.g. heavy filesystem cache injection, large
+# reduce_blocking_parts_sleep_ms) inflate per-step latency. The bug under test
+# is about config reload settings priority and is independent of these random
+# settings.
 
 # Verify that storage_configuration disk settings properly override global <s3>
 # endpoint configuration for the DiskS3 path (S3ObjectStorage::applyNewSettings).

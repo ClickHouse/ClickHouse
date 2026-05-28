@@ -2,7 +2,8 @@
 # Tags: long, no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage
 # long: The test inserts 4M+ rows across the initial setup, 20s parallel insert/select/cancel phase,
 #     and final verification. On the encrypted-S3 + ASan+UBSan + meta-in-keeper flaky-check variant
-#     it consistently exceeds the 180s default budget, so we use the 600s budget instead.
+#     it consistently exceeds the `clickhouse-test` flaky-check `TEST_MAX_RUN_TIME_IN_SECONDS` cap,
+#     so we use the 600s `--timeout` budget (the regular per-test cap) instead.
 # no-fasttest: The test is slow (too many small blocks)
 # no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
 #     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.

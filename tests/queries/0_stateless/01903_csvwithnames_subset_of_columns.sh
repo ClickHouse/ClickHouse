@@ -11,8 +11,9 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE test_01903 (col0 Date, col1 Nullable(UInt8))
 
 # Use 100k rows: enough to exercise multi-block streaming in the CSVWithNames/TSVWithNames
 # row-format readers (default max_block_size = 65505) while keeping the test well under the
-# 180s flaky-check timeout under sanitizer + WasmEdge runs. The original 1M rows added no
-# extra coverage but was prone to timing out under MSan + WasmEdge (see CIDB).
+# `clickhouse-test` flaky-check `TEST_MAX_RUN_TIME_IN_SECONDS` cap under sanitizer + WasmEdge
+# runs. The original 1M rows added no extra coverage but was prone to timing out under
+# MSan + WasmEdge (see CIDB).
 $CLICKHOUSE_CLIENT -q "INSERT INTO test_01903 FORMAT CSVWithNames" < <(
     echo 'col0,col1'
     yes '2021-05-05,1' | head -n 100000
