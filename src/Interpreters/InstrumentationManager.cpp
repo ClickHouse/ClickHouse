@@ -24,6 +24,7 @@
 #include <llvm/XRay/InstrumentationMap.h>
 
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <thread>
 #include <random>
@@ -59,18 +60,27 @@ static Float64 getSleepArgumentValue(const InstrumentationManager::InstrumentedA
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric argument (Int64 or Float64) for sleep, but got something else");
 }
 
+static Float64 validateSleepArgumentValue(const InstrumentationManager::InstrumentedArgument & arg)
+{
+    auto value = getSleepArgumentValue(arg);
+    if (!std::isfinite(value))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be finite");
+
+    return value;
+}
+
 static void validateSleepArguments(const std::vector<InstrumentationManager::InstrumentedArgument> & args)
 {
     if (args.empty() || args.size() > 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected one or two arguments for sleep instrumentation, but got {}", args.size());
 
-    auto min = getSleepArgumentValue(args[0]);
+    auto min = validateSleepArgumentValue(args[0]);
     if (min < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
 
     if (args.size() == 2)
     {
-        auto max = getSleepArgumentValue(args[1]);
+        auto max = validateSleepArgumentValue(args[1]);
         if (max < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
 
