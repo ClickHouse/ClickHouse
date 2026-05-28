@@ -10,6 +10,7 @@
 
 #include <future>
 #include <memory>
+#include <unordered_set>
 #include <utility>
 
 
@@ -47,6 +48,9 @@ private:
     using ConnectionKey = std::pair<String, String>; /// query_id, exchange_stream_id
     using ConnectionsMap = std::unordered_map<ConnectionKey, FutureConnectionPtr, boost::hash<ConnectionKey>>;
     ConnectionsMap pending_connections;
+    /// Queries that have been cleaned up. Late add/get for these query ids must not
+    /// (re)create pending entries — otherwise the entry would have no owner and leak.
+    std::unordered_set<String> cancelled_queries;
     LoggerPtr log = getLogger("ExchangeConnections");
 };
 

@@ -1147,15 +1147,25 @@ protected:
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
 
-            /// Register the task with the tracker before issuing the HTTP `start` so that
-            /// a lost response (worker accepted the task, coordinator never observes it)
-            /// is still cancellable through the normal cleanup path. The worker tolerates
-            /// UnknownTaskId for forget/cancel, which covers the case where the start
-            /// never reached it.
+            /// Send the task before registering it: status polling does not tolerate
+            /// UnknownTaskId, so a tracker poll racing the start would abort the query.
+            /// On send failure issue best-effort cancel + forget directly in case the
+            /// worker did accept the start; both tolerate UnknownTaskId.
             auto task_info = buildTaskInfo(task_description);
             LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
+            try
+            {
+                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, context);
+            }
+            catch (...)
+            {
+                try { cancelTask(task_info.endpoint_uri, task_info.task_id, context); }
+                catch (...) { tryLogCurrentException(logger, fmt::format("cancelTask after failed start for {}", task_info.task_id)); }
+                try { forgetTask(task_info.endpoint_uri, task_info.task_id, context); }
+                catch (...) { tryLogCurrentException(logger, fmt::format("forgetTask after failed start for {}", task_info.task_id)); }
+                throw;
+            }
             running_tasks.addTask(stage_name, task_info);
-            sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, context);
         }
     }
 

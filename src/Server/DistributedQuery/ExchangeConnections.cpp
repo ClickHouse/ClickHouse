@@ -21,6 +21,15 @@ void ExchangeConnections::addConnection(const String & query_id, const String & 
 
     std::lock_guard lock(mutex);
 
+    /// Refuse late arrivals for a cancelled query: getConnection cannot consume the
+    /// entry anymore, so creating one would leak.
+    if (cancelled_queries.contains(query_id))
+    {
+        LOG_TRACE(log, "Dropping late connection for cancelled query id {} exchange stream {}", query_id, exchange_stream_id);
+        socket.close();
+        return;
+    }
+
     /// Check if a FutureConnection already exists (getConnection was called first)
     if (auto it = pending_connections.find(connection_key); it != pending_connections.end())
     {
@@ -48,6 +57,16 @@ FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, 
 
     std::lock_guard lock(mutex);
 
+    /// Cancelled query: return a pre-cancelled future so the caller fails on the next
+    /// wait instead of creating a pending entry that nothing will satisfy.
+    if (cancelled_queries.contains(query_id))
+    {
+        auto future_connection = std::make_shared<FutureConnection>();
+        future_connection->cancel(std::make_exception_ptr(
+            Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Exchange connection cancelled, query id {}", query_id)));
+        return future_connection;
+    }
+
     if (auto it = pending_connections.find(connection_key); it != pending_connections.end())
     {
         /// addConnection was called first, get the existing FutureConnection
@@ -71,6 +90,9 @@ void ExchangeConnections::cleanupQuery(const String & query_id)
     std::vector<FutureConnectionPtr> to_cancel;
     {
         std::lock_guard lock(mutex);
+        /// Mark the query so any addConnection/getConnection arriving after this point
+        /// short-circuits and doesn't recreate an orphan entry.
+        cancelled_queries.insert(query_id);
         for (auto it = pending_connections.begin(); it != pending_connections.end();)
         {
             if (it->first.first == query_id)
