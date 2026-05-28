@@ -4726,7 +4726,9 @@ This setting is useful for ensuring that materialized views do not contain dupli
 - [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
     DECLARE(Bool, wait_for_part_commit_in_dependent_materialized_views, false, R"(
-Controls whether `INSERT` operations into tables with dependent materialized views wait for the inserted part to be fully committed and visible in the storage's parts list before the materialized view cascade runs.
+Controls whether each sink commits its just-written part before its own dependent materialized view cascade runs, so a cascade that reads back from the source via `JOIN` observes the part written by that sink.
+
+The guarantee is per sink instance — parts written by other sink threads of the same `INSERT` may not yet be visible. The setting does not provide cross-thread commit ordering.
 
 Has no effect on inserts into tables with no dependent materialized views.
 )", 0) \
