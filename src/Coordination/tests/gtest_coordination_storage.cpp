@@ -2086,4 +2086,120 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
 }
 
+/// B4: invalid TTL values must be rejected with ZBADARGUMENTS.
+TYPED_TEST(CoordinationTest, TestCreateTTLRejectsInvalidValues)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+
+    const auto try_create = [&](int64_t ttl) -> Error
+    {
+        auto req = std::make_shared<ZooKeeperCreateRequest>();
+        req->path = "/n" + std::to_string(ttl);
+        req->include_ttl = true;
+        req->ttl = ttl;
+        storage.preprocessRequest(req, session_id, /*time=*/0, ++zxid);
+        auto responses = storage.processRequest(req, session_id, zxid);
+        return responses[0].response->error;
+    };
+
+    EXPECT_EQ(try_create(0), Error::ZBADARGUMENTS);
+    EXPECT_EQ(try_create(-1), Error::ZBADARGUMENTS);
+    EXPECT_EQ(try_create(MAX_KEEPER_TTL_MS + 1), Error::ZBADARGUMENTS);
+    EXPECT_EQ(try_create(std::numeric_limits<int64_t>::max()), Error::ZBADARGUMENTS);
+    EXPECT_EQ(try_create(1), Error::ZOK);
+    EXPECT_EQ(try_create(MAX_KEEPER_TTL_MS), Error::ZOK);
+}
+
+/// B7: a failed `Create` with include_ttl && is_ephemeral inside a Multi
+/// must not leave an entry in uncommitted_state.ephemerals.
+TYPED_TEST(CoordinationTest, TestCreateTTLAndEphemeralDoesNotLeakEphemeral)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 7;
+
+    auto bad_create = std::make_shared<ZooKeeperCreateRequest>();
+    bad_create->path = "/bad";
+    bad_create->is_ephemeral = true;
+    bad_create->include_ttl = true;
+    bad_create->ttl = 1000;
+    storage.preprocessRequest(bad_create, session_id, /*time=*/0, ++zxid);
+    auto responses = storage.processRequest(bad_create, session_id, zxid);
+    ASSERT_EQ(responses[0].response->error, Error::ZBADARGUMENTS);
+
+    auto session_it = storage.uncommitted_state.ephemerals.find(session_id);
+    if (session_it != storage.uncommitted_state.ephemerals.end())
+        EXPECT_TRUE(session_it->second.empty());
+}
+
+/// B8: a failed Multi with Set on a TTL node must not leak the refreshed
+/// destroy_time into uncommitted state.
+TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 8;
+    const int64_t ttl_ms = 5000;
+    const int64_t create_time = 1000;
+
+    auto create_req = std::make_shared<ZooKeeperCreateRequest>();
+    create_req->path = "/n";
+    create_req->include_ttl = true;
+    create_req->ttl = ttl_ms;
+    storage.preprocessRequest(create_req, session_id, create_time, ++zxid);
+    storage.processRequest(create_req, session_id, zxid);
+
+    const int64_t original_destroy_time = create_time + ttl_ms;
+
+    /// Multi: Set/n (refreshes destroy_time) + Create/n (fails — already exists).
+    Coordination::Requests ops{
+        zkutil::makeSetRequest("/n", "refreshed", -1),
+        zkutil::makeCreateRequest("/n", "dup", zkutil::CreateMode::Persistent),
+    };
+    auto multi_req = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
+
+    const int64_t set_time = create_time + 100;
+    storage.preprocessRequest(multi_req, session_id, set_time, ++zxid);
+    auto multi_responses = storage.processRequest(multi_req, session_id, zxid);
+    ASSERT_EQ(multi_responses.size(), 1u);
+    auto & multi_response = dynamic_cast<ZooKeeperMultiResponse &>(*multi_responses[0].response);
+
+    /// The duplicate Create sub-op must have failed, taking the whole Multi with it.
+    ASSERT_EQ(multi_response.responses.size(), 2u);
+    EXPECT_NE(multi_response.responses[1]->error, Error::ZOK);
+
+    auto node_it = storage.container.find("/n");
+    ASSERT_NE(node_it, storage.container.end());
+    ASSERT_TRUE(node_it->value.destroy_time.has_value());
+    EXPECT_EQ(*node_it->value.destroy_time, original_destroy_time);
+
+    auto uncommitted = storage.uncommitted_state.getNode("/n");
+    ASSERT_NE(uncommitted, nullptr);
+    ASSERT_TRUE(uncommitted->destroy_time.has_value());
+    EXPECT_EQ(*uncommitted->destroy_time, original_destroy_time);
+}
+
 #endif
