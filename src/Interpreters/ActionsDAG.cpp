@@ -923,6 +923,7 @@ void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
     root->children.clear();
     root->function_base.reset();
     root->function.reset();
+    root->is_deterministic_constant = inner->is_deterministic_constant;
 }
 
 void ActionsDAG::pushMaterializeOutwardForConstants()
