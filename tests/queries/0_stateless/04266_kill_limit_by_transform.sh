@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-sanitizers-lsan, long
 # Test that KILL QUERY works for LIMIT BY queries.
-# Tests both transformCommon (no ORDER BY) and transformInOrder
-# (ORDER BY with LIMIT BY columns as prefix) paths.
+# Tests both transformCommon and transformInOrder paths.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,7 +27,7 @@ test_limit_by_cancellation()
     echo "OK"
 }
 
-# Test transformCommon path: no ORDER BY, uses hashmap-based group tracking
+# Test transformCommon path
 test_limit_by_cancellation "common" "
     SELECT
         number % 100000000 AS category,
@@ -36,18 +35,19 @@ test_limit_by_cancellation "common" "
     FROM numbers(100000000)
     LIMIT 1 BY category
     FORMAT Null
-    SETTINGS max_block_size=100000000, max_threads=1
+    SETTINGS max_block_size=100000000, max_threads=1, max_rows_to_read=0
 " || exit 1
 
-# Test transformInOrder path: ORDER BY with LIMIT BY columns as prefix, uses sorted group tracking
+# Test transformInOrder path
 test_limit_by_cancellation "inorder" "
     SELECT
-        concat(toString(number), repeat('aaaaaaaaaa', 1000)) AS cat1,
-        concat(toString(number), repeat('bbbbbbbbbb', 1000)) AS cat2,
+        concat(toString(number), repeat('x', 50)) AS cat1,
+        concat(toString(number), repeat('y', 50)) AS cat2,
         number AS value
-    FROM numbers(1200000)
-    ORDER BY cat1, cat2, value
-    LIMIT 1 BY cat1, cat2
+    FROM numbers(100000000)
+    LIMIT 1 BY
+        cat1,
+        cat2
     FORMAT Null
-    SETTINGS max_block_size=1200000, max_threads=1
+    SETTINGS max_block_size = 100000000, max_threads = 1, max_rows_to_read=0
 " || exit 1

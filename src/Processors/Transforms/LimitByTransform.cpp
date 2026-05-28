@@ -42,11 +42,23 @@ void LimitByTransform::transformCommon(Chunk & chunk)
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     IColumn::Filter filter(num_rows);
     UInt64 inserted_count = 0;
 
     for (UInt64 row = 0; row < num_rows; ++row)
     {
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
+
         SipHash hash;
         for (auto position : key_positions)
             columns[position]->updateHashWithValue(row, hash);
@@ -71,11 +83,23 @@ void LimitByTransform::transformInOrder(Chunk & chunk)
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     IColumn::Filter filter(num_rows);
     UInt64 inserted_count = 0;
 
     for (UInt64 row = 0; row < num_rows; ++row)
     {
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
+
         SipHash hash;
         for (auto position : key_positions)
             columns[position]->updateHashWithValue(row, hash);
