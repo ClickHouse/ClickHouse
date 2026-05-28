@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -19,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
@@ -511,22 +513,67 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         VectorWithMemoryTracking<char> flat_buf(contiguous);
         data.copyTo(flat_buf.data(), write_range);
 
-        segment.write(flat_buf.data(), contiguous, write_offset);
+        /// Mirror `CachedOnDiskReadBufferFromFile::writeCache` error handling.
+        /// `FileSegment::write` throws `ErrnoException` on disk failure and
+        /// leaves the segment in `PARTIALLY_DOWNLOADED_NO_CONTINUATION`.
+        ///   - `ENOSPC` (errno 28) / quota exceeded (errno 122): always fail
+        ///     open; the query continues without this segment in the cache.
+        ///   - Other I/O errors: respect `cache->skipCacheOnDiskFailure()`;
+        ///     if set, log and skip; otherwise rethrow as
+        ///     `CACHE_CANNOT_WRITE_TO_CACHE_DISK`. Pre-fix this just threw
+        ///     `ErrnoException` and failed the query — even with
+        ///     `skip_cache_on_disk_failure = true`.
+        bool written_ok = false;
+        try
+        {
+            segment.write(flat_buf.data(), contiguous, write_offset);
+            written_ok = true;
+        }
+        catch (ErrnoException & e)
+        {
+            const int code = e.getErrno();
+            const bool is_no_space_left = code == /* No space left on device */28
+                || code == /* Quota exceeded */122;
+            chassert(segment.state() == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+            if (is_no_space_left)
+            {
+                LOG_INFO(log, "DiskCacheHandle::put: insert into cache skipped due to insufficient disk space: {}",
+                    e.displayText());
+            }
+            else if (cache->skipCacheOnDiskFailure())
+            {
+                LOG_ERROR(log, "DiskCacheHandle::put: insert into cache skipped due to disk IO error: {}",
+                    e.displayText());
+            }
+            else
+            {
+                throw Exception(ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK,
+                    "Filesystem cache disk IO error (errno {}): {}. "
+                    "Consider setting skip_cache_on_disk_failure=true in cache config.",
+                    code, e.displayText());
+            }
+        }
 
-        /// Release downloader role. If we did not reach `seg_r.end()`,
-        /// the segment is left PARTIALLY_DOWNLOADED for later continuation.
+        /// Release downloader role and pop the segment regardless of write
+        /// outcome. On failure the segment is left in
+        /// `PARTIALLY_DOWNLOADED_NO_CONTINUATION`, so the assertion inside
+        /// `completePartAndResetDownloader` (state is DOWNLOADING or
+        /// NO_CONTINUATION) still holds. Popping is the load-bearing detail
+        /// that keeps the cache able to evict for subsequent reserves —
+        /// see the comment on the outer `while (!holder->empty())` loop.
         segment.completePartAndResetDownloader();
-        bytes_written += contiguous;
+        if (written_ok)
+        {
+            bytes_written += contiguous;
+            LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}] at offset {}",
+                contiguous, seg_range.left, seg_range.right, write_offset);
 
-        LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}] at offset {}",
-            contiguous, seg_range.left, seg_range.right, write_offset);
-
-        if (cache_log)
-            appendCacheLogEntry(
-                *cache_log, segment, origin,
-                FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
-                source_file_path, requested_range);
-
+            if (cache_log)
+                appendCacheLogEntry(
+                    *cache_log, segment, origin,
+                    FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
+                    source_file_path, requested_range);
+        }
         holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
     }
 
