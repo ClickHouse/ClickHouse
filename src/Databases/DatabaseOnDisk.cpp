@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Disks/DiskLocal.h>

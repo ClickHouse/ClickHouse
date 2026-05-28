@@ -563,7 +563,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     QueryPlanResourceHolder resources;
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     auto table_it = selected_tables.begin();
     auto modified_context = Context::createCopy(context);
@@ -1495,7 +1495,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
 
         for (const auto & db : databases)
         {
