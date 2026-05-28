@@ -25,6 +25,7 @@ public:
         size_t object_size,
         ByteRange requested,
         const FilesystemCacheSettings & cache_settings,
+        ThrottlerPtr local_throttler,
         std::shared_ptr<FilesystemCacheLog> cache_log,
         String source_file_path);
 
@@ -46,6 +47,13 @@ private:
     /// Size of the object itself (bytes_size from StoredObject).
     size_t object_size;
     FilesystemCacheSettings cache_settings;
+    /// Pipeline's local-read throttler, propagated into the per-segment
+    /// `createReadBufferFromFileBase` call in `get`. Carrying just the
+    /// throttler keeps the contract narrow — the cache-file `ReadSettings`
+    /// `get()` constructs is otherwise fully fixed (pread method,
+    /// external-buffer mode), so there's nothing else worth forwarding
+    /// from the caller's `ReadSettings`.
+    ThrottlerPtr local_throttler;
     std::shared_ptr<FilesystemCacheLog> cache_log;
     String source_file_path;
     ByteRange requested_range;
@@ -88,6 +96,7 @@ public:
         FileCachePtr cache_,
         const FilesystemCacheSettings & cache_settings_,
         const String & query_id_ = {},
+        ThrottlerPtr local_throttler_ = nullptr,
         std::shared_ptr<FilesystemCacheLog> cache_log_ = nullptr,
         std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
         std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt);
@@ -101,6 +110,11 @@ public:
 private:
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
+    /// Pipeline's local-read throttler, forwarded into each
+    /// `DiskCacheHandle` so cache-file reads in `get` honour
+    /// `max_local_read_bandwidth`. The pre-fix raw `pread` path bypassed
+    /// the throttler entirely.
+    ThrottlerPtr local_throttler;
     std::shared_ptr<FilesystemCacheLog> cache_log;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;

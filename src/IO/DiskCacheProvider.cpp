@@ -1,5 +1,6 @@
 #include <IO/DiskCacheProvider.h>
 
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <IO/ReadBufferFromFile.h>
@@ -9,11 +10,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <base/errnoToString.h>
 #include <chrono>
 #include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
 
 namespace DB
 {
@@ -66,6 +64,7 @@ DiskCacheHandle::DiskCacheHandle(
     size_t object_size_,
     ByteRange requested,
     const FilesystemCacheSettings & cache_settings_,
+    ThrottlerPtr local_throttler_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     String source_file_path_)
     : cache(std::move(cache_))
@@ -74,6 +73,7 @@ DiskCacheHandle::DiskCacheHandle(
     , object_file_offset(object_file_offset_)
     , object_size(object_size_)
     , cache_settings(cache_settings_)
+    , local_throttler(std::move(local_throttler_))
     , cache_log(std::move(cache_log_))
     , source_file_path(std::move(source_file_path_))
     , requested_range(requested)
@@ -258,35 +258,67 @@ Rope DiskCacheHandle::get(ByteRange range)
             continue;
         size_t overlap_size = overlap_end - overlap_start;
 
-        /// Read from local file. The segment is pinned by the holder, so the
-        /// file is guaranteed to exist for the lifetime of this handle; any
-        /// failure here is a hard I/O error (or external tampering), not a
-        /// race with eviction — throw rather than silently drop a hit that
-        /// `status()` already promised.
+        /// Read from local file via the standard `createReadBufferFromFileBase`
+        /// path so cache-hit reads pick up the same accounting the legacy
+        /// reader had: `max_local_read_bandwidth` (via
+        /// `local_read_settings.local_throttler`), `OpenedFileCache*` /
+        /// `ReadBufferFromFileDescriptorRead*` ProfileEvents, and any future
+        /// file-read instrumentation. The raw `::open`+`::pread` path skipped
+        /// all of this.
+        ///
+        /// Zero-copy: `buffer_size = 0` in `local_read_settings` means the
+        /// reader allocates no internal buffer. We `set(buf->data(), n)` to
+        /// rewire `working_buffer` at our `OwnedRopeBuffer` memory, and `next`
+        /// calls `pread` directly into it. Same memory shape as the previous
+        /// raw `::pread`, with the buffer wrapper around it.
+        ///
+        /// The segment is pinned by the holder, so the file is guaranteed to
+        /// exist for the lifetime of this handle; any failure here is a hard
+        /// I/O error (or external tampering), not a race with eviction —
+        /// throw rather than silently drop a hit that `status()` already
+        /// promised.
         String path = segment->getPath();
         size_t offset_in_file = overlap_start - seg_range.left;
 
         auto buf = std::make_shared<OwnedRopeBuffer>(overlap_size);
 
-        int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (fd < 0)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
-                "DiskCacheHandle::get: open({}) failed: {}", path, errnoToString());
+        /// Narrow per-call `ReadSettings`: everything is fixed except the
+        /// caller-supplied throttler. `buffer_size = 0` + external-buffer
+        /// drive below means the reader allocates no internal buffer and
+        /// `pread` writes directly into `buf->data()`. Same pattern as
+        /// legacy `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`
+        /// (see the long comment there for which fields are deliberately
+        /// NOT propagated and why).
+        ReadSettings cache_file_read_settings;
+        cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        cache_file_read_settings.local_fs_settings.buffer_size = 0;
+        cache_file_read_settings.local_throttler = local_throttler;
 
-        ssize_t bytes_read = ::pread(fd, buf->data(), overlap_size, offset_in_file);
-        int saved_errno = errno;
-        if (0 != ::close(fd))
-            LOG_WARNING(log, "DiskCacheHandle::get: close failed for {}: {}", path, errnoToString());
+        auto reader = createReadBufferFromFileBase(
+            path, cache_file_read_settings,
+            /*read_hint=*/std::nullopt,
+            /*file_size=*/std::nullopt,
+            segment->getFlagsForLocalRead());
 
-        if (bytes_read < 0)
+        reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
+
+        size_t copied = 0;
+        while (copied < overlap_size)
+        {
+            reader->set(buf->data() + copied, overlap_size - copied);
+            if (!reader->next())
+                break;  /// EOF — would mean status() promised a hit we can't honor
+            const size_t got = reader->available();
+            if (got == 0)
+                break;
+            reader->position() = reader->buffer().end();
+            copied += got;
+        }
+
+        if (copied != overlap_size)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "DiskCacheHandle::get: pread({}, size={}, offset={}) failed: {}",
-                path, overlap_size, offset_in_file, errnoToString(saved_errno));
-
-        if (static_cast<size_t>(bytes_read) != overlap_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "DiskCacheHandle::get: pread({}) short read: got {} bytes, expected {} at offset {}",
-                path, bytes_read, overlap_size, offset_in_file);
+                "DiskCacheHandle::get: short read from cache file {} at offset {}: got {}, expected {}",
+                path, offset_in_file, copied, overlap_size);
 
         /// Node's logical_offset is file-level — translate from object-local.
         result.append(RopeNode{
@@ -585,11 +617,13 @@ DiskCacheProvider::DiskCacheProvider(
     FileCachePtr cache_,
     const FilesystemCacheSettings & cache_settings_,
     const String & query_id_,
+    ThrottlerPtr local_throttler_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     std::optional<FileCacheKey> custom_cache_key_,
     std::optional<FileCacheOriginInfo> custom_origin_)
     : cache(std::move(cache_))
     , cache_settings(cache_settings_)
+    , local_throttler(std::move(local_throttler_))
     , cache_log(std::move(cache_log_))
     , custom_cache_key(std::move(custom_cache_key_))
     , custom_origin(std::move(custom_origin_))
@@ -616,6 +650,7 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
         object.bytes_size,
         range_in_file,
         cache_settings,
+        local_throttler,
         cache_log,
         object.remote_path);
 }

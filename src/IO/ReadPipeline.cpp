@@ -367,13 +367,19 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// executor queries `caches[0]` first, so reversing here matches that
     /// outer-first query order. Single-cache pipelines (the common case)
     /// are unaffected — reversing a one-element range is a no-op.
+    ///
+    /// Forward `local_throttler` so `DiskCacheHandle::get` honours
+    /// `max_local_read_bandwidth` on cache-hit reads; the rest of the
+    /// cache-file `ReadSettings` is fixed (synchronous pread, external
+    /// buffer) and constructed inside the handle. Pre-fix the raw `pread`
+    /// path in `get` skipped the throttler entirely.
     for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
     {
         const auto & dc = *it;
         if (dc.cache)
         {
             executor_caches.push_back(std::make_shared<DiskCacheProvider>(
-                dc.cache, dc.cache_settings, query_id, dc.cache_log,
+                dc.cache, dc.cache_settings, query_id, settings.local_throttler, dc.cache_log,
                 dc.custom_cache_key, dc.custom_origin));
         }
     }
