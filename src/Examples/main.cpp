@@ -60,6 +60,7 @@ std::pair<std::string_view, MainFunc> examples[] =
 #endif
     {"check_pointer_valid", mainEntryExampleCheckPointerValid},
     {"memory_tracker_benchmark", mainEntryExampleMemoryTrackerBenchmark},
+    {"rseq_vs_atomic_benchmark", mainEntryExampleRSeqVsAtomicBenchmark},
 #if USE_ICU
     {"utf8_upper_lower", mainEntryExampleUtf8UpperLower},
 #endif
