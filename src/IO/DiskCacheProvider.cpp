@@ -623,7 +623,13 @@ DiskCacheProvider::DiskCacheProvider(
     : cache(std::move(cache_))
     , cache_settings(cache_settings_)
     , local_throttler(std::move(local_throttler_))
-    , cache_log(std::move(cache_log_))
+    /// Honour `cache_settings.enable_log` (backed by `enable_filesystem_cache_log`)
+    /// the same way legacy `CachedOnDiskReadBufferFromFile` does at its line
+    /// `cache_log(cache_settings_.enable_log ? cache_log_ : nullptr)`. Without
+    /// this gate, the executor path writes `system.filesystem_cache_log` rows
+    /// even when the query explicitly disabled them, because the downstream
+    /// emission sites only check `if (cache_log)`.
+    , cache_log(cache_settings_.enable_log ? std::move(cache_log_) : nullptr)
     , custom_cache_key(std::move(custom_cache_key_))
     , custom_origin(std::move(custom_origin_))
 {
