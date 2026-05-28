@@ -14,3 +14,9 @@ test_constraints_t2	c2	CHECK	y < 100
 test_constraints_t2	c3	ASSUME	y > 0
 check_mem	CHECK	a != 0
 0
+tmp_constr	c_pos	CHECK	x > 0
+tmp_constr	c_small	ASSUME	x < 100
+test_constraints_regular	c_reg	CHECK	a > 10
+test_constraints_regular	c_reg	CHECK	a > 10
+tmp_constr	c_pos	CHECK	x > 0
+tmp_constr	c_small	ASSUME	x < 100

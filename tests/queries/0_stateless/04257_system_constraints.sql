@@ -113,3 +113,27 @@ FROM system.constraints
 WHERE database = currentDatabase() AND table = 'test_constraints_none';
 
 DROP TABLE test_constraints_none;
+
+-- Test temporary and regular table constraints are visible together
+CREATE TEMPORARY TABLE tmp_constr (x UInt8, CONSTRAINT c_pos CHECK x > 0, CONSTRAINT c_small ASSUME x < 100);
+
+SELECT table, name, type, expression
+FROM system.constraints
+WHERE table = 'tmp_constr'
+ORDER BY name;
+
+DROP TABLE IF EXISTS test_constraints_regular;
+CREATE TABLE test_constraints_regular (a UInt32, CONSTRAINT c_reg CHECK a > 10) ENGINE = MergeTree ORDER BY a;
+
+SELECT table, name, type, expression
+FROM system.constraints
+WHERE table = 'test_constraints_regular'
+ORDER BY name;
+
+SELECT table, name, type, expression
+FROM system.constraints
+WHERE table IN ('test_constraints_regular', 'tmp_constr')
+ORDER BY table, name;
+
+DROP TABLE test_constraints_regular;
+DROP TEMPORARY TABLE tmp_constr;

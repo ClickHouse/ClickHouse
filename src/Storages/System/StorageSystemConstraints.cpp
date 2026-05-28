@@ -74,7 +74,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (database_idx >= databases->size())
+        if (database_idx > databases->size())
             return {};
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
@@ -83,26 +83,59 @@ protected:
         const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
-        while (rows_count < max_block_size)
+
+        auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
-            if (tables_it && !tables_it->isValid())
-                ++database_idx;
+            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            if (!metadata_snapshot)
+                return;
+            const auto & constraints = metadata_snapshot->getConstraints();
+            if (constraints.empty())
+                return;
 
-            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
+            for (const auto & constraint_ast : constraints.getConstraints())
             {
-                database_name = databases->getDataAt(database_idx);
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                const auto * decl = constraint_ast->as<ASTConstraintDeclaration>();
+                if (!decl)
+                    continue;
 
-                if (database)
-                    break;
-                ++database_idx;
+                ++rows_count;
+
+                size_t src_index = 0;
+                size_t res_index = 0;
+
+                if (column_mask[src_index++])
+                    res_columns[res_index++]->insert(db_name);
+                if (column_mask[src_index++])
+                    res_columns[res_index++]->insert(tbl_name);
+                if (column_mask[src_index++])
+                    res_columns[res_index++]->insert(decl->name);
+                if (column_mask[src_index++])
+                    res_columns[res_index++]->insert(decl->type);
+                if (column_mask[src_index++])
+                    res_columns[res_index++]->insert(decl->expr->formatForLogging());
             }
+        };
 
-            if (database_idx >= databases->size())
-                break;
-
+        /// Phase 1: catalog databases
+        while (database_idx < databases->size() && rows_count < max_block_size)
+        {
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context);
+            {
+                while (database_idx < databases->size())
+                {
+                    database_name = databases->getDataAt(database_idx);
+                    database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                    if (database)
+                    {
+                        tables_it = database->getTablesIterator(context);
+                        break;
+                    }
+                    ++database_idx;
+                }
+                if (database_idx == databases->size())
+                    break;
+            }
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
@@ -115,37 +148,32 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-                if (!metadata_snapshot)
-                    continue;
-                const auto & constraints = metadata_snapshot->getConstraints();
-                if (constraints.empty())
-                    continue;
 
-                for (const auto & constraint_ast : constraints.getConstraints())
-                {
-                    const auto * decl = constraint_ast->as<ASTConstraintDeclaration>();
-                    if (!decl)
-                        continue;
-
-                    ++rows_count;
-
-                    size_t src_index = 0;
-                    size_t res_index = 0;
-
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(database_name);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(table_name);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(decl->name);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(decl->type);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(decl->expr->formatForLogging());
-                }
+                add_constraints(database_name, table_name, table);
             }
+
+            if (!tables_it->isValid())
+                ++database_idx;
         }
+
+        /// Phase 2: session temporary tables
+        if (database_idx == databases->size() && rows_count < max_block_size)
+        {
+            if (!external_tables_initialized)
+            {
+                external_tables_initialized = true;
+                if (context->hasSessionContext())
+                    external_tables = context->getSessionContext()->getExternalTables();
+                external_tables_it = external_tables.begin();
+            }
+
+            for (; rows_count < max_block_size && external_tables_it != external_tables.end(); ++external_tables_it)
+                add_constraints("", external_tables_it->first, external_tables_it->second);
+
+            if (external_tables_it == external_tables.end())
+                ++database_idx;
+        }
+
         return Chunk(std::move(res_columns), rows_count);
     }
 
@@ -158,6 +186,9 @@ private:
     DatabasePtr database;
     std::string database_name;
     DatabaseTablesIteratorPtr tables_it;
+    Tables external_tables;
+    Tables::const_iterator external_tables_it;
+    bool external_tables_initialized = false;
 };
 
 class ReadFromSystemConstraints : public SourceStepWithFilter
