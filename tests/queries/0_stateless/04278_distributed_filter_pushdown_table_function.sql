@@ -11,6 +11,7 @@
 SET enable_analyzer = 1;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET prefer_localhost_replica = 1;
+SET serialize_query_plan = 0;
 
 -- Correctness: filter should still match the right row on every shard.
 SELECT number
