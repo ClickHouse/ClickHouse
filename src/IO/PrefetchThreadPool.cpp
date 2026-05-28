@@ -78,25 +78,21 @@ std::unique_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()>
         [shared, t = std::move(task), thread_group = std::move(submitter_thread_group)]() mutable
     {
         SCOPE_EXIT({ CurrentMetrics::sub(CurrentMetrics::ReaderExecutorPrefetchInFlight); });
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFETCH_READER);
 
-        /// CAS first, BEFORE attaching to the submitter's `ThreadGroup`. If
-        /// `discardPrefetch` cancelled the task while it sat in the queue,
-        /// the worker must not walk the submitter's `MemoryTracker` parent
-        /// chain — by the time the worker picks up a cancelled task, the
-        /// submitter's `QueryScope` (and the group's parent chain) may have
-        /// already torn down. Use `std::runtime_error` rather than
-        /// `DB::Exception(LOGICAL_ERROR, ...)`: in debug builds the latter
-        /// aborts via `ABORT_ON_LOGICAL_ERROR`, and a cancelled-task pickup
-        /// is normal operation, not a logic bug.
         auto expected = PrefetchHandle::State::Queued;
         if (!shared->state.compare_exchange_strong(expected, PrefetchHandle::State::Running))
         {
+            /// Cancelled before we picked it up — set an exception so anyone
+            /// who (incorrectly) waits on the future gets a defined failure
+            /// rather than a hang on a broken promise. Use std::runtime_error
+            /// rather than DB::Exception(LOGICAL_ERROR, ...): in debug builds
+            /// the latter aborts via ABORT_ON_LOGICAL_ERROR, and this code
+            /// path is reachable in normal operation (not a logic bug).
             shared->promise.set_exception(std::make_exception_ptr(
                 std::runtime_error("PrefetchHandle: task was cancelled")));
             return;
         }
-
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFETCH_READER);
         try
         {
             shared->promise.set_value(t());
