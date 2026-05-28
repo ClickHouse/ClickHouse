@@ -941,6 +941,54 @@ def test_system_tables_with_nullptr_table(started_cluster):
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
+def test_delete_on_lazy_initialized_table(started_cluster):
+    """
+    Regression test for https://github.com/ClickHouse/ClickHouse/issues/96806.
+
+    Tables in a DataLakeCatalog database use lazy metadata initialization
+    (lazy_init=true), meaning the DataLake metadata is not loaded at table
+    construction time.  Prior to the fix, running ALTER TABLE ... DELETE (or
+    DELETE FROM ...) as the very first operation on such a table -- before any
+    SELECT had a chance to trigger metadata initialization -- resulted in a
+    LOGICAL_ERROR: 'Metadata is not initialized'.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_delete_lazy_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster, node, root_namespace, table_name, "(x String)"
+    )
+
+    # Insert rows without any prior SELECT so that metadata starts uninitialized.
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('keep');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('delete_me');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    # Run ALTER TABLE DELETE without a prior SELECT.  This is exactly the query
+    # that triggered LOGICAL_ERROR: 'Metadata is not initialized' before the fix.
+    node.query(
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` DELETE WHERE x = 'delete_me';",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    # Also exercise the DELETE FROM syntax (InterpreterDeleteQuery path).
+    node.query(
+        f"DELETE FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` WHERE x = 'keep';",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
+
+
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 

@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <base/sort.h>
+#include <base/scope_guard.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -411,8 +412,12 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
     }
 }
 
-template<typename Storage>
-void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
+template <typename Storage>
+void KeeperStorageSnapshot<Storage>::deserialize(
+    SnapshotDeserializationResult<Storage> & deserialization_result,
+    ReadBuffer & in,
+    KeeperContextPtr keeper_context,
+    bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     uint8_t version;
     readBinary(version, in);
@@ -997,6 +1002,12 @@ template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
     const auto & snapshot_info = *existing_snapshots.at(up_to_log_idx);
+    return deserializeSnapshotBufferFromDisk(snapshot_info);
+}
+
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const
+{
     WriteBufferFromNuraftBuffer writer;
     auto reader = snapshot_info.disk->readFile(snapshot_info.path, getReadSettings());
     copyData(*reader, writer);
@@ -1050,6 +1061,32 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     if (load_full_storage)
         result.storage->initializeSystemNodes();
     return result;
+}
+
+template<typename Storage>
+SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
+{
+    /// `nuraft::buffer::pos(0)` resets the cursor. This method must leave the
+    /// buffer at offset `0` on success and on throw.
+    SCOPE_EXIT({ buffer->pos(0); });
+
+    bool is_zstd_compressed = isZstdCompressed(buffer);
+
+    std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
+    std::unique_ptr<ReadBuffer> compressed_reader;
+
+    if (is_zstd_compressed)
+        compressed_reader = wrapReadBufferWithCompressionMethod(std::move(reader), CompressionMethod::Zstd);
+    else
+        compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
+
+    uint8_t version;
+    readBinary(version, *compressed_reader);
+    SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
+    if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
+
+    return deserializeSnapshotMetadata(*compressed_reader);
 }
 
 template<typename Storage>
