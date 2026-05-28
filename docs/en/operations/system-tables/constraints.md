@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 Contains information about existing constraints in all tables.
 
-Columns from [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in `system.constraints` only in the session where they were created. They are shown with an empty `database` field.
+Constraints defined on [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in `system.constraints` only in the session where they were created. They are shown with an empty `database` field.
 
 ## Columns {#columns}
 
