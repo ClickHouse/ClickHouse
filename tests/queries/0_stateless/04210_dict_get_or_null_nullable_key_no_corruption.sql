@@ -81,3 +81,35 @@ DROP TABLE t_73633_json;
 DROP TABLE t_73633_mt;
 DROP TABLE t_73633_memory;
 DROP DICTIONARY d_73633;
+
+-- Multi-attribute dictionary coverage. Single-attribute access on a
+-- multi-attribute dictionary goes through the same `wrapInNullable` path
+-- and exhibited the same corruption before the fix. Tuple-attribute
+-- access goes through a separate branch in `executeImpl`; tuple access
+-- with a `Nullable` key is currently rejected at type-resolution.
+CREATE DICTIONARY d_multi_73633 (id UInt64, a String, b UInt32)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(QUERY $$SELECT c1 AS id, c2 AS a, c3 AS b FROM VALUES((1, 'one', 1), (2, 'two', 2))$$))
+LAYOUT(FLAT()) LIFETIME(0);
+
+SELECT 'multi-attr dict, attr a, nullable key';
+SELECT x, dictGetOrNull('d_multi_73633', 'a', x) AS dx
+FROM (SELECT toNullable(arrayJoin([0, 1, 2])) AS x)
+ORDER BY x;
+
+SELECT 'multi-attr dict, attr b, nullable key';
+SELECT x, dictGetOrNull('d_multi_73633', 'b', x) AS dx
+FROM (SELECT toNullable(arrayJoin([0, 1, 2])) AS x)
+ORDER BY x;
+
+SELECT 'multi-attr dict, tuple-attr access, non-nullable key';
+SELECT x, dictGetOrNull('d_multi_73633', ('a', 'b'), x) AS dx
+FROM (SELECT arrayJoin([toUInt64(0), 1, 2]) AS x)
+ORDER BY x;
+
+SELECT 'multi-attr dict, tuple-attr access, nullable key (unsupported)';
+SELECT x, dictGetOrNull('d_multi_73633', ('a', 'b'), x) AS dx
+FROM (SELECT toNullable(arrayJoin([0, 1, 2])) AS x)
+ORDER BY x; -- { serverError UNSUPPORTED_METHOD }
+
+DROP DICTIONARY d_multi_73633;
