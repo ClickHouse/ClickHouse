@@ -621,9 +621,8 @@ bool WriteBufferFromS3::completeMultipartUpload()
                 ErrorCodes::LOGICAL_ERROR,
                 "Failed to complete multipart upload. No parts have uploaded");
 
-    for (size_t i = 0; i < multipart_tags.size(); ++i)
+    for (const auto & tag : multipart_tags)
     {
-        const auto tag = multipart_tags.at(i);
         if (tag.empty())
         {
             // One of the earlier uploads failed.
