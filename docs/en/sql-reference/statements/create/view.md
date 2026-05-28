@@ -146,9 +146,9 @@ Materialized views in ClickHouse are implemented more like insert triggers. If t
 
 Materialized views in ClickHouse do not have deterministic behaviour in case of errors. This means that blocks that had been already written will be preserved in the destination table, but all blocks after error will not.
 
-By default, if pushing to one of the views throws, the `INSERT` query fails. Whether the block has already reached the source table by that point is not guaranteed — it depends on insert pipeline timing, not on the view error.
+By default, if pushing to one of the views throws, the `INSERT` query fails. Whether the block has already reached the source table by that point is not guaranteed — it depends on insert pipeline timing, not on the view error. Retry the failed `INSERT` with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) to get exactly-once delivery to the source table and all dependent views.
 
-Setting `materialized_views_ignore_errors=true` on the `INSERT` query only changes error reporting: the view error is logged as a warning and the `INSERT` succeeds. The block still does not appear in that view's destination table, but the source table receives it as usual. To get exactly-once delivery to the views, retry the `INSERT` with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`).
+Setting `materialized_views_ignore_errors=true` on the `INSERT` query only changes error reporting: each view error is logged as a warning and the `INSERT` query succeeds. Delivery to the failing view's destination is partial — blocks processed before the exception are kept, and the failing block plus any subsequent blocks are dropped from that view. Views downstream of that destination see only the blocks that did arrive, so their delivery is partial too. Sibling views (and their downstream chains) that did not throw are written to in full, and the source table is written to as usual. Because the `INSERT` reports success, the client gets no failure signal and no automatic retry is triggered; use this setting only when source-table writes must not be blocked by view-side problems (for example, `system.*_log` tables).
 
 `materialized_views_ignore_errors` is `true` by default for `system.*_log` tables.
 :::
