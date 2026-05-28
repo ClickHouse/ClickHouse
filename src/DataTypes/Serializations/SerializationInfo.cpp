@@ -308,7 +308,9 @@ void SerializationInfo::toJSON(Poco::JSON::Object & object) const
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
-    /// Skip emitting the key when false so pre-flag readers stay forward-compatible.
+    /// Only emit the key when true: a missing key reads back as `false` (see `fromJSON`),
+    /// so writing `"exact_num_defaults": false` would just add noise to `serialization.json`
+    /// for parts that don't carry exact counts.
     if (data.exact_num_defaults)
         object.set(KEY_EXACT_NUM_DEFAULTS, true);
 }
