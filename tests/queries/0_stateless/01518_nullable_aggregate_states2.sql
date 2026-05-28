@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS testNullableStates;
 DROP TABLE IF EXISTS testNullableStatesAgg;
 
