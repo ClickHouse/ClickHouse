@@ -589,6 +589,7 @@ struct UpdateNodeStatDelta
         , new_stats(node.stats)
         , old_num_children(node.num_children)
         , new_num_children(node.num_children)
+        , old_destroy_time(node.destroy_time)
     {}
 
     NodeStats old_stats;
@@ -596,6 +597,10 @@ struct UpdateNodeStatDelta
     int32_t old_num_children;
     int32_t new_num_children;
     int32_t version{-1};
+    /// Snapshot of destroy_time at delta construction so a rollback can restore
+    /// it. Without this a failed Multi after a Set would leak the refreshed TTL
+    /// deadline into uncommitted_state.
+    std::optional<int64_t> old_destroy_time;
     std::optional<int64_t> new_destroy_time;
 };
 
@@ -992,6 +997,8 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
                 node->invalidateDigestCache();
                 node->stats = operation.old_stats;
                 node->num_children = operation.old_num_children;
+                /// Pair with apply, which may have refreshed destroy_time.
+                node->destroy_time = operation.old_destroy_time;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
@@ -1845,6 +1852,18 @@ std::list<KeeperStorageBase::Delta> preprocess(
     if (!fixupACL(zk_request.acls, session_id, storage.uncommitted_state, keeper_context.shouldBlockACL(), node_acls))
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZINVALIDACL}};
 
+    /// Validate TTL flags BEFORE mutating uncommitted_state to avoid orphan
+    /// ephemeral entries on rejected requests (e.g. inside a failed `Multi`).
+    if (zk_request.include_ttl)
+    {
+        if (zk_request.is_ephemeral)
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+        /// Reject non-positive or unbounded TTL — matches ZK's MAX_TTL bound and
+        /// prevents `time + ttl` overflow when computing destroy_time.
+        if (zk_request.ttl <= 0 || zk_request.ttl > MAX_KEEPER_TTL_MS)
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
+    }
+
     if (zk_request.is_ephemeral)
         storage.uncommitted_state.ephemerals[session_id].emplace(path_created);
 
@@ -1876,8 +1895,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.aversion = 0;
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
-    if (zk_request.include_ttl && zk_request.is_ephemeral)
-        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     std::optional<int64_t> destroy_time = std::nullopt;
     if (zk_request.include_ttl)
@@ -2034,6 +2051,11 @@ processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & sto
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
+    /// The internal TTL garbage collector session has no ACLs and is server-issued;
+    /// it must be allowed to expire a node regardless of user-level Delete ACLs.
+    if (zk_request.try_remove && session_id == keeper_internal_ttl_garbage_collector_session_id)
+        return true;
+
     if (auto check_node_acl = storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove];
         check_node_acl && !storage.checkACL(zk_request.getPath(), Coordination::ACL::Delete, session_id, is_local, !is_local))
     {
@@ -4525,6 +4547,10 @@ uint64_t KeeperStorage<Container>::getNodesCount() const
 template<typename Container>
 std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const
 {
+    /// `ttl_paths` and `container` are mutated by commit under exclusive
+    /// `storage_mutex`. Take it shared to read them consistently.
+    std::shared_lock storage_lock(storage_mutex);
+
     std::vector<String> expired_nodes;
     std::unordered_map<String, Int32> versions;
 

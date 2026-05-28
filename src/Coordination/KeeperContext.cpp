@@ -591,6 +591,19 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
     }
 
+    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
+    /// V8. Enabling CREATE_TTL with an older write version would silently turn
+    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
+    {
+        const uint64_t write_version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
+        if (write_version < SnapshotVersion::V8)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
+                "Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<int>(SnapshotVersion::V8), write_version);
+    }
+
     feature_flags.logFlags(getLogger("KeeperContext"));
 }
 

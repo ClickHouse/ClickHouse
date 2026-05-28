@@ -277,11 +277,22 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
     int32_t flags_read = 0;
     Coordination::read(flags_read, in);
 
+    /// include_stats / include_ttl may already be set from the opnum (Create2 / CreateTTL).
+    /// We must not lose include_stats when reclassifying, and we must reject combinations
+    /// that disagree with the wire create-mode (e.g. Create2 carrying a TTL flag would
+    /// otherwise pass feature-gating as Create2 yet create a TTL node here).
+    const bool from_create_ttl_opnum = include_ttl;
     is_ephemeral = false;
     is_sequential = false;
     include_ttl = false;
 
-    /// org.apache.zookeeper.CreateMode.fromFlag.
+    /// org.apache.zookeeper.CreateMode.fromFlag — reject unknown flags rather than
+    /// silently treating them as PERSISTENT.
+    if (flags_read < static_cast<int32_t>(CreateMode::PERSISTENT)
+        || flags_read > static_cast<int32_t>(CreateMode::PERSISTENT_SEQUENTIAL_WITH_TTL))
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "Unknown create mode flag {}", flags_read);
+
     auto flags = static_cast<CreateMode>(flags_read);
     switch (flags)
     {
@@ -307,6 +318,16 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
             is_sequential = true;
             break;
     }
+
+    /// Opnum says TTL but create-mode flag says otherwise, or vice versa. Refuse both.
+    if (from_create_ttl_opnum != include_ttl)
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "CreateTTL opnum and create-mode flag disagree on TTL");
+
+    /// Create2 sets include_stats; that must not coexist with a TTL create mode.
+    if (include_stats && include_ttl)
+        throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+            "Create2 must not carry a TTL create-mode flag");
 
     if (include_ttl)
         Coordination::read(ttl, in);
