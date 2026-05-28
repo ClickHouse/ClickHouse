@@ -38,13 +38,13 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     IAsynchronousReader & reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
-    : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_settings.buffer_size)
+    : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , base_priority(settings_.priority)
     , impl(std::move(impl_))
-    , prefetch_buffer(settings_.remote_fs_settings.buffer_size)
+    , prefetch_buffer(settings_.remote_fs_buffer_size)
     , read_until_position(impl->getFileSize())
-    , use_prefetch(settings_.remote_fs_settings.prefetch)
+    , use_prefetch(settings_.remote_fs_prefetch)
     , log(getLogger("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);

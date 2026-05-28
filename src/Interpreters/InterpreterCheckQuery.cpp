@@ -24,7 +24,6 @@
 #include <Interpreters/ProcessList.h>
 
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTCheckDatabaseQuery.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
@@ -174,7 +173,7 @@ private:
 };
 
 /// Sends TableCheckTask to workers
-class TableCheckSource final : public ISource
+class TableCheckSource : public ISource
 {
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
@@ -290,7 +289,7 @@ private:
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
-class TableCheckWorkerProcessor final : public ISimpleTransform
+class TableCheckWorkerProcessor : public ISimpleTransform
 {
 public:
     TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
@@ -339,7 +338,7 @@ private:
 
 /// Accumulates all results and returns single value
 /// Used when settings.check_query_single_value_result is true
-class TableCheckResultEmitter final : public IAccumulatingTransform
+class TableCheckResultEmitter : public IAccumulatingTransform
 {
 public:
     explicit TableCheckResultEmitter(SharedHeader input_header)
@@ -396,7 +395,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 static Strings getAllDatabases(const ContextPtr & context)
 {
     Strings res;
-    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     res.reserve(databases.size());
     for (const auto & [database_name, _] : databases)
     {
@@ -418,11 +417,8 @@ BlockIO InterpreterCheckQuery::execute()
     bool is_table_name_in_output = false;
     if (const auto * check_query = query_ptr->as<ASTCheckTableQuery>())
     {
-        /// Check specific table. Use `ResolveAll` so that an unqualified name
-        /// prefers a `TEMPORARY` table over a permanent one of the same name,
-        /// matching the scoping precedence of `SHOW CREATE TABLE` and
-        /// `DESCRIBE TABLE` introduced in #100966.
-        auto table_id = context->resolveStorageID(*check_query);
+        /// Check specific table
+        auto table_id = context->resolveStorageID(*check_query, Context::ResolveOrdinary);
         auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context);
         worker_source = std::make_shared<TableCheckSource>(table_check_task, log);
         worker_source->addTotalRowsApprox(table_check_task->size());
@@ -434,17 +430,6 @@ BlockIO InterpreterCheckQuery::execute()
         auto databases = getAllDatabases(context);
         LOG_DEBUG(log, "Checking {} databases", databases.size());
         worker_source = std::make_shared<TableCheckSource>(databases, context, log);
-    }
-    else if (const auto * check_database_query = query_ptr->as<ASTCheckDatabaseQuery>())
-    {
-        /// Check specific database
-        const auto & database_name = check_database_query->getDatabase();
-        LOG_DEBUG(log, "Checking database name = {} ", database_name);
-        context->checkAccess(AccessType::CHECK, database_name);
-        auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        database->checkDatabase();
-        BlockIO res;
-        return res;
     }
     else
     {

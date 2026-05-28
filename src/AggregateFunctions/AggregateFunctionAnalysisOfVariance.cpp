@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
 

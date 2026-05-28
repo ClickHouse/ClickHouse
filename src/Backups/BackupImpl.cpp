@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
-#include <Core/UUID.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>

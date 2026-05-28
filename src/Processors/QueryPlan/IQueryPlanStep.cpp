@@ -1,12 +1,9 @@
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Common/CurrentThread.h>
+
 #include <fmt/format.h>
 
 namespace DB
@@ -47,7 +44,7 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     dataflow_cache_updater = std::move(updater);
 }
 
-IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/)
+IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
@@ -59,7 +56,7 @@ bool IQueryPlanStep::canRemoveColumnsFromOutput() const
 
 bool IQueryPlanStep::hasCorrelatedExpressions() const
 {
-    return false;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check {} plan step for correlated expressions", getName());
 }
 
 const SharedHeader & IQueryPlanStep::getOutputHeader() const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/assert_cast.h>
+#include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
@@ -37,7 +38,6 @@ public:
 
     /// Splits the posting list into posting_list_block_size-large blocks and encodes each block separately.
     /// Also collects per-segment metadata into info and returns it to the caller (TokenPostingsInfo).
-    /// Appends a per-block Index Section after each segment for lazy cursor support.
     virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
     /// Reads an encoded posting list, decodes it, and returns a posting list.
@@ -49,7 +49,6 @@ private:
 class PostingListCodecFactory : public boost::noncopyable
 {
 public:
-    static std::unique_ptr<IPostingListCodec> createPostingListCodec(IPostingListCodec::Type type);
     static std::unique_ptr<IPostingListCodec> createPostingListCodec(std::string_view codec_name, const String & caller_name);
 };
 
