@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -100,7 +101,8 @@ void StorageObjectStorageConfiguration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    const StorageID * table_id)
+    const StorageID * table_id,
+    LoadingStrictnessLevel mode)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -132,11 +134,15 @@ void StorageObjectStorageConfiguration::initialize(
         /// which already has an internal compression codec. Wrapping the data file with an
         /// outer codec via `compression_method` is silently ignored on the Iceberg write
         /// path, while still applied on read, yielding files the engine cannot read back.
-        /// For other data lake formats (DeltaLake, Hudi, Paimon) the outer wrapping
+        /// For other data lake formats (`DeltaLake`, `Hudi`, `Paimon`) the outer wrapping
         /// breaks compatibility with external readers. See issue #105644.
         String compression_method_lower = configuration_to_initialize.compression_method;
         boost::algorithm::to_lower(compression_method_lower);
-        if (!compression_method_lower.empty()
+        /// Gate the rejection on `mode < ATTACH` so existing tables created before this
+        /// validation landed can still attach after upgrade. The canonicalization below
+        /// runs unconditionally so attached tables also benefit from the lowercase fix.
+        if (mode < LoadingStrictnessLevel::ATTACH
+            && !compression_method_lower.empty()
             && compression_method_lower != "auto"
             && compression_method_lower != "none")
         {
@@ -149,7 +155,7 @@ void StorageObjectStorageConfiguration::initialize(
         }
         /// Canonicalize: downstream `chooseCompressionMethod` callers compare `hint` to
         /// the lowercase literals `auto`/`none` case-sensitively. Without this assignment,
-        /// inputs like `AUTO`/`None` would pass this CREATE TIME check but later throw
+        /// inputs like `AUTO`/`None` would pass the CREATE check but later throw
         /// `Unknown compression method` from read/write paths.
         configuration_to_initialize.compression_method = compression_method_lower;
     }

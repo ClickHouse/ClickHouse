@@ -23,6 +23,8 @@ TABLES=(
     "${TABLE_PREFIX}_auto"
     "${TABLE_PREFIX}_auto_upper"
     "${TABLE_PREFIX}_none_mixed"
+    "${TABLE_PREFIX}_attach_lzma"
+    "${TABLE_PREFIX}_attach_gzip"
 )
 
 for table in "${TABLES[@]}"; do
@@ -78,7 +80,31 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_none_mixed"
 
+# 8 / 9. `ATTACH` path: existing tables persisted before this validation landed can
+#        carry a non-default `compression_method` in their metadata. The rejection
+#        above must be gated on `LoadingStrictnessLevel < ATTACH` so server restart
+#        and explicit `ATTACH` can still load such tables. We use the deprecated
+#        Ordinary engine because the Atomic engine forbids the full-spec
+#        `ATTACH TABLE name (cols) ENGINE = ...` form used to simulate a metadata
+#        replay. For each table we count occurrences of the rejection error; the
+#        expected count is 0 (rejection did not fire).
+ORD_DB="${TABLE_PREFIX}_ord"
+${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
+    CREATE DATABASE ${ORD_DB} ENGINE = Ordinary
+"
+
+${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
+    ATTACH TABLE ${ORD_DB}.t_attach_lzma (c0 Int)
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_lzma', 'Parquet', 'lzma')
+" 2>&1 | grep -c "not supported by data lake engines" || true
+
+${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
+    ATTACH TABLE ${ORD_DB}.t_attach_gzip (c0 Int)
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_gzip', 'Parquet', 'gzip')
+" 2>&1 | grep -c "not supported by data lake engines" || true
+
 # Cleanup.
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${ORD_DB} SYNC"
 for table in "${TABLES[@]}"; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${table}"
     rm -rf "${USER_FILES_PATH:?}/${table}"

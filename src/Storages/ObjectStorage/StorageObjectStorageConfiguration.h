@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
@@ -86,12 +87,16 @@ public:
     using Paths = std::vector<Path>;
 
     /// Initialize configuration from either AST or NamedCollection.
+    /// `mode` distinguishes a fresh `CREATE TABLE` from `ATTACH`/server-startup paths; some
+    /// validations (for example the data lake `compression_method` rejection) only apply at
+    /// CREATE TIME so that pre-existing metadata can still be attached after upgrade.
     static void initialize(
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        const StorageID * table_id = nullptr);
+        const StorageID * table_id = nullptr,
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
