@@ -766,8 +766,12 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
     if (distributed_plan.stages.size() == 1)
     {
-        /// For now just replace the plan with the first and only fragment
+        /// For now just replace the plan with the first and only fragment, but preserve
+        /// table locks and storage holders accumulated during planning.
+        QueryPlanResourceHolder preserved_resources = std::move(resources);
         *this = std::move(distributed_plan.stages.begin()->second.query_plan_fragment);
+        /// QueryPlanResourceHolder's move-assignment appends rhs into lhs without dropping existing entries.
+        resources = std::move(preserved_resources);
 
         QueryPlanOptimizationSettings local_settings = optimization_settings;
         local_settings.make_distributed_plan = false;
@@ -856,7 +860,11 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         read_from_distributed.addStep(std::make_unique<ReadFromPreparedSource>(std::move(inputs)));
 
+        /// Preserve original table locks and storage holders across the move-assign
+        /// so the final pipeline keeps the tables referenced by serialized fragments alive.
+        QueryPlanResourceHolder preserved_resources = std::move(resources);
         *this = std::move(read_from_distributed);
+        resources = std::move(preserved_resources);
 
         /// Add temporary files cleaner to the resources so that all temporary files are removed after the pipeline is executed
         if (final_result_exchange.kind == ExchangeDescription::Kind::Persisted)
