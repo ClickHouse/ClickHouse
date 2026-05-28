@@ -4,6 +4,8 @@
 
 #include <Common/Exception.h>
 
+#include <base/scope_guard.h>
+
 #include <Poco/Exception.h>
 #include <Poco/Net/StreamSocket.h>
 
@@ -42,6 +44,7 @@ void FiberStreamSocketImpl::connect(const Poco::Net::SocketAddress & address, co
 {
     init(address.af());
     setBlocking(false);
+    SCOPE_EXIT({ setBlocking(true); });
 
     int r = ::connect(sockfd(), address.addr(), address.length());
     if (r < 0)
