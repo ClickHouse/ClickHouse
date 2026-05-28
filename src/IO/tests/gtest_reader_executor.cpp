@@ -1532,6 +1532,40 @@ TEST(ReaderExecutor, LiveBufferReacquiredAfterSeekBackFromEof)
         << "slot must be re-acquired after backward seek + read";
 }
 
+TEST(ReaderExecutor, SeekClosesStaleLiveBufferEvenWithoutReadFromSource)
+{
+    /// Regression: `seek` used to defer closing a stale `live_buffer` to
+    /// `readFromSource`. If the next window was fully cache-served (or just
+    /// nothing was read after seek), the old connection — and its
+    /// `SourceBufferLimit` slot — stayed open until EOF or executor
+    /// destruction, burning `max_remote_read_connections` capacity.
+    String content_a(2000, 'A');
+    String content_b(2000, 'B');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"a", content_a}, {"b", content_b}});
+
+    StoredObjects objects;
+    objects.emplace_back("a", "", 2000);
+    objects.emplace_back("b", "", 2000);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// Read from object "a" — opens a live buffer + acquires a slot.
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 500u);
+    EXPECT_EQ(limit->getActive().size(), 1u);
+
+    /// Seek into object "b". No read afterwards — the stale connection to
+    /// "a" must be closed by `seek` itself, not by a future `readFromSource`.
+    executor.seek(2500);
+    EXPECT_EQ(limit->getActive().size(), 0u)
+        << "stale live buffer + slot must be released by seek when the "
+           "target is in a different object";
+}
+
 TEST(ReaderExecutor, LiveBufferClosedOnSeek)
 {
     TestThreadGroup tg;

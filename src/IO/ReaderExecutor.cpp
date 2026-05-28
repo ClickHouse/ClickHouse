@@ -738,16 +738,37 @@ void ReaderExecutor::seek(size_t new_position)
     }
 
     discardPrefetch();
+
+    const size_t new_physical = new_position + data_start_offset;
+    size_t new_obj_file_offset = 0;
+    const StoredObject * new_obj = offset_map.findObjectAt(new_physical, &new_obj_file_offset);
+
     /// `pre_acquired_slot` is keyed to the old object. Drop it when the new
     /// position lands in a different (or no) object — pairs with the
     /// path-mismatch reset in `readFromSource`.
-    if (const auto * new_obj = offset_map.findObjectAt(new_position + data_start_offset))
-        releaseStalePreAcquiredSlot(new_obj->remote_path);
-    else
-        releaseStalePreAcquiredSlot(String{});
-    /// `over_read_buffer` is paired with the live connection's position; the
-    /// upcoming source-read will not continue from `live_buffer`, so the
-    /// speculative bytes can no longer be reused.
+    releaseStalePreAcquiredSlot(new_obj ? new_obj->remote_path : String{});
+
+    /// Reset `live_buffer` when the seek target no longer continues from it.
+    /// `readFromSource` does the same check, but a cache-hit path skips that
+    /// branch entirely — without resetting here the stale connection (and
+    /// its `SourceBufferSlot`) would stay open until EOF or destruction,
+    /// burning `max_remote_read_connections` capacity.
+    if (live_buffer)
+    {
+        const bool live_continues = new_obj
+            && live_buffer->slot.objectPath() == new_obj->remote_path
+            && live_buffer->current_position == new_physical - new_obj_file_offset;
+        if (!live_continues)
+        {
+            LOG_TRACE(log, "seek: live buffer for {} (at {}) no longer matches target, closing",
+                live_buffer->slot.objectPath(), live_buffer->current_position);
+            live_buffer.reset();
+        }
+    }
+
+    /// `over_read_buffer` is paired with the live connection's position;
+    /// even if `live_buffer` survives, the speculative bytes are scoped to
+    /// the previous window.
     over_read_buffer = {};
     position = new_position;
     reached_eof = false;
