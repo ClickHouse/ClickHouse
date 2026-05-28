@@ -535,15 +535,12 @@ void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
         return;
 
     /// Resolve the share's bucket once per column on this reader and remember it.
-    /// `column_name_in_storage` is `NameAndTypePair::getNameInStorage()` on a stable
-    /// `NameAndTypePair` in `columns_to_read`, so its address is constant for the
-    /// reader's lifetime -- pointer-equality is enough as a cache key and avoids a
-    /// per-call string compare.
-    if (cached_share_bucket.column_name_key != &column_name_in_storage)
+    if (!cached_share_bucket.initialized || cached_share_bucket.column_name_key != column_name_in_storage)
     {
-        cached_share_bucket.column_name_key = &column_name_in_storage;
+        cached_share_bucket.column_name_key = column_name_in_storage;
         cached_share_bucket.bucket = sparse_offsets_share->findBucket(
             data_part_info_for_read->getPartName(), column_name_in_storage);
+        cached_share_bucket.initialized = true;
     }
 
     if (!cached_share_bucket.bucket)

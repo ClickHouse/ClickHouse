@@ -171,14 +171,12 @@ protected:
     /// Per-reader cache of the share's `(part, column)` lookup result. The reader is
     /// scoped to one part and re-reads the same column thousands of times, so resolving
     /// the bucket pointer once and reusing it skips the share's `SharedMutex` on every
-    /// slice call. The match key is the *address* of the column name `String` returned
-    /// from `NameAndTypePair::getNameInStorage()`; that string lives inside the reader's
-    /// `columns_to_read` and its address is stable for the reader's lifetime, so pointer
-    /// equality is enough and avoids a per-call string compare.
+    /// slice call.
     struct SharedBucketCacheEntry
     {
-        const String * column_name_key = nullptr;
+        String column_name_key;
         const SparseOffsetsShare::Bucket * bucket = nullptr;
+        bool initialized = false;
     } cached_share_bucket;
 
     /// Next part-row position the reader will read at when `continue_reading=true`.
