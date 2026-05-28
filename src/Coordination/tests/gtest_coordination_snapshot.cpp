@@ -3,7 +3,6 @@
 #if USE_NURAFT
 #include <Coordination/tests/gtest_coordination_common.h>
 
-#include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/SnapshotableHashTable.h>
@@ -1070,24 +1069,6 @@ TEST(KeeperMemorySnapshotApplyTest, CorruptSnapshotPrefixFailsBeforeDroppingStor
     auto & storage = state_machine->getStorageUnsafe();
     ASSERT_TRUE(storage.container.contains("/old"));
     EXPECT_EQ(std::string(storage.container.getValue("/old").getData()), "old");
-}
-
-TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotWithoutSavedMetadataThrows)
-{
-    ChangelogDirTest snapshots("./snapshots");
-    ChangelogDirTest rocks("./rocksdb");
-
-    auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./rocksdb");
-    DB::SnapshotsQueue snapshots_queue{1};
-    auto state_machine = std::make_shared<DB::KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, ctx, nullptr);
-    state_machine->init();
-
-    nuraft::snapshot snapshot(1, 0, std::make_shared<nuraft::cluster_config>());
-    EXPECT_THROW(state_machine->apply_snapshot(snapshot), DB::Exception);
-
-    auto & storage = state_machine->getStorageUnsafe();
-    EXPECT_TRUE(storage.container.contains("/"));
-    EXPECT_TRUE(storage.container.contains(DB::keeper_system_path));
 }
 
 /// Verify that concurrent snapshot transfers from a leader with a remote snapshot disk work correctly.

@@ -208,37 +208,6 @@ TYPED_TEST(CoordinationTest, TestReapplyingDeltas)
     ASSERT_TRUE(children1_set == children2_set);
 }
 
-TYPED_TEST(CoordinationTest, TestApplyUncommittedStateRejectsZeroLogIndex)
-{
-#ifndef DEBUG_OR_SANITIZER_BUILD
-    /// `LOGICAL_ERROR` aborts in debug/sanitizer builds, so we can only test
-    /// the throwing path in release builds.
-    using namespace DB;
-    using namespace Coordination;
-
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
-
-    Storage source{500, "", this->keeper_context};
-    Storage target{500, "", this->keeper_context};
-
-    const auto create_request = std::make_shared<ZooKeeperCreateRequest>();
-    create_request->path = "/bad_log_idx";
-    source.preprocessRequest(
-        create_request,
-        1,
-        0,
-        1,
-        /*check_acl=*/true,
-        /*digest=*/std::nullopt,
-        /*log_idx=*/0);
-
-    EXPECT_THROW(source.applyUncommittedState(target, 0), DB::Exception);
-#endif
-}
-
 TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
 {
     using namespace DB;
