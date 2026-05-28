@@ -1,3 +1,8 @@
+-- Tags: no-old-analyzer
+-- The fix lives in the new analyzer (`createUniqueAliasesIfNecessary`); the old
+-- analyzer rejects the AST-fuzzer query shape with `UNKNOWN_IDENTIFIER` before
+-- reaching the planner, so the bug cannot manifest there.
+--
 -- Regression test for the chronic AST-fuzzer / serverfuzz exception
 --   Logical error: 'Column identifier dummy is already registered'
 -- (STID 4697-4326, issue ClickHouse/ClickHouse#104877).
@@ -8,7 +13,7 @@
 -- no __tableN aliases. prepareBuildQueryPlanForTableExpression registered the
 -- bare column name for the wrapping QueryNode, and CollectSourceColumnsVisitor
 -- then tried to register the same bare name for the inner TableNode, throwing
--- LOGICAL_ERROR.
+-- the exception.
 --
 -- The merged fix family for the same error message (#100770, #101048, #101051,
 -- #101104) addressed UNION ALL / additional_result_filter paths but did not
