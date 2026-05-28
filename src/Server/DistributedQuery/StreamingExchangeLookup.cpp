@@ -7,7 +7,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {

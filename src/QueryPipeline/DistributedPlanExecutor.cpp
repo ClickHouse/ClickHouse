@@ -18,6 +18,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Processors/Sources/NativeCompressedSource.h>
 #include <Planner/Utils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
@@ -128,9 +130,9 @@ public:
 private:
     ObjectStoragePtr object_storage;
     const String object_storage_path;
-    const std::unordered_set<String> input_temporary_files;
-    const std::unordered_set<String> output_temporary_files;
-    std::vector<std::unique_ptr<WriteBuffer>> write_buffers;
+    const std::unordered_set<String> input_temporary_files; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::unordered_set<String> output_temporary_files; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<std::unique_ptr<WriteBuffer>> write_buffers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     LoggerPtr logger = getLogger("TemporaryFilesInObjectStorage");
 };
 
@@ -213,7 +215,7 @@ private:
     String name;
     std::mutex mutex;
     std::condition_variable has_data;
-    std::deque<Chunk> chunks;
+    std::deque<Chunk> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 using InMemoryExchangePtr = std::shared_ptr<InMemoryExchange>;
@@ -239,9 +241,9 @@ public:
     }
 
 private:
-    using InMemoryExchangeMap = std::unordered_map<String, InMemoryExchangePtr>;
+    using InMemoryExchangeMap = std::unordered_map<String, InMemoryExchangePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    std::unordered_map<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, InMemoryExchangeMap> exchanges_by_query_id TSA_GUARDED_BY(mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::mutex mutex;
 };
 
@@ -321,7 +323,7 @@ class AllKindsExchangeLookup : public IExchangeLookup
 {
 public:
     AllKindsExchangeLookup(
-        const std::unordered_map<String, ExchangeDescription> & exchanges_,
+        const std::unordered_map<String, ExchangeDescription> & exchanges_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
         ExchangeLookupPtr persistent_exchange_lookup_,
         ExchangeLookupPtr streaming_exchange_lookup_)
         : exchanges(exchanges_)
@@ -359,7 +361,7 @@ public:
     }
 
 private:
-    const std::unordered_map<String, ExchangeDescription> exchanges;
+    const std::unordered_map<String, ExchangeDescription> exchanges; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     ExchangeLookupPtr persistent_exchange_lookup;
     ExchangeLookupPtr streaming_exchange_lookup;
 };
@@ -405,7 +407,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     const String object_storage_path;
-    const std::unordered_set<String> temporary_files;
+    const std::unordered_set<String> temporary_files; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 std::shared_ptr<ICustomResourceHolder> makeTemporaryFilesCleaner(ObjectStoragePtr object_storage_, const String & object_storage_path_, const Strings & temporary_files_)
@@ -424,7 +426,7 @@ TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storag
 
 ExchangeLookupPtr createExchangeLookup(
     const String & query_id,
-    const std::unordered_map<String, ExchangeDescription> & exchanges_,
+    const std::unordered_map<String, ExchangeDescription> & exchanges_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context)
@@ -649,7 +651,7 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
-        std::vector<std::future<void>> started_tasks;
+        std::vector<std::future<void>> started_tasks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         started_tasks.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
@@ -692,7 +694,7 @@ protected:
     }
 
 private:
-    std::unordered_map<String, std::vector<std::future<void>>> stage_tasks;
+    std::unordered_map<String, std::vector<std::future<void>>> stage_tasks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 
@@ -861,7 +863,7 @@ protected:
         /// `checkStatusFunc` threads can observe `is_cancelled` and exit.
         void cancel()
         {
-            std::vector<RunningTaskInfo> tasks_to_cancel;
+            std::vector<RunningTaskInfo> tasks_to_cancel; // STYLE_CHECK_ALLOW_STD_CONTAINERS
             {
                 std::lock_guard g(lock);
                 for (auto & [stage_name, started_tasks] : stage_tasks)
@@ -1037,7 +1039,7 @@ protected:
         struct StageInfo
         {
             const String name;
-            std::deque<String> tasks_to_check;  /// Queue of the tasks from this stage that are not finished and are not being checked at the moment
+            std::deque<String> tasks_to_check;  /// Queue of the tasks from this stage that are not finished and are not being checked at the moment // STYLE_CHECK_ALLOW_STD_CONTAINERS
             Int64 started_tasks = 0;
             Int64 finished_tasks = 0;
             std::promise<void> promise;
@@ -1051,11 +1053,11 @@ protected:
         const Int64 max_in_flight_requests;
 
         std::mutex lock;
-        std::unordered_map<String, StageInfoPtr> all_stages TSA_GUARDED_BY(lock);
-        std::unordered_map<String, std::map<String, RunningTaskInfo>> stage_tasks TSA_GUARDED_BY(lock);
+        std::unordered_map<String, StageInfoPtr> all_stages TSA_GUARDED_BY(lock); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_map<String, std::map<String, RunningTaskInfo>> stage_tasks TSA_GUARDED_BY(lock); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         std::atomic<Int64> in_flight_request_count = 0;
-        std::deque<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);  /// Queue of stages that have unfinished tasks to be checked
-        std::unordered_map<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock);
+        std::deque<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);  /// Queue of stages that have unfinished tasks to be checked // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_map<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         std::shared_ptr<std::atomic<bool>> is_cancelled;
         std::exception_ptr first_exception TSA_GUARDED_BY(lock);
         ThreadPool thread_pool;
@@ -1091,7 +1093,7 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
-        std::deque<RunningTaskInfo> started_tasks;
+        std::deque<RunningTaskInfo> started_tasks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
@@ -1144,7 +1146,7 @@ void DistributedQueryPlanExecutor::checkCancelled() const
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
-void DistributedQueryPlanExecutor::startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages)
+void DistributedQueryPlanExecutor::startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     if (executed_stages.contains(stage_name))
         return;
@@ -1182,7 +1184,7 @@ void DistributedQueryPlanExecutor::start()
 
     /// Execute stages in topological order
     {
-        std::unordered_set<String> executed_stages;
+        std::unordered_set<String> executed_stages; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (const auto & [stage_name, _] : distributed_query_plan.stages)
             startStageWithDependencies(stage_name, executed_stages);
     }

@@ -1347,8 +1347,6 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
 
-
-
 }
 
 }

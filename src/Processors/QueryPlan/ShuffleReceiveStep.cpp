@@ -18,7 +18,7 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
 {
     const String bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     /// Read all shards
     for (const String & shard_id : source_shards)

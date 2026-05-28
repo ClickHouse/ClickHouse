@@ -16,17 +16,17 @@ class TaskToHostMap : public boost::noncopyable
 public:
     TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
 
-    const std::vector<String> & getHostnames() const { return hostnames; }
-    const std::unordered_map<String, String> & getTaskHosts() const { return task_hosts; }
-    const std::unordered_map<String, String> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+    const std::vector<String> & getHostnames() const { return hostnames; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::unordered_map<String, String> & getTaskHosts() const { return task_hosts; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::unordered_map<String, String> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     void fillHostnames(ContextPtr context);
     void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan);
 
-    std::vector<String> hostnames;
-    std::unordered_map<String, String> task_hosts;
-    std::unordered_map<String, String> exchange_stream_source_hosts;
+    std::vector<String> hostnames; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::unordered_map<String, String> task_hosts; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::unordered_map<String, String> exchange_stream_source_hosts; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
@@ -48,7 +48,7 @@ public:
     virtual void cleanup() = 0;
 
 private:
-    void startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages);
+    void startStageWithDependencies(const String & stage_name, std::unordered_set<String> & executed_stages); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 protected:
     DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_);
@@ -63,7 +63,7 @@ protected:
     ContextPtr context;
     QueryStatusPtr query_status;
     std::shared_ptr<std::atomic<bool>> is_cancelled;
-    std::deque<String> running_stages;
+    std::deque<String> running_stages; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     LoggerPtr logger;
 };
 
@@ -78,7 +78,7 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
 struct ExchangeStreamSources
 {
     /// Exchange stream id -> source host
-    std::unordered_map<String, String> stream_hosts;
+    std::unordered_map<String, String> stream_hosts; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 /// Contains all info to send a task to remote worker
@@ -112,7 +112,7 @@ struct ExchangeDescription;
 
 ExchangeLookupPtr createExchangeLookup(
     const String & query_id,
-    const std::unordered_map<String, ExchangeDescription> & exchanges_,
+    const std::unordered_map<String, ExchangeDescription> & exchanges_, // STYLE_CHECK_ALLOW_STD_CONTAINERS
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context);

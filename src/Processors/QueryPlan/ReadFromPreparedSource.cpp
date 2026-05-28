@@ -22,6 +22,11 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
     : ISourceStep(pipe_.getSharedHeader())
     , pipe(std::move(pipe_))

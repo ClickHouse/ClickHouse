@@ -7,8 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
-#include "Processors/QueryPlan/QueryPlan.h"
-#include "QueryPipeline/DistributedPlanExecutor.h"
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Core/ProtocolDefines.h>
 
 namespace DB
