@@ -1,6 +1,7 @@
 #include <Processors/Transforms/MaterializingCTETransform.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
 #include <Processors/Port.h>
@@ -8,6 +9,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 MaterializingCTETransform::MaterializingCTETransform(
     const SharedHeader & input_header_,
@@ -68,7 +74,18 @@ Chunk MaterializingCTETransform::generate()
     auto seconds = static_cast<double>(watch.elapsedNanoseconds()) / 1e9;
     LOG_DEBUG(getLogger("MaterializingCTETransform"), "Finished materializing CTE with name '{}' in {} seconds", materialized_cte->cte_name, seconds);
 
-    materialized_cte->is_built.store(true, std::memory_order_release);
+    /// `exchange(true, release)` returns the previous value: if `true`, another
+    /// `MaterializingCTETransform` already finished for this same `MaterializedCTE`,
+    /// which violates the single-writer invariant enforced at plan time by
+    /// `is_materialization_planned.exchange(true)` in
+    /// `DelayedMaterializingCTEsStep::makePlansForCTEs`. Two writers would both
+    /// append to the same `StorageMemory`, producing duplicated CTE rows.
+    /// Throw on detection rather than silently double-publish.
+    if (materialized_cte->is_built.exchange(true, std::memory_order_release))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Materialized CTE '{}' was built twice",
+            materialized_cte->cte_name);
 
     return {};
 }
