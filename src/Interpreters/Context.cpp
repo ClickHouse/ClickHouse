@@ -2148,7 +2148,7 @@ void Context::resetToUserDefaults()
     {
         try
         {
-            callback();
+            callback(*this);
         }
         catch (...)
         {

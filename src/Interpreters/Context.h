@@ -387,7 +387,11 @@ protected:
     /// (e.g. MySQL/Postgres prepared statements, cached socket timeouts).
     /// Registration happens once at session creation; the session context
     /// outlives any query context, so callbacks see a stable handler.
-    using SessionResetCallback = std::function<void()>;
+    /// The closure receives the session `Context` itself so handlers don't
+    /// need to capture a `shared_ptr` back to us — capturing one here would
+    /// keep the `Context` alive forever (the callback list it lives on holds
+    /// the only references back).
+    using SessionResetCallback = std::function<void(Context &)>;
     std::vector<SessionResetCallback> session_reset_callbacks;
 
     using ProgressCallback = std::function<void(const Progress & progress)>;

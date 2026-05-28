@@ -289,7 +289,7 @@ bool PostgreSQLHandler::startup()
         /// needed. Outlives the session (`SCOPE_EXIT({ session.reset(); })`),
         /// so capturing `this` is safe.
         session->sessionContext()->addSessionResetCallback(
-            [this]
+            [this](Context &)
             {
                 prepared_statements_manager = PostgreSQLProtocol::PostgresPreparedStatements::PreparedStatemetsManager(std::nullopt);
             });

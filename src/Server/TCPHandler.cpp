@@ -347,7 +347,7 @@ void TCPHandler::runImpl()
 {
     DB::setThreadName(ThreadName::TCP_HANDLER);
 
-    extractConnectionSettingsFromContext(server.context());
+    extractConnectionSettingsFromContext(*server.context());
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);
@@ -437,7 +437,7 @@ void TCPHandler::runImpl()
         {
             /// If session created, then settings in session context has been updated.
             /// So it's better to update the connection settings for flexibility.
-            extractConnectionSettingsFromContext(session->sessionContext());
+            extractConnectionSettingsFromContext(*session->sessionContext());
 
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
@@ -452,7 +452,7 @@ void TCPHandler::runImpl()
             /// the session settings. The TCPHandler outlives the session
             /// context that owns the callback list, so capturing `this` is safe.
             session->sessionContext()->addSessionResetCallback(
-                [this, session_context = session->sessionContext()]
+                [this](Context & session_context)
                 {
                     extractConnectionSettingsFromContext(session_context);
                 });
@@ -608,7 +608,7 @@ void TCPHandler::runImpl()
 
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.
-            extractConnectionSettingsFromContext(query_state->query_context);
+            extractConnectionSettingsFromContext(*query_state->query_context);
 
             /// Sync timeouts on client and server during current query to avoid dangling queries on server.
             /// It should be reset at the end of query.
@@ -1114,9 +1114,9 @@ void TCPHandler::logQueryDuration(QueryState & state)
 }
 
 
-void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context)
+void TCPHandler::extractConnectionSettingsFromContext(const Context & context)
 {
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     send_exception_with_stack_trace = settings[Setting::calculate_text_stack_trace];
     send_timeout = settings[Setting::send_timeout];
     receive_timeout = settings[Setting::receive_timeout];
