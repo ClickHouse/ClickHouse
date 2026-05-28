@@ -50,18 +50,18 @@ cleanup() {
 trap cleanup EXIT
 cleanup
 
-# Run `query` and emit `label: pass` only if the server did NOT respond with
-# `ACCESS_DENIED`. Any other failure mode (network error, parse error, etc.)
-# is acceptable here: this assertion is only about the hardening check.
-expect_no_access_denied() {
+# Run `query` and emit `label: pass` only if the allowed form executes
+# successfully. The positive cases use `DESCRIBE TABLE` with an explicit
+# structure, so they should be local and should not contact S3.
+expect_success() {
     local label="$1"
     local query="$2"
     local out
-    out="$($CLICKHOUSE_CLIENT --send_logs_level=fatal -q "${query}" 2>&1 || true)"
-    if echo "$out" | grep -q "ACCESS_DENIED"; then
-        echo "${label}: fail (got ACCESS_DENIED)"
-    else
+    if out="$($CLICKHOUSE_CLIENT --send_logs_level=fatal -q "${query}" 2>&1)"; then
         echo "${label}: pass"
+    else
+        out="${out//$'\n'/ }"
+        echo "${label}: fail (${out})"
     fi
 }
 
@@ -371,7 +371,7 @@ $CLICKHOUSE_CLIENT -m -q "
         secret_access_key = 's',
         use_environment_credentials = 0;
 " > /dev/null
-expect_no_access_denied "nc_env_off" "
+expect_success "nc_env_off" "
     DESCRIBE TABLE s3(${NC_ENV_OFF}, format = 'TSV', structure = 'x UInt8')
 "
 
@@ -383,7 +383,7 @@ $CLICKHOUSE_CLIENT -m -q "
         secret_access_key = 's',
         role_arn = '${ROLE_ARN}';
 " > /dev/null
-expect_no_access_denied "nc_role_with_keys" "
+expect_success "nc_role_with_keys" "
     DESCRIBE TABLE s3(${NC_ROLE_OK}, format = 'TSV', structure = 'x UInt8')
 "
 
@@ -393,12 +393,12 @@ $CLICKHOUSE_CLIENT -m -q "
         url = 'http://localhost:11111/test/${DB}.tsv',
         no_sign_request = 1;
 " > /dev/null
-expect_no_access_denied "nc_nosign" "
+expect_success "nc_nosign" "
     DESCRIBE TABLE s3(${NC_NOSIGN}, format = 'TSV', structure = 'x UInt8')
 "
 
 # `extra_credentials(role_arn=...)` is allowed when keys are also supplied.
-expect_no_access_denied "extra_credentials_with_keys" "
+expect_success "extra_credentials_with_keys" "
     DESCRIBE TABLE s3('http://localhost:11111/test/${DB}.tsv', 'k', 's',
                       format = 'TSV', structure = 'x UInt8',
                       extra_credentials(role_arn = '${ROLE_ARN}'))
