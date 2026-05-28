@@ -15,7 +15,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <optional>
-#include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 #include <queue>
 #include <stack>
 #include <base/sort.h>
@@ -799,7 +799,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(
+    Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
 {
     ExecutionContext execution_context
     {
@@ -841,6 +842,14 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
             e.addMessage(fmt::format("while executing '{}'", action.toString()));
             throw;
         }
+
+        if (check_cancelled && check_cancelled())
+        {
+            /// Return an empty block with the names and types of result columns
+            block = sample_block.cloneWithColumns(sample_block.cloneEmptyColumns());
+            num_rows = 0;
+            return;
+        }
     }
 
     if (project_inputs)
@@ -875,11 +884,11 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run, allow_duplicates_in_input);
+    execute(block, num_rows, dry_run, allow_duplicates_in_input, std::move(check_cancelled));
 
     if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
@@ -904,15 +913,17 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns)
 {
     std::optional<size_t> min_size;
     NameAndTypePair result;
 
     for (const auto & column : columns)
     {
-        /// Skip .sizeX and similar meta information
-        if (column.isSubcolumn())
+        /// Skip .sizeX and similar meta information for storage column lists.
+        /// For subquery projections, all entries are valid query-level outputs,
+        /// so skip_subcolumns should be false.
+        if (skip_subcolumns && column.isSubcolumn())
             continue;
 
         /// @todo resolve evil constant
@@ -1016,44 +1027,6 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     return map;
 }
 
-bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const
-{
-    /// Check has column in (empty set).
-    String set_to_check;
-
-    for (auto it = actions.rbegin(); it != actions.rend(); ++it)
-    {
-        const auto & action = *it;
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION && action.node->function_base)
-        {
-            if (action.node->result_name == column_name && action.node->children.size() > 1)
-            {
-                auto name = action.node->function_base->getName();
-                if ((name == "in" || name == "globalIn"))
-                {
-                    set_to_check = action.node->children[1]->result_name;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!set_to_check.empty())
-    {
-        for (const auto & action : actions)
-        {
-            if (action.node->type == ActionsDAG::ActionType::COLUMN && action.node->result_name == set_to_check)
-                // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
-                if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
-                    if (auto future_set = column_set->getData())
-                        if (auto set = future_set->get())
-                            if (set->getTotalRowCount() == 0)
-                                return true;
-        }
-    }
-
-    return false;
-}
 
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 {

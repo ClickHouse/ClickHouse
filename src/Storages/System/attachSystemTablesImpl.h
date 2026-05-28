@@ -3,6 +3,7 @@
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -43,7 +44,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
     /// Set the comment
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     assert(table);
-    auto metadata = table->getInMemoryMetadata();
+    StorageInMemoryMetadata metadata = *table->getInMemoryMetadataPtr(context, false);
     metadata.comment = comment;
     table->setInMemoryMetadata(metadata);
 }

@@ -1,12 +1,10 @@
 #pragma once
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <fmt/format.h>
 #include <Common/Base58.h>
 
@@ -183,7 +181,7 @@ struct BaseXXDecode
 };
 
 template <typename Func>
-class FunctionBaseXXConversion : public IFunction
+class FunctionBaseXXConversion final : public IFunction
 {
     static constexpr bool has_size_optimization = Func::has_size_optimization;
 

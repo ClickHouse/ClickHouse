@@ -19,7 +19,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
@@ -618,6 +617,47 @@ public:
 
 private:
 
+    /// When maskedExecute evaluates a short-circuit argument only on the rows where the
+    /// dictionary key was not found (mask == 1), it expands the result back to full size by
+    /// filling mask == 0 rows with NULLs via ColumnNullable::expand. Those rows are about to
+    /// be overwritten by the dictionary result, but castColumnAccurate rejects the column if
+    /// it contains any NULLs while casting to a non-Nullable type.
+    /// This helper clears the spurious null-map bits at mask == 0 positions so the cast only
+    /// fails when the user-provided default genuinely evaluates to NULL on a row that needs it.
+    static void clearMaskedNullsBeforeCast(
+        IColumn & column,
+        const IColumn::Filter & mask,
+        const DataTypePtr & result_type)
+    {
+        if (result_type->isNullable())
+            return;
+
+        if (auto * nullable = typeid_cast<ColumnNullable *>(&column))
+        {
+            auto & null_map = nullable->getNullMapData();
+            chassert(null_map.size() == mask.size());
+            for (size_t i = 0; i < null_map.size(); ++i)
+            {
+                if (!mask[i])
+                    null_map[i] = 0;
+            }
+            /// Recurse in case nested is e.g. Tuple(Nullable(...)).
+            clearMaskedNullsBeforeCast(nullable->getNestedColumn(), mask, result_type);
+        }
+        else if (auto * tuple_col = typeid_cast<ColumnTuple *>(&column))
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(result_type.get()))
+            {
+                const size_t n = std::min(tuple_col->tupleSize(), tuple_type->getElements().size());
+                for (size_t col_idx = 0; col_idx < n; ++col_idx)
+                {
+                    clearMaskedNullsBeforeCast(
+                        tuple_col->getColumn(col_idx), mask, tuple_type->getElements()[col_idx]);
+                }
+            }
+        }
+    }
+
     std::pair<ColumnPtr, ColumnPtr> getDefaultsShortCircuit(
         IColumn::Filter && default_mask,
         const DataTypePtr & result_type,
@@ -626,8 +666,11 @@ private:
         ColumnWithTypeAndName column_before_cast = last_argument;
         maskedExecute(column_before_cast, default_mask);
 
+        auto mutable_col = IColumn::mutate(column_before_cast.column->convertToFullColumnIfConst());
+        clearMaskedNullsBeforeCast(*mutable_col, default_mask, result_type);
+
         ColumnWithTypeAndName column_to_cast = {
-            column_before_cast.column->convertToFullColumnIfConst(),
+            std::move(mutable_col),
             column_before_cast.type,
             column_before_cast.name};
 
