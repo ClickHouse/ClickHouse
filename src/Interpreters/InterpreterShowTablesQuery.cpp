@@ -232,7 +232,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     }
     auto rewritten_query = getRewrittenQuery();
     String database = getContext()->resolveDatabase(query.getFrom());
-    if (query.databases || DatabaseCatalog::instance().isDatalakeCatalog(database))
+    if (query.databases || DatabaseCatalog::instance().isRemoteDatabase(database))
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
