@@ -17,35 +17,6 @@ class MMappedFileCache;
 class PageCache;
 class Context;
 
-/// Settings controlling the in-memory page cache behavior.
-/// Used by CachedInMemoryReadBufferFromFile and the ReadPipeline memory cache stage.
-struct PageCacheSettings
-{
-    bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
-    bool page_cache_inject_eviction = false;
-    size_t page_cache_block_size = 1 << 20;
-    size_t page_cache_lookahead_blocks = 16;
-    size_t page_cache_max_coalesced_bytes = 16 << 20;
-};
-
-/// Settings controlling the filesystem (disk) cache behavior.
-/// Used by CachedOnDiskReadBufferFromFile and the ReadPipeline disk cache stage.
-struct FilesystemCacheSettings
-{
-    bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
-    size_t filesystem_cache_segments_batch_size = 20;
-    std::optional<size_t> filesystem_cache_boundary_alignment;
-    bool filesystem_cache_allow_background_download = true;
-    bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
-    bool filesystem_cache_allow_background_download_during_fetch = true;
-    bool filesystem_cache_prefer_bigger_buffer_size = true;
-    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
-    size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
-    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
-    bool enable_filesystem_cache_log = false;
-    std::optional<FileCacheOriginInfo> filecache_origin_info;
-};
-
 struct ReadSettings
 {
     /// Method to use reading from local filesystem.
@@ -77,20 +48,34 @@ struct ReadSettings
 
     bool enable_filesystem_read_prefetches_log = false;
 
-    /// Toggle for the filesystem cache stage. The stage parameters live in `filesystem_cache_settings`.
     bool enable_filesystem_cache = true;
-    FilesystemCacheSettings filesystem_cache_settings;
+    bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+    bool enable_filesystem_cache_log = false;
+    size_t filesystem_cache_segments_batch_size = 20;
+    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    bool filesystem_cache_allow_background_download = true;
+    bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
+    bool filesystem_cache_allow_background_download_during_fetch = true;
+    bool filesystem_cache_prefer_bigger_buffer_size = true;
+    std::optional<size_t> filesystem_cache_boundary_alignment;
 
-    /// Toggles for the page cache stage (decided per-disk before composing the pipeline).
-    /// The stage parameters live in `page_cache_settings`.
     bool use_page_cache_for_disks_without_file_cache = false;
     [[maybe_unused]] bool use_page_cache_with_distributed_cache = false;
     bool use_page_cache_for_local_disks = false;
     bool use_page_cache_for_object_storage = false;
+    bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
+    bool page_cache_inject_eviction = false;
+    size_t page_cache_block_size = 1 << 20;
+    size_t page_cache_lookahead_blocks = 16;
     std::shared_ptr<PageCache> page_cache;
-    PageCacheSettings page_cache_settings;
+
+    size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
+    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    bool remote_read_buffer_restrict_seek = false;
+    bool remote_read_buffer_use_external_buffer = false;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
@@ -106,10 +91,11 @@ struct ReadSettings
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
+    std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
-    bool enable_blob_storage_log_for_read_operations = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
+    ReadSettings withNestedBuffer(bool seekable = false) const;
 };
 
 ReadSettings getReadSettings();

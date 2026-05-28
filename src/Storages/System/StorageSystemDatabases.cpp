@@ -12,6 +12,7 @@
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -22,6 +23,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
 }
 
+namespace Setting
+{
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+}
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {

@@ -58,8 +58,7 @@ enum class LakeFormat
 {
     All = 0,
     Iceberg = 1,
-    DeltaLake = 2,
-    Paimon = 3
+    DeltaLake = 2
 };
 
 enum class LakeStorage
@@ -319,16 +318,6 @@ public:
     bool isIcebergLocalEngine() const;
 
     bool isAnyIcebergEngine() const;
-
-    bool isPaimonS3Engine() const;
-
-    bool isPaimonAzureEngine() const;
-
-    bool isPaimonLocalEngine() const;
-
-    bool isAnyPaimonEngine() const;
-
-    bool isAnyLakeEngine() const;
 
     bool isOnS3() const;
 

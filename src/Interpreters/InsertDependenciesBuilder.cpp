@@ -1,7 +1,6 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
-#include <Common/MemoryTracker.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ResizeProcessor.h>
@@ -136,19 +135,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
-}
-
-namespace
-{
-/// Cap `min_insert_block_size_bytes` by a fraction of the server-wide memory hard limit so
-/// squashing does not accumulate more data than the host can hold. Shared between direct
-/// INSERT and materialized-view pipelines so the cap is applied symmetrically.
-size_t capMinBlockSizeBytesForMemoryLimit(size_t value)
-{
-    if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
-        return std::min<size_t>(value, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
-    return value;
-}
 }
 
 
@@ -716,7 +702,7 @@ private:
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             settings[Setting::min_insert_block_size_rows],
-            capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]),
+            settings[Setting::min_insert_block_size_bytes],
             settings[Setting::max_insert_block_size],
             settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits)
@@ -783,9 +769,9 @@ struct SquashingTransformContext
 
 }
 
-VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
+std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    VectorWithMemoryTracking<Chain> insert_chains;
+    std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
         StorageIDMaybeEmpty,
@@ -863,7 +849,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? capMinBlockSizeBytesForMemoryLimit(settings[Setting::min_insert_block_size_bytes]) : 0ULL,
+                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
                         settings[Setting::max_insert_block_size],
                         settings[Setting::max_insert_block_size_bytes],
                         squash_with_strict_limits));
@@ -903,7 +889,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
         result_data.push_back(std::make_pair(std::move(processor_list), std::move(resources)));
     }
 
-    VectorWithMemoryTracking<Chain> result_chains;
+    std::vector<Chain> result_chains;
     result_chains.reserve(result_data.size());
 
     for (auto & [processor_list, resources] : result_data)
@@ -1108,22 +1094,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     chassert(storage);
     auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
-    auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
-
-    if (materialized_view && current != init_table_id)
-    {
-        StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
-        if (select_table_id != parent)
-        {
-            /// It may happen if materialized view query was changed and it doesn't depend on this source table anymore.
-            /// See setting `allow_experimental_alter_materialized_view_structure`.
-            /// A stale dependency can also point through a table name that now belongs to another valid dependency.
-            /// Validate the relation before updating the shared maps, so rejecting this path cannot remove the valid one.
-            LOG_INFO(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
-                parent, current, select_table_id);
-            return false;
-        }
-    }
 
     storages[current] = storage;
     metadata_snapshots[current] = metadata;
@@ -1149,13 +1119,23 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         dependent_views[root_view] = {};
     };
 
-    if (materialized_view)
+    if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
     {
         if (current == init_table_id)
         {
             set_defaults_for_root_view(init_table_id, materialized_view->getTargetTableId());
             view_types[init_table_id] = QueryViewsLogElement::ViewType::MATERIALIZED;
             return true;
+        }
+
+        StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
+        if (select_table_id != parent)
+        {
+            /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
+            /// See setting `allow_experimental_alter_materialized_view_structure`
+            LOG_INFO(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                parent, current, select_table_id);
+            return false;
         }
 
         inner_tables[current] = materialized_view->getTargetTableId();
@@ -1482,7 +1462,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     if (dependent_views_ids.empty())
         return {};
 
-    VectorWithMemoryTracking<Chain> view_chains;
+    std::vector<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
     std::vector<Block> output_view_chains_headers;
