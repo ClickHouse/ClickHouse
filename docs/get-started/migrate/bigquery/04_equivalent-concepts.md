@@ -99,7 +99,6 @@ Query acceleration in ClickHouse comes from three layers: primary-key ordering (
 | Cached results | [Query cache](/operations/query-cache) | ClickHouse's query cache lives in each replica's memory and is per-user by default; identical queries to different replicas don't share results. Not transactionally consistent. |
 | Sessions / multi-statement queries | Per-statement execution; multi-step state managed in the client or an orchestrator | ClickHouse has no per-session variables or shared state. |
 
-
 ## Security and governance {#security-governance}
 
 Authorized views and row-level security are listed under [Storage and tables](#storage-tables).
