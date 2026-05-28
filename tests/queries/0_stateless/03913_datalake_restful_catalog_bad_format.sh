@@ -27,7 +27,10 @@ SETTINGS
     warehouse = 'demo';
 " > /dev/null 2>&1 && echo "CREATE DATABASE unexpectedly succeeded" || echo "CREATE failed"
 
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '${NEW_DB_NAME}';"
+$CLICKHOUSE_CLIENT -q "
+SELECT database || '.' || name FROM system.tables WHERE database = '${NEW_DB_NAME}' AND engine = 'MergeTree'
+SETTINGS show_remote_databases_in_system_tables = 1;
+"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_NAME};"
 
