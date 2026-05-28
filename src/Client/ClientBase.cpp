@@ -8,6 +8,7 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -3329,7 +3330,19 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         std::string result;
 
-        /// Send the query
+        /// Send the query with an initial-query `ClientInfo`. Passing
+        /// `nullptr` here causes `Connection::sendQuery` to write a default
+        /// `ClientInfo` whose `query_kind` is `NO_QUERY`, which the native
+        /// `TCPHandler` rejects with `INCORRECT_DATA` before creating a
+        /// query context — and then closes the connection. Mirror the
+        /// pattern used by `Suggest::load` at the bottom of `ClientBase`
+        /// where the same internal-probe pattern is wired up correctly.
+        ClientInfo client_info;
+        if (client_context)
+            client_info = client_context->getClientInfo();
+        if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
+            client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+
         connection->sendQuery(
             connection_parameters.timeouts,
             query,
@@ -3337,7 +3350,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             "",  /// query_id
             QueryProcessingStage::Complete,
             nullptr,  /// settings
-            nullptr,  /// client_info
+            &client_info,
             false,    /// with_pending_data
             {},       /// external_roles
             {}        /// external_data
