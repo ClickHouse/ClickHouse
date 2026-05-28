@@ -231,7 +231,7 @@ def test_catalog_basic_export(catalog_export_cluster):
 
     node.query(
         f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {dest_ch}",
-        settings={"write_full_path_in_iceberg_metadata": 1},
+        settings={"write_full_path_in_iceberg_metadata": 1, "allow_insert_into_iceberg": 1},
     )
     wait_for_export_status(node, source, None, pid)
 
@@ -279,7 +279,7 @@ def test_catalog_concurrent_export(catalog_export_cluster):
         try:
             node.query(
                 f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {dest_ch}",
-                settings={"write_full_path_in_iceberg_metadata": 1},
+                settings={"write_full_path_in_iceberg_metadata": 1, "allow_insert_into_iceberg": 1},
             )
             wait_for_export_status(node, source, None, pid, timeout=120)
         except Exception as exc:
@@ -340,7 +340,7 @@ def test_catalog_idempotent_retry(catalog_export_cluster):
     node.query("SYSTEM ENABLE FAILPOINT iceberg_export_after_commit_before_zk_completed")
     node.query(
         f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {dest_ch}",
-        settings={"write_full_path_in_iceberg_metadata": 1},
+        settings={"write_full_path_in_iceberg_metadata": 1, "allow_insert_into_iceberg": 1},
     )
 
     # Give the background scheduler time to export the data files and reach the
@@ -401,7 +401,7 @@ def test_catalog_export_two_replicas_basic(catalog_export_cluster):
 
     r1.query(
         f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {dest_ch}",
-        settings={"write_full_path_in_iceberg_metadata": 1},
+        settings={"write_full_path_in_iceberg_metadata": 1, "allow_insert_into_iceberg": 1},
     )
     wait_for_export_status(r1, source, None, pid)
 
@@ -447,7 +447,7 @@ def test_catalog_concurrent_export_from_different_replicas(catalog_export_cluste
         try:
             node.query(
                 f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {dest_ch}",
-                settings={"write_full_path_in_iceberg_metadata": 1},
+                settings={"write_full_path_in_iceberg_metadata": 1, "allow_insert_into_iceberg": 1},
             )
             wait_for_export_status(node, source, None, pid, timeout=120)
         except Exception as exc:
@@ -505,7 +505,7 @@ def test_catalog_concurrent_export_from_different_replicas(catalog_export_cluste
 #         try:
 #             node.query(
 #                 f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {dest_ch}",
-#                 settings={"write_full_path_in_iceberg_metadata": 1},
+#                 settings={"write_full_path_in_iceberg_metadata": 1, "allow_insert_into_iceberg": 1},
 #             )
 #             wait_for_export_status(node, source, None, pid, timeout=120)
 #         except Exception as exc:

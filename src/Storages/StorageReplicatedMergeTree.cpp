@@ -8496,7 +8496,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Exporting merge tree partition is experimental. Set the server setting `allow_experimental_export_merge_tree_partition` to enable it (on all replicas).\n"
-            "If you are exporting to an Apache Iceberg table, you also need to enable the setting `allow_experimental_insert_into_iceberg` on all replicas. The same goes for `allow_experimental_export_merge_tree_part`");
+            "If you are exporting to an Apache Iceberg table, you also need to enable the setting `allow_insert_into_iceberg` on the initiator (query, session or profile) - replicas inherit it from the scheduled task.");
     }
 
     /// EXPORT PARTITION ALL: expand into one sub-call per active partition id.
@@ -8774,7 +8774,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Iceberg writes are experimental. "
-                "To allow its usage, enable the setting allow_experimental_insert_into_iceberg (on all replicas). The same goes for `allow_experimental_export_merge_tree_partition` and `allow_experimental_export_merge_tree_part`");
+                "To allow its usage, enable the setting `allow_insert_into_iceberg` on the initiator (query, session or profile) - replicas inherit it from the scheduled task.");
         }
 
         const auto metadata_object = iceberg_metadata->getMetadataJSON(query_context);

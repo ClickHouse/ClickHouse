@@ -86,6 +86,12 @@ namespace ExportPartitionUtils
         context_copy->setSetting("export_merge_tree_part_filename_pattern", manifest.filename_pattern);
         context_copy->setSetting("write_full_path_in_iceberg_metadata", manifest.write_full_path_in_iceberg_metadata);
 
+        /// The request-time call to exportPartitionToTable has already validated allow_insert_into_iceberg
+        /// against the initiator's settings. Once the manifest is in ZooKeeper, every replica must be
+        /// able to execute the task regardless of its own profile - otherwise an export silently
+        /// stalls when the setting is only set at the query level.
+        context_copy->setSetting("allow_insert_into_iceberg", true);
+
 	    return context_copy;
     }
 

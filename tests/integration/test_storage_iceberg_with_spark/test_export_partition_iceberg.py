@@ -183,7 +183,10 @@ def run_accepted(export_cluster, label, spark_ddl, ch_schema, rmt_columns, rmt_p
     node.query(f"INSERT INTO {source} VALUES {insert_values}")
 
     pid = first_partition_id(node, source)
-    node.query(f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}")
+    node.query(
+        f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
     wait_for_export_status(node, source, iceberg, pid)
 
     return node, source, iceberg, pid
@@ -208,7 +211,8 @@ def run_rejected(export_cluster, label, spark_ddl, ch_schema, rmt_columns, rmt_p
 
     pid = first_partition_id(node, source)
     error = node.query_and_get_error(
-        f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}"
+        f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}",
+        settings={"allow_insert_into_iceberg": 1},
     )
     return error
 
@@ -691,7 +695,10 @@ def test_idempotency_after_commit_crash(export_cluster):
     # injection point (after a successful Iceberg commit), std::terminate() is called
     # and the process exits immediately without setting ZK COMPLETED.
     node.query("SYSTEM ENABLE FAILPOINT iceberg_export_after_commit_before_zk_completed")
-    node.query(f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}")
+    node.query(
+        f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
     # the fail point will sleep for 10 seconds. Wait for 5 and then re-start clickhouse.
     time.sleep(5)
     # Restart ClickHouse. The ZK task is still PENDING; the scheduler will pick it up.
@@ -757,7 +764,8 @@ def test_commit_attempts_budget_transitions_to_failed(export_cluster):
         # to exhaust the budget and flip the task to FAILED.
         node.query(
             f"ALTER TABLE {source} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}"
-            f" SETTINGS export_merge_tree_partition_max_retries = 2"
+            f" SETTINGS export_merge_tree_partition_max_retries = 2,"
+            f" allow_insert_into_iceberg = 1"
         )
 
         # Timeout must cover: at least one manifest-updating poll cycle (30s)
@@ -807,7 +815,10 @@ def test_export_initiated_from_replica2(export_cluster):
     r1.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2020), (3, 2020)")
     r2.query(f"SYSTEM SYNC REPLICA {mt_table}")
 
-    r2.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}")
+    r2.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
     wait_for_export_status(r2, mt_table, iceberg_table, "2020")
 
     count_r1 = int(r1.query(f"SELECT count() FROM {iceberg_table}").strip())
@@ -846,7 +857,8 @@ def test_concurrent_exports_different_partitions_across_replicas(export_cluster)
     def export_from(node, pid):
         try:
             node.query(
-                f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}"
+                f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}",
+                settings={"allow_insert_into_iceberg": 1},
             )
             wait_for_export_status(node, mt_table, iceberg_table, pid)
         except Exception as exc:
@@ -895,7 +907,8 @@ def test_three_replica_concurrent_exports(export_cluster):
     def export_fn(node_pid):
         node, pid = node_pid
         node.query(
-            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}"
+            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg_table}",
+            settings={"allow_insert_into_iceberg": 1},
         )
         wait_for_export_status(node, mt_table, iceberg_table, pid)
 

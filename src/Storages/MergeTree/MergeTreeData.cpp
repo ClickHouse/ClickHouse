@@ -7127,7 +7127,7 @@ void MergeTreeData::exportPartToTable(
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Iceberg writes are experimental. "
-                "To allow its usage, enable the setting allow_experimental_insert_into_iceberg");
+                "To allow its usage, enable the setting `allow_insert_into_iceberg`.");
         }
 
 #if USE_AVRO

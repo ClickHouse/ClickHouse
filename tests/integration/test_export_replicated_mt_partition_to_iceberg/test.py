@@ -152,7 +152,8 @@ def test_export_partition_to_iceberg(cluster):
     setup_tables(cluster, mt_table, iceberg_table, nodes=["replica1"])
 
     node.query(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
     )
     wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
 
@@ -183,7 +184,8 @@ def test_export_two_partitions_to_iceberg(cluster):
         ALTER TABLE {mt_table}
             EXPORT PARTITION ID '2020' TO TABLE {iceberg_table},
             EXPORT PARTITION ID '2021' TO TABLE {iceberg_table}
-        """
+        """,
+        settings={"allow_insert_into_iceberg": 1},
     )
 
     wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
@@ -210,7 +212,10 @@ def test_export_partition_all_to_iceberg(cluster):
 
     setup_tables(cluster, mt_table, iceberg_table, nodes=["replica1"])
 
-    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {iceberg_table}")
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
 
     wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
     wait_for_export_status(node, mt_table, iceberg_table, "2021", "COMPLETED")
@@ -240,7 +245,7 @@ def test_failure_is_logged_in_system_table(cluster):
 
     node.query(f"SYSTEM STOP MOVES {mt_table}")
 
-    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table} SETTINGS export_merge_tree_partition_max_retries = 1")
+    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table} SETTINGS export_merge_tree_partition_max_retries = 1, allow_insert_into_iceberg = 1")
 
     with PartitionManager() as pm:
         pm.add_rule({
@@ -301,7 +306,7 @@ def test_inject_short_living_failures(cluster):
 
     node.query(f"SYSTEM STOP MOVES {mt_table}")
 
-    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table} SETTINGS export_merge_tree_partition_max_retries = 100")
+    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table} SETTINGS export_merge_tree_partition_max_retries = 100, allow_insert_into_iceberg = 1")
 
     with PartitionManager() as pm:
         pm.add_rule({
@@ -370,7 +375,8 @@ def test_export_partition_scheduler_skipped_when_moves_stopped(cluster):
     node.query(f"SYSTEM STOP MOVES {mt_table}")
 
     node.query(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
     )
 
     wait_for_export_to_start(node, mt_table, iceberg_table, "2020")
@@ -421,7 +427,7 @@ def test_export_partition_resumes_after_stop_moves(cluster):
 
     node.query(
         f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
-        f" SETTINGS export_merge_tree_partition_max_retries = 50"
+        f" SETTINGS export_merge_tree_partition_max_retries = 50, allow_insert_into_iceberg = 1"
     )
 
     wait_for_export_to_start(node, mt_table, iceberg_table, "2020")
@@ -466,7 +472,7 @@ def test_export_partition_resumes_after_stop_moves_during_export(cluster):
 
     node.query(
         f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
-        f" SETTINGS export_merge_tree_partition_max_retries = 50")
+        f" SETTINGS export_merge_tree_partition_max_retries = 50, allow_insert_into_iceberg = 1")
 
     wait_for_export_to_start(node, mt_table, iceberg_table, "2020")
 
@@ -527,7 +533,8 @@ def test_partition_transform_compatibility_accepted(cluster):
     def check_accepted(mt, iceberg, description):
         pid = first_partition_id(node, mt)
         node.query(
-            f"ALTER TABLE {mt} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}"
+            f"ALTER TABLE {mt} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}",
+            settings={"allow_insert_into_iceberg": 1},
         )
 
     # 1. Compound identity: (year, region)
@@ -598,7 +605,8 @@ def test_partition_transform_compatibility_rejected(cluster):
         # The compatibility check fires synchronously; any partition ID works here.
         pid = first_partition_id(node, mt)
         error = node.query_and_get_error(
-            f"ALTER TABLE {mt} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}"
+            f"ALTER TABLE {mt} EXPORT PARTITION ID '{pid}' TO TABLE {iceberg}",
+            settings={"allow_insert_into_iceberg": 1},
         )
         assert "BAD_ARGUMENTS" in error, (
             f"[{description}] Expected BAD_ARGUMENTS, got: {error!r}"
@@ -688,7 +696,8 @@ def test_partition_key_compatibility_check(cluster):
         """
     )
     error = node.query_and_get_error(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_col_mismatch}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_col_mismatch}",
+        settings={"allow_insert_into_iceberg": 1},
     )
     assert "BAD_ARGUMENTS" in error, (
         f"Expected BAD_ARGUMENTS for partition column mismatch, got: {error!r}"
@@ -709,7 +718,8 @@ def test_partition_key_compatibility_check(cluster):
         """
     )
     error = node.query_and_get_error(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_count_mismatch}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_count_mismatch}",
+        settings={"allow_insert_into_iceberg": 1},
     )
     assert "BAD_ARGUMENTS" in error, (
         f"Expected BAD_ARGUMENTS for partition count mismatch, got: {error!r}"
@@ -731,7 +741,8 @@ def test_partition_key_compatibility_check(cluster):
     )
     # Should not raise — the check passes so the export is accepted synchronously
     node.query(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_match}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_match}",
+        settings={"allow_insert_into_iceberg": 1},
     )
 
 
@@ -752,12 +763,13 @@ def test_export_ttl(cluster):
     # First export.
     node.query(
         f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table} "
-        f"SETTINGS export_merge_tree_partition_manifest_ttl = {ttl_seconds}"
+        f"SETTINGS export_merge_tree_partition_manifest_ttl = {ttl_seconds}, allow_insert_into_iceberg = 1"
     )
 
     # A second export before the TTL expires must be rejected.
     error = node.query_and_get_error(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
     )
     assert "Export with key" in error, f"Expected duplicate-export error before TTL, got: {error}"
 
@@ -771,7 +783,8 @@ def test_export_ttl(cluster):
 
     # Second export must be accepted now.
     node.query(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
     )
     wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
 
@@ -791,7 +804,10 @@ def test_export_data_files_are_not_cleaned_up_on_commit_failure(cluster):
 
     node.query("SYSTEM ENABLE FAILPOINT iceberg_writes_non_retry_cleanup")
 
-    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}")
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
     wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
 
     count = int(node.query(f"SELECT count() FROM {iceberg_table} WHERE year = 2020").strip())
@@ -826,7 +842,10 @@ def test_post_publish_exception_preserves_snapshot(cluster):
 
     node.query("SYSTEM ENABLE FAILPOINT iceberg_writes_post_publish_throw")
 
-    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}")
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
+    )
     wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
 
     count = int(node.query(f"SELECT count() FROM {iceberg_table} WHERE year = 2020").strip())
@@ -869,7 +888,8 @@ def test_export_task_timeout_kills_stuck_pending_task(cluster):
             f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
             f" SETTINGS export_merge_tree_partition_task_timeout_seconds = 5,"
             f"          export_merge_tree_partition_max_retries = 1000000,"
-            f"          export_merge_tree_partition_manifest_ttl = 3600"
+            f"          export_merge_tree_partition_manifest_ttl = 3600,"
+            f"          allow_insert_into_iceberg = 1"
         )
 
         # Timeout budget must cover: the 5s task timeout + one manifest-updating
@@ -947,7 +967,8 @@ def test_export_partition_writes_column_statistics(cluster):
     setup_stats_tables(node, mt_table, iceberg_table)
 
     node.query(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}"
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {iceberg_table}",
+        settings={"allow_insert_into_iceberg": 1},
     )
     wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
 
