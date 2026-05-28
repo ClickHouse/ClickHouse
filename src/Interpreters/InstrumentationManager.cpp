@@ -65,9 +65,15 @@ static void validateSleepArguments(const std::vector<InstrumentationManager::Ins
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected one or two arguments for sleep instrumentation, but got {}", args.size());
 
     auto min = getSleepArgumentValue(args[0]);
+    if (min < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+
     if (args.size() == 2)
     {
         auto max = getSleepArgumentValue(args[1]);
+        if (max < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+
         if (min > max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep minimum duration must be less than or equal to maximum duration");
     }
