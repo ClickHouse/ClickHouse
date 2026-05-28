@@ -13,6 +13,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
