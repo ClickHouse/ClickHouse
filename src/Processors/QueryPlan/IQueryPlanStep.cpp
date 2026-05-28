@@ -209,24 +209,47 @@ static size_t getLineWidth(const String & line)
     return UTF8::computeWidth(reinterpret_cast<const UInt8 *>(line.data()), line.size());
 }
 
-static bool areProcessorsSimilarForExplain(const IProcessor & lhs, const IProcessor & rhs)
+static bool haveProcessorsEqualOutputHeadersForExplain(const IProcessor & lhs, const IProcessor & rhs)
+{
+    const auto & lhs_outputs = lhs.getOutputs();
+    const auto & rhs_outputs = rhs.getOutputs();
+
+    if (lhs_outputs.size() != rhs_outputs.size())
+        return false;
+
+    auto rhs_output = rhs_outputs.begin();
+    for (const auto & lhs_output : lhs_outputs)
+    {
+        if (!blocksHaveEqualStructure(lhs_output.getHeader(), rhs_output->getHeader()))
+            return false;
+
+        ++rhs_output;
+    }
+
+    return true;
+}
+
+static bool areProcessorsSimilarForExplain(const IProcessor & lhs, const IProcessor & rhs, bool compare_headers)
 {
     return lhs.getName() == rhs.getName()
         && lhs.getInputs().size() == rhs.getInputs().size()
         && lhs.getOutputs().size() == rhs.getOutputs().size()
-        && lhs.getDescription() == rhs.getDescription();
+        && lhs.getDescription() == rhs.getDescription()
+        && (!compare_headers || haveProcessorsEqualOutputHeadersForExplain(lhs, rhs));
 }
 
 static bool areProcessorChainsSimilar(
     const std::vector<const IProcessor *> & processors,
     size_t first_chain_begin,
     size_t second_chain_begin,
-    size_t chain_size)
+    size_t chain_size,
+    bool compare_headers)
 {
     for (size_t processor_offset = 0; processor_offset < chain_size; ++processor_offset)
         if (!areProcessorsSimilarForExplain(
                 *processors[first_chain_begin + processor_offset],
-                *processors[second_chain_begin + processor_offset]))
+                *processors[second_chain_begin + processor_offset],
+                compare_headers))
             return false;
 
     return true;
@@ -331,7 +354,10 @@ static bool isRepeatedProcessorChainIndependent(
     return !hasConnectionBetweenRepeatedProcessorChains(processors, repeated_chains_begin, chain_size, chain_count);
 }
 
-static std::pair<size_t, size_t> findRepeatedProcessorChainRange(const std::vector<const IProcessor *> & processors, size_t begin)
+static std::pair<size_t, size_t> findRepeatedProcessorChainRange(
+    const std::vector<const IProcessor *> & processors,
+    size_t begin,
+    bool compare_headers)
 {
     static constexpr size_t min_period = 2;
     static constexpr size_t max_period = 8;
@@ -343,7 +369,7 @@ static std::pair<size_t, size_t> findRepeatedProcessorChainRange(const std::vect
     {
         size_t count = 1;
         while (begin + (count + 1) * period <= processors.size()
-            && areProcessorChainsSimilar(processors, begin, begin + count * period, period))
+            && areProcessorChainsSimilar(processors, begin, begin + count * period, period, compare_headers))
         {
             ++count;
         }
@@ -430,7 +456,7 @@ static void doDescribePipelineWithRepeatedProcessorChainCompaction(
         /// Compact adjacent similar processors first.
         size_t equal_processors_count = 1;
         while (position + equal_processors_count < ordered_processors.size()
-            && areProcessorsSimilarForExplain(*ordered_processors[position], *ordered_processors[position + equal_processors_count]))
+            && areProcessorsSimilarForExplain(*ordered_processors[position], *ordered_processors[position + equal_processors_count], settings.write_header))
         {
             ++equal_processors_count;
         }
@@ -443,7 +469,7 @@ static void doDescribePipelineWithRepeatedProcessorChainCompaction(
         }
 
         /// Compact repeated processor chains when adjacent processors are not similar.
-        const auto [repeated_period, repeated_count] = findRepeatedProcessorChainRange(ordered_processors, position);
+        const auto [repeated_period, repeated_count] = findRepeatedProcessorChainRange(ordered_processors, position, settings.write_header);
         if (repeated_count > 1)
         {
             doDescribeRepeatedProcessorChains(ordered_processors, position, repeated_period, repeated_count, settings);
