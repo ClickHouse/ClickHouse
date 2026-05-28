@@ -385,14 +385,16 @@ protected:
     /// Callbacks fired at the end of `resetToUserDefaults`. Protocol handlers
     /// register here to drop session-scoped state that lives outside `Context`
     /// (e.g. MySQL/Postgres prepared statements, cached socket timeouts).
-    /// Registration happens once at session creation; the session context
-    /// outlives any query context, so callbacks see a stable handler.
-    /// The closure receives the session `Context` itself so handlers don't
-    /// need to capture a `shared_ptr` back to us — capturing one here would
-    /// keep the `Context` alive forever (the callback list it lives on holds
-    /// the only references back).
+    /// Keyed by an owner pointer so re-registration from the same handler
+    /// (e.g. Arrow Flight `StartCall` firing per-RPC against a reused named
+    /// session) replaces the previous entry instead of appending a duplicate.
+    /// The closure receives the session `Context` by reference so handlers
+    /// don't need to capture a `shared_ptr` back to us: such a capture would
+    /// be a cycle (this vector lives on the `Context`, and would then hold a
+    /// `shared_ptr` to that same `Context`) and would keep the `Context`
+    /// alive past session shutdown.
     using SessionResetCallback = std::function<void(Context &)>;
-    std::vector<SessionResetCallback> session_reset_callbacks;
+    std::vector<std::pair<const void *, SessionResetCallback>> session_reset_callbacks;
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
@@ -904,9 +906,12 @@ public:
     /// Register a callback to be invoked at the end of `resetToUserDefaults`.
     /// Protocol handlers use this to drop their own session-scoped state
     /// (prepared statements, cached socket timeouts) that `Context` doesn't
-    /// own. The callback is invoked outside `Context::mutex`; the registered
-    /// closure must not call back into `Context::resetToUserDefaults`.
-    void addSessionResetCallback(SessionResetCallback callback);
+    /// own. `owner` is any stable pointer (typically `this` of the registering
+    /// handler) used to deduplicate registrations: re-registering with the
+    /// same `owner` replaces the previous closure rather than appending. The
+    /// callback is invoked outside `Context::mutex`; the registered closure
+    /// must not call back into `Context::resetToUserDefaults`.
+    void setSessionResetCallback(const void * owner, SessionResetCallback callback);
 
     std::optional<UUID> getUserID() const;
     String getUserName() const;

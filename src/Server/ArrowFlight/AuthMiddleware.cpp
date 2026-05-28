@@ -263,8 +263,10 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         /// could continue resolving the old handle via `CommandPreparedStatementQuery`
         /// after the reset — violating the post-authentication baseline.
         /// `calls_data` outlives every session (it's owned by `ArrowFlightServer`),
-        /// so capturing by reference is safe.
-        session->sessionContext()->addSessionResetCallback(
+        /// so capturing by reference is safe. `StartCall` runs per-RPC, but
+        /// `setSessionResetCallback` dedupes by owner key, so re-registration
+        /// on a reused named session simply replaces the previous entry.
+        session->sessionContext()->setSessionResetCallback(&calls_data,
             [&calls_data_ref = calls_data, username, session_id](Context &)
             {
                 calls_data_ref.closeAllPreparedStatements(username, session_id);

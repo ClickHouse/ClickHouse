@@ -300,7 +300,7 @@ void MySQLHandler::run()
             /// The session context is passed in by reference rather than
             /// captured by `shared_ptr` so we don't pin the very `Context` that
             /// owns this callback list.
-            session->sessionContext()->addSessionResetCallback(
+            session->sessionContext()->setSessionResetCallback(this,
                 [this](Context & session_context)
                 {
                     {

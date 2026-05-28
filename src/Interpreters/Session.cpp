@@ -650,11 +650,15 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         { session_name_ },
         max_sessions_for_user);
 
-    /// Stash the auth-server settings so `RESET SESSION` can replay them, same
-    /// as in the unnamed-session path. For named sessions, also apply them
-    /// above on the newly-created branch so reset is idempotent on a clean
-    /// session.
-    session_context->setSettingsFromAuthServer(settings_from_auth_server);
+    /// Stash the auth-server settings so `RESET SESSION` can replay them,
+    /// same as in the unnamed-session path. Only on the newly-created branch:
+    /// on reuse, the live session context has been mutated by `SET` since,
+    /// and overwriting its stash with the current request's auth-server
+    /// settings would let a future `RESET SESSION` apply settings the live
+    /// session never had — diverging from "the state right after this
+    /// session's authentication" the docs promise.
+    if (new_named_session_created)
+        session_context->setSettingsFromAuthServer(settings_from_auth_server);
 
     recordLoginSuccess(session_context);
 

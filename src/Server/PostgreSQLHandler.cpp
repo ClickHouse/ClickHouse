@@ -288,7 +288,7 @@ bool PostgreSQLHandler::startup()
         /// single-threaded per connection so no extra synchronisation is
         /// needed. Outlives the session (`SCOPE_EXIT({ session.reset(); })`),
         /// so capturing `this` is safe.
-        session->sessionContext()->addSessionResetCallback(
+        session->sessionContext()->setSessionResetCallback(this,
             [this](Context &)
             {
                 prepared_statements_manager = PostgreSQLProtocol::PostgresPreparedStatements::PreparedStatemetsManager(std::nullopt);

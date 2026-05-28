@@ -1990,14 +1990,28 @@ void Context::rememberDatabaseAtSessionStart()
 
 void Context::resetToUserDefaults()
 {
-    if (!user_id)
+    /// Read all the early-rejection state under a shared lock. Every other
+    /// access to `user_id`, `session_context`, and `merge_tree_transaction` in
+    /// this class is mutex-guarded; matching that convention keeps the next
+    /// reader from having to relearn which fields are racy.
+    std::optional<UUID> snapshot_user_id;
+    bool is_session_context;
+    bool inside_transaction;
+    {
+        SharedLockGuard lock(mutex);
+        snapshot_user_id = user_id;
+        is_session_context = (session_context.lock().get() == this);
+        inside_transaction = static_cast<bool>(merge_tree_transaction);
+    }
+
+    if (!snapshot_user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetToUserDefaults() called on a context without a user");
 
     /// `resetToUserDefaults` is meant to operate on the session context itself.
     /// Calling it on a query context would silently misbehave: the new
     /// `settings_from_auth_server` / `database_at_session_start` fields default
     /// initialise on copy, so they would be empty here. Enforce.
-    if (session_context.lock().get() != this)
+    if (!is_session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RESET SESSION must be executed against the session context");
 
     /// Refuse to reset while the session is inside an active transaction.
@@ -2005,7 +2019,7 @@ void Context::resetToUserDefaults()
     /// reset while leaving the transaction in place would let a pooled
     /// connection inherit the previous snapshot and uncommitted writes.
     /// Require the caller to commit or roll back first.
-    if (merge_tree_transaction)
+    if (inside_transaction)
         throw Exception(ErrorCodes::INVALID_TRANSACTION,
             "RESET SESSION is not allowed inside an active transaction. "
             "COMMIT or ROLLBACK first.");
@@ -2013,7 +2027,7 @@ void Context::resetToUserDefaults()
     /// Re-derive everything from access control (outside the lock — `deriveUserDefaults`
     /// performs IO). Sharing this helper with `setUser` keeps the two code paths
     /// in lock-step.
-    auto defaults = deriveUserDefaults(getAccessControl(), *user_id);
+    auto defaults = deriveUserDefaults(getAccessControl(), *snapshot_user_id);
     const String user_default_database = defaults.user->default_database;
 
     /// Decide the target database eagerly so the locked section never has to
@@ -2111,11 +2125,16 @@ void Context::resetToUserDefaults()
     /// those destructors after we drop the lock. `TemporaryTableHolder::~`
     /// reaches into DatabaseCatalog / DatabaseMemory locks; holding our own
     /// mutex across that is both slow and a lock-ordering hazard.
+    /// `BackupsInMemoryHolder` keeps `BACKUP ... TO Memory(...)` payloads and
+    /// can be large; clear it the same way so a session that ran
+    /// `BACKUP ... TO Memory('b')` can't `RESTORE FROM Memory('b')` (or hit
+    /// `BACKUP_ALREADY_EXISTS`) after `RESET SESSION`.
     TemporaryTablesMapping tables_to_drop;
     Scalars scalars_to_drop;
     Scalars special_scalars_to_drop;
+    std::shared_ptr<BackupsInMemoryHolder> backups_to_drop;
 
-    std::vector<SessionResetCallback> callbacks_snapshot;
+    std::vector<std::pair<const void *, SessionResetCallback>> callbacks_snapshot;
     {
         std::lock_guard lock(mutex);
 
@@ -2131,15 +2150,16 @@ void Context::resetToUserDefaults()
         tables_to_drop.swap(external_tables_mapping);
         scalars_to_drop.swap(scalars);
         special_scalars_to_drop.swap(special_scalars);
+        backups_to_drop.swap(backups_in_memory);
         query_parameters.clear();
 
         /// Snapshot under the lock so the invocation below sees a stable set
-        /// even if a concurrent `addSessionResetCallback` races. Snapshotting
+        /// even if a concurrent `setSessionResetCallback` races. Snapshotting
         /// is cheap — these vectors hold a handful of entries.
         callbacks_snapshot = session_reset_callbacks;
     }
-    /// `tables_to_drop`, `scalars_to_drop`, `special_scalars_to_drop` destructors
-    /// run here, outside the lock.
+    /// `tables_to_drop`, `scalars_to_drop`, `special_scalars_to_drop`,
+    /// `backups_to_drop` destructors run here, outside the lock.
 
     /// Fire handler-registered hooks outside the lock so callbacks can take
     /// their own locks without re-entering ours. A throwing callback must not
@@ -2150,7 +2170,7 @@ void Context::resetToUserDefaults()
     /// were called to drop. So: keep going through every callback, capturing
     /// the first exception, then rethrow it after the loop.
     std::exception_ptr first_callback_exception;
-    for (auto & callback : callbacks_snapshot)
+    for (auto & [_, callback] : callbacks_snapshot)
     {
         try
         {
@@ -2167,10 +2187,18 @@ void Context::resetToUserDefaults()
         std::rethrow_exception(first_callback_exception);
 }
 
-void Context::addSessionResetCallback(SessionResetCallback callback)
+void Context::setSessionResetCallback(const void * owner, SessionResetCallback callback)
 {
     std::lock_guard lock(mutex);
-    session_reset_callbacks.push_back(std::move(callback));
+    for (auto & entry : session_reset_callbacks)
+    {
+        if (entry.first == owner)
+        {
+            entry.second = std::move(callback);
+            return;
+        }
+    }
+    session_reset_callbacks.emplace_back(owner, std::move(callback));
 }
 
 std::shared_ptr<const User> Context::getUser() const

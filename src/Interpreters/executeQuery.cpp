@@ -1757,7 +1757,12 @@ static BlockIO executeQueryImpl(
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {
-                    if (!interpreter->supportsTransactions())
+                    /// `RESET SESSION` is intentionally exempt from this gate: the
+                    /// interpreter rejects active transactions itself in
+                    /// `Context::resetToUserDefaults` with `INVALID_TRANSACTION`, the
+                    /// statement-specific error code. Letting the generic
+                    /// `NOT_IMPLEMENTED` path fire here would short-circuit that.
+                    if (!interpreter->supportsTransactions() && !(out_ast && out_ast->as<ASTResetSessionQuery>()))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
 
                     if (query_settings[Setting::apply_mutations_on_fly])

@@ -451,7 +451,7 @@ void TCPHandler::runImpl()
             /// timeouts, poll interval, etc.) after `RESET SESSION` re-derives
             /// the session settings. The TCPHandler outlives the session
             /// context that owns the callback list, so capturing `this` is safe.
-            session->sessionContext()->addSessionResetCallback(
+            session->sessionContext()->setSessionResetCallback(this,
                 [this](Context & session_context)
                 {
                     extractConnectionSettingsFromContext(session_context);

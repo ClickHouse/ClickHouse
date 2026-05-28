@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterResetSessionQuery.h>
 
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTResetSessionQuery.h>
@@ -10,16 +11,20 @@ namespace DB
 
 BlockIO InterpreterResetSessionQuery::execute()
 {
-    /// gRPC requests without `session_id` (and other paths that build a
-    /// query context directly from the global context) never create a
-    /// session context: every bit of mutable state lives on the query
-    /// context and dies with it. There is nothing to reset to a
-    /// post-authentication baseline, so treat this as a no-op rather than
-    /// throwing `THERE_IS_NO_SESSION`. This matches the documented
-    /// "already-clean session" contract.
-    if (!getContext()->hasSessionContext())
+    auto query_context = getContext();
+
+    /// gRPC requests without `session_id` build a query context straight from
+    /// the global context — no session, nothing session-scoped to reset.
+    /// Treat that one specific case as a no-op, matching the documented
+    /// already-clean-session behaviour. Any other interface that lacks a
+    /// session context here is a real bug (HTTP/TCP/MySQL/Postgres/Arrow
+    /// Flight all call `makeSessionContext` before dispatching queries), so
+    /// let the throwing `getSessionContext` accessor below fire.
+    if (!query_context->hasSessionContext()
+        && query_context->getClientInfo().interface == ClientInfo::Interface::GRPC)
         return {};
-    getContext()->getSessionContext()->resetToUserDefaults();
+
+    query_context->getSessionContext()->resetToUserDefaults();
     return {};
 }
 
