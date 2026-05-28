@@ -3750,15 +3750,32 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     /// Lazy sparsity classification at scan time. Invariants mirror
     /// `supportsSkipIndexesOnDataRead`: no FINAL exact mode, no JOIN dependency on
-    /// plan-time row counts, no `max_rows_to_read` with throw, no pending data
-    /// mutations or patch parts.
+    /// plan-time row counts, no `max_rows_to_read` with throw, no pending data,
+    /// alter, or patch mutations.
     MergeTreeSparsityReaderPtr sparsity_reader;
     {
         const auto & settings = context->getSettingsRef();
+        const bool has_join = [&]
+        {
+            if (!query_info.query_tree)
+                return false;
+            const auto & join_tree = query_info.query_tree->as<QueryNode &>().getJoinTree();
+            return join_tree
+                && (join_tree->getNodeType() == QueryTreeNodeType::JOIN
+                    || join_tree->getNodeType() == QueryTreeNodeType::CROSS_JOIN);
+        }();
+        const bool read_overflow_throws =
+            (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+            || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+
         if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead
             && !query_info.isFinal()
             && !context->getCurrentTransaction()
-            && !(mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            && !has_join
+            && !read_overflow_throws
+            && !(mutations_snapshot && (mutations_snapshot->hasDataMutations()
+                                        || mutations_snapshot->hasAlterMutations()
+                                        || mutations_snapshot->hasPatchParts()))
             && query_info.query_tree)
         {
             if (auto * query_node = query_info.query_tree->as<QueryNode>(); query_node && query_node->hasWhere())

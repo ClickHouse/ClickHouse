@@ -5892,6 +5892,15 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         return std::nullopt;
     }
 
+    /// Pending alter mutations (e.g. `MODIFY COLUMN` with on-the-fly conversion) leave
+    /// `serialization.json` describing source-type defaults while reads return the new
+    /// type. The stat would mismatch the post-conversion default semantics.
+    if (getMutationCounters().num_alter > 0)
+    {
+        LOG_DEBUG(log, "No defaultness stats for column {}: pending alter mutations", column_name);
+        return std::nullopt;
+    }
+
     ColumnDefaultnessStats aggregate;
     for (const auto & part : getVisibleDataPartsVector(query_context))
     {

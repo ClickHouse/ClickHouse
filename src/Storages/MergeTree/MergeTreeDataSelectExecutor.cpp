@@ -157,6 +157,25 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 }
 
 
+namespace
+{
+
+/// True when pending mutations or transaction visibility make on-disk `num_defaults`
+/// stats unreliable for sparsity pruning / trivial-count rewrite on this query.
+bool sparsityStatsUnsafeForQuery(
+    const SelectQueryInfo & query_info,
+    const ContextPtr & context,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot)
+{
+    return query_info.isFinal()
+        || context->getCurrentTransaction()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations()
+                                   || mutations_snapshot->hasAlterMutations()
+                                   || mutations_snapshot->hasPatchParts()));
+}
+
+}
+
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
 static std::string toString(const RelativeSize & x)
@@ -834,9 +853,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
     /// pruning runs whenever the mode isn't `Off`; granule-level pruning runs in
     /// `Planning` / `DataRead` mode.
     if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Off
-        || query_info.isFinal()
-        || context->getCurrentTransaction()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot))
     {
         return parts;
     }
@@ -930,9 +947,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
 
     /// `DataRead` mode defers granule analysis to scan time, so it skips this path.
     if (settings[Setting::use_sparsity_info_for_pruning] != SparsityPruningMode::Planning
-        || query_info.isFinal()
-        || context->getCurrentTransaction()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        || sparsityStatsUnsafeForQuery(query_info, context, mutations_snapshot))
     {
         return parts;
     }
