@@ -245,8 +245,9 @@ public:
     void pushMaterializeOutwardForConstants();
 
     /// Resolve `name` to a Const column, looking through `materialize(...)` and ALIASes
-    /// Returns nullptr if `name` does not reach a const
-    ColumnPtr tryGetConstantColumnByName(const std::string & name) const;
+    /// Returns nullptr if `name` does not reach a const. When `through_materialize` is
+    /// non-null, it is true if at least one `materialize` wrapper was traversed
+    ColumnPtr tryGetConstantColumnByName(const std::string & name, bool * through_materialize = nullptr) const;
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs

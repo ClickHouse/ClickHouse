@@ -903,13 +903,15 @@ std::optional<ResolvedConst> resolveConstThroughMaterialize(const ActionsDAG::No
 
 }
 
-ColumnPtr ActionsDAG::tryGetConstantColumnByName(const std::string & name) const
+ColumnPtr ActionsDAG::tryGetConstantColumnByName(const std::string & name, bool * through_materialize) const
 {
     const auto * node = tryFindInOutputs(name);
     if (!node)
         return nullptr;
-    bool unused = false;
-    auto resolved = resolveConstThroughMaterialize(node, unused);
+    bool through = false;
+    auto resolved = resolveConstThroughMaterialize(node, through);
+    if (through_materialize)
+        *through_materialize = through;
     return resolved ? resolved->column : nullptr;
 }
 

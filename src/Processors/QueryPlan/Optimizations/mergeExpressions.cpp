@@ -89,10 +89,12 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         if (prevent_input_removal)
             filter->setPreventInputRemoval();
 
-        /// If the predicate folded to a constant false (or NULL), the source step is
-        /// guaranteed to contribute zero rows, drop the whole subtree so the source is not executed
-        auto filter_const = filter->getExpression().tryGetConstantColumnByName(filter->getFilterColumnName());
-        if (filter_const)
+        /// If the predicate folded to a constant false via materialize-look-through, the
+        /// source step is guaranteed to contribute zero rows, drop the whole subtree so
+        /// the source is not executed
+        bool through_materialize = false;
+        auto filter_const = filter->getExpression().tryGetConstantColumnByName(filter->getFilterColumnName(), &through_materialize);
+        if (filter_const && through_materialize)
         {
             ConstantFilterDescription desc(*filter_const);
             if (desc.always_false)
