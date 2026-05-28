@@ -29,7 +29,7 @@ public:
 
     bool shouldBeEmptyOnDetach() const override { return false; }
     bool supportsDetachingTables() const override { return false; }
-    bool isDatalakeCatalog() const override { return true; }
+    bool isRemoteDatabase() const override { return true; }
 
     bool empty() const override;
 
