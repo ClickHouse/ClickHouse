@@ -5,8 +5,8 @@
 # a ~20s tuple sleep) as a timing floor, but the wall-clock duration is dominated by the
 # concurrent DDL (`CREATE`/`DROP`/`RENAME`/`EXCHANGE`) on `Atomic` databases running on
 # top of those sleeps. The DDL path is instrumented under ASan/TSan/MSan and coverage
-# builds, so the whole test can exceed 180s (CIDB p95 on `amd_tsan, parallel` is ~356s),
-# which trips the `clickhouse-test` flaky-check `TEST_MAX_RUN_TIME_IN_SECONDS = 180s` cap;
+# builds, so the whole test can exceed the `clickhouse-test` flaky-check
+# `TEST_MAX_RUN_TIME_IN_SECONDS` cap (CIDB p95 on `amd_tsan, parallel` is ~356s);
 # the `long` tag exempts the test from that cap. The `sleepEachRow` calls themselves are
 # wall-clock sleeps and are not sped up or slowed down by sanitizers.
 

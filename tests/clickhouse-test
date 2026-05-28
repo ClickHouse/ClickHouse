@@ -133,7 +133,10 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
-TEST_MAX_RUN_TIME_IN_SECONDS = 180
+# Applies only in `--flaky-check` mode. Tests tagged `long` are exempt.
+# 180s was too tight for randomized debug-build runs (e.g. `--max_insert_threads`
+# combined with `enable_parallel_replicas` + `page_cache_inject_eviction`).
+TEST_MAX_RUN_TIME_IN_SECONDS = 300
 
 
 def detect_cgroup_version():
