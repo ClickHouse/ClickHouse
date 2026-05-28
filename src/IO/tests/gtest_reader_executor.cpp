@@ -629,6 +629,44 @@ TEST(ReaderExecutor, DecryptRopeStreamsBlockByBlock)
     EXPECT_EQ(result, plaintext);
 }
 
+TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
+{
+    /// Regression: `atEnd` used to compare the logical `position` against
+    /// the physical `offset_map.totalSize()`. For an encrypted file the
+    /// physical size is larger by `data_start_offset` bytes, so after the
+    /// last plaintext byte `position` is strictly less than
+    /// `offset_map.totalSize()` and `atEnd` stays false. That skipped the
+    /// EOF branch in `readNextWindow` and left the `SourceBufferLimit`
+    /// slot pinned past EOF.
+    String key(16, 'k');
+    FileEncryption::InitVector iv(UInt128{0xfeedfacecafeULL});
+    String plaintext(2048, 'E');
+    String file_bytes = makeEncryptedFile(key, iv, plaintext);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    auto buffer_limit = std::make_shared<SourceBufferLimit>(4);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/512);
+    executor.setBufferLimit(buffer_limit);
+    executor.addDecryptionLayer(
+        "/test", 0,
+        [&](UInt128, const String &) { return key; });
+    executor.initDecryption();
+
+    while (true)
+    {
+        auto w = executor.readNextWindow();
+        if (w.empty())
+            break;
+    }
+
+    EXPECT_EQ(buffer_limit->getActive().size(), 0u);
+}
+
 TEST(ReaderExecutor, DecryptRopeRoundtripsSmallPayload)
 {
     /// Same path but payload smaller than ROPE_BLOCK_SIZE — exercises the

@@ -157,7 +157,7 @@ private:
     {
         if (!over_read_buffer.empty())
             return false;
-        return reached_eof || (!offset_map.hasUnknownSize() && position >= offset_map.totalSize());
+        return reached_eof || (!offset_map.hasUnknownSize() && position >= totalSize());
     }
 
     /// Try to acquire a buffer_limit slot up front so the next source read can
