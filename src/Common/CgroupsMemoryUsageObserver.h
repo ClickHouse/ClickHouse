@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <mutex>
+#include <base/defines.h>
 
 namespace DB
 {

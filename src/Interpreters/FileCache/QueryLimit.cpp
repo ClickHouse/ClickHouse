@@ -3,6 +3,7 @@
 #include <Interpreters/FileCache/QueryLimit.h>
 #include <IO/ReadSettings.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {
@@ -42,7 +43,7 @@ void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const
 
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     const std::string & query_id,
-    const ReadSettings & settings,
+    const FilesystemCacheSettings & settings,
     const CachePriorityGuard::WriteLock &)
 {
     if (query_id.empty())

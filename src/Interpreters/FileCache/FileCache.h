@@ -9,7 +9,7 @@
 #include <boost/functional/hash.hpp>
 
 #include <Common/callOnce.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -28,6 +28,7 @@
 namespace DB
 {
 struct ReadSettings;
+struct FilesystemCacheSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -235,7 +236,7 @@ public:
     std::vector<FileSegment::Info> sync();
 
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -259,7 +260,7 @@ private:
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
-    ThreadFromGlobalPool load_metadata_main_thread;
+    std::unique_ptr<ThreadFromGlobalPool> load_metadata_main_thread;
     const bool write_cache_per_user_directory;
     const bool allow_dynamic_cache_resize;
     const size_t dynamic_resize_lock_wait_ms;
