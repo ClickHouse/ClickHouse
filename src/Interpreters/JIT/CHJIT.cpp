@@ -53,6 +53,14 @@ class JITAllocationScope : private DB::ScopedJemallocThreadArena
 {
 public:
     JITAllocationScope() : DB::ScopedJemallocThreadArena(DB::JemallocJITArena::getArenaIndex()) {}
+
+    /// Run a callable inside a `JITAllocationScope` and return its result.
+    template <typename F>
+    static auto run(F && fn)
+    {
+        JITAllocationScope scope;
+        return std::forward<F>(fn)();
+    }
 };
 
 }
@@ -424,9 +432,9 @@ private:
 // };
 
 CHJIT::CHJIT()
-    : machine([] { JITAllocationScope scope; return getTargetMachine(); }())
-    , layout([this] { JITAllocationScope scope; return machine->createDataLayout(); }())
-    , compiler([this] { JITAllocationScope scope; return std::make_unique<JITCompiler>(*machine); }())
+    : machine(JITAllocationScope::run([] { return getTargetMachine(); }))
+    , layout(JITAllocationScope::run([this] { return machine->createDataLayout(); }))
+    , compiler(JITAllocationScope::run([this] { return std::make_unique<JITCompiler>(*machine); }))
     , symbol_resolver(std::make_unique<JITSymbolResolver>(layout))
 {
     /// Define common symbols that can be generated during compilation
@@ -468,13 +476,12 @@ CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> 
     /// Module creation and IR building (`compile_function`, which uses `llvm::IRBuilder` and friends)
     /// are fused into a single scope: the IR objects they allocate are owned by the module, so they
     /// belong in the JIT arena alongside the module itself.
-    auto module = [&]
+    auto module = JITAllocationScope::run([&]
     {
-        JITAllocationScope scope;
         auto new_module = createModuleForCompilation();
         compile_function(*new_module);
         return new_module;
-    }();
+    });
 
     auto module_info = compileModule(std::move(module));
 
@@ -498,9 +505,8 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
     /// `ObjectFile` keeps a non-owning reference into it, so the buffer must outlive the linker
     /// step further down.
     std::unique_ptr<llvm::MemoryBuffer> buffer;
-    auto object = [&]
+    auto object = JITAllocationScope::run([&]
     {
-        JITAllocationScope scope;
         runOptimizationPassesOnModule(*module);
 
 #ifdef PRINT_ASSEMBLY
@@ -510,7 +516,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 
         buffer = compiler->compile(*module);
         return llvm::object::ObjectFile::createObjectFile(*buffer);
-    }();
+    });
 
     if (!object)
     {

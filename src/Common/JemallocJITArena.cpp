@@ -1,5 +1,7 @@
 #include <Common/JemallocJITArena.h>
 
+#include "config.h"
+
 #if USE_JEMALLOC
 
 #include <Common/Jemalloc.h>
