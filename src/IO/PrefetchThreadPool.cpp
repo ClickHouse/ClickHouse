@@ -6,6 +6,7 @@
 #include <base/scope_guard.h>
 #include <Common/setThreadName.h>
 
+#include <chrono>
 #include <stdexcept>
 
 namespace CurrentMetrics
@@ -30,6 +31,11 @@ Rope PrefetchHandle::get()
 PrefetchHandle::State PrefetchHandle::state() const
 {
     return shared->state.load();
+}
+
+bool PrefetchHandle::isFinished() const noexcept
+{
+    return future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
 }
 
 PrefetchThreadPool::PrefetchThreadPool(size_t pool_size, size_t queue_size)

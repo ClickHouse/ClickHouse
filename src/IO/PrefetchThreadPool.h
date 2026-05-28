@@ -42,6 +42,9 @@ public:
     /// Only valid after `tryCancel` returned false.
     Rope get();
 
+    /// Non-blocking probe: true once the worker has set the promise.
+    bool isFinished() const noexcept;
+
     /// For diagnostics/tests.
     State state() const;
 

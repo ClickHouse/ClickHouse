@@ -167,6 +167,18 @@ ReaderExecutor::ReaderExecutor(
 ReaderExecutor::~ReaderExecutor()
 {
     discardPrefetch();
+    for (auto & handle : abandoned_prefetches)
+    {
+        try
+        {
+            std::ignore = handle->get();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Abandoned prefetch task threw at destruction");
+        }
+    }
+    abandoned_prefetches.clear();
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheHitBytes, stats.cache_hit_bytes);
@@ -360,6 +372,8 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (!prefetch_pool || prefetch_handle || atEnd())
         return;
 
+    drainFinishedAbandonedPrefetches();
+
     size_t logical_size = totalSize();
 
     ensurePreAcquiredSlot();
@@ -391,32 +405,40 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
 void ReaderExecutor::discardPrefetch()
 {
-    /// `std::future::get` detaches the associated state on its first call —
-    /// even when the worker threw. Move `prefetch_handle` out before touching
-    /// it so a thrown `get` cannot leave a consumed future behind for a later
-    /// `discardPrefetch` to call `get` on again.
+    drainFinishedAbandonedPrefetches();
+
     auto local_handle = std::move(prefetch_handle);
     if (!local_handle)
         return;
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
 
-    {
-        /// If the task hadn't started, cancel it — no need to wait. Otherwise
-        /// we must wait for the worker to finish so its capture of `this` is
-        /// safe to drop.
-        if (!local_handle->tryCancel())
-        {
-            try
+    /// Retain the handle so the destructor can wait on its worker — the
+    /// worker's `ThreadGroupSwitcher` attach must not race the submitter's
+    /// `QueryScope` teardown.
+    local_handle->tryCancel();
+    abandoned_prefetches.push_back(std::move(local_handle));
+}
+
+void ReaderExecutor::drainFinishedAbandonedPrefetches()
+{
+    abandoned_prefetches.erase(
+        std::remove_if(abandoned_prefetches.begin(), abandoned_prefetches.end(),
+            [this](std::unique_ptr<PrefetchHandle> & h)
             {
-                std::ignore = local_handle->get();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Discarded prefetch task threw");
-            }
-        }
-    }
+                if (!h->isFinished())
+                    return false;
+                try
+                {
+                    std::ignore = h->get();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Abandoned prefetch task threw");
+                }
+                return true;
+            }),
+        abandoned_prefetches.end());
 }
 
 void ReaderExecutor::addDecryptionLayer(
