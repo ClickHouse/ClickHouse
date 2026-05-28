@@ -2206,13 +2206,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->notifyQueryFailed(fuzzed_ast);
         }
-        catch (...)
-        {
-            reset_transactions();
-            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
-            auto [fuzzer, lock] = getGlobalASTFuzzer();
-            fuzzer->notifyQueryFailed(fuzzed_ast);
-        }
     }
 }
 

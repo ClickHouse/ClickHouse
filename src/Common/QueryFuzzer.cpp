@@ -4206,9 +4206,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
             }
         }
-        else if (!oracle_mode && fuzz_rand() % 50 == 0)
+        else if ((!oracle_mode || current_ast_depth > 1) && fuzz_rand() % 50 == 0)
         {
-            /// In oracle mode, don't add random GROUP BY — it breaks SELECT list consistency.
+            /// Adding a random GROUP BY to the topmost query changes the
+            /// SELECT-list shape under the oracle's feet, so the oracle's
+            /// rewrites (e.g. TLP's per-partition UNION) become structurally
+            /// invalid. In a subquery this is fine — the outer SELECT-list
+            /// shape is what the oracle checks, and subquery GROUP BY just
+            /// changes the row count of the inner result (which the outer
+            /// query has to deal with anyway).
             select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList(select->select()->children.size()));
         }
 
