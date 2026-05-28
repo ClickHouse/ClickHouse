@@ -4501,11 +4501,36 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         auto array_join_expression_alias = array_join_expression->getAlias();
 
         std::string identifier_full_name;
+        IdentifierNode * identifier_node = array_join_expression->as<IdentifierNode>();
 
-        if (auto * identifier_node = array_join_expression->as<IdentifierNode>())
+        if (identifier_node)
             identifier_full_name = identifier_node->getIdentifier().getFullName();
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        /// If a bare identifier in ARRAY JOIN did not resolve to an Array/Map (e.g. because
+        /// it matched an ALIAS column of a different shape), try to expand it as a Nested
+        /// prefix over the underlying table expression. For a table with `loc.x Array(...)`,
+        /// `loc.y Array(...)`, this lets `ARRAY JOIN loc` be treated as the per-field arrays —
+        /// matching the legacy analyzer's behavior.
+        if (identifier_node)
+        {
+            auto current_result_type = array_join_expression->getResultType();
+            if (current_result_type && !isArray(current_result_type) && !isMap(current_result_type))
+            {
+                const auto & inner_table_expression = array_join_node_typed.getTableExpression();
+                auto data_it = scope.table_expression_node_to_data.find(inner_table_expression);
+                if (data_it != scope.table_expression_node_to_data.end())
+                {
+                    Identifier identifier(identifier_full_name);
+                    if (auto nested_function_node = IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
+                            identifier, data_it->second, scope.context))
+                    {
+                        array_join_expression = std::move(nested_function_node);
+                    }
+                }
+            }
+        }
 
         auto process_array_join_expression = [&](const QueryTreeNodePtr & expression)
         {
