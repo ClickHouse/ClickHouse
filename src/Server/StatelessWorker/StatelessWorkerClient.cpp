@@ -27,9 +27,9 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
     ReadSettings read_settings;
-    read_settings.http_max_tries = 1;
-    read_settings.http_retry_initial_backoff_ms = 500;
-    read_settings.http_retry_max_backoff_ms = 1000;
+    read_settings.http_settings.max_tries = 1;
+    read_settings.http_settings.retry_initial_backoff_ms = 500;
+    read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
     uri.addQueryParameter("operation",   "start");
@@ -89,9 +89,9 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
     timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
     ReadSettings read_settings;
-    read_settings.http_max_tries = 1;
-    read_settings.http_retry_initial_backoff_ms = 500;
-    read_settings.http_retry_max_backoff_ms = 1000;
+    read_settings.http_settings.max_tries = 1;
+    read_settings.http_settings.retry_initial_backoff_ms = 500;
+    read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
     uri.addQueryParameter("operation",   "get_status");
@@ -131,9 +131,9 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
     timeouts.send_timeout = Poco::Timespan(5 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(5 * 1000 * 1000);
     ReadSettings read_settings;
-    read_settings.http_max_tries = 1;
-    read_settings.http_retry_initial_backoff_ms = 500;
-    read_settings.http_retry_max_backoff_ms = 1000;
+    read_settings.http_settings.max_tries = 1;
+    read_settings.http_settings.retry_initial_backoff_ms = 500;
+    read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
     uri.addQueryParameter("operation",   "cancel");
@@ -167,9 +167,9 @@ void forgetTask(const String & endpoint_uri, const String & task_id, const Conte
     timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
     timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
     ReadSettings read_settings;
-    read_settings.http_max_tries = 1;
-    read_settings.http_retry_initial_backoff_ms = 500;
-    read_settings.http_retry_max_backoff_ms = 1000;
+    read_settings.http_settings.max_tries = 1;
+    read_settings.http_settings.retry_initial_backoff_ms = 500;
+    read_settings.http_settings.retry_max_backoff_ms = 1000;
 
     Poco::URI uri(endpoint_uri);
     uri.addQueryParameter("operation",   "forget");
