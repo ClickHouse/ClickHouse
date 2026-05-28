@@ -106,7 +106,7 @@ void TaskTracker::add(Callback && func)
 {
     {
         std::lock_guard lock(mutex);
-        chassert(!final_task && "add must not be called after addFinal");
+        chassert(!final_task_added && "add must not be called after addFinal");
         ++tasks_added;
     }
 
@@ -170,7 +170,8 @@ void TaskTracker::addFinal(Callback && func)
     bool run_final_task_now = false;
     {
         std::lock_guard lock(mutex);
-        chassert(!final_task && "addFinal must be called at most once");
+        chassert(!final_task_added && "addFinal must be called at most once");
+        final_task_added = true;
         if (tasks_finished == tasks_added)
         {
             /// Every previously added task has already finished.

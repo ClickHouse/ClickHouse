@@ -70,8 +70,10 @@ private:
     size_t tasks_finished TSA_GUARDED_BY(mutex) = 0;
 
     /// A packaged task for the callback added by addFinal. A non-null value means
-    /// the callback has been added, but not yet run.
+    /// the callback has been added, but not yet scheduled.
     std::shared_ptr<std::packaged_task<void()>> final_task TSA_GUARDED_BY(mutex);
+
+    bool final_task_added = false;
 };
 
 }
