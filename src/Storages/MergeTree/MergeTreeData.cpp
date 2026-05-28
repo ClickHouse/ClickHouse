@@ -5875,8 +5875,6 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
 std::optional<IStorage::ColumnDefaultnessStats>
 MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
 {
-    auto log = getLogger(getStorageID().getNameForLogs());
-
     /// A transaction can change which parts are visible vs the snapshot we'd reason about.
     if (query_context->getCurrentTransaction())
     {
