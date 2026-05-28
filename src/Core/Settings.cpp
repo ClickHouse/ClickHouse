@@ -4726,7 +4726,9 @@ This setting is useful for ensuring that materialized views do not contain dupli
 - [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
     DECLARE(Bool, materialized_views_ignore_errors, false, R"(
-Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the table regardless of MVs
+If enabled, exceptions thrown while pushing data to a dependent materialized view (in its `SELECT` or in the inner table sink) are logged as a warning and the `INSERT` statement succeeds. If disabled (default), such an exception propagates and the `INSERT` statement fails.
+
+This setting controls only error reporting. It does not roll back a write to the source table, and it does not guarantee that the original block has, or has not, already been committed to the source table when an error occurs in a dependent view's pipeline. Retry the `INSERT` if you need at-least-once delivery to dependent views, and combine retries with the insert deduplication feature (see `insert_deduplicate` and `deduplicate_blocks_in_dependent_materialized_views`) to achieve exactly-once delivery on retry.
 )", 0) \
     DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
 Ignore MVs with dropped target table during pushing to views
