@@ -191,8 +191,8 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
 
 HTTPHeaderEntries S3AuthSettings::getHeaders() const
 {
-    bool auth_settings_is_default = !impl->isChanged("access_key_id");
-    if (access_headers.empty() || !auth_settings_is_default)
+    const String access_key_id = (*this)[S3AuthSetting::access_key_id];
+    if (access_headers.empty() || !access_key_id.empty())
         return headers;
 
     HTTPHeaderEntries result(headers);
