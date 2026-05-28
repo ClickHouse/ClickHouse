@@ -216,7 +216,13 @@ ReaderExecutor::~ReaderExecutor()
         elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         elem.query_id = creator_query_id;
         elem.source_file_path = log_file_path;
-        elem.total_size = offset_map.totalSize();
+        /// User-visible (logical) bytes — matches `cache_hit_bytes`/
+        /// `cache_miss_bytes` units and the `totalSize` accessor that
+        /// `PipelineReadBuffer::getFileSize` exposes. For encrypted reads
+        /// this is physical minus the header prefix; using the raw
+        /// `offset_map.totalSize()` here would over-report by
+        /// `data_start_offset` bytes.
+        elem.total_size = totalSize();
         elem.cache_hit_bytes = stats.cache_hit_bytes;
         elem.cache_miss_bytes = stats.cache_miss_bytes;
         elem.cache_populated_bytes = stats.cache_populated_bytes;
