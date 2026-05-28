@@ -1,0 +1,14 @@
+=== Schema-less inference ===
+t_ms	Time64(3)
+t_us	Time64(6)
+=== Schema-less read (session_timezone = Asia/Shanghai) ===
+01:02:03.456	01:02:03.456789
+=== INSERT into matching-scale Time64 columns (session_timezone = Asia/Shanghai) ===
+01:02:03.456	01:02:03.456789
+=== Writer: ClickHouse Time / Time64 -> Avro TIME_* (schema check) ===
+schema OK
+=== Writer round-trip via ClickHouse read-back ===
+t_s	Time64(3)
+t_ms64	Time64(3)
+t_us64	Time64(6)
+12:34:56.000	01:02:03.456	01:02:03.456789
