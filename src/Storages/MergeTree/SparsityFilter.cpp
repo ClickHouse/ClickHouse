@@ -19,31 +19,34 @@ namespace
 /// `Field::operator==` is type-strict: `Field(UInt64{0})` (how literal `0` parses)
 /// doesn't compare equal to `Field(Int64{0})` (Int16's default). Convert through
 /// the column's data type so both sides share a `Types::Which` before comparing.
+///
+/// Nullable types intentionally do not strip the wrapper: for a Nullable column the
+/// per-column `num_defaults` counts NULLs (see `ColumnNullable::isDefaultAt`), so a
+/// predicate like `col = 0` is not equivalent to "row is default". Comparing against
+/// the Nullable default (`NULL`) makes such predicates fall through here so the
+/// classifier rejects them, leaving only `isNull` / `isNotNull` as the safe forms.
 bool constantEqualsTypeDefault(const Field & value, const DataTypePtr & type)
 {
-    DataTypePtr inner_type = type;
-    if (inner_type->isNullable())
-        inner_type = removeNullable(inner_type);
-    Field converted = convertFieldToType(value, *inner_type);
+    Field converted = convertFieldToType(value, *type);
     if (converted.isNull())
         return false;
-    return converted == inner_type->getDefault();
+    return converted == type->getDefault();
 }
 
+/// Range predicates on unsigned integers (`col > 0` etc.) match all non-default rows.
+/// For Nullable(UInt) the predicate evaluates to NULL on NULL rows, which `WHERE`
+/// treats as false - so it really means "non-NULL AND > 0", not "non-default".
+/// Reject Nullable to avoid that mismatch.
 bool isUnsignedInteger(const DataTypePtr & type)
 {
-    DataTypePtr inner = type;
-    if (inner->isNullable())
-        inner = removeNullable(inner);
-    return WhichDataType(inner).isUInt();
+    return !type->isNullable() && WhichDataType(*type).isUInt();
 }
 
+/// Same reasoning as `isUnsignedInteger`: `empty(col)` / `notEmpty(col)` on a Nullable
+/// String return NULL for NULL rows, which is not "row is default" (= NULL).
 bool isStringLike(const DataTypePtr & type)
 {
-    DataTypePtr inner = type;
-    if (inner->isNullable())
-        inner = removeNullable(inner);
-    return WhichDataType(inner).isString();
+    return !type->isNullable() && WhichDataType(*type).isString();
 }
 
 struct ColumnRef

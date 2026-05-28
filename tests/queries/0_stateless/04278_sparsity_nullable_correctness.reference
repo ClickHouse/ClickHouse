@@ -1,0 +1,27 @@
+serialization_kind:	id	Default
+serialization_kind:	n	Sparse
+serialization_kind:	s	Sparse
+baseline isNull(n)=	3000
+baseline isNotNull(n)=	2000
+baseline n=0=	1000
+baseline n!=0=	1000
+baseline empty(s)=	1000
+baseline notEmpty(s)=	1000
+baseline s=empty=	1000
+baseline s!=empty=	1000
+planning  isNull(n)=	3000
+data_read isNull(n)=	3000
+planning  isNotNull(n)=	2000
+data_read isNotNull(n)=	2000
+planning  empty(s)=	1000
+planning  notEmpty(s)=	1000
+planning  n=0 trivial=1=	1000
+planning  n=0 trivial=0=	1000
+data_read n=0 trivial=0=	1000
+planning  n!=0 trivial=1=	1000
+planning  n!=0 trivial=0=	1000
+data_read n!=0 trivial=0=	1000
+planning  s=empty trivial=1=	1000
+data_read s=empty trivial=0=	1000
+planning  s!=empty trivial=1=	1000
+data_read s!=empty trivial=0=	1000
