@@ -7,6 +7,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Core/Block.h>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/QueryScope.h>
 #include <Common/Stopwatch.h>
@@ -99,7 +100,21 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
         }
     };
 
-    thread_pool.scheduleOrThrow(std::move(task_function));
+    try
+    {
+        thread_pool.scheduleOrThrow(std::move(task_function));
+    }
+    catch (...)
+    {
+        /// The pool refused the task (e.g. saturated or shutting down). Drop the
+        /// half-published entry so `get_status` doesn't report "running" forever
+        /// for a task no thread is executing, and complete the promise with the
+        /// scheduling exception so future waiters fail fast.
+        task_promise->set_value(getCurrentExceptionMessage(/*with_stacktrace*/ false));
+        std::lock_guard lock(tasks_mutex);
+        tasks.erase(unique_task_id);
+        throw;
+    }
 
     return Result::Ok;
 }

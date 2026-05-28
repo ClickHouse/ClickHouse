@@ -890,6 +890,9 @@ protected:
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
+                /// Release worker-side bookkeeping for the task. The worker tolerates
+                /// UnknownTaskId if the start request never reached it.
+                tryForgetTask(task);
             }
         }
 
@@ -926,22 +929,31 @@ protected:
             {
                 /// Add the task back to the end of the queue
                 addTaskToCheckQueue(stage_name, task.task_id);
+                return;
             }
-            else
+
+            /// Task reached a terminal state on the worker. Release worker-side
+            /// bookkeeping for it (TaskState/progress/future). Best-effort.
+            tryForgetTask(task);
+
+            if (task_status.status != "Finished")
+                throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                    "Failures: Task {} error: {}", task.task_id, task_status.error_message);
+
+            /// Update task state
+            setTaskFinished(stage_name, task.task_id);
+        }
+
+        void tryForgetTask(const RunningTaskInfo & task) noexcept
+        {
+            try
             {
-                String error_message;
-                if (task_status.status != "Finished")
-                    error_message += " Task " + task.task_id + " error: " + task_status.error_message + "\n";
-
-                if (!error_message.empty())
-                    throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "Failures: {}", error_message);
-
-                /// Update task state
-                setTaskFinished(stage_name, task.task_id);
+                forgetTask(task.endpoint_uri, task.task_id, context);
             }
-
-            /// Try to enqueue next check
-            enqueueGetStatus();
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("forgetTask {} on {}", task.task_id, task.endpoint_uri));
+            }
         }
 
         void addTaskToCheckQueue(const String & stage_name, const String & task_name)
@@ -1031,7 +1043,13 @@ protected:
                         }
                         *is_cancelled = true;
                     }
+                    /// Decrement the in-flight counter before scheduling the next check so
+                    /// the next `enqueueGetStatus` is not gated by an already-finished slot.
+                    /// Otherwise, when the counter sits at the limit, every re-enqueue
+                    /// inside `checkStatusFunc` sees a full pipeline, all in-flight checks
+                    /// then decrement to zero, and no further check is ever scheduled.
                     --in_flight_request_count;
+                    enqueueGetStatus();
                 });
             ++in_flight_request_count;
         }
@@ -1064,7 +1082,7 @@ protected:
         LoggerPtr logger;
     };
 
-    RunningTaskInfo startTask(const DistributedQueryTaskDescription & task_description)
+    RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
     {
         const String host = task_to_host_map->getTaskHosts().at(task_description.task.task_id);
         String stateless_worker_endpoint_uri;
@@ -1082,22 +1100,17 @@ protected:
         }
 
         String unique_task_id = toString(unique_query_id) + "::" + task_description.task.task_id;
-        String unique_temp_file_path = toString(unique_query_id);
-
-        LOG_DEBUG(logger, "Sending task {} to host {}", unique_task_id, host);
-
-        sendTask(stateless_worker_endpoint_uri, unique_task_id, task_description, unique_temp_file_path, context);
-
         return {stateless_worker_endpoint_uri, unique_task_id};
     }
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
-        std::deque<RunningTaskInfo> started_tasks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
+
+        const String unique_temp_file_path = toString(unique_query_id);
 
         for (const auto & task : stage.tasks)
         {
@@ -1113,7 +1126,15 @@ protected:
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
 
-            running_tasks.addTask(stage_name, startTask(task_description));
+            /// Register the task with the tracker before issuing the HTTP `start` so that
+            /// a lost response (worker accepted the task, coordinator never observes it)
+            /// is still cancellable through the normal cleanup path. The worker tolerates
+            /// UnknownTaskId for forget/cancel, which covers the case where the start
+            /// never reached it.
+            auto task_info = buildTaskInfo(task_description);
+            LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
+            running_tasks.addTask(stage_name, task_info);
+            sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, context);
         }
     }
 
