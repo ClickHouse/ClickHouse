@@ -759,7 +759,8 @@ void KeeperRequestDispatcher::dispatchThread()
                     Session * session = nullptr;
                     auto op = request.request->getOpNum();
                     if (op != Coordination::OpNum::Close &&
-                        op != Coordination::OpNum::SessionID)
+                        op != Coordination::OpNum::SessionID &&
+                        request.session_id >= 0)
                     {
                         auto it = sessions.find(request.session_id);
                         if (it == sessions.end() || it->second.dead.load())
