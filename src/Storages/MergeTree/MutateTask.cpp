@@ -1687,18 +1687,21 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
-    ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-    Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
+    Chunk squashed_chunk;
+    {
+        ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
+        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
 
-    /// Everything is deleted by lightweight delete
-    if (block_to_squash.rows() == 0)
-        return;
+        /// Everything is deleted by lightweight delete
+        if (block_to_squash.rows() == 0)
+            return;
 
-    projection_squashes[projection_idx].setHeader(block_to_squash.cloneEmpty());
-    projection_squashes[projection_idx].add({block_to_squash.getColumns(), block_to_squash.rows()});
-    Chunk squashed_chunk = Squashing::squash(
-        projection_squashes[projection_idx].generate(),
-        projection_squashes[projection_idx].getHeader());
+        projection_squashes[projection_idx].setHeader(block_to_squash.cloneEmpty());
+        projection_squashes[projection_idx].add({block_to_squash.getColumns(), block_to_squash.rows()});
+        squashed_chunk = Squashing::squash(
+            projection_squashes[projection_idx].generate(),
+            projection_squashes[projection_idx].getHeader());
+    }
 
     if (squashed_chunk)
         writeTempProjectionPart(projection_idx, std::move(squashed_chunk));
