@@ -144,12 +144,6 @@ public:
 
     void shutdown() override;
 
-    /// Check if the disk is OK to proceed read/write operations. Currently the check is
-    /// rudimentary. The more advanced choice would be using
-    /// https://github.com/smartmontools/smartmontools. However, it's good enough for now.
-    bool canRead() const noexcept;
-    bool canWrite() noexcept;
-
     bool supportsStat() const override { return true; }
     struct stat stat(const String & path) const override;
 
@@ -168,9 +162,6 @@ private:
     /// Throw exception if it's not possible to setup necessary files and directories.
     void setup();
 
-    /// Read magic number from disk checker file. Return std::nullopt if exception happens.
-    std::optional<UInt32> readDiskCheckerMagicNumber() const noexcept;
-
     const String disk_path;
     const String disk_checker_path = ".disk_checker_file";
     std::atomic<UInt64> keep_free_space_bytes;
@@ -184,11 +175,7 @@ private:
 
     std::atomic<bool> broken{false};
     std::atomic<bool> readonly{false};
-    std::unique_ptr<DiskLocalCheckThread> disk_checker;
-    /// A magic number to vaguely check if reading operation generates correct result.
-    /// -1 means there is no available disk_checker_file yet.
-    Int64 disk_checker_magic_number = -1;
-    bool disk_checker_can_check_read = true;
+    std::optional<DiskLocalCheckThread> disk_checker;
 };
 
 
