@@ -6,6 +6,13 @@
 -- trying to reuse the name — i.e. the session would not be back to its
 -- post-authentication baseline.
 
+-- Async `BackupsWorker::RestoreStarter::onException` logs failed restores at
+-- ERROR level via the server log, which `clickhouse-test` will then flag as
+-- spurious stderr. Suppress log forwarding for the duration of this test —
+-- the intentional `BACKUP_NOT_FOUND` below would otherwise look like a
+-- failure to the test harness.
+SET send_logs_level = 'fatal';
+
 DROP TABLE IF EXISTS reset_session_backup_src;
 
 CREATE TABLE reset_session_backup_src (x Int32) ENGINE = MergeTree ORDER BY tuple();
@@ -19,6 +26,9 @@ RESTORE TABLE reset_session_backup_src FROM Memory('reset_session_b1') FORMAT Nu
 SELECT count() FROM reset_session_backup_src;
 
 RESET SESSION;
+-- `RESET SESSION` resets `send_logs_level` to the profile default, so re-apply
+-- the suppression before the intentional `BACKUP_NOT_FOUND` below.
+SET send_logs_level = 'fatal';
 
 -- After the reset the in-memory holder must be empty: the named backup is
 -- gone, so restoring from it fails with `BACKUP_NOT_FOUND`.
