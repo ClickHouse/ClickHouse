@@ -49,6 +49,7 @@ namespace S3RequestSetting
 namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
+    extern const char s3_send_request_throw_expired_token[];
 }
 
 namespace ErrorCodes
@@ -394,7 +395,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         if (impl && offset_ > position)
         {
             size_t diff = offset_ - position;
-            if (diff < read_settings.remote_read_min_bytes_for_seek)
+            if (diff < read_settings.remote_fs_settings.min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset_;
@@ -503,7 +504,7 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
-    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
+    size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));
 }
 
@@ -535,6 +536,19 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     ProfileEvents::increment(ProfileEvents::S3GetObject);
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
+
+    /// Simulate a real `ExpiredToken` error returned from S3, used by integration tests for
+    /// the credentials refresh callback path in `processException`. Unlike
+    /// `s3_read_buffer_throw_expired_token` (which is gated by `if (impl)` in `nextImpl` and
+    /// therefore only fires on multi-fill streaming reads), this failpoint fires inside
+    /// `sendRequest` itself, so it covers both `nextImpl`-driven reads and the
+    /// `readBigAt` range-read path used by Parquet column-chunk reads.
+    fiu_do_on(FailPoints::s3_send_request_throw_expired_token,
+    {
+        throw S3Exception(
+            Aws::S3::S3Errors::UNKNOWN,
+            "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired.");
+    });
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
