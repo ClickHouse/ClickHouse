@@ -2068,6 +2068,26 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeTime>)
+        {
+            /// Conversion of Time64 to Time: drop sub-second part by dividing by the scale multiplier.
+            /// Unlike `DateTime64 -> Time`, no timezone offset is applied: both Time64 and Time are
+            /// timezone-unaware seconds-of-day, so the cast is a pure scale conversion. Applying the
+            /// session timezone offset here would silently shift values (see #104038 for the Arrow
+            /// analogue of this class of bug).
+            const auto & arg = arguments[0];
+            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arg.type).getScale();
+            const auto scale_mult = DecimalUtils::scaleMultiplier<Time64::NativeType>(from_scale);
+
+            const auto & from_col = assert_cast<const ColumnDecimal<Time64> &>(*arg.column);
+            auto to_col = ColumnVector<Int32>::create(input_rows_count);
+            auto & to_data = to_col->getData();
+            const auto & from_data = from_col.getData();
+            for (size_t i = 0; i < input_rows_count; ++i)
+                to_data[i] = static_cast<Int32>(from_data[i].value / scale_mult);
+            return to_col;
+        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
