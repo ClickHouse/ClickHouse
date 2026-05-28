@@ -146,9 +146,11 @@ Materialized views in ClickHouse are implemented more like insert triggers. If t
 
 Materialized views in ClickHouse do not have deterministic behaviour in case of errors. This means that blocks that had been already written will be preserved in the destination table, but all blocks after error will not.
 
-By default if pushing to one of views fails, then the INSERT query will fail too, and some blocks may not be written to the destination table. This can be changed using `materialized_views_ignore_errors` setting (you should set it for `INSERT` query), if you will set `materialized_views_ignore_errors=true`, then any errors while pushing to views will be ignored and all blocks will be written to the destination table.
+By default, if pushing to one of the views throws, the `INSERT` query fails. Whether the block has already reached the source table by that point is not guaranteed — it depends on insert pipeline timing, not on the view error.
 
-Also note, that `materialized_views_ignore_errors` set to `true` by default for `system.*_log` tables.
+Setting `materialized_views_ignore_errors=true` on the `INSERT` query only changes error reporting: the view error is logged as a warning and the `INSERT` succeeds. The block still does not appear in that view's destination table, but the source table receives it as usual. To get exactly-once delivery to the views, retry the `INSERT` with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`).
+
+`materialized_views_ignore_errors` is `true` by default for `system.*_log` tables.
 :::
 
 If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
