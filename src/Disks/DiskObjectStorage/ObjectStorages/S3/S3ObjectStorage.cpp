@@ -680,13 +680,18 @@ void S3ObjectStorage::applyNewSettings(
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
     auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName());
+    auto apply_endpoint_settings = [&]
+    {
+        /// Start endpoint credentials from empty so removing a credential-bearing
+        /// field from a still-matching endpoint config revokes the old value.
+        modified_settings->resetCredentialsForUserControlledRequest();
+        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    };
 
     /// Apply global <s3> endpoint settings first (lowest priority) for disk configs.
     if (for_disk_s3 && endpoint_settings)
-    {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
+        apply_endpoint_settings();
 
     /// Apply config settings. For disk configs these take priority over endpoint defaults.
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
