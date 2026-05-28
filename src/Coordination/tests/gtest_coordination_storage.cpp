@@ -1206,7 +1206,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         create_request->path = path;
         create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
         storage.preprocessRequest(create_request, session_id, 0, req_zxid);
-        auto acls = storage.uncommitted_state.getACLs(path);
+        auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, digest);
         storage.processRequest(create_request, session_id, req_zxid);
@@ -1217,7 +1217,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         set_acl_request->path = path;
         set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
         storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid);
-        acls = storage.uncommitted_state.getACLs(path);
+        acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 1);
         ASSERT_EQ(acls[0].id, new_digest);
         storage.processRequest(set_acl_request, session_id, req_zxid);
@@ -1233,7 +1233,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         create_request->path = path;
         create_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{digest}}};
         storage.preprocessRequest(create_request, session_id, 0, req_zxid);
-        auto acls = storage.uncommitted_state.getACLs(path);
+        auto acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(create_request, session_id, req_zxid);
         ASSERT_EQ(storage.container.getValue(path).acl_id, 0);
@@ -1243,7 +1243,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
         set_acl_request->path = path;
         set_acl_request->acls = {Coordination::ACL{.permissions = Coordination::ACL::All, .scheme = "digest", .id = std::string{new_digest}}};
         storage.preprocessRequest(set_acl_request, session_id, 0, req_zxid);
-        acls = storage.uncommitted_state.getACLs(path);
+        acls = getUncommittedACLs(storage, path);
         ASSERT_EQ(acls.size(), 0);
         storage.processRequest(set_acl_request, session_id, req_zxid);
         ASSERT_EQ(storage.container.getValue(path).acl_id, 0);

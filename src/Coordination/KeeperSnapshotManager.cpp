@@ -184,6 +184,7 @@ namespace
             in.readStrict(node.data.get(), node.stats.data_size);
         }
 
+        bool add_usage = true;
         if (version >= SnapshotVersion::V7)
         {
             readBinary(node.acl_id, in);
@@ -223,10 +224,14 @@ namespace
             }
 
             if (!cleanup_acl)
+            {
                 node.acl_id = acl_map.convertACLs(acls);
+                add_usage = false;
+            }
         }
 
-        acl_map.addUsage(node.acl_id);
+        if (add_usage)
+            acl_map.addUsage(node.acl_id);
 
         if (version < SnapshotVersion::V6)
         {

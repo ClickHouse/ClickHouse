@@ -132,6 +132,14 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
         });
 }
 
+template <typename Storage>
+Coordination::ACLs getUncommittedACLs(const Storage & storage, std::string_view path)
+{
+    auto node = storage.uncommitted_state.getNode(path);
+    Coordination::ACLId acl_id = node ? node->acl_id : 0;
+    return storage.acl_map.convertNumber(acl_id);
+}
+
 using Implementation = testing::Types<TestParam<DB::KeeperMemoryStorage, true>
                                       ,TestParam<DB::KeeperMemoryStorage, false>
 #if USE_ROCKSDB

@@ -512,16 +512,16 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
     state_machine->pre_commit(2, create_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    ASSERT_TRUE(uncommitted_state.nodes.contains(node_path));
+    const auto & storage = state_machine->getStorageUnsafe();
+    ASSERT_TRUE(storage.uncommitted_state.nodes.contains(node_path));
 
     // commit log entries
     state_machine->commit(1, auth_entry->get_buf());
     state_machine->commit(2, create_entry->get_buf());
 
-    auto node = uncommitted_state.getNode(node_path);
+    auto node = storage.uncommitted_state.getNode(node_path);
     ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);
@@ -816,11 +816,11 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
     state_machine->commit(2, create_entry->get_buf());
     state_machine->commit(3, set_acl_entry->get_buf());
 
-    const auto & uncommitted_state = state_machine->getStorageUnsafe().uncommitted_state;
-    auto node = uncommitted_state.getNode(node_path);
+    const auto & storage = state_machine->getStorageUnsafe();
+    auto node = storage.uncommitted_state.getNode(node_path);
 
     ASSERT_NE(node, nullptr);
-    auto acls = uncommitted_state.getACLs(node_path);
+    auto acls = getUncommittedACLs(storage, node_path);
     ASSERT_EQ(acls.size(), 1);
     EXPECT_EQ(acls[0].scheme, "digest");
     EXPECT_EQ(acls[0].id, digest);

@@ -45,9 +45,27 @@ ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
     if (acls.empty())
         return 0;
 
+    {
+        std::shared_lock shared_lock(map_mutex);
+        auto it = acl_to_num.find(acls);
+        if (it != acl_to_num.end())
+        {
+            ++num_to_acl.at(it->second).usage;
+            return it->second;
+        }
+    }
+
     std::lock_guard lock(map_mutex);
-    if (acl_to_num.contains(acls))
-        return acl_to_num[acls];
+
+    /// Re-check after re-locking.
+    {
+        auto it = acl_to_num.find(acls);
+        if (it != acl_to_num.end())
+        {
+            ++num_to_acl.at(it->second).usage;
+            return it->second;
+        }
+    }
 
     /// Start from one. After overflow, skip zero (sentinel) and IDs still in use.
     auto start = max_acl_id;
@@ -59,8 +77,11 @@ ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "All ACL IDs are in use");
     }
 
-    acl_to_num[acls] = index;
-    num_to_acl[index] = acls;
+    bool emplaced = acl_to_num.emplace(acls, index).second;
+    chassert(emplaced);
+    emplaced = num_to_acl.emplace(std::piecewise_construct,
+        std::forward_as_tuple(index), std::forward_as_tuple(std::move(acls), 1)).second;
+    chassert(emplaced);
 
     return index;
 }
@@ -70,42 +91,83 @@ Coordination::ACLs ACLMap::convertNumber(ACLId acls_id) const
     if (acls_id == 0)
         return Coordination::ACLs{};
 
-    std::lock_guard lock(map_mutex);
-    if (!num_to_acl.contains(acls_id))
+    std::shared_lock shared_lock(map_mutex);
+
+    auto it = num_to_acl.find(acls_id);
+    if (it == num_to_acl.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown ACL id {}. It's a bug", acls_id);
 
-    return num_to_acl.at(acls_id);
+    return it->second.acls;
+}
+
+std::vector<std::pair<ACLId, Coordination::ACLs>> ACLMap::getMapping() const
+{
+    std::shared_lock shared_lock(map_mutex);
+    std::vector<std::pair<ACLId, Coordination::ACLs>> vec;
+    vec.reserve(num_to_acl.size());
+    for (const auto & [id, entry] : num_to_acl)
+        vec.emplace_back(id, entry.acls);
+    return vec;
 }
 
 void ACLMap::addMapping(ACLId acls_id, const Coordination::ACLs & acls)
 {
     std::lock_guard lock(map_mutex);
-    num_to_acl[acls_id] = acls;
+
+    if (num_to_acl.contains(acls_id))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACL with id {} already exists", acls_id);
+    if (acl_to_num.contains(acls))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACLs with id {} and {} are identical", acls_id, acl_to_num.at(acls));
+
+    num_to_acl.emplace(std::piecewise_construct,
+        std::forward_as_tuple(acls_id), std::forward_as_tuple(acls, 0));
     acl_to_num[acls] = acls_id;
     max_acl_id = std::max(acls_id + 1, max_acl_id); /// max_acl_id pointer next slot
 }
 
 void ACLMap::addUsage(ACLId acl_id)
 {
-    std::lock_guard lock(map_mutex);
-    usage_counter[acl_id]++;
+    if (acl_id == 0)
+        return;
+
+    std::shared_lock shared_lock(map_mutex);
+    num_to_acl.at(acl_id).usage++;
 }
 
 void ACLMap::removeUsage(ACLId acl_id)
 {
-    std::lock_guard lock(map_mutex);
-    if (!usage_counter.contains(acl_id))
+    if (acl_id == 0)
         return;
 
-    usage_counter[acl_id]--;
-
-    if (usage_counter[acl_id] == 0)
     {
-        auto acls = num_to_acl[acl_id];
-        num_to_acl.erase(acl_id);
-        acl_to_num.erase(acls);
-        usage_counter.erase(acl_id);
+        /// Fast path: decrement without locking the mutex exclusively.
+        std::shared_lock shared_lock(map_mutex);
+        uint64_t usage = --num_to_acl.at(acl_id).usage;
+        chassert(usage < INT64_MAX);
+        if (usage != 0)
+            return;
     }
+
+    std::lock_guard lock(map_mutex);
+
+    auto it = num_to_acl.find(acl_id);
+    if (it == num_to_acl.end() || it->second.usage.load(std::memory_order_relaxed) != 0)
+        /// Benign race condition:
+        ///  1. We decrement usage to 0 and unlock mutex.
+        ///  2. Another thread does convertACLs and increments usage to 1.
+        ///
+        /// Then:
+        ///  3a. We re-lock the mutex and see usage == 1. No action needed.
+        ///
+        /// Or:
+        ///  3b. Another thread does another removeUsage and decrements usage to 0 again, and
+        ///      removes the acl from maps.
+        ///  4b. We re-lock the mutex and see that acl_id is not even in the map. No action needed.
+        return;
+
+    bool erased = acl_to_num.erase(it->second.acls);
+    chassert(erased);
+    num_to_acl.erase(it);
 }
 
 }

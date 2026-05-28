@@ -532,8 +532,6 @@ public:
 
         std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
 
-        Coordination::ACLs getACLs(std::string_view path, bool should_lock_storage = true) const;
-
         void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
         void applyDelta(const Delta & delta, uint64_t * digest);
         void rollbackDelta(const Delta & delta);
@@ -552,7 +550,6 @@ public:
         struct UncommittedNode
         {
             std::shared_ptr<Node> node{nullptr};
-            std::optional<Coordination::ACLs> acls{};
             /// Tracks which zxids have been applied to this uncommitted node.
             /// Typically 1-3 entries; vector is faster than unordered_set at this size.
             /// May contain duplicates when a Multi operation applies multiple deltas
@@ -647,14 +644,19 @@ public:
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, ACLId acl_id, bool update_digest);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
+    /// Used internally by `preprocess` and `processLocal` implementations.
+    /// They usually have acl_id readily available, so we don't have to look up the node here.
+    bool checkACL(ACLId acl_id, int32_t permissions, int64_t session_id, bool is_local);
+
+    /// Used externally. Locks storage mutex and looks up the node.
+    bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
     ~KeeperStorage();
