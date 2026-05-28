@@ -98,12 +98,24 @@ SocketImpl* SecureSocketImpl::acceptConnection(SocketAddress& clientAddr)
 }
 
 
+void SecureSocketImpl::setBioMethod(const BIO_METHOD * method)
+{
+	_bioMethod = method;
+}
+
+
+const BIO_METHOD * SecureSocketImpl::getBioMethod() const
+{
+	return _bioMethod ? _bioMethod : BIO_s_socket();
+}
+
+
 void SecureSocketImpl::acceptSSL()
 {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	poco_assert (!_pSSL);
 
-	BIO* pBIO = BIO_new(BIO_s_socket());
+	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
 
@@ -169,7 +181,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	poco_assert (!_pSSL);
 	poco_assert (_pSocket->initialized());
 
-	BIO* pBIO = BIO_new(BIO_s_socket());
+	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create SSL BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
 

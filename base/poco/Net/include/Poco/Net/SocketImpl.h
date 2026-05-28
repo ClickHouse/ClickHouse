@@ -215,7 +215,7 @@ namespace Net
         /// Returns true if the next operation corresponding to
         /// mode will not block, false otherwise.
 
-        bool pollImpl(Poco::Timespan & timeout, int mode);
+        virtual bool pollImpl(Poco::Timespan & timeout, int mode);
         /// Modifies `timeout`
 
         virtual void setSendBufferSize(int size);

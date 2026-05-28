@@ -193,6 +193,12 @@ namespace Net
         /// the socket are changed via the setBlocking method!
 
 
+        void setBioMethod(const BIO_METHOD * method);
+        /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.
+        /// Has no effect once the SSL handshake has been initiated (i.e. once
+        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
+
+
     protected:
         void acceptSSL();
         /// Assume per-object mutex is locked.
@@ -239,6 +245,10 @@ namespace Net
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
 
+        const BIO_METHOD * getBioMethod() const;
+        /// Returns the BIO_METHOD to use for the SSL transport BIO.
+        /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
+
         mutable std::recursive_mutex _mutex;
         SSL * _pSSL; // GUARDED_BY _mutex
         Poco::AutoPtr<SocketImpl> _pSocket;
@@ -246,6 +256,7 @@ namespace Net
         bool _needHandshake;
         std::string _peerHostName;
         Session::Ptr _pSession;
+        const BIO_METHOD * _bioMethod = nullptr;
 
         friend class SecureStreamSocketImpl;
 
