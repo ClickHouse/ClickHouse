@@ -1967,7 +1967,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
@@ -2049,11 +2049,11 @@ TEST_F(FileCacheTest, DiskCacheProviderHonoursFullRangeWhenBatchSizeIsOne)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
     /// The trigger: tells the provider it may only see ONE segment per call.
     /// The provider must ignore this (it is a one-shot lookup, not a streaming
     /// reader); otherwise the read returns only the first 10 bytes.
-    cache_settings.filesystem_cache_segments_batch_size = 1;
+    cache_settings.segments_batch_size = 1;
 
     auto provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
@@ -2107,7 +2107,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
@@ -2187,7 +2187,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialPutSegmentIsCacheable)
     const size_t object_size = 10;
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     auto provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
 
@@ -2295,7 +2295,7 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
 
@@ -2409,7 +2409,7 @@ TEST_F(FileCacheTest, DiskCacheProviderStackedQueryOrderOuterFirst)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     StoredObjects objects;
     objects.emplace_back(file_path, "", data.size());
@@ -2506,7 +2506,7 @@ TEST_F(FileCacheTest, DiskCacheProviderBypassReportsUncoveredRangesAsMiss)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings non_bypass_settings;
-    non_bypass_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    non_bypass_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     /// Prime the cache with the middle segment only — read `[10, 20)` through
     /// a normal (non-bypass) provider.
@@ -2535,8 +2535,8 @@ TEST_F(FileCacheTest, DiskCacheProviderBypassReportsUncoveredRangesAsMiss)
     /// Now lookup [0, 30) in BYPASS mode. Only [10, 20) is cached; the
     /// surrounding two 10-byte ranges must surface as misses.
     FilesystemCacheSettings bypass_settings;
-    bypass_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = true;
-    bypass_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    bypass_settings.read_if_exists_otherwise_bypass = true;
+    bypass_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     auto bypass_provider = std::make_shared<DiskCacheProvider>(cache, bypass_settings);
 
@@ -2612,7 +2612,7 @@ namespace
             wb->finalize();
 
             FilesystemCacheSettings cs;
-            cs.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+            cs.reserve_space_wait_lock_timeout_milliseconds = 1000;
             provider = std::make_shared<DiskCacheProvider>(cache, cs);
             source_reader = std::make_shared<LocalSourceReader>();
             objects.emplace_back(file_path, "", data.size());
@@ -2785,7 +2785,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
@@ -2876,7 +2876,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
     SCOPE_EXIT({ fs::remove(file_path); });
 
     FilesystemCacheSettings cache_settings;
-    cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
     auto source_reader = std::make_shared<LocalSourceReader>();
