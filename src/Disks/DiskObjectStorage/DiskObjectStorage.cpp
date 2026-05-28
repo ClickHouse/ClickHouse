@@ -700,6 +700,8 @@ bool DiskObjectStorage::isSharedCompatible() const
         case ObjectStorageType::Azure:
         case ObjectStorageType::Web:
             break;
+        case ObjectStorageType::GCS:
+            return false;
         default:
             return false;
     }

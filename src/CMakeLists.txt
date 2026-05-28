@@ -117,6 +117,7 @@ add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 add_headers_and_sources(dbms Disks/IO)
+add_headers_and_sources(dbms IO/GCS)
 add_headers_and_sources(dbms Disks/DiskObjectStorage)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/Replication)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
@@ -190,6 +191,7 @@ endif()
 add_headers_and_sources(dbms Databases/DataLake)
 
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/GCS)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Local)
 add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Web)
 

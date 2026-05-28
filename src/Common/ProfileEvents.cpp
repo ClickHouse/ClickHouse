@@ -760,6 +760,60 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromS3Bytes, "Bytes written to S3.", ValueType::Bytes) \
     M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.", ValueType::Number) \
     M(WriteBufferFromS3WaitInflightLimitMicroseconds, "Time spent on waiting while some of the current requests are done when its number reached the limit defined by s3_max_inflight_parts_for_one_file.", ValueType::Microseconds) \
+    \
+    M(GCSReadMicroseconds, "Time of GetObject and ReadObject requests to GCS storage.", ValueType::Microseconds) \
+    M(GCSReadRequestsCount, "Number of GetObject and ReadObject requests to GCS storage.", ValueType::Number) \
+    M(GCSReadRequestsErrors, "Number of non-throttling errors in GetObject and ReadObject requests to GCS storage.", ValueType::Number) \
+    M(GCSReadRequestsThrottling, "Number of throttling errors in GetObject and ReadObject requests to GCS storage.", ValueType::Number) \
+    M(GCSReadRequestAttempts, "Number of attempts for GetObject and ReadObject requests to GCS storage, including the initial try and any retries.", ValueType::Number) \
+    M(GCSReadRequestRetryableErrors, "Number of retryable errors for GetObject and ReadObject requests to GCS storage.", ValueType::Number) \
+    M(GCSWriteMicroseconds, "Time of ListObjects, DeleteObject and WriteObject requests to GCS storage.", ValueType::Microseconds) \
+    M(GCSWriteRequestsCount, "Number of ListObjects, DeleteObject and WriteObject requests to GCS storage.", ValueType::Number) \
+    M(GCSWriteRequestsErrors, "Number of non-throttling errors in ListObjects, DeleteObject and WriteObject requests to GCS storage.", ValueType::Number) \
+    M(GCSWriteRequestsThrottling, "Number of throttling errors in ListObjects, DeleteObject and WriteObject requests to GCS storage.", ValueType::Number) \
+    M(GCSWriteRequestAttempts, "Number of attempts for ListObjects, DeleteObject and WriteObject requests to GCS storage, including the initial try and any retries.", ValueType::Number) \
+    M(GCSWriteRequestRetryableErrors, "Number of retryable errors for ListObjects, DeleteObject and WriteObject requests to GCS storage.", ValueType::Number) \
+    M(DiskGCSReadMicroseconds, "Time of GetObject and ReadObject requests to DiskGCS storage.", ValueType::Microseconds) \
+    M(DiskGCSReadRequestsCount, "Number of GetObject and ReadObject requests to DiskGCS storage.", ValueType::Number) \
+    M(DiskGCSReadRequestsErrors, "Number of non-throttling errors in GetObject and ReadObject requests to DiskGCS storage.", ValueType::Number) \
+    M(DiskGCSReadRequestsThrottling, "Number of throttling errors in GetObject and ReadObject requests to DiskGCS storage.", ValueType::Number) \
+    M(DiskGCSReadRequestAttempts, "Number of attempts for GetObject and ReadObject requests to DiskGCS storage, including the initial try and any retries.", ValueType::Number) \
+    M(DiskGCSReadRequestRetryableErrors, "Number of retryable errors for GetObject and ReadObject requests to DiskGCS storage.", ValueType::Number) \
+    M(DiskGCSWriteMicroseconds, "Time of ListObjects, DeleteObject and WriteObject requests to DiskGCS storage.", ValueType::Microseconds) \
+    M(DiskGCSWriteRequestsCount, "Number of ListObjects, DeleteObject and WriteObject requests to DiskGCS storage.", ValueType::Number) \
+    M(DiskGCSWriteRequestsErrors, "Number of non-throttling errors in ListObjects, DeleteObject and WriteObject requests to DiskGCS storage.", ValueType::Number) \
+    M(DiskGCSWriteRequestsThrottling, "Number of throttling errors in ListObjects, DeleteObject and WriteObject requests to DiskGCS storage.", ValueType::Number) \
+    M(DiskGCSWriteRequestAttempts, "Number of attempts for ListObjects, DeleteObject and WriteObject requests to DiskGCS storage, including the initial try and any retries.", ValueType::Number) \
+    M(DiskGCSWriteRequestRetryableErrors, "Number of retryable errors for ListObjects, DeleteObject and WriteObject requests to DiskGCS storage.", ValueType::Number) \
+    M(GCSGetRequestThrottlerCount, "Number of GCS GetObject and ReadObject requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(GCSGetRequestThrottlerBlocked, "Number of GCS GetObject and ReadObject requests blocked by throttler.", ValueType::Number) \
+    M(GCSGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform GCS GetObject and ReadObject request throttling.", ValueType::Microseconds) \
+    M(GCSPutRequestThrottlerCount, "Number of GCS ListObjects, DeleteObject and WriteObject requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(GCSPutRequestThrottlerBlocked, "Number of GCS ListObjects, DeleteObject and WriteObject requests blocked by throttler.", ValueType::Number) \
+    M(GCSPutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform GCS ListObjects, DeleteObject and WriteObject request throttling.", ValueType::Microseconds) \
+    M(DiskGCSGetRequestThrottlerCount, "Number of DiskGCS GetObject and ReadObject requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(DiskGCSGetRequestThrottlerBlocked, "Number of DiskGCS GetObject and ReadObject requests blocked by throttler.", ValueType::Number) \
+    M(DiskGCSGetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskGCS GetObject and ReadObject request throttling.", ValueType::Microseconds) \
+    M(DiskGCSPutRequestThrottlerCount, "Number of DiskGCS ListObjects, DeleteObject and WriteObject requests passed through throttler: blocked and not blocked.", ValueType::Number) \
+    M(DiskGCSPutRequestThrottlerBlocked, "Number of DiskGCS ListObjects, DeleteObject and WriteObject requests blocked by throttler.", ValueType::Number) \
+    M(DiskGCSPutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskGCS ListObjects, DeleteObject and WriteObject request throttling.", ValueType::Microseconds) \
+    M(GCSGetObject, "Number of GCS API GetObject calls.", ValueType::Number) \
+    M(GCSListObjects, "Number of GCS API ListObjects calls.", ValueType::Number) \
+    M(GCSDeleteObject, "Number of GCS API DeleteObject calls.", ValueType::Number) \
+    M(GCSReadObject, "Number of GCS API ReadObject calls.", ValueType::Number) \
+    M(GCSWriteObject, "Number of GCS API WriteObject calls.", ValueType::Number) \
+    M(DiskGCSGetObject, "Number of DiskGCS API GetObject calls.", ValueType::Number) \
+    M(DiskGCSListObjects, "Number of DiskGCS API ListObjects calls.", ValueType::Number) \
+    M(DiskGCSDeleteObject, "Number of DiskGCS API DeleteObject calls.", ValueType::Number) \
+    M(DiskGCSReadObject, "Number of DiskGCS API ReadObject calls.", ValueType::Number) \
+    M(DiskGCSWriteObject, "Number of DiskGCS API WriteObject calls.", ValueType::Number) \
+    M(ReadBufferFromGCSMicroseconds, "Time spent on reading from GCS.", ValueType::Microseconds) \
+    M(ReadBufferFromGCSInitMicroseconds, "Time spent initializing connection to GCS.", ValueType::Microseconds) \
+    M(ReadBufferFromGCSBytes, "Bytes read from GCS.", ValueType::Bytes) \
+    M(ReadBufferFromGCSRequestsErrors, "Number of exceptions while reading from GCS.", ValueType::Number) \
+    M(WriteBufferFromGCSMicroseconds, "Time spent on writing to GCS.", ValueType::Microseconds) \
+    M(WriteBufferFromGCSBytes, "Bytes written to GCS.", ValueType::Bytes) \
+    M(WriteBufferFromGCSRequestsErrors, "Number of exceptions while writing to GCS.", ValueType::Number) \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
