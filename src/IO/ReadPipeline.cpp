@@ -247,7 +247,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     return impl;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(const std::string & /*query_id*/) const
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(const std::string & query_id) const
 {
     const auto & settings = source->read_settings;
     if (!settings.use_reader_executor)
@@ -347,7 +347,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
         if (dc.cache)
         {
             executor_caches.push_back(std::make_shared<DiskCacheProvider>(
-                dc.cache, dc.cache_settings, dc.cache_log,
+                dc.cache, dc.cache_settings, query_id, dc.cache_log,
                 dc.custom_cache_key, dc.custom_origin));
         }
     }

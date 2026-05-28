@@ -534,6 +534,26 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
 }
 
 
+DiskCacheProvider::DiskCacheProvider(
+    FileCachePtr cache_,
+    const FilesystemCacheSettings & cache_settings_,
+    const String & query_id_,
+    std::shared_ptr<FilesystemCacheLog> cache_log_,
+    std::optional<FileCacheKey> custom_cache_key_,
+    std::optional<FileCacheOriginInfo> custom_origin_)
+    : cache(std::move(cache_))
+    , cache_settings(cache_settings_)
+    , cache_log(std::move(cache_log_))
+    , custom_cache_key(std::move(custom_cache_key_))
+    , custom_origin(std::move(custom_origin_))
+{
+    /// Register a per-query context if `query_id_` is non-empty and the
+    /// cache settings request a per-query download budget. `getQueryContextHolder`
+    /// returns null when `filesystem_cache_max_download_size == 0` or no query
+    /// limit is configured on the cache, which is the unbounded path.
+    query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
+}
+
 std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
     const StoredObject & object,
     size_t object_file_offset,

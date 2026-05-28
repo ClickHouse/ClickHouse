@@ -77,19 +77,20 @@ private:
 class DiskCacheProvider : public ICacheProvider
 {
 public:
+    /// `query_id` is required to enforce `filesystem_cache_max_download_size`:
+    /// the provider keeps a `FileCache::QueryContextHolder` alive for its
+    /// whole lifetime so `FileCache::tryReserve` (called inside
+    /// `DiskCacheHandle::put`) finds the matching per-query budget when it
+    /// looks up `CurrentThread::getQueryId()`. Passing an empty `query_id`
+    /// (or running with `filesystem_cache_max_download_size = 0`) is
+    /// equivalent to no holder — the cache then has no per-query limit.
     DiskCacheProvider(
         FileCachePtr cache_,
         const FilesystemCacheSettings & cache_settings_,
+        const String & query_id_ = {},
         std::shared_ptr<FilesystemCacheLog> cache_log_ = nullptr,
         std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
-        std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt)
-        : cache(std::move(cache_))
-        , cache_settings(cache_settings_)
-        , cache_log(std::move(cache_log_))
-        , custom_cache_key(std::move(custom_cache_key_))
-        , custom_origin(std::move(custom_origin_))
-    {
-    }
+        std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt);
 
     std::unique_ptr<ICacheHandle> lookup(
         const StoredObject & object,
@@ -103,6 +104,11 @@ private:
     std::shared_ptr<FilesystemCacheLog> cache_log;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
+    /// Per-query budget holder. Keeps the `FileCacheQueryLimit::QueryContext`
+    /// registered under `query_id` for the lifetime of the provider, so
+    /// `tryReserve` charges every `DiskCacheHandle::put` against the same
+    /// per-query budget — mirrors `CachedOnDiskReadBufferFromFile`'s holder.
+    FileCache::QueryContextHolderPtr query_context_holder;
 };
 
 }
