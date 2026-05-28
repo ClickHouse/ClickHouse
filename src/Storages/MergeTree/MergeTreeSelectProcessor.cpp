@@ -409,10 +409,13 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromChunk(
     {
         const auto & header_col = pk_block_header.getByPosition(j);
         auto column = header_col.column->cloneEmpty();
-        /// Source may be wrapped (sparse, const, low-cardinality, replicated). `insertFrom`
-        /// requires a representation compatible with the destination, so fully materialize.
-        ColumnPtr source_column = data_columns[pk_positions[j]]->convertToFullIfNeeded();
-        column->insertFrom(*source_column, source_row);
+        /// Round-trip through `Field` so insertion works for any column representation on
+        /// either side (sparse / const / `LowCardinality` / replicated source, and the
+        /// destination is `ColumnLowCardinality` when the PK type is `LowCardinality(...)`).
+        /// Called once per chunk, so the `Field` cost is negligible.
+        Field field;
+        data_columns[pk_positions[j]]->get(source_row, field);
+        column->insert(field);
         pk_columns.push_back({std::move(column), header_col.type, header_col.name});
     }
     return makeVirtualRowChunk(current_task, Block(std::move(pk_columns)));
@@ -493,7 +496,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         /// - PREWHERE filters all rows (merge gets updated position without actual data)
         /// - A downstream filter (WHERE, JOIN) removes all rows (virtual row passes through filters)
         ///
-        /// Prefer extracting the boundary key from the chunk's actual data — it is always a
+        /// Prefer extracting the boundary key from the chunk's actual data: it is always a
         /// tight, correct bound on the next data's PK regardless of granule alignment.
         /// Fall back to the index-based boundary when the chunk has no surviving data (e.g.
         /// PREWHERE filtered everything) or when the PK columns are not part of the result.
