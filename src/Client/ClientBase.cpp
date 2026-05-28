@@ -928,23 +928,20 @@ void ClientBase::initClientContext(ContextMutablePtr context)
     client_context->setQueryKind(query_kind);
     client_context->setQueryParameters(query_parameters);
 
-    /// Snapshot the connection-start database before any in-session `USE` could
-    /// mutate `default_database`. `RESET SESSION` restores from here.
-    if (!default_database_at_connect.has_value())
+    /// Snapshot the database / settings / query-parameter values the client
+    /// started with — before any in-session `USE` / `SET` / `SET param_*` can
+    /// mutate them. Command-line overrides like `--max_threads N` and
+    /// `--param_x=...` have already been applied to the client state by this
+    /// point, so they end up in the snapshot. `RESET SESSION` restores from
+    /// these. One-shot: subsequent `initClientContext` calls (after a
+    /// reconnect) must not overwrite with post-reset/post-`SET` state.
+    if (!connect_snapshot_taken)
+    {
         default_database_at_connect = default_database;
-
-    /// Snapshot the effective settings before any in-session `SET` could mutate
-    /// them. Command-line overrides like `--max_threads N` have already been
-    /// applied to the context by this point, so they end up in the snapshot.
-    if (!settings_at_connect)
         settings_at_connect = std::make_unique<Settings>(client_context->getSettingsCopy());
-
-    /// Same idea for query parameters supplied via `--param_*`: the client
-    /// has parsed them into `query_parameters` (and pushed them to the
-    /// context two lines above) before any in-session `SET param_*`, so we
-    /// can stash that map here and `RESET SESSION` can restore from it.
-    if (!query_parameters_at_connect.has_value())
         query_parameters_at_connect = query_parameters;
+        connect_snapshot_taken = true;
+    }
 }
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)

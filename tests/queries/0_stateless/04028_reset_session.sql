@@ -35,7 +35,9 @@ SET send_logs_level = 'fatal';
 
 SELECT '-- post-reset --';
 -- 999 / 12345 are arbitrary non-defaults; they must be gone.
-SELECT getSetting('max_threads') = 999, getSetting('max_block_size') = 12345;
+-- Phrase as `!= 999` so the reference encodes the success case as `1`,
+-- which makes the direction obvious if this ever regresses.
+SELECT getSetting('max_threads') != 999, getSetting('max_block_size') != 12345;
 -- Query parameters: both should be gone. Use the substitution-error path
 -- because there's no public introspection for the session's parameter map.
 SELECT {x:String}; -- { serverError UNKNOWN_QUERY_PARAMETER }

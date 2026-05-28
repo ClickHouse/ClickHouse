@@ -2101,25 +2101,33 @@ void Context::resetToUserDefaults()
     ///      `setUser`.
     /// The constraint chain is built on top of the global context's existing
     /// constraints, matching how `setCurrentProfilesWithLock` chains them.
+    ///
+    /// We don't share code with the live-context apply machinery in step (2)/(3)
+    /// because that machinery operates against `this->settings` under lock; the
+    /// reset path needs to build the result in a local `Settings` and atomically
+    /// swap. Sharing the inner quirks-and-clamp tail via a lambda is the easiest
+    /// guard against the two paths drifting.
+    const auto apply_and_clamp = [this](Settings & s, const SettingsChanges & changes)
+    {
+        s.applyChanges(changes);
+        applySettingsQuirks(s);
+        if (auto type = getApplicationType();
+            type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
+            doSettingsSanityCheckClamp(s, getLogger("SettingsSanity"));
+    };
+
     Settings new_settings = getGlobalContext()->getSettingsCopy();
-    new_settings.applyChanges(defaults.enabled_profiles->settings);
-    applySettingsQuirks(new_settings);
-    if (auto type = getApplicationType();
-        type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(new_settings, getLogger("SettingsSanity"));
+    apply_and_clamp(new_settings, defaults.enabled_profiles->settings);
 
     auto new_profiles_state = defaults.enabled_profiles->getConstraintsAndProfileIDs(
         getGlobalContext()->getSettingsConstraintsAndCurrentProfiles());
 
     new_profiles_state->constraints.check(new_settings, auth_settings_snapshot, SettingSource::QUERY);
-    new_settings.applyChanges(auth_settings_snapshot);
-    applySettingsQuirks(new_settings);
     /// The login path runs the server-level sanity clamp after the auth-server
     /// settings are applied (via `applySettingChangeWithLock` which clamps
-    /// per-setting); run it once at the end here to land in the same state.
-    if (auto type = getApplicationType();
-        type == ApplicationType::LOCAL || type == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(new_settings, getLogger("SettingsSanity"));
+    /// per-setting); the lambda runs it once at the end here to land in the
+    /// same state.
+    apply_and_clamp(new_settings, auth_settings_snapshot);
 
     /// Take ownership of fields whose destructors do non-trivial work and run
     /// those destructors after we drop the lock. `TemporaryTableHolder::~`
@@ -2169,6 +2177,10 @@ void Context::resetToUserDefaults()
     /// back to a pool as "clean" would silently re-leak the very state we
     /// were called to drop. So: keep going through every callback, capturing
     /// the first exception, then rethrow it after the loop.
+    /// TODO: no callback in tree currently throws, so this rethrow-after-loop
+    /// behaviour is only covered by code review. A gtest would need to spin
+    /// up a Context with a real user/session, which no existing test does;
+    /// worth revisiting when that infrastructure lands.
     std::exception_ptr first_callback_exception;
     for (auto & [_, callback] : callbacks_snapshot)
     {

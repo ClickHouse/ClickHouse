@@ -5,7 +5,7 @@ mango	7
 hello
 1
 -- post-reset --
-0	0
+1	1
 0
 1
 reset is idempotent

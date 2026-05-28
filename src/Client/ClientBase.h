@@ -318,9 +318,13 @@ protected:
     ContextMutablePtr client_context;
 
     String default_database;
-    /// Value of `default_database` at the time of the first successful connection.
-    /// Used by `RESET SESSION` to revert any in-session `USE` so a subsequent
-    /// reconnect lands on the same database the user originally asked for.
+    /// Snapshot of the connection-start values for `default_database`,
+    /// the post-command-line `Settings`, and `query_parameters`, captured
+    /// on the first `initClientContext` call. `RESET SESSION` restores
+    /// from these. `connect_snapshot_taken` guards the one-shot capture
+    /// so reconnects don't overwrite the snapshot with the post-reconnect
+    /// (and therefore post-`SET`/post-`USE`) state.
+    bool connect_snapshot_taken = false;
     std::optional<String> default_database_at_connect;
     String query_id;
     Int32 suggestion_limit;
