@@ -20,15 +20,19 @@ SET automatic_parallel_replicas_mode = 0;
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
 
--- The sharded-aggregator subquery scatters rows by hash and disables read-in-order,
--- so it announces `Default`. The in-order subquery announces `WithOrder`. Both
--- subqueries share the same `ParallelReplicasReadingCoordinator` instance.
+-- The outer query carries `optimize_aggregation_in_order = 1`, which the parallel-
+-- replicas planner uses to derive `WithOrder` for the standard-aggregator path. The
+-- inner SETTINGS pin `optimize_aggregation_in_order = 0` on each subquery, but the
+-- sharded-aggregator subquery still scatters rows by hash and ends up announcing
+-- `Default`. Both subqueries share the same `ParallelReplicasReadingCoordinator`
+-- instance, which is what the bug requires.
 SELECT
     (SELECT count() FROM
         (SELECT a, sum(b) FROM t_pr_coord_collision GROUP BY a
-         SETTINGS enable_sharding_aggregator = 0, optimize_aggregation_in_order = 1)) > 0,
+         SETTINGS enable_sharding_aggregator = 0, optimize_aggregation_in_order = 0)) > 0,
     (SELECT count() FROM
         (SELECT a, sum(b) FROM t_pr_coord_collision GROUP BY a
-         SETTINGS enable_sharding_aggregator = 1, optimize_aggregation_in_order = 1)) > 0;
+         SETTINGS enable_sharding_aggregator = 1, optimize_aggregation_in_order = 0)) > 0
+SETTINGS optimize_aggregation_in_order = 1;
 
 DROP TABLE t_pr_coord_collision;
