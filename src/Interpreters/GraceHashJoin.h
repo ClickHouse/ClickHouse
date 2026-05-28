@@ -105,7 +105,7 @@ public:
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
-    InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
+    InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0, bool enable_row_store = true);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);

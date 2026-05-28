@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
@@ -25,6 +26,7 @@ public:
     explicit FinishCounter(size_t total_) : total(total_) { }
 
     bool isLast() { return finished.fetch_add(1) + 1 >= total; }
+    size_t getTotal() const { return total; }
 
 private:
     const size_t total;
@@ -102,6 +104,7 @@ public:
 
     Status prepare() override;
     void work() override;
+    PipelineUpdate updatePipeline() override;
 
     ProcessorMemoryStats getMemoryStats() override;
     bool spillOnSize(size_t bytes) override;
@@ -114,6 +117,23 @@ private:
     bool for_totals = false;
     bool set_totals = false;
     bool post_build_phase = false;
+    InputPorts::iterator post_build_processors_begin;
+};
+
+/// Finalizes right join side after all data was inserted.
+/// Created from the last finishing `FillingRightJoinSideTransform` instance when a post build phase is needed.
+class FinalizingRightJoinSideTransform final : public IProcessor
+{
+public:
+    explicit FinalizingRightJoinSideTransform(JoinPtr join_);
+    String getName() const override { return "FinalizingRightJoinSide"; }
+
+    Status prepare() override;
+    void work() override;
+
+private:
+    JoinPtr join;
+    bool finished = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>

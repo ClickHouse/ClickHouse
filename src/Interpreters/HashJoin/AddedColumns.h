@@ -205,9 +205,9 @@ public:
 
         const auto & access_indexes = join.getJoinedData()->column_access_indexes;
 
-        if (join.getJoinedData()->use_row_store)
+        if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Ready)
         {
-            using AccessType = HashJoin::ColumnAccessIndex::Type;
+            using AccessType = ColumnAccessIndex::Type;
             Columns row_store_sample_columns;
             for (size_t i = 0; i < saved_block_sample.columns(); ++i)
             {

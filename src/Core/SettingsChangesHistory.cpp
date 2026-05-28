@@ -46,11 +46,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_posting_list_apply_mode", "materialize", "materialize", "New setting for lazy posting list apply mode"},
             {"text_index_density_threshold", 0.2, 0.2, "New setting for lazy posting list density threshold"},
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
-            {"min_columns_for_hash_join_row_store", 0, 3, "New setting to control the minimum number of payload columns to trigger transforming hash join payload to row major."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"min_columns_for_hash_join_row_store", 0, 3, "New setting to control the minimum number of payload columns to trigger transforming hash join payload to row major."},
+            {"max_bytes_for_hash_join_row_store", 0, 0, "Maximum total bytes of build-side data below which the hash join payload is transformed to row-major format. 0 means no maximum."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {

@@ -708,7 +708,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
-        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num, /*enable_row_store=*/false);
         auto right_reader = current_bucket->startJoining();
         size_t num_rows = 0; /// count rows that were written and rehashed
         for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
@@ -730,9 +730,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     return nullptr;
 }
 
-GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num)
+GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin(const String & bucket_id, size_t reserve_num, bool enable_row_store)
 {
-    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id);
+    return std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, reserve_num, bucket_id, /*use_two_level_maps=*/false, enable_row_store);
 }
 
 Block GraceHashJoin::prepareRightBlock(const Block & block)
@@ -839,7 +839,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         /// new modulus, so ~half stay here and the rest are flushed to disk. Reserving for the
         /// full `prev_keys_num` would allocate a power-of-two buffer for the pre-rehash size and
         /// immediately blow past `max_bytes_before_external_join`.
-        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2, /*enable_row_store=*/false);
 
         if (current_block.rows() > 0)
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);

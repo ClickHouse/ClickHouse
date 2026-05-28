@@ -268,6 +268,22 @@ void SpillingHashJoin::onBuildPhaseFinish()
     chosen_join->onBuildPhaseFinish();
 }
 
+bool SpillingHashJoin::hasPostBuildPhase() const
+{
+    return chosen_join && chosen_join->hasPostBuildPhase();
+}
+
+bool SpillingHashJoin::runPostBuildPhase()
+{
+    return chosen_join && chosen_join->runPostBuildPhase();
+}
+
+void SpillingHashJoin::onPostBuildPhaseFinish()
+{
+    if (chosen_join)
+        chosen_join->onPostBuildPhaseFinish();
+}
+
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
     if (hash_join)

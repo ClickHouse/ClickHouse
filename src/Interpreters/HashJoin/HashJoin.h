@@ -114,7 +114,8 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false);
+        bool use_two_level_maps_ = false,
+        bool enable_row_store_ = true);
 
     ~HashJoin() override;
 
@@ -188,7 +189,7 @@ public:
     void onBuildPhaseFinish() override;
 
     bool hasPostBuildPhase() const override;
-    void runPostBuildPhase() override;
+    bool runPostBuildPhase() override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -408,14 +409,12 @@ public:
     using NullmapList = std::deque<NullMapHolder>;
     using ScatteredColumnsList = std::list<ScatteredColumns>;
 
-    struct ColumnAccessIndex
+    enum class RowStoreState : uint8_t
     {
-        enum Type : uint8_t { Columns, RowStore };
-        Type type;
-        size_t index;
+        Disabled,
+        Enabled,
+        Ready,
     };
-
-    using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
 
     struct RightTableData
     {
@@ -443,10 +442,9 @@ public:
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
-        /// Whether the row store initialization was already attempted or not
-        bool row_store_initialized = false;
-        /// Whether the right table payload is in row store
-        bool use_row_store = false;
+        RowStoreState row_store_state = RowStoreState::Enabled;
+        /// Track which columns are present as `ColumnReplicated` in any block.
+        std::vector<bool> column_replicated_flags;
 
         /// For range types: the minimum key value and the range size from min_key to max_key.
         struct KeyRange
@@ -503,8 +501,6 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
-    RowDataStorePtr createRowStoreForBlock(const Block & block) const;
-
     size_t getAndSetRightTableKeys() const;
 
     bool hasNonJoinedRows();
@@ -522,8 +518,6 @@ public:
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
-
-    void initRowStore(const Block & block);
 
 private:
     friend class NotJoinedHash;
@@ -632,6 +626,10 @@ private:
 
     template <bool is_signed, typename Key, typename MapsTemplate>
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
+
+    bool isRowStoreSupported() const;
+    void finalizeRowStoreStatus();
+    void tryConvertToRowStore();
 
     void reinitUsedFlags();
 

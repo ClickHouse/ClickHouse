@@ -3,6 +3,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Common/PODArray.h>
 
+#include <atomic>
 #include <vector>
 
 
@@ -37,7 +38,14 @@ public:
 
     using RowLayout = std::vector<FieldLayout>;
 
+    static std::shared_ptr<RowDataStore> create();
     static std::shared_ptr<RowDataStore> create(const Columns & columns);
+
+    /// Initialize the row store from a set of columns.
+    void init(const Columns & columns);
+
+    /// Same as above, but ensures the row store is initialized only once.
+    bool tryInit(const Columns & columns);
 
     /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
     /// For nullable fields the null flag is written at the field's first byte followed by the value.
@@ -67,6 +75,7 @@ private:
     Chars chars;
     RowLayout layout;
     size_t row_length;
+    std::atomic<bool> init_flag{false};
 
     explicit RowDataStore(const RowLayout & layout_);
     explicit RowDataStore(RowLayout && layout_);

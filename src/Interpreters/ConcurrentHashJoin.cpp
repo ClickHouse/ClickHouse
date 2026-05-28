@@ -284,18 +284,11 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
-    /// Initialize the row store layout based on the first block.
-    std::call_once(row_store_init_flag, [&]
-    {
-        for (auto & hj : hash_joins)
-            hj->data->initRowStore(right_block);
-    });
-
-    /// We also build the row store here to avoid building it multiple times on different threads.
+    /// We also create the row store here to avoid creating it multiple times on different threads.
     bool use_zero_copy = useZeroCopyApproach(right_block);
-    RowDataStorePtr block_row_store = nullptr;
-    if (use_zero_copy)
-        block_row_store = hash_joins[0]->data->createRowStoreForBlock(right_block);
+    RowDataStorePtr block_row_store;
+    if (use_zero_copy && getData(hash_joins[0])->row_store_state == HashJoin::RowStoreState::Enabled)
+        block_row_store = RowDataStore::create();
 
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), use_zero_copy);
     size_t blocks_left = 0;
@@ -888,6 +881,18 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     for (const auto & hash_join : hash_joins)
         hash_join->data->all_values_unique = all_values_unique;
 
+    auto & merged_flags = getData(hash_joins[0])->column_replicated_flags;
+    for (auto & hash_join : hash_joins)
+    {
+        const auto & src_flags = getData(hash_join)->column_replicated_flags;
+        chassert(merged_flags.size() == src_flags.size());
+        for (size_t j = 0; j < merged_flags.size(); ++j)
+            merged_flags[j] = merged_flags[j] || src_flags[j];
+    }
+
+    for (size_t i = 1; i < slots; ++i)
+        getData(hash_joins[i])->column_replicated_flags = merged_flags;
+
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
     // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
     for (const auto & hash_join : hash_joins)
@@ -923,6 +928,54 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     }
 
     build_phase_finished = true;
+
+    for (size_t i = 0; i < hash_joins.size(); ++i)
+    {
+        auto & data = *getData(hash_joins[i]);
+        if (data.row_store_state == HashJoin::RowStoreState::Enabled)
+            join_data_iters.push_back({i, data.columns.begin()});
+    }
+}
+
+bool ConcurrentHashJoin::hasPostBuildPhase() const
+{
+    return !join_data_iters.empty();
+}
+
+bool ConcurrentHashJoin::runPostBuildPhase()
+{
+    ColumnsInfo * columns_info = nullptr;
+    const ColumnAccessIndexes * access_indexes = nullptr;
+    {
+        std::lock_guard lock(join_data_mutex);
+        while (current_join_data_idx < join_data_iters.size())
+        {
+            auto & join_data_iter = join_data_iters[current_join_data_idx];
+            auto & data = *getData(hash_joins[join_data_iter.idx]);
+            if (join_data_iter.iter != data.columns.end())
+            {
+                columns_info = &join_data_iter.iter->columns_info;
+                access_indexes = &data.column_access_indexes;
+                ++join_data_iter.iter;
+                break;
+            }
+            ++current_join_data_idx;
+        }
+    }
+
+    if (columns_info)
+        columns_info->tryTransferToRowStore(*access_indexes);
+    return columns_info != nullptr;
+}
+
+void ConcurrentHashJoin::onPostBuildPhaseFinish()
+{
+    for (const auto & join_data_iter : join_data_iters)
+    {
+        auto & data = *getData(hash_joins[join_data_iter.idx]);
+        if (data.row_store_state == HashJoin::RowStoreState::Enabled)
+            data.row_store_state = HashJoin::RowStoreState::Ready;
+    }
 }
 }
 

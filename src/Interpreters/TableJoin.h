@@ -169,6 +169,7 @@ private:
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
     const size_t min_columns_for_hash_join_row_store = 0;
+    const size_t max_bytes_for_hash_join_row_store = 0;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -334,6 +335,7 @@ public:
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     size_t minColumnsForHashJoinRowStore() const { return min_columns_for_hash_join_row_store; }
+    size_t maxBytesForHashJoinRowStore() const { return max_bytes_for_hash_join_row_store; }
 
     bool oneDisjunct() const;
 

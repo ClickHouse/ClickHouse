@@ -57,20 +57,35 @@ RowDataStore::RowDataStore(RowLayout && layout_)
 {
 }
 
+std::shared_ptr<RowDataStore> RowDataStore::create()
+{
+    return std::shared_ptr<RowDataStore>(new RowDataStore(RowLayout{}));
+}
+
 std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
 {
-    /// Columns are materialized to make sure all blocks have
-    /// the same split of columnar and row store columns.
-    Columns materialized_columns;
-    materialized_columns.reserve(columns.size());
-    for (const auto & col : columns)
-        materialized_columns.push_back(col->convertToFullIfNeeded());
-
-    RowLayout layout = initLayout(materialized_columns);
-    auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
-    if (!materialized_columns.empty() && !materialized_columns[0]->empty())
-        row_store->gatherRows(materialized_columns, 0, materialized_columns[0]->size());
+    auto row_store = create();
+    row_store->init(columns);
     return row_store;
+}
+
+void RowDataStore::init(const Columns & columns)
+{
+    layout = initLayout(columns);
+    row_length = layout.empty() ? 0 : layout.back().offset + layout.back().size;
+
+    if (!columns.empty() && !columns[0]->empty())
+        gatherRows(columns, 0, columns[0]->size());
+}
+
+bool RowDataStore::tryInit(const Columns & columns)
+{
+    bool expected = false;
+    if (!init_flag.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+        return false;
+
+    init(columns);
+    return true;
 }
 
 void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t length)

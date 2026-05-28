@@ -109,6 +109,7 @@ struct JoinSettings
     bool enable_software_prefetch_in_join;
     bool use_hash_table_stats_for_join_reordering;
     UInt64 min_columns_for_hash_join_row_store;
+    UInt64 max_bytes_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
 
