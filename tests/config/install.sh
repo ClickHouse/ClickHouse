@@ -140,7 +140,6 @@ sed "s|<async>[01]</async>|<async>$value</async>|" $SRC_PATH/config.d/logger_tra
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/reader_executor_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_read_prefetches_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/background_schedule_pool_log.yaml $DEST_SERVER_PATH/config.d/
@@ -215,11 +214,13 @@ ln -sf $SRC_PATH/users.d/enable_blobs_check.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
-if check_clickhouse_version 26.5; then
-    # `use_reader_executor` was introduced in 26.5; older clickhouse-server binaries
-    # reject the whole users.xml as UNKNOWN_SETTING. Upgrade-check and stress tests
-    # run an older binary against the same test config, so gate the symlink.
+if check_clickhouse_version 26.6; then
+    # `use_reader_executor` / `enable_reader_executor_log` and `<reader_executor_log>`
+    # are registered in the 26.6 settings-history block. Upgrade-check and stress
+    # tests run older binaries against the same test config, which would reject
+    # the users.xml with UNKNOWN_SETTING.
     ln -sf $SRC_PATH/users.d/use_reader_executor.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/reader_executor_log.xml $DEST_SERVER_PATH/config.d/
 fi
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
