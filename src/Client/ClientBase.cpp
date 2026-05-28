@@ -2540,15 +2540,27 @@ void ClientBase::processParsedSingleQuery(
             /// client binary. The server has the profile values; this snapshot
             /// captures the *client*-side baseline.
             client_context->setSettings(settings_at_connect ? *settings_at_connect : Settings());
-            /// Restore the database the connection was opened with so a
-            /// reconnection after `USE other_db; RESET SESSION;` lands back on
-            /// the connection-start database, matching the server-side reset.
-            if (default_database_at_connect.has_value())
+            /// Sync the client-side default database to whatever the server
+            /// actually landed on after the reset. The server runs a fallback
+            /// chain (connect-time db → user `DEFAULT DATABASE` → global
+            /// default) and can pick something other than the connect-time
+            /// value — e.g. if the connect-time db was dropped mid-session,
+            /// or the user has no `DEFAULT DATABASE` and the connection had
+            /// none baked in.
+            /// Blindly restoring `default_database_at_connect` here would
+            /// leave the client's local copy diverged from the server, which
+            /// is invisible until the connection drops and the client
+            /// reconnects with a now-`UNKNOWN_DATABASE` name. Ask the server
+            /// instead. The extra round-trip is cheap; `RESET SESSION` is
+            /// not a hot path.
+            if (connection)
             {
-                default_database = *default_database_at_connect;
+                String server_db = executeQueryForSingleString("SELECT currentDatabase()");
+                if (server_db.empty() && default_database_at_connect.has_value())
+                    server_db = *default_database_at_connect;
+                default_database = server_db;
                 getClientConfiguration().setString("database", default_database);
-                if (connection)
-                    connection->setDefaultDatabase(default_database);
+                connection->setDefaultDatabase(default_database);
             }
         }
     }
