@@ -70,6 +70,30 @@ void FinishSortingTransform::consume(Chunk chunk)
     removeConstColumns(chunk);
     compactReplicatedColumns(chunk);
 
+    /// Materialize sort key columns that are `ColumnReplicated`. Otherwise the binary search
+    /// below (and the eventual `MergeSorter`) can call `compareAt` on a non-replicated `lhs`
+    /// against a `ColumnReplicated` `rhs`, which fails inside the per-type `assert_cast`.
+    /// Mirrors the existing materialization in `MergeSorter::MergeSorter`.
+    {
+        bool needs_materialize = false;
+        for (const auto & column_desc : description_with_positions)
+        {
+            if (chunk.getColumns()[column_desc.column_number]->isReplicated())
+            {
+                needs_materialize = true;
+                break;
+            }
+        }
+        if (needs_materialize)
+        {
+            size_t num_rows = chunk.getNumRows();
+            auto columns = chunk.detachColumns();
+            for (const auto & column_desc : description_with_positions)
+                columns[column_desc.column_number] = columns[column_desc.column_number]->convertToFullColumnIfReplicated();
+            chunk.setColumns(std::move(columns), num_rows);
+        }
+    }
+
     /// Find the position of last already read key in current chunk.
     if (!chunks.empty())
     {
