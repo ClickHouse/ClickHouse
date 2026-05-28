@@ -1902,6 +1902,19 @@ public:
     }
 };
 
+/// Mock pool that runs every submitted task synchronously on the calling
+/// thread and returns a `Done`-state handle holding the produced rope.
+/// Eliminates worker-thread timing from prefetch-related tests.
+class SyncPrefetchPool : public PrefetchThreadPool
+{
+public:
+    SyncPrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
+    std::unique_ptr<PrefetchHandle> submit(std::function<Rope()> task) override
+    {
+        return makeCompletedHandleForTest(task());
+    }
+};
+
 }
 
 TEST(ReaderExecutor, PreAcquiredSlotReleasedOnCrossObjectSeek)
@@ -1959,4 +1972,54 @@ TEST(ReaderExecutor, PreAcquiredSlotReleasedOnCrossObjectSeek)
     ASSERT_EQ(active.size(), 1u)
         << "cross-object seek must release the stale pre-acquired slot";
     EXPECT_EQ(active.front().object_path, "obj_B");
+}
+
+/// Pre-fix: for an unknown-size source, the prefetch worker can set
+/// `reached_eof = true` mid-flight while still producing a partial rope
+/// with the real final bytes. `readNextWindow`'s EOF gate ran BEFORE the
+/// `if (prefetch_handle)` branch, so the foreground call short-circuited
+/// to `discardPrefetch()` + `return {}` and dropped those bytes.
+///
+/// With the fix, the prefetch is consumed first; only the no-prefetch
+/// branch applies the EOF gate.
+TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
+{
+    /// 30 bytes "ABAB...". The source has the real bytes; the executor is
+    /// told the size is unknown, so it discovers EOF only via a short
+    /// return from the source.
+    constexpr size_t total = 30;
+    String content(total, 0);
+    for (size_t i = 0; i < total; ++i)
+        content[i] = static_cast<char>('A' + (i % 2));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", StoredObject::UnknownSize);
+
+    auto pool = std::make_shared<SyncPrefetchPool>();
+
+    constexpr size_t window = 16;
+    ReaderExecutor executor(source, objects, {}, window, /*min_bytes_for_seek=*/0);
+    executor.setPrefetchPool(pool);
+
+    /// First call: sync-read [0, 16). At the end of the call,
+    /// `maybeTriggerPrefetch` submits P1 for [16, 32). The synchronous
+    /// pool runs P1 inline: the source short-returns 14 bytes (EOF at 30),
+    /// the worker sets `reached_eof = true`, and the future ends up
+    /// holding the 14-byte rope.
+    auto r1 = executor.readNextWindow();
+    EXPECT_EQ(r1.range().offset, 0u);
+    EXPECT_EQ(r1.range().size, window);
+
+    /// Pre-fix: returns {} (EOF gate fires; prefetch dropped). Post-fix:
+    /// the prefetched final bytes are served.
+    auto r2 = executor.readNextWindow();
+    EXPECT_EQ(r2.range().offset, window) << "prefetched final bytes lost";
+    EXPECT_EQ(r2.range().size, total - window);
+
+    /// Third call: no pending prefetch, `reached_eof` still set → real EOF.
+    auto r3 = executor.readNextWindow();
+    EXPECT_TRUE(r3.empty());
 }

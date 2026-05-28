@@ -599,33 +599,19 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
 Rope ReaderExecutor::readNextWindow()
 {
     size_t logical_size = totalSize();
-    /// EOF detection has two flavours:
-    ///   1. Size-known: `position >= totalSize` is authoritative.
-    ///   2. Size-unknown (`offset_map.hasUnknownSize()`): we can only
-    ///      learn EOF from the source returning fewer bytes than asked
-    ///      for. `reached_eof` is set in the read path when that happens
-    ///      and consulted here so subsequent calls don't re-issue a
-    ///      doomed read.
-    const bool size_known_eof = !offset_map.hasUnknownSize() && position >= logical_size;
-    if (size_known_eof || reached_eof)
-    {
-        LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
-        /// Release scarce per-stream resources as soon as the caller
-        /// hits EOF — there's no reason to hold an open connection /
-        /// `SourceBufferLimit` slot just because the caller hasn't
-        /// dropped the `PipelineReadBuffer` yet. If they later seek
-        /// back and read again, we'll re-open and re-acquire.
-        live_buffer.reset();
-        pre_acquired_slot.reset();
-        over_read_buffer = Rope{};
-        discardPrefetch();
-        return {};
-    }
-
     Rope rope;
 
     if (prefetch_handle)
     {
+        /// Consume the prefetched rope BEFORE applying the EOF gate. For an
+        /// unknown-size source the prefetch worker can set `reached_eof`
+        /// from inside `readPhysicalWindow` (short return) while still
+        /// returning a partial rope with the real final bytes. Treating
+        /// `reached_eof` as authoritative here would `discardPrefetch` and
+        /// drop those bytes — they would never be served to the caller.
+        /// `maybeTriggerPrefetch` already refuses to schedule another
+        /// prefetch once `reached_eof` is set, so the next call lands in
+        /// the no-prefetch branch and short-circuits to EOF correctly.
         /// Take ownership of the handle BEFORE calling `tryCancel` / `get`.
         /// `std::future::get` detaches the future's associated state as its
         /// very first step (even if the worker stored an exception), so a
@@ -678,6 +664,30 @@ Rope ReaderExecutor::readNextWindow()
     }
     else
     {
+        /// EOF detection has two flavours:
+        ///   1. Size-known: `position >= totalSize` is authoritative.
+        ///   2. Size-unknown (`offset_map.hasUnknownSize()`): we can only
+        ///      learn EOF from the source returning fewer bytes than asked
+        ///      for. `reached_eof` is set in the read path when that happens
+        ///      and consulted here so subsequent calls don't re-issue a
+        ///      doomed read.
+        /// The pending-prefetch branch above intentionally bypasses this
+        /// gate — see its comment for the unknown-size race.
+        const bool size_known_eof = !offset_map.hasUnknownSize() && position >= logical_size;
+        if (size_known_eof || reached_eof)
+        {
+            LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
+            /// Release scarce per-stream resources as soon as the caller
+            /// hits EOF — there's no reason to hold an open connection /
+            /// `SourceBufferLimit` slot just because the caller hasn't
+            /// dropped the `PipelineReadBuffer` yet. If they later seek
+            /// back and read again, we'll re-open and re-acquire.
+            live_buffer.reset();
+            pre_acquired_slot.reset();
+            over_read_buffer = Rope{};
+            return {};
+        }
+
         ensurePreAcquiredSlot();
         size_t win_size = std::min(effectiveWindowSize(), logical_size - position);
         ByteRange physical_window{position + data_start_offset, win_size};

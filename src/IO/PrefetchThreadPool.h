@@ -82,6 +82,13 @@ public:
     /// every submission) without spinning up real workers.
     virtual std::unique_ptr<PrefetchHandle> submit(std::function<Rope()> task);
 
+    /// Test-only factory: build a `Done`-state `PrefetchHandle` from a
+    /// precomputed `Rope`. Lets tests exercise the prefetch-consume path
+    /// deterministically without spinning up real worker threads. Required
+    /// because `PrefetchHandle`'s ctor is private and only friend with
+    /// `PrefetchThreadPool` — a subclass mock can't construct handles directly.
+    static std::unique_ptr<PrefetchHandle> makeCompletedHandleForTest(Rope rope);
+
 protected:
     /// Test-only constructor: skips ThreadPool initialization so a mock
     /// subclass can override `submit` without paying for real workers.

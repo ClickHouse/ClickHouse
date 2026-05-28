@@ -115,4 +115,13 @@ std::unique_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()>
     return std::unique_ptr<PrefetchHandle>(new PrefetchHandle(std::move(shared), std::move(future)));
 }
 
+std::unique_ptr<PrefetchHandle> PrefetchThreadPool::makeCompletedHandleForTest(Rope rope)
+{
+    auto shared = std::make_shared<PrefetchHandle::SharedState>();
+    auto future = shared->promise.get_future();
+    shared->state.store(PrefetchHandle::State::Done);
+    shared->promise.set_value(std::move(rope));
+    return std::unique_ptr<PrefetchHandle>(new PrefetchHandle(std::move(shared), std::move(future)));
+}
+
 }
