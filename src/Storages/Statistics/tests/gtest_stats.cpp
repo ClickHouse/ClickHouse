@@ -3,7 +3,9 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -184,6 +186,152 @@ TEST(Statistics, MinMaxEstimateLess)
     /// estimateLess returns nullopt when row_count = 0
     StatisticsMinMax empty(Field{}, Field{}, 0);
     EXPECT_FALSE(empty.estimateLess(Field(UInt64(42))).has_value());
+}
+
+namespace
+{
+
+/// Build a `ColumnStatistics` carrying the requested types over `data_type`.
+ColumnStatisticsPtr createTestStats(
+    const std::vector<StatisticsType> & types,
+    const DataTypePtr & data_type)
+{
+    ColumnStatisticsDescription desc;
+    desc.data_type = data_type;
+    for (auto type : types)
+        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+    return MergeTreeStatisticsFactory::instance().get(desc);
+}
+
+/// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
+/// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
+ColumnStatisticsPtr buildNullableInt32Stats(
+    const std::vector<StatisticsType> & types,
+    size_t total,
+    size_t null_every)
+{
+    auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    MutableColumnPtr col = data_type->createColumn();
+    auto * nullable_col = assert_cast<ColumnNullable *>(col.get());
+    for (size_t i = 0; i < total; ++i)
+    {
+        if (i % null_every == 0)
+            nullable_col->insertDefault();
+        else
+            nullable_col->insert(static_cast<Int32>(i));
+    }
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+/// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    ParserExpressionWithOptionalAlias exp_parser(false);
+    ContextPtr context = getContext().context;
+    RPNBuilderTreeContext tree_context(
+        context,
+        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
+        {});
+    ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+    RPNBuilderTreeNode node(ast.get(), tree_context);
+    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+}
+
+}
+
+TEST(Statistics, NullableEstimatorWithBasic)
+{
+    /// Two Nullable(Int32) columns with three-valued logic exercised across ranges and IS [NOT] NULL.
+    ///
+    /// column a: Nullable(Int32), 1000 rows, every 5th NULL  → 200 NULLs, 800 non-NULLs in [1, 999]
+    /// column b: Nullable(Int32), 1000 rows, every 10th NULL → 100 NULLs, 900 non-NULLs in [1, 999]
+    ///
+    /// `basic` populates numeric min/max (1 .. 999) plus null_count, so:
+    ///   estimateLess(500) = (500-1)/(999-1) * non_null = 0.5 * non_null
+    ///   → 400 for column a, 450 for column b
+    tryRegisterFunctions();
+
+    auto stats_a = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/5);
+    auto stats_b = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/10);
+    ASSERT_EQ(stats_a->getNonNullRowCount(), 800u);
+    ASSERT_EQ(stats_b->getNonNullRowCount(), 900u);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats_a);
+    builder.addStatistics("b", stats_b);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps)
+    {
+        Float64 actual = estimateRowsFor(estimator, expression);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    /// Single column — plain ranges (NULL rows are excluded).
+    check("a > 500",       400.0, 1.0);
+    check("a < 500",       400.0, 1.0);
+    check("b > 500",       450.0, 1.0);
+    check("b < 500",       450.0, 1.0);
+
+    /// Single column — IS NULL / IS NOT NULL.
+    check("a IS NULL",     200.0, 1e-6);
+    check("a IS NOT NULL", 800.0, 1e-6);
+    check("b IS NULL",     100.0, 1e-6);
+    check("b IS NOT NULL", 900.0, 1e-6);
+
+    /// Single column — IS NULL AND range → contradiction (the range is FALSE on NULL rows).
+    check("a IS NULL AND a > 500", 0.0, 1e-6);
+    check("b IS NULL AND b < 500", 0.0, 1e-6);
+
+    /// Single column — IS NULL OR range → null rows ∪ matching range rows.
+    check("a IS NULL OR a > 500", 600.0, 1.0);   /// 200 + 400
+    check("b IS NULL OR b < 500", 550.0, 1.0);   /// 100 + 450
+
+    /// Single column — IS NOT NULL AND range → equals the range (NULL filtering is implicit).
+    check("a IS NOT NULL AND a > 500", 400.0, 1.0);
+    check("b IS NOT NULL AND b < 500", 450.0, 1.0);
+
+    /// Single column — IS NOT NULL OR range → IS NOT NULL dominates.
+    check("a IS NOT NULL OR a > 500", 800.0, 1.0);
+    check("b IS NOT NULL OR b < 500", 900.0, 1.0);
+
+    /// Cross-column — range AND range, independent: 0.4 * 0.45 = 0.18.
+    check("a > 500 AND b > 500", 180.0, 2.0);
+
+    /// Cross-column — range OR range: 1 - (1-0.4)*(1-0.45) = 0.67.
+    check("a > 500 OR b > 500", 670.0, 2.0);
+
+    /// Cross-column — IS NULL AND range, independent columns: 0.2 * 0.45 = 0.09.
+    check("a IS NULL AND b > 500", 90.0, 2.0);
+
+    /// Cross-column — IS NULL OR range: 1 - P(a IS NOT NULL) * P(b <= 500) = 1 - 0.8 * 0.55 = 0.56.
+    check("a IS NULL OR b > 500", 560.0, 2.0);
+
+    /// Cross-column — IS NULL AND IS NULL: 0.2 * 0.1 = 0.02.
+    check("a IS NULL AND b IS NULL", 20.0, 2.0);
+
+    /// Cross-column — IS NULL OR IS NULL: 1 - 0.8 * 0.9 = 0.28.
+    check("a IS NULL OR b IS NULL", 280.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NOT NULL: 0.8 * 0.9 = 0.72.
+    check("a IS NOT NULL AND b IS NOT NULL", 720.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NULL (different columns): 0.8 * 0.1 = 0.08.
+    check("a IS NOT NULL AND b IS NULL", 80.0, 2.0);
+
+    /// Cross-column — range AND IS NULL (different columns): 0.4 * 0.1 = 0.04.
+    check("a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// `a IS NOT NULL AND a > 500` collapses to `a > 500` (P = 0.4); then AND `b IS NULL` (P = 0.1).
+    check("a IS NOT NULL AND a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// Contradictions spanning two columns.
+    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6);  /// b > 500 contradicts b IS NULL
+    check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
 TEST(Statistics, LikeSelectivity)
