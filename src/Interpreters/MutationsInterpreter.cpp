@@ -1981,6 +1981,13 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         if (!query_tree)
             continue;
 
+        /// Ensure every source node has a unique `__tableN` alias before planning.
+        /// Mutation-path tree rewrites (notably `exists((subq))` -> `1 IN (...)`) can
+        /// leave inner source nodes unaliased, which would make
+        /// `prepareBuildQueryPlanForTableExpression` and `CollectSourceColumnsVisitor`
+        /// register the same bare column identifier twice.
+        createUniqueAliasesIfNecessary(query_tree, context_);
+
         auto subquery_options = SelectQueryOptions{}.subquery();
         /// Sets may use Materialized CTEs; mirror the regular planner path
         /// (`addBuildSubqueriesForSetsStepIfNeeded`) so CTE materialization is
