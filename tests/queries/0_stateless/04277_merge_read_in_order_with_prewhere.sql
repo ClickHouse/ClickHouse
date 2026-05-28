@@ -32,3 +32,22 @@ SELECT count() FROM
 WHERE explain ILIKE '%ReadType: InOrder%';
 
 DROP TABLE users_86313;
+
+-- Regression for an exception triggered by the AST fuzzer:
+-- `addMonotonicChain` used to crash with "Cannot add column ... because it is nullptr"
+-- when the read-in-order virtual-row code walked an ORDER BY expression wrapped in a
+-- `materialize(...)` (added by the planner for `WITH FILL`) on top of a monotonic chain
+-- (e.g. `toTimezone(toTimezone(x, 'UTC'), 'CET')`).
+
+DROP TABLE IF EXISTS tab_fill_86313;
+
+CREATE TABLE tab_fill_86313 (x DateTime, y UInt32, z UInt32) ENGINE = MergeTree ORDER BY (x, y);
+INSERT INTO tab_fill_86313 SELECT toDateTime('2024-01-01') + number, number, number FROM numbers(3);
+
+SELECT count() FROM
+(
+    SELECT * FROM tab_fill_86313
+    ORDER BY toTimezone(toTimezone(x, 'UTC'), 'CET') ASC NULLS FIRST, intDiv(intDiv(y, -2), -3) ASC WITH FILL
+);
+
+DROP TABLE tab_fill_86313;
