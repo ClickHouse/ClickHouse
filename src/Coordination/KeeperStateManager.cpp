@@ -44,6 +44,22 @@ namespace
 
 const std::string copy_lock_file = "STATE_COPY_LOCK";
 
+KeeperStateManager::StartupConfigLookupResult makeStartupConfigResult(
+    const nuraft::ptr<nuraft::log_entry> & entry,
+    KeeperStateManager::StartupConfigSource source)
+{
+    KeeperStateManager::StartupConfigLookupResult result;
+    if (!entry)
+        return result;
+
+    auto & buf = entry->get_buf();
+    buf.pos(0);
+    result.config = ClusterConfig::deserialize(buf);
+    result.source = source;
+    result.log_term = entry->get_term();
+    return result;
+}
+
 bool isLocalhost(const std::string & hostname)
 {
     try
@@ -343,12 +359,22 @@ void KeeperStateManager::system_exit(const int /* exit_code */)
     abort();
 }
 
-ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
+KeeperStateManager::StartupConfigLookupResult KeeperStateManager::getLatestConfigFromLogStoreForStartup(
+    uint64_t authoritative_boundary) const
 {
-    auto entry_with_change = log_store->getLatestConfigChange();
-    if (entry_with_change)
-        return ClusterConfig::deserialize(entry_with_change->get_buf());
-    return nullptr;
+    chassert(log_store_initialized);
+
+    if (auto result = makeStartupConfigResult(
+            log_store->getLatestConfigChange(authoritative_boundary),
+            StartupConfigSource::BoundedLogStore);
+        result.config)
+    {
+        return result;
+    }
+
+    return makeStartupConfigResult(
+        log_store->getLatestConfigChangeUnbounded(),
+        StartupConfigSource::LegacyBootstrapLogStore);
 }
 
 std::optional<AuthenticationData> KeeperStateManager::getAuthenticationData() const

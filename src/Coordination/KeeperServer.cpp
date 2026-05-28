@@ -452,40 +452,51 @@ KeeperServer::RespondingCounts KeeperServer::KeeperRaftServer::getRespondingCoun
 
 void KeeperServer::loadLatestConfig()
 {
-    auto latest_snapshot_config = state_machine->getClusterConfig();
-    auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
+    auto latest_config = state_machine->getClusterConfig();
     auto async_replication = keeper_context->getCoordinationSettings()[CoordinationSetting::async_replication];
 
-    if (latest_snapshot_config && latest_log_store_config)
+    if (latest_config)
     {
-        if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
-        {
-            LOG_INFO(log, "Will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
-            latest_snapshot_config->set_async_replication(async_replication);
-            state_manager->save_config(*latest_snapshot_config);
-        }
-        else
-        {
-            LOG_INFO(log, "Will use config from log store with log index {}", latest_log_store_config->get_log_idx());
-            latest_log_store_config->set_async_replication(async_replication);
-            state_manager->save_config(*latest_log_store_config);
-        }
-    }
-    else if (latest_snapshot_config)
-    {
-        LOG_INFO(log, "No config in log store, will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
-        latest_snapshot_config->set_async_replication(async_replication);
-        state_manager->save_config(*latest_snapshot_config);
-    }
-    else if (latest_log_store_config)
-    {
-        LOG_INFO(log, "No config in snapshot, will use config from log store with log index {}", latest_log_store_config->get_log_idx());
-        latest_log_store_config->set_async_replication(async_replication);
-        state_manager->save_config(*latest_log_store_config);
+        LOG_INFO(log, "Will use config from state machine with log index {}", latest_config->get_log_idx());
+        latest_config->set_async_replication(async_replication);
+        state_manager->save_config(*latest_config);
     }
     else
     {
-        LOG_INFO(log, "No config in log store and snapshot, probably it's initial run. Will use config from .xml on disk");
+        const auto authoritative_boundary = state_machine->last_commit_index();
+        /// Reaching this branch means the state machine selected no valid snapshot or sidecar config.
+        /// A valid sidecar would already be state-machine config; a corrupt sidecar would have thrown during init.
+        auto startup_config = state_manager->getLatestConfigFromLogStoreForStartup(authoritative_boundary);
+        switch (startup_config.source)
+        {
+        case KeeperStateManager::StartupConfigSource::BoundedLogStore:
+            LOG_INFO(
+                log,
+                "No config in state machine, will use authoritative config from log store with log index {}, log term {}, at or before boundary {}",
+                startup_config.config->get_log_idx(),
+                startup_config.log_term,
+                authoritative_boundary);
+            startup_config.config->set_async_replication(async_replication);
+            state_manager->save_config(*startup_config.config);
+            break;
+        case KeeperStateManager::StartupConfigSource::LegacyBootstrapLogStore:
+            LOG_WARNING(
+                log,
+                "No authoritative config found in state machine, sidecar, or bounded log store. Will use unverified legacy bootstrap "
+                "config from local log store with log index {}, log term {}, and boundary {}. It will not be written to committed_config "
+                "until NuRaft commits or replays it through commit_config",
+                startup_config.config->get_log_idx(),
+                startup_config.log_term,
+                authoritative_boundary);
+            startup_config.config->set_async_replication(async_replication);
+            state_manager->save_config(*startup_config.config);
+            break;
+        case KeeperStateManager::StartupConfigSource::None:
+            LOG_INFO(
+                log,
+                "No config in state machine, sidecar, bounded log store, or legacy bootstrap logs. Will use config from .xml on disk");
+            break;
+        }
     }
 }
 

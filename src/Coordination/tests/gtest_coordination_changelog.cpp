@@ -6,6 +6,8 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
+#include <libnuraft/cluster_config.hxx>
+
 #include <thread>
 
 
@@ -180,6 +182,70 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogWriteAt)
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), changelog.last_entry()->get_term());
     EXPECT_EQ(changelog_reader.start_index(), changelog.start_index());
     EXPECT_EQ(changelog_reader.next_slot(), changelog.next_slot());
+}
+
+TYPED_TEST(CoordinationChangelogTest, ChangelogLatestConfigChangeCutoff)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    auto make_conf_log = [](uint64_t term, uint64_t cfg_log_idx)
+    {
+        auto cfg = nuraft::cs_new<nuraft::cluster_config>(cfg_log_idx, 0);
+        cfg->get_servers().push_back(
+            nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+        cfg->set_log_idx(cfg_log_idx);
+        auto buf = cfg->serialize();
+        return nuraft::cs_new<nuraft::log_entry>(
+            term, buf, nuraft::log_val_type::conf);
+    };
+
+    auto config_index = [](const LogEntryPtr & entry) -> uint64_t
+    {
+        if (!entry)
+            return 0;
+
+        entry->get_buf().pos(0);
+        return nuraft::cluster_config::deserialize(entry->get_buf())->get_log_idx();
+    };
+
+    auto app_log_1 = getLogEntry("app1", 1);
+    auto conf_log_2 = make_conf_log(1, 2);
+    auto app_log_3 = getLogEntry("app3", 1);
+    auto conf_log_4 = make_conf_log(1, 4);
+    auto conf_log_5 = make_conf_log(1, 5);
+
+    changelog.append(app_log_1);
+    changelog.append(conf_log_2);
+    changelog.append(app_log_3);
+    changelog.append(conf_log_4);
+    changelog.append(conf_log_5);
+    changelog.end_of_append_batch(0, 0);
+
+    EXPECT_EQ(nullptr, changelog.getLatestConfigChange(0));
+    EXPECT_EQ(nullptr, changelog.getLatestConfigChange(1));
+    EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(2)));
+    EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(3)));
+    EXPECT_EQ(4, config_index(changelog.getLatestConfigChange(4)));
+    EXPECT_EQ(5, config_index(changelog.getLatestConfigChange(100)));
+    EXPECT_EQ(5, config_index(changelog.getLatestConfigChangeUnbounded()));
+
+    auto app_log_4 = getLogEntry("rewritten-app4", 2);
+    changelog.write_at(4, app_log_4);
+    changelog.end_of_append_batch(0, 0);
+
+    EXPECT_EQ(nullptr, changelog.getLatestConfigChange(0));
+    EXPECT_EQ(nullptr, changelog.getLatestConfigChange(1));
+    EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(2)));
+    EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(4)));
+    EXPECT_EQ(2, config_index(changelog.getLatestConfigChange(100)));
+    EXPECT_EQ(2, config_index(changelog.getLatestConfigChangeUnbounded()));
 }
 
 

@@ -918,6 +918,672 @@ TYPED_TEST(CoordinationTest, TestDurableState)
     }
 }
 
+namespace
+{
+
+DB::ClusterConfigPtr makeConfig(uint64_t log_idx, const std::string & endpoint)
+{
+    auto config = nuraft::cs_new<nuraft::cluster_config>(log_idx, 0);
+    config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, endpoint));
+    config->set_log_idx(log_idx);
+    return config;
+}
+
+std::string endpointOf(const DB::ClusterConfigPtr & config)
+{
+    EXPECT_NE(config, nullptr);
+    if (!config)
+        return {};
+
+    const auto & servers = config->get_servers();
+    EXPECT_FALSE(servers.empty());
+    if (servers.empty())
+        return {};
+
+    return servers.front()->get_endpoint();
+}
+
+LogEntryPtr makeConfigLogEntry(uint64_t term, const DB::ClusterConfigPtr & config)
+{
+    auto buf = config->serialize();
+    return nuraft::cs_new<nuraft::log_entry>(term, buf, nuraft::log_val_type::conf);
+}
+
+void appendAppLogsUntil(DB::KeeperLogStore & log_store, uint64_t target_idx)
+{
+    while (log_store.next_slot() < target_idx)
+    {
+        auto next_idx = log_store.next_slot();
+        auto entry = getLogEntry("app-" + std::to_string(next_idx), 1);
+        EXPECT_EQ(next_idx, log_store.append(entry));
+    }
+}
+
+void appendConfigLogAtIndex(
+    DB::KeeperLogStore & log_store,
+    uint64_t target_idx,
+    uint64_t term,
+    const DB::ClusterConfigPtr & config)
+{
+    appendAppLogsUntil(log_store, target_idx);
+    auto entry = makeConfigLogEntry(term, config);
+    EXPECT_EQ(target_idx, log_store.append(entry));
+    log_store.end_of_append_batch(0, 0);
+}
+
+template <typename Storage>
+void createSnapshotWithConfig(
+    DB::KeeperStateMachine<Storage> & state_machine,
+    DB::SnapshotsQueue & snapshots_queue,
+    uint64_t snapshot_last_log_idx,
+    const DB::ClusterConfigPtr & config)
+{
+    bool snapshot_created = false;
+    nuraft::snapshot snapshot(snapshot_last_log_idx, 0, config);
+    nuraft::async_result<bool>::handler_type when_done = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
+    {
+        snapshot_created = ret;
+    };
+
+    state_machine.create_snapshot(snapshot, when_done);
+    DB::CreateSnapshotTask snapshot_task;
+    ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+    snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+    ASSERT_TRUE(snapshot_created);
+}
+
+}
+
+TYPED_TEST(CoordinationTest, TestCommittedConfigSurvivesRestart)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto committed_config = nuraft::cs_new<nuraft::cluster_config>();
+    committed_config->get_servers().push_back(
+        nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+    committed_config->set_log_idx(7);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+        state_machine->commit_config(7, committed_config);
+        ASSERT_EQ(state_machine->last_commit_index(), 7);
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 7);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 0);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestCommittedConfigCorruptionFailsStartup)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    {
+        WriteBufferFromFile write_buf("./state_dir/committed_config", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        writeIntBinary(uint64_t{1}, write_buf);
+        write_buf.sync();
+        write_buf.close();
+    }
+
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    ASSERT_THROW(state_machine->init(), DB::Exception);
+}
+
+TYPED_TEST(CoordinationTest, TestCommittedConfigNewerThanSnapshotConfigWins)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto make_config = [](uint64_t log_idx)
+    {
+        auto config = nuraft::cs_new<nuraft::cluster_config>();
+        config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+        config->set_log_idx(log_idx);
+        return config;
+    };
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+
+        auto snapshot_config = make_config(3);
+        state_machine->commit_config(3, snapshot_config);
+
+        bool snapshot_created = false;
+        nuraft::snapshot snapshot(3, 0, snapshot_config);
+        nuraft::async_result<bool>::handler_type when_done = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
+        {
+            snapshot_created = ret;
+        };
+
+        state_machine->create_snapshot(snapshot, when_done);
+        CreateSnapshotTask snapshot_task;
+        ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+        ASSERT_TRUE(snapshot_created);
+
+        auto committed_config = make_config(7);
+        state_machine->commit_config(7, committed_config);
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 7);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 3);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestSnapshotCreationUsesSnapshotConfig)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto make_config = [](uint64_t log_idx)
+    {
+        auto config = nuraft::cs_new<nuraft::cluster_config>();
+        config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+        config->set_log_idx(log_idx);
+        return config;
+    };
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+
+        auto snapshot_config = make_config(3);
+        state_machine->commit_config(3, snapshot_config);
+
+        auto committed_config = make_config(7);
+        state_machine->commit_config(7, committed_config);
+
+        bool snapshot_created = false;
+        nuraft::snapshot snapshot(3, 0, snapshot_config);
+        nuraft::async_result<bool>::handler_type when_done = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
+        {
+            snapshot_created = ret;
+        };
+
+        state_machine->create_snapshot(snapshot, when_done);
+        CreateSnapshotTask snapshot_task;
+        ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+        ASSERT_TRUE(snapshot_created);
+    }
+
+    ASSERT_TRUE(std::filesystem::remove("./state_dir/committed_config"));
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 3);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 3);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestSnapshotConfigNewerThanCommittedConfigWins)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    auto make_config = [](uint64_t log_idx)
+    {
+        auto config = nuraft::cs_new<nuraft::cluster_config>();
+        config->get_servers().push_back(nuraft::cs_new<nuraft::srv_config>(1, "host:port"));
+        config->set_log_idx(log_idx);
+        return config;
+    };
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+
+        auto snapshot_config = make_config(7);
+        state_machine->commit_config(7, snapshot_config);
+
+        bool snapshot_created = false;
+        nuraft::snapshot snapshot(7, 0, snapshot_config);
+        nuraft::async_result<bool>::handler_type when_done = [&snapshot_created](bool & ret, nuraft::ptr<std::exception> & /*exception*/)
+        {
+            snapshot_created = ret;
+        };
+
+        state_machine->create_snapshot(snapshot, when_done);
+        CreateSnapshotTask snapshot_task;
+        ASSERT_TRUE(snapshots_queue.pop(snapshot_task));
+        snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
+        ASSERT_TRUE(snapshot_created);
+
+        auto committed_config = make_config(3);
+        state_machine->commit_config(3, committed_config);
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 7);
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 7);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestInvalidSnapshotConfigDoesNotOutrankCommittedSidecar)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+
+        createSnapshotWithConfig(*state_machine, snapshots_queue, 5, makeConfig(8, "snapshot-invalid:9000"));
+
+        auto sidecar_config = makeConfig(6, "sidecar:9000");
+        state_machine->commit_config(6, sidecar_config);
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        restored_state_machine->init();
+
+        auto restored_config = restored_state_machine->getClusterConfig();
+        ASSERT_NE(restored_config, nullptr);
+        EXPECT_EQ(restored_config->get_log_idx(), 6);
+        EXPECT_EQ(endpointOf(restored_config), "sidecar:9000");
+        EXPECT_EQ(restored_state_machine->last_commit_index(), 5);
+
+        auto restored_snapshot = restored_state_machine->last_snapshot();
+        ASSERT_NE(restored_snapshot, nullptr);
+        ASSERT_NE(restored_snapshot->get_last_config(), nullptr);
+        EXPECT_LE(restored_snapshot->get_last_config()->get_log_idx(), restored_snapshot->get_last_log_idx());
+        EXPECT_NE(restored_snapshot->get_last_config()->get_log_idx(), 8);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestInvalidSnapshotConfigWithCorruptCommittedConfigFailsStartup)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+        createSnapshotWithConfig(*state_machine, snapshots_queue, 5, makeConfig(8, "snapshot-invalid:9000"));
+    }
+
+    {
+        WriteBufferFromFile write_buf("./state_dir/committed_config", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
+        writeIntBinary(uint64_t{1}, write_buf);
+        write_buf.sync();
+        write_buf.close();
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    SnapshotsQueue snapshots_queue{1};
+    auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    ASSERT_THROW(restored_state_machine->init(), DB::Exception);
+}
+
+TYPED_TEST(CoordinationTest, TestEmptySnapshotConfigIsNotAuthoritativeOnRestart)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+        createSnapshotWithConfig(*state_machine, snapshots_queue, 5, nuraft::cs_new<nuraft::cluster_config>());
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    SnapshotsQueue snapshots_queue{1};
+    auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    restored_state_machine->init();
+
+    EXPECT_EQ(restored_state_machine->getClusterConfig(), nullptr);
+    EXPECT_EQ(restored_state_machine->last_commit_index(), 5);
+
+    auto restored_snapshot = restored_state_machine->last_snapshot();
+    ASSERT_NE(restored_snapshot, nullptr);
+    ASSERT_NE(restored_snapshot->get_last_config(), nullptr);
+    EXPECT_TRUE(restored_snapshot->get_last_config()->get_servers().empty());
+    EXPECT_EQ(restored_snapshot->get_last_config()->get_log_idx(), 0);
+}
+
+TYPED_TEST(CoordinationTest, TestInvalidSnapshotConfigFallsBackToBoundedLogStoreConfig)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest logs("./logs");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setLogDirectory("./logs");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+        createSnapshotWithConfig(*state_machine, snapshots_queue, 5, makeConfig(8, "snapshot-invalid:9000"));
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    SnapshotsQueue snapshots_queue{1};
+    auto restored_state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    restored_state_machine->init();
+    EXPECT_EQ(restored_state_machine->getClusterConfig(), nullptr);
+
+    KeeperStateManager state_manager(1, "localhost", 9000, this->keeper_context);
+    state_manager.loadLogStore(0, 0);
+    auto log_store = state_manager.getLogStore();
+    appendConfigLogAtIndex(*log_store, 4, 11, makeConfig(4, "bounded:9000"));
+    appendConfigLogAtIndex(*log_store, 8, 12, makeConfig(8, "legacy-newer:9000"));
+
+    auto result = state_manager.getLatestConfigFromLogStoreForStartup(5);
+    ASSERT_NE(result.config, nullptr);
+    EXPECT_EQ(result.source, KeeperStateManager::StartupConfigSource::BoundedLogStore);
+    EXPECT_EQ(result.config->get_log_idx(), 4);
+    EXPECT_EQ(endpointOf(result.config), "bounded:9000");
+    EXPECT_EQ(result.log_term, 11);
+
+    state_manager.save_config(*result.config);
+    EXPECT_EQ(endpointOf(state_manager.load_config()), "bounded:9000");
+    EXPECT_FALSE(std::filesystem::exists("./state_dir/committed_config"));
+}
+
+TYPED_TEST(CoordinationTest, TestLegacyBootstrapFromLocalLogWithoutSnapshotOrSidecar)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest logs("./logs");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setLogDirectory("./logs");
+    this->setRocksDBDirectory("./rocksdb");
+    this->keeper_context->setLastCommitIndex(0);
+
+    using Storage = typename TestFixture::Storage;
+
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+    EXPECT_EQ(state_machine->getClusterConfig(), nullptr);
+
+    KeeperStateManager state_manager(1, "localhost", 9000, this->keeper_context);
+    state_manager.loadLogStore(0, 0);
+    appendConfigLogAtIndex(*state_manager.getLogStore(), 2, 21, makeConfig(2, "bootstrap:9000"));
+
+    EXPECT_FALSE(std::filesystem::exists("./state_dir/committed_config"));
+    auto result = state_manager.getLatestConfigFromLogStoreForStartup(0);
+    ASSERT_NE(result.config, nullptr);
+    EXPECT_EQ(result.source, KeeperStateManager::StartupConfigSource::LegacyBootstrapLogStore);
+    EXPECT_EQ(result.config->get_log_idx(), 2);
+    EXPECT_EQ(endpointOf(result.config), "bootstrap:9000");
+    EXPECT_EQ(result.log_term, 21);
+
+    state_manager.save_config(*result.config);
+    EXPECT_EQ(endpointOf(state_manager.load_config()), "bootstrap:9000");
+    EXPECT_FALSE(std::filesystem::exists("./state_dir/committed_config"));
+}
+
+TYPED_TEST(CoordinationTest, TestInvalidSnapshotConfigUsesLegacyBootstrapWhenNoBoundedConfig)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest logs("./logs");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setLogDirectory("./logs");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    {
+        SnapshotsQueue snapshots_queue{1};
+        auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+            nullptr, snapshots_queue, this->keeper_context, nullptr);
+        state_machine->init();
+        createSnapshotWithConfig(*state_machine, snapshots_queue, 5, makeConfig(8, "snapshot-invalid:9000"));
+    }
+
+    this->keeper_context->setLastCommitIndex(0);
+
+    KeeperStateManager state_manager(1, "localhost", 9000, this->keeper_context);
+    state_manager.loadLogStore(0, 0);
+    appendConfigLogAtIndex(*state_manager.getLogStore(), 8, 31, makeConfig(8, "bootstrap-newer:9000"));
+
+    auto result = state_manager.getLatestConfigFromLogStoreForStartup(5);
+    ASSERT_NE(result.config, nullptr);
+    EXPECT_EQ(result.source, KeeperStateManager::StartupConfigSource::LegacyBootstrapLogStore);
+    EXPECT_EQ(result.config->get_log_idx(), 8);
+    EXPECT_EQ(endpointOf(result.config), "bootstrap-newer:9000");
+    EXPECT_EQ(result.log_term, 31);
+
+    state_manager.save_config(*result.config);
+    EXPECT_FALSE(std::filesystem::exists("./state_dir/committed_config"));
+}
+
+TYPED_TEST(CoordinationTest, TestLegacyBootstrapDoesNotCreateCommittedConfigSidecarBeforeCommitConfig)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest logs("./logs");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setLogDirectory("./logs");
+    this->setRocksDBDirectory("./rocksdb");
+    this->keeper_context->setLastCommitIndex(0);
+
+    using Storage = typename TestFixture::Storage;
+
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+
+    KeeperStateManager state_manager(1, "localhost", 9000, this->keeper_context);
+    state_manager.loadLogStore(0, 0);
+    appendConfigLogAtIndex(*state_manager.getLogStore(), 2, 41, makeConfig(2, "bootstrap:9000"));
+
+    EXPECT_FALSE(std::filesystem::exists("./state_dir/committed_config"));
+    auto result = state_manager.getLatestConfigFromLogStoreForStartup(0);
+    ASSERT_NE(result.config, nullptr);
+    state_manager.save_config(*result.config);
+    EXPECT_FALSE(std::filesystem::exists("./state_dir/committed_config"));
+
+    state_machine->commit_config(result.config->get_log_idx(), result.config);
+    EXPECT_TRUE(std::filesystem::exists("./state_dir/committed_config"));
+}
+
+TYPED_TEST(CoordinationTest, TestApplySnapshotIgnoresInvalidSnapshotConfigAndKeepsPreviousConfig)
+{
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest state_dir("./state_dir");
+    ChangelogDirTest rocks("./rocksdb");
+
+    this->setSnapshotDirectory("./snapshots");
+    this->setStateFileDirectory("./state_dir");
+    this->setRocksDBDirectory("./rocksdb");
+
+    using Storage = typename TestFixture::Storage;
+
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(
+        nullptr, snapshots_queue, this->keeper_context, nullptr);
+    state_machine->init();
+
+    auto valid_config = makeConfig(5, "valid-before-apply:9000");
+    state_machine->commit_config(5, valid_config);
+    ASSERT_EQ(endpointOf(state_machine->getClusterConfig()), "valid-before-apply:9000");
+
+    createSnapshotWithConfig(*state_machine, snapshots_queue, 5, makeConfig(8, "snapshot-invalid:9000"));
+
+    nuraft::snapshot snapshot(5, 0, makeConfig(8, "snapshot-invalid:9000"));
+    ASSERT_TRUE(state_machine->apply_snapshot(snapshot));
+
+    auto post_apply_config = state_machine->getClusterConfig();
+    ASSERT_NE(post_apply_config, nullptr);
+    EXPECT_EQ(post_apply_config->get_log_idx(), 5);
+    EXPECT_EQ(endpointOf(post_apply_config), "valid-before-apply:9000");
+
+    auto post_apply_snapshot = state_machine->last_snapshot();
+    ASSERT_NE(post_apply_snapshot, nullptr);
+    ASSERT_NE(post_apply_snapshot->get_last_config(), nullptr);
+    EXPECT_LE(post_apply_snapshot->get_last_config()->get_log_idx(), post_apply_snapshot->get_last_log_idx());
+    EXPECT_NE(post_apply_snapshot->get_last_config()->get_log_idx(), 8);
+}
+
 TYPED_TEST(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;

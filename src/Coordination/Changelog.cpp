@@ -1222,6 +1222,7 @@ void LogEntryStorage::cleanUpTo(uint64_t index)
     if (auto it = std::max_element(logs_with_config_changes.begin(), logs_with_config_changes.end()); it != logs_with_config_changes.end())
     {
         latest_config_index = *it;
+        latest_config = nullptr;
         latest_config = getEntry(latest_config_index);
     }
     else
@@ -1316,6 +1317,7 @@ void LogEntryStorage::cleanAfter(uint64_t index)
     if (auto it = std::max_element(logs_with_config_changes.begin(), logs_with_config_changes.end()); it != logs_with_config_changes.end())
     {
         latest_config_index = *it;
+        latest_config = nullptr;
         latest_config = getEntry(latest_config_index);
     }
     else
@@ -1428,7 +1430,28 @@ void LogEntryStorage::clear()
     log_term_infos.clear();
 }
 
-LogEntryPtr LogEntryStorage::getLatestConfigChange() const
+LogEntryPtr LogEntryStorage::getLatestConfigChange(uint64_t up_to_log_index) const
+{
+    if (up_to_log_index == 0)
+        return nullptr;
+
+    if (latest_config != nullptr && latest_config_index <= up_to_log_index)
+        return latest_config;
+
+    uint64_t best_index = 0;
+    for (const auto config_index : logs_with_config_changes)
+    {
+        if (config_index <= up_to_log_index && config_index > best_index)
+            best_index = config_index;
+    }
+
+    if (best_index == 0)
+        return nullptr;
+
+    return getEntry(best_index);
+}
+
+LogEntryPtr LogEntryStorage::getLatestConfigChangeUnbounded() const
 {
     return latest_config;
 }
@@ -2526,9 +2549,14 @@ LogEntryPtr Changelog::entryAt(uint64_t index) const
     return entry_storage.getEntry(index);
 }
 
-LogEntryPtr Changelog::getLatestConfigChange() const
+LogEntryPtr Changelog::getLatestConfigChange(uint64_t up_to_log_index) const
 {
-    return entry_storage.getLatestConfigChange();
+    return entry_storage.getLatestConfigChange(up_to_log_index);
+}
+
+LogEntryPtr Changelog::getLatestConfigChangeUnbounded() const
+{
+    return entry_storage.getLatestConfigChangeUnbounded();
 }
 
 nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, int32_t count)

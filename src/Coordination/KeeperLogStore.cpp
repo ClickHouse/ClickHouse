@@ -131,10 +131,17 @@ void KeeperLogStore::end_of_append_batch(uint64_t /*start_index*/, uint64_t /*co
     changelog.flushAsync();
 }
 
-nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange() const
+nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange(uint64_t up_to_log_index) const
+{
+    /// Exclusive: getLatestConfigChange -> getEntry may mutate LogEntryStorage::first_log_entry.
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    return changelog.getLatestConfigChange(up_to_log_index);
+}
+
+nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChangeUnbounded() const
 {
     ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-    return changelog.getLatestConfigChange();
+    return changelog.getLatestConfigChangeUnbounded();
 }
 
 void KeeperLogStore::shutdownChangelog()
