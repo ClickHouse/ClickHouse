@@ -15,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
-    extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
 namespace
@@ -151,32 +150,30 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
         ai_response.finish_reason = anthropic_stop_reason;
 
     auto content = json_obj->getArray("content");
-    if (!content)
-        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
-            "Anthropic response is missing 'content' array");
-
-    for (unsigned i = 0; i < content->size(); ++i)
+    if (content)
     {
-        auto block = content->getObject(i);
-        if (!block)
-            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
-                "Anthropic response 'content' does not contain output");
-        String type = block->optValue<String>("type", "");
-        if (type == "text")
+        for (unsigned i = 0; i < content->size(); ++i)
         {
-            ai_response.result = block->optValue<String>("text", "");
-            break;
-        }
-        else if (type == "tool_use")
-        {
-            auto input = block->getObject("input");
-            if (!input)
-                throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
-                    "Anthropic response output is missing for tool_use block");
-            std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            input->stringify(ss);
-            ai_response.result = ss.str();
-            break;
+            auto block = content->getObject(i);
+            if (!block)
+                continue;
+            String type = block->optValue<String>("type", "");
+            if (type == "text")
+            {
+                ai_response.result = block->optValue<String>("text", "");
+                break;
+            }
+            else if (type == "tool_use")
+            {
+                auto input = block->getObject("input");
+                if (input)
+                {
+                    std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
+                    input->stringify(ss);
+                    ai_response.result = ss.str();
+                }
+                break;
+            }
         }
     }
 

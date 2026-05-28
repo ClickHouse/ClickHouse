@@ -13,7 +13,6 @@
 
 #include <base/find_symbols.h>
 #include <fmt/ranges.h>
-#include <Core/UUID.h>
 
 namespace DB
 {

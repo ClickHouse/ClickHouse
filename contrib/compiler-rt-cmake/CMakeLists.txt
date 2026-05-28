@@ -285,10 +285,7 @@ set(SANITIZER_COMMON_FLAGS
     # RTTI is disabled by default in compiler-rt
     # (lib/sanitizer_common/CMakeLists.txt sets RTTI OFF; ubsan_cxx overrides).
     -fno-rtti
-    # The query profiler uses frame-pointer-based stack unwinding under sanitizers
-    # (via abseil), so sanitizer runtime frames (e.g. TSan interceptors) need frame
-    # pointers too. Override compiler-rt's default -fomit-frame-pointer.
-    -fno-omit-frame-pointer
+    -fomit-frame-pointer
     -funwind-tables
     -fno-stack-protector
     -fvisibility=hidden

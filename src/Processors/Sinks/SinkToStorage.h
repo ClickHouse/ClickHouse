@@ -37,7 +37,7 @@ private:
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 
-class NullSinkToStorage final : public SinkToStorage
+class NullSinkToStorage : public SinkToStorage
 {
 public:
     using SinkToStorage::SinkToStorage;

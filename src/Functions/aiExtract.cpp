@@ -24,9 +24,9 @@ class FunctionAiExtract final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiExtract";
 
-    explicit FunctionAiExtract(ContextPtr context_) : FunctionBaseAI(context_) {}
+    explicit FunctionAiExtract(ContextPtr context) : FunctionBaseAI(context) {}
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiExtract>(context_); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiExtract>(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -137,7 +137,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "aiExtract: 'instruction_or_schema' must be a JSON object mapping field names to descriptions");
 
-                Strings keys;
+                std::vector<String> keys;
                 user_obj->getNames(keys);
                 for (const auto & key : keys)
                 {

@@ -180,20 +180,14 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// Database engines that do not own ClickHouse table metadata cannot contain arbitrary ClickHouse table engines:
+    /// External database (i.e. PostgreSQL/Datalake/...) does not support any of ClickHouse internal tables:
     /// - *MergeTree
     /// - Distributed
     /// - RocksDB
     /// - ...
     virtual bool isExternal() const { return true; }
 
-    /// True for databases whose contents live on a remote service that we don't
-    /// want to enumerate implicitly in system tables (data lake catalogs, MySQL, PostgreSQL, ...).
-    /// Such databases are hidden from system.tables / system.columns / system.completions
-    /// unless `show_remote_databases_in_system_tables` is enabled.
-    /// This is distinct from `isExternal()` (which classifies whether the engine supports
-    /// ClickHouse internal table types).
-    virtual bool isRemoteDatabase() const { return false; }
+    virtual bool isDatalakeCatalog() const { return false; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
