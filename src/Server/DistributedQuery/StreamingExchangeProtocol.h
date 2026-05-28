@@ -22,6 +22,11 @@ namespace StreamingExchangeProtocol
     /// Sanity cap for the body of a Hello packet.
     static constexpr UInt64 MAX_HELLO_BODY_BYTES = 64 * 1024;
 
+    /// Sanity cap for the body of a Data packet. The peer-supplied size is allocated
+    /// before any payload is read, so an unbounded value would let a buggy or hostile
+    /// sink make the source allocate arbitrarily large buffers.
+    static constexpr UInt64 MAX_DATA_PACKET_BODY_BYTES = 256ULL * 1024 * 1024;
+
     /// Per-recv/send timeout applied to the Hello exchange on the server side.
     /// The handshake runs inline on the accept thread, so a silent peer must not
     /// hold it indefinitely.

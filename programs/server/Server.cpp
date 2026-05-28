@@ -2014,7 +2014,7 @@ try
     global_context->updateInterserverCredentials(config());
 
     std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
-    if (config().getBool("stateless_worker_server.enabled", true))
+    if (config().getBool("stateless_worker_server.enabled", false))
     {
         String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
         stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>();

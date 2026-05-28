@@ -595,7 +595,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     for (auto & [shard, task] : current_list_of_shards)
                     {
                         auto it = frame.list_of_shards.find(shard);
-                        if (it == current_list_of_shards.end())
+                        if (it == frame.list_of_shards.end())
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Shard {} is missing in the list of shards", shard);
 
                         it->second.parameters.parameters.insert(task.parameters.parameters.begin(), task.parameters.parameters.end());

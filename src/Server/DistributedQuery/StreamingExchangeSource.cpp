@@ -206,6 +206,11 @@ void StreamingExchangeSource::tryReadHeader()
         if (current_packet_header.packet_type != StreamingExchangeProtocol::PacketType::Data)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", current_packet_header.packet_type);
 
+        if (current_packet_header.bytes_size > StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Data packet body size {} exceeds limit {} on exchange stream {}",
+                current_packet_header.bytes_size, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES, stream_name);
+
         current_packet_body.resize(current_packet_header.bytes_size);
         current_packet_body_bytes_filled = 0;
         packet_receive_state = ReceivingBody;
