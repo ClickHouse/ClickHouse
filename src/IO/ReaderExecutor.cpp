@@ -780,20 +780,37 @@ VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::alloc
 /// like pread_threadpool/io_uring read into their own allocation and assume
 /// memory.size() == internal_buffer.size(), so set()+next() would corrupt
 /// the heap whenever chunk exceeds the buffer's constructor-time size).
-/// Returns bytes read; 0 means EOF.
+/// Returns bytes read; 0 means EOF. May return less than `chunk` only when
+/// the underlying source reached EOF — short positive `next` returns are
+/// looped over so the caller (readPhysicalWindow) does not misinterpret a
+/// partial fill as `actual < pr.size` and spuriously throw
+/// `CANNOT_READ_ALL_DATA` (size-known) or latch `reached_eof`
+/// (size-unknown) when more bytes are still available.
 static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 {
     if (buf.supportsExternalBufferMode())
     {
-        buf.set(dest, chunk);
-        if (!buf.next())
-            return 0;
-        size_t got = buf.available();
-        buf.position() = buf.buffer().end();
-        return got;
+        size_t total = 0;
+        while (total < chunk)
+        {
+            /// Re-arm the external buffer for the still-unfilled tail. The
+            /// source's internal position has already advanced by `total`
+            /// from the previous iteration, so each `next` reads into the
+            /// next slot in `dest` and the bytes land contiguously.
+            buf.set(dest + total, chunk - total);
+            if (!buf.next())
+                break;
+            size_t got = buf.available();
+            if (got == 0)
+                break;  /// Defensive: source returned `true` with no data.
+            buf.position() = buf.buffer().end();
+            total += got;
+        }
+        return total;
     }
 
-    /// Fallback: copy out of the buffer's own memory.
+    /// Fallback: copy out of the buffer's own memory. `ReadBuffer::read`
+    /// already loops internally via `!eof()`.
     return buf.read(dest, chunk);
 }
 
