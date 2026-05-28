@@ -380,7 +380,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
 
             settings.seek_to_start_callback(dictionary_keys_path);
 
-            UInt64 repeated_keys_version;
+            UInt64 repeated_keys_version = 0;
             readBinaryLittleEndian(repeated_keys_version, *stream);
             if (repeated_keys_version != keys_version)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Inconsistent version while resetting LowCardinality dictionary stream");

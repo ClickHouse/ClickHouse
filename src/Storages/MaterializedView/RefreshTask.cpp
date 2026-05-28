@@ -1683,7 +1683,7 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
             /// Unquoted int or quoted json string.
             Int64 int_val = 0;
             String string_val;
-            char c;
+            char c = 0;
             if (in.peek(c) && c != '"')
                 in >> int_val;
             else
@@ -1792,7 +1792,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_time<std::chrono::nanoseconds>>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::nanoseconds(v));
         }
