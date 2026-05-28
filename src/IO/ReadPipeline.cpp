@@ -222,10 +222,27 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// such a pipeline; the assertion below catches accidental misuse.
     if (source->already_complete)
     {
-        chassert(!gather && !memory_cache && filesystem_caches.empty()
-                 && !async_prefetch && decryption_stages.empty() && !distributed_cache
-                 && !prefetch_pool && !buffer_limit,
-                 "ReadPipeline: setAlreadyCompleteSource is incompatible with any stage");
+        /// Throw in release builds too, not only `chassert` in debug: callers
+        /// can stack stages on top of an already-complete source via
+        /// `prepareRead` wrappers (e.g. `DiskEncrypted::prepareRead` recurses
+        /// into the delegate first and then appends `needDecryption` on the
+        /// way back up). If the delegate registered an already-complete source,
+        /// the chassert was a no-op in release and we silently returned the
+        /// raw delegate buffer, dropping the wrapping stage — for encryption
+        /// that means handing encrypted bytes to the caller.
+        if (gather || memory_cache || !filesystem_caches.empty()
+            || async_prefetch || !decryption_stages.empty() || distributed_cache
+            || prefetch_pool || buffer_limit)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ReadPipeline: setAlreadyCompleteSource is incompatible with any stage: "
+                "gather={}, memory_cache={}, filesystem_caches={}, async_prefetch={}, "
+                "decryption_stages={}, distributed_cache={}, prefetch_pool={}, buffer_limit={}",
+                gather, memory_cache.has_value(), filesystem_caches.size(),
+                async_prefetch.has_value(), decryption_stages.size(),
+                distributed_cache.has_value(),
+                static_cast<bool>(prefetch_pool), static_cast<bool>(buffer_limit));
+        }
         const auto & custom = std::get<CustomSource>(source->source);
         return custom.creator(
             source->objects.front(),
