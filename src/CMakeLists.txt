@@ -156,6 +156,10 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
 
+add_headers_and_sources(dbms Core/Streaming)
+add_headers_and_sources(dbms Storages/Streaming)
+add_headers_and_sources(dbms Storages/MergeTree/Streaming)
+
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
