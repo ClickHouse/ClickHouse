@@ -2670,6 +2670,26 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         if (engine_define->settings)
             database_replicated_settings.loadFromQuery(*engine_define);
 
+        /// Reject explicit `max_replication_lag_to_enqueue = 0` at CREATE time.
+        /// 0 has no meaningful semantics (asks for zero lag tolerance, which is
+        /// impossible to satisfy under concurrent commits) and used to trigger a
+        /// `LOGICAL_ERROR` in the post-recovery DDL path (see issue #98823).
+        /// Only checked when the user explicitly set the value in the
+        /// `CREATE DATABASE` `SETTINGS` clause; values inherited from the server's
+        /// `<database_replicated>` config block, or persisted in existing database
+        /// metadata being attached, are tolerated for upgrade compatibility (the
+        /// post-recovery comparison in `DatabaseReplicatedDDLWorker` now uses a
+        /// strict `<`, so 0 no longer mis-marks caught-up replicas as unsynced).
+        if (args.mode < LoadingStrictnessLevel::ATTACH
+            && engine_define->settings
+            && engine_define->settings->changes.tryGet("max_replication_lag_to_enqueue") != nullptr
+            && database_replicated_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] == 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `max_replication_lag_to_enqueue` must be greater than 0");
+        }
+
         return std::make_shared<DatabaseReplicated>(
             args.database_name,
             args.metadata_path,
