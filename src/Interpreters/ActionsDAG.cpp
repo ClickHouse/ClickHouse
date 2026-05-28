@@ -871,22 +871,24 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
-const ActionsDAG::Node * skipAliasesConst(const ActionsDAG::Node * node)
+struct Resolved
+{
+    ColumnPtr column;
+    bool deterministic;
+    bool through_materialize;
+};
+
+const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
 {
     while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
         node = node->children.front();
     return node;
 }
 
-struct ResolvedConst
+std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * node)
 {
-    ColumnPtr column;
-    bool deterministic;
-};
-
-std::optional<ResolvedConst> resolveConstThroughMaterialize(const ActionsDAG::Node * node, bool & through_materialize)
-{
-    node = skipAliasesConst(node);
+    bool through_materialize = false;
+    node = skipAliases(node);
     while (node
         && node->type == ActionsDAG::ActionType::FUNCTION
         && node->function_base
@@ -894,25 +896,13 @@ std::optional<ResolvedConst> resolveConstThroughMaterialize(const ActionsDAG::No
         && node->children.size() == 1)
     {
         through_materialize = true;
-        node = skipAliasesConst(node->children.front());
+        node = skipAliases(node->children.front());
     }
     if (node && node->column && isColumnConst(*node->column))
-        return ResolvedConst{node->column, node->is_deterministic_constant};
+        return Resolved{node->column, node->is_deterministic_constant, through_materialize};
     return std::nullopt;
 }
 
-}
-
-ColumnPtr ActionsDAG::tryGetConstantColumnByName(const std::string & name, bool * through_materialize) const
-{
-    const auto * node = tryFindInOutputs(name);
-    if (!node)
-        return nullptr;
-    bool through = false;
-    auto resolved = resolveConstThroughMaterialize(node, through);
-    if (through_materialize)
-        *through_materialize = through;
-    return resolved ? resolved->column : nullptr;
 }
 
 void ActionsDAG::pushMaterializeOutwardForConstants()
@@ -922,7 +912,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants()
     for (auto it = nodes.begin(); it != nodes.end(); ++it)
     {
         auto & node = *it;
-        if (node.type != ActionType::FUNCTION || !node.function_base)
+        if (node.type != ActionType::FUNCTION || !node.function_base || !node.function)
             continue;
         if (node.function_base->getName() == "materialize")
             continue;
@@ -930,35 +920,45 @@ void ActionsDAG::pushMaterializeOutwardForConstants()
             continue;
         if (!node.function_base->isSuitableForConstantFolding())
             continue;
-        /// `isConstant` and similar representation-observing helpers mark themselves
-        /// non-deterministic; folding them would flip their result
         if (!node.function_base->isDeterministic())
             continue;
-        if (!node.function)
+
+        IFunctionBase::ShortCircuitSettings sc;
+        if (node.function_base->isShortCircuit(sc, node.children.size()))
             continue;
-        /// `execute` would throw constructing a non-empty column of Nothing
+
+        /// execute would throw constructing a non-empty column of Nothing
         if (!node.result_type || node.result_type->onlyNull() || isNothing(node.result_type))
             continue;
+
+        auto always_const_indices = node.function_base->getArgumentsThatAreAlwaysConstant();
+        std::unordered_set<size_t> always_const(always_const_indices.begin(), always_const_indices.end());
 
         ColumnsWithTypeAndName args;
         args.reserve(node.children.size());
         bool any_through_materialize = false;
         bool all_deterministic = true;
         bool all_resolved = true;
-        for (const auto * child : node.children)
+        for (size_t i = 0; i < node.children.size(); ++i)
         {
-            auto resolved = resolveConstThroughMaterialize(child, any_through_materialize);
+            auto resolved = resolveConstThroughMaterialize(node.children[i]);
             if (!resolved)
             {
                 all_resolved = false;
                 break;
             }
+            if (resolved->through_materialize && always_const.contains(i))
+            {
+                all_resolved = false;
+                break;
+            }
+            any_through_materialize = any_through_materialize || resolved->through_materialize;
             all_deterministic = all_deterministic && resolved->deterministic;
-            args.push_back({resolved->column, child->result_type, child->result_name});
+            args.push_back({resolved->column, node.children[i]->result_type, node.children[i]->result_name});
         }
         if (!all_resolved)
             continue;
-        /// without materialize traversal, `addFunctionImpl` already folded this
+        /// without materialize traversal, addFunctionImpl already folded this
         if (!any_through_materialize)
             continue;
 
@@ -966,8 +966,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants()
         if (!result || !isColumnConst(*result))
             continue;
 
-        /// Insert the folded const BEFORE the rewritten node so it has a smaller list
-        /// position - serialize asserts child id < parent id
+        /// Insert the folded const before the rewritten node, serialize asserts child id < parent id
         Node new_const{};
         new_const.type = ActionType::COLUMN;
         new_const.result_type = node.result_type;
@@ -976,8 +975,7 @@ void ActionsDAG::pushMaterializeOutwardForConstants()
         new_const.is_deterministic_constant = all_deterministic;
         const Node & const_node = *nodes.insert(it, std::move(new_const));
 
-        /// wrap in materialize so the runtime column type stays non-Const - keeps block
-        /// structure invariants (UnionStep schema match, retained filter columns)
+        /// wrap in materialize so the runtime column type stays non-Const (UnionStep schema match, retained filter columns)
         auto materialize_func = std::make_shared<FunctionMaterialize<false>>();
         FunctionOverloadResolverPtr resolver
             = std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(materialize_func));

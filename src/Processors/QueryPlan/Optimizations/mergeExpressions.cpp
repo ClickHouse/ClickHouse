@@ -1,11 +1,9 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Columns/FilterDescription.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -76,8 +74,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_filter->isInputRemovalPrevented();
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
-
-        /// merge brings materialize wrappers from the child Expression into the filter's DAG, push them outward so folds happen
+        /// merge brings materialize wrappers from the child Expression into the filter's DAG
+        /// (e.g. UNION schema homogenization); push them outward so the predicate folds (#78166)
         merged.pushMaterializeOutwardForConstants();
 
         auto filter = std::make_unique<FilterStep>(
@@ -88,24 +86,6 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             filter->setPreventInputRemoval();
-
-        /// If the predicate folded to a constant false via materialize-look-through, the
-        /// source step is guaranteed to contribute zero rows, drop the whole subtree so
-        /// the source is not executed
-        bool through_materialize = false;
-        auto filter_const = filter->getExpression().tryGetConstantColumnByName(filter->getFilterColumnName(), &through_materialize);
-        if (filter_const && through_materialize)
-        {
-            ConstantFilterDescription desc(*filter_const);
-            if (desc.always_false)
-            {
-                auto read_nothing = std::make_unique<ReadNothingStep>(filter->getOutputHeader());
-                read_nothing->setStepDescription(*filter);
-                parent_node->step = std::move(read_nothing);
-                parent_node->children.clear();
-                return 1;
-            }
-        }
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
