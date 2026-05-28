@@ -1,6 +1,5 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
-#include <Core/UUID.h>
 
 #if USE_MSGPACK
 

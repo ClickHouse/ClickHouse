@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|base/base/openpty\.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # Pre-compute file lists to avoid repeated find+grep
@@ -42,7 +42,7 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/glibc-compatibility/**' --glob '!**/poco/**' --glob '!**/memcpy/**' \
     --glob '!**/consistent-hashing/**' --glob '!**/*benchmark*' \
     --glob '!**/tests/**/*.cpp' \
-    --glob '!**/AvroSchema.h' \
+    --glob '!**/base/base/openpty.h' --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
@@ -248,20 +248,12 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | g
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
     src/Columns
-    src/Compression
-    src/Daemon
     src/Dictionaries
-    src/Functions
-    src/IO
-    src/Loggers
-    src/QueryPipeline
-    src/TableFunctions
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do
     grep "/$dir/" "$STYLE_TMPDIR/all_excluded" |
         xargs rg -Hn 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
-        grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|//|/\*)' |
         grep -v "STYLE_CHECK_ALLOW_STD_CONTAINERS" && echo "Use an -WithMemoryTracking alternative or mark these usages with STYLE_CHECK_ALLOW_STD_CONTAINERS"
 done
 } > "$O.08" 2>&1 &
@@ -291,7 +283,6 @@ std_cerr_cout_excludes=(
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
     src/IO/Ask.cpp
-    src/Examples/main.cpp
     # Only in block comments (/* ... */)
     src/Storages/IStorage.h
     src/Common/mysqlxx/mysqlxx/Query.h
