@@ -544,7 +544,7 @@ private:
 
             /// Add argument with tokenizer definition.
             auto arg_type = std::make_shared<DataTypeString>();
-            auto arg_column = assert_cast<const ColumnConst &>(*arg_type->createColumnConst(0, Field(tokenizer_description))).getPtr();
+            auto arg_column = arg_type->createColumnConst(0, Field(tokenizer_description));
             new_children.push_back(&actions_dag.addColumn(std::move(arg_column), std::move(arg_type), quoteString(tokenizer_description)));
 
             /// Convert needles to array if they are a string by applying a tokenizer.
@@ -562,7 +562,7 @@ private:
         }
 
         /// Recreate an argument with needles.
-        auto needles_column = assert_cast<const ColumnConst &>(*needles_type->createColumnConst(0, needles_field)).getPtr();
+        auto needles_column = needles_type->createColumnConst(0, needles_field);
         new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
 
         /// Recreate a function object because we have modified the arguments.

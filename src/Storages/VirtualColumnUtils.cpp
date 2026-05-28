@@ -629,7 +629,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
                         ? res->result_type->getDefault()
                         : nested_type->getDefault();
-                    auto zero_column = assert_cast<const ColumnConst &>(*res->result_type->createColumnConst(0, zero_field)).getPtr();
+                    auto zero_column = res->result_type->createColumnConst(0, zero_field);
                     const auto & zero_node = tmp_dag.addColumn(std::move(zero_column), res->result_type, "0");
                     auto ne_func = FunctionFactory::instance().get("notEquals", context);
                     res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});

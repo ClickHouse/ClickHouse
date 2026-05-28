@@ -599,7 +599,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     /// Adding window column
     DataTypes window_column_type{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()};
     auto column_type = std::make_shared<DataTypeTuple>(std::move(window_column_type));
-    auto column = assert_cast<const ColumnConst &>(*column_type->createColumnConst(0, Tuple{w_start, watermark})).getPtr();
+    auto column = column_type->createColumnConst(0, Tuple{w_start, watermark});
     auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column), std::move(column_type), window_column_name);
     auto adding_column_actions
         = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings(getContext()));
@@ -1576,7 +1576,7 @@ void StorageWindowView::writeIntoWindowView(
             auto column_type = timezone.empty()
                 ? std::make_shared<DataTypeDateTime>()
                 : std::make_shared<DataTypeDateTime>(timezone);
-            auto column = assert_cast<const ColumnConst &>(*column_type->createColumnConst(0, Field(now()))).getPtr();
+            auto column = column_type->createColumnConst(0, Field(now()));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column), std::move(column_type), "____timestamp");
             auto adding_column_actions = std::make_shared<ExpressionActions>(

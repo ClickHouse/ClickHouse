@@ -588,7 +588,7 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
     else
     {
         auto unknown_field_type = std::make_shared<DataTypeUInt8>();
-        auto unknown_field_column = assert_cast<const ColumnConst &>(*unknown_field_type->createColumnConst(0, UNKNOWN_FIELD)).getPtr();
+        auto unknown_field_column = unknown_field_type->createColumnConst(0, UNKNOWN_FIELD);
         result_node = &result_dag.addColumn(std::move(unknown_field_column), unknown_field_type, calculateConstantActionNodeName(UNKNOWN_FIELD));
     }
 

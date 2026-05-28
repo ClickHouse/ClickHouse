@@ -437,7 +437,7 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
     Field cast_type_constant_value(cast_type->getName());
 
     auto type = std::make_shared<DataTypeString>();
-    auto column = assert_cast<const ColumnConst &>(*type->createColumnConst(0, cast_type_constant_value)).getPtr();
+    ColumnConstPtr column = type->createColumnConst(0, cast_type_constant_value);
     auto name = calculateConstantActionNodeName(cast_type_constant_value);
 
     const auto * cast_type_constant_node = &addColumn(std::move(column), type, std::move(name));
@@ -1937,7 +1937,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
         {
             auto string_type = std::make_shared<DataTypeString>();
             auto type_name = res_elem.type->getName();
-            auto type_const = assert_cast<const ColumnConst &>(*string_type->createColumnConst(0, type_name)).getPtr();
+            auto type_const = string_type->createColumnConst(0, type_name);
 
             const auto * right_arg = &actions_dag.addColumn(std::move(type_const), string_type, std::move(type_name));
             const auto * left_arg = dst_node;
@@ -2005,7 +2005,7 @@ ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnConstPtr column, DataTypePt
 
 ActionsDAG ActionsDAG::makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value)
 {
-    return makeAddingColumnActions(assert_cast<const ColumnConst &>(*type->createColumnConst(0, value)).getPtr(), type, name);
+    return makeAddingColumnActions(type->createColumnConst(0, value), type, name);
 }
 
 ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
@@ -3717,7 +3717,7 @@ ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter
                         /// Replace non-computable child in "and" with constant true.
                         if (name == "and")
                         {
-                            auto const_column = assert_cast<const ColumnConst &>(*child->result_type->createColumnConst(0, 1)).getPtr();
+                            auto const_column = child->result_type->createColumnConst(0, 1);
                             copy_map[child] = &actions.addColumn(std::move(const_column), child->result_type, child->result_name);
 
                             /// Mark as now computable (since we substituted it)

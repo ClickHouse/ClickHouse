@@ -169,7 +169,7 @@ const ActionsDAG::Node & addAndTrue(
     Field const_true_value(true);
 
     auto const_true_type = std::make_shared<DataTypeUInt8>();
-    auto const_true_column = assert_cast<const ColumnConst &>(*const_true_type->createColumnConst(0, const_true_value)).getPtr();
+    auto const_true_column = const_true_type->createColumnConst(0, const_true_value);
 
     const auto * const_true_node = &dag->addColumn(std::move(const_true_column), std::move(const_true_type), "");
     ActionsDAG::NodeRawConstPtrs children = {&filter_node_to_normalize, const_true_node};

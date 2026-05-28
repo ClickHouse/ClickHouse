@@ -160,7 +160,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
                 auto reinterpret_func = FunctionFactory::instance().get("reinterpretAsUInt64", nullptr);
                 auto bitxor_func = FunctionFactory::instance().get("bitXor", nullptr);
                 auto sign_bit_type = std::make_shared<DataTypeUInt64>();
-                auto sign_bit_column = assert_cast<const ColumnConst &>(*sign_bit_type->createColumnConst(0, Field(UInt64(1) << 63))).getPtr();
+                auto sign_bit_column = sign_bit_type->createColumnConst(0, Field(UInt64(1) << 63));
                 const auto * sign_bit_node = &dag.addColumn(std::move(sign_bit_column), std::move(sign_bit_type), "__sign_bit");
                 const auto * version_int64 = &dag.addFunction(to_int64, {version_node}, {});
                 const auto * version_uint64 = &dag.addFunction(reinterpret_func, {version_int64}, {});
@@ -170,7 +170,7 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             const auto * version_128 = &dag.addFunction(to_uint128, {version_node}, {});
             const auto * row_index_128 = &dag.addFunction(to_uint128, {row_index_node}, {});
             auto shift_type = std::make_shared<DataTypeUInt8>();
-            auto shift_column = assert_cast<const ColumnConst &>(*shift_type->createColumnConst(0, Field(UInt8(64)))).getPtr();
+            auto shift_column = shift_type->createColumnConst(0, Field(UInt8(64)));
             const auto * shift_amount = &dag.addColumn(std::move(shift_column), std::move(shift_type), "__shift_64");
             const auto * shifted = &dag.addFunction(bit_shift_left, {version_128, shift_amount}, {});
             const auto * tiebreaker = &dag.addFunction(plus_func, {shifted, row_index_128}, {});

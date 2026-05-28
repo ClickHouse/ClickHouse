@@ -68,7 +68,7 @@ ActionsDAG addMissingDefaults(
         if (array_type && nested_groups.contains(offsets_name))
         {
             const auto & nested_type = array_type->getNestedType();
-            auto nested_column = assert_cast<const ColumnConst &>(*nested_type->createColumnConstWithDefaultValue(0)).getPtr();
+            auto nested_column = nested_type->createColumnConstWithDefaultValue(0);
             const auto & constant = actions.addColumn(std::move(nested_column), nested_type, column.name);
 
             auto & group = nested_groups[offsets_name];
@@ -81,7 +81,7 @@ ActionsDAG addMissingDefaults(
         /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
-        auto new_column = assert_cast<const ColumnConst &>(*column.type->createColumnConstWithDefaultValue(0)).getPtr();
+        auto new_column = column.type->createColumnConstWithDefaultValue(0);
         const auto * col = &actions.addColumn(std::move(new_column), column.type, column.name);
         index.push_back(&actions.materializeNode(*col));
     }

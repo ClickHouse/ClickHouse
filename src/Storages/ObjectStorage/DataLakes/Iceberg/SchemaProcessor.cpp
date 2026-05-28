@@ -520,7 +520,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     old_id,
                     new_id);
             }
-            auto default_type_column = assert_cast<const ColumnConst &>(*type->createColumnConstWithDefaultValue(0)).getPtr();
+            auto default_type_column = type->createColumnConstWithDefaultValue(0);
             const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
             outputs.push_back(&constant);
         }

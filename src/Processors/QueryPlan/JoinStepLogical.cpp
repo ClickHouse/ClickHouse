@@ -141,7 +141,7 @@ static void addToNullableIfNeeded(
     if (outputs.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        auto column = assert_cast<const ColumnConst &>(*column_type->createColumnConst(0, 0)).getPtr();
+        auto column = column_type->createColumnConst(0, 0);
         const auto * node = &actions_dag->addColumn(std::move(column), column_type, String(join_dummy_result_name));
         actions_after_join.push_back(node);
         outputs.push_back(node);
@@ -370,7 +370,7 @@ IQueryPlanStep::RemovedUnusedColumns JoinStepLogical::removeUnusedColumns(NameMu
     if (required_nodes.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        auto column = assert_cast<const ColumnConst &>(*column_type->createColumnConst(0, 0)).getPtr();
+        auto column = column_type->createColumnConst(0, 0);
         const auto * node = &actions_dag.addColumn(std::move(column), column_type, String(join_dummy_result_name));
         new_actions_after_join.push_back(node);
         required_nodes.push_back(node);
@@ -557,7 +557,7 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
         {
             JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-            auto rhs_column = assert_cast<const ColumnConst &>(*uint8_ty->createColumnConst(0, 1)).getPtr();
+            auto rhs_column = uint8_ty->createColumnConst(0, 1);
             const auto & rhs_node = dag.addColumn(std::move(rhs_column), uint8_ty, "true");
             nodes.push_back(&rhs_node);
             return function_and(dag, nodes);
@@ -1045,11 +1045,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         auto dt = std::make_shared<DataTypeUInt8>();
 
-        auto lhs_column = assert_cast<const ColumnConst &>(*dt->createColumnConst(0, 1)).getPtr();
+        auto lhs_column = dt->createColumnConst(0, 1);
         JoinActionRef lhs(&actions_dag->addColumn(std::move(lhs_column), dt, "__lhs_const"), expression_actions);
         lhs.setSourceRelations(BitSet().set(0));
 
-        auto rhs_column = assert_cast<const ColumnConst &>(*dt->createColumnConst(0, rhs_value)).getPtr();
+        auto rhs_column = dt->createColumnConst(0, rhs_value);
         JoinActionRef rhs(&actions_dag->addColumn(std::move(rhs_column), dt, "__rhs_const"), expression_actions);
         rhs.setSourceRelations(BitSet().set(1));
 

@@ -41,7 +41,7 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
             /// Create the second argument of getSubcolumn function with string
             /// containing subcolumn name and add it to the ActionsDAG.
             auto subcolumn_name_type = std::make_shared<DataTypeString>();
-            auto subcolumn_name_column = assert_cast<const ColumnConst &>(*subcolumn_name_type->createColumnConst(0, subcolumn_name)).getPtr();
+            auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
             const auto & subcolumn_name_arg_node = extract_subcolumns_dag.addColumn(std::move(subcolumn_name_column), std::move(subcolumn_name_type), std::string(subcolumn_name));
 
             /// Create and add getSubcolumn function

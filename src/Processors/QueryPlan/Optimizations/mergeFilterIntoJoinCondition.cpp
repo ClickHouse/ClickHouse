@@ -211,7 +211,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             auto it = conjuncts_to_replace.find(output);
             if (it != conjuncts_to_replace.end())
             {
-                auto const_column = assert_cast<const ColumnConst &>(*output->result_type->createColumnConst(0, 1)).getPtr();
+                auto const_column = output->result_type->createColumnConst(0, 1);
                 output = &filter_dag.addColumn(std::move(const_column), output->result_type, output->result_name);
             }
         }

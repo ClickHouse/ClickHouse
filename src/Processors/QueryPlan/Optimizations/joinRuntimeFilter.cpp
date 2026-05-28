@@ -86,7 +86,7 @@ const ActionsDAG::Node & createRuntimeFilterCondition(
     const DataTypePtr & filter_element_type)
 {
     auto string_type = std::make_shared<DataTypeString>();
-    auto filter_name_column = assert_cast<const ColumnConst &>(*string_type->createColumnConst(0, filter_name)).getPtr();
+    auto filter_name_column = string_type->createColumnConst(0, filter_name);
     const auto & filter_name_node = actions_dag.addColumn(std::move(filter_name_column), std::move(string_type), filter_name);
 
     const auto & key_column_node = actions_dag.findInOutputs(key_column.name);
@@ -308,7 +308,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             /// Build __applyFilter(filter_name, tuple_node) condition directly,
             /// since the tuple node is freshly created and not yet in the DAG outputs
             auto string_type = std::make_shared<DataTypeString>();
-            auto filter_name_column = assert_cast<const ColumnConst &>(*string_type->createColumnConst(0, filter_name)).getPtr();
+            auto filter_name_column = string_type->createColumnConst(0, filter_name);
             const auto & filter_name_node = filter_dag.addColumn(std::move(filter_name_column), std::move(string_type), filter_name);
             auto filter_function = FunctionFactory::instance().get("__applyFilter", /*query_context*/nullptr);
             const auto & condition = filter_dag.addFunction(filter_function, {&filter_name_node, &tuple_node}, {});

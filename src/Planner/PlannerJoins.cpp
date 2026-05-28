@@ -985,7 +985,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
         if (!which_type.isUInt8())
         {
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-            auto true_col = assert_cast<const ColumnConst &>(*uint8_ty->createColumnConst(0, 1)).getPtr();
+            auto true_col = uint8_ty->createColumnConst(0, 1);
             const auto * true_node = &result.residual_join_expressions_actions->addColumn(std::move(true_col), uint8_ty, "true");
             result.residual_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
         }

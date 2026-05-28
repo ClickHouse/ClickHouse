@@ -91,7 +91,7 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
             is_deleted_column);
 
     auto zero_type = std::make_shared<DataTypeUInt8>();
-    auto zero_column = assert_cast<const ColumnConst &>(*zero_type->createColumnConst(0, Field(UInt8(0)))).getPtr();
+    auto zero_column = zero_type->createColumnConst(0, Field(UInt8(0)));
     const auto * zero_node = &dag.addColumn(std::move(zero_column), std::move(zero_type), "__is_deleted_zero");
 
     auto equals_func = FunctionFactory::instance().get("equals", context);

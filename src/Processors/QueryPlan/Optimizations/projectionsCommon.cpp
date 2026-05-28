@@ -139,7 +139,7 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
             }
             else
             {
-                auto column = assert_cast<const ColumnConst &>(*node->result_type->createColumnConst(0, 1)).getPtr();
+                auto column = node->result_type->createColumnConst(0, 1);
                 *it = &dag.addColumn(std::move(column), node->result_type, node->result_name);
             }
 
