@@ -679,24 +679,42 @@ void S3ObjectStorage::applyNewSettings(
     auto current_settings = s3_settings.get();
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
-    /// Apply global <s3> endpoint settings first (lowest priority).
-    bool endpoint_settings_applied = false;
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
+    auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName());
+
+    /// Apply global <s3> endpoint settings first (lowest priority) for disk configs.
+    if (for_disk_s3 && endpoint_settings)
     {
         modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-        endpoint_settings_applied = true;
     }
 
-    /// Apply disk config settings on top (higher priority than global <s3> section).
+    /// Apply config settings. For disk configs these take priority over endpoint defaults.
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
+    if (!for_disk_s3)
+    {
+        if (options.allow_client_change)
+        {
+            if (endpoint_settings)
+            {
+                modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+                modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+            }
+            else
+            {
+                /// Dynamically refreshable `S3` storages may have picked up endpoint-scoped
+                /// credentials on an earlier reload. If the endpoint no longer matches,
+                /// drop credential-bearing fields so revocation takes effect.
+                modified_settings->resetCredentialsForUserControlledRequest();
+            }
+        }
+        else
+            modified_settings->copyCredentialsFrom(*current_settings);
+    }
+
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
-
-    if (!for_disk_s3 && !endpoint_settings_applied)
-        modified_settings->copyCredentialsFrom(*current_settings);
 
     if (options.allow_client_change
         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))

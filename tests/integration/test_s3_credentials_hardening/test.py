@@ -50,6 +50,33 @@ ROLE_ARN = "arn:aws:iam::123456789012:role/Test"
 ENDPOINT = "http://unreachable.invalid/bucket/object.tsv"
 UNTRUSTED_ENDPOINT = "http://resolver:18080/untrusted/object.csv"
 TRUSTED_ENDPOINT = "http://resolver:18080/trusted/object.csv"
+RELOAD_TRUSTED_ENDPOINT = "http://resolver:18080/reload_trusted/object.csv"
+RELOAD_TRUSTED_ENDPOINT_CONFIG = """        <reload_trusted_endpoint>
+            <endpoint>http://resolver:18080/reload_trusted/</endpoint>
+            <access_key_id>TRUSTED_FAKE_KEY</access_key_id>
+            <secret_access_key>TRUSTED_FAKE_SECRET</secret_access_key>
+            <header>X-Admin-Secret: TRUSTED_HEADER</header>
+        </reload_trusted_endpoint>
+"""
+
+
+def _set_reload_trusted_endpoint(enabled):
+    config_path = os.path.join(
+        os.path.dirname(__file__),
+        cluster.instances_dir_name,
+        "node/configs/config.d/admin_s3.xml",
+    )
+    with open(config_path, encoding="utf-8") as config:
+        contents = config.read()
+
+    contents = contents.replace(RELOAD_TRUSTED_ENDPOINT_CONFIG, "")
+    if enabled:
+        contents = contents.replace(
+            "    </s3>\n", RELOAD_TRUSTED_ENDPOINT_CONFIG + "    </s3>\n"
+        )
+
+    with open(config_path, "w", encoding="utf-8") as config:
+        config.write(contents)
 
 
 def _expect_access_denied(query):
@@ -120,6 +147,32 @@ def test_s3_storage_refresh_does_not_inherit_server_headers():
         assert node.query("SELECT * FROM s3_refresh").strip() == "0"
     finally:
         node.query("DROP TABLE IF EXISTS s3_refresh")
+
+
+def test_s3_storage_refresh_drops_revoked_endpoint_credentials():
+    node.query("DROP TABLE IF EXISTS s3_refresh_revoked_endpoint")
+    _set_reload_trusted_endpoint(False)
+    node.query("SYSTEM RELOAD CONFIG")
+    node.query(
+        f"""
+        CREATE TABLE s3_refresh_revoked_endpoint (leaked UInt8)
+        ENGINE = S3('{RELOAD_TRUSTED_ENDPOINT}', 'CSV')
+        """
+    )
+    try:
+        assert node.query("SELECT * FROM s3_refresh_revoked_endpoint").strip() == "0"
+
+        _set_reload_trusted_endpoint(True)
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT * FROM s3_refresh_revoked_endpoint").strip() == "2"
+
+        _set_reload_trusted_endpoint(False)
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT * FROM s3_refresh_revoked_endpoint").strip() == "0"
+    finally:
+        node.query("DROP TABLE IF EXISTS s3_refresh_revoked_endpoint")
+        _set_reload_trusted_endpoint(False)
+        node.query("SYSTEM RELOAD CONFIG")
 
 
 def test_endpoint_scoped_credentials_still_apply():
