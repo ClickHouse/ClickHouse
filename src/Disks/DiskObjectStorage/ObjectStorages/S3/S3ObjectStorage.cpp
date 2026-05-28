@@ -702,10 +702,7 @@ void S3ObjectStorage::applyNewSettings(
         if (options.allow_client_change)
         {
             if (endpoint_settings)
-            {
-                modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-                modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-            }
+                apply_endpoint_settings();
             else
             {
                 /// Dynamically refreshable `S3` storages may have picked up endpoint-scoped
