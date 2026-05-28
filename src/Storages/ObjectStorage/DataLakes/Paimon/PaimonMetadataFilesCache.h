@@ -29,6 +29,9 @@ namespace DB
 
 using namespace Paimon;
 
+using ManifestListConstPtr = std::shared_ptr<const std::vector<PaimonManifestFileMeta>>;
+using ManifestConstPtr = std::shared_ptr<const PaimonManifest>;
+
 /// Cache cell that can hold different types of Paimon metadata.
 struct PaimonMetadataFilesCacheCell
 {
@@ -38,21 +41,21 @@ struct PaimonMetadataFilesCacheCell
         std::vector<PaimonManifestFileMeta>, /// manifest list parsed result
         PaimonManifest                       /// manifest parsed result
     > cached_element;
-    Int64 memory_bytes;
+    size_t memory_bytes;
 
     explicit PaimonMetadataFilesCacheCell(std::vector<PaimonManifestFileMeta> && manifest_list)
         : cached_element(std::move(manifest_list))
-        , memory_bytes(static_cast<Int64>(
+        , memory_bytes(
               getMemorySizeOfManifestList(std::get<std::vector<PaimonManifestFileMeta>>(cached_element))
-              + SIZE_IN_MEMORY_OVERHEAD))
+              + SIZE_IN_MEMORY_OVERHEAD)
     {
     }
 
     explicit PaimonMetadataFilesCacheCell(PaimonManifest && manifest)
         : cached_element(std::move(manifest))
-        , memory_bytes(static_cast<Int64>(
+        , memory_bytes(
               std::get<PaimonManifest>(cached_element).getSizeInMemory()
-              + SIZE_IN_MEMORY_OVERHEAD))
+              + SIZE_IN_MEMORY_OVERHEAD)
     {
     }
 
@@ -105,7 +108,7 @@ public:
     }
 
     template <typename LoadFunc>
-    std::vector<PaimonManifestFileMeta> getOrSetManifestList(const String & key, LoadFunc && load_fn)
+    ManifestListConstPtr getOrSetManifestList(const String & key, LoadFunc && load_fn)
     {
         auto load_wrapper = [&]()
         {
@@ -117,11 +120,12 @@ public:
             ProfileEvents::increment(ProfileEvents::PaimonMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::PaimonMetadataFilesCacheHits);
-        return std::get<std::vector<PaimonManifestFileMeta>>(result.first->cached_element);
+        const auto & vec = std::get<std::vector<PaimonManifestFileMeta>>(result.first->cached_element);
+        return ManifestListConstPtr(result.first, &vec);
     }
 
     template <typename LoadFunc>
-    PaimonManifest getOrSetManifest(const String & key, LoadFunc && load_fn)
+    ManifestConstPtr getOrSetManifest(const String & key, LoadFunc && load_fn)
     {
         auto load_wrapper = [&]()
         {
@@ -133,7 +137,8 @@ public:
             ProfileEvents::increment(ProfileEvents::PaimonMetadataFilesCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::PaimonMetadataFilesCacheHits);
-        return std::get<PaimonManifest>(result.first->cached_element);
+        const auto & manifest = std::get<PaimonManifest>(result.first->cached_element);
+        return ManifestConstPtr(result.first, &manifest);
     }
 
 private:

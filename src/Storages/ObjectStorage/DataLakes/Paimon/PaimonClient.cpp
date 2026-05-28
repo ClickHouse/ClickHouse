@@ -165,7 +165,7 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     /// parse schema json
     RelativePathWithMetadata object_info(max_schema_path);
     auto context = getContext();
-    auto read_settings = getPaimonMetadataReadSettings();
+    auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
     auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -188,7 +188,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
         if (object_storage->exists(StoredObject(relative_path_with_metadata.relative_path)))
         {
             auto context = getContext();
-            auto read_settings = getPaimonMetadataReadSettings();
+            auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
             auto buf = createReadBuffer(relative_path_with_metadata, object_storage, context, log, read_settings);
             String hint_version_string;
             readStringUntilEOF(hint_version_string, *buf);
@@ -272,7 +272,7 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
     /// read snapshot and parse
     RelativePathWithMetadata snapshot_object(latest_snapshot_path);
     auto context = getContext();
-    auto read_settings = getPaimonMetadataReadSettings();
+    auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/false);
     auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, context, log, read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);

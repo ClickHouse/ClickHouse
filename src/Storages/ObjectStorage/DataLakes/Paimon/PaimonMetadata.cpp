@@ -188,7 +188,7 @@ DataLakeMetadataPtr PaimonMetadata::create(
     String table_cache_key_prefix;
     if (cache_ptr)
     {
-        Int64 schema0_time_millis = schema->time_mills;
+        Int64 schema0_time_millis = schema->time_millis;
         try
         {
             auto schema0_info = table_client->getTableSchemaInfoById(0);
@@ -454,10 +454,10 @@ PaimonTableStatePtr PaimonMetadata::extractTableState(StorageMetadataPtr storage
     return std::make_shared<PaimonTableState>(*paimon_state);
 }
 
-std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String & manifest_list_path) const
+ManifestListConstPtr PaimonMetadata::getManifestList(const String & manifest_list_path) const
 {
     if (manifest_list_path.empty())
-        return {};
+        return std::make_shared<const std::vector<PaimonManifestFileMeta>>();
 
     if (persistent_components.hasMetadataCache())
     {
@@ -473,10 +473,11 @@ std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String
     }
 
     LOG_TRACE(log, "Loading manifest list (no cache): {}", manifest_list_path);
-    return table_client->getManifestMeta(manifest_list_path);
+    return std::make_shared<const std::vector<PaimonManifestFileMeta>>(
+        table_client->getManifestMeta(manifest_list_path));
 }
 
-PaimonManifest PaimonMetadata::getManifest(const String & manifest_path, Int64 schema_id) const
+ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64 schema_id) const
 {
     auto schema = persistent_components.schema_processor->getSchemaById(schema_id);
     if (!schema)
@@ -497,7 +498,8 @@ PaimonManifest PaimonMetadata::getManifest(const String & manifest_path, Int64 s
     }
 
     LOG_TRACE(log, "Loading manifest (no cache): {}", manifest_path);
-    return table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name);
+    return std::make_shared<const PaimonManifest>(
+        table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name));
 }
 
 ObjectIterator PaimonMetadata::iterate(
@@ -839,10 +841,10 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
             return;
 
         auto manifest_metas = getManifestList(manifest_list_path);
-        for (const auto & meta : manifest_metas)
+        for (const auto & meta : *manifest_metas)
         {
             auto manifest = getManifest(meta.file_name, snapshot_state->schema_id);
-            for (const auto & entry : manifest.entries)
+            for (const auto & entry : manifest->entries)
             {
                 String file_path = (std::filesystem::path(persistent_components.table_path)
                     / entry.file.bucket_path / entry.file.file_name);

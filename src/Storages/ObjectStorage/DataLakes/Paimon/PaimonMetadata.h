@@ -145,10 +145,10 @@ private:
     static PaimonTableStatePtr extractTableState(StorageMetadataPtr storage_metadata);
 
     /// Get or load manifest file list (uses cache)
-    std::vector<PaimonManifestFileMeta> getManifestList(const String & manifest_list_path) const;
+    ManifestListConstPtr getManifestList(const String & manifest_list_path) const;
 
     /// Get or load manifest content (uses cache)
-    PaimonManifest getManifest(const String & manifest_path, Int64 schema_id) const;
+    ManifestConstPtr getManifest(const String & manifest_path, Int64 schema_id) const;
 
     /// Validate configuration
     void checkSupportedConfiguration() const;
