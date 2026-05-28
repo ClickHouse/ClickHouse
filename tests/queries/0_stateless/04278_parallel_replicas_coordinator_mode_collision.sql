@@ -16,6 +16,10 @@ SELECT toString(rand() % 100000), number FROM numbers(300000);
 INSERT INTO t_pr_coord_collision
 SELECT toString(rand() % 100000), number FROM numbers(300000);
 
+SET automatic_parallel_replicas_mode = 0;
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1;
+
 -- The sharded-aggregator subquery scatters rows by hash and disables read-in-order,
 -- so it announces `Default`. The in-order subquery announces `WithOrder`. Both
 -- subqueries share the same `ParallelReplicasReadingCoordinator` instance.
