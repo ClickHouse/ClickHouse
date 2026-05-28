@@ -29,3 +29,5 @@ FROM (
     SELECT count() FROM numbers(100)
     WHERE materialize('online'::String) = 'online'
 );
+
+SELECT count() FROM numbers(100) WHERE isConstant(materialize('online'));

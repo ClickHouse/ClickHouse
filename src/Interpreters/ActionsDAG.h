@@ -240,8 +240,9 @@ public:
 
     void removeAliasesForFilter(const std::string & filter_name);
 
-    /// fold filter to const when its only "non-const" leaves are materialize(const)
-    void foldConstantFilterThroughMaterialize(const std::string & filter_column_name);
+    /// fold FUNCTION nodes whose args reach a const through `materialize(...)` wrappers
+    /// to `materialize(Const)`, keeping the column type non-Const at runtime
+    void pushMaterializeOutwardForConstants();
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs

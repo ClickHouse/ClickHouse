@@ -54,6 +54,9 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
+        /// merge brings materialize wrappers from the child Expression into the filter's DAG, push them outward so folds happen
+        merged.pushMaterializeOutwardForConstants();
+
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
         expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
