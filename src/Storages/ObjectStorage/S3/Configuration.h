@@ -91,6 +91,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
     String path_suffix;
+    bool has_user_supplied_credentials = false;
 
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
@@ -144,7 +145,7 @@ public:
 
     void check(ContextPtr context) override;
     void validateNamespace(const String & name) const override;
-    bool isStaticConfiguration() const override { return static_configuration; }
+    bool isStaticConfiguration() const override { return has_user_or_catalog_credentials; }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
@@ -169,9 +170,10 @@ public:
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
-    /// If s3 configuration was passed from ast, then it is static.
-    /// If from config - it can be changed with config reload.
-    bool static_configuration = true;
+    /// If credential-bearing settings came from SQL/catalog metadata, keep them
+    /// static across config reloads. Endpoint-scoped credentials are trusted
+    /// config and must remain refreshable/revocable.
+    bool has_user_or_catalog_credentials = true;
 
     String biglake_adc_client_id;
     String biglake_adc_client_secret;

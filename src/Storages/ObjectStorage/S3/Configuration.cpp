@@ -100,6 +100,20 @@ namespace
         source);
 }
 
+bool namedCollectionHasUserSuppliedCredentials(const NamedCollection & collection)
+{
+    return collection.has("no_sign_request")
+        || !collection.getOrDefault<String>("access_key_id", "").empty()
+        || !collection.getOrDefault<String>("secret_access_key", "").empty()
+        || !collection.getOrDefault<String>("session_token", "").empty()
+        || !collection.getOrDefault<String>("role_arn", "").empty()
+        || !collection.getOrDefault<String>("role_session_name", "").empty()
+        || !collection.getOrDefault<String>("http_client", "").empty()
+        || !collection.getOrDefault<String>("service_account", "").empty()
+        || !collection.getOrDefault<String>("metadata_service", "").empty()
+        || !collection.getOrDefault<String>("request_token_path", "").empty();
+}
+
 void applyEndpointCredentialsOrReset(S3Settings & s3_settings, const S3::URI & url, ContextPtr context)
 {
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
@@ -226,6 +240,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
 {
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
+    has_user_supplied_credentials = namedCollectionHasUserSuppliedCredentials(collection);
 
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
@@ -742,6 +757,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     /// keys ended up in `auth_settings` after merging with `<s3>` / endpoint config.
     bool user_supplied_access_key_id = false;
     bool user_supplied_secret_access_key = false;
+    bool user_supplied_session_token = false;
+    bool user_supplied_no_sign_request = false;
 
     if (auto access_key_id_value = getFromPositionOrKeyValue<String>("access_key_id", args, engine_args_to_idx, key_value_args);
         access_key_id_value.has_value())
@@ -761,6 +778,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         session_token_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
+        user_supplied_session_token = !session_token_value.value().empty();
     }
 
     if (extra_credentials_result.role_arn_provided
@@ -772,12 +790,20 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     if (no_sign_request)
     {
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+        user_supplied_no_sign_request = true;
     }
     else if (auto no_sign_value = getFromPositionOrKeyValue<bool>("no_sign", args, {}, key_value_args);
         no_sign_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
+        user_supplied_no_sign_request = true;
     }
+
+    has_user_supplied_credentials = user_supplied_access_key_id
+        || user_supplied_secret_access_key
+        || user_supplied_session_token
+        || user_supplied_no_sign_request
+        || !headers_from_ast.empty();
 
     if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
         storage_class_name.has_value())
@@ -1078,10 +1104,10 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 {
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
+    const bool has_user_supplied_credentials = parsed_arguments.has_user_supplied_credentials;
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    has_user_or_catalog_credentials = has_user_supplied_credentials;
 }
 
 void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -1104,6 +1130,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 {
     S3StorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
+    const bool has_user_supplied_credentials = parsed_arguments.has_user_supplied_credentials;
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     assert(s3_settings != nullptr);
@@ -1114,8 +1141,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
         s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = biglake_adc_refresh_token;
     }
-    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    has_user_or_catalog_credentials = has_user_supplied_credentials || !biglake_adc_client_id.empty();
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
