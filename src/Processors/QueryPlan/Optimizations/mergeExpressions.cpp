@@ -77,6 +77,11 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         /// merge brings materialize wrappers from the child Expression into the filter's DAG
         /// (e.g. UNION schema homogenization); push them outward so the predicate folds (#78166)
         merged.pushMaterializeOutwardForConstants();
+        /// when  filter column is dropped after filtering, keep predicate as a
+        /// bare Const so `FilterTransform` sees `ColumnConst` and short-circuits the
+        /// source via `ConstantFilterDescription::always_false/always_true`
+        if (parent_filter->removesFilterColumn())
+            merged.unwrapMaterializeWrapAtOutput(parent_filter->getFilterColumnName());
 
         auto filter = std::make_unique<FilterStep>(
             child_expr->getInputHeaders().front(),

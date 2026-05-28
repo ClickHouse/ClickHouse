@@ -905,6 +905,26 @@ std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * 
 
 }
 
+void ActionsDAG::unwrapMaterializeWrapAtOutput(const std::string & name)
+{
+    auto * root = const_cast<Node *>(tryFindInOutputs(name));
+    if (!root || root->type != ActionType::FUNCTION || !root->function_base)
+        return;
+    if (root->function_base->getName() != "materialize" || root->children.size() != 1)
+        return;
+    const Node * inner = root->children.front();
+    if (!inner->column || !isColumnConst(*inner->column))
+        return;
+
+    /// Mutate in place so the output (same Node pointer) becomes the const
+    /// The unused inner node stays in the DAG and is cleaned up by `removeUnusedActions`
+    root->type = ActionType::COLUMN;
+    root->column = inner->column;
+    root->children.clear();
+    root->function_base.reset();
+    root->function.reset();
+}
+
 void ActionsDAG::pushMaterializeOutwardForConstants()
 {
     /// Build order is bottom-up, so when we rewrite a node, its parents - visited later -

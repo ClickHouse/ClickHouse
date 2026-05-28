@@ -309,6 +309,12 @@ public:
       */
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
 
+    /** Argument indices that must remain `Const` at execution time. Optimizations must
+      * not freely substitute these with logically equivalent non-Const values
+      * (e.g. by looking through `materialize` wrappers)
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
     /** Should we evaluate this function lazily in short-circuit function arguments?
       * If function can throw an exception or it's computationally heavy, then
       * it's suitable, otherwise it's not (due to the overhead of lazy execution).

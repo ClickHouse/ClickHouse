@@ -244,6 +244,11 @@ public:
     /// to `materialize(Const)`, keeping the column type non-Const at runtime
     void pushMaterializeOutwardForConstants();
 
+    /// If output `name` is `materialize(Const)`, strip the materialize so the output is
+    /// a bare Const COLUMN. Used at filter root when the filter column is removed: it
+    /// lets `FilterTransform` recognize a constant filter and close the source
+    void unwrapMaterializeWrapAtOutput(const std::string & name);
+
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs
     /// * If there is a node from new_inputs keys, replace it to INPUT
