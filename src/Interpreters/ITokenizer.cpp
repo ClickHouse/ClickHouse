@@ -735,33 +735,33 @@ void AsciiCJKTokenizer::substringToTokens(
 }
 
 #if USE_JIEBA
-bool ChineseTokenizer::nextInString(
-    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+bool ChineseTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
 {
-    /// pos == 0 signals the start of a fresh iteration — caller reset their loop counter,
-    /// so re-segment the entire buffer (jieba can return overlapping tokens that don't
-    /// align to a left-to-right scan).
-    if (pos == 0)
-    {
-        tokens_cache = JiebaSegmenter::instance().tokenize({data, length}, granularity);
-        tokens_cache_index = 0;
-    }
-
-    if (tokens_cache_index >= tokens_cache.size())
-        return false;
-
-    const auto token = tokens_cache[tokens_cache_index++];
-    token_start = token.data() - data;
-    token_length = token.size();
-    /// Keep `pos` in (0, length] so the helper's `cur < length` guard keeps the loop alive
-    /// until we return false, regardless of the actual token positions (which may overlap).
-    pos = (tokens_cache_index < tokens_cache.size()) ? std::min<size_t>(length, 1) : length;
-    return true;
+    /// All hot-path tokenization for `ChineseTokenizer` goes through `stringToTokens` /
+    /// `stringToBloomFilter` (and the substring variants which delegate to them), each of
+    /// which calls the segmenter directly with per-call local state. There is no
+    /// streaming, stateful entry point for this tokenizer.
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInString is not supported");
 }
 
 bool ChineseTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ChineseTokenizer::nextInStringLike is not supported");
+}
+
+void ChineseTokenizer::stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const
+{
+    const auto tokens = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    for (const auto & token : tokens)
+        bloom_filter.add(token.data(), token.size());
+}
+
+void ChineseTokenizer::stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const
+{
+    const auto words = JiebaSegmenter::instance().tokenize({data, length}, granularity);
+    tokens.reserve(tokens.size() + words.size());
+    for (const auto & word : words)
+        tokens.emplace_back(word);
 }
 
 void ChineseTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool, bool) const

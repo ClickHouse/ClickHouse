@@ -465,6 +465,12 @@ struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return false; }
+    /// Hot-path methods bypass `nextInString` and invoke the segmenter directly with
+    /// per-call local state. `MergeTreeIndexText` shares one `ChineseTokenizer` between
+    /// concurrent aggregators and conditions, so the streaming `nextInString` iterator
+    /// (which would have to keep `tokens_cache` between calls) is not safe to use here.
+    void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override;
+    void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
@@ -472,9 +478,6 @@ struct ChineseTokenizer final : public ITokenizerHelper<ChineseTokenizer>
 
 private:
     ChineseTokenizationGranularity granularity;
-    /// State for the streaming nextInString iterator (rebuilt when callers restart with pos == 0)
-    mutable std::vector<std::string_view> tokens_cache;
-    mutable size_t tokens_cache_index = 0;
 };
 #endif
 
