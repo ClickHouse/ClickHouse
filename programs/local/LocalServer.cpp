@@ -2,7 +2,6 @@
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
@@ -23,7 +22,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/SystemLog.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
@@ -41,8 +39,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
-#include <Common/StackTrace.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/OwnSplitChannel.h>
@@ -146,7 +143,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
-    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsUInt64 thread_pool_queue_size;
@@ -169,12 +165,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
     extern const ServerSettingsUInt64 page_cache_shards;
-    extern const ServerSettingsUInt64 memory_worker_period_ms;
-    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
-    extern const ServerSettingsDouble memory_worker_purge_total_memory_threshold_ratio;
-    extern const ServerSettingsBool memory_worker_correct_memory_tracker;
-    extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
-    extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsString allowed_disks_for_table_engines;
 }
 
@@ -255,7 +245,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-        loaded_config_path = config_path;
     }
 
     server_settings.loadSettingsFromConfig(config());
@@ -409,7 +398,7 @@ void LocalServer::tryInitPath()
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
-            (void)std::filesystem::is_directory(parent_folder); // checks the path is accessible (may throw on I/O error)
+            std::filesystem::is_directory(parent_folder); // that will throw an exception if it's not a directory
             LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
         }
 
@@ -459,9 +448,6 @@ void LocalServer::cleanup()
     try
     {
         connection.reset();
-
-        /// Stop the memory worker before shutting down context, as it references the page cache.
-        memory_worker.reset();
 
         /// Suggestions are loaded async in a separate thread and it can use global context.
         /// We should reset it before resetting global_context.
@@ -596,22 +582,19 @@ void LocalServer::setupUsers()
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
 
-    /// Apply user-level configuration from a loaded config file (including those
-    /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
-    if (!loaded_config_path.empty())
+    if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
     {
-        const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
+        String config_path = getClientConfiguration().getString("config-file", "");
         bool has_user_directories = getClientConfiguration().has("user_directories");
+        const auto config_dir = fs::path{config_path}.remove_filename().string();
         String users_config_path = getClientConfiguration().getString("users_config", "");
 
         if (users_config_path.empty() && has_user_directories)
+        {
             users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
-
-        /// Anchor relative paths to the config's directory, not the cwd.
-        /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
-        /// which could grant `access_management` to the default user.
-        if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
-            users_config_path = fs::path(config_dir) / users_config_path;
+            if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+                users_config_path = fs::path(config_dir) / users_config_path;
+        }
 
         if (users_config_path.empty())
             users_config = getConfigurationFromXMLString(minimal_default_user_xml);
@@ -805,12 +788,12 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
-    if (!queries.empty() && !queries_files.empty())
+    if (!queries.empty() && getClientConfiguration().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     pager = getClientConfiguration().getString("pager", "");
 
-    delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
+    delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || getClientConfiguration().has("queries-file"));
     if (!is_interactive || delayed_interactive)
     {
         echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
@@ -898,9 +881,6 @@ void LocalServer::processConfig()
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
-        server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
-
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
     if (page_cache_max_size != 0 && (page_cache_min_size > page_cache_max_size))
@@ -923,23 +903,6 @@ void LocalServer::processConfig()
             server_settings[ServerSetting::page_cache_free_memory_ratio],
             server_settings[ServerSetting::page_cache_shards]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
-    }
-
-    /// MemoryWorker periodically updates RSS in the memory tracker, resizes the userspace page
-    /// cache based on available memory, and purges jemalloc dirty pages under memory pressure.
-    /// It is required for the page cache to function correctly: without it the cache stays stuck
-    /// at `page_cache_min_size` and never grows, causing severe thrashing.
-    {
-        MemoryWorkerConfig memory_worker_config{
-            .rss_update_period_ms = server_settings[ServerSetting::memory_worker_period_ms],
-            .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
-            .purge_total_memory_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_total_memory_threshold_ratio],
-            .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
-            .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
-            .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
-        };
-        memory_worker.emplace(memory_worker_config, global_context->getPageCache());
-        memory_worker->start();
     }
 
     const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
@@ -1186,26 +1149,12 @@ void LocalServer::processConfig()
         DatabaseCatalog::instance().startupBackgroundTasks();
     }
 
-    /// Initialize system logs only when explicitly configured (e.g. `query_log`, `processors_profile_log`).
-    /// Default `clickhouse-local` invocations have no system log sections in the config, and skipping
-    /// initialization avoids a TSan-visible race between background pool task logging and `Context`
-    /// teardown that would otherwise be triggered for short-lived processes.
-    /// Also skip in `--only-system-tables` mode, which is intended for reading existing persisted
-    /// system tables; spinning up the loggers there is unnecessary and can race with shutdown.
-    /// This must happen after the system database is attached.
-    if (!getClientConfiguration().has("no-system-tables")
-        && !getClientConfiguration().has("only-system-tables")
-        && hasAnySystemLogConfigured(config()))
-        global_context->initializeSystemLogs();
-
     std::string default_database = getClientConfiguration().getString("database", server_default_database);
     if (default_database.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabase(default_database);
 
     server_display_name = getClientConfiguration().getString("display_name", "");
-
-    rainbow_parentheses = getClientConfiguration().getBool("rainbow_parentheses", true);
 
     if (getClientConfiguration().has("prompt"))
         prompt = getClientConfiguration().getString("prompt");
@@ -1215,32 +1164,30 @@ void LocalServer::processConfig()
 }
 
 
-String LocalServer::getHelpHeader() const
+[[ maybe_unused ]] static std::string getHelpHeader()
 {
-    return fmt::format(
-        "Usage: {0} [initial table definition] [--query <query>]\n\n"
-        "{0} allows to execute SQL queries on your data files\n"
-        "via single command line call.\n"
-        "To do so, initially you need to define your data source and its format.\n"
-        "After that, you can execute your SQL queries as usual.\n\n"
-        "There are two ways to define initial table keeping your data.\n"
-        "Either just in the first query like this:\n"
+    return
+        "usage: clickhouse-local [initial table definition] [--query <query>]\n"
+
+        "clickhouse-local allows to execute SQL queries on your data files via single command line call."
+        " To do so, initially you need to define your data source and its format."
+        " After you can execute your SQL queries in usual manner.\n"
+
+        "There are two ways to define initial table keeping your data."
+        " Either just in first query like this:\n"
         "    CREATE TABLE <table> (<structure>) ENGINE = File(<input-format>, <file>);\n"
-        "Either through corresponding command line parameters\n"
-        "--table --structure --input-format and --file.",
-        app_name);
+        "Either through corresponding command line parameters --table --structure --input-format and --file.";
 }
 
 
-String LocalServer::getHelpFooter() const
+[[ maybe_unused ]] static std::string getHelpFooter()
 {
-    return fmt::format(
+    return
         "Example printing memory used by each Unix user:\n"
-        "    ps aux | tail -n +2 | awk '{{ printf(\"%s\\t%s\\n\", $1, $4) }}' | \\\n"
-        "        {} -S \"user String, mem Float64\" -q \\\n"
-        "        \"SELECT user, round(sum(mem), 2) as mem_total FROM table \\\n"
-        "         GROUP BY user ORDER BY mem_total DESC FORMAT PrettyCompact\"",
-        app_name);
+        "ps aux | tail -n +2 | awk '{ printf(\"%s\\t%s\\n\", $1, $4) }' | "
+        "clickhouse-local -S \"user String, mem Float64\" -q"
+            " \"SELECT user, round(sum(mem), 2) as mem_total FROM table GROUP BY user ORDER"
+            " BY mem_total DESC FORMAT PrettyCompact\"";
 }
 
 

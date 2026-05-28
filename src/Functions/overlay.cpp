@@ -17,7 +17,7 @@ namespace
 /// Syntax:
 /// - overlay(s, replace, offset[, length])
 /// - overlayUTF8(s, replace, offset[, length]) - measure offset and length in code points instead of bytes
-class FunctionOverlay final : public IFunction
+class FunctionOverlay : public IFunction
 {
 public:
     FunctionOverlay(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}

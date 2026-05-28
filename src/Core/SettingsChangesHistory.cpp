@@ -39,7 +39,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.6",
+        addSettingsChanges(settings_changes_history, "26.3",
         {
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
@@ -126,48 +126,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_rand_distribution_parameter", 1e6, 1e6, "New setting to limit shape parameters in random distribution functions, preventing hangs with extreme inputs."},
             {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
+            {"defer_partition_pruning_after_final", false, true, "Gates the FINAL planner's unconditional skipping of partition pruning when the partition-key column is not in the sorting key. The behavior change itself shipped silently in 26.3 via https://github.com/ClickHouse/ClickHouse/pull/98242; this entry retroactively documents it so `compatibility = '26.2'` restores the pre-regression behavior (0 = prune before FINAL, fast; 1 = defer pruning, correctness-safe)."},
             {"http_max_fields", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
             {"http_max_field_name_size", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
             {"http_max_request_header_size", 0, 10485760, "New setting to limit total HTTP request header size before authentication."},
             {"http_headers_read_timeout", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."},
-            {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
-            {"query_plan_optimize_lazy_final", false, false, "New setting to optimize reading with FINAL from ReplacingMergeTree using set-based index analysis"},
-            {"max_rows_for_lazy_final", 10000000, 10000000, "New setting for maximum number of rows in the set for lazy FINAL optimization"},
-            {"max_bytes_for_lazy_final", 256000000, 256000000, "New setting for maximum number of bytes in the set for lazy FINAL optimization"},
-            {"min_filtered_ratio_for_lazy_final", 0.5, 0.5, "New setting for minimum ratio of marks filtered for lazy FINAL optimization to proceed"},
-            {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
-            {"s3_uri_style", "auto", "auto", "New setting."},
-            {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
-            {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
-            {"optimize_rewrite_array_exists_to_has", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."},
-            {"parallel_replicas_allow_view_over_mergetree", false, false, "New setting"},
-            {"read_in_order_use_virtual_row_per_block", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."},
-            {"distributed_plan_prefer_replicas_over_workers", false, false, "New setting to serialize distributed plan for replicas"},
-            {"use_text_index_like_evaluation_by_dictionary_scan", true, true, "New setting"},
-            {"text_index_like_min_pattern_length", 4, 4, "New setting"},
-            {"text_index_like_max_postings_to_read", 50, 50, "New setting"},
-            {"analyzer_inline_views", false, false, "New setting"},
-            {"distributed_cache_write_request_max_tries", 10, 10, "New setting"},
-            {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
-            {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
-            {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
-            {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
-            {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
-            {"allow_experimental_ai_functions", false, false, "New setting"},
-            {"ai_function_request_timeout_sec", 60, 60, "New setting"},
-            {"ai_function_max_retries", 0, 0, "New setting"},
-            {"ai_function_retry_initial_delay_ms", 1000, 1000, "New setting"},
-            {"ai_function_throw_on_error", true, true, "New setting"},
-            {"ai_function_max_input_tokens_per_query", 1000000, 1000000, "New setting"},
-            {"ai_function_max_output_tokens_per_query", 500000, 500000, "New setting"},
-            {"ai_function_max_api_calls_per_query", 0, 0, "New setting"},
-            {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
-            {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
-            {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
-        });
-        addSettingsChanges(settings_changes_history, "26.3",
-        {
-            {"defer_partition_pruning_after_final", false, true, "Gates the FINAL planner's unconditional skipping of partition pruning when the partition-key column is not in the sorting key. The behavior change itself shipped silently in 26.3 via https://github.com/ClickHouse/ClickHouse/pull/98242; this entry retroactively documents it so `compatibility = '26.2'` restores the pre-regression behavior (0 = prune before FINAL, fast; 1 = defer pruning, correctness-safe)."},
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
             {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
@@ -219,6 +182,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
+            {"apply_row_policy_after_final", true, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
             {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
             {"input_format_max_block_wait_ms", 0, 0, "New setting to limit maximum wait time in milliseconds before a block is emitted by input format"},
@@ -295,6 +259,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
+            {"apply_row_policy_after_final", true, true, "New setting to control if row policies and PREWHERE are applied after FINAL processing for *MergeTree tables"},
             {"apply_prewhere_after_final", false, false, "New setting. When enabled, PREWHERE conditions are applied after FINAL processing."},
             {"compatibility_s3_presigned_url_query_in_path", false, false, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
@@ -338,6 +303,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
+            {"allow_experimental_alias_table_engine", false, false, "New setting"},
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
@@ -348,7 +314,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
-            {"apply_row_policy_after_final", true, true, "Setting was added as a fix for the post-#87303 regression where row policies and PREWHERE were applied before FINAL. PR #91065 introduced the setting and PR #97279 made the correctness-safe true the default. Recorded as {true, true} so compatibility never reverts to the pre-fix false behavior."},
             {"allow_special_serialization_kinds_in_output_formats", false, false, "Add a setting to allow output of special columns representations like Sparse/Replicated without converting them to full columns"},
             {"enable_lazy_columns_replication", false, false, "Add a setting to enable lazy columns replication in JOIN and ARRAY JOIN"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
@@ -1222,31 +1187,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.6",
-        {
-            {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", false, false, "New setting which allows SMT download parts data from replicas instead of S3 on startup"},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
-        {
-            {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
-            {"add_minmax_index_for_block_number_column", false, false, "New setting."},
-            {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
-            {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.4",
-        {
-            {"share_nested_offsets", true, true, "When set to false, Array columns with dotted names that share a common prefix are treated as independent columns instead of sharing offset files as part of legacy Nested semantics"},
-            {"shared_merge_tree_merge_coordinator_merges_prepare_count", 100, "auto", "Make setting auto: max merge tasks per replica * number of active replicas"},
-            {"allow_commit_order_projection", false, false, "New setting"},
-            {"replicated_fetches_min_part_level", 0, 0, "New setting"},
-            {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 1800, "Increase default replica set background update interval to 30 minutes"},
-            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
-            {"compress_per_column_in_compact_parts", true, true, "New setting"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
+            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
             {"map_serialization_version", "basic", "basic", "Add a setting to control Map serialization version"},
@@ -1265,6 +1210,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
+            {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
         });

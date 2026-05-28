@@ -1,2 +1,0 @@
-MergeTree ORDER BY id SETTINGS index_granularity = 8192
-MergeTree ORDER BY id SETTINGS index_granularity = 8192

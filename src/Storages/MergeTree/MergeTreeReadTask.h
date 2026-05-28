@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -72,13 +71,8 @@ struct IndexReadTask
     bool is_final = false;
 };
 
-/// Ordered map to ensure deterministic iteration order.
-/// `IndexReadTasks` may be copied (e.g. into `MergeTreeReadPoolBase`) and then
-/// iterated independently in `getPrewhereActions` / `getReadTaskColumns`.
-/// `std::unordered_map` does not guarantee the same iteration order after copy,
-/// which leads to mismatched prewhere readers and actions.
-using IndexReadTasks = std::map<String, IndexReadTask>;
-using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
+using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
+using IndexReadColumns = std::unordered_map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -170,11 +164,6 @@ public:
     {
         Block block;
         MarkRanges read_mark_ranges;
-        /// Per-granule unmatched marks: marks where all rows were filtered out by PREWHERE.
-        /// Populated only when use_query_condition_cache is enabled.
-        /// Superset of what addPrewhereUnmatchedMarks recorded with the old coarse approach,
-        /// because it captures individual filtered-out granules even in partially-passing batches.
-        MarkRanges unmatched_mark_ranges;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;

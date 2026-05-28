@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
@@ -26,15 +25,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 SerializationNullable::getHash(const SerializationPtr & nested_, bool use_default_null_map_)
-{
-    SipHash hash;
-    hash.update("Nullable");
-    hash.update(nested_->getHash());
-    hash.update(use_default_null_map_);
-    return hash.get128();
-}
-
 void SerializationNullable::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
@@ -45,7 +35,7 @@ void SerializationNullable::enumerateStreams(
     if (!use_default_null_map)
     {
         auto null_map_serialization
-            = SerializationNamed::create(SerializationNumber<UInt8>::create(), "null", SubstreamType::NamedNullMap);
+            = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", SubstreamType::NamedNullMap);
 
         settings.path.push_back(Substream::NullMap);
         auto null_map_data = SubstreamData(null_map_serialization)
@@ -120,7 +110,7 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
         /// First serialize null map.
         settings.path.push_back(Substream::NullMap);
         if (auto * stream = settings.getter(settings.path))
-            SerializationNumber<UInt8>::create()->serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
+            SerializationNumber<UInt8>().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
         settings.path.pop_back();
     }
 
@@ -152,7 +142,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
         else if (auto * stream = settings.getter(settings.path))
         {
             size_t prev_size = col.getNullMapColumnPtr()->size();
-            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
+            SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
             addColumnWithNumReadRowsToSubstreamsCache(
                 cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
         }
@@ -943,13 +933,6 @@ void SerializationNullable::serializeTextXML(const IColumn & column, size_t row_
 void SerializationNullable::serializeNullXML(DB::WriteBuffer & ostr)
 {
     writeCString("\\N", ostr);
-}
-
-SerializationPtr SerializationNullable::create(const SerializationPtr & nested_, bool use_default_null_map_)
-{
-    if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationNullable(nested_, use_default_null_map_));
-    return ISerialization::pooled(getHash(nested_, use_default_null_map_), [&] { return new SerializationNullable(nested_, use_default_null_map_); });
 }
 
 }
