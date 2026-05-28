@@ -4,6 +4,8 @@
 #include <Analyzer/ListNode.h>
 #include <Core/Names.h>
 
+#include <optional>
+
 namespace re2
 {
     class RE2;
@@ -16,7 +18,7 @@ namespace DB
   * Check MatcherQueryTreeNode.h before reading this documentation.
   *
   * They main purpose is to apply some logic for expressions after matcher is resolved.
-  * There are 3 types of transformers:
+  * There are 4 types of transformers:
   *
   * 1. APPLY transformer:
   * APPLY transformer transform matched expression using lambda or function into another expression.
@@ -54,9 +56,15 @@ namespace DB
   * Example:
   * SELECT * REPLACE (1 AS id, 2 AS value).
   *
+  * 4. RENAME transformer:
+  * RENAME transformer changes matched expression names without changing expression values.
+  * It has 2 syntax variants:
+  *     1. explicit list variant: SELECT matcher RENAME (column_name_1 AS renamed_column_name_1, ...).
+  *     2. lambda variant: SELECT matcher RENAME (x -> concat(x, '_suffix')).
+  *
   * Matchers can be combined together and chained.
   * Example:
-  * SELECT * EXCEPT (id) APPLY (x -> toString(x)) APPLY (x -> length(x)) FROM test_table.
+  * SELECT * EXCEPT (id) APPLY (x -> toString(x)) APPLY (x -> length(x)) RENAME (x -> concat(x, '_length')) FROM test_table.
   */
 
 /// Column transformer type
@@ -64,7 +72,8 @@ enum class ColumnTransfomerType : uint8_t
 {
     APPLY,
     EXCEPT,
-    REPLACE
+    REPLACE,
+    RENAME
 };
 
 /// Get column transformer type name
@@ -308,6 +317,77 @@ private:
 
     static constexpr size_t replacements_child_index = 0;
     static constexpr size_t children_size = replacements_child_index + 1;
+};
+
+enum class RenameColumnTransformerType : uint8_t
+{
+    LAMBDA,
+    COLUMN_LIST,
+};
+
+const char * toString(RenameColumnTransformerType type);
+
+/** Rename column transformer.
+  * Explicit RENAME must match all specified source column names.
+  */
+class RenameColumnTransformerNode final : public IColumnTransformerNode
+{
+public:
+    struct Rename
+    {
+        std::string column_name;
+        std::string new_name;
+    };
+
+    explicit RenameColumnTransformerNode(std::vector<Rename> renames_);
+
+    explicit RenameColumnTransformerNode(QueryTreeNodePtr lambda_node_);
+
+    RenameColumnTransformerType getRenameTransformerType() const
+    {
+        return rename_transformer_type;
+    }
+
+    const QueryTreeNodePtr & getLambdaNode() const
+    {
+        return children[lambda_child_index];
+    }
+
+    const Names & getRenameColumnNames() const
+    {
+        return rename_column_names;
+    }
+
+    const Names & getRenameNewNames() const
+    {
+        return rename_new_names;
+    }
+
+    std::optional<std::string> findNewName(const std::string & column_name) const;
+
+    ColumnTransfomerType getTransformerType() const override
+    {
+        return ColumnTransfomerType::RENAME;
+    }
+
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
+
+    QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+private:
+    RenameColumnTransformerType rename_transformer_type;
+    Names rename_column_names;
+    Names rename_new_names;
+
+    static constexpr size_t lambda_child_index = 0;
+    static constexpr size_t children_size = lambda_child_index + 1;
 };
 
 }

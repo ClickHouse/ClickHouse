@@ -4754,6 +4754,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             replace_transformer->is_strict = !replace_transformer->is_strict;
         fuzz(replace_transformer->children);
     }
+    else if (auto * rename_transformer = typeid_cast<ASTColumnsRenameTransformer *>(ast.get()))
+    {
+        if (fuzz_rand() % 50 == 0 && !rename_transformer->target_names.empty())
+            rename_transformer->target_names[fuzz_rand() % rename_transformer->target_names.size()] = "renamed_" + std::to_string(fuzz_rand() % 10);
+        fuzz(rename_transformer->children);
+    }
     else if (auto * create_function = typeid_cast<ASTCreateSQLFunctionQuery *>(ast.get()))
     {
         /// Toggle OR REPLACE / IF NOT EXISTS flags to exercise all creation paths

@@ -1,0 +1,33 @@
+explicit single
+id	UInt8					
+value_diff_sum	UInt8					
+value_2	UInt8					
+time	UInt8					
+1	10	20	5
+2	11	21	6
+explicit list
+id	UInt8					
+value_diff_sum	UInt8					
+value_2_diff_sum	UInt8					
+time	UInt8					
+1	10	20	5
+2	11	21	6
+replace and rename
+id	UInt8					
+value_plus_ten	UInt16					
+value_2	UInt8					
+time	UInt8					
+1	20	20	5
+2	21	21	6
+lambda rename after apply
+id_str	String					
+value_str	String					
+value_2_str	String					
+1	10	20
+2	11	21
+lambda rename after chained apply
+id_plus_one_str	String					
+value_plus_one_str	String					
+value_2_plus_one_str	String					
+2	11	21
+3	12	22

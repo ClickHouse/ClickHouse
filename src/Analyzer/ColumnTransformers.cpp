@@ -31,6 +31,7 @@ const char * toString(ColumnTransfomerType type)
         case ColumnTransfomerType::APPLY: return "APPLY";
         case ColumnTransfomerType::EXCEPT: return "EXCEPT";
         case ColumnTransfomerType::REPLACE: return "REPLACE";
+        case ColumnTransfomerType::RENAME: return "RENAME";
     }
 }
 
@@ -351,6 +352,137 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
     }
 
     return ast_replace_transformer;
+}
+
+/// RenameColumnTransformerNode implementation
+
+const char * toString(RenameColumnTransformerType type)
+{
+    switch (type)
+    {
+        case RenameColumnTransformerType::LAMBDA:
+            return "LAMBDA";
+        case RenameColumnTransformerType::COLUMN_LIST:
+            return "COLUMN_LIST";
+    }
+}
+
+RenameColumnTransformerNode::RenameColumnTransformerNode(std::vector<Rename> renames_)
+    : IColumnTransformerNode(children_size)
+    , rename_transformer_type(RenameColumnTransformerType::COLUMN_LIST)
+{
+    std::unordered_set<std::string> rename_names_set;
+
+    for (const auto & rename : renames_)
+    {
+        auto [_, inserted] = rename_names_set.emplace(rename.column_name);
+        if (!inserted)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Expressions in column transformer RENAME should not contain same column {} more than once",
+                rename.column_name);
+
+        rename_column_names.push_back(rename.column_name);
+        rename_new_names.push_back(rename.new_name);
+    }
+}
+
+RenameColumnTransformerNode::RenameColumnTransformerNode(QueryTreeNodePtr lambda_node_)
+    : IColumnTransformerNode(children_size)
+    , rename_transformer_type(RenameColumnTransformerType::LAMBDA)
+{
+    if (lambda_node_->getNodeType() != QueryTreeNodeType::LAMBDA)
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Rename column transformer expression must be lambda. Actual {}",
+            lambda_node_->getNodeTypeName());
+
+    children[lambda_child_index] = std::move(lambda_node_);
+}
+
+std::optional<std::string> RenameColumnTransformerNode::findNewName(const std::string & column_name) const
+{
+    auto it = std::find(rename_column_names.begin(), rename_column_names.end(), column_name);
+    if (it == rename_column_names.end())
+        return {};
+
+    size_t rename_index = it - rename_column_names.begin();
+    return rename_new_names[rename_index];
+}
+
+void RenameColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
+{
+    buffer << std::string(indent, ' ') << "RENAME COLUMN TRANSFORMER id: " << format_state.getNodeId(this);
+    buffer << ", rename_transformer_type: " << toString(rename_transformer_type);
+
+    if (rename_transformer_type == RenameColumnTransformerType::LAMBDA)
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "LAMBDA" << '\n';
+        getLambdaNode()->dumpTreeImpl(buffer, format_state, indent + 4);
+        return;
+    }
+
+    size_t rename_names_size = rename_column_names.size();
+    buffer << ", renames: ";
+    for (size_t i = 0; i < rename_names_size; ++i)
+    {
+        buffer << rename_column_names[i] << " AS " << rename_new_names[i];
+
+        if (i + 1 != rename_names_size)
+            buffer << ", ";
+    }
+}
+
+bool RenameColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+{
+    const auto & rhs_typed = assert_cast<const RenameColumnTransformerNode &>(rhs);
+    return rename_transformer_type == rhs_typed.rename_transformer_type
+        && rename_column_names == rhs_typed.rename_column_names
+        && rename_new_names == rhs_typed.rename_new_names;
+}
+
+void RenameColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
+{
+    hash_state.update(static_cast<size_t>(getTransformerType()));
+    hash_state.update(static_cast<size_t>(getRenameTransformerType()));
+
+    hash_state.update(rename_column_names.size());
+    for (size_t i = 0; i < rename_column_names.size(); ++i)
+    {
+        hash_state.update(rename_column_names[i].size());
+        hash_state.update(rename_column_names[i]);
+        hash_state.update(rename_new_names[i].size());
+        hash_state.update(rename_new_names[i]);
+    }
+}
+
+QueryTreeNodePtr RenameColumnTransformerNode::cloneImpl() const
+{
+    if (rename_transformer_type == RenameColumnTransformerType::LAMBDA)
+        return std::make_shared<RenameColumnTransformerNode>(getLambdaNode());
+
+    std::vector<Rename> renames;
+    renames.reserve(rename_column_names.size());
+    for (size_t i = 0; i < rename_column_names.size(); ++i)
+        renames.emplace_back(Rename{rename_column_names[i], rename_new_names[i]});
+
+    return std::make_shared<RenameColumnTransformerNode>(std::move(renames));
+}
+
+ASTPtr RenameColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
+{
+    auto ast_rename_transformer = make_intrusive<ASTColumnsRenameTransformer>();
+
+    if (rename_transformer_type == RenameColumnTransformerType::LAMBDA)
+    {
+        auto & lambda_expression = getLambdaNode()->as<LambdaNode &>();
+        if (!lambda_expression.getArgumentNames().empty())
+            ast_rename_transformer->lambda_arg = lambda_expression.getArgumentNames()[0];
+        ast_rename_transformer->lambda = lambda_expression.toAST(options);
+        return ast_rename_transformer;
+    }
+
+    ast_rename_transformer->source_names = rename_column_names;
+    ast_rename_transformer->target_names = rename_new_names;
+    return ast_rename_transformer;
 }
 
 }

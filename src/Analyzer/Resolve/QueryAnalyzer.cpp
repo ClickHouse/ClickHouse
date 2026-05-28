@@ -51,6 +51,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
@@ -2356,16 +2357,47 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     }
 
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
+    std::unordered_map<const RenameColumnTransformerNode *, std::unordered_set<std::string>> rename_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
         auto * except_transformer = transformer->as<ExceptColumnTransformerNode>();
         auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>();
+        auto * rename_transformer = transformer->as<RenameColumnTransformerNode>();
 
         if (except_transformer && except_transformer->isStrict())
             strict_transformer_to_used_column_names.emplace(except_transformer, std::unordered_set<std::string>());
         else if (replace_transformer && replace_transformer->isStrict())
             strict_transformer_to_used_column_names.emplace(replace_transformer, std::unordered_set<std::string>());
+
+        if (rename_transformer && rename_transformer->getRenameTransformerType() == RenameColumnTransformerType::COLUMN_LIST)
+            rename_transformer_to_used_column_names.emplace(rename_transformer, std::unordered_set<std::string>());
     }
+
+    auto evaluate_rename_lambda = [&](const RenameColumnTransformerNode & rename_transformer, const String & column_name) -> String
+    {
+        if (!scope.context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot evaluate RENAME lambda without query context");
+
+        auto lambda_expression_to_resolve = rename_transformer.getLambdaNode()->clone();
+        auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
+        resolveLambda(
+            rename_transformer.getLambdaNode(),
+            lambda_expression_to_resolve,
+            {std::make_shared<ConstantNode>(Field{column_name})},
+            lambda_scope);
+
+        auto & lambda_expression_to_resolve_typed = lambda_expression_to_resolve->as<LambdaNode &>();
+        auto rename_expression_ast = lambda_expression_to_resolve_typed.getExpression()->toAST();
+        auto [rename_value, _] = evaluateConstantExpression(rename_expression_ast, scope.context);
+
+        if (rename_value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "RENAME lambda must return String, got {}. In scope {}",
+                rename_value.getTypeName(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        return rename_value.safeGet<String>();
+    };
 
     ListNodePtr list = std::make_shared<ListNode>();
     ProjectionNames result_projection_names;
@@ -2375,8 +2407,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     {
         bool apply_transformer_was_used = false;
         bool replace_transformer_was_used = false;
-        bool execute_apply_transformer = false;
-        bool execute_replace_transformer = false;
 
         auto projection_name_it = node_to_projection_name.find(node);
         if (projection_name_it != node_to_projection_name.end())
@@ -2386,6 +2416,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
+            bool execute_apply_transformer = false;
+            bool execute_replace_transformer = false;
+
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
@@ -2470,6 +2503,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 execute_replace_transformer = true;
             }
+            else if (auto * rename_transformer = transformer->as<RenameColumnTransformerNode>())
+            {
+                if (rename_transformer->getRenameTransformerType() == RenameColumnTransformerType::LAMBDA)
+                {
+                    result_projection_names.back() = evaluate_rename_lambda(*rename_transformer, column_name);
+                    node_to_projection_name[node] = result_projection_names.back();
+                }
+                else if (auto new_name = rename_transformer->findNewName(column_name))
+                {
+                    rename_transformer_to_used_column_names[rename_transformer].insert(column_name);
+                    result_projection_names.back() = *new_name;
+                    node_to_projection_name[node] = result_projection_names.back();
+                }
+            }
 
             if (execute_apply_transformer || execute_replace_transformer)
             {
@@ -2502,6 +2549,26 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             list->getNodes().push_back(node);
         else
             result_projection_names.pop_back();
+    }
+
+    for (auto & [rename_transformer, used_column_names] : rename_transformer_to_used_column_names)
+    {
+        const auto & rename_column_names = rename_transformer->getRenameColumnNames();
+        if (rename_column_names.size() == used_column_names.size())
+            continue;
+
+        Names non_matched_column_names;
+        for (const auto & column_name : rename_column_names)
+        {
+            if (!used_column_names.contains(column_name))
+                non_matched_column_names.push_back(column_name);
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "RENAME column transformer {} expects following column(s) : {}. In scope {}",
+            rename_transformer->formatASTForErrorMessage(),
+            fmt::join(non_matched_column_names, ", "),
+            scope.scope_node->formatASTForErrorMessage());
     }
 
     for (auto & [strict_transformer, used_column_names] : strict_transformer_to_used_column_names)

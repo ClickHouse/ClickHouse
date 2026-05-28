@@ -1735,6 +1735,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword apply(Keyword::APPLY);
     ParserKeyword except(Keyword::EXCEPT);
     ParserKeyword replace(Keyword::REPLACE);
+    ParserKeyword rename(Keyword::RENAME);
     ParserKeyword as(Keyword::AS);
     ParserKeyword strict(Keyword::STRICT);
 
@@ -1928,6 +1929,100 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto res = make_intrusive<ASTColumnsReplaceTransformer>();
         res->children = std::move(replacements);
         res->is_strict = is_strict;
+        node = std::move(res);
+        return true;
+    }
+    if (allowed_transformers.isSet(ColumnTransformer::RENAME) && rename.ignore(pos, expected))
+    {
+        /// RENAME is terminal because it only changes output names after all value transformations are done.
+        allowed_transformers = {};
+
+        ASTPtr lambda;
+        String lambda_arg;
+
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            auto before_open_round_bracket = pos;
+            ++pos;
+
+            if (ParserExpression().parse(pos, lambda, expected))
+            {
+                if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+                {
+                    if (!isASTLambdaFunction(*func))
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Lambda function definition expects two arguments, first argument must be a tuple of arguments");
+
+                    const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
+                    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "First argument of lambda must be a tuple");
+
+                    const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
+                    if (lambda_arg_asts.size() != 1)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "RENAME column transformer can only accept lambda with one argument");
+
+                    if (auto opt_arg_name = tryGetIdentifierName(lambda_arg_asts[0]); opt_arg_name)
+                        lambda_arg = *opt_arg_name;
+                    else
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
+
+                    if (pos->type != TokenType::ClosingRoundBracket)
+                        return false;
+                    ++pos;
+
+                    func->setIsLambdaFunction(true);
+
+                    auto res = make_intrusive<ASTColumnsRenameTransformer>();
+                    res->lambda = lambda;
+                    res->lambda_arg = lambda_arg;
+                    node = std::move(res);
+                    return true;
+                }
+            }
+
+            lambda = nullptr;
+            pos = before_open_round_bracket;
+        }
+
+        Names source_names;
+        Names target_names;
+        ParserIdentifier source_ident_p(true);
+        ParserIdentifier target_ident_p;
+        auto parse_rename = [&]
+        {
+            ASTPtr source;
+            if (!source_ident_p.parse(pos, source, expected))
+                return false;
+            if (!as.ignore(pos, expected))
+                return false;
+            ASTPtr target;
+            if (!target_ident_p.parse(pos, target, expected))
+                return false;
+
+            source_names.push_back(getIdentifierName(source));
+            target_names.push_back(getIdentifierName(target));
+            return true;
+        };
+
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+
+            if (!ParserList::parseUtil(pos, expected, parse_rename, false))
+                return false;
+
+            if (pos->type != TokenType::ClosingRoundBracket)
+                return false;
+            ++pos;
+        }
+        else
+        {
+            if (!parse_rename())
+                return false;
+        }
+
+        auto res = make_intrusive<ASTColumnsRenameTransformer>();
+        res->source_names = std::move(source_names);
+        res->target_names = std::move(target_names);
         node = std::move(res);
         return true;
     }

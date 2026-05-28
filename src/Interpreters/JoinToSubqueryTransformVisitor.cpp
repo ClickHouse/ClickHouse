@@ -180,7 +180,8 @@ private:
                     {
                         if (transformer->as<ASTColumnsApplyTransformer>() ||
                             transformer->as<ASTColumnsExceptTransformer>() ||
-                            transformer->as<ASTColumnsReplaceTransformer>())
+                            transformer->as<ASTColumnsReplaceTransformer>() ||
+                            transformer->as<ASTColumnsRenameTransformer>())
                             IASTColumnsTransformer::transform(transformer, columns);
                         else
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must only have children of IASTColumnsTransformer type");
