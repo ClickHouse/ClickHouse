@@ -26,6 +26,7 @@
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
