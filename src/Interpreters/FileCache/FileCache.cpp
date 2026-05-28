@@ -2558,13 +2558,13 @@ bool FileCache::doDynamicResizeImpl(
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
-    const String & query_id, const ReadSettings & read_settings)
+    const String & query_id, const FilesystemCacheSettings & cache_settings)
 {
-    if (!query_limit || read_settings.filesystem_cache_max_download_size == 0)
+    if (!query_limit || cache_settings.max_download_size_per_query == 0)
         return {};
 
     auto lock = cache_guard.writeLock();
-    auto context = query_limit->getOrSetQueryContext(query_id, read_settings, lock);
+    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
 }
 
