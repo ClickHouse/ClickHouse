@@ -1,4 +1,3 @@
-#include <Common/DequeWithMemoryTracking.h>
 #include <IO/S3/copyS3File.h>
 
 #if USE_AWS_S3
@@ -78,7 +77,7 @@ namespace
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
-            const std::optional<ObjectAttributes> & object_metadata_,
+            const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_)
@@ -102,7 +101,7 @@ namespace
         const String & dest_bucket;
         const String & dest_key;
         const S3::S3RequestSettings & request_settings;
-        const std::optional<ObjectAttributes> & object_metadata;
+        const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
@@ -121,7 +120,7 @@ namespace
         size_t num_parts;
         size_t normal_part_size;
         String multipart_upload_id;
-        DequeWithMemoryTracking<String> multipart_tags;
+        std::deque<String> multipart_tags;
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
@@ -423,7 +422,7 @@ namespace
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
-            const std::optional<ObjectAttributes> & object_metadata_,
+            const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_)
             : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
@@ -610,7 +609,7 @@ namespace
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
             const ReadSettings & read_settings_,
-            const std::optional<ObjectAttributes> & object_metadata_,
+            const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_)
@@ -824,7 +823,7 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<std::map<String, String>> & object_metadata)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -855,7 +854,7 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer& fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<std::map<String, String>> & object_metadata)
 {
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;

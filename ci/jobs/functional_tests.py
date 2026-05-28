@@ -137,45 +137,6 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
 }
 
 
-def invert_bugfix_validation_status(test_result: Result) -> None:
-    """Invert FAIL/OK in `test_result.results` for bugfix validation.
-
-    On master HEAD a regression test for the bug is expected to FAIL; the
-    inverter flips that to OK so the job reads as "bug reproduced". A clean
-    OK means the test does not catch the bug and is flipped to FAIL with
-    "Failed to reproduce the bug".
-
-    When the run ended in `Result.Status.ERROR` (runner did not finish,
-    e.g. server crash without proper exit code, Python exception,
-    infrastructure outage) the per-test list is empty or partial and the
-    pre-inversion `ERROR` already tells the truth. Preserve it instead of
-    overwriting with "Failed to reproduce the bug". See #105789.
-    """
-    if test_result.status == Result.Status.ERROR:
-        for r in test_result.results:
-            r.set_label(Result.Label.XFAIL)
-        print(
-            "Bugfix validation inconclusive: the test runner did not "
-            "finish; preserving ERROR rather than reporting "
-            "'Failed to reproduce the bug'."
-        )
-        return
-
-    has_failure = False
-    for r in test_result.results:
-        r.set_label(Result.Label.XFAIL)
-        if r.status == Result.Status.FAIL:
-            r.status = Result.Status.OK
-            has_failure = True
-        elif r.status == Result.Status.OK:
-            r.status = Result.Status.FAIL
-    if not has_failure:
-        print("Failed to reproduce the bug")
-        test_result.set_failed().set_info("Failed to reproduce the bug")
-    else:
-        test_result.set_success()
-
-
 def main():
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
@@ -788,7 +749,22 @@ def main():
 
     # invert result status for bugfix validation
     if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
-        invert_bugfix_validation_status(test_result)
+        has_failure = False
+        for r in test_result.results:
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
+                has_failure = True
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            test_result.set_failed().set_info("Failed to reproduce the bug")
+        else:
+            # For bugfix validation, the expected behavior is:
+            # - At least one test must fail (bug reproduced)
+            # - The overall Tests result is treated as success in that case
+            test_result.set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")

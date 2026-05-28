@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <ranges>
-#include <thread>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -22,7 +21,6 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TransactionLog.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
@@ -41,7 +39,6 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
@@ -53,7 +50,6 @@
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -237,7 +233,6 @@ void StorageMergeTree::startup()
     {
         cleanup_thread.start();
         background_operations_assignee.start();
-        background_streaming_assignee.start();
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
@@ -273,7 +268,6 @@ void StorageMergeTree::flushAndPrepareForShutdown()
 
     background_operations_assignee.finish();
     background_moves_assignee.finish();
-    background_streaming_assignee.finish();
 
     cleanup_thread.stop();
 
@@ -360,7 +354,7 @@ void StorageMergeTree::read(
     const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
-    QueryPlanPtr plan = MergeTreeDataSelectExecutor(*this).read(
+    auto plan = MergeTreeDataSelectExecutor(*this).read(
         column_names,
         storage_snapshot,
         query_info,
@@ -372,17 +366,6 @@ void StorageMergeTree::read(
 
     if (plan)
         query_plan = std::move(*plan);
-}
-
-CursorPromotersMap StorageMergeTree::buildPromoters()
-{
-    const auto data_parts = getDataPartsVectorForInternalUsage();
-    std::map<String, PartBlockNumberRanges> partition_ranges;
-
-    for (const auto & part : data_parts)
-        partition_ranges[part->info.getPartitionId()].addPart(part->info.min_block, part->info.max_block);
-
-    return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
@@ -1117,7 +1100,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                command.ast_text,
+                command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
                 block_numbers_map,
                 parts_in_progress_names,
@@ -1633,7 +1616,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 }
                 else
                 {
-                    commands_size += command.ast()->size();
+                    commands_size += command.ast->size();
                 }
             }
 
@@ -1644,8 +1627,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                     auto fake_query_context = Context::createCopy(getContext());
                     fake_query_context->makeQueryContext();
                     fake_query_context->setCurrentQueryId("");
-                    commands_size += evaluateMutationCommandsSize(
-                        commands_for_size_validation, shared_from_this(), fake_query_context);
+                    MutationsInterpreter::Settings settings(false);
+                    MutationsInterpreter interpreter(
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, settings);
+                    commands_size += interpreter.evaluateCommandsSize();
                 }
                 catch (...)
                 {
@@ -2185,8 +2170,6 @@ struct FutureNewEmptyPart
     MergeTreePartInfo part_info;
     MergeTreePartition partition;
     std::string part_name;
-    /// Metadata of the source part being covered; see `MergeTreeData::createEmptyPart`.
-    StorageMetadataPtr metadata_snapshot;
 
     StorageMergeTree::MutableDataPartPtr data_part;
 };
@@ -2214,7 +2197,6 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
         new_part.part_info.level += 1;
         new_part.partition = old_part->partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
-        new_part.metadata_snapshot = old_part->getMetadataSnapshot();
     }
 
     return future_parts;
@@ -2226,7 +2208,7 @@ std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> cr
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
     {
-        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn);
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, txn);
         data_parts.first.emplace_back(std::move(new_data_part));
         data_parts.second.emplace_back(std::move(tmp_dir_holder));
     }
