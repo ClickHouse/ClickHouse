@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionKqlArraySort final : public IFunction
+class FunctionKqlArraySort : public IFunction
 {
 public:
     explicit FunctionKqlArraySort(ContextPtr context, const String & name_, bool is_desc_)

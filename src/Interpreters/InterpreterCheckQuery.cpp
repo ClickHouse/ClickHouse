@@ -174,7 +174,7 @@ private:
 };
 
 /// Sends TableCheckTask to workers
-class TableCheckSource final : public ISource
+class TableCheckSource : public ISource
 {
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
@@ -290,7 +290,7 @@ private:
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
-class TableCheckWorkerProcessor final : public ISimpleTransform
+class TableCheckWorkerProcessor : public ISimpleTransform
 {
 public:
     TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
@@ -339,7 +339,7 @@ private:
 
 /// Accumulates all results and returns single value
 /// Used when settings.check_query_single_value_result is true
-class TableCheckResultEmitter final : public IAccumulatingTransform
+class TableCheckResultEmitter : public IAccumulatingTransform
 {
 public:
     explicit TableCheckResultEmitter(SharedHeader input_header)
@@ -396,7 +396,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 static Strings getAllDatabases(const ContextPtr & context)
 {
     Strings res;
-    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     res.reserve(databases.size());
     for (const auto & [database_name, _] : databases)
     {

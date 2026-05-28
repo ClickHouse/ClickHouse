@@ -5,7 +5,6 @@
 
 #include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/UUID.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/IKeyValueEntity.h>

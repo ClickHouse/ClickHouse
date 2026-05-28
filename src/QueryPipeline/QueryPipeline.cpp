@@ -1,10 +1,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <iterator>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/QueueWithMemoryTracking.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <queue>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -158,9 +155,9 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
-    VectorWithMemoryTracking<IProcessor *> processors;
-    MapWithMemoryTracking<LimitTransform *, VectorWithMemoryTracking<size_t>> limit_candidates;
-    UnorderedSetWithMemoryTracking<IProcessor *> visited;
+    std::vector<IProcessor *> processors;
+    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
+    std::unordered_set<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
@@ -170,7 +167,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ssize_t limit_input_port;
     };
 
-    QueueWithMemoryTracking<QueuedEntry> queue;
+    std::queue<QueuedEntry> queue;
 
     queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);

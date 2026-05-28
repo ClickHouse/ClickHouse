@@ -1,5 +1,4 @@
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
@@ -47,7 +46,7 @@ void IQueryPlanStep::setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowSta
     dataflow_cache_updater = std::move(updater);
 }
 
-IQueryPlanStep::RemoveUnusedColumnsResult IQueryPlanStep::removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/)
+IQueryPlanStep::RemovedUnusedColumns IQueryPlanStep::removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }

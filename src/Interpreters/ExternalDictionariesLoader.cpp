@@ -11,7 +11,6 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include "config.h"
 

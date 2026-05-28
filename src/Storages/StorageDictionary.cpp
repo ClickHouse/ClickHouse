@@ -13,7 +13,6 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <QueryPipeline/Pipe.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>

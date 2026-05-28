@@ -1,7 +1,5 @@
 #include <Common/JemallocCacheArena.h>
 
-#include "config.h"
-
 #if USE_JEMALLOC
 
 #include <jemalloc/jemalloc.h>
