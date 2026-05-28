@@ -127,12 +127,12 @@ CREATE TABLE test_constraints_regular (a UInt32, CONSTRAINT c_reg CHECK a > 10) 
 
 SELECT table, name, type, expression
 FROM system.constraints
-WHERE table = 'test_constraints_regular'
+WHERE database = currentDatabase() AND table = 'test_constraints_regular'
 ORDER BY name;
 
 SELECT table, name, type, expression
 FROM system.constraints
-WHERE table IN ('test_constraints_regular', 'tmp_constr')
+WHERE (database = currentDatabase() AND table = 'test_constraints_regular') OR (database = '' AND table = 'tmp_constr')
 ORDER BY table, name;
 
 DROP TABLE test_constraints_regular;
