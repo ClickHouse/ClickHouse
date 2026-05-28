@@ -240,17 +240,24 @@ Rope DiskCacheHandle::get(ByteRange range)
     for (const auto & segment : *holder)
     {
         auto state = segment->state();
+        /// `DOWNLOADING` accepted too: another reader may have become the
+        /// downloader between `status` and `get` (transition
+        /// `PARTIALLY_DOWNLOADED → DOWNLOADING`). The prefix
+        /// `[seg.left, getCurrentWriteOffset)` is committed to disk and safe
+        /// to read; without this we would silently drop the hit that
+        /// `status` already promised.
         if (state != FileSegmentState::DOWNLOADED
             && state != FileSegmentState::PARTIALLY_DOWNLOADED
-            && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+            && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+            && state != FileSegmentState::DOWNLOADING)
             continue;
 
         const auto & seg_range = segment->range();
         ByteRange seg_r{seg_range.left, seg_range.size()};
 
         /// For a fully downloaded segment, the readable end is `seg_r.end()`.
-        /// For a partial segment, only `[seg_r.offset, current_write_offset)`
-        /// is committed — bytes past that point are not on disk yet.
+        /// For partial / downloading segments, only
+        /// `[seg_r.offset, current_write_offset)` is committed.
         size_t downloaded_end = (state == FileSegmentState::DOWNLOADED)
             ? seg_r.end()
             : segment->getCurrentWriteOffset();

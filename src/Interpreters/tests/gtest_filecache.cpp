@@ -26,7 +26,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #if CLICKHOUSE_CLOUD
-#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#include <Interpreters/FileCache/OvercommitFileCachePriority.h>
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -2250,6 +2250,94 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialPutSegmentIsCacheable)
     Rope served = handle2->get(ByteRange{0, 10});
     ASSERT_TRUE(served.covers(ByteRange{0, 5}));
     ASSERT_FALSE(served.covers(ByteRange{5, 5}));
+    char buf_out[5] = {};
+    served.copyTo(buf_out, ByteRange{0, 5});
+    ASSERT_EQ(std::string(buf_out, 5), "HELLO");
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderGetReadsCommittedPrefixWhileDownloading)
+{
+    /// Regression: `status()` reports a `PARTIALLY_DOWNLOADED` segment's
+    /// prefix as a hit, but if another reader becomes downloader between
+    /// `status()` and `get()`, the segment transitions to `DOWNLOADING`
+    /// and the pre-fix `get()` skipped it — returning no bytes for what
+    /// `status()` had promised. The committed prefix is on disk and must
+    /// remain readable while another thread is downloading further bytes.
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_dl_prefix", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("dc_dl_prefix_key");
+
+    /// Stage 1: write 5 of 10 bytes ("HELLO") and release the downloader
+    /// so the segment is in `PARTIALLY_DOWNLOADED`. Keep `setup_holder`
+    /// alive for the rest of the test — letting it destruct here would
+    /// run `FileSegment::complete` and split the segment into a
+    /// fully-downloaded prefix + a fresh empty tail, which the bug
+    /// scenario doesn't apply to (DOWNLOADED can't transition to
+    /// DOWNLOADING).
+    auto setup_holder = cache->getOrSet(key, 0, 10, /*file_size=*/10, {}, 0, user);
+    ASSERT_EQ(setup_holder->size(), 1u);
+    auto setup_seg = *setup_holder->begin();
+    ASSERT_EQ(setup_seg->state(), FileSegment::State::EMPTY);
+
+    ASSERT_EQ(setup_seg->getOrSetDownloader(), FileSegment::getCallerId());
+    std::string failure_reason;
+    ASSERT_TRUE(setup_seg->reserve(/*size_to_reserve=*/10, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
+
+    auto key_str = key.toString();
+    auto subdir = fs::path(cache_base_path2) / key_str.substr(0, 3) / key_str;
+    if (!fs::exists(subdir))
+        fs::create_directories(subdir);
+    char data[] = "HELLO";
+    setup_seg->write(data, 5, setup_seg->getCurrentWriteOffset());
+    setup_seg->completePartAndResetDownloader();
+    ASSERT_EQ(setup_seg->state(), FileSegment::State::PARTIALLY_DOWNLOADED);
+    ASSERT_EQ(setup_seg->getDownloadedSize(), 5u);
+
+    /// Stage 2: transition the segment into `DOWNLOADING` by becoming its
+    /// downloader from a separate holder. The same `FileSegment` instance
+    /// (pinned by `setup_holder`) is shared across both holders.
+    auto downloader_holder = cache->getOrSet(key, 0, 10, /*file_size=*/10, {}, 0, user);
+    ASSERT_EQ(downloader_holder->size(), 1u);
+    auto downloader_seg = *downloader_holder->begin();
+    ASSERT_EQ(downloader_seg.get(), setup_seg.get());
+    ASSERT_EQ(downloader_seg->getOrSetDownloader(), FileSegment::getCallerId());
+    ASSERT_EQ(downloader_seg->state(), FileSegment::State::DOWNLOADING);
+    /// No explicit `completePartAndResetDownloader` cleanup: the
+    /// `DiskCacheHandle` destructor below holds the same caller-id and
+    /// will clear the downloader claim as it walks its own holder.
+
+    /// Stage 3: a fresh `DiskCacheHandle` for the same range. Its own
+    /// holder pins the same segment; `get()` must read the committed
+    /// 5-byte prefix from disk despite the `DOWNLOADING` state.
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DiskCacheProvider>(
+        cache, cache_settings, /*query_id_=*/String{},
+        /*local_throttler_=*/nullptr,
+        /*cache_log_=*/nullptr,
+        /*custom_cache_key_=*/std::optional<FileCacheKey>(key),
+        /*custom_origin_=*/std::nullopt);
+
+    StoredObject object{"dc_dl_prefix_obj", "", 10};
+    auto handle = provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, 10});
+    ASSERT_NE(handle, nullptr);
+
+    Rope served = handle->get(ByteRange{0, 5});
+    ASSERT_EQ(served.totalBytes(), 5u)
+        << "DOWNLOADING segment's committed prefix must be readable";
     char buf_out[5] = {};
     served.copyTo(buf_out, ByteRange{0, 5});
     ASSERT_EQ(std::string(buf_out, 5), "HELLO");
