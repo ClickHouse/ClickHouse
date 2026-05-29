@@ -4510,24 +4510,15 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 
 ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
 {
-    /// Reject DAGs where two DIFFERENT nodes share a result name. Same-pointer
-    /// duplicates are tolerated: row policy and prewhere filters with a bare
-    /// column expression (e.g. `USING c0`) reference the input node both as
-    /// the filter and as a passthrough output, which is the historical way to
-    /// keep the column available after `FilterTransform` erases the filter
-    /// column by name. Position-based logic later in this function operates on
-    /// `output_header` (table columns, always uniquely named), not on the
-    /// filter DAG outputs, so a same-pointer duplicate does not break it.
-    /// See issue #106099.
     const auto ensure_no_duplicate_outputs = [](const ActionsDAG & dag, const std::string_view & description)
     {
-        std::unordered_map<std::string_view, const ActionsDAG::Node *> seen_outputs;
+        NameSet seen_outputs;
         for (const auto * output : dag.getOutputs())
         {
-            auto [it, inserted] = seen_outputs.try_emplace(output->result_name, output);
-            if (!inserted && it->second != output)
+            if (seen_outputs.contains(output->result_name))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Duplicate column name {} in {} actions output", output->result_name, description);
+            seen_outputs.insert(output->result_name);
         }
     };
 

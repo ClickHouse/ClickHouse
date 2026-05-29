@@ -303,8 +303,28 @@ try
     filter_info->column_name = expr_list->children.at(0)->getColumnName();
     filter_info->actions.removeUnusedActions(NameSet{filter_info->column_name});
 
+    /// After `removeUnusedActions`, the DAG outputs hold exactly the filter
+    /// result. Re-export every input column so the filtered rows still carry
+    /// them. For a bare-column filter (e.g. row policy `USING c0`) the filter
+    /// result IS one of the inputs and is already in outputs -- adding it
+    /// again would create a same-pointer duplicate that the downstream
+    /// validator (`ReadFromMergeTree::removeUnusedColumns`) rejects. Keep one
+    /// copy and flip `do_remove_column` off so `FilterTransform` does not
+    /// erase the column we want to keep. For a computed-column filter,
+    /// `do_remove_column` stays true so the filter column is stripped after
+    /// filtering. See issue #106099.
+    auto & filter_outputs = filter_info->actions.getOutputs();
+    const auto * filter_result_node = filter_outputs.front();
+    filter_info->do_remove_column = true;
     for (const auto * node : filter_info->actions.getInputs())
-        filter_info->actions.getOutputs().push_back(node);
+    {
+        if (node == filter_result_node)
+        {
+            filter_info->do_remove_column = false;
+            continue;
+        }
+        filter_outputs.push_back(node);
+    }
 
     auto required_columns_from_filter = filter_info->actions.getRequiredColumns();
 
