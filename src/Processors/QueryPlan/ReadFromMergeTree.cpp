@@ -56,7 +56,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/SparseGranuleAnalyzer.h>
 #include <Storages/MergeTree/SparsityFilter.h>
-#include <Analyzer/QueryNode.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>

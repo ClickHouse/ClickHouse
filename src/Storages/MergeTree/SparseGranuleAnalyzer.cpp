@@ -307,9 +307,8 @@ analyzeSparseColumnGranules(
         RunnerT runner(getIOThreadPool().get(), ThreadName::MERGETREE_READ);
         std::vector<std::shared_ptr<RunnerT::Task>> task_handles;
         task_handles.reserve(chunks.size());
-        for (size_t i = 0; i < chunks.size(); ++i)
+        for (auto chunk : chunks)
         {
-            const auto chunk = chunks[i];
             task_handles.push_back(runner.enqueueAndGiveOwnership(
                 [process_chunk, chunk]() { return process_chunk(chunk); }));
         }
