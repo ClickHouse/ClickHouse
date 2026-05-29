@@ -1004,6 +1004,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 table_identifier_node->setQuoteStyles(table_identifier_typed.getQuoteStyles());
 
                 table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());
+                table_identifier_node->setAliasIsDoubleQuoted(table_identifier_typed.alias_is_double_quoted);
                 table_identifier_node->setOriginalAST(table_element.table_expression);
 
                 table_expressions.push_back(std::move(table_identifier_node));
@@ -1015,6 +1016,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliases(), context);
                 node->setAlias(subquery_expression.tryGetAlias());
+                node->setAliasIsDoubleQuoted(subquery_expression.alias_is_double_quoted);
                 node->setOriginalAST(select_with_union_query);
 
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax
@@ -1081,6 +1083,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 if (table_expression_modifiers)
                     node->setTableExpressionModifiers(*table_expression_modifiers);
                 node->setAlias(table_expression.table_function->tryGetAlias());
+                if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(table_expression.table_function.get()))
+                    node->setAliasIsDoubleQuoted(ast_with_alias->alias_is_double_quoted);
                 node->setOriginalAST(table_expression.table_function);
 
                 table_expressions.push_back(std::move(node));

@@ -891,7 +891,7 @@ bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
 
 String DatabaseCatalog::tryResolveDatabaseNameCaseInsensitive(std::string_view database_name) const
 {
-    assert(!database_name.empty());
+    chassert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
 
     /// use precomputed map for lookup

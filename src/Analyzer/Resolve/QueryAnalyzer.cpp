@@ -1220,8 +1220,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
-        /// Propagate quote style from the original lookup for case-sensitivity
-        alias_identifier_lookup.is_part_double_quoted = identifier_lookup.is_part_double_quoted;
+        /// Quote styles must come from the alias *expression*, not the reference that triggered the lookup
+        const auto & alias_quote_styles = alias_identifier_node.getQuoteStyles();
+        alias_identifier_lookup.is_part_double_quoted.reserve(alias_quote_styles.size());
+        for (auto style : alias_quote_styles)
+            alias_identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
 
         scope_to_resolve_alias_expression->popExpressionNode();

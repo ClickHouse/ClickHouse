@@ -178,7 +178,7 @@ boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
         return nullptr;
 
     /// Preserve per-part quote styles so downstream resolution (e.g. case-insensitive lookup
-    /// in `standard` mode for `joinGet("Db"."Table", ...)`) can still see which parts were quoted.
+    /// in `standard` mode for `joinGet` with double-quoted parts) can still see which parts were quoted
     if (!quote_styles.empty())
         result->setQuoteStyles(quote_styles);
 

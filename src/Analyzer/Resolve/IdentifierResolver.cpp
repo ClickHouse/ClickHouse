@@ -560,8 +560,11 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     if (identifier.getPartsSize() == 1)
         return false;
 
+    /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
+    const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
+
     if ((!table_name.empty() && strings_equal(path_start, table_name, part_case_insensitive(0)))
-        || (table_expression_node->hasAlias() && strings_equal(path_start, table_expression_node->getAlias(), part_case_insensitive(0))))
+        || (table_expression_node->hasAlias() && strings_equal(path_start, table_expression_node->getAlias(), alias_case_insensitive)))
         return true;
 
     if (identifier.getPartsSize() == 2)
@@ -650,8 +653,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    /// In SQL standard mode, use case-insensitive lookup for non-double-quoted-identifiers
+    /// Full column lookup uses the last-part quote style (the column name itself)
     const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+    /// Subcolumn base lookup keys off the first part (the tuple/struct column itself), so e.g.
+    /// `data."Name"` can match an unquoted base column `Data` while the quoted tuple field `Name`
+    /// stays case-sensitive (the tuple-field lookup is always exact-match)
+    const size_t identifier_qualifier_parts = identifier.getPartsSize() - identifier_without_column_qualifier.getPartsSize();
+    const bool subcolumn_base_case_insensitive
+        = table_expression_data.standard_mode && !identifier_lookup.isPartDoubleQuoted(identifier_qualifier_parts);
 
     if (use_case_insensitive)
     {
@@ -669,7 +678,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     if (!result_expression)
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(
-                identifier_full_name, use_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
+                identifier_full_name, subcolumn_base_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
         {
             /// Don't read subcolumn of aliases directly, only using getSubcolumn,
             /// because aliases don't have real subcolumns, they should be extracted
@@ -921,8 +930,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return a == b;
     };
 
+    /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
+    const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
+
     if ((!table_name.empty() && strings_equal(path_start, table_name, part_case_insensitive(0)))
-        || (!table_alias.empty() && strings_equal(path_start, table_alias, part_case_insensitive(0))))
+        || (!table_alias.empty() && strings_equal(path_start, table_alias, alias_case_insensitive)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
