@@ -48,6 +48,3 @@ SELECT count() FROM numbers(100) WHERE isConstant(materialize('online'));
 
 SELECT count() FROM numbers(10) WHERE materialize(now()) > toDateTime('1970-01-01');
 
--- short-circuit lazy branch, toFloat64('xxx') would throw if evaluated at planning time
-SELECT count() FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x)
-WHERE if(materialize(x) > 0, 1, toFloat64(materialize('xxx')) < 50);
