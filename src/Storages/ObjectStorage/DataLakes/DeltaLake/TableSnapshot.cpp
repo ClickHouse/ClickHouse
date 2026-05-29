@@ -36,9 +36,6 @@
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
 
-
-namespace fs = std::filesystem;
-
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
