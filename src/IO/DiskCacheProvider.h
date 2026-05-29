@@ -34,6 +34,7 @@ public:
     CacheLookupResult status() const override;
     Rope get(ByteRange range) override;
     size_t put(ByteRange range, Rope data) override;
+    ICacheHandle::CacheSegmentPin pinSegmentAt(size_t file_offset) const override;
 
 private:
     size_t writeToSegment(FileSegment & segment, ByteRange range_in_object, const Rope & data);

@@ -216,6 +216,12 @@ private:
     };
 
     std::optional<LiveBuffer> live_buffer;
+    /// While streaming sequentially through a DiskCache/FileCache segment, hold
+    /// a bare ref to that segment so a mid-read eviction can't snap the next
+    /// miss head back to the segment start and force a connection reset + a
+    /// re-read of bytes already delivered. Re-pointed each window to the
+    /// segment under the live frontier; dropped on seek/EOF/connection reset.
+    ICacheHandle::CacheSegmentPin inflight_segment_pin;
     std::shared_ptr<SourceBufferLimit> buffer_limit;
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;
     String creator_query_id;

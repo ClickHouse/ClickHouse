@@ -219,6 +219,42 @@ CacheLookupResult DiskCacheHandle::status() const
     return result;
 }
 
+ICacheHandle::CacheSegmentPin DiskCacheHandle::pinSegmentAt(size_t file_offset) const
+{
+    /// `file_offset` is file-level; FileCache keys are object-local. Guard the
+    /// lower bound — the executor calls this on every miss handle, including
+    /// ones for other objects; an offset past this object finds no segment in
+    /// the read-only `get` below and returns null.
+    if (file_offset < object_file_offset)
+        return nullptr;
+    const size_t obj_offset = file_offset - object_file_offset;
+
+    /// `put` pops each written segment from this handle's `holder` (so the
+    /// cache can evict it for later reserves, see
+    /// `02944_dynamically_change_filesystem_cache_size`), so after a window's
+    /// put the holder no longer contains the just-filled segment. Re-fetch it
+    /// read-only rather than reading the emptied holder.
+    auto fresh = cache->get(cache_key, obj_offset, 1, /*file_segments_limit=*/0, origin.user_id);
+    if (!fresh || fresh->empty())
+        return nullptr;
+
+    /// Take the bare ref BEFORE `fresh` is destroyed: holding it makes us not
+    /// the segment's last owner (`isLastOwnerOfFileSegment` == use_count()==2),
+    /// so `fresh`'s completion skips the shrink / background-download path and
+    /// leaves the segment PARTIALLY_DOWNLOADED (still appendable by the next
+    /// window's put). A bare ref — not a FileSegmentsHolder, whose destructor
+    /// would re-`complete` the segment — pins it from eviction.
+    FileSegmentPtr segment = fresh->getSingleFileSegment();
+
+    const auto state = segment->state();
+    const bool partial = state == FileSegmentState::PARTIALLY_DOWNLOADED
+                      || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+    if (!partial || segment->getCurrentWriteOffset() <= segment->range().left)
+        return nullptr;
+
+    return std::static_pointer_cast<void>(segment);
+}
+
 Rope DiskCacheHandle::get(ByteRange range)
 {
     Rope result;

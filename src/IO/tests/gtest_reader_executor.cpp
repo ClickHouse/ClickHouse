@@ -19,6 +19,17 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 
+#include <IO/DiskCacheProvider.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/Context.h>
+#include <Core/ServerUUID.h>
+#include <Common/QueryScope.h>
+#include <Common/scope_guard_safe.h>
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/Util/XMLConfiguration.h>
+
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <atomic>
@@ -33,6 +44,17 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+}
+
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsBool load_metadata_asynchronously;
+    extern const FileCacheSettingsFileCachePolicy cache_policy;
 }
 
 using namespace DB;
@@ -1090,6 +1112,307 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferHits), 0);      /// No live buffer to hit.
     EXPECT_GE(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 2); /// All reads fell back.
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferBytes), 0);     /// No bytes through live buffer.
+}
+
+namespace
+{
+
+/// FileCache-style cache with fixed-size segments that the test can evict
+/// between windows. Mirrors DiskCacheHandle::status miss-head behavior:
+///   - partially downloaded segment -> miss head at current write offset,
+///   - empty/evicted segment        -> miss head at segment start.
+/// Honors pinSegmentAt using FileCache's releasable() rule (use_count()==1).
+class EvictableSegmentMockCache : public ICacheProvider
+{
+public:
+    explicit EvictableSegmentMockCache(size_t segment_size_)
+        : segment_size(segment_size_) {}
+
+    std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override;
+
+    String name() const override { return "EvictableSegmentMock"; }
+
+    /// Evict every segment not currently pinned by a caller.
+    void evictUnpinned()
+    {
+        for (auto & [idx, live] : liveness)
+            if (live.use_count() == 1)
+                downloaded[idx] = 0;
+    }
+
+    size_t segmentSize() const { return segment_size; }
+
+    std::shared_ptr<int> & livenessFor(size_t idx)
+    {
+        auto & p = liveness[idx];
+        if (!p)
+            p = std::make_shared<int>(0);
+        return p;
+    }
+
+    /// idx -> bytes downloaded from segment start (0 == empty).
+    std::unordered_map<size_t, size_t> downloaded;
+    /// idx -> liveness token; an extra ref (held by the executor's pin) makes
+    /// the segment non-evictable.
+    std::unordered_map<size_t, std::shared_ptr<int>> liveness;
+    std::vector<std::pair<ByteRange, size_t>> put_log;
+    /// idx -> true means put() returns 0 (simulates a cache that refuses writes).
+    std::unordered_map<size_t, bool> reject_put;
+
+private:
+    size_t segment_size;
+};
+
+class EvictableSegmentMockCacheHandle : public ICacheHandle
+{
+public:
+    EvictableSegmentMockCacheHandle(ByteRange requested_, EvictableSegmentMockCache & cache_)
+        : requested(requested_), cache(cache_)
+    {
+        const size_t seg = cache.segmentSize();
+        const size_t first = requested.offset / seg;
+        const size_t last = requested.end() == 0 ? 0 : (requested.end() - 1) / seg;
+        for (size_t idx = first; idx <= last; ++idx)
+        {
+            const size_t seg_start = idx * seg;
+            const size_t seg_end = seg_start + seg;
+            const size_t dl = cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0;
+            if (dl >= seg)
+            {
+                result.hit_ranges.push_back(ByteRange{seg_start, seg});
+            }
+            else if (dl > 0)
+            {
+                result.hit_ranges.push_back(ByteRange{seg_start, dl});
+                const size_t miss_head = seg_start + dl;
+                const size_t miss_end = std::min(seg_end, requested.end());
+                if (miss_head < miss_end)
+                    result.miss_ranges.push_back(ByteRange{miss_head, miss_end - miss_head});
+            }
+            else
+            {
+                const size_t miss_end = std::min(seg_end, requested.end());
+                if (seg_start < miss_end)
+                    result.miss_ranges.push_back(ByteRange{seg_start, miss_end - seg_start});
+            }
+        }
+    }
+
+    CacheLookupResult status() const override { return result; }
+
+    Rope get(ByteRange range) override
+    {
+        auto buf = std::make_shared<OwnedRopeBuffer>(range.size);
+        std::memset(buf->data(), 'D', range.size);
+        Rope rope;
+        rope.append(RopeNode{buf, 0, range.size, range.offset});
+        return rope;
+    }
+
+    size_t put(ByteRange range, Rope data) override
+    {
+        cache.put_log.emplace_back(range, data.totalBytes());
+        const size_t seg = cache.segmentSize();
+        const size_t idx = range.offset / seg;
+        if (auto it = cache.reject_put.find(idx); it != cache.reject_put.end() && it->second)
+            return 0;
+        const size_t seg_start = idx * seg;
+        const size_t cwo = seg_start + (cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0);
+        if (range.offset != cwo)   // append-only, like FileSegment::write
+            return 0;
+        cache.downloaded[idx] = std::min(seg, (range.offset + range.size) - seg_start);
+        cache.livenessFor(idx);
+        return range.size;
+    }
+
+    CacheSegmentPin pinSegmentAt(size_t file_offset) const override
+    {
+        const size_t seg = cache.segmentSize();
+        const size_t idx = file_offset / seg;
+        const size_t dl = cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0;
+        if (dl == 0 || dl >= seg)
+            return nullptr;   // nothing partial to pin
+        return std::static_pointer_cast<void>(cache.livenessFor(idx));
+    }
+
+private:
+    ByteRange requested;
+    EvictableSegmentMockCache & cache;
+    CacheLookupResult result;
+};
+
+inline std::unique_ptr<ICacheHandle> EvictableSegmentMockCache::lookup(const StoredObject &, size_t, ByteRange range)
+{
+    return std::make_unique<EvictableSegmentMockCacheHandle>(range, *this);
+}
+
+} // anonymous namespace
+
+TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
+{
+    TestThreadGroup tg;
+
+    /// One 4000-byte object = one 4000-byte cache segment, window 1000.
+    String content(4000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("file", "", 4000);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    String result;
+    auto consume = [&](Rope rope)
+    {
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+    };
+
+    /// Window 1: [0,1000). Fills the segment to cwo=1000; the executor pins it.
+    auto w1 = executor.readNextWindow();
+    ASSERT_FALSE(w1.empty());
+    consume(std::move(w1));
+
+    /// Eviction pressure. The pinned segment must survive (use_count()==2).
+    cache->evictUnpinned();
+    ASSERT_EQ(cache->downloaded[0], 1000u) << "pinned in-flight segment was evicted";
+
+    /// Drain the rest sequentially.
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        consume(std::move(rope));
+    }
+
+    EXPECT_EQ(result, content);                       /// no corruption / no missing bytes
+    EXPECT_EQ(executor.getSourceRequestsCount(), 1u); /// connection opened exactly once
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);
+}
+
+TEST(ReaderExecutor, MultipleEvictionsKeepSingleConnection)
+{
+    TestThreadGroup tg;
+    String content(4000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+    StoredObjects objects;
+    objects.emplace_back("file", "", 4000);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    String result;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+        EXPECT_LE(limit->getActive().size(), 1u);   /// no slot churn
+        cache->evictUnpinned();                      /// eviction pressure before next window
+    }
+
+    EXPECT_EQ(result, content);
+    EXPECT_EQ(executor.getSourceRequestsCount(), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);
+}
+
+TEST(ReaderExecutor, PinReleasedOnSeek)
+{
+    String content(8000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+    StoredObjects objects;
+    objects.emplace_back("file", "", 8000);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);  /// two segments
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+
+    ASSERT_FALSE(executor.readNextWindow().empty());      /// [0,1000) fills + pins segment 0
+    ASSERT_EQ(cache->downloaded[0], 1000u);
+    cache->evictUnpinned();
+    ASSERT_EQ(cache->downloaded[0], 1000u) << "segment 0 should be pinned before the seek";
+
+    executor.seek(5000);                                  /// continuity breaks -> pin released
+    cache->evictUnpinned();
+    EXPECT_EQ((cache->downloaded.contains(0) ? cache->downloaded[0] : 0u), 0u)
+        << "pin should be released on seek, allowing eviction of segment 0";
+
+    auto rope = executor.readNextWindow();                /// [5000,6000)
+    ASSERT_FALSE(rope.empty());
+    String got;
+    for (const auto & node : rope.getNodes())
+        got.append(node.data(), node.size);
+    EXPECT_EQ(got, content.substr(5000, got.size()));
+}
+
+TEST(ReaderExecutor, PutFailedTakesNoPin)
+{
+    String content(4000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+    StoredObjects objects;
+    objects.emplace_back("file", "", 4000);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);
+    cache->reject_put[0] = true;            /// segment 0 never accepts writes
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+
+    auto rope = executor.readNextWindow();   /// [0,1000)
+    ASSERT_FALSE(rope.empty());
+    String got;
+    for (const auto & node : rope.getNodes())
+        got.append(node.data(), node.size);
+    EXPECT_EQ(got, content.substr(0, got.size()));   /// data still correct from source
+    EXPECT_FALSE(cache->liveness.contains(0));        /// nothing downloaded -> no pin token
+}
+
+TEST(ReaderExecutor, TransientReadDoesNotPin)
+{
+    String content(4000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+    StoredObjects objects;
+    objects.emplace_back("file", "", 4000);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    auto transient = executor.makeTransientForReadAt(0);
+    ASSERT_TRUE(transient != nullptr);
+    auto rope = transient->readNextWindow();
+    ASSERT_FALSE(rope.empty());
+
+    /// A transient one-shot read has no buffer_limit -> no live buffer -> the
+    /// pin is cleared each window. Nothing should survive an eviction sweep.
+    cache->evictUnpinned();
+    EXPECT_EQ((cache->downloaded.contains(0) ? cache->downloaded[0] : 0u), 0u);
 }
 
 TEST(SourceBufferLimit, MoveAssignReleasesPreviousSlot)
@@ -2194,5 +2517,137 @@ TEST(ReaderExecutor, MemoryBackedFileBufferIsReadFully)
         rope.copyTo(collected.data() + base, rope.range());
     }
     EXPECT_EQ(collected, content) << "memory-backed file buffer must deliver all bytes through the executor";
+}
+
+/// End-to-end: drive the REAL `ReaderExecutor` over a REAL `DiskCacheProvider`
+/// backed by a REAL `FileCache`, force real eviction between windows, and
+/// assert the source connection is opened exactly once (no reset, no re-read).
+///
+/// The other pin tests use a MOCK cache (`EvictableSegmentMockCache`) or test
+/// `DiskCacheHandle::pinSegmentAt` in isolation. This test closes the gap: it
+/// proves the executor's in-flight pin keeps the partially-downloaded segment
+/// non-releasable through an eviction flood that targets the REAL FileCache
+/// LRU/reserve machinery. A prior bug — `pinSegmentAt` reading the holder that
+/// `put` empties — was invisible to the mock but is caught here.
+TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
+{
+    DB::ServerUUID::setRandomForUnitTests();
+
+    /// `FileCache::reserve` charges the per-query budget via
+    /// `CurrentThread::getQueryId()`, so a real `ThreadStatus` + `QueryScope`
+    /// (with a query context) must be in scope — same setup as
+    /// `gtest_filecache.cpp`'s `DiskCacheHandlePinSurvivesEviction`.
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_real_disk_cache");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_pin_it_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    /// Sized so the streamed object's single segment plus a little headroom
+    /// fits, and a flood of other keys forces eviction of anything releasable.
+    settings[DB::FileCacheSetting::max_size] = 24 * 1024;
+    settings[DB::FileCacheSetting::max_elements] = 4;
+    settings[DB::FileCacheSetting::max_file_segment_size] = 8 * 1024;
+    /// Alignment == segment size keeps the streamed segment PARTIALLY_DOWNLOADED
+    /// across windows (a smaller alignment would shrink it to DOWNLOADED on
+    /// complete, removing the state the pin protects).
+    settings[DB::FileCacheSetting::boundary_alignment] = 8 * 1024;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_pin_it", settings);
+    cache->initialize();
+    const auto & origin = DB::FileCache::getCommonOrigin();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DB::DiskCacheProvider>(cache, cache_settings, /*query_id_=*/String{});
+
+    /// One object that is a single 8 KiB-aligned segment, streamed in 2 KiB
+    /// windows (4 windows) so the segment is PARTIALLY_DOWNLOADED between
+    /// windows.
+    String content(8000, 'Q');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"stream_obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("stream_obj", "stream_obj", 8000);
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(provider);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    /// NOTE: no prefetch pool — keep reads synchronous so the flood between
+    /// windows is deterministic.
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/2000, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// Flood the cache with unrelated keys to force eviction of any releasable
+    /// segment. The streamed segment must survive because it is pinned.
+    auto flood = [&](int round)
+    {
+        for (int i = 0; i < 6; ++i)
+        {
+            auto key = DB::FileCacheKey::fromPath("flood_" + std::to_string(round) + "_" + std::to_string(i));
+            auto h = cache->getOrSet(key, 0, 8 * 1024, 8 * 1024, DB::CreateFileSegmentSettings{}, 0, origin);
+            for (auto & seg : *h)
+            {
+                if (seg->state() != DB::FileSegment::State::EMPTY)
+                    continue;
+                if (seg->getOrSetDownloader() != DB::FileSegment::getCallerId())
+                    continue;
+                std::string failure_reason;
+                if (!seg->reserve(8 * 1024, 1000, failure_reason))
+                {
+                    seg->completePartAndResetDownloader();
+                    continue;
+                }
+                /// `FileSegment::write` requires the key's on-disk directory.
+                auto key_str = key.toString();
+                auto subdir = fs::path(cache_path) / key_str.substr(0, 3) / key_str;
+                if (!fs::exists(subdir))
+                    fs::create_directories(subdir);
+                std::string payload(8 * 1024, 'Z');
+                seg->write(payload.data(), payload.size(), seg->getCurrentWriteOffset());
+                seg->completePartAndResetDownloader();
+            }
+        }
+    };
+
+    auto & profile_events = DB::CurrentThread::getProfileEvents();
+    const auto created_before = profile_events[ProfileEvents::LiveSourceBufferCreated].load();
+
+    String result;
+    int round = 0;
+    while (true)
+    {
+        auto rope = executor.readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+            result.append(node.data(), node.size);
+        flood(round++);   // eviction pressure before the next window
+    }
+
+    EXPECT_EQ(result, content);
+    /// The streamed segment stayed pinned through every flood, so the live
+    /// connection was never reset and the left bytes were never re-read.
+    EXPECT_EQ(executor.getSourceRequestsCount(), 1u);
+    EXPECT_EQ(profile_events[ProfileEvents::LiveSourceBufferCreated].load() - created_before, 1);
 }
 

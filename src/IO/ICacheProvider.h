@@ -58,6 +58,19 @@ public:
     /// `02944_dynamically_change_filesystem_cache_size` for the regression
     /// this ordering prevents.
     virtual size_t put(ByteRange range, Rope data) = 0;
+
+    /// Opaque token that keeps one cache segment non-evictable until it is
+    /// dropped. Null when there is nothing useful to pin. See ReaderExecutor's
+    /// sequential-streaming pin (design: in-flight segment pin).
+    using CacheSegmentPin = std::shared_ptr<void>;
+
+    /// Pin the cache segment containing `file_offset` (file-level coordinates),
+    /// so it survives eviction until the returned token is released. Only
+    /// providers with append-only partial segments (DiskCache/FileCache)
+    /// implement this; the default is a no-op. Returns null when the covering
+    /// segment is absent, empty, fully downloaded, or this provider has no
+    /// evictable-segment notion.
+    virtual CacheSegmentPin pinSegmentAt(size_t /*file_offset*/) const { return nullptr; }
 };
 
 /// Cache provider interface. `ReadPipeline` configures the chain.

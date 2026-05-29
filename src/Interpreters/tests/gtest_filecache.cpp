@@ -2496,6 +2496,133 @@ TEST_F(FileCacheTest, DiskCacheProviderGetReadsCommittedPrefixWhileDownloading)
     ASSERT_EQ(std::string(buf_out, 5), "HELLO");
 }
 
+/// `DiskCacheHandle::pinSegmentAt` returns a bare `FileSegmentPtr` for a
+/// `PARTIALLY_DOWNLOADED` segment and null otherwise. The bare ref makes the
+/// segment non-releasable (`releasable()` == `isSharedPtrUnique`), so eviction
+/// pressure from another key cannot evict the pinned partial prefix.
+TEST_F(FileCacheTest, DiskCacheHandlePinSurvivesEviction)
+{
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("disk_cache_handle_pin");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 30;          /// tiny: forces eviction
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    /// Alignment == segment size so a partially-filled segment is NOT shrunk to
+    /// its downloaded size on `complete` (which would flip it to DOWNLOADED);
+    /// it stays PARTIALLY_DOWNLOADED across the full [0, 10) range — the state
+    /// the pin protects.
+    settings[FileCacheSetting::boundary_alignment] = 10;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("disk_cache_handle_pin", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("pin_object_key");
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DiskCacheProvider>(
+        cache, cache_settings, /*query_id_=*/String{},
+        /*local_throttler_=*/nullptr,
+        /*cache_log_=*/nullptr,
+        /*custom_cache_key_=*/std::optional<FileCacheKey>(key),
+        /*custom_origin_=*/std::nullopt);
+
+    /// `object_size` is 20 so a fresh lookup spans the partial segment [0, 10)
+    /// and an EMPTY segment [10, 20).
+    StoredObject object{"pin_object", "", /*bytes_size=*/20};
+
+    ICacheHandle::CacheSegmentPin pin;
+    {
+        auto handle = provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, 20});
+        ASSERT_NE(handle, nullptr);
+        ASSERT_FALSE(handle->status().miss_ranges.empty());
+
+        /// Fill segment [0, 10) to 5 of 10 bytes THROUGH the handle's own
+        /// `put` — the executor's real flow. `put` pops every written segment
+        /// from this handle's holder (`completeAndPopFront`), so after this
+        /// call the holder is empty: a holder-based `pinSegmentAt` would find
+        /// nothing. The fix re-fetches the segment read-only instead.
+        auto buf = std::make_shared<DB::OwnedRopeBuffer>(5);
+        std::memset(buf->data(), 'X', 5);
+        DB::Rope data;
+        data.append(DB::RopeNode{buf, 0, 5, 0});
+        ASSERT_EQ(handle->put(ByteRange{0, 10}, std::move(data)), 5u);
+
+        /// Assertion 3 (the bug catcher): the just-filled partial segment must
+        /// be pinnable on the SAME handle whose `put` consumed the holder.
+        pin = handle->pinSegmentAt(/*file_offset=*/2);
+        ASSERT_TRUE(pin != nullptr)
+            << "pinSegmentAt must find the partial segment after put consumed the holder";
+
+        /// Assertion 4: an offset outside this handle's object yields null —
+        /// guards the executor calling pinSegmentAt on another object's handle.
+        EXPECT_EQ(handle->pinSegmentAt(/*file_offset=*/50), nullptr)
+            << "out-of-object offset must not be pinnable";
+    }   /// handle (and its holder) destroyed here; only `pin` holds the segment.
+
+    /// Eviction pressure from another key: download enough full segments to
+    /// overflow `max_size`. The unpinned segments may be evicted; the pinned
+    /// partial prefix must survive because the bare ref keeps it non-releasable.
+    auto flood_key = DB::FileCacheKey::fromPath("flood_key");
+    for (size_t off = 0; off < 60; off += 10)
+    {
+        auto h = cache->getOrSet(flood_key, off, 10, /*file_size=*/60, {}, 0, user);
+        for (auto & seg : *h)
+        {
+            if (seg->state() != FileSegment::State::EMPTY)
+                continue;
+            if (seg->getOrSetDownloader() != FileSegment::getCallerId())
+                continue;
+            std::string failure_reason;
+            if (!seg->reserve(seg->range().size(), 1000, failure_reason))
+            {
+                seg->completePartAndResetDownloader();
+                continue;
+            }
+            download(cache_base_path, *seg);
+            FileSegment::complete(FileSegmentPtr(seg), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
+        }
+    }
+
+    /// The flood (60 bytes against `max_size` 30) must have overflowed the
+    /// cache, so eviction necessarily ran — this is what makes assertion 5
+    /// non-vacuous (an un-pinned segment would have been a candidate).
+    ASSERT_LE(cache->getUsedCacheSize(), 30u);
+
+    /// Assertion 5: the pinned partial segment's prefix is still a hit.
+    {
+        auto handle = provider->lookup(object, 0, ByteRange{0, 20});
+        auto status = handle->status();
+        bool has_hit_at_zero = false;
+        for (const auto & hit : status.hit_ranges)
+            if (hit.offset == 0 && hit.size >= 5)
+                has_hit_at_zero = true;
+        EXPECT_TRUE(has_hit_at_zero) << "pinned partial segment was evicted";
+    }
+
+    /// After releasing the pin the segment becomes evictable again.
+    pin.reset();
+    SUCCEED();
+}
+
 /// End-to-end version of the partial-segment scenario, exercising the
 /// full unknown-size path through `ReaderExecutor` + `DiskCacheProvider`.
 ///

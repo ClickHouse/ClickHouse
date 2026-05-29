@@ -699,6 +699,7 @@ Rope ReaderExecutor::readNextWindow()
             /// the caller to drop the `PipelineReadBuffer`. A subsequent
             /// seek-back will re-open and re-acquire.
             live_buffer.reset();
+            inflight_segment_pin.reset();
             pre_acquired_slot.reset();
             return {};
         }
@@ -763,6 +764,7 @@ void ReaderExecutor::seek(size_t new_position)
             LOG_TRACE(log, "seek: live buffer for {} (at {}) no longer matches target, closing",
                 live_buffer->slot.objectPath(), live_buffer->current_position);
             live_buffer.reset();
+            inflight_segment_pin.reset();
         }
     }
 
@@ -881,6 +883,7 @@ Rope ReaderExecutor::readFromSource(
         LOG_TRACE(log, "readFromSource: closing live buffer for {} (was at {}), need {}:{}",
             live_buffer->slot.objectPath(), live_buffer->current_position, object.remote_path, offset);
         live_buffer.reset();
+        inflight_segment_pin.reset();
     }
 
     /// `pre_acquired_slot` keyed to a different object: drop it now, otherwise
@@ -1136,6 +1139,26 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
         }
+    }
+
+    /// Keep the partially-downloaded segment the live connection will continue
+    /// into pinned, so a mid-read eviction can't reset the connection (Strategy
+    /// A — see design doc). Re-point to the segment under the new frontier and
+    /// drop any previous pin; clear it when there's nothing partial to hold.
+    if (live_buffer && !reached_eof)
+    {
+        ICacheHandle::CacheSegmentPin pin;
+        for (const auto & handle : miss_handles)
+        {
+            pin = handle->pinSegmentAt(physical_window.end());
+            if (pin)
+                break;
+        }
+        inflight_segment_pin = std::move(pin);
+    }
+    else
+    {
+        inflight_segment_pin.reset();
     }
 
     /// Release the slot if this window didn't open a connection — a fully
