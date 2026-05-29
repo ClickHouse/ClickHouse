@@ -33,6 +33,38 @@ namespace DB::S3AuthSetting
 namespace DeltaLake
 {
 
+namespace
+{
+
+/// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
+/// The Rust FFI decodes the `(ptr, len)` slices as `&str` and returns an error variant on
+/// invalid UTF-8 (e.g. binary credentials such as raw `MD5(...)` bytes). `unwrapResult` turns
+/// that into a regular exception instead of letting it slip through unchecked.
+void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+{
+    KernelUtils::unwrapResult(
+        ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
+        "set_builder_option");
+}
+
+/// RAII guard that frees an `EngineBuilder` unless released.
+/// `ffi::builder_build` consumes the builder on success; if configuring the builder throws before
+/// that (invalid option, unsupported auth, malformed connection string), the builder must be freed
+/// via `ffi::free_engine_builder` to avoid leaking it.
+class BuilderGuard
+{
+public:
+    explicit BuilderGuard(ffi::EngineBuilder * builder_) : builder(builder_) {}
+    ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
+    BuilderGuard(const BuilderGuard &) = delete;
+    BuilderGuard & operator=(const BuilderGuard &) = delete;
+    ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
+private:
+    ffi::EngineBuilder * builder = nullptr;
+};
+
+}
+
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
 {
@@ -68,10 +100,11 @@ public:
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
+        BuilderGuard guard(builder);
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+            setBuilderOption(builder, name, value);
         };
 
         const auto & credentials = client->getCredentials();
@@ -111,7 +144,7 @@ public:
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
             !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
 
-        return builder;
+        return guard.release();
     }
 
 private:
@@ -153,10 +186,11 @@ public:
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
+        BuilderGuard guard(builder);
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+            setBuilderOption(builder, name, value);
         };
 
         const auto & endpoint = connection_params.endpoint;
@@ -274,7 +308,7 @@ public:
             "Using azure container: {}, data_path: {}",
             endpoint.container_name, data_path);
 
-        return builder;
+        return guard.release();
     }
 
 private:
