@@ -60,7 +60,7 @@ public:
         access = context_copy->getAccess();
         check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
-        auto all_databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto all_databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
 
         if (database_filter_)
         {
