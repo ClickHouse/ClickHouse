@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -240,6 +241,26 @@ public:
     size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
+
+    /// Union-find over DAG nodes. Callers populate it from whatever notion of
+    /// equivalence they need (structural, equi-join, ...)
+    class EquivalenceClasses
+    {
+    public:
+        explicit EquivalenceClasses(const ActionsDAG & dag);
+
+        const Node * find(const Node * n) const;
+        void unite(const Node * a, const Node * b);
+
+    private:
+        mutable std::unordered_map<const Node *, const Node *> parent;
+        std::unordered_map<const Node *, size_t> size;
+    };
+
+    /// Classes from structural equivalence (CSE): same type, function, and children
+    EquivalenceClasses buildStructuralEquivalenceClasses() const;
+    void applyEquivalenceClasses(const EquivalenceClasses & ec);
+    void deduplicateSubtrees();
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs

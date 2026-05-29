@@ -871,10 +871,11 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
+/// `and`/`or` are not here because with `short_circuit_function_evaluation` the
+/// argument order is observable
 bool isCommutativeForDedup(std::string_view name)
 {
-    return name == "equals" || name == "notEquals"
-        || name == "and" || name == "or" || name == "xor"
+    return name == "equals" || name == "notEquals" || name == "xor"
         || name == "plus" || name == "multiply"
         || name == "least" || name == "greatest"
         || name == "bitAnd" || name == "bitOr" || name == "bitXor";
@@ -937,41 +938,60 @@ struct NodeKeyHash
 
 }
 
-void ActionsDAG::deduplicateSubtrees()
+ActionsDAG::EquivalenceClasses::EquivalenceClasses(const ActionsDAG & dag)
 {
-    std::unordered_map<const Node *, const Node *> canonical;
+    for (const auto & node : dag.nodes)
+    {
+        parent[&node] = &node;
+        size[&node] = 1;
+    }
+}
+
+const ActionsDAG::Node * ActionsDAG::EquivalenceClasses::find(const Node * n) const
+{
+    auto it = parent.find(n);
+    if (it == parent.end() || it->second == n)
+        return it == parent.end() ? n : it->second;
+    const Node * root = find(it->second);
+    it->second = root;
+    return root;
+}
+
+void ActionsDAG::EquivalenceClasses::unite(const Node * a, const Node * b)
+{
+    const Node * ra = find(a);
+    const Node * rb = find(b);
+    if (ra == rb)
+        return;
+    if (size[ra] < size[rb])
+        std::swap(ra, rb);
+    parent[rb] = ra;
+    size[ra] += size[rb];
+}
+
+ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() const
+{
+    EquivalenceClasses ec(*this);
     std::unordered_map<NodeKey, const Node *, NodeKeyHash> seen;
 
-    auto resolve = [&](const Node * n) -> const Node *
-    {
-        auto it = canonical.find(n);
-        return it != canonical.end() ? it->second : n;
-    };
-
-    /// function results depend on values, not on the alias names along the chain
+    /// function results depend on values, not on alias names along the chain
     auto resolve_through_aliases = [&](const Node * n) -> const Node *
     {
-        n = resolve(n);
+        n = ec.find(n);
         while (n && n->type == ActionType::ALIAS && !n->children.empty())
-            n = resolve(n->children.front());
+            n = ec.find(n->children.front());
         return n;
     };
 
     for (const auto & node : nodes)
     {
         if (node.type == ActionType::ARRAY_JOIN)
-        {
-            canonical[&node] = &node;
             continue;
-        }
-        /// two calls to rand() give different values - merging them changes semantics
+        /// two calls to rand() give different values
         if (node.type == ActionType::FUNCTION
             && node.function_base
             && !node.function_base->isDeterministicInScopeOfQuery())
-        {
-            canonical[&node] = &node;
             continue;
-        }
 
         NodeKey key;
         key.type = node.type;
@@ -987,10 +1007,10 @@ void ActionsDAG::deduplicateSubtrees()
                 key.column = node.column;
                 break;
             case ActionType::ALIAS:
-                /// keep alias name in the key - downstream may look up the column by name
+                /// keep alias name in the key - downstream may look up by name
                 key.name = node.result_name;
                 if (!node.children.empty())
-                    key.children.push_back(resolve(node.children.front()));
+                    key.children.push_back(ec.find(node.children.front()));
                 break;
             case ActionType::FUNCTION:
                 if (node.function_base)
@@ -1007,19 +1027,33 @@ void ActionsDAG::deduplicateSubtrees()
 
         auto it = seen.find(key);
         if (it != seen.end())
-            canonical[&node] = it->second;
+            /// first-seen wins as root, so EXPLAIN names stay stable
+            ec.unite(it->second, &node);
         else
-        {
             seen.emplace(std::move(key), &node);
-            canonical[&node] = &node;
-        }
     }
 
+    return ec;
+}
+
+void ActionsDAG::applyEquivalenceClasses(const EquivalenceClasses & ec)
+{
     for (auto & node : nodes)
         for (auto & child : node.children)
-            child = resolve(child);
+            child = ec.find(child);
+    /// outputs are the header contract (FilterStep looks them up by result_name)
+    /// so only collapse an output when its canonical has the same name
     for (auto & out : outputs)
-        out = resolve(out);
+    {
+        const Node * canon = ec.find(out);
+        if (canon != out && canon->result_name == out->result_name)
+            out = canon;
+    }
+}
+
+void ActionsDAG::deduplicateSubtrees()
+{
+    applyEquivalenceClasses(buildStructuralEquivalenceClasses());
 }
 
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)

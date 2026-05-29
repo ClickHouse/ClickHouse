@@ -37,3 +37,15 @@ FROM (
 );
 
 DROP TABLE u_4263;
+
+-- and/or are order-sensitive under short_circuit, dedup must NOT canonicalize them
+-- Outer `or(intDiv(1, n) > 0, n = 0)` evaluates intDiv first -> throws on n=0
+SELECT count() FROM (
+    SELECT number FROM numbers(3) WHERE or(number = 0, intDiv(1, number) > 0)
+) WHERE or(intDiv(1, number) > 0, number = 0)
+SETTINGS short_circuit_function_evaluation = 'enable'; -- { serverError ILLEGAL_DIVISION }
+
+-- projected output named f and the filter predicate share structure
+-- dedup must not rewrite the filter output to f (would lose its name)
+SELECT * FROM (SELECT number, equals(number, 0) AS f FROM numbers(3))
+WHERE equals(number, 0) ORDER BY number;
