@@ -83,7 +83,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
 
     /// Validate lazy mode request once; actual support is determined from the on-disk sparse-index header.
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     const auto & ctx_settings = condition_text.getContext()->getSettingsRef();
     const auto apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
 
@@ -112,7 +112,7 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
     /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
     /// pure-token queries — pattern predicates take the eager `applyPostingsAny` branch.
     auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
 
     use_lazy_mode = lazy_mode_requested
         && postings_codec->getType() != IPostingListCodec::Type::None
