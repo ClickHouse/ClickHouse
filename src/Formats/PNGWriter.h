@@ -1,5 +1,8 @@
 #pragma once
 
+#include <exception>
+#include <string>
+
 #include <png.h>
 #include <boost/noncopyable.hpp>
 
@@ -36,7 +39,7 @@ private:
     static void writeDataCallback(png_struct_def * png_ptr, unsigned char * data, size_t length);
     static void flushDataCallback(png_struct_def * png_ptr);
     [[noreturn]] static void errorCallback(png_struct_def * png_ptr, png_const_charp error_msg);
-    static void warningCallback(png_struct_def * png_ptr, png_const_charp warning_msg);
+    [[noreturn]] static void warningCallback(png_struct_def * png_ptr, png_const_charp warning_msg);
 
     void cleanup();
 
@@ -44,6 +47,11 @@ private:
 
     png_structp png_ptr = nullptr;
     png_infop info_ptr = nullptr;
+
+    /// libpng error handling uses `longjmp`, so C++ exceptions must not be thrown through its C frames.
+    /// Instead, callbacks save the state here and `longjmp` back to `writeImage`, which rethrows.
+    std::exception_ptr saved_exception;
+    std::string error_message;
 
     size_t width = 0;
     size_t height = 0;

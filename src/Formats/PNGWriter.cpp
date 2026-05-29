@@ -53,6 +53,13 @@ void PNGWriter::writeImage(const unsigned char * pixels)
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PNG writer can encode only one image");
 
+    /// Build the row pointers before `setjmp`, so that this object is in scope (and thus destroyed during
+    /// stack unwinding) if a callback longjmps back and we throw from the handler below.
+    std::vector<png_bytep> row_pointers(height);
+    const size_t row_bytes = width * channels;
+    for (size_t y = 0; y < height; ++y)
+        row_pointers[y] = const_cast<png_bytep>(pixels + y * row_bytes);
+
     png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, this, &PNGWriter::errorCallback, &PNGWriter::warningCallback);
     if (!png_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create libpng write struct");
@@ -62,7 +69,13 @@ void PNGWriter::writeImage(const unsigned char * pixels)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create libpng info struct");
 
     if (setjmp(png_jmpbuf(png_ptr))) // NOLINT(cert-err52-cpp)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error while encoding image");
+    {
+        /// A callback longj'd back here. Either an I/O exception was saved while writing, or libpng raised an error/warning.
+        if (saved_exception)
+            std::rethrow_exception(saved_exception);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error while encoding image: {}",
+            error_message.empty() ? "unknown" : error_message);
+    }
 
     png_set_write_fn(png_ptr, this, &PNGWriter::writeDataCallback, &PNGWriter::flushDataCallback);
 
@@ -82,11 +95,6 @@ void PNGWriter::writeImage(const unsigned char * pixels)
         PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
     png_set_compression_level(png_ptr, PNG_COMPRESSION_LEVEL);
-
-    std::vector<png_bytep> row_pointers(height);
-    const size_t row_bytes = width * channels;
-    for (size_t y = 0; y < height; ++y)
-        row_pointers[y] = const_cast<png_bytep>(pixels + y * row_bytes);
 
     png_write_info(png_ptr, info_ptr);
     png_write_image(png_ptr, row_pointers.data());
@@ -108,9 +116,10 @@ void PNGWriter::writeDataCallback(png_struct_def * png_ptr_, unsigned char * dat
     {
         writer->out.write(reinterpret_cast<const char *>(data), length);
     }
-    catch (...)
+    catch (...) /// Ok: a C++ exception must not propagate through libpng's C frames; save it and longjmp instead.
     {
-        png_error(png_ptr_, "Error writing PNG image to WriteBuffer");
+        writer->saved_exception = std::current_exception();
+        png_longjmp(png_ptr_, 1);
     }
 }
 
@@ -121,21 +130,28 @@ void PNGWriter::flushDataCallback(png_struct_def * png_ptr_)
     {
         writer->out.next();
     }
-    catch (...)
+    catch (...) /// Ok: a C++ exception must not propagate through libpng's C frames; save it and longjmp instead.
     {
-        png_error(png_ptr_, "Error flushing WriteBuffer while writing PNG image");
+        writer->saved_exception = std::current_exception();
+        png_longjmp(png_ptr_, 1);
     }
 }
 
-[[noreturn]] void PNGWriter::errorCallback(png_struct_def *, png_const_charp error_msg)
+[[noreturn]] void PNGWriter::errorCallback(png_struct_def * png_ptr_, png_const_charp error_msg)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error: {}",
-        error_msg ? error_msg : "unknown");
+    auto * writer = reinterpret_cast<PNGWriter *>(png_get_error_ptr(png_ptr_));
+    if (writer)
+        writer->error_message = error_msg ? error_msg : "unknown";
+    png_longjmp(png_ptr_, 1);
 }
 
-void PNGWriter::warningCallback(png_struct_def *, png_const_charp /*warning_msg*/)
+[[noreturn]] void PNGWriter::warningCallback(png_struct_def * png_ptr_, png_const_charp warning_msg)
 {
-    /// Ignore libpng warnings to keep output formats quiet.
+    /// We do not expect any warnings; treat them as errors.
+    auto * writer = reinterpret_cast<PNGWriter *>(png_get_error_ptr(png_ptr_));
+    if (writer)
+        writer->error_message = warning_msg ? warning_msg : "unknown";
+    png_longjmp(png_ptr_, 1);
 }
 
 }
