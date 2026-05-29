@@ -92,6 +92,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -1486,7 +1487,8 @@ static BlockIO executeQueryImpl(
             if (auto * insert_with_returning = out_ast->as<ASTInsertQuery>(); insert_with_returning && insert_with_returning->returning_select)
             {
                 detached_returning_select = insert_with_returning->returning_select;
-                std::erase(insert_with_returning->children, detached_returning_select);
+                auto & children = insert_with_returning->children;
+                children.erase(std::remove(children.begin(), children.end(), detached_returning_select), children.end());
             }
 
             /// Propagate WITH statement to children ASTSelect.
