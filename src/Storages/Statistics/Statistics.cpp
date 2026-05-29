@@ -218,7 +218,7 @@ std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) cons
         return 0;
 
     if (range.isInfinite())
-        return static_cast<Float64>(rows);
+        return static_cast<Float64>(getNonNullRowCount());
 
     if (range.left == range.right)
         return estimateEqual(range.left);

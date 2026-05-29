@@ -35,20 +35,6 @@ enum BasicFeatureMask : UInt8
     NullCount = 1u << 2,
 };
 
-/// `column` is the column passed to `build`, which may be Sparse and/or LowCardinality and/or
-/// Nullable. Return the inner column (Nullable-stripped, LowCardinality decoded back to its
-/// dictionary's nested column for value access). This is used only to inspect *non-null* values
-/// for length statistics. NULL handling is done separately on the outer column.
-ColumnPtr stripWrappersForValueAccess(const ColumnPtr & column)
-{
-    auto full = column->convertToFullColumnIfSparse();
-    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(full.get()))
-        full = lc->convertToFullColumn();
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(full.get()))
-        return nullable->getNestedColumnPtr();
-    return full;
-}
-
 UInt64 countNullsInColumn(const ColumnPtr & column)
 {
     auto full = column->convertToFullColumnIfSparse();
@@ -81,6 +67,42 @@ const NullMap * tryGetNullMap(const IColumn & column)
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
         return &nullable->getNullMapData();
     return nullptr;
+}
+
+/// Sum byte lengths of *non-NULL* values in `column`. `LowCardinality` is expanded before
+/// reading the null map so that `LowCardinality(Nullable(...))` rows are excluded correctly
+/// (the null map lives on the inner `Nullable`, not the outer LC).
+UInt64 sumNonNullStringBytes(const ColumnPtr & column)
+{
+    auto full = column->convertToFullColumnIfSparse();
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(full.get()))
+        full = lc->convertToFullColumn();
+    const NullMap * null_map = tryGetNullMap(*full);
+
+    ColumnPtr values = full;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(values.get()))
+        values = nullable->getNestedColumnPtr();
+
+    const size_t column_size = column->size();
+    if (const auto * fs = typeid_cast<const ColumnFixedString *>(values.get()))
+    {
+        UInt64 non_null = column_size;
+        if (null_map)
+            non_null -= std::count(null_map->begin(), null_map->end(), 1);
+        return fs->getN() * non_null;
+    }
+    if (const auto * s = typeid_cast<const ColumnString *>(values.get()))
+    {
+        UInt64 total = 0;
+        for (size_t i = 0; i < column_size; ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            total += s->getDataAt(i).size();
+        }
+        return total;
+    }
+    return 0;
 }
 
 }
@@ -117,35 +139,7 @@ void StatisticsBasic::build(const ColumnPtr & column)
     }
 
     if (tracks_string)
-    {
-        /// Sum byte lengths of *non-NULL* values into `string_total_bytes`. The average is
-        /// `string_total_bytes / non_null_string_count` at read time. Doing it row by row keeps
-        /// the code uniform across `String`, `FixedString`, `LowCardinality(String)`, and
-        /// `Nullable(String)` and is fast enough — the column is already in memory.
-        ///
-        /// For `FixedString` the per-row length is constant, so we can take a shortcut.
-        auto full = column->convertToFullColumnIfSparse();
-        const NullMap * null_map = tryGetNullMap(*full);
-
-        auto values = stripWrappersForValueAccess(column);
-        if (const auto * fs = typeid_cast<const ColumnFixedString *>(values.get()))
-        {
-            const UInt64 fixed_len = fs->getN();
-            UInt64 non_null = column_size;
-            if (null_map)
-                non_null -= std::count(null_map->begin(), null_map->end(), 1);
-            string_total_bytes += fixed_len * non_null;
-        }
-        else if (const auto * s = typeid_cast<const ColumnString *>(values.get()))
-        {
-            for (size_t i = 0; i < column_size; ++i)
-            {
-                if (null_map && (*null_map)[i])
-                    continue;
-                string_total_bytes += s->getDataAt(i).size();
-            }
-        }
-    }
+        string_total_bytes += sumNonNullStringBytes(column);
 
     row_count += column_size;
 }
