@@ -2147,9 +2147,8 @@ void registerStorageURL(StorageFactory & factory)
                     raw_url = checkAndGetLiteralArgument<String>(literal, "url");
                     got_url = true;
                 }
-                catch (...) // NOLINT(bugprone-empty-catch)
+                catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a positional literal (e.g. a named collection) — keep plain URL behavior.
                 {
-                    /// Not a positional literal (e.g. a named collection) — keep plain URL behavior.
                 }
 
                 if (got_url)
