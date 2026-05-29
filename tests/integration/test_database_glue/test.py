@@ -414,14 +414,14 @@ def test_list_tables(started_cluster):
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_remote_databases_in_system_tables = true"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
         ).strip()
     )
     node.restart_clickhouse()
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_remote_databases_in_system_tables = true"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
         ).strip()
     )
 
@@ -473,8 +473,8 @@ def test_select(started_cluster):
         )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 4
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_remote_databases_in_system_tables = true").strip()) == 4
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_remote_databases_in_system_tables = false").strip()) == 0
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 0
 
 
 def test_hide_sensitive_info(started_cluster):
@@ -769,23 +769,24 @@ def test_system_tables(started_cluster):
     assert table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
     # system.tables
-    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_remote_databases_in_system_tables = true").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
     assert int(node.query(f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
 
-    # system.iceberg_history - always displays irrespective of show_remote_databases_in_system_tables
-    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_remote_databases_in_system_tables = true").strip()) == 4
-    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_remote_databases_in_system_tables = false").strip()) == 4
+    # system.iceberg_history - always displays irrespective of show_data_lake_catalogs_in_system_tables
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 4
+    assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 4
 
-    # system.databases - always displays remote databases irrespective of show_remote_databases_in_system_tables
-    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_remote_databases_in_system_tables = true").strip()) == 1
-    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_remote_databases_in_system_tables = false").strip()) == 1
+    # system.databases always shows data lake catalog databases regardless of show_data_lake_catalogs_in_system_tables,
+    # because listing a database name is purely local metadata and never requires calls to an external catalog service.
+    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 1
+    assert int(node.query(f"SELECT count() FROM system.databases WHERE name = '{CATALOG_NAME}' SETTINGS show_data_lake_catalogs_in_system_tables = false").strip()) == 1
 
     # system.columns
-    assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_remote_databases_in_system_tables = true").strip()) == 24
+    assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) == 24
     assert int(node.query(f"SELECT count() FROM system.columns WHERE database = '{CATALOG_NAME}' and table ilike '%{root_namespace}%'").strip()) == 0
 
     # system.completions
-    assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}') SETTINGS show_remote_databases_in_system_tables = true").strip()) != 0
+    assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}') SETTINGS show_data_lake_catalogs_in_system_tables = true").strip()) != 0
     assert int(node.query(f"SELECT count() FROM system.completions WHERE startsWith(word, '{test_ref}')").strip()) == 0
 
 def test_show_tables_optimization(started_cluster):
@@ -823,7 +824,7 @@ def test_show_tables_optimization(started_cluster):
         f"Get table information for table {root_namespace}.{table_name}"
     )
 
-    node.query(f"SELECT * from system.tables where table ilike '%{root_namespace}%' SETTINGS show_remote_databases_in_system_tables = true")
+    node.query(f"SELECT * from system.tables where table ilike '%{root_namespace}%' SETTINGS show_data_lake_catalogs_in_system_tables = true")
     assert node.contains_in_log(
         f"Get table information for table {root_namespace}.{table_name}"
     )
