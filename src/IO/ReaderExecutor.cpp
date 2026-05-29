@@ -4,6 +4,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
@@ -60,6 +61,14 @@ namespace DB::ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
+}
+
+namespace DB::FailPoints
+{
+    /// Pauses after a sequential window has filled and pinned its in-flight
+    /// FileCache segment, so a test can drop/evict the cache and verify the
+    /// pinned segment survives. No-op unless enabled via `SYSTEM ENABLE FAILPOINT`.
+    extern const char reader_executor_pause_after_window[];
 }
 
 #if USE_SSL
@@ -1155,6 +1164,12 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 break;
         }
         inflight_segment_pin = std::move(pin);
+
+        /// Test hook: pause here while the in-flight segment is pinned and the
+        /// live connection is open, so a test can drop/evict the cache and
+        /// observe that the pinned segment survives. No-op unless enabled.
+        if (inflight_segment_pin)
+            FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_window);
     }
     else
     {
