@@ -1589,7 +1589,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
         rg.nextInFullRange(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
-        d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
+        d.format == LakeFormat::DeltaLake ? "deltalake" : (d.format == LakeFormat::Paimon ? "paimon" : "iceberg"),
         catalog);
     fc.outf << "--External database " << buf << std::endl;
     return httpPut("/sparkdatabase", buf);
@@ -1741,11 +1741,12 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         first = false;
     }
     buf += "]";
-    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
+    if (t.isAnyLakeEngine())
     {
+        const char * engine = t.isAnyDeltaLakeEngine() ? "deltalake" : (t.isAnyPaimonEngine() ? "paimon" : "iceberg");
         buf += fmt::format(
             R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
-            t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
+            engine,
             escapeJSON(t.getSparkCatalogName()),
             t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
     }
@@ -1765,7 +1766,7 @@ bool DolorIntegration::reRunCreateTable(const String & body)
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
+    if (t.isAnyLakeEngine())
     {
         const LakeCatalog catalog = t.getLakeCatalog();
 
@@ -1917,6 +1918,7 @@ bool DolorIntegration::performExternalCommand(
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
+    , worker(fcc.log)
 {
     if (fc.mysql_server.has_value())
     {

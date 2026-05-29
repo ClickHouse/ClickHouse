@@ -71,6 +71,10 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_EXAMPLES)
+    add_subdirectory (Examples)
+endif()
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
     set_source_files_properties(
@@ -150,6 +154,10 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+
+add_headers_and_sources(dbms Core/Streaming)
+add_headers_and_sources(dbms Storages/Streaming)
+add_headers_and_sources(dbms Storages/MergeTree/Streaming)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -311,6 +319,7 @@ add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
+add_object_library(clickhouse_storages_mergetree_unique_key Storages/MergeTree/UniqueKey)
 add_object_library(clickhouse_storages_mergetree_compaction Storages/MergeTree/Compaction)
 add_object_library(clickhouse_storages_mergetree_compaction_merge_predicates Storages/MergeTree/Compaction/MergePredicates)
 add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Storages/MergeTree/Compaction/MergeSelectors)
@@ -345,12 +354,20 @@ set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEP
 ${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
-${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
+${CMAKE_SOURCE_DIR}/programs/server/schema.html")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
+
+set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/webterminal.html")
 
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
@@ -506,6 +523,7 @@ endif()
 
 target_link_libraries(dbms PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
@@ -578,7 +596,8 @@ target_link_libraries(
     dbms
     PUBLIC
         boost::circular_buffer
-        boost::heap)
+        boost::heap
+        boost::iostreams)
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect

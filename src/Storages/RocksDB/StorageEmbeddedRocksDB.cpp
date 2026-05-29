@@ -13,6 +13,7 @@
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <Storages/StorageFactory.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Processors/ISource.h>
@@ -35,6 +36,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/SharedLockGuard.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
@@ -79,6 +81,8 @@ extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
 extern const int NOT_IMPLEMENTED;
+extern const int TABLE_IS_DROPPED;
+extern const int TYPE_MISMATCH;
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
@@ -100,7 +104,7 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
     return options;
 }
 
-class EmbeddedRocksDBSource : public ISource
+class EmbeddedRocksDBSource final : public ISource
 {
 public:
     EmbeddedRocksDBSource(
@@ -367,18 +371,25 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
             }
 
-            auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
-            if (!status.ok())
-                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+            {
+                SharedLockGuard lock(rocksdb_ptr_mx);
+                if (!rocksdb_ptr)
+                    throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+                auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+                if (!status.ok())
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+            }
         }
 
         return;
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
+    auto alter = commands.front().ast();
+    const auto column_to_update = getColumnToUpdateExpression(*alter);
     for (const auto & key_name : primary_keys)
     {
-        if (commands.front().column_to_update_expression.contains(key_name))
+        if (column_to_update.contains(key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", key_name);
     }
 
@@ -430,7 +441,9 @@ bool StorageEmbeddedRocksDB::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type EmbeddedRocksDB");
 
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        return true;
     rocksdb::CompactRangeOptions compact_options;
     auto status = rocksdb_ptr->CompactRange(compact_options, nullptr, nullptr);
     if (!status.ok())
@@ -715,7 +728,16 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     const auto & sample_block = getOutputHeader();
     if (all_scan)
     {
-        auto iterator = std::unique_ptr<rocksdb::Iterator>(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+        std::unique_ptr<rocksdb::Iterator> iterator;
+        {
+            SharedLockGuard lock(storage.rocksdb_ptr_mx);
+            if (!storage.rocksdb_ptr)
+            {
+                pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
+                return;
+            }
+            iterator.reset(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+        }
         iterator->SeekToFirst();
         auto source = std::make_shared<EmbeddedRocksDBSource>(storage, storage_snapshot, sample_block, std::move(iterator), max_block_size);
         source->setStorageLimits(query_info.storage_limits);
@@ -864,7 +886,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
 {
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return nullptr;
     return rocksdb_ptr->GetOptions().statistics;
@@ -873,7 +895,7 @@ std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistic
 std::vector<rocksdb::Status>
 StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const
 {
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
@@ -897,7 +919,7 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
 
         if (!key_type->equals(*primary_key_type))
             throw DB::Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::TYPE_MISMATCH,
                 "Primary key type mismatch, expected {}, got {}.",
                 primary_key_types[i]->getName(),
                 keys[i].type->getName());
@@ -991,7 +1013,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
 {
     if (!query_context->getSettingsRef()[Setting::optimize_trivial_approximate_count_query])
         return {};
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     UInt64 estimated_rows;
@@ -1002,7 +1024,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
 {
-    std::shared_lock lock(rocksdb_ptr_mx);
+    SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     UInt64 estimated_bytes;

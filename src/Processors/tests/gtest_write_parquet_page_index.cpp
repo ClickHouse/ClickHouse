@@ -173,7 +173,7 @@ TEST(Parquet, WriteParquetPageIndexParallel)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = true;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -214,7 +214,7 @@ TEST(Parquet, WriteParquetPageIndexParallelPlainEnconding)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = true;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -255,7 +255,7 @@ TEST(Parquet, WriteParquetPageIndexParallelAllNull)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = true;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -292,7 +292,7 @@ TEST(Parquet, WriteParquetPageIndexSingleThread)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
+
     format_settings.parquet.parallel_encoding = false;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;
@@ -328,46 +328,6 @@ TEST(Parquet, WriteParquetPageIndexSingleThread)
         });
 }
 
-TEST(Parquet, WriteParquetPageIndexArrowEncoder)
-{
-    FormatSettings format_settings;
-    format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = false;
-    format_settings.parquet.write_page_index = true;
-    format_settings.parquet.data_page_size = 32;
-
-    std::vector<std::vector<UInt64>> values;
-    std::vector<UInt64> col;
-    for (size_t i = 0; i < 1000; i++)
-    {
-        col.push_back(i % 10);
-    }
-    values.push_back(col);
-    values.push_back(col);
-    auto source = multiColumnsSource<UInt64>(
-        {makeNullable(std::make_shared<DataTypeUInt64>()), makeNullable(std::make_shared<DataTypeUInt64>())}, values, 100);
-    String path = "/tmp/test.parquet";
-    writeParquet(source, format_settings, path);
-    validatePageIndex(
-        path,
-        [](auto null_pages)
-        {
-            for (auto null_page : null_pages)
-            {
-                ASSERT_TRUE(!null_page);
-            }
-        },
-        [](auto null_counts)
-        {
-            for (auto null_count : null_counts)
-            {
-                ASSERT_TRUE(null_count > 0);
-            }
-        },
-        /// arrow doesn't write statistics to data page headers
-        /*expect_statistics_in_page_headers*/ false);
-}
-
 /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/103039
 /// When a page has a short min and a long max (exceeding max_statistics_size=4096),
 /// the column index must not be written because it would contain invalid bounds
@@ -376,7 +336,6 @@ TEST(Parquet, WriteParquetPageIndexOversizedStringStats)
 {
     FormatSettings format_settings;
     format_settings.parquet.row_group_rows = 10000;
-    format_settings.parquet.use_custom_encoder = true;
     format_settings.parquet.parallel_encoding = false;
     format_settings.parquet.write_page_index = true;
     format_settings.parquet.data_page_size = 32;

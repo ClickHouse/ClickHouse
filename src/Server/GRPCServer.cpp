@@ -1142,7 +1142,7 @@ namespace
 
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
-        assert(!pipeline);
+        chassert(!pipeline);
 
         const Settings & settings = query_context->getSettingsRef();
 
