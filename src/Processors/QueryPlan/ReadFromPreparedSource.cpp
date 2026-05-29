@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Storages/System/StorageSystemOne.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -60,7 +59,7 @@ ReadFromStorageStep::ReadFromStorageStep(
 
 void ReadFromStorageStep::serialize(Serialization & ctx) const
 {
-    if (storage->as<StorageSystemOne>() == nullptr)
+    if (storage->getName() != "SystemOne")
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromStorageStep serailization is implemented only for StorageSystemOne, got: {}", storage->getName());
 
     writeStringBinary(storage->getName(), ctx.out);
