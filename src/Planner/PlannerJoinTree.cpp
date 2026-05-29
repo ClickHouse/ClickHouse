@@ -51,8 +51,10 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Processors/Sources/NullSource.h>
@@ -1412,6 +1414,41 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                     ? outer_modifiers->getSampleOffsetRatio()
                                     : (inner_modifiers ? inner_modifiers->getSampleOffsetRatio() : std::nullopt);
                                 dist_table.setTableExpressionModifiers(TableExpressionModifiers{merged_final, merged_sample_size, merged_sample_offset});
+                            }
+
+                            /// Fold any `additional_table_filters` keyed by this view into the outer
+                            /// QueryNode's WHERE clause BEFORE inlining the view body. The view's
+                            /// TableNode is still table_expression at this point, so view-namespace
+                            /// identifiers (including projection aliases) resolve correctly. After
+                            /// cloneAndReplace below, the WHERE rides along inside the shipped query
+                            /// and is evaluated on the shard prior to any partial aggregation, exactly
+                            /// like a user-written WHERE clause — `SELECT count() FROM v` becomes
+                            /// `SELECT count() FROM (inlined view body) WHERE additional_filter`.
+                            /// We also clear additional_filter_ast on query_info to suppress
+                            /// StorageDistributed::read's own propagation (which would otherwise
+                            /// re-key the view-namespace AST to the shard-local table — fine for
+                            /// unaliased views, but a hard error for aliased ones).
+                            if (auto & additional_filter_ast = table_expression_query_info.additional_filter_ast; additional_filter_ast)
+                            {
+                                ASTPtr wrapped_filter_ast = additional_filter_ast;
+                                if (wrapped_filter_ast->as<ASTSubquery>() || wrapped_filter_ast->as<ASTSelectWithUnionQuery>())
+                                    wrapped_filter_ast = makeASTFunction("notEquals",
+                                        wrapped_filter_ast,
+                                        make_intrusive<ASTLiteral>(Field(UInt8(0))));
+
+                                auto filter_query_tree = buildQueryTree(wrapped_filter_ast, query_context);
+                                QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
+                                query_analysis_pass.run(filter_query_tree, query_context);
+
+                                auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
+                                if (outer_query_node.hasWhere())
+                                    outer_query_node.getWhere() = mergeConditionNodes(
+                                        {outer_query_node.getWhere(), std::move(filter_query_tree)},
+                                        query_context);
+                                else
+                                    outer_query_node.getWhere() = std::move(filter_query_tree);
+
+                                additional_filter_ast = nullptr;
                             }
 
                             /// Replace the view's table expression in the outer query with the
