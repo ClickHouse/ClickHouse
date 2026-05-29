@@ -247,9 +247,9 @@ bool FourLetterCommandFactory::supportArguments(int32_t code) const
 
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
-    const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
+    const auto & server_config = keeper_dispatcher.getKeeperConfiguration();
     auto log = getLogger("FourLetterCommandFactory");
-    String list_str = keeper_settings->four_letter_word_allow_list;
+    String list_str = server_config->four_letter_word_allow_list;
     std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
@@ -343,8 +343,10 @@ String MonitorCommand::run()
 
     if (keeper_info.is_leader)
     {
+        print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
+        print(ret, "synced_non_voting_followers", keeper_info.synced_non_voting_follower_count);
     }
 
     return ret.str();
@@ -370,7 +372,7 @@ String ConfCommand::run()
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
-    keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperConfiguration()->dump(buf);
     keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
@@ -663,7 +665,7 @@ void printToString(void * output, const char * data)
 String JemallocDumpStats::run()
 {
     std::string output;
-    malloc_stats_print(printToString, &output, nullptr);
+    je_malloc_stats_print(printToString, &output, nullptr);
     return output;
 }
 

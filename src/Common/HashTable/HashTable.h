@@ -1,14 +1,5 @@
 #pragma once
 
-#include <string.h>
-
-#include <math.h>
-
-#include <new>
-#include <utility>
-
-#include <boost/noncopyable.hpp>
-
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -19,9 +10,16 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/CacheLine.h>
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/Prefetching.h>
+
+#include <boost/noncopyable.hpp>
+
+#include <utility>
+#include <math.h>
+#include <string.h>
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
     #include <iostream>
@@ -272,7 +270,7 @@ struct HashTableGrower
   * This grower assume 0.5 load factor
   */
 template <size_t initial_size_degree = 8>
-class alignas(64) HashTableGrowerWithPrecalculation
+class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
@@ -330,7 +328,7 @@ public:
     }
 };
 
-static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == 64);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
@@ -1091,13 +1089,19 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
+public:
     void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
         __builtin_prefetch(&buf[place]);
     }
 
-public:
+    bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
+    {
+        const auto place = grower.place(hash_key);
+        return buf[place].isZero(*this);
+    }
+
     void reserve(size_t num_elements)
     {
         resize(num_elements);
@@ -1147,6 +1151,9 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
+        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
+        /// Without this, every prefetch would leak the serialized key bytes in the aggregation pool.
+        keyHolderDiscardKey(key_holder);
     }
 
     /** Insert the key.

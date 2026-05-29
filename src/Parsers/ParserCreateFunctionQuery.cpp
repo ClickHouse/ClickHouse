@@ -107,6 +107,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
         std::optional<ParserKeyword> s_from{Keyword::FROM};
         std::optional<ParserKeyword> s_hash{Keyword::SHA256_HASH};
         std::optional<ParserKeyword> s_abi{Keyword::ABI};
+        std::optional<ParserKeyword> s_deterministic{Keyword::DETERMINISTIC};
 
         /// Parse fields in any order, but only once each
         while (true)
@@ -184,6 +185,11 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
                     return false;
                 create_function_query->setModuleHash(hash_ast);
             }
+            else if (s_deterministic && s_deterministic->ignore(pos, expected))
+            {
+                s_deterministic.reset();
+                create_function_query->is_deterministic = true;
+            }
             else
             {
                 break;
@@ -215,6 +221,10 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
             }
             create_function_query->setSettings(std::move(changes));
         }
+
+        /// The parser accepts clauses in any order, so children were added
+        /// in parse order. Normalize to the canonical order that formatImpl uses.
+        create_function_query->normalizeChildrenOrder();
 
         node = create_function_query;
         return true;

@@ -22,6 +22,7 @@
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -34,6 +35,11 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
+#include <Compression/CompressionFactory.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -80,6 +86,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
             ("backslash", "add a backslash at the end of each line of the formatted query")
+            ("no_rainbow_parentheses", "bypass highlighting of matching parentheses in distinct colors")
             ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
             ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
@@ -96,9 +103,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (options.contains("help"))
         {
-            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
+            std::cout << "Usage: clickhouse format [options] < query" << std::endl;
             std::cout << desc << std::endl;
-            return 1;
+            return 0;
         }
 
         bool hilite = options.contains("hilite");
@@ -108,6 +115,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         size_t max_line_length = options["max_line_length"].as<size_t>();
         bool obfuscate = options.contains("obfuscate");
         bool backslash = options.contains("backslash");
+        bool rainbow_parentheses = !options.contains("no_rainbow_parentheses");
         bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
         bool semicolon_inline = options.contains("semicolons_inline");
@@ -183,6 +191,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerDatabases();
             registerStorages();
             registerFormats();
+            registerDictionaries();
 
             std::unordered_set<std::string> additional_names;
 
@@ -190,11 +199,21 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
             auto all_known_settings = Settings().getAllRegisteredNames();
             auto all_known_merge_tree_settings = MergeTreeSettings().getAllRegisteredNames();
+            auto all_known_index_types = MergeTreeIndexFactory::instance().getAllRegisteredNames();
+            auto all_known_codecs = CompressionCodecFactory::instance().getAllRegisteredNames();
+            auto all_known_database_engines = DatabaseFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_layouts = DictionaryFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_sources = DictionarySourceFactory::instance().getAllRegisteredNames();
 
             additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
             additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
             additional_names.insert(all_known_settings.begin(), all_known_settings.end());
             additional_names.insert(all_known_merge_tree_settings.begin(), all_known_merge_tree_settings.end());
+            additional_names.insert(all_known_index_types.begin(), all_known_index_types.end());
+            additional_names.insert(all_known_codecs.begin(), all_known_codecs.end());
+            additional_names.insert(all_known_database_engines.begin(), all_known_database_engines.end());
+            additional_names.insert(all_known_dict_layouts.begin(), all_known_dict_layouts.end());
+            additional_names.insert(all_known_dict_sources.begin(), all_known_dict_sources.end());
 
             for (auto * it = auto_time_zones; *it; ++it)
             {
@@ -286,7 +305,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         String formatted_query = query_buf.str();
 #if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
+                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
 #endif
                         str_buf.write(formatted_query.data(), formatted_query.size());
 
@@ -340,7 +359,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         String formatted_query = str_buf.str();
 #if USE_REPLXX
                         if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
+                            formatted_query = highlighted(formatted_query, *context, rainbow_parentheses);
 #endif
                         WriteBufferFromOStream res_cout(std::cout, 4096);
 

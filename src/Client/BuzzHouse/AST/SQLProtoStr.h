@@ -4,14 +4,14 @@
 
 /// Protobuf generated files give lots of warnings, disable them
 #if defined(__clang__)
-#    pragma clang diagnostic push
-#    pragma clang diagnostic ignored "-Weverything"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
 #endif
 
 #include "SQLGrammar.pb.h"
 
 #if defined(__clang__)
-#    pragma clang diagnostic pop
+#pragma clang diagnostic pop
 #endif
 
 namespace BuzzHouse
@@ -19,7 +19,7 @@ namespace BuzzHouse
 
 void CreateDatabaseToString(String & ret, const CreateDatabase &);
 void CreateTableToString(String & ret, const CreateTable &);
-void BackupParamsToString(String & ret, const BackupParams &);
+void BackupOutToString(String & ret, const BackupOut &);
 void SQLQueryToString(String & ret, const SQLQuery &);
 
 }

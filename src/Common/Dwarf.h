@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -30,11 +30,16 @@
 #include <variant>
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
 
 class Elf;
+#if defined(OS_DARWIN)
+class MachO;
+#endif
 
 /**
  * DWARF record parser.
@@ -67,6 +72,11 @@ class Dwarf final
 public:
     /** Create a DWARF parser around an ELF file. */
     explicit Dwarf(const std::shared_ptr<Elf> & elf);
+
+#if defined(OS_DARWIN)
+    /** Create a DWARF parser around a Mach-O file (typically from a dSYM bundle). */
+    explicit Dwarf(const std::shared_ptr<MachO> & macho);
+#endif
 
     /**
      * More than one location info may exist if current frame is an inline
@@ -168,12 +178,15 @@ public:
     /** Find the file and line number information corresponding to address.
       * The address must be physical - offset in object file without offset in virtual memory where the object is loaded.
       */
-    bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const;
+    bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode, VectorWithMemoryTracking<SymbolizedFrame> & inline_frames) const;
 
 private:
     static bool findDebugInfoOffset(uintptr_t address, std::string_view aranges, uint64_t & offset);
 
     std::shared_ptr<const Elf> elf_; /// NOLINT
+#if defined(OS_DARWIN)
+    std::shared_ptr<const MachO> macho_; /// NOLINT
+#endif
 
     // DWARF section made up of chunks, each prefixed with a length header.
     // The length indicates whether the chunk is DWARF-32 or DWARF-64, which
@@ -273,7 +286,7 @@ private:
 
         // Only the CompilationUnit that contains the caller functions needs this cache.
         // Indexed by (abbr.code - 1) if (abbr.code - 1) < abbrCache.size();
-        std::vector<DIEAbbreviation> abbr_cache;
+        VectorWithMemoryTracking<DIEAbbreviation> abbr_cache;
     };
 
     /** cu must exist during the life cycle of created Die. */
@@ -284,7 +297,7 @@ private:
         LocationInfoMode mode,
         CompilationUnit & cu,
         LocationInfo & info,
-        std::vector<SymbolizedFrame> & inline_frames,
+        VectorWithMemoryTracking<SymbolizedFrame> & inline_frames,
         bool assume_in_cu_range) const;
 
     /**
@@ -408,7 +421,7 @@ private:
         const LineNumberVM & line_vm,
         uint64_t address,
         std::optional<uint64_t> base_addr_cu,
-        std::vector<CallLocation> & locations,
+        VectorWithMemoryTracking<CallLocation> & locations,
         size_t max_size) const;
 
     // Read an abbreviation from a std::string_view, return true if at end; remove_prefix section

@@ -1,13 +1,16 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+
+#include <Core/Settings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Core/Settings.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
-
 
 namespace DB
 {
@@ -42,9 +45,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
+    auto prewarm_caches = data_part->storage.getCachesToPrewarm(part_uncompressed_bytes);
+    bool save_marks_in_cache = prewarm_caches.mark_cache != nullptr || prewarm_caches.index_mark_cache != nullptr;
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     writer_settings = MergeTreeWriterSettings(
         data_part->storage.getContext()->getSettingsRef(),
@@ -61,8 +65,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     /// NOTE do not pass context for writing to system.transactions_info_log,
     /// because part may have temporary name (with temporary block numbers). Will write it later.
-    data_part->version.setCreationTID(tid, nullptr);
-    data_part->storeVersionMetadata();
+    data_part->version->setAndStoreCreationTID(tid, nullptr);
 
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
@@ -74,7 +77,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         columns_list,
         data_part->getColumnPositions(),
         metadata_snapshot,
-        data_part->storage.getVirtualsPtr(),
         skip_indices,
         data_part->getMarksFileExtension(),
         default_codec,
@@ -99,9 +101,9 @@ void MergedBlockOutputStream::cancel() noexcept
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
     */
-void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
+void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
 {
-    writeImpl(block, permutation);
+    writeImpl(block, permutation, permuted_columns_cache);
 }
 
 struct MergedBlockOutputStream::Finalizer::Impl
@@ -144,11 +146,19 @@ void MergedBlockOutputStream::Finalizer::Impl::finish()
 {
     writer.finish(sync);
 
+    /// Finalize all files first (writes any pending bytes to the OS),
+    /// then sync them in parallel — fsync of independent files can run concurrently
+    /// and is a major contributor to part finalization latency when many small files are involved.
     for (auto & file : written_files)
-    {
         file->finalize();
-        if (sync)
-            file->sync();
+
+    if (sync)
+    {
+        std::vector<WriteBufferFromFileBase *> files_to_sync;
+        files_to_sync.reserve(written_files.size());
+        for (auto & file : written_files)
+            files_to_sync.push_back(file.get());
+        parallelSyncFiles(files_to_sync);
     }
 
     for (const auto & file_name : files_to_remove_after_finish)
@@ -317,9 +327,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 written_files.emplace_back(std::move(file));
             }
 
-            if (new_part->minmax_idx->initialized)
+            if (new_part->getMinMaxIndex()->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
+                auto files = new_part->getMinMaxIndex()->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
@@ -430,14 +440,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     return written_files;
 }
 
-void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
+void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)
         return;
 
-    writer->write(block, permutation);
+    writer->write(block, permutation, permuted_columns_cache);
     if (reset_columns)
         new_serialization_infos.add(block);
 

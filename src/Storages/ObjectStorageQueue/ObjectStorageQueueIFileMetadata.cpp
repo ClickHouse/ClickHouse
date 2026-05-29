@@ -180,7 +180,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             zk_retry.retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-                if (zk_retry.isRetry())
+                if (zk_retry.isRetry() || uncertain_commit)
                 {
                     /// It is possible that we fail "after operation",
                     /// e.g. we successfully removed the node, but did not get confirmation,
@@ -479,6 +479,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequests(
 
     if (!reduce_retry_count)
     {
+        processing_reset_without_failure = true;
         prepareResetProcessingRequests(requests);
         return;
     }
@@ -527,6 +528,26 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 #endif
 }
 
+void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
+{
+    SCOPE_EXIT({
+        (*file_status).reset();
+        created_processing_node = false;
+    });
+
+    LOG_TRACE(log, "File {} processing was reset for retry (rows: {})", path, file_status->processed_rows.load());
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        chassert(
+            !zk_client->exists(processing_node_path),
+            fmt::format("Expected path {} not to exist after reset for {}", processing_node_path, path));
+    });
+#endif
+}
+
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
@@ -563,7 +584,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-        /// Created Failed node.
+        /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
     }

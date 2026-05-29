@@ -22,10 +22,10 @@ $CLICKHOUSE_CLIENT -nm -q "
 # NOTE: in release the limit for the warning in ZooKeeper::receiveEvent() is 10K, and creating 10KK parts is very slow, so we will create only 1K, and rely on lower limit for sanitizers/debug builds, which is 100 right now
 read -r event_time_timestamp query_duration_ms < <($CLICKHOUSE_CLIENT -nm -q "
   system flush logs query_log;
-  select toUnixTimestamp(event_time), query_duration_ms from system.query_log where current_database = '$CLICKHOUSE_DATABASE' and query_kind = 'Drop' and type = 'QueryFinish';
+  select toUnixTimestamp(event_time), query_duration_ms from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' and query_kind = 'Drop' and type = 'QueryFinish';
 ")
 $CLICKHOUSE_CLIENT -nm -q "
   system flush logs text_log;
   with fromUnixTimestamp($event_time_timestamp) as end_, $query_duration_ms/1000 as duration_
-  select * from system.text_log where logger_name = 'ZooKeeperClient' and level = 'Warning' and event_time between end_-duration_ and end_ limit 5;
+  select * from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'ZooKeeperClient' and level = 'Warning' and event_time between end_-duration_ and end_ limit 5;
 "

@@ -1,4 +1,5 @@
 #include <Processors/Port.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
@@ -133,6 +134,9 @@ IProcessor::Status BuildTextIndexTransform::prepare()
 
 void BuildTextIndexTransform::aggregate(const Block & block)
 {
+    if (block.rows() == 0)
+        return;
+
     /// Threshold for the number of processed tokens to flush the segment.
     /// Calculating used RAM or number of processed unique tokens adds significant overhead,
     /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.
@@ -201,6 +205,17 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         stream->finalize();
 }
 
+static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
+{
+    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
+    auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
+    /// The merge task always writes the current on-disk format, so the legacy lazy-codec fallback
+    /// doesn't apply — pass `WithCodec` to keep the codec fixed to the index definition.
+    return PostingsSerialization(
+        PostingListCodecFactory::createPostingListCodec(codec_type),
+        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+}
+
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -214,6 +229,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
+    , postings_serialization(createPostingsSerialization(*index_ptr))
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());
@@ -221,7 +237,6 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     output_tokens = ColumnString::create();
     params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
-    posting_list_codec = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec();
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -281,7 +296,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, posting_list_codec);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, &postings_serialization);
     const auto & tokens = inputs[source_num].tokens;
     cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     queue.push(cursors[source_num]);
@@ -302,7 +317,7 @@ std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-        postings.emplace_back(PostingsSerialization::deserialize(*data_buffer, token_info.header, token_info.cardinality, posting_list_codec));
+        postings.emplace_back(postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality));
     }
 
     return postings;
@@ -327,7 +342,7 @@ void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, posting_list_codec);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
 
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
@@ -370,7 +385,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         if (output_infos[i].header & PostingsSerialization::Flags::EmbeddedPostings)
         {
             const auto & roaring_bitmap = output_infos[i].embedded_postings->roaring;
-            PostingsSerialization::serialize(roaring_bitmap, output_infos[i].header, ostr);
+            postings_serialization.serialize(roaring_bitmap, output_infos[i].header, ostr);
         }
     }
 
@@ -454,7 +469,7 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeSparseIndex(sparse_index, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

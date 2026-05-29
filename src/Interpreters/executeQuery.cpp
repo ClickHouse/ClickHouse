@@ -1,4 +1,5 @@
 #include <Common/DateLUTImpl.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
@@ -36,6 +37,7 @@
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
@@ -68,6 +70,9 @@
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#if CLICKHOUSE_CLOUD
+#include <Common/Licensing/LicenseChecker.h>
+#endif
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
@@ -96,6 +101,7 @@
 namespace ProfileEvents
 {
     extern const Event Query;
+    extern const Event InsertQuery;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -117,6 +123,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -153,6 +160,7 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
@@ -200,9 +208,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -382,6 +388,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.query_partitions.insert(access_info.partitions.begin(), access_info.partitions.end());
         element.query_projections.insert(access_info.projections.begin(), access_info.projections.end());
         element.query_views.insert(access_info.views.begin(), access_info.views.end());
+        element.used_row_policies.insert(access_info.row_policies.begin(), access_info.row_policies.end());
     }
 
     /// We copy QueryFactoriesInfo for thread-safety, because it is possible that query context can be modified by some processor even
@@ -473,6 +480,7 @@ QueryLogElement logQueryStart(
             elem.query_partitions = info.partitions;
             elem.query_projections = info.projections;
             elem.query_views = info.views;
+            elem.used_row_policies = info.row_policies;
         }
 
         if (async_insert)
@@ -586,12 +594,13 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
+QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
 {
-    if (query_result_cache_usage == QueryResultCacheUsage::Write)
-        /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
-        /// prevent partial/garbage results in case of exceptions during query execution.
-        query_pipeline.finalizeWriteInQueryResultCache();
+    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
+    /// prevent partial/garbage results in case of exceptions during query execution.
+    /// Always called (it's a no-op if no cache writers exist in the pipeline), because subqueries may have
+    /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
+    query_pipeline.finalizeWriteInQueryResultCache();
 
     std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
@@ -750,6 +759,34 @@ void logQueryFinish(
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
 }
 
+/// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
+/// Shared between `logQueryException` (failures during execution) and `logExceptionBeforeStart`
+/// (failures before execution starts) so the two paths never drift.
+static void incrementFailedQueryProfileEvents(const ASTPtr & ast, const ClientInfo & client_info, bool internal)
+{
+    ProfileEvents::increment(ProfileEvents::FailedQuery);
+    if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
+    else if (ast->as<ASTInsertQuery>())
+        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
+        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
+    }
+
+    if (internal)
+    {
+        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
+        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
+        else if (ast->as<ASTInsertQuery>())
+            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
+    }
+}
+
 void logQueryException(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
@@ -777,27 +814,7 @@ void logQueryException(
     elem.event_time = timeInSeconds(time_now);
     elem.event_time_microseconds = timeInMicroseconds(time_now);
 
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-    else if (query_ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
-        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
-    }
-
-    if (internal)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInternalQuery);
-        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalSelectQuery);
-        else if (query_ast->as<ASTInsertQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInternalInsertQuery);
-    }
+    incrementFailedQueryProfileEvents(query_ast, context->getClientInfo(), internal);
 
     QueryStatusInfoPtr info;
     if (process_list_elem)
@@ -911,18 +928,7 @@ void logExceptionBeforeStart(
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    ProfileEvents::increment(ProfileEvents::FailedQuery);
-    if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
-    else if (ast->as<ASTInsertQuery>())
-        ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
-        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
-    }
+    incrementFailedQueryProfileEvents(ast, context->getClientInfo(), internal);
 
     QueryStatusInfoPtr info;
     if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
@@ -1120,8 +1126,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    assert(internal || CurrentThread::get().getQueryContext());
-    assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    assert(internal || CurrentThread::get().tryGetQueryContext());
+    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1166,6 +1172,21 @@ static BlockIO executeQueryImpl(
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
+        else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
+        {
+            /// Pass through to `ParserPolyglotQuery` which handles SET queries
+            /// internally (via the standard parser) even when the feature gate
+            /// is off.  This lets users recover from misconfigured profiles
+            /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
+            ParserPolyglotQuery parser(
+                max_query_size,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                settings[Setting::polyglot_dialect],
+                end,
+                settings[Setting::allow_experimental_polyglot_dialect]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
         else
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -1176,7 +1197,7 @@ static BlockIO executeQueryImpl(
             try
             {
                 /// Verify that AST formatting is consistent:
-                /// If you format AST, parse it back, and format it again, you get the same string.
+                /// If you format AST, parse it back, you get the same AST, and if you format it again, you get the same string.
                 std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
                 auto format_ast = [](ASTPtr ast)
@@ -1225,6 +1246,18 @@ static BlockIO executeQueryImpl(
                 }
 
                 chassert(ast2);
+
+                if (out_ast->getTreeHash(false) != ast2->getTreeHash(false))
+                {
+                    WriteBufferFromOwnString ast_tree1;
+                    WriteBufferFromOwnString ast_tree2;
+                    out_ast->dumpTree(ast_tree1);
+                    ast2->dumpTree(ast_tree2);
+
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Inconsistent AST formatting: the original AST:\n{}\n differs from the result of parsing back formatted AST:\n{}\n",
+                        ast_tree1.str(), ast_tree2.str());
+                }
 
                 String formatted2 = format_ast(ast2);
 
@@ -1296,7 +1329,7 @@ static BlockIO executeQueryImpl(
             }
             catch (const Exception & e)
             {
-                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under debug build.
+                /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail under the debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                     throw;
             }
@@ -1472,6 +1505,7 @@ static BlockIO executeQueryImpl(
         bool async_insert_enabled = settings[Setting::async_insert];
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
+        StoragePtr insert_table;
         if (insert_query)
         {
             if (insert_query->table_id)
@@ -1480,8 +1514,11 @@ static BlockIO executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
-                if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
-                    async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+            {
+                insert_table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context);
+                if (insert_table)
+                    async_insert_enabled |= insert_table->areAsynchronousInsertsEnabled();
+            }
         }
 
         if (insert_query && insert_query->select)
@@ -1493,9 +1530,20 @@ static BlockIO executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
-                    StoragePtr storage = context->executeTableFunction(input_function, insert_query->select->as<ASTSelectQuery>());
+                    /// For input('auto'), make sure that Context::insertion_table_info is set.
+                    if (insert_table && !context->hasInsertionTableColumnsDescription())
+                        InterpreterInsertQuery::setInsertContextValues(context, *insert_query, insert_table);
+
+                    const ASTSelectQuery * select_query_hint = insert_query->select->as<ASTSelectQuery>();
+                    if (!select_query_hint)
+                    {
+                        if (const auto * union_query = insert_query->select->as<ASTSelectWithUnionQuery>();
+                            union_query && union_query->list_of_selects->children.size() == 1)
+                            select_query_hint = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+                    }
+                    StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
+                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
 
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
@@ -1555,9 +1603,21 @@ static BlockIO executeQueryImpl(
             if (quota)
             {
                 quota_checked = true;
-                quota->used(QuotaType::QUERY_INSERTS, 1);
-                quota->used(QuotaType::QUERIES, 1);
-                quota->checkExceeded(QuotaType::ERRORS);
+                if (quota->isKeyedByNormalizedQueryHash())
+                {
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                }
+                else
+                {
+                    quota->used(QuotaType::QUERY_INSERTS, 1);
+                    quota->used(QuotaType::QUERIES, 1);
+                    quota->checkExceeded(QuotaType::ERRORS);
+                }
+
+                /// Track per-normalized-query-hash quota limits (works for all key types).
+                quota->usedPerNormalizedHash(normalized_query_hash);
             }
 
             /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
@@ -1568,10 +1628,17 @@ static BlockIO executeQueryImpl(
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
+                // Increment InsertQuery for async insert with inline data
+                ProfileEvents::increment(ProfileEvents::InsertQuery);
+
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                    auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
+                    auto source = std::make_shared<WaitForAsyncInsertSource>(
+                        std::move(result.future),
+                        timeout,
+                        context->getProcessListElement(),
+                        context->getProgressCallback());
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -1608,6 +1675,7 @@ static BlockIO executeQueryImpl(
         const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+        context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
@@ -1643,8 +1711,9 @@ static BlockIO executeQueryImpl(
             {
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
+
                     if (reader.hasCacheEntryForKey())
                     {
                         result_details.query_cache_entry_created_at = reader.entryCreatedAt();
@@ -1709,16 +1778,29 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                        if (quota->isKeyedByNormalizedQueryHash())
                         {
-                            quota->used(QuotaType::QUERY_SELECTS, 1);
+                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
+                            /// against per-hash intervals instead of shared session intervals.
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
                         }
-                        else if (out_ast->as<ASTInsertQuery>())
+                        else
                         {
-                            quota->used(QuotaType::QUERY_INSERTS, 1);
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->used(QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->used(QuotaType::QUERY_INSERTS, 1);
+                            quota->used(QuotaType::QUERIES, 1);
+                            quota->checkExceeded(QuotaType::ERRORS);
                         }
-                        quota->used(QuotaType::QUERIES, 1);
-                        quota->checkExceeded(QuotaType::ERRORS);
+
+                        /// Track per-normalized-query-hash quota limits (works for all key types).
+                        quota->usedPerNormalizedHash(normalized_query_hash);
                     }
                 }
 
@@ -1749,33 +1831,10 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
-
-                    /// If it is a non-internal SELECT query, and active (write) use of the query result cache is enabled, then add a
-                    /// processor on top of the pipeline which stores the result in the query result cache.
-                    if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
+                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
+                    /// top of the pipeline which stores the result in the query cache.
+                    if (checkCanWriteQueryResultCache(out_ast, context))
                     {
-                        /// Only use the query result cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-
-                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(out_ast, context);
-                        const bool ast_contains_system_tables = astContainsSystemTables(out_ast, context);
-
-                        const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
-                            = settings[Setting::query_cache_nondeterministic_function_handling];
-                        const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
-
-                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "The query result was not cached because the query contains a non-deterministic function."
-                                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
-                                "The query result was not cached because the query contains a system table."
-                                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
-                            && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
-                        {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
@@ -1785,7 +1844,8 @@ static BlockIO executeQueryImpl(
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
                                 created_at, expires_at,
-                                settings[Setting::query_cache_compress_entries]);
+                                settings[Setting::query_cache_compress_entries],
+                                /* is_subquery = */ false);
 
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
@@ -1811,7 +1871,6 @@ static BlockIO executeQueryImpl(
                             /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
                             if (settings[Setting::enable_reads_from_query_cache])
                                 result_details.query_cache_entry_expires_at = expires_at;
-                        }
                     }
                 }
             }
@@ -2001,15 +2060,37 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     for (size_t i = 0; i < num_runs; ++i)
     {
         ASTPtr fuzzed_ast;
+        NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
+            fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
-        WriteBufferFromOwnString fuzzed_query_buf;
-        fuzzed_ast->format(fuzzed_query_buf, IAST::FormatSettings(/*one_line=*/true));
-        String fuzzed_query = fuzzed_query_buf.str();
+        /// Skip deeply nested ASTs to avoid stack overflow during formatting or execution.
+        try
+        {
+            fuzzed_ast->checkDepth(500);
+        }
+        catch (...) // Ok: skip fuzzed ASTs that are too deeply nested
+        {
+            continue;
+        }
+
+        /// The fuzzer can produce structurally invalid ASTs (e.g. mismatched children counts)
+        /// that cause crashes during formatting. Catch and skip those.
+        String fuzzed_query;
+        try
+        {
+            WriteBufferFromOwnString fuzzed_query_buf;
+            fuzzed_ast->format(fuzzed_query_buf, IAST::FormatSettings(/*one_line=*/true));
+            fuzzed_query = fuzzed_query_buf.str();
+        }
+        catch (...) // Ok: skip fuzzed ASTs that cannot be formatted
+        {
+            continue;
+        }
 
         if (fuzzed_query.size() > 10000)
         {
@@ -2020,32 +2101,73 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
+        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
+        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
+        context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+        /// Declare contexts outside try block so we can reset transactions on all paths.
+        /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
+        /// which uses getCurrentExceptionCode with bare `throw;` - that only works
+        /// inside a catch handler, not during stack unwinding.
+        ContextMutablePtr fuzz_session_context;
+        ContextMutablePtr fuzz_context;
+
+        auto reset_transactions = [&]()
+        {
+            if (fuzz_context)
+                fuzz_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+            if (fuzz_session_context)
+                fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+        };
+
         try
         {
-            /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-            context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-            context->setCurrentTransaction(NO_TRANSACTION_PTR);
+            fuzz_session_context = Context::createCopy(context);
+            fuzz_session_context->makeSessionContext();
 
-            auto fuzz_context = Context::createCopy(context);
+            fuzz_context = Context::createCopy(fuzz_session_context);
+            fuzz_context->makeQueryContext();
+            fuzz_context->resetInputCallbacks();
+            fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
+            fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+
+            /// Limit resources for each fuzzed query to prevent runaway execution.
+            fuzz_context->setSetting("max_execution_time", Field(UInt64(10)));
+            fuzz_context->setSetting("max_memory_usage", Field(UInt64(1024 * 1024 * 1024)));  /// 1 GiB
+            fuzz_context->setSetting("max_result_rows", Field(UInt64(1000)));
+            fuzz_context->setSetting("max_result_bytes", Field(UInt64(10 * 1024 * 1024)));  /// 10 MiB
+
             fuzz_context->setCurrentQueryId("");
+            if (!fuzzed_query_params.empty())
+                fuzz_context->setQueryParameters(fuzzed_query_params);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
             if (result.second.pipeline.initialized())
             {
-                if (result.second.pipeline.pulling())
+                if (result.second.pipeline.pushing())
                 {
-                    result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    /// Cannot execute pushing pipelines (e.g. INSERT) without providing input data, just cancel.
+                    result.second.pipeline.cancel();
                 }
-                CompletedPipelineExecutor executor(result.second.pipeline);
-                executor.execute();
+                else
+                {
+                    if (result.second.pipeline.pulling())
+                    {
+                        result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
+                    }
+                    CompletedPipelineExecutor executor(result.second.pipeline);
+                    executor.execute();
+                }
             }
 
+            reset_transactions();
             base_ast = fuzzed_ast;
         }
         catch (...)
         {
+            reset_transactions();
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->notifyQueryFailed(fuzzed_ast);
@@ -2235,7 +2357,7 @@ void executeQuery(
         {
             set_result_details(result_details);
         }
-        catch (...)
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
             /// This exception can be ignored.
             /// because if the code goes here, it means there's already an exception raised during query execution,
@@ -2319,23 +2441,23 @@ void executeQuery(
         {
             if (key_value.getType() != Field::Types::Tuple
                 || key_value.safeGet<Tuple>().size() != 2)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the `additional_http_headers` setting must be a Map");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of the `http_response_headers` setting must be a Map");
 
             if (key_value.safeGet<Tuple>().at(0).getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `additional_http_headers` setting must be Strings");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys of the `http_response_headers` setting must be Strings");
 
             if (key_value.safeGet<Tuple>().at(1).getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` setting must be Strings");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `http_response_headers` setting must be Strings");
 
             String key = key_value.safeGet<Tuple>().at(0).safeGet<String>();
             String value = key_value.safeGet<Tuple>().at(1).safeGet<String>();
 
             if (std::find_if(key.begin(), key.end(), isControlASCII) != key.end()
                 || std::find_if(value.begin(), value.end(), isControlASCII) != value.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The values of the `additional_http_headers` cannot contain ASCII control characters");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The keys and values of the `http_response_headers` setting cannot contain ASCII control characters");
 
             if (!result_details.additional_headers.emplace(key, value).second)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `additional_http_headers` setting");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are duplicate entries in the `http_response_headers` setting");
         }
     }
 

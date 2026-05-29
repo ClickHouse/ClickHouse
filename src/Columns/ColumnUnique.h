@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
@@ -78,9 +77,9 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override
     {
-        return getNestedColumn()->getValueNameAndTypeImpl(name_buf, n, options);
+        getNestedColumn()->getValueNameImpl(name_buf, n, options);
     }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     std::string_view getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
@@ -637,7 +636,7 @@ static void checkIndexes(const ColumnVector<IndexType> & indexes, size_t max_dic
     {
         if (data[i] >= max_dictionary_size)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is grated or equal "
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found index {} at position {} which is greater or equal "
                             "than dictionary size {}", toString(data[i]), toString(i), toString(max_dictionary_size));
         }
     }
@@ -728,6 +727,34 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         else
         {
             auto ref = src_column->getDataAt(row);
+
+            // NaN can contain different sign or mantissa bits, but we need to consider all NaNs equal.
+            if constexpr (is_float_vector_v<ColumnType>)
+            {
+                auto value = unalignedLoad<typename ColumnType::ValueType>(ref.data());
+                if (isNaN(value))
+                {
+                    auto nan = NaNOrZero<typename ColumnType::ValueType>();
+                    auto nan_ref = std::string_view(reinterpret_cast<const char *>(&nan), sizeof(nan));
+                    MutableColumnPtr res = nullptr;
+
+                    if (secondary_index && next_position >= max_dictionary_size)
+                    {
+                        auto insertion_point = reverse_index.getInsertionPoint(nan_ref);
+                        if (insertion_point == reverse_index.lastInsertionPoint())
+                            res = insert_key(nan_ref, *secondary_index);
+                        else
+                            positions[num_added_rows] = static_cast<IndexType>(insertion_point);
+                    }
+                    else
+                        res = insert_key(nan_ref, reverse_index);
+
+                    if (res)
+                        return res;
+                    continue;
+                }
+            }
+
             MutableColumnPtr res = nullptr;
 
             if (secondary_index && next_position >= max_dictionary_size)

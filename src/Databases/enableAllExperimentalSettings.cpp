@@ -19,6 +19,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_fuzz_query_functions", 1);
     context->setSetting("allow_experimental_hash_functions", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
+    context->setSetting("allow_experimental_text_index_lazy_apply", 1);
     context->setSetting("allow_experimental_window_functions", 1);
     context->setSetting("allow_experimental_geo_types", 1);
     context->setSetting("allow_experimental_map_type", 1);
@@ -26,6 +27,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_bfloat16_type", 1);
     context->setSetting("allow_experimental_time_time64_type", 1);
     context->setSetting("allow_experimental_correlated_subqueries", 1);
+    context->setSetting("allow_experimental_unique_key", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
     context->setSetting("allow_experimental_nullable_tuple_type", 1);
 
@@ -58,11 +60,19 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_lightweight_update", 1);
     context->setSetting("allow_insert_into_iceberg", 1);
     context->setSetting("allow_experimental_iceberg_compaction", 1);
+    context->setSetting("allow_experimental_cleanup_old_data_files_compaction", 1);
+    context->setSetting("allow_iceberg_remove_orphan_files", 1);
+    context->setSetting("allow_experimental_expire_snapshots", 1);
     context->setSetting("allow_experimental_delta_lake_writes", 1);
+    context->setSetting("allow_experimental_paimon_storage_engine", 1);
     context->setSetting("allow_dynamic_type_in_join_keys", 1);
     context->setSetting("allow_experimental_alias_table_engine", 1);
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
+    context->setSetting("allow_experimental_json_lazy_type_hints", 1);
+    context->setSetting("allow_experimental_full_text_index", 1);
+
+    context->setSetting("allow_experimental_ai_functions", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);

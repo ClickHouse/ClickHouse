@@ -2,7 +2,6 @@
 
 #if USE_H3
 
-#include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -28,12 +27,16 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3KRing : public IFunction
+class FunctionH3KRing final : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
+    H3Validator validator;
+
+    explicit FunctionH3KRing(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3KRing>(context); }
 
     std::string getName() const override { return name; }
 
@@ -101,9 +104,6 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const H3Index origin_hindex = data_hindex[row];
-
-            validateH3Cell(origin_hindex);
-
             const int k = data_k[row];
 
             /// Overflow is possible. The function maxGridDiskSize does not check for overflow.
@@ -116,8 +116,16 @@ public:
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
-            const auto vec_size = maxGridDiskSize(k);
-            std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
+            if (!validator.validateCell(origin_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
+
+            int64_t disk_size = 0;
+            maxGridDiskSize(k, &disk_size);
+            const auto vec_size = static_cast<size_t>(disk_size);
+            VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 

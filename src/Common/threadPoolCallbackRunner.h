@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <exception>
 #include <future>
 
@@ -23,14 +23,14 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 
 /// NOTE When using ThreadPoolCallbackRunnerUnsafe you MUST ensure that all async tasks are finished
 /// before any objects they may use are destroyed.
-/// A common mistake is capturing some some local objects in lambda and passing it to the runner.
+/// A common mistake is capturing some local objects in lambda and passing it to the runner.
 /// In case of exception, these local objects will be destroyed before scheduled tasks are finished.
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
         {
@@ -202,7 +202,7 @@ public:
         auto task = std::make_shared<Task>();
         task->future = promise->get_future();
 
-        auto task_func = [this, task, thread_group = CurrentThread::getGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [this, task, thread_group = getCurrentThreadGroup(), my_callback = std::move(callback), promise]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))
