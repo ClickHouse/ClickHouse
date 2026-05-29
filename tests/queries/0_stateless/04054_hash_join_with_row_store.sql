@@ -27,7 +27,7 @@ SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null SETTINGS log_co
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null SETTINGS max_bytes_for_hash_join_row_store = 1, log_comment = 'rs_04054_max_bytes';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = 0, log_comment = 'rs_04054_min_cols_zero';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 SELECT
     sumIf(num, log_comment = 'rs_04054_enabled') > 0 AS enabled,
