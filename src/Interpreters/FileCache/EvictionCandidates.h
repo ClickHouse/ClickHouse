@@ -96,7 +96,7 @@ public:
     using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
     using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
 
-    EvictionCandidates();
+    explicit EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_);
     ~EvictionCandidates();
 
     /// Total number of eviction candidates.
@@ -177,6 +177,8 @@ private:
     bool removed_queue_entries = false;
 
     IFileCachePriority::HoldSpacePtr hold_space;
+
+    IFileCachePriority::OnEvictCallback on_evict_callback;
 
     LoggerPtr log;
 };

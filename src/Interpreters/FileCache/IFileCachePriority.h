@@ -7,6 +7,7 @@
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 #include <fmt/ranges.h>
@@ -15,6 +16,7 @@ namespace DB
 {
 struct FileCacheReserveStat;
 class EvictionCandidates;
+class FileSegment;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
@@ -392,6 +394,8 @@ public:
     virtual size_t getHoldElements() = 0;
 
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
+
+    using OnEvictCallback = std::function<void(const FileSegment & segment)>;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);

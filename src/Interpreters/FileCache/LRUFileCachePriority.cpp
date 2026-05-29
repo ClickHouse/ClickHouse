@@ -11,6 +11,8 @@ namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheSize;
     extern const Metric FilesystemCacheElements;
+    extern const Metric FilesystemCachePriorityQueueElements;
+    extern const Metric FilesystemCacheInvalidatedElements;
 }
 
 namespace ProfileEvents
@@ -135,6 +137,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     }
 
     auto iterator = queue.insert(queue.end(), entry);
+    CurrentMetrics::add(CurrentMetrics::FilesystemCachePriorityQueueElements);
 
     if (entry->size)
         state->add(entry->size, /* elements */1, *state_lock);
@@ -154,6 +157,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     if (entry.size)
         state->sub(entry.size, /* elements */1);
 
+    const bool was_invalidated = entry.getState() == Entry::State::Invalidated;
     entry.setRemoved(lock);
 
     LOG_TEST(
@@ -161,6 +165,11 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
         entry.key, entry.offset, entry.size.load());
 
     moveEvictionPosIfEqual(it, lock);
+
+    if (was_invalidated)
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheInvalidatedElements);
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCachePriorityQueueElements);
+
     return queue.erase(it);
 }
 
@@ -641,6 +650,7 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     size_t entry_size = entry_ptr->size;
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheInvalidatedElements);
 
     if (entry_size)
         cache_priority->state->sub(entry_size, 1);

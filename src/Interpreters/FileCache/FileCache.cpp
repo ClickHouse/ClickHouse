@@ -50,6 +50,8 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
+    extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
 }
@@ -1190,7 +1192,7 @@ bool FileCache::doTryReserve(
         }
     }
 
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 
     /// Collect candidates for eviction and
@@ -1466,7 +1468,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
 
     FileCacheReserveStat stat;
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
 
     IFileCachePriority::CollectStatus desired_size_status =  IFileCachePriority::CollectStatus::CANNOT_EVICT;
     /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
@@ -2056,6 +2058,12 @@ FileCache::~FileCache()
     assertCacheCorrectness();
 }
 
+void FileCache::onSegmentEvicted(const FileSegment & segment)
+{
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.range().size());
+}
+
 void FileCache::deactivateBackgroundOperations()
 {
     shutdown.store(true);
@@ -2395,7 +2403,7 @@ bool FileCache::doDynamicResizeImpl(
 
     chassert(!eviction_info->hasHoldSpace());
 
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(&FileCache::onSegmentEvicted);
     if (!eviction_info->requiresEviction())
     {
         /// Nothing needs to be evicted,
