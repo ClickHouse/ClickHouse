@@ -246,7 +246,7 @@ points are encoded and must match the tile.
 ## Serving tiles over HTTP {#serving-tiles-over-http}
 
 ClickHouse does not expose a tile endpoint by default: the HTTP interface only accepts queries at `/`. A clean
-`/tile/{z}/{x}/{y}` URL is added by the operator with a [predefined query handler](../../../interfaces/http.md) in the
+`/tile/{z}/{x}/{y}` URL is added by the operator with a [predefined query handler](/interfaces/http) in the
 server configuration. The handler's `url` uses the `regex:` form to capture the path segments, binds them to query
 parameters, and returns the bytes with `FORMAT RawBLOB`:
 
