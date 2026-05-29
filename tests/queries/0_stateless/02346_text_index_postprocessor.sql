@@ -670,39 +670,6 @@ SELECT count() FROM tab WHERE val IN ('foo', 'bar');              -- 0
 
 DROP TABLE tab;
 
-SELECT '26. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.';
--- Mirrors test 10 for hasTokenOrNull. hasTokenOrNull is treated like hasToken in the optimization
--- (Exact direct-read mode + needApplyPostprocessor), so the rewrite applies on both materialized
--- and non-materialized parts. Without the fix, granule pruning would diverge from row-level
--- evaluation when the postprocessor maps the needle to empty.
-
-CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
-SYSTEM STOP MERGES tab;
-
--- Old parts: row-scan path (no index materialized).
-INSERT INTO tab VALUES (1, 'the quick'), (2, 'hello world');
-
-ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val));
-
--- New parts: indexed path.
-INSERT INTO tab VALUES (3, 'the apple'), (4, 'foo bar');
-
--- Stop word 'the' must return 0 across both old (row-scan) and new (index) parts.
-SELECT count() FROM tab WHERE hasTokenOrNull(val, 'the');
--- Real tokens are found consistently regardless of the path used.
-SELECT count() FROM tab WHERE hasTokenOrNull(val, 'apple');  -- row 3, new part (index)
-SELECT count() FROM tab WHERE hasTokenOrNull(val, 'hello');  -- row 2, old part (row-scan)
--- Invalid needle: hasTokenOrNull returns NULL, count() does not count NULLs.
-SELECT count() FROM tab WHERE hasTokenOrNull(val, '!@#');
--- NULL semantics are preserved by the optimization: invalid needles return NULL on every row,
--- valid-but-missing needles return 0 — granule pruning never converts a 0 into a NULL.
-SELECT countIf(hasTokenOrNull(val, '!@#') IS NULL) FROM tab;       -- 4 (all rows NULL)
-SELECT countIf(hasTokenOrNull(val, 'missing') = 0) FROM tab;       -- 4 (all rows 0, no match)
-SELECT countIf(hasTokenOrNull(val, 'missing') IS NULL) FROM tab;   -- 0
-
-SYSTEM START MERGES tab;
-DROP TABLE tab;
-
 SELECT '27. Negative tests.';
 
 SELECT '- The postprocessor expression must reference the index column';

@@ -208,7 +208,6 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAll"
         || function_name == "like"
         || function_name == "ilike"
-        || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "match";
@@ -225,7 +224,6 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
     if (function_name == "hasToken"
-        || function_name == "hasTokenOrNull"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
     {

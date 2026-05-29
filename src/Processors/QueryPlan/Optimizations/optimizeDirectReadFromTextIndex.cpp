@@ -402,7 +402,7 @@ private:
     /// has/hasAll/hasAny bypass both transforms.
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasTokenOrNull"
+        return function_name == "hasToken"
             || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
@@ -410,7 +410,7 @@ private:
     /// hasPhrase keeps its needle as an unsplit phrase string so per-token postprocessing does not apply.
     static bool needApplyPostprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasTokenOrNull"
+        return function_name == "hasToken"
             || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
     }
 
@@ -587,7 +587,7 @@ private:
             {
                 auto haystack_name = getNameWithoutAliases(new_children[0]);
                 ActionsDAG::NodeRawConstPtrs merged_outputs;
-                actions_dag.mergeNodes(postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type).clone(), &merged_outputs);
+                actions_dag.mergeNodes(postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type), &merged_outputs);
                 chassert(merged_outputs.size() == 1);
                 new_children[0] = merged_outputs.front();
             }

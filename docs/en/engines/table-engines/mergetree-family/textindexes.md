@@ -316,13 +316,13 @@ Usage of non-deterministic functions is disallowed.
 **Function compatibility with preprocessor / tokenizer / postprocessor**.
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
 For most functions (`=`, `IN`, `hasPhrase`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
-For token search functions (`hasToken`, `hasTokenOrNull`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. When the `array` tokenizer is used with a postprocessor, the haystack column is also normalized element-wise at query time, so both sides of the comparison are consistently transformed (e.g., enabling case-insensitive matching for `hasAllTokens(arr, ['FOO'])` with a `lower` postprocessor).
+For token search functions (`hasToken`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts. When the `array` tokenizer is used with a postprocessor, the haystack column is also normalized element-wise at query time, so both sides of the comparison are consistently transformed (e.g., enabling case-insensitive matching for `hasAllTokens(arr, ['FOO'])` with a `lower` postprocessor).
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
 | Function | Preprocessor | Compatible tokenizers | Postprocessor |
 |---|---|---|---|
 | `=`, `IN` | yes | any | yes |
-| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken), [`hasTokenOrNull`](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) | yes | any (designed for `splitByNonAlpha`) | yes |
+| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken) | yes | any (designed for `splitByNonAlpha`) | yes |
 | [`hasAnyTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | any | yes |
 | [`hasAnyTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | any | yes |
 | [`hasPhrase`](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
@@ -338,7 +338,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 ² `ILIKE` is only supported via direct-read mode (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer). There is no hint-mode fallback: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`. The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
 The `array` tokenizer applies the postprocessor to each array element during index build, just as other tokenizers apply it to each generated token. At query time, the behavior depends on the function:
-- For `hasToken`, `hasTokenOrNull`, `hasAllTokens`, and `hasAnyTokens`: the postprocessor is applied to both the haystack column (element-wise) and the search needle, enabling fully normalized matching (e.g., case-insensitive array search).
+- For `hasToken`, `hasAllTokens`, and `hasAnyTokens`: the postprocessor is applied to both the haystack column (element-wise) and the search needle, enabling fully normalized matching (e.g., case-insensitive array search).
 - For all other functions (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): only the search needle is postprocessed for the index-hint lookup; the row-level predicate still compares against the original column values.
 
 Example for stop word filtering:
@@ -600,16 +600,16 @@ Similarly, `endsWith` should be used with a leading space:
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-#### `hasToken` and `hasTokenOrNull` {#functions-example-hastoken-hastokenornull}
+#### `hasToken` {#functions-example-hastoken}
 
 :::note
-Functions `hasToken` and `hasTokenOrNull` look straightforward to use but they have certain pitfalls with non-default tokenizers and preprocessor or postprocessor expressions.
-We recommend using functions `hasAnyTokens` and `hasAllTokens` instead.
+`hasToken` has certain pitfalls when used for lookups in text indexes with non-`splitByNonAlpha` tokenizers and/or preprocessor/postprocessor expressions.
+We recommend using `hasAnyTokens` and `hasAllTokens` instead.
 
 The case-insensitive variants `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` are not text-index-aware — they always run as a full row scan even on text-indexed columns. For case-insensitive matching, use a `lower(...)` preprocessor or postprocessor and combine it with `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 :::
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) and [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) match against a single given token.
+Function [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken) matches against a single given token.
 
 Unlike the previously mentioned functions, they do not tokenize the search term (they assume the input is a single token).
 
