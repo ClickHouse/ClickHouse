@@ -989,6 +989,9 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
     {
         if (node.type == ActionType::ARRAY_JOIN)
             continue;
+        /// identify inputs and placeholders by node pointer (do not dedup)
+        if (node.type == ActionType::INPUT || node.type == ActionType::PLACEHOLDER)
+            continue;
         /// COLUMN that came from a non-deterministic source - two such columns aren't interchangeable
         /// even if their current values match
         if (node.type == ActionType::COLUMN && !node.is_deterministic_constant)
@@ -1011,7 +1014,7 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
         {
             case ActionType::INPUT:
             case ActionType::PLACEHOLDER:
-                key.name = node.result_name;
+                /// skipped above
                 break;
             case ActionType::COLUMN:
                 key.column = node.column;
