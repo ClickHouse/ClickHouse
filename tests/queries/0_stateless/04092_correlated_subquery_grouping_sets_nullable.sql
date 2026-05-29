@@ -16,7 +16,7 @@ SET group_by_use_nulls = 1;
 
 SELECT replaceRegexpOne(trim(explain), ' : [0-9]+$', '') AS planner_action
 FROM (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, compact = 0, pretty = 0
     SELECT bitNot((SELECT bitNot(number)))
     FROM numbers(1)
     GROUP BY number WITH ROLLUP
