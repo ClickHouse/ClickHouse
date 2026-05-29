@@ -1,6 +1,8 @@
-SET explain_query_plan_default = 'legacy';
--- Tags: zookeeper, no-encrypted-storage
+-- Tags: zookeeper
 -- https://github.com/ClickHouse/ClickHouse/issues/72887
+
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t0;
 
 CREATE TABLE t0 (c0 Int) ENGINE = Memory();
