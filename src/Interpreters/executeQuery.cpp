@@ -1478,6 +1478,17 @@ static BlockIO executeQueryImpl(
                 query_table = query_with_table_output->getTable();
             }
 
+            /// The RETURNING subquery is an independent `SELECT` that must be normalized with its own `SETTINGS`, which
+            /// are applied only after the INSERT runs (see `buildReturningSelectPipeline`). Detach it from the INSERT's
+            /// child list so the global AST visitors below do not normalize it using the outer INSERT settings (for
+            /// example resolving its `UNION` with the outer `union_default_mode` instead of the subquery's own).
+            ASTPtr detached_returning_select;
+            if (auto * insert_with_returning = out_ast->as<ASTInsertQuery>(); insert_with_returning && insert_with_returning->returning_select)
+            {
+                detached_returning_select = insert_with_returning->returning_select;
+                std::erase(insert_with_returning->children, detached_returning_select);
+            }
+
             /// Propagate WITH statement to children ASTSelect.
             if (settings[Setting::enable_global_with_statement])
             {
@@ -1494,6 +1505,9 @@ static BlockIO executeQueryImpl(
                 NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
                 NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
             }
+
+            if (detached_returning_select)
+                out_ast->as<ASTInsertQuery>()->children.push_back(detached_returning_select);
 
             /// Check the limits.
             checkASTSizeLimits(*out_ast, settings);

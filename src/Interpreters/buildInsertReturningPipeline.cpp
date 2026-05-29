@@ -2,10 +2,13 @@
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
+#include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -84,23 +87,46 @@ ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, Co
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_global_with_statement;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsSetOperationMode union_default_mode;
 }
 
 QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
 {
     rejectUnsupportedReturningSettings(returning_select);
     auto returning_context = makeReturningSelectContext(returning_select, context);
-    const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
-    if (returning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+
+    /// `executeQueryImpl` detaches the RETURNING subquery from the INSERT before running the global AST visitors, so
+    /// they do not normalize it with the outer INSERT settings. Run the same normalization passes here using the
+    /// subquery's own settings, so the subquery is normalized exactly as the equivalent standalone `SELECT` would be
+    /// (for example, `union_default_mode` in the subquery's `SETTINGS` decides how its top-level `UNION` is resolved).
+    ASTPtr select_to_interpret = returning_select;
+    const auto & returning_settings = returning_context->getSettingsRef();
+    if (returning_settings[Setting::enable_global_with_statement])
+        ApplyWithGlobalVisitor::visit(select_to_interpret);
     {
-        InterpreterSelectQueryAnalyzer interpreter(returning_select, returning_context, select_query_options);
+        SelectIntersectExceptQueryVisitor::Data data{
+            returning_settings[Setting::intersect_default_mode], returning_settings[Setting::except_default_mode]};
+        SelectIntersectExceptQueryVisitor{data}.visit(select_to_interpret);
+    }
+    {
+        NormalizeSelectWithUnionQueryVisitor::Data data{returning_settings[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(select_to_interpret);
+    }
+
+    const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
+    if (returning_settings[Setting::allow_experimental_analyzer])
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_to_interpret, returning_context, select_query_options);
         return QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
     }
 
-    InterpreterSelectWithUnionQuery interpreter(returning_select, returning_context, select_query_options);
+    InterpreterSelectWithUnionQuery interpreter(select_to_interpret, returning_context, select_query_options);
     return QueryPipelineBuilder::getPipeline(interpreter.buildQueryPipeline());
 }
 

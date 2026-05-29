@@ -24,4 +24,7 @@ returning memory limit rejection
 returning analyzer setting
 1
 1
+returning union_default_mode
+1
+1
 async insert rejection

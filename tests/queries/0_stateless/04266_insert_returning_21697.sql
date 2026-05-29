@@ -67,6 +67,15 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) SETTINGS allow_experimental_analyzer=1 RETURNING (SELECT 1 SETTINGS allow_experimental_analyzer=0) VALUES (105, 'analyzer');
 SELECT count() AS inserted_after_returning_analyzer FROM t_insert_returning WHERE id = 105;
 
+-- The RETURNING subquery must be normalized with its own SETTINGS, not the outer INSERT's: the outer session uses
+-- UNION ALL, but the subquery overrides union_default_mode to DISTINCT, so its UNION must collapse to a single row.
+SELECT 'returning union_default_mode';
+TRUNCATE TABLE t_insert_returning;
+SET union_default_mode = 'ALL';
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 UNION SELECT 1 SETTINGS union_default_mode='DISTINCT') VALUES (106, 'union');
+SET union_default_mode = '';
+SELECT count() AS inserted_after_returning_union FROM t_insert_returning WHERE id = 106;
+
 -- async_insert is rejected
 SELECT 'async insert rejection';
 SET async_insert = 1;
