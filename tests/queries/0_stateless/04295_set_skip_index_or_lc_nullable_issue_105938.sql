@@ -33,9 +33,19 @@ INSERT INTO t_105938 SELECT 'has-republisher', NULL FROM numbers(100);
 INSERT INTO t_105938 SELECT 'no-match',        NULL FROM numbers(10);
 
 -- All three expressions must agree: 100 matching rows.
+--
+-- The first query is the buggy path. Pin the settings that gate the partial
+-- disjunction skip-index code so the stateless runner cannot accidentally
+-- mask the regression: under randomization a pre-fix binary can return `100`
+-- here just because `use_skip_indexes_on_data_read = 1` or
+-- `use_skip_indexes_for_disjunctions = 0` skipped the buggy path entirely.
 
 SELECT count() FROM t_105938
-WHERE (n = 'republisher' OR s LIKE '%republisher%');
+WHERE (n = 'republisher' OR s LIKE '%republisher%')
+SETTINGS use_skip_indexes = 1,
+         use_skip_indexes_on_data_read = 0,
+         use_skip_indexes_for_disjunctions = 1,
+         use_query_condition_cache = 0;
 
 SELECT count() FROM t_105938
 WHERE (n = 'republisher' OR s LIKE '%republisher%')
