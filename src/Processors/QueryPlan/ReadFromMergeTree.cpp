@@ -240,6 +240,7 @@ namespace Setting
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
     extern const SettingsBool distributed_index_analysis_only_on_coordinator;
+    extern const SettingsBool read_in_order_allow_per_partition_lazy_read;
 }
 
 namespace MergeTreeSetting
@@ -835,6 +836,93 @@ Pipe ReadFromMergeTree::readInOrder(
     return pipe;
 }
 
+Pipe ReadFromMergeTree::readInOrderByPartitions(
+    RangesInDataParts parts_with_ranges,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    const Names & column_names,
+    PoolSettings pool_settings,
+    ReadType read_type,
+    UInt64 read_limit,
+    const SortDescription & sort_description,
+    ExpressionActionsPtr sorting_key_expr)
+{
+    if (parts_with_ranges.empty())
+        return {};
+
+    std::vector<std::pair<String, RangesInDataParts>> partition_groups;
+    {
+        String current_partition_id;
+        for (auto & part_with_ranges : parts_with_ranges)
+        {
+            String partition_id = part_with_ranges.data_part->info.getPartitionId();
+            if (partition_groups.empty() || partition_id != current_partition_id)
+            {
+                partition_groups.emplace_back(std::move(partition_id), RangesInDataParts{});
+                current_partition_id = partition_groups.back().first;
+            }
+            partition_groups.back().second.emplace_back(std::move(part_with_ranges));
+        }
+    }
+
+    if (partition_groups.size() <= 1)
+        return readInOrder(std::move(partition_groups.front().second), index_build_context, column_names, pool_settings, read_type, read_limit);
+
+    if (read_type == ReadType::InReverseOrder)
+        std::reverse(partition_groups.begin(), partition_groups.end());
+
+    Pipes partition_pipes;
+    partition_pipes.reserve(partition_groups.size());
+
+    for (auto & [partition_id, partition_parts] : partition_groups)
+    {
+        auto partition_pipe = readInOrder(
+            std::move(partition_parts), index_build_context, column_names, pool_settings, read_type, read_limit);
+
+        if (partition_pipe.empty())
+            continue;
+
+        partition_pipe.addSimpleTransform([&sorting_key_expr](const SharedHeader & header)
+        {
+            return std::make_shared<ExpressionTransform>(header, sorting_key_expr);
+        });
+
+        if (partition_pipe.numOutputPorts() > 1)
+        {
+            auto transform = std::make_shared<MergingSortedTransform>(
+                partition_pipe.getSharedHeader(),
+                partition_pipe.numOutputPorts(),
+                sort_description,
+                block_size.max_block_size_rows,
+                /*max_block_size_bytes=*/0,
+                /*max_dynamic_subcolumns=*/std::nullopt,
+                SortingQueueStrategy::Batch,
+                /*limit=*/0,
+                /*always_read_till_end=*/false,
+                /*out_row_sources_buf=*/nullptr,
+                /*filter_column_name=*/std::nullopt,
+                /*use_average_block_sizes=*/false,
+                /*apply_virtual_row_conversions*/false);
+
+            partition_pipe.addTransform(std::move(transform));
+        }
+
+        partition_pipes.emplace_back(std::move(partition_pipe));
+    }
+
+    if (partition_pipes.empty())
+        return {};
+
+    if (partition_pipes.size() == 1)
+        return std::move(partition_pipes.front());
+
+    /// Unite all partition pipes and add ConcatProcessor to read them sequentially.
+    auto result_pipe = Pipe::unitePipes(std::move(partition_pipes));
+    auto concat = std::make_shared<ConcatProcessor>(result_pipe.getSharedHeader(), result_pipe.numOutputPorts());
+    result_pipe.addTransform(std::move(concat));
+
+    return result_pipe;
+}
+
 Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1220,6 +1308,133 @@ static ActionsDAG createProjection(const Block & header)
     return ActionsDAG(header.getNamesAndTypesList());
 }
 
+static bool arePrefixSortingColumnsFixed(
+    const StorageSnapshotPtr & storage_snapshot,
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    const ContextPtr & context,
+    size_t partition_sort_key_index)
+{
+    if (partition_sort_key_index == 0)
+        return true;
+
+    if (!filter_actions_dag)
+        return false;
+
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+
+    for (size_t j = 0; j < partition_sort_key_index && j < sorting_key.column_names.size(); ++j)
+    {
+        const auto & col_name = sorting_key.column_names[j];
+
+        ActionsDAGWithInversionPushDown filter_dag(filter_actions_dag->getOutputs().front(), context);
+        auto key_expr = std::make_shared<ExpressionActions>(sorting_key.expression->getActionsDAG().clone());
+        KeyCondition key_condition(filter_dag, context, Names{col_name}, key_expr);
+
+        /// The column is "fixed" only if there is exactly one single-point range
+        /// Multiple single-point ranges (e.g. a IN (1, 2)) do NOT count as fixed
+        /// because different partitions may interleave on those values.
+        auto column_ranges = key_condition.extractBounds();
+        if (column_ranges.size() != 1)
+            return false;
+
+        const auto & range = column_ranges[0];
+        if (!range.left_included || !range.right_included || !Range::equals(range.left, range.right))
+            return false;
+    }
+
+    return true;
+}
+
+static std::optional<size_t> isPartitionKeyMonotonicInSortKey(
+    const StorageSnapshotPtr & storage_snapshot,
+    const InputOrderInfoPtr & input_order_info)
+{
+    const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
+    if (partition_key.column_names.empty())
+        return 0;
+
+    if (partition_key.column_names.size() > 1)
+        return std::nullopt;
+
+    /// The partition key's INPUT leaf must be one of these columns.
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    std::unordered_map<String, size_t> sort_key_index;
+    for (size_t i = 0; i < std::min(input_order_info->used_prefix_of_sorting_key_size, sorting_key.column_names.size()); ++i)
+        sort_key_index[sorting_key.column_names[i]] = i;
+
+    const auto & dag = partition_key.expression->getActionsDAG();
+    const auto & outputs = dag.getOutputs();
+
+    /// Find the output node corresponding to the partition key column.
+    /// The expression DAG may have multiple outputs (e.g. the computed partition
+    /// column plus the original input columns), so we look up by name.
+    const auto & partition_col_name = partition_key.column_names[0];
+    const ActionsDAG::Node * partition_output = nullptr;
+    for (const auto * output : outputs)
+    {
+        if (output->result_name == partition_col_name)
+        {
+            partition_output = output;
+            break;
+        }
+    }
+    if (!partition_output)
+        return std::nullopt;
+
+    /// Walk the partition key output node back to its INPUT leaf, checking that
+    /// every function on the path is always-monotonic with exactly one non-constant argument
+    const auto * node = partition_output;
+    while (true)
+    {
+        switch (node->type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            {
+                auto it = sort_key_index.find(node->result_name);
+                if (it != sort_key_index.end())
+                    return it->second;
+                return std::nullopt;
+            }
+
+            case ActionsDAG::ActionType::COLUMN:
+                return 0;
+
+            case ActionsDAG::ActionType::ALIAS:
+                node = node->children.front();
+                break;
+
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                if (!node->function_base || !node->function_base->hasInformationAboutMonotonicity())
+                    return std::nullopt;
+
+                const ActionsDAG::Node * monotonic_child = nullptr;
+                for (const auto * child : node->children)
+                {
+                    if (child->column && isColumnConst(*child->column))
+                        continue;
+                    if (monotonic_child) /// More than one non-const arg.
+                        return std::nullopt;
+                    monotonic_child = child;
+                }
+                if (!monotonic_child)
+                    return std::nullopt;
+
+                auto mono = node->function_base->getMonotonicityForRange(
+                    *monotonic_child->result_type, {}, {});
+                if (!mono.is_monotonic || !mono.is_always_monotonic || !mono.is_positive)
+                    return std::nullopt;
+
+                node = monotonic_child;
+                break;
+            }
+
+            default:
+                return std::nullopt;
+        }
+    }
+}
+
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts_with_ranges,
     const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -1337,12 +1552,74 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
+    size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
+    auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
+    order_key_prefix_ast->children.resize(prefix_size);
+
+    auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+    auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
+    const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
+    std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+
+    SortDescription sort_description;
+    sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+
+    sort_description.reserve(prefix_size);
+    for (size_t i = 0; i < prefix_size; ++i)
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sorting_columns[i], input_order_info->direction * -1);
+        else
+            sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
+    }
+
+    auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
+
+    bool use_lazy_partition_reading = settings[Setting::read_in_order_allow_per_partition_lazy_read]
+        && !is_parallel_reading_from_replicas
+        && !output_each_partition_through_separate_port
+        && countPartitions(parts_with_ranges) > 1;
+
+    /// Check whether we can use lazy partition reading optimization.
+    /// 1. The partition key is a monotonic function of some sorting key column C_i
+    /// 2. All sorting key columns C_0..C_{i-1} before C_i are fixed (pinned to
+    ///    constants) by the WHERE clause.
+    if (use_lazy_partition_reading)
+    {
+        auto idx = isPartitionKeyMonotonicInSortKey(storage_snapshot, input_order_info);
+        if (!idx || !arePrefixSortingColumnsFixed(storage_snapshot, query_info.filter_actions_dag, context, *idx))
+            use_lazy_partition_reading = false;
+    }
+
     Pipes pipes;
     /// For parallel replicas the split will be performed on the initiator side.
     if (is_parallel_reading_from_replicas)
     {
         pipes.emplace_back(readInOrder(
             std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+    }
+    else if (use_lazy_partition_reading)
+    {
+        Block original_pipe_header = *getOutputHeader();
+
+        auto pipe = readInOrderByPartitions(
+            std::move(parts_with_ranges),
+            index_build_context,
+            column_names,
+            pool_settings,
+            read_type,
+            input_order_info->limit,
+            sort_description,
+            sorting_key_expr);
+
+        if (pipe.empty())
+            return {};
+
+        if (have_input_columns_removed_after_prewhere)
+            out_projection = createProjection(original_pipe_header);
+
+        return pipe;
     }
     else
     {
@@ -1434,30 +1711,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     if (need_preliminary_merge || output_each_partition_through_separate_port)
     {
-        size_t prefix_size = input_order_info->used_prefix_of_sorting_key_size;
-        auto order_key_prefix_ast = storage_snapshot->metadata->getSortingKey().expression_list_ast->clone();
-        order_key_prefix_ast->children.resize(prefix_size);
-
-        auto syntax_result = TreeRewriter(context).analyze(order_key_prefix_ast, storage_snapshot->metadata->getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-        auto sorting_key_prefix_expr = ExpressionAnalyzer(order_key_prefix_ast, syntax_result, context).getActionsDAG(false);
-        const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
-        std::vector<bool> reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
-
-        SortDescription sort_description;
-        sort_description.compile_sort_description = settings[Setting::compile_sort_description];
-        sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
-
-        sort_description.reserve(prefix_size);
-        for (size_t i = 0; i < prefix_size; ++i)
-        {
-            if (!reverse_flags.empty() && reverse_flags[i])
-                sort_description.emplace_back(sorting_columns[i], input_order_info->direction * -1);
-            else
-                sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
-        }
-
-        auto sorting_key_expr = std::make_shared<ExpressionActions>(std::move(sorting_key_prefix_expr));
-
         auto merge_streams = [&](Pipe & pipe)
         {
             pipe.addSimpleTransform([sorting_key_expr](const SharedHeader & header)

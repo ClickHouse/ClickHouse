@@ -486,7 +486,17 @@ private:
         Names required_columns,
         PoolSettings pool_settings,
         ReadType read_type,
-        UInt64 limit);
+        UInt64 read_limit);
+
+    Pipe readInOrderByPartitions(
+        RangesInDataParts parts_with_ranges,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        const Names & column_names,
+        PoolSettings pool_settings,
+        ReadType read_type,
+        UInt64 read_limit,
+        const SortDescription & sort_description,
+        ExpressionActionsPtr sorting_key_expr);
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
