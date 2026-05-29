@@ -617,9 +617,18 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer 
         if (in.available() < size_of_value_if_fixed)
             throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
 
-        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
-        in.ignore(size_of_value_if_fixed);
-        return ret;
+        if (column_holder->isNumeric())
+        {
+            auto temp_col = column_holder->cloneEmpty();
+            temp_col->deserializeAndInsertFromArena(in, settings);
+            return uniqueInsertFrom(*temp_col, 0);
+        }
+        else
+        {
+            size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
+            in.ignore(size_of_value_if_fixed);
+            return ret;
+        }
     }
 
     /// String
