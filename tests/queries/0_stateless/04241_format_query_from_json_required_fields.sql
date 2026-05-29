@@ -70,6 +70,14 @@ SELECT formatQueryFromJSON('{"type":"KillQueryQuery"}'); -- { serverError BAD_AR
 -- RefreshStrategy: `schedule_kind` is required (otherwise schedule semantics are dropped and the query formats as just `REFRESH`).
 SELECT formatQueryFromJSON('{"type":"CreateQuery","table":"v","is_materialized_view":true,"refresh_strategy":{"type":"RefreshStrategy"}}'); -- { serverError BAD_ARGUMENTS }
 
+-- SelectWithUnionQuery: `list_of_selects` is required (`clone` / `formatQueryImpl` and the interpreters dereference it unconditionally).
+SELECT formatQueryFromJSON('{"type":"SelectWithUnionQuery"}'); -- { serverError BAD_ARGUMENTS }
+
+-- UpdateQuery: `table`, `assignments`, and `predicate` are required (`formatQueryImpl` dereferences `assignments` and `predicate` and always formats the table name).
+SELECT formatQueryFromJSON('{"type":"UpdateQuery"}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"UpdateQuery","table":{"type":"Identifier","name":"t"}}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"UpdateQuery","table":{"type":"Identifier","name":"t"},"assignments":{"type":"ExpressionList","children":[]}}'); -- { serverError BAD_ARGUMENTS }
+
 -- Well-formed payloads still work.
 SELECT formatQueryFromJSON(parseQueryToJSON('OPTIMIZE TABLE t'));
 SELECT formatQueryFromJSON(parseQueryToJSON('DROP TABLE t'));

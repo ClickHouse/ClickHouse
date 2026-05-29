@@ -218,9 +218,14 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     for (const auto & mode_str : modes_arr)
         list_of_modes.push_back(parseSelectUnionMode(mode_str));
 
+    /// `list_of_selects` is a required invariant: `clone`, `formatQueryImpl`, and the interpreters
+    /// dereference it unconditionally. Reject malformed JSON that omits it instead of producing an
+    /// AST that crashes later.
     list_of_selects = r.readChild("list_of_selects");
-    if (list_of_selects)
-        children.push_back(list_of_selects);
+    if (!list_of_selects)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SelectWithUnionQuery` AST requires 'list_of_selects' during AST JSON deserialization");
+    children.push_back(list_of_selects);
 
     out_file = r.readChild("out_file");
     if (out_file)

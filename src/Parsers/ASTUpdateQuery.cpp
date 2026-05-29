@@ -77,18 +77,27 @@ void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
     database = r.readChild("database");
     if (database)
         children.push_back(database);
+    /// `table`, `assignments`, and `predicate` are required: `formatQueryImpl` dereferences
+    /// `assignments` and `predicate` unconditionally and always formats the table name. Reject
+    /// malformed JSON that omits them instead of producing an AST that crashes later.
     table = r.readChild("table");
-    if (table)
-        children.push_back(table);
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`Update` AST requires 'table' during AST JSON deserialization");
+    children.push_back(table);
     assignments = r.readChild("assignments");
-    if (assignments)
-        children.push_back(assignments);
+    if (!assignments)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`Update` AST requires 'assignments' during AST JSON deserialization");
+    children.push_back(assignments);
     partition = r.readChild("partition");
     if (partition)
         children.push_back(partition);
     predicate = r.readChild("predicate");
-    if (predicate)
-        children.push_back(predicate);
+    if (!predicate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`Update` AST requires 'predicate' during AST JSON deserialization");
+    children.push_back(predicate);
     settings_ast = r.readChild("settings_ast");
     if (settings_ast)
         children.push_back(settings_ast);
