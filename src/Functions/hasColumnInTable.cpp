@@ -27,7 +27,7 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithContext
+class FunctionHasColumnInTable final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
@@ -130,7 +130,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     }
     else
     {
-        std::vector<std::vector<String>> host_names = {{ host_name }};
+        HostsByShard host_names = {{host_name}};
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;

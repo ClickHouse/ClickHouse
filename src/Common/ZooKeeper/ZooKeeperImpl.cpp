@@ -6,6 +6,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/Stopwatch.h>
+#include <Common/StackTrace.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -2102,8 +2103,8 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     }
     else
     {
-        assert(response);
-        assert(response->xid == PING_XID || response->xid == WATCH_XID);
+        chassert(response);
+        chassert(response->xid == PING_XID || response->xid == WATCH_XID);
         elems.emplace_back();
     }
 

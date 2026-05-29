@@ -114,7 +114,6 @@
 
 #include <memory>
 #include <filesystem>
-#include <cassert>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
@@ -604,7 +603,13 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
         }
     }
     const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
-    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
+
+    /// `sharding_key_dag.getOutputs()` contains both the sharding key column and source columns.
+    /// For example, if the sharding key is `intHash64(user_id)`, then `getOutputs() = [intHash64(user_id), user_id]`. The `user_id` column is a source
+    /// column but not a key value, and should be excluded from checks. We need to find the actual sharding key output
+    /// node to check that it depends only on the allowed set of nodes (`irreducible_nodes`).
+    const auto sharding_key_outputs = sharding_key_dag.findInOutputs(Names{sharding_key_column_name});
+    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_outputs, irreducibe_nodes, matches);
 }
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
@@ -1947,7 +1952,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(relative_data_path != new_path_to_table_data);
+    chassert(relative_data_path != new_path_to_table_data);
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
@@ -1961,7 +1966,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
     for (const auto & shard : shards)
         total_weight += shard.weight;
 
-    assert(total_weight > 0);
+    chassert(total_weight > 0);
 
     size_t res;
     {
