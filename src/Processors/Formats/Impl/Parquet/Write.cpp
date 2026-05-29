@@ -1280,9 +1280,9 @@ void writeColumnChunkBody(
                     writeColumnImpl<parquet::Int64Type>(s, options, out, ConverterTimeInt64(s.primitive_column, s.datetime_multiplier));
             }
             else
-                N(Int32,  Int32Type);
+                N(Int32, Int32Type);
             break;
-        case TypeIndex::Int64  : N(Int64,  Int64Type); break;
+        case TypeIndex::Int64 : N(Int64, Int64Type); break;
 
         case TypeIndex::UInt32:
             if (s.datetime_multiplier == 1)
