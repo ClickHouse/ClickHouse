@@ -3215,6 +3215,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+    {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      10, 2)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
     {"−",             Operator("minus",           11, 2)},
@@ -3602,6 +3603,27 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         /// Not a LIKE operator on top, push the popped operator back and fall through
         if (popped)
             layers.back()->pushOperator(top_op);
+    }
+
+    /// 'expr AT LOCAL' → toTimeZone(expr, timeZone()). Must be checked before the
+    /// operators_table loop so it takes precedence over any 'AT ...' entry there.
+    if (ParserKeyword(Keyword::AT).checkWithoutMoving(pos, stub))
+    {
+        auto at_local_pos = pos;
+        ParserKeyword(Keyword::AT).ignore(at_local_pos, expected);
+        if (ParserKeyword(Keyword::LOCAL).ignore(at_local_pos, expected))
+        {
+            ASTPtr operand;
+            if (layers.back()->popOperand(operand))
+            {
+                pos = at_local_pos;
+                auto tz_func = makeASTFunction("timeZone");
+                auto function = makeASTFunction("toTimeZone", std::move(operand), std::move(tz_func));
+                function->setIsOperator(true);
+                layers.back()->pushOperand(std::move(function));
+                return Action::OPERATOR;
+            }
+        }
     }
 
     /// Try to find operators from 'operators_table'
