@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/GeoJSONRowInputFormat.h>
 
 #include <array>
+#include <unordered_set>
 
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeCustomGeo.h>
@@ -54,10 +55,13 @@ Array readGeoJSONArray(ReadBuffer & buf, ElementReader read_element)
 {
     JSONUtils::skipArrayStart(buf);
     Array items;
+    bool first = true;
     while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
+        if (!first)
+            JSONUtils::skipComma(buf);
+        first = false;
         items.push_back(read_element(buf));
-        JSONUtils::checkAndSkipComma(buf);
     }
     return items;
 }
@@ -77,12 +81,15 @@ Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONA
 template <typename FieldHandler>
 void forEachFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & json_settings, FieldHandler && handle_field)
 {
+    bool first = true;
     while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
+        if (!first)
+            JSONUtils::skipComma(buf);
+        first = false;
         String key = JSONUtils::readFieldName(buf, json_settings);
         if (!handle_field(key))
             skipJSONField(buf, key, json_settings);
-        JSONUtils::checkAndSkipComma(buf);
     }
 }
 
@@ -91,13 +98,16 @@ void forEachFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & jso
 /// or returns false after consuming the closing `}` if not found.
 bool findFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & json_settings, const String & desired_key)
 {
+    bool first = true;
     while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
+        if (!first)
+            JSONUtils::skipComma(buf);
+        first = false;
         String key = JSONUtils::readFieldName(buf, json_settings);
         if (key == desired_key)
             return true;
         skipJSONField(buf, key, json_settings);
-        JSONUtils::checkAndSkipComma(buf);
     }
     return false;
 }
@@ -188,14 +198,15 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 
     auto & buf = getReadBuffer();
 
-    if (!first_row)
-        JSONUtils::checkAndSkipComma(buf);
-
     if (JSONUtils::checkAndSkipArrayEnd(buf))
     {
         done = true;
         return false;
     }
+
+    /// Features must be separated by a comma; reject missing separators instead of normalizing them.
+    if (!first_row)
+        JSONUtils::skipComma(buf);
 
     first_row = false;
 
@@ -272,27 +283,35 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
     auto it = geometry_discriminants.find(geo_type);
     if (it == geometry_discriminants.end())
     {
-        /// A valid GeoJSON geometry type that cannot be represented in ClickHouse's Geometry type
-        /// (such as GeometryCollection or MultiPoint), or an unrecognized type. Throw by default so
-        /// that data is not silently lost; the user can opt into inserting NULL instead.
-        if (format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
+        /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's Geometry type.
+        static const std::unordered_set<String> known_unsupported_types = {"GeometryCollection", "MultiPoint"};
+        if (known_unsupported_types.contains(geo_type))
         {
-            variant_col.insertDefault();
-            return;
+            /// Throw by default so that data is not silently lost; the user can opt into inserting NULL instead.
+            if (format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
+            {
+                variant_col.insertDefault();
+                return;
+            }
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "GeoJSON: geometry type '{}' cannot be represented in ClickHouse's Geometry type. "
+                "Set input_format_geojson_unsupported_geometry_handling = 'null' to insert NULL "
+                "for such geometries instead of throwing.",
+                geo_type);
         }
+
+        /// An unknown or missing geometry type is malformed input and is always rejected.
         throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "GeoJSON: geometry type '{}' cannot be represented in ClickHouse's Geometry type. "
-            "Set input_format_geojson_unsupported_geometry_handling = 'null' to insert NULL "
-            "for such geometries instead of throwing.",
-            geo_type);
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or missing geometry type '{}'", geo_type);
     }
 
+    /// A supported geometry type without a 'coordinates' member is malformed (an explicit JSON `null`
+    /// geometry is handled separately above), so reject it instead of silently inserting NULL.
     if (raw_coordinates.empty())
-    {
-        variant_col.insertDefault();
-        return;
-    }
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: geometry of type '{}' is missing the 'coordinates' member", geo_type);
 
     ColumnVariant::Discriminator global_discr = it->second;
     auto & sub_col = variant_col.getVariantByGlobalDiscriminator(global_discr);

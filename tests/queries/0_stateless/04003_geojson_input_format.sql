@@ -149,3 +149,26 @@ FROM format('GeoJSON', 'geometry Variant(Point), properties JSON', '{"type":"Fea
 SELECT *
 FROM format('GeoJSON', 'geometry Geometry, extra Int32', '{"type":"FeatureCollection","features":[]}'); -- { serverError BAD_ARGUMENTS }
 
+-- An unknown or misspelled geometry type is malformed input and is always rejected, even with null handling.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Piont", "coordinates": [0, 0]}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
+
+-- A supported geometry type without a 'coordinates' member is malformed input.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point"}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A missing comma between features is rejected instead of being silently accepted.
+SELECT count()
+FROM format('GeoJSON', '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{}} {"type":"Feature","geometry":null,"properties":{}}]}'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+
