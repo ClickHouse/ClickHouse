@@ -94,7 +94,7 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
     const auto [states, pools, error_decrease_time] = getPoolExtendedStates();
     // NOTE: to avoid data races do not touch any data of ConnectionPoolWithFailover or PoolWithFailoverBase in the code below.
 
-    assert(states.size() == pools.size());
+    chassert(states.size() == pools.size());
 
     ConnectionPoolWithFailover::Status result;
     result.reserve(states.size());

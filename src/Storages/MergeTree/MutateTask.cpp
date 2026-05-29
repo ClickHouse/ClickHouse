@@ -325,7 +325,7 @@ static void splitAndModifyMutationCommands(
                     if (has_nested_column)
                     {
                         const auto & nested = part_columns.getNested(command.column_name);
-                        assert(!nested.empty());
+                        chassert(!nested.empty());
                         for (const auto & nested_column : nested)
                             mutated_columns.emplace(nested_column.name);
                     }

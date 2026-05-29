@@ -126,7 +126,7 @@ void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
     size_t num_captured_columns = captured_columns.size();
-    assert(num_captured_columns == src_func.captured_columns.size());
+    chassert(num_captured_columns == src_func.captured_columns.size());
 
     for (size_t i = 0; i < num_captured_columns; ++i)
     {
@@ -147,7 +147,7 @@ void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
     size_t num_captured_columns = captured_columns.size();
-    assert(num_captured_columns == src_func.captured_columns.size());
+    chassert(num_captured_columns == src_func.captured_columns.size());
 
     for (size_t i = 0; i < num_captured_columns; ++i)
     {

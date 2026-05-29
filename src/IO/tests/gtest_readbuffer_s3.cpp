@@ -165,7 +165,7 @@ struct ClientFake : DB::S3::Client
 
     Aws::S3::Model::GetObjectOutcome GetObject([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) const override
     {
-        assert(getObjectImpl);
+        chassert(getObjectImpl);
         return (*getObjectImpl)(request);
     }
 

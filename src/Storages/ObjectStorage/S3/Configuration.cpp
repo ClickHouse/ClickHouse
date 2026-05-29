@@ -1025,7 +1025,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
-    assert(s3_settings != nullptr);
+    chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";

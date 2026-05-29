@@ -275,7 +275,7 @@ public:
     void commit();
 
     /// (It would be nice to assert something like the following:
-    ///    assert(isExecuted() || std::uncaught_exceptions() || ops.empty());
+    ///    chassert(isExecuted() || std::uncaught_exceptions() || ops.empty());
     ///  But we can't do it because it would cause rare false positives because
     ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
     ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following

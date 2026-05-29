@@ -164,7 +164,7 @@ Chunk CassandraSource::generate()
     cassandraWaitAndCheck(result_future);
     CassResultPtr result = cass_future_get_result(result_future);
 
-    assert(cass_result_column_count(result) == columns.size());
+    chassert(cass_result_column_count(result) == columns.size());
 
     assertTypes(result);
 
@@ -196,7 +196,7 @@ Chunk CassandraSource::generate()
     }
 
     size_t num_rows = columns.front()->size();
-    assert(cass_result_row_count(result) == num_rows);
+    chassert(cass_result_row_count(result) == num_rows);
 
     return Chunk(std::move(columns), num_rows);
 }

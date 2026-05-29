@@ -580,7 +580,7 @@ Chunk StorageObjectStorageSource::generate()
 
         total_rows_in_file = 0;
 
-        assert(reader_future.valid());
+        chassert(reader_future.valid());
         reader = reader_future.get();
 
         if (!reader)

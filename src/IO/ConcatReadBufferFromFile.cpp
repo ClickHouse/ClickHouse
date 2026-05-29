@@ -143,8 +143,8 @@ off_t ConcatReadBufferFromFile::seek(off_t off, int whence)
     {
         /// Position is still inside the same working buffer.
         pos += change_position;
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
         return new_position;
     }
 

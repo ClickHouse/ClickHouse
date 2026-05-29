@@ -1,7 +1,16 @@
 #pragma once
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Common/CurrentMetrics.h>
+#include <base/defines.h>
 #include <boost/noncopyable.hpp>
+#include <mutex>
+#include <unordered_map>
+
+namespace CurrentMetrics
+{
+    extern const Metric FilesystemCacheOvercommitUsers;
+}
 
 namespace DB
 {
@@ -27,12 +36,13 @@ struct CacheUsageStatGuard : private boost::noncopyable
 /// From each user cache is evicted according to LRU/SLRU eviction policies.
 struct CacheUsage
 {
-    CacheUsage(const FileCacheOriginInfo & origin_info_, FileCachePriorityPtr priority_);
+    /// priority is a non-owning pointer; the pointed-to object is owned by CacheUsagePerUser::CacheUserData.
+    CacheUsage(const FileCacheOriginInfo & origin_info_, IFileCachePriority * priority_);
 
     const FileCacheOriginInfo origin_info;
     /// A user priority, contains only entries which belong to `user`
     /// by corresponding eviction strategy priority.
-    const FileCachePriorityPtr priority{};
+    IFileCachePriority * const priority{};
 
     std::shared_ptr<CacheUsageStatGuard> guard;
 
@@ -48,5 +58,40 @@ struct CacheUsage
 
 };
 using CacheUsagePtr = std::shared_ptr<CacheUsage>;
+
+
+/// Owns the per-user cache usage map, each method is thread-safe.
+struct CacheUsagePerUser : private boost::noncopyable
+{
+    using UserID = std::string;
+
+    size_t size() const;
+
+    /// Returns the usages of all non-empty users (lazy cleanup of empty entries as a side effect).
+    std::vector<CacheUsagePtr> snapshot() const;
+
+    /// Returns nullptr when not found.
+    CacheUsagePtr tryGet(const UserID & user_id) const;
+
+    /// Returns the existing entry or inserts a new one created by make().
+    /// The returned CacheUsagePtr keeps use_count > 1 and prevents
+    /// user's usage from being cleaned up due to being empty.
+    CacheUsagePtr getOrSet(
+        const UserID & user_id,
+        std::function<std::pair<FileCachePriorityPtr, CacheUsagePtr>()> make);
+
+private:
+    struct CacheUserData
+    {
+        CacheUsagePtr usage;
+        FileCachePriorityPtr priority;
+        CurrentMetrics::Increment metric_increment{CurrentMetrics::FilesystemCacheOvercommitUsers};
+    };
+
+    bool canRemoveUser(const CacheUsagePtr & usage) const TSA_REQUIRES(mutex);
+
+    mutable std::unordered_map<UserID, CacheUserData> map TSA_GUARDED_BY(mutex);
+    mutable std::mutex mutex;
+};
 
 }

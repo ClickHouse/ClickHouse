@@ -2218,11 +2218,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & prev_part : parts)
     {
         const auto & part_or_projection = prev_part.data_part;
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+        const auto num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
 
         if (query_status)
             query_status->checkTimeLimit();
 
-        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && !part_values->contains(part->name))
             continue;
 
@@ -2236,13 +2237,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
                 continue;
         }
 
-        size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
-
         counters.num_initial_selected_parts += 1;
         counters.num_initial_selected_granules += num_granules;
 
-        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        /// hyperrectangle must come from the part whose metadata built the condition.
+        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -2285,6 +2284,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+            size_t num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
+
             if (part_values && !part_values->contains(part->name))
                 continue;
 
@@ -2302,14 +2303,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
                 continue;
 
-            size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
-
             counters.num_initial_selected_parts += 1;
             counters.num_initial_selected_granules += num_granules;
 
-            if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types)
-                        .can_be_true)
+            /// hyperrectangle must come from the part whose metadata built the condition.
+            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
                 continue;
 
             counters.num_parts_after_minmax += 1;

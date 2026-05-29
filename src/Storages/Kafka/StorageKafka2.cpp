@@ -266,7 +266,7 @@ bool StorageKafka2::activate()
     {
         /// The exception when you try to zookeeper_init usually happens if DNS does not work or the connection with ZK fails
         tryLogCurrentException(log, "Failed to establish a new ZK connection. Will try again");
-        assert(!is_active);
+        chassert(!is_active);
         return false;
     }
 
@@ -323,7 +323,7 @@ bool StorageKafka2::activate()
 
     if (!activate_in_keeper())
     {
-        assert(!is_active);
+        chassert(!is_active);
         return false;
     }
 
@@ -1073,7 +1073,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
 
             if (is_dead_letter)
             {
-                assert(exception_message);
+                chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = getStorageID();
 

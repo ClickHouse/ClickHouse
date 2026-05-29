@@ -1,4 +1,5 @@
 #include <Client.h>
+#include <base/defines.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
@@ -119,7 +120,7 @@ void Client::processError(std::string_view query) const
 
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
-    assert(have_error == (client_exception || server_exception));
+    chassert(have_error == (client_exception || server_exception));
 }
 
 

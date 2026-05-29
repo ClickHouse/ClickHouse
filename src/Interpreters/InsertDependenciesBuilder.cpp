@@ -74,7 +74,6 @@
 #include <base/defines.h>
 
 #include <atomic>
-#include <cassert>
 #include <exception>
 #include <memory>
 #include <unordered_map>

@@ -237,7 +237,7 @@ struct TranslateUTF8Impl
                     }
 
                     size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], reinterpret_cast<char *>(dst), 4);
-                    assert(0 < dst_len && dst_len <= 4);
+                    chassert(0 < dst_len && dst_len <= 4);
 
                     src += 1;
                     dst += dst_len;
@@ -246,7 +246,7 @@ struct TranslateUTF8Impl
                 }
 
                 size_t src_len = UTF8::seqLength(*src);
-                assert(0 < src_len && src_len <= 4);
+                chassert(0 < src_len && src_len <= 4);
 
                 if (src + src_len <= src_end)
                 {
@@ -262,7 +262,7 @@ struct TranslateUTF8Impl
                                 continue;
 
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), reinterpret_cast<char *>(dst), 4);
-                            assert(0 < dst_len && dst_len <= 4);
+                            chassert(0 < dst_len && dst_len <= 4);
 
                             dst += dst_len;
                             data_size += dst_len;

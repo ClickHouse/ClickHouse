@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <cerrno>
-#include <cassert>
 #include <sys/stat.h>
 
 #include <Common/Throttler.h>

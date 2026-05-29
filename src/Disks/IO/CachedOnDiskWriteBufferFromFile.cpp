@@ -3,6 +3,7 @@
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
+#include <Common/NetException.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
@@ -26,11 +27,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS;
     extern const int FAULT_INJECTED;
+    extern const int NETWORK_ERROR;
 }
 
 namespace FailPoints
 {
     extern const char write_through_cache_fail[];
+    extern const char file_segment_range_writer_partial_write_then_network_error[];
+    extern const char distributed_cache_simulate_writer_not_keeping_up[];
 }
 
 FileSegmentRangeWriter::FileSegmentRangeWriter(
@@ -58,6 +62,16 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
 
 bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, FileSegmentKind segment_kind)
 {
+    if (is_distributed_cache && offset >= 2 * DBMS_DEFAULT_BUFFER_SIZE)
+    {
+        fiu_do_on(FailPoints::distributed_cache_simulate_writer_not_keeping_up,
+        {
+            throw Exception(
+                ErrorCodes::FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS,
+                "Failpoint: simulated writer-not-keeping-up");
+        });
+    }
+
     if (finalized)
         return false;
 
@@ -74,6 +88,15 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
     if (!ignore_bytes
         && (!file_segments || file_segments->empty() || file_segments->front().isDownloaded()))
     {
+        /// Only this allocateFileSegment (the one entered when file_segments is empty/finished)
+        /// can legitimately observe a partially downloaded segment under retry semantics:
+        /// it is the segment we land on after jumpToPosition, i.e. the single trailing partial
+        /// segment left over by the previous attempt's disconnect (within one connection the
+        /// writer fills segments sequentially, so earlier segments are either fully downloaded
+        /// or never touched). The other allocateFileSegment calls below step into segments that
+        /// the previous attempt never reached, so any data there can only have come from a
+        /// concurrent reader's background download — that case is rejected later in the write
+        /// loop with FILECACHE_CANNOT_WRITE_THROUGH_CACHE_WITH_CONCURRENT_READS.
         file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
 
         if (is_distributed_cache && file_segment->getCurrentWriteOffset() > offset)
@@ -83,7 +106,7 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
             /// where this method can be called twice for the same server,
             /// while path contains server uuid, e.g. the cache key will be the same,
             /// so file segment here can have downloaded_size > 0.
-            ignore_bytes = file_segment->range().right - offset + 1;
+            ignore_bytes = file_segment->getCurrentWriteOffset() - offset;
             LOG_TEST(log, "Will ignore {} bytes from file segment {}", ignore_bytes, file_segment->getInfoForLog());
         }
     }
@@ -99,12 +122,20 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
         {
             expected_write_offset += size;
             ignore_bytes -= size;
+
+            chassert(!file_segments->empty());
+            if (!ignore_bytes && expected_write_offset > file_segments->front().range().right)
+            {
+                chassert(expected_write_offset == file_segments->front().range().right + 1);
+                completeFileSegment();
+            }
             return true;
         }
         size -= ignore_bytes;
         data += ignore_bytes;
         offset += ignore_bytes;
         expected_write_offset += ignore_bytes;
+        ignore_bytes = 0;
 
         file_segment = &allocateFileSegment(expected_write_offset, segment_kind);
     }
@@ -167,6 +198,16 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
 
         file_segment->write(data, size_to_write, offset);
         file_segment->completePartAndResetDownloader();
+
+        if (is_distributed_cache)
+        {
+            fiu_do_on(FailPoints::file_segment_range_writer_partial_write_then_network_error,
+            {
+                throw NetException(
+                    ErrorCodes::NETWORK_ERROR,
+                    "Failpoint: simulated network failure after partial write to file segment");
+            });
+        }
 
         size -= size_to_write;
         expected_write_offset += size_to_write;
@@ -350,6 +391,7 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
     }
 
     expected_write_offset = position;
+    ignore_bytes = 0;
 }
 
 CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(

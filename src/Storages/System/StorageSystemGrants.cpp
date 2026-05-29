@@ -96,7 +96,7 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             column_role_name_null_map.push_back(false);
         }
         else
-            assert(false);
+            chassert(false);
 
         column_access_type.push_back(static_cast<Int16>(access_type));
         column_access_object.insertData(access_object.data(), access_object.length());

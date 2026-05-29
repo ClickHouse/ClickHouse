@@ -143,7 +143,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
-        assert(!substream_path.empty());
+        chassert(!substream_path.empty());
 
         /// Don't create streams for ephemeral subcolumns that don't store any real data.
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))

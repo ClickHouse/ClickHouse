@@ -116,7 +116,7 @@ public:
     void attachChild(const SchedulerNodePtr & child) override
     {
         // Take ownership
-        assert(child->parent == nullptr);
+        chassert(child->parent == nullptr);
         if (auto [it, inserted] = children.emplace(child.get(), child); !inserted)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
@@ -194,7 +194,7 @@ public:
 private:
     void activate(Resource * value)
     {
-        assert(value->next == nullptr && value->prev == nullptr);
+        chassert(value->next == nullptr && value->prev == nullptr);
         if (current == nullptr) // No active children
         {
             current = value;
@@ -214,7 +214,7 @@ private:
     {
         if (value->next == nullptr)
             return; // Already deactivated
-        assert(current != nullptr);
+        chassert(current != nullptr);
         if (current == value)
         {
             if (current->next == current) // We are going to remove the last active child

@@ -483,7 +483,7 @@ void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & i
 
 bool ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::isMovePartitionOrAttachFrom(const MergeTreePartInfo & drop_range_info)
 {
-    assert(drop_range_info.getBlocksCount() != 0);
+    chassert(drop_range_info.getBlocksCount() != 0);
     return drop_range_info.getBlocksCount() == 1;
 }
 

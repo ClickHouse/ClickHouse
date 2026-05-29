@@ -46,6 +46,9 @@ struct FileCacheReserveStat
         size_t moving_count = 0;
         size_t invalidated_count = 0;
 
+        size_t candidates_iteration_steps = 0;
+        size_t clients_iterated = 0;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
@@ -55,6 +58,8 @@ struct FileCacheReserveStat
             evicting_count += other.evicting_count;
             moving_count += other.moving_count;
             invalidated_count += other.invalidated_count;
+            candidates_iteration_steps += other.candidates_iteration_steps;
+            clients_iterated += other.clients_iterated;
             return *this;
         }
 
@@ -291,9 +296,11 @@ private:
 
     std::mutex apply_settings_mutex;
 
-    CacheMetadata metadata;
-
     FileCachePriorityPtr main_priority;
+
+    /// Must be declared after main_priority: metadata holds iterators that reference
+    /// the priority's internal state, so metadata must be destroyed first
+    CacheMetadata metadata;
     mutable CachePriorityGuard cache_guard;
     mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;

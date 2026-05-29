@@ -12,7 +12,6 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
-#include <cassert>
 #include <iterator>
 
 #include <boost/algorithm/string.hpp>
@@ -1256,14 +1255,14 @@ void obfuscateQueries(
             }
             else if (token.type == TokenType::StringLiteral)
             {
-                assert(token.size() >= 2);
+                chassert(token.size() >= 2);
                 result.write(*token.begin);
                 obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, always_false_func);
                 result.write(token.end[-1]);
             }
             else if (token.type == TokenType::QuotedIdentifier)
             {
-                assert(token.size() >= 2);
+                chassert(token.size() >= 2);
                 result.write(*token.begin);
                 if (token.size() > 32)
                     writeIntText(sipHash64(token.begin + 1, token.size() - 2), result);
@@ -1519,7 +1518,7 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::QuotedIdentifier)
         {
-            assert(token.size() >= 2);
+            chassert(token.size() >= 2);
 
             /// Write quotes and the obfuscated content inside.
             result.write(*token.begin);
@@ -1538,7 +1537,7 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::StringLiteral)
         {
-            assert(token.size() >= 2);
+            chassert(token.size() >= 2);
 
             /// Hex string literals like x'ABCD' or binary string literals like b'1010'.
             if (token.size() >= 3

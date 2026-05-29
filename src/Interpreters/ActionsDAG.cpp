@@ -2290,7 +2290,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                     for (auto & child : copy.children)
                     {
                         child = data[child].to_first;
-                        assert(child != nullptr);
+                        chassert(child != nullptr);
                     }
 
                     if (cur_data.used_in_result)

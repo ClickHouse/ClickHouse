@@ -661,7 +661,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
 {
-    assert(pulling());
+    chassert(pulling());
 
     /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is to write
     /// each chunk into the query result cache. All transforms hold a refcounted reference to the same query result cache writer object.

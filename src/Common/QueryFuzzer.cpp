@@ -351,7 +351,7 @@ Field QueryFuzzer::getRandomField(int type)
             return String(json_values[fuzz_rand() % std::size(json_values)]);
         }
         default:
-            assert(false);
+            chassert(false);
             return Null{};
     }
 }

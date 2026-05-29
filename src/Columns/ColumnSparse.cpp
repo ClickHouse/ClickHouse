@@ -206,7 +206,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
         size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
         size_t offset_end = std::lower_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
-        assert(offset_start <= offset_end);
+        chassert(offset_start <= offset_end);
 
         if (offset_start != offset_end)
         {
@@ -481,7 +481,7 @@ ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
@@ -661,7 +661,7 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
         }
     }
 
-    assert(row == limit);
+    chassert(row == limit);
 }
 
 void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -919,7 +919,7 @@ IColumn::Offsets & ColumnSparse::getOffsetsData()
 
 size_t ColumnSparse::getValueIndex(size_t n) const
 {
-    assert(n < _size);
+    chassert(n < _size);
 
     const auto & offsets_data = getOffsetsData();
     const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);

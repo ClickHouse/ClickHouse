@@ -73,7 +73,7 @@ DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & nump
 DataTypePtr createNestedArrayType(const DataTypePtr & nested_type, size_t depth)
 {
     DataTypePtr result_type = nested_type;
-    assert(depth > 0);
+    chassert(depth > 0);
     if (depth > 1)
     {
         for (size_t i = 0; i < depth - 1; ++i)

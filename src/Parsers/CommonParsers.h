@@ -2,7 +2,6 @@
 
 #include <Parsers/IParserBase.h>
 
-#include <cassert>
 #include <string_view>
 #include <unordered_set>
 
@@ -679,7 +678,7 @@ class ParserKeyword : public IParserBase
 private:
     std::string_view s;
 
-    explicit ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
+    explicit ParserKeyword(std::string_view s_): s(s_) { chassert(!s.empty()); }
 
 public:
     static ParserKeyword createDeprecated(std::string_view s_)

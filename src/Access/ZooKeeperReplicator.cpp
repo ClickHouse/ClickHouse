@@ -233,7 +233,7 @@ bool ZooKeeperReplicator::insertZooKeeper(
             }
         }
 
-        assert(replace_if_exists);
+        chassert(replace_if_exists);
         Coordination::Requests replace_ops;
         if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
         {

@@ -115,7 +115,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
     {
         for (const auto & [name, expression] : scope.aliases.alias_name_to_expression_node)
         {
-            assert(expression);
+            chassert(expression);
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
         }
@@ -160,7 +160,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
 
     for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
     {
-        assert(expression);
+        chassert(expression);
         auto expression_node_type = expression->getNodeType();
 
         if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))

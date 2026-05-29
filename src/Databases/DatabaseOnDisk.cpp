@@ -165,7 +165,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->attach = true;
 
     /// We remove everything that is not needed for ATTACH from the query.
-    assert(!create->isTemporary());
+    chassert(!create->isTemporary());
     create->reset(create->database);
 
     if (create->uuid != UUIDHelpers::Nil)
@@ -218,7 +218,7 @@ void DatabaseOnDisk::createTable(
     createDirectories();
 
     const auto & create = query->as<ASTCreateQuery &>();
-    assert(table_name == create.getTable());
+    chassert(table_name == create.getTable());
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -243,7 +243,7 @@ void DatabaseOnDisk::createTable(
     if (create.attach_short_syntax)
     {
         /// Metadata already exists, table was detached
-        assert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
+        chassert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
         attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
@@ -599,7 +599,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     auto db_disk = getDisk();
     {
         std::lock_guard lock(mutex);
-        assert(tables.empty());
+        chassert(tables.empty());
     }
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
@@ -662,7 +662,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
 
     auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
-        assert(getUUID() == UUIDHelpers::Nil);
+        chassert(getUUID() == UUIDHelpers::Nil);
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
 

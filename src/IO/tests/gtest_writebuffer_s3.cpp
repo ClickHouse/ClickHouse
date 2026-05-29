@@ -162,7 +162,7 @@ class S3MemStrore
 public:
     void CreateBucket(const std::string & bucket)
     {
-        assert(!buckets.contains(bucket));
+        chassert(!buckets.contains(bucket));
         buckets.emplace(bucket, BucketMemStore{});
     }
 

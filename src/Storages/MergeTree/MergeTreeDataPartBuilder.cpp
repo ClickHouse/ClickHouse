@@ -179,7 +179,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 {
-    assert(volume);
+    chassert(volume);
     auto [storage, mark_type] = getPartStorageAndMarkType(volume, root_path, part_dir, read_settings);
 
     if (!storage || !mark_type)
@@ -195,7 +195,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
 {
-    assert(part_storage);
+    chassert(part_storage);
     auto mark_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(*part_storage);
 
     if (!mark_type)

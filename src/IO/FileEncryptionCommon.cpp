@@ -76,7 +76,7 @@ namespace
 
     size_t partBlockSize(size_t size, size_t off)
     {
-        assert(off < kBlockSize);
+        chassert(off < kBlockSize);
         /// write the part as usual block
         if (off == 0)
             return 0;
@@ -116,7 +116,7 @@ namespace
 
     size_t encryptBlockWithPadding(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, size_t pad_left, WriteBuffer & out)
     {
-        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        chassert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
         uint8_t padded_data[kBlockSize] = {};
         memcpy(&padded_data[pad_left], data, size);
         size_t padded_data_size = pad_left + size;
@@ -169,7 +169,7 @@ namespace
     {
         chassert(data != nullptr);
         chassert(out != nullptr);
-        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        chassert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
         uint8_t padded_data[kBlockSize] = {};
         memcpy(&padded_data[pad_left], data, size);
         size_t padded_data_size = pad_left + size;

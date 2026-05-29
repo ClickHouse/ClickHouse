@@ -80,8 +80,8 @@ namespace impl
 
         size_t size() const
         {
-            assert(key0 && key1);
-            assert(key0->size() == key1->size());
+            chassert(key0 && key1);
+            chassert(key0->size() == key1->size());
             return key0->size();
         }
 
@@ -91,7 +91,7 @@ namespace impl
                 i = 0;
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
-            assert(key0->size() > i);
+            chassert(key0->size() > i);
             return {key0data[i], key1data[i]};
         }
 
@@ -126,8 +126,8 @@ namespace impl
 
         SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        assert(result.key0);
-        assert(result.key1);
+        chassert(result.key0);
+        chassert(result.key1);
 
         if (!checkColumn<ColumnUInt64>(*result.key0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");

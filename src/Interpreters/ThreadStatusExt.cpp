@@ -641,7 +641,7 @@ void ThreadStatus::initQueryProfiler()
         return;
 
     auto query_context_ptr = query_context.lock();
-    assert(query_context_ptr);
+    chassert(query_context_ptr);
     const auto & settings = query_context_ptr->getSettingsRef();
 
     try

@@ -285,7 +285,7 @@ namespace
 
                     LOG_TRACE(log, "Writing part #{} of {}. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", part_number, num_parts, dest_bucket, dest_key, multipart_upload_id, part_size);
 
-                    assert(part_size);
+                    chassert(part_size);
 
                     auto & part_tag = multipart_tags[part_number - 1];
 

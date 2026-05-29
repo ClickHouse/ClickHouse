@@ -8,7 +8,6 @@
 #endif
 #include <fcntl.h>
 #include <unistd.h>
-#include <cassert>
 
 #include <Common/MemoryStatisticsOS.h>
 
@@ -81,7 +80,7 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, filename, "Cannot read from file {}", filename);
         }
 
-        assert(res >= 0);
+        chassert(res >= 0);
         break;
     } while (true);
 

@@ -57,7 +57,7 @@ LimitTransform::LimitTransform(
 
 Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
 {
-    assert(row < chunk.getNumRows());
+    chassert(row < chunk.getNumRows());
     ColumnRawPtrs current_columns = extractSortColumns(chunk.getColumns());
     MutableColumns last_row_sort_columns;
     for (size_t i = 0; i < current_columns.size(); ++i)
@@ -302,7 +302,7 @@ void LimitTransform::splitChunk(PortsData & data)
     /// <---------------> offset
     ///             <---> start
 
-    assert(offset < rows_read);
+    chassert(offset < rows_read);
 
     if (offset + num_rows > rows_read)
         start = offset + num_rows - rows_read;
@@ -377,7 +377,7 @@ ColumnRawPtrs LimitTransform::extractSortColumns(const Columns & columns) const
 
 bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const
 {
-    assert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
+    chassert(current_chunk_sort_columns.size() == previous_row_chunk.getNumColumns());
     size_t size = current_chunk_sort_columns.size();
     const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
     for (size_t i = 0; i < size; ++i)
@@ -387,4 +387,3 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
 }
 
 }
-

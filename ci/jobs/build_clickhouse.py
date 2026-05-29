@@ -143,6 +143,10 @@ def main():
         os.environ["CTCACHE_DIR"] = f"{temp_dir}/ccache/clang-tidy-cache"
         os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_PATH
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
+        # PR builds run on untrusted runners without S3 write access; only
+        # master/release builds (pr_number == 0) are allowed to write entries.
+        if info.pr_number > 0:
+            os.environ["CTCACHE_S3_READ_ONLY"] = "true"
 
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"

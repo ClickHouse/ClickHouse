@@ -237,7 +237,7 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     const auto & element_serializations = serialization_tuple->getElementsSerializations();
 
     size_t size = elems.size();
-    assert(element_serializations.size() == size);
+    chassert(element_serializations.size() == size);
     MutableColumns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
         tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]->getNested());
@@ -427,7 +427,7 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
     infos.reserve(elems.size());
 
     const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
-    assert(elems.size() == column_tuple.getColumns().size());
+    chassert(elems.size() == column_tuple.getColumns().size());
 
     for (size_t i = 0; i < elems.size(); ++i)
     {

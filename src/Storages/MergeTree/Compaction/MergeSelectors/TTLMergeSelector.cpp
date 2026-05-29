@@ -100,7 +100,7 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
 
     for (auto range = parts_ranges.begin(); range != parts_ranges.end(); ++range)
     {
-        assert(!range->empty());
+        chassert(!range->empty());
         const auto & range_partition = range->front().info.getPartitionId();
 
         if (needToPostponePartition(range_partition))
