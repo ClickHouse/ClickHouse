@@ -1,2 +1,4 @@
 1
+committed after rejected reset:	1
+after rollback:	1
 reset after rollback ok

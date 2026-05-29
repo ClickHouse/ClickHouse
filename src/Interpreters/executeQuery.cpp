@@ -1980,7 +1980,13 @@ static BlockIO executeQueryImpl(
                 }
                 else if (auto txn = context->getCurrentTransaction())
                 {
-                    txn->onException();
+                    /// `RESET SESSION` refuses to run inside an active transaction
+                    /// (throws `INVALID_TRANSACTION`) and never mutates the
+                    /// transaction itself, so it must not trigger the rollback/cancel
+                    /// hook — otherwise the caller's open transaction would be poisoned
+                    /// before they get the chance to `COMMIT` or `ROLLBACK`.
+                    if (!(out_ast && out_ast->as<ASTResetSessionQuery>()))
+                        txn->onException();
                 }
 
                 /// If a query with internal query fails, only add one error to the quota.
@@ -2006,7 +2012,11 @@ static BlockIO executeQueryImpl(
         }
         else if (auto txn = context->getCurrentTransaction())
         {
-            txn->onException();
+            /// See the matching note in `exception_callback`: `RESET SESSION`
+            /// rejects an active transaction without mutating it, so it must not
+            /// poison that transaction via the rollback/cancel hook.
+            if (!(out_ast && out_ast->as<ASTResetSessionQuery>()))
+                txn->onException();
         }
 
         logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);

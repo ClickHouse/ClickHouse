@@ -43,11 +43,11 @@ Connection-pool implementations that issue `RESET SESSION` before returning a co
 
 `RESET SESSION` resets the ClickHouse session **context** — the state listed above, which the server tracks per session. It does **not** touch state that a wire-protocol handler keeps outside that context. In particular, **prepared statements created over the MySQL, PostgreSQL, and Arrow Flight protocols are not invalidated by `RESET SESSION`**:
 
-- MySQL: statements prepared with `COM_STMT_PREPARE` remain registered.
-- PostgreSQL: server-side prepared statements (`PREPARE name AS ...` / extended-query `Parse` messages) remain registered.
-- Arrow Flight: prepared statement handles remain valid.
+- MySQL: statements prepared with `COM_STMT_PREPARE` remain registered. They can be closed individually with `COM_STMT_CLOSE`; ClickHouse's MySQL endpoint does not implement a bulk connection-reset command (`COM_RESET_CONNECTION`), so to fully discard protocol-local state, drop and reopen the connection.
+- PostgreSQL: server-side prepared statements (`PREPARE name AS ...` / extended-query `Parse` messages) remain registered. Remove them individually with `DEALLOCATE name`, or drop and reopen the connection.
+- Arrow Flight: prepared statement handles remain valid until closed via the Flight SQL `ClosePreparedStatement` action or the session is closed.
 
-Clients that pool connections over these protocols should use the protocol's own reset mechanism for protocol-local state — for example, MySQL `COM_RESET_CONNECTION` or PostgreSQL `DISCARD ALL` / `DEALLOCATE` — and should not rely on `RESET SESSION` to clear prepared statements.
+Do not rely on `RESET SESSION` to clear prepared statements on these protocols.
 
 This is a deliberate scoping decision for the first version of the statement: `RESET SESSION` is a server-side, session-context reset. Extending it to drive per-protocol cleanup is tracked as future work.
 
