@@ -806,7 +806,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
     for (const ASTPtr & ast : syntax->window_function_asts)
     {
         const ASTFunction & function_node = typeid_cast<const ASTFunction &>(*ast);
-        assert(function_node.isWindowFunction());
+        chassert(function_node.isWindowFunction());
 
         WindowFunctionDescription window_function;
         window_function.function_node = &function_node;
@@ -885,7 +885,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
             if (!inserted)
             {
-                assert(it->second.full_sort_description == full_sort_description);
+                chassert(it->second.full_sort_description == full_sort_description);
             }
 
             it->second.window_functions.push_back(window_function);
@@ -1867,7 +1867,7 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendProjectResul
             if (const auto * as_literal = ast->as<ASTLiteral>())
             {
                 source_name = as_literal->unique_column_name;
-                assert(!source_name.empty());
+                chassert(!source_name.empty());
             }
 
             result_columns.emplace_back(source_name, result_name);
@@ -2106,9 +2106,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 Block before_prewhere_sample = source_header;
                 if (sanitizeBlock(before_prewhere_sample))
                 {
-                    ExpressionActions(
-                        prewhere_dag_and_flags->dag.clone(),
-                        ExpressionActionsSettings(context->getSettingsRef())).execute(before_prewhere_sample);
+                    before_prewhere_sample = prewhere_dag_and_flags->dag.updateHeader(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -2147,9 +2145,9 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     if (!extracting_subcolumns_dag.getNodes().empty())
                         dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
 
-                    ExpressionActions(
-                        std::move(dag),
-                        ExpressionActionsSettings(context->getSettingsRef())).execute(before_where_sample);
+                    /// Use updateHeader (dry-run evaluation) instead of ExpressionActions::execute,
+                    /// because sets from subqueries may not be ready yet at this point.
+                    before_where_sample = dag.updateHeader(before_where_sample);
 
                     auto & column_elem
                         = before_where_sample.getByName(query.where()->getColumnName());
