@@ -90,8 +90,8 @@ bool BorrowFromCacheObjectStorage::exists(const StoredObject & object) const
 ReadSettings BorrowFromCacheObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     auto modified_settings{read_settings};
-    modified_settings.local_fs_method = LocalFSReadMethod::pread;
-    modified_settings.direct_io_threshold = 0;
+    modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    modified_settings.local_fs_settings.direct_io_threshold = 0;
     return IObjectStorage::patchSettings(modified_settings);
 }
 
