@@ -2459,8 +2459,8 @@ Possible values:
 - `pretty` (default since 26.6) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
 - `legacy` — pre-26.6 verbose output.
 
-Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this setting.
-Set setting to `legacy` (or set `compatibility` to any version older than `26.6`) to restore the pre-26.6 verbose output.
+Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this setting.
+Set this setting to `legacy` (or set `compatibility` to any version older than `26.6`) to restore the pre-26.6 verbose output.
 )", 0) \
     \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(

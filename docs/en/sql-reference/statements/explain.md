@@ -190,10 +190,10 @@ Settings:
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
 - `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1 when `explain_query_plan_default` is `pretty`, 0 when it is `legacy` (see the note below).
-- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
+- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1 when `explain_query_plan_default` is `pretty`, 0 when it is `legacy` (see the note below).
 
 :::note
-Starting from ClickHouse 26.6, the server setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this.
+Starting from ClickHouse 26.6, the server setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Specifying these options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this.
 
 To restore the pre-26.6 verbose output, either run `SET explain_query_plan_default = 'legacy'` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.6`.
 :::
