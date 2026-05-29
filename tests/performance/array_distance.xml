@@ -1,128 +1,105 @@
 <test>
+    <!--
+        This benchmark isolates the distance *kernel* (the hot SIMD loop), which is
+        what PR #101310 optimizes. The earlier version computed
+            L2Distance(arrayResize(v, N), arrayResize(materialize(v), N))
+        whose wall-clock time was dominated by the per-query allocation/copy of the
+        temporary Array columns produced by `arrayResize`/`materialize`, not by the
+        kernel - so a faster kernel could not move the measured number.
+
+        Here the arrays are stored already at the target length (one table per size),
+        and the measured query calls the distance function directly. No `arrayResize`,
+        no `materialize`, no wrapping subquery - so the kernel is the dominant cost.
+    -->
     <substitutions>
         <substitution>
             <name>array_size</name>
             <values>
-                <value>16</value>
                 <value>256</value>
+                <value>1024</value>
                 <value>4096</value>
             </values>
         </substitution>
     </substitutions>
 
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Two distinct Float32 vectors per row (so cosine is well-defined). -->
     <create_query>
-        CREATE TABLE array_distance_float32
+        CREATE TABLE array_distance_f32_{array_size}
         (
             id UInt64,
-            v Array(Float32)
+            a Array(Float32),
+            b Array(Float32)
         )
-        ENGINE = Memory;
+        ENGINE = Memory
     </create_query>
 
+    <!-- Quantised (UInt8) storage vector against a Float64 query vector: the
+         canonical mixed-type ANN layout that PR #101310 adds SIMD support for. -->
     <create_query>
-        CREATE TABLE array_distance_mixed
+        CREATE TABLE array_distance_mixed_{array_size}
         (
             id UInt64,
             u8 Array(UInt8),
             f64 Array(Float64)
         )
-        ENGINE = Memory;
+        ENGINE = Memory
     </create_query>
 
     <fill_query>
-        INSERT INTO array_distance_float32
+        INSERT INTO array_distance_f32_{array_size}
         SELECT
             number,
-            arrayMap(i -> toFloat32((number + i) % 257), range(4096))
-        FROM numbers(100000);
+            arrayMap(i -> toFloat32((number * 9 + i) % 1000) * 0.001, range({array_size})),
+            arrayMap(i -> toFloat32((number * 7 + i + 13) % 1000) * 0.001, range({array_size}))
+        FROM numbers(100000)
     </fill_query>
 
     <fill_query>
-        INSERT INTO array_distance_mixed
+        INSERT INTO array_distance_mixed_{array_size}
         SELECT
             number,
-            arrayMap(i -> toUInt8((number + i) % 256), range(4096)),
-            arrayMap(i -> toFloat64((number + i) % 257), range(4096))
-        FROM numbers(100000);
+            arrayMap(i -> toUInt8((number + i) % 256), range({array_size})),
+            arrayMap(i -> toFloat64((number * 3 + i) % 997) * 0.5, range({array_size}))
+        FROM numbers(100000)
     </fill_query>
 
-    <settings>
-        <max_threads>1</max_threads>
-    </settings>
+    <!-- ===== Native Float32, non-const x non-const path (all five metrics) ===== -->
+    <query>SELECT sum(L1Distance(a, b))        FROM array_distance_f32_{array_size}</query>
+    <query>SELECT sum(L2Distance(a, b))        FROM array_distance_f32_{array_size}</query>
+    <query>SELECT sum(L2SquaredDistance(a, b)) FROM array_distance_f32_{array_size}</query>
+    <query>SELECT sum(LinfDistance(a, b))      FROM array_distance_f32_{array_size}</query>
+    <query>SELECT sum(cosineDistance(a, b))    FROM array_distance_f32_{array_size}</query>
 
+    <!-- ===== Native Float32, const x non-const path =====
+         The needle is a single cached vector reused for every row. For L2/cosine this
+         exercises the hand-written AVX-512 intrinsic path (already present on master),
+         so these queries are expected to stay flat - they are the baseline reference. -->
     <query>
-        SELECT sum(d)
-        FROM
-        (
-            SELECT L1Distance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
-            FROM array_distance_float32
-        )
+        WITH (SELECT a FROM array_distance_f32_{array_size} LIMIT 1) AS needle
+        SELECT sum(L2Distance(needle, b)) FROM array_distance_f32_{array_size}
+    </query>
+    <query>
+        WITH (SELECT a FROM array_distance_f32_{array_size} LIMIT 1) AS needle
+        SELECT sum(cosineDistance(needle, b)) FROM array_distance_f32_{array_size}
     </query>
 
+    <!-- ===== Mixed UInt8 x Float64, non-const x non-const path =====
+         Exercises executeDistanceMixed / the is_common_mixed_pair specialisation. -->
+    <query>SELECT sum(L1Distance(u8, f64))     FROM array_distance_mixed_{array_size}</query>
+    <query>SELECT sum(L2Distance(u8, f64))     FROM array_distance_mixed_{array_size}</query>
+    <query>SELECT sum(cosineDistance(u8, f64)) FROM array_distance_mixed_{array_size}</query>
+
+    <!-- ===== Mixed UInt8 x Float64, const x non-const path =====
+         Exercises executeDistanceConstMixed. -->
     <query>
-        SELECT sum(d)
-        FROM
-        (
-            SELECT L2Distance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
-            FROM array_distance_float32
-        )
+        WITH (SELECT u8 FROM array_distance_mixed_{array_size} LIMIT 1) AS needle
+        SELECT sum(L2Distance(needle, f64)) FROM array_distance_mixed_{array_size}
     </query>
 
-    <query>
-        SELECT sum(d)
-        FROM
-        (
-            SELECT L2SquaredDistance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
-            FROM array_distance_float32
-        )
-    </query>
-
-    <query>
-        SELECT sum(d)
-        FROM
-        (
-            SELECT LinfDistance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
-            FROM array_distance_float32
-        )
-    </query>
-
-    <query>
-        SELECT sum(d)
-        FROM
-        (
-            SELECT cosineDistance(arrayResize(v, {array_size}), arrayResize(materialize(v), {array_size})) AS d
-            FROM array_distance_float32
-        )
-    </query>
-
-    <query>
-        SELECT sum(d)
-        FROM
-        (
-            SELECT L2Distance(arrayResize(u8, {array_size}), arrayResize(f64, {array_size})) AS d
-            FROM array_distance_mixed
-        )
-    </query>
-
-    <query>
-        SELECT sum(d)
-        FROM
-        (
-            SELECT cosineDistance(arrayResize(u8, {array_size}), arrayResize(f64, {array_size})) AS d
-            FROM array_distance_mixed
-        )
-    </query>
-
-    <query>
-        WITH (SELECT arrayResize(u8, {array_size}) FROM array_distance_mixed LIMIT 1) AS needle
-        SELECT sum(d)
-        FROM
-        (
-            SELECT L2Distance(needle, arrayResize(f64, {array_size})) AS d
-            FROM array_distance_mixed
-        )
-    </query>
-
-    <drop_query>DROP TABLE array_distance_float32</drop_query>
-    <drop_query>DROP TABLE array_distance_mixed</drop_query>
+    <drop_query>DROP TABLE array_distance_f32_{array_size}</drop_query>
+    <drop_query>DROP TABLE array_distance_mixed_{array_size}</drop_query>
 </test>
