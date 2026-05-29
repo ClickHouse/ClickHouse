@@ -5526,6 +5526,13 @@ Possible values:
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
+    DECLARE(UInt64, iceberg_parallel_manifest_decode_threads, 1, R"(
+Number of threads used to decode Iceberg manifest files in parallel during query planning.
+
+A value of `1` (the default) preserves the historical single-threaded behavior. Values greater than `1` make the Iceberg iterator spawn several producer tasks that cooperatively walk the snapshot's manifest list, which can reduce query planning time for tables with many manifest files.
+
+The effective number of threads is capped at the number of manifest files in the snapshot, so setting a larger value has no additional effect.
+)", EXPERIMENTAL) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 

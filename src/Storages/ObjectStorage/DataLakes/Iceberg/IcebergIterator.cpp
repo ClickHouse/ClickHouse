@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #if USE_AVRO
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -62,6 +63,7 @@ extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
+extern const Event IcebergParallelManifestDecodeThreadsSpawned;
 };
 
 
@@ -75,6 +77,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsUInt64 iceberg_parallel_manifest_decode_threads;
 };
 
 
@@ -172,10 +175,21 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             current_manifest_file_iterator = nullptr;
         }
 
-        /// Find the next manifest file with matching content type.
-        while (manifest_file_index < data_snapshot->manifest_list_entries.size())
+        /// Find the next manifest file with matching content type. When `shared_manifest_index`
+        /// is set, claim indices via `fetch_add` so multiple `SingleThreadIcebergKeysIterator`
+        /// instances can cooperate to walk the same `manifest_list_entries` in parallel.
+        const size_t total_manifests = data_snapshot->manifest_list_entries.size();
+        while (true)
         {
-            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_file_index++];
+            size_t idx;
+            if (shared_manifest_index)
+                idx = shared_manifest_index->fetch_add(1, std::memory_order_relaxed);
+            else
+                idx = local_manifest_file_index++;
+            if (idx >= total_manifests)
+                break;
+
+            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[idx];
             if (manifest_list_entry.content_type != manifest_file_content_type)
                 continue;
 
@@ -212,7 +226,8 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     const ActionsDAG * filter_dag_,
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-    PersistentTableComponents persistent_components_)
+    PersistentTableComponents persistent_components_,
+    std::shared_ptr<std::atomic<size_t>> shared_manifest_index_)
     : object_storage(object_storage_)
     , filter_dag(
           [&]() -> std::shared_ptr<const ActionsDAG>
@@ -235,8 +250,27 @@ SingleThreadIcebergKeysIterator::SingleThreadIcebergKeysIterator(
     , data_snapshot(data_snapshot_)
     , persistent_components(persistent_components_)
     , log(getLogger("IcebergIterator"))
+    , shared_manifest_index(std::move(shared_manifest_index_))
     , manifest_file_content_type(manifest_file_content_type_)
 {
+}
+
+namespace
+{
+
+/// Resolve `iceberg_parallel_manifest_decode_threads` for one query.
+/// Returns 1 when the setting is unset/zero or there are no manifests to walk.
+size_t resolveParallelManifestDecodeThreads(const ContextPtr & ctx, size_t total_manifests)
+{
+    if (!ctx)
+        return 1;
+    size_t requested = ctx->getSettingsRef()[Setting::iceberg_parallel_manifest_decode_threads];
+    if (requested == 0)
+        requested = 1;
+    /// No point spawning more workers than there are manifests to walk.
+    return std::min<size_t>(requested, std::max<size_t>(total_manifests, 1));
+}
+
 }
 
 IcebergIterator::IcebergIterator(
@@ -252,14 +286,6 @@ IcebergIterator::IcebergIterator(
     , object_storage(std::move(object_storage_))
     , table_state_snapshot(table_snapshot_)
     , persistent_components(persistent_components_)
-    , data_files_iterator(
-          object_storage,
-          local_context_,
-          Iceberg::ManifestFileContentType::DATA,
-          filter_dag.get(),
-          table_snapshot_,
-          data_snapshot_,
-          persistent_components_)
     , deletes_iterator(
           object_storage,
           local_context_,
@@ -271,55 +297,109 @@ IcebergIterator::IcebergIterator(
     , blocking_queue(100)
     , callback(std::move(callback_))
 {
+    /// 1. Drain delete files synchronously (single-threaded by design — required for the data
+    ///    file pruning logic below, and the volume of delete entries is typically small).
     auto delete_file = deletes_iterator.next();
     while (delete_file.has_value())
     {
         if (delete_file.value()->parsed_entry->equality_ids.has_value())
-        {
             equality_deletes_files.emplace_back(std::move(delete_file.value()));
-        }
         else
-        {
             position_deletes_files.emplace_back(std::move(delete_file.value()));
-        }
         delete_file = deletes_iterator.next();
     }
-    LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
+    LOG_DEBUG(
+        logger,
+        "Taken {} position deletes file and {} equality deletes files in iceberg iterator",
+        position_deletes_files.size(),
+        equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
-    producer_task = std::make_unique<ThreadFromGlobalPool>(
-        [this, thread_group = CurrentThread::getGroup()]()
+
+    /// 2. Decide how many parallel data-file producers to spawn.
+    const size_t total_manifests = data_snapshot_ ? data_snapshot_->manifest_list_entries.size() : 0;
+    const size_t parallel_threads = resolveParallelManifestDecodeThreads(local_context_, total_manifests);
+
+    /// 3. Build N data-file iterators. When N > 1 they share one atomic counter so each `next`
+    ///    call against `data_snapshot->manifest_list_entries` claims a non-overlapping index;
+    ///    when N == 1 the lone iterator uses its private counter (historical behavior).
+    auto shared_index = parallel_threads > 1 ? std::make_shared<std::atomic<size_t>>(0) : nullptr;
+    data_files_iterators.reserve(parallel_threads);
+    for (size_t i = 0; i < parallel_threads; ++i)
+    {
+        data_files_iterators.emplace_back(std::make_unique<Iceberg::SingleThreadIcebergKeysIterator>(
+            object_storage,
+            local_context_,
+            Iceberg::ManifestFileContentType::DATA,
+            filter_dag.get(),
+            table_snapshot_,
+            data_snapshot_,
+            persistent_components_,
+            shared_index));
+    }
+
+    /// 4. Spawn one producer task per iterator. The last finisher closes `blocking_queue` so
+    ///    consumers see EOF; on exception the first thrower stashes to `exception` and
+    ///    `blocking_queue.finish()`s early to unblock peers (other producers' `fetch_sub`
+    ///    branches still call `finish()`, which is idempotent).
+    producers_in_flight = std::make_shared<std::atomic<size_t>>(parallel_threads);
+    producer_tasks.reserve(parallel_threads);
+    try
+    {
+        for (size_t i = 0; i < parallel_threads; ++i)
         {
-            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
-            while (!blocking_queue.isFinished())
-            {
-                std::optional<ProcessedManifestFileEntryPtr> entry;
-                try
+            auto * iter = data_files_iterators[i].get();
+            producer_tasks.emplace_back(
+                [this, iter, in_flight = producers_in_flight, thread_group = CurrentThread::getGroup()]()
                 {
-                    entry = data_files_iterator.next();
-                }
-                catch (...)
-                {
-                    std::lock_guard lock(exception_mutex);
-                    if (!exception)
+                    DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
+                    try
                     {
-                        exception = std::current_exception();
+                        while (!blocking_queue.isFinished())
+                        {
+                            auto entry = iter->next();
+                            if (!entry.has_value())
+                                break;
+                            while (!blocking_queue.push(std::move(entry.value())))
+                            {
+                                if (blocking_queue.isFinished())
+                                    break;
+                            }
+                        }
                     }
-                    blocking_queue.finish();
-                    break;
-                }
-                if (!entry.has_value())
-                    break;
-                while (!blocking_queue.push(std::move(entry.value())))
-                {
-                    if (blocking_queue.isFinished())
+                    catch (...)
                     {
-                        break;
+                        std::lock_guard lock(exception_mutex);
+                        if (!exception)
+                            exception = std::current_exception();
+                        blocking_queue.finish();
                     }
-                }
-            }
-            blocking_queue.finish();
-        });
+
+                    if (in_flight->fetch_sub(1, std::memory_order_acq_rel) == 1)
+                        blocking_queue.finish();
+                });
+        }
+    }
+    catch (...)
+    {
+        /// `ThreadFromGlobalPool`'s constructor calls `scheduleOrThrow` and can throw if the
+        /// global thread pool is saturated. If iteration `i` throws after `i` producers were
+        /// already spawned, we must drain and join them here: `~IcebergIterator` does not run
+        /// (the object never finished construction), and `~ThreadFromGlobalPoolImpl` calls
+        /// `abort()` on any still-`initialized()` entry that the `producer_tasks` vector
+        /// destructor would otherwise hit, killing the entire server process.
+        blocking_queue.finish();
+        for (auto & task : producer_tasks)
+            if (task.joinable())
+                task.join();
+        throw;
+    }
+
+    if (parallel_threads > 1)
+    {
+        ProfileEvents::increment(ProfileEvents::IcebergParallelManifestDecodeThreadsSpawned, parallel_threads);
+        LOG_DEBUG(logger, "Spawned {} parallel iceberg manifest-decode producer threads", parallel_threads);
+    }
 }
 
 ObjectInfoPtr IcebergIterator::next(size_t)
@@ -425,9 +505,10 @@ size_t IcebergIterator::estimatedKeysCount()
 IcebergIterator::~IcebergIterator()
 {
     blocking_queue.finish();
-    if (producer_task)
+    for (auto & task : producer_tasks)
     {
-        producer_task->join();
+        if (task.joinable())
+            task.join();
     }
 }
 }

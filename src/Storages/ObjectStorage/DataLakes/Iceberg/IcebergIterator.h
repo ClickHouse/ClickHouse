@@ -18,6 +18,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool_fwd.h>
 
+#include <atomic>
 #include <optional>
 #include <base/defines.h>
 
@@ -37,6 +38,11 @@ namespace Iceberg
 class SingleThreadIcebergKeysIterator
 {
 public:
+    /// `shared_manifest_index`, when non-null, is an atomic counter shared across multiple
+    /// `SingleThreadIcebergKeysIterator` instances. Each `next` claims its next manifest list
+    /// entry via `fetch_add` against this counter, letting several iterator instances cooperate
+    /// to walk one snapshot's `manifest_list_entries` in parallel without overlap.
+    /// When null (default), each instance uses its own private index — the historical behavior.
     SingleThreadIcebergKeysIterator(
         ObjectStoragePtr object_storage_,
         ContextPtr local_context_,
@@ -44,7 +50,8 @@ public:
         const ActionsDAG * filter_dag_,
         TableStateSnapshotPtr table_snapshot_,
         IcebergDataSnapshotPtr data_snapshot_,
-        PersistentTableComponents persistent_components);
+        PersistentTableComponents persistent_components,
+        std::shared_ptr<std::atomic<size_t>> shared_manifest_index = nullptr);
 
     std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
@@ -57,7 +64,8 @@ private:
     PersistentTableComponents persistent_components;
     LoggerPtr log;
 
-    size_t manifest_file_index = 0;
+    size_t local_manifest_file_index = 0;
+    std::shared_ptr<std::atomic<size_t>> shared_manifest_index;
     Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
@@ -88,10 +96,19 @@ private:
     ObjectStoragePtr object_storage;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;
     Iceberg::PersistentTableComponents persistent_components;
-    Iceberg::SingleThreadIcebergKeysIterator data_files_iterator;
+    /// Data-file producers. Always at least one element; more when
+    /// `iceberg_parallel_manifest_decode_threads > 1`. Declared before `producer_tasks` so that
+    /// reverse-order member destruction frees the iterators only after the tasks (which hold
+    /// raw pointers into this vector) have already been destroyed.
+    std::vector<std::unique_ptr<Iceberg::SingleThreadIcebergKeysIterator>> data_files_iterators;
     Iceberg::SingleThreadIcebergKeysIterator deletes_iterator;
     ConcurrentBoundedQueue<Iceberg::ProcessedManifestFileEntryPtr> blocking_queue;
-    std::unique_ptr<ThreadFromGlobalPool> producer_task;
+    /// Number of producer tasks that have not yet finished. Each producer fetch_subs as it
+    /// exits; the last finisher closes `blocking_queue` so consumers see EOF. Captured
+    /// by-value (shared_ptr copy) into each producer lambda; the member here lets a debugger
+    /// inspect the live count.
+    std::shared_ptr<std::atomic<size_t>> producers_in_flight;
+    std::vector<ThreadFromGlobalPool> producer_tasks;
     IDataLakeMetadata::FileProgressCallback callback;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> position_deletes_files;
     std::vector<Iceberg::ProcessedManifestFileEntryPtr> equality_deletes_files;
