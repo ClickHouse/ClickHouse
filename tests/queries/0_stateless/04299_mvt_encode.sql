@@ -35,16 +35,20 @@ FROM (SELECT mvtEncodeGeom(lon, lat, 10, 550, 335) AS geom FROM mvt_points)
 GROUP BY geom
 ORDER BY geom;
 
-SELECT '-- mvtEncode: a tile with several features sharing an attribute value interns it only once';
-SELECT hex(mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)))
+SELECT '-- mvtEncode: a shared attribute value is interned once, so a tile with one distinct value is smaller';
+-- The tile is compared by length rather than by exact bytes because mvtEncode is order-dependent: the order
+-- of the feature messages (and hence the exact bytes) depends on the order rows reach the aggregate, but the
+-- total length does not. A shared value yields a one-entry value pool, so the tile is shorter than when the
+-- two features carry distinct values.
+SELECT
+    length(mvtEncode('points')(geom, tuple(toUInt64(5))::Tuple(cluster_count UInt64)))
+        < length(mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)))
 FROM
 (
     SELECT tuple(10.0, 20.0) AS geom, toUInt64(5) AS cluster_count
     UNION ALL
-    SELECT tuple(30.0, 40.0) AS geom, toUInt64(5) AS cluster_count
-    ORDER BY geom
-)
-SETTINGS max_threads = 1;
+    SELECT tuple(30.0, 40.0) AS geom, toUInt64(6) AS cluster_count
+);
 
 SELECT '-- mvtEncode: each supported property type maps to its vector tile value type';
 SELECT hex(mvtEncode('t')(
