@@ -88,12 +88,7 @@ public:
 
     size_t getPosition() const { return position; }
 
-    /// Test-only accessors for `over_read_buffer` introspection. Production
-    /// callers should never need these — the buffer is self-managing.
-    size_t getOverReadBytes() const { return over_read_buffer.totalBytes(); }
-    const Rope & getOverReadBuffer() const { return over_read_buffer; }
     size_t getSourceRequestsCount() const { return stats.source_requests; }
-    size_t getOverReadServedBytes() const { return stats.over_read_served_bytes; }
     /// Test-only: is there a prefetch currently scheduled for the next window?
     bool hasInflightPrefetch() const { return prefetch_handle != nullptr; }
 
@@ -151,12 +146,8 @@ private:
     ///   - size known: `position >= totalSize()`.
     ///   - size unknown: the source's short return latches `reached_eof`.
     /// Seek backward clears `reached_eof` so the source can re-deliver.
-    /// `over_read_buffer` is consulted so a short return cannot drop bytes
-    /// the previous source-read pulled past `physical_window`.
     bool atEnd() const
     {
-        if (!over_read_buffer.empty())
-            return false;
         return reached_eof || (!offset_map.hasUnknownSize() && position >= totalSize());
     }
 
@@ -291,21 +282,6 @@ private:
         size_t prefetch_discarded_running = 0;
         UInt64 prefetch_discard_wait_us = 0;
         size_t prefetch_discarded_bytes = 0;
-        /// Bytes source-read PAST the requested window and retained in
-        /// `over_read_buffer` for a potential future call. Pair this with
-        /// `over_read_served_bytes` to measure how often the speculation
-        /// pays off:
-        ///   served / bytes ≈ 1 — every speculated byte is consumed (great).
-        ///   served / bytes ≪ 1 — most speculation is wasted (e.g. random
-        ///   reads, or the overflow guard kept dropping the buffer).
-        size_t over_read_bytes = 0;
-
-        /// Bytes served to the caller from `over_read_buffer`. Counted
-        /// separately from `cache_hit_bytes` — these bytes were already
-        /// accounted for as `cache_miss_bytes` when source-read in the
-        /// originating call; double-counting them as cache hits would
-        /// distort hit-rate math.
-        size_t over_read_served_bytes = 0;
     };
     /// `mutable` so the `const` `decryptRope` can accumulate `decrypt_us`.
     /// `decryptRope`'s `const` documents thread-safety for parallel calls
@@ -314,17 +290,6 @@ private:
     /// writes from worker + foreground are serialized via the prefetch
     /// future's `get()` happens-before edge (same model as `source_read_us`).
     mutable Stats stats;
-
-    /// Bytes that were source-read into a separate `OwnedRopeBuffer` but landed
-    /// outside the caller's `physical_window` — only retained when the
-    /// source-read advanced `live_buffer`. On the next `readPhysicalWindow`
-    /// they're checked before the cache chain, so a subsequent request that
-    /// covers these bytes can serve them without touching the cache or source,
-    /// and the live connection stays at its position for the next pr.
-    /// Self-bounding: each call removes the served slices and the overflow
-    /// guard at the end of `readPhysicalWindow` drops the buffer (and
-    /// `live_buffer`) if total bytes exceed `window_size`.
-    Rope over_read_buffer;
 
     LoggerPtr log = getLogger("ReaderExecutor");
 };

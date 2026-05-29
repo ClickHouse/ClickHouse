@@ -40,9 +40,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchDiscardedBytes;
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
-    extern const Event ReaderExecutorOverReadOverflow;
-    extern const Event ReaderExecutorOverReadBytes;
-    extern const Event ReaderExecutorOverReadServedBytes;
 }
 
 namespace CurrentMetrics
@@ -193,8 +190,6 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedRunning, stats.prefetch_discarded_running);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardWaitMicroseconds, stats.prefetch_discard_wait_us);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedBytes, stats.prefetch_discarded_bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadBytes, stats.over_read_bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadServedBytes, stats.over_read_served_bytes);
 
     LOG_DEBUG(log,
         "Destroyed: cache_hit_bytes={} miss_bytes={} populated={} allocated={} "
@@ -202,8 +197,7 @@ ReaderExecutor::~ReaderExecutor()
         "get_us={} populate_us={} src_us={} decrypt_us={} "
         "prefetch_wait_us={} sync_read_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
-        "prefetch_discarded_running={} prefetch_discard_wait_us={} prefetch_discarded_bytes={} "
-        "over_read={} over_read_served={}",
+        "prefetch_discarded_running={} prefetch_discard_wait_us={} prefetch_discarded_bytes={}",
         stats.cache_hit_bytes, stats.cache_miss_bytes,
         stats.cache_populated_bytes, stats.allocated_bytes,
         stats.cache_get_requests, stats.cache_populate_requests, stats.source_requests,
@@ -211,8 +205,7 @@ ReaderExecutor::~ReaderExecutor()
         stats.source_read_us, stats.decrypt_us,
         stats.prefetch_wait_us, stats.sync_read_us,
         stats.prefetch_hits, stats.prefetch_cancelled, stats.prefetch_pool_full,
-        stats.prefetch_discarded_running, stats.prefetch_discard_wait_us, stats.prefetch_discarded_bytes,
-        stats.over_read_bytes, stats.over_read_served_bytes);
+        stats.prefetch_discarded_running, stats.prefetch_discard_wait_us, stats.prefetch_discarded_bytes);
 
     if (reader_executor_log)
     {
@@ -425,9 +418,9 @@ void ReaderExecutor::discardPrefetch()
     }
 
     /// `tryCancel` lost the race — the worker is mid-`readPhysicalWindow`,
-    /// mutating `live_buffer`, `over_read_buffer`, `reached_eof`, `stats`
-    /// via the captured `this`. Block so the caller can safely overwrite
-    /// that state on return. Everything the worker produced is wasted.
+    /// mutating `live_buffer`, `reached_eof`, `stats` via the captured
+    /// `this`. Block so the caller can safely overwrite that state on
+    /// return. Everything the worker produced is wasted.
     ++stats.prefetch_discarded_running;
     StopwatchAccumulator wait_scope(stats.prefetch_discard_wait_us);
     try
@@ -773,10 +766,6 @@ void ReaderExecutor::seek(size_t new_position)
         }
     }
 
-    /// `over_read_buffer` is paired with the live connection's position;
-    /// even if `live_buffer` survives, the speculative bytes are scoped to
-    /// the previous window.
-    over_read_buffer = {};
     position = new_position;
     reached_eof = false;
 
@@ -982,30 +971,6 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> miss_handles;
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> hit_only_handles;
 
-    /// Over-read pre-check: bytes the previous source-read pulled past its
-    /// window (advancing `live_buffer` through them) and we kept in
-    /// `over_read_buffer`. Serving them here lets the live-buffer reuse path
-    /// take over the rest of the window — the upcoming source-read starts at
-    /// the exact byte where `live_buffer` is positioned.
-    if (!over_read_buffer.empty())
-    {
-        /// Don't bump `cache_hit_bytes`: these bytes were already accounted
-        /// as `cache_miss_bytes` in the source-read that produced them.
-        Rope served = over_read_buffer.slice(physical_window);
-        for (const auto & node : served.getNodes())
-            covered.add(ByteRange{node.logical_offset, node.size});
-        const size_t served_bytes = served.totalBytes();
-        stats.over_read_served_bytes += served_bytes;
-        LOG_TRACE(log, "readPhysicalWindow: over-read served {} bytes", served_bytes);
-        result.append(std::move(served));
-
-        /// Half-open `[physical_window.end(), +∞)`. `size_t::max()/2` avoids
-        /// `offset + size` overflow inside `ByteRange::end()`.
-        const size_t tail_size = std::numeric_limits<size_t>::max() / 2;
-        over_read_buffer = over_read_buffer.slice(
-            ByteRange{physical_window.end(), tail_size});
-    }
-
     /// Walk the cache chain. Each cache reports hits/misses at its own
     /// granularity (which may extend past the requested range). Hits are
     /// appended only for not-yet-covered subranges so `result` stays disjoint
@@ -1108,10 +1073,9 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             LOG_TRACE(log, "readPhysicalWindow: source read object={}, offset={}, size={}",
                 pr.object.remote_path, pr.object_offset, pr.size);
 
-            /// Split at the user-window edges so user-data and over-read bytes
-            /// land in separate `OwnedRopeBuffer`s — when the caller drops the
-            /// returned rope, the user-data buffer's refcount falls to zero
-            /// even if `over_read_buffer` still holds the tail block.
+            /// Split at the user-window edges so user-data bytes (within
+            /// the window) and head-extension bytes (segment-aligned miss
+            /// heads before the window) live in separate `OwnedRopeBuffer`s.
             VectorWithMemoryTracking<size_t> splits;
             const size_t pr_lo = logical_pos;
             const size_t pr_hi = logical_pos + pr.size;
@@ -1151,24 +1115,6 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 covered.add(sub);
             }
 
-            /// Retain whatever the source delivered past `physical_window.end()`
-            /// — the over-read pre-check on the next call serves these bytes
-            /// regardless of `live_buffer` state. Critical for unknown-size
-            /// EOF inside a cache-widened miss: bytes between
-            /// `physical_window.end()` and the actual file end would otherwise
-            /// be dropped before the caller could read them.
-            /// A pre-window prefix is always dropped (sequential reads move
-            /// forward; the over-read pre-check would discard it anyway).
-            /// The overflow guard at the end of this function bounds total
-            /// retention to `window_size`.
-            Rope tail = source_rope.slice(
-                ByteRange{physical_window.end(), std::numeric_limits<size_t>::max() / 2});
-            if (!tail.empty())
-            {
-                stats.over_read_bytes += tail.totalBytes();
-                over_read_buffer.append(std::move(tail));
-            }
-
             logical_pos += pr.size;
         }
     }
@@ -1190,18 +1136,6 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
         }
-    }
-
-    /// Over-read past `window_size` means the caller is not consuming our
-    /// lookahead — drop both the buffer and `live_buffer` (the next call
-    /// will need bytes before the connection's position anyway).
-    if (over_read_buffer.totalBytes() > window_size)
-    {
-        LOG_TRACE(log, "readPhysicalWindow: over-read buffer overflow ({} > {}), dropping it and live_buffer",
-            over_read_buffer.totalBytes(), window_size);
-        ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadOverflow);
-        over_read_buffer = {};
-        live_buffer.reset();
     }
 
     /// Release the slot if this window didn't open a connection — a fully

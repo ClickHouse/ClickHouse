@@ -826,9 +826,6 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchDiscardedBytes, "Bytes a running ReaderExecutor prefetch delivered before discardPrefetch threw the rope away.", ValueType::Bytes) \
     M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a SourceBufferLimit slot for a live-buffer read.", ValueType::Number) \
     M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a SourceBufferLimit slot.", ValueType::Number) \
-    M(ReaderExecutorOverReadOverflow, "Number of times ReaderExecutor dropped its retained over-read buffer (and the matching live connection) because the buffer exceeded `window_size`; signals a non-sequential access pattern that wasn't consuming the lookahead.", ValueType::Number) \
-    M(ReaderExecutorOverReadBytes, "Bytes that ReaderExecutor source-read past the caller's window and retained in `over_read_buffer` for a potential follow-up call. Divide `ReaderExecutorOverReadServedBytes` by this to measure speculation hit rate.", ValueType::Bytes) \
-    M(ReaderExecutorOverReadServedBytes, "Bytes served from ReaderExecutor's over-read buffer (source-read past a previous request's window and retained for the next call). Avoids re-fetching from source / cache. Not counted as `ReaderExecutorCacheHitBytes` — those bytes were already accounted as `ReaderExecutorCacheMissBytes` when the originating source-read happened.", ValueType::Bytes) \
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \

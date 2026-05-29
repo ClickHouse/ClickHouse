@@ -1433,76 +1433,6 @@ TEST(ReaderExecutor, UnknownSizeMultiObjectRejected)
     });
 }
 
-namespace
-{
-
-/// Cache mock that models the `DiskCacheProvider` shape where miss ranges are
-/// segment-aligned and can be wider than the caller's request — so the
-/// next layer (or source) can fully populate the segment via `put`.
-class WideMissOnlyCacheHandle : public ICacheHandle
-{
-public:
-    explicit WideMissOnlyCacheHandle(ByteRange segment)
-    {
-        result.miss_ranges.push_back(segment);
-    }
-    CacheLookupResult status() const override { return result; }
-    Rope get(ByteRange) override { return Rope{}; }
-    size_t put(ByteRange, Rope data) override { return data.totalBytes(); }
-private:
-    CacheLookupResult result;
-};
-
-class WideMissOnlyCacheProvider : public ICacheProvider
-{
-public:
-    explicit WideMissOnlyCacheProvider(size_t segment_size_) : segment_size(segment_size_) {}
-    std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange) override
-    {
-        return std::make_unique<WideMissOnlyCacheHandle>(ByteRange{0, segment_size});
-    }
-    String name() const override { return "WideMissOnlyCache"; }
-private:
-    size_t segment_size;
-};
-
-}
-
-TEST(ReaderExecutor, UnknownSizeShortReadInsideWideCacheMissPreservesTail)
-{
-    /// Regression: cache reports a miss wider than the caller's window
-    /// (e.g. a 4 MiB disk-cache segment for a 500-byte window) and the
-    /// unknown-size source returns short within that wide miss. Without
-    /// the EOF-tail retention + `atEnd` over-read awareness fix, bytes
-    /// between `physical_window.end()` and the actual file end were
-    /// dropped because (a) `live_used` compared `current_position`
-    /// against `pr.size` rather than `actual`, and (b) `atEnd` returned
-    /// true on `reached_eof` regardless of buffered over-read bytes.
-    String content(600, 'T');
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"obj", content}});
-
-    StoredObjects objects;
-    objects.emplace_back("obj", "", StoredObject::UnknownSize);
-
-    auto cache = std::make_shared<WideMissOnlyCacheProvider>(/*segment_size=*/4096);
-
-    ReaderExecutor executor(source, objects, {cache}, /*window_size=*/500);
-
-    String collected;
-    while (true)
-    {
-        Rope w = executor.readNextWindow();
-        if (w.empty())
-            break;
-        for (const auto & node : w.getNodes())
-            collected.append(node.data(), node.size);
-    }
-
-    EXPECT_EQ(collected.size(), content.size());
-    EXPECT_EQ(collected, content);
-}
-
 TEST(ReaderExecutor, LiveBufferReacquiredAfterSeekBackFromEof)
 {
     /// After EOF released the slot, a backward seek and re-read must
@@ -2111,8 +2041,8 @@ public:
 
 TEST(ReaderExecutor, PreAcquiredSlotReleasedOnCrossObjectSeek)
 {
-    /// Pre-fix: `seek` cleared `prefetch_handle` and `over_read_buffer` but
-    /// left `pre_acquired_slot` alone. After seeking across objects, the
+    /// Pre-fix: `seek` cleared `prefetch_handle` but left `pre_acquired_slot`
+    /// alone. After seeking across objects, the
     /// next `readFromSource` saw a path mismatch, fell through to acquire
     /// a fresh slot for the new object, and silently held the stale slot
     /// until executor destruction — a slow leak of
