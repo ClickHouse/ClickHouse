@@ -1,6 +1,7 @@
 #include <memory>
 #include <Access/Common/AccessRightsElement.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/TablesDependencyGraph.h>
@@ -28,7 +29,6 @@
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Core/UUID.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
