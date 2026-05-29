@@ -225,6 +225,14 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+enum class TextIndexPostingListApplyMode : uint8_t
+{
+    MATERIALIZE,
+    LAZY,
+};
+
+DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
+
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 
 DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
