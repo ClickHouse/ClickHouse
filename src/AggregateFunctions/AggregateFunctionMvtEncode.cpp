@@ -131,7 +131,7 @@ private:
 
     static Int32 readFixedInt32(const char *& pos, const char * end)
     {
-        if (pos + sizeof(UInt32) > end)
+        if (sizeof(UInt32) > static_cast<size_t>(end - pos))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated coordinate");
         UInt32 bits = 0;
         for (size_t i = 0; i < sizeof(bits); ++i)
@@ -343,7 +343,9 @@ public:
                     continue;
 
                 const UInt64 length = readVarint(pos, end);
-                if (pos + length > end)
+                /// Compare sizes rather than pointers: `length` is read from the (possibly corrupted) state and could be
+                /// huge, so `pos + length` would overflow the pointer and the check could be bypassed.
+                if (length > static_cast<UInt64>(end - pos))
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated value");
                 std::string_view value(pos, length);
                 pos += length;
