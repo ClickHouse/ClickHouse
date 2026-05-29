@@ -98,7 +98,9 @@ ReadSettings BorrowFromCacheObjectStorage::patchSettings(const ReadSettings & re
 std::unique_ptr<ReadBufferFromFileBase> BorrowFromCacheObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    bool /* use_external_buffer */,
+    bool /* restrict_seek */) const
 {
     /// Capture both `cache_path` and the `holder` under the lock. The holder is shared
     /// with the returned read buffer via `HoldingReadBuffer` so the underlying cache file
