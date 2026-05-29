@@ -274,7 +274,17 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             /// the column to one of the output lists in every case, otherwise the slot in
             /// `res_columns` inside `postprocessChunk` is left null and `Chunk::checkNumRowsIsConsistent`
             /// dereferences a null `ColumnPtr` (issue #101937).
-            if (!column_names_to_sum.empty() && !isInNames(column.name, column_names_to_sum))
+            ///
+            /// Match `column_names_to_sum` against both the physical name and the nested
+            /// table name, mirroring `MergeTreeData::MergingParams::check`, which validates
+            /// the engine argument against `Nested::extractTableName(name_and_type.name)`.
+            /// Without this, `CoalescingMergeTree(testMap)` over `testMap.key`/`testMap.value`
+            /// would route both subcolumns into `column_numbers_not_to_aggregate` and silently
+            /// emit the first-row values instead of applying `last_value`.
+            const bool matches_columns_to_sum
+                = isInNames(column.name, column_names_to_sum)
+                || isInNames(Nested::extractTableName(column.name), column_names_to_sum);
+            if (!column_names_to_sum.empty() && !matches_columns_to_sum)
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
             }

@@ -73,6 +73,32 @@ SELECT 'lc - FINAL', * FROM test_coal_nested_map_lc FINAL ORDER BY key;
 OPTIMIZE TABLE test_coal_nested_map_lc FINAL;
 SELECT 'lc - after optimize', * FROM test_coal_nested_map_lc;
 
+-- 4. Explicit nested-table `columns` argument: `CoalescingMergeTree(testMap)`.
+--    `MergeTreeData::MergingParams::check` validates the engine argument against
+--    `Nested::extractTableName(name_and_type.name)`, so the stored
+--    `columns_to_sum` entry is the nested table name (`testMap`), not the
+--    physical subcolumn names (`testMap.key`, `testMap.value`).
+--    `SummingSortedAlgorithm::defineColumns` must match the same way; otherwise
+--    both subcolumns fall through to `column_numbers_not_to_aggregate` and
+--    `finishGroup` emits the first-row values instead of `last_value`.
+
+CREATE TABLE test_coal_nested_map_explicit
+(
+    key UInt32,
+    `testMap.key` Array(UInt32),
+    `testMap.value` Array(UInt32),
+    other_col UInt64
+)
+ENGINE = CoalescingMergeTree(testMap)
+ORDER BY key;
+
+INSERT INTO test_coal_nested_map_explicit VALUES (1, [1], [10], 100);
+INSERT INTO test_coal_nested_map_explicit VALUES (1, [2], [20], 200);
+SELECT 'explicit - FINAL', * FROM test_coal_nested_map_explicit FINAL ORDER BY key;
+OPTIMIZE TABLE test_coal_nested_map_explicit FINAL;
+SELECT 'explicit - after optimize', * FROM test_coal_nested_map_explicit ORDER BY key;
+
 DROP TABLE test_coal_nested_map_array;
 DROP TABLE test_coal_nested_map_mixed;
 DROP TABLE test_coal_nested_map_lc;
+DROP TABLE test_coal_nested_map_explicit;
