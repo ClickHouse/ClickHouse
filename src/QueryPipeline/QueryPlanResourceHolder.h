@@ -33,8 +33,8 @@ struct QueryPlanResourceHolder
     QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &) = delete;
 
     /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
-    /// Note: append (and thus this assignment) allocates through the memory-tracking containers,
-    /// so it can throw MEMORY_LIMIT_EXCEEDED and must not be noexcept.
+    /// append (and thus this assignment) allocates, so it can throw (`std::bad_alloc`, or
+    /// `MEMORY_LIMIT_EXCEEDED` from the memory-tracking containers) and must not be noexcept.
     QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&);
     QueryPlanResourceHolder & append(const QueryPlanResourceHolder & rhs);
 
