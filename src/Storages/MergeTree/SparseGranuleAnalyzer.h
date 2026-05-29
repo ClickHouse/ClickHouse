@@ -6,6 +6,8 @@
 #include <Storages/MergeTree/SparsityFilter.h>
 #include <Common/Logger.h>
 
+#include <atomic>
+
 #include <optional>
 #include <vector>
 
@@ -45,7 +47,8 @@ analyzeSparseColumnGranules(
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & query_context,
     SparseOffsetsShare * offsets_share,
-    LoggerPtr log);
+    LoggerPtr log,
+    const std::atomic<bool> * is_cancelled = nullptr);
 
 
 /// `granules_selected[g] == false` means the scan can skip granule g. Adapted from
@@ -78,6 +81,10 @@ public:
     /// can pick them up.
     void setSparseOffsetsShare(SparseOffsetsSharePtr share) { offsets_share = std::move(share); }
 
+    /// Marks the reader as cancelled. Outstanding `read` calls return nullptr; pending
+    /// chunk work inside `analyzeSparseColumnGranules` is abandoned. Idempotent.
+    void cancel() noexcept { is_cancelled.store(true, std::memory_order_release); }
+
 private:
     std::vector<RecognisedSparsityPredicate> predicates;
     const MergeTreeData & data;
@@ -85,6 +92,7 @@ private:
     ContextPtr query_context;
     SparseOffsetsSharePtr offsets_share;
     LoggerPtr log;
+    std::atomic<bool> is_cancelled{false};
 };
 
 using MergeTreeSparsityReaderPtr = std::shared_ptr<MergeTreeSparsityReader>;

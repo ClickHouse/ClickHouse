@@ -97,8 +97,13 @@ analyzeSparseColumnGranules(
     const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & query_context,
     SparseOffsetsShare * offsets_share,
-    LoggerPtr log)
+    LoggerPtr log,
+    const std::atomic<bool> * is_cancelled)
 {
+    auto check_cancelled = [&] { return is_cancelled && is_cancelled->load(std::memory_order_acquire); };
+    if (check_cancelled())
+        return std::nullopt;
+
     /// Without a sparse offsets stream there is no cheap classification to make.
     const auto & infos = part->getSerializationInfos();
     auto it = infos.find(column_name);
@@ -212,12 +217,15 @@ analyzeSparseColumnGranules(
     auto mark_cache_keepalive = storage.getContext()->getMarkCache();
     auto * mark_cache_raw = mark_cache_keepalive.get();
 
-    auto process_chunk = [part, cols, storage_snapshot, storage_settings_ptr, mark_cache_keepalive, mark_cache_raw, part_info, log, column_name](const MarkRange & chunk) -> ChunkResult
+    auto process_chunk = [part, cols, storage_snapshot, storage_settings_ptr, mark_cache_keepalive, mark_cache_raw, part_info, log, column_name, is_cancelled](const MarkRange & chunk) -> ChunkResult
     {
         ChunkResult r;
         r.range = chunk;
         r.has_only_defaults.assign(chunk.end - chunk.begin, 0);
         r.has_only_non_defaults.assign(chunk.end - chunk.begin, 0);
+
+        if (is_cancelled && is_cancelled->load(std::memory_order_acquire))
+            return r;
 
         auto chunk_reader = createMergeTreeReader(
             part_info,
@@ -391,6 +399,9 @@ MergeTreeSparsityReader::MergeTreeSparsityReader(
 
 SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & part)
 {
+    if (is_cancelled.load(std::memory_order_acquire))
+        return nullptr;
+
     auto result = std::make_shared<SparsityReadResult>();
     const size_t total_marks = part.data_part->index_granularity->getMarksCountWithoutFinal();
     result->granules_selected.assign(total_marks, true);
@@ -398,8 +409,11 @@ SparsityReadResultPtr MergeTreeSparsityReader::read(const RangesInDataPart & par
     bool any_predicate_used = false;
     for (const auto & predicate : predicates)
     {
+        if (is_cancelled.load(std::memory_order_acquire))
+            return nullptr;
+
         auto analysis = analyzeSparseColumnGranules(
-            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, offsets_share.get(), log);
+            part.data_part, predicate.column_name, part.ranges, data, storage_snapshot, query_context, offsets_share.get(), log, &is_cancelled);
         if (!analysis)
             continue;
         any_predicate_used = true;

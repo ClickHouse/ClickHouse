@@ -566,6 +566,9 @@ void MergeTreeIndexReadResultPool::cancel() noexcept
 
     if (projection_index_reader)
         projection_index_reader->cancel();
+
+    if (sparsity_reader)
+        sparsity_reader->cancel();
 }
 
 }
