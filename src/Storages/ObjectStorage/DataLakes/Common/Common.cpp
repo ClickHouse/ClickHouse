@@ -50,9 +50,7 @@ std::vector<String> listFiles(
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)
 {
-    namespace fs = std::filesystem;
-
-    auto norm_base = fs::path(table_path).lexically_normal();
+    auto norm_base = std::filesystem::path(table_path).lexically_normal();
     auto combined = (norm_base / relative_path).lexically_normal();
 
     auto rel = combined.lexically_relative(norm_base);
