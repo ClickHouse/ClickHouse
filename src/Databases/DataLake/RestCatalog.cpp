@@ -1272,8 +1272,9 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         sendRequest(endpoint, request_body);
     }
-    catch (const DB::HTTPException &)
+    catch (const DB::HTTPException & ex)
     {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;
@@ -1333,8 +1334,9 @@ bool RestCatalog::updateSchema(
     {
         sendRequest(endpoint, request_body);
     }
-    catch (const DB::HTTPException &)
+    catch (const DB::HTTPException & ex)
     {
+        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
         return false;
     }
     return true;
