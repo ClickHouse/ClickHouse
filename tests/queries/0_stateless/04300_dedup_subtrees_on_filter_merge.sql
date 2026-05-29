@@ -61,6 +61,6 @@ SELECT number FROM (
     SELECT number, arrayMap(x -> x + 1, [number])[1] AS a FROM numbers(5)
 ) WHERE arrayMap(x -> x + 2, [number])[1] = 5;
 
--- Outer `randConstant() = x` should not merge with inner `randConstant()`
-SELECT count() FROM (SELECT randConstant() AS x FROM numbers(100))
-WHERE randConstant() = x AND x != x; -- second clause ensures: even if randConstants collide by chance, the row count is 0
+-- If the outer rand() were merged with inner x, the predicate would collapse to
+-- x = x and return 100, correct behavior is two independent rands -> ~0 matches
+SELECT count() FROM (SELECT rand() AS x FROM numbers(100)) WHERE rand() = x;
