@@ -2255,6 +2255,159 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialPutSegmentIsCacheable)
     ASSERT_EQ(std::string(buf_out, 5), "HELLO");
 }
 
+/// `status()` clamps miss tails to the requested range and skips miss
+/// emission when the cached prefix already covers the request. The miss
+/// HEAD is intentionally left at the segment boundary so source overread
+/// fills the segment's existing prefix.
+TEST_F(FileCacheTest, DiskCacheProviderStatusClampsMissTailToRequest)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path3;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    /// Align segments to 10-byte boundaries so a request that starts
+    /// mid-segment exercises the "miss head extends back to seg.start"
+    /// behaviour (Case 4).
+    settings[FileCacheSetting::boundary_alignment] = 10;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_status_clamp", settings);
+    cache->initialize();
+
+    const std::string object_path = "/synthetic/path/status_clamp_object";
+    const size_t object_size = 30;
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+    StoredObject object{object_path, "", object_size};
+
+    /// Populate first segment [0, 10) with 5 bytes (partial fill, cwo=5).
+    {
+        auto buf = std::make_shared<OwnedRopeBuffer>(5);
+        std::memcpy(buf->data(), "HELLO", 5);
+        Rope rope;
+        rope.append(RopeNode{buf, 0, 5, 0});
+        auto h = provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, 10});
+        ASSERT_NE(h, nullptr);
+        h->put(ByteRange{0, 10}, std::move(rope));
+    }
+
+    auto total_size = [](const auto & rs)
+    {
+        size_t s = 0;
+        for (const auto & r : rs) s += r.size;
+        return s;
+    };
+
+    /// Case 1: cached prefix `[0, 5)` fully covers request `[0, 3)` ⇒
+    /// only hit, no miss.
+    {
+        auto h = provider->lookup(object, 0, ByteRange{0, 3});
+        ASSERT_NE(h, nullptr);
+        auto s = h->status();
+        EXPECT_TRUE(s.miss_ranges.empty())
+            << "miss should be empty when cached prefix covers request";
+        EXPECT_GE(total_size(s.hit_ranges), 3u);
+    }
+
+    /// Case 2: request `[0, 8)` extends past cwo=5 within the same segment ⇒
+    /// miss tail clamped to req.end=8 (no fetching past the request).
+    {
+        auto h = provider->lookup(object, 0, ByteRange{0, 8});
+        ASSERT_NE(h, nullptr);
+        auto s = h->status();
+        ASSERT_FALSE(s.miss_ranges.empty());
+        for (const auto & r : s.miss_ranges)
+            EXPECT_LE(r.end(), 8u) << "miss tail must not extend past req.end";
+    }
+
+    /// Case 3: cold segment `[10, 20)`, request `[10, 13)` ⇒ miss tail
+    /// clamped to req.end=13. Head naturally at the segment boundary.
+    {
+        auto h = provider->lookup(object, 0, ByteRange{10, 3});
+        ASSERT_NE(h, nullptr);
+        auto s = h->status();
+        ASSERT_FALSE(s.miss_ranges.empty());
+        for (const auto & r : s.miss_ranges)
+            EXPECT_LE(r.end(), 13u) << "miss tail must not extend past req.end";
+    }
+
+    /// Case 4: cold segment `[10, 20)`, request `[12, 15)` starts mid-segment ⇒
+    /// miss HEAD is NOT cut — it extends back to seg.start=10 so the
+    /// source overread can fill the segment prefix.
+    {
+        auto h = provider->lookup(object, 0, ByteRange{12, 3});
+        ASSERT_NE(h, nullptr);
+        auto s = h->status();
+        ASSERT_FALSE(s.miss_ranges.empty());
+        EXPECT_EQ(s.miss_ranges.front().offset, 10u)
+            << "miss head must NOT be cut — should extend back to seg.start";
+        for (const auto & r : s.miss_ranges)
+            EXPECT_LE(r.end(), 15u) << "miss tail must not extend past req.end";
+    }
+
+    /// Case 5: partial segment `[0, 10)` cwo=5, request `[6, 9)` starts past
+    /// cwo ⇒ the cached-prefix hit `[0, 5)` is reported segment-aligned
+    /// (executor clamps it to its window, where it intersects empty);
+    /// the meaningful payload is the miss starting at cwo=5 (head not
+    /// cut, tail clamped to 9).
+    {
+        auto h = provider->lookup(object, 0, ByteRange{6, 3});
+        ASSERT_NE(h, nullptr);
+        auto s = h->status();
+        for (const auto & r : s.hit_ranges)
+            EXPECT_LE(r.end(), 5u) << "any hit must be within the cached prefix";
+        ASSERT_FALSE(s.miss_ranges.empty());
+        EXPECT_EQ(s.miss_ranges.front().offset, 5u)
+            << "miss head must extend back to cwo";
+        for (const auto & r : s.miss_ranges)
+            EXPECT_LE(r.end(), 9u) << "miss tail must not extend past req.end";
+    }
+
+    /// Case 6: request `[3, 18)` spans cached prefix of partial seg `[0, 10)`
+    /// + cold seg `[10, 20)` ⇒ hit for the prefix (segment-aligned, may
+    /// extend back to seg.start=0), misses for the partial tail and the
+    /// cold segment, both tail-clamped to req.end=18.
+    {
+        auto h = provider->lookup(object, 0, ByteRange{3, 15});
+        ASSERT_NE(h, nullptr);
+        auto s = h->status();
+        EXPECT_FALSE(s.hit_ranges.empty());
+        for (const auto & r : s.hit_ranges)
+            EXPECT_LE(r.end(), 10u) << "hit must be within the partial segment";
+        ASSERT_FALSE(s.miss_ranges.empty());
+        for (const auto & r : s.miss_ranges)
+            EXPECT_LE(r.end(), 18u) << "miss tail must not extend past req.end";
+    }
+
+    /// Case 7: a fully `DOWNLOADED` segment. Hit may exceed the request
+    /// (segment-aligned by design); no miss should be emitted.
+    {
+        /// Populate `[20, 30)` fully.
+        auto buf = std::make_shared<OwnedRopeBuffer>(10);
+        std::memset(buf->data(), 'Z', 10);
+        Rope rope;
+        rope.append(RopeNode{buf, 0, 10, 20});
+        auto h_put = provider->lookup(object, 0, ByteRange{20, 10});
+        ASSERT_NE(h_put, nullptr);
+        h_put->put(ByteRange{20, 10}, std::move(rope));
+        h_put.reset();
+
+        auto h = provider->lookup(object, 0, ByteRange{22, 4});
+        ASSERT_NE(h, nullptr);
+        auto s = h->status();
+        EXPECT_TRUE(s.miss_ranges.empty())
+            << "no miss for a fully downloaded segment containing the request";
+        EXPECT_GE(total_size(s.hit_ranges), 4u);
+    }
+}
+
 TEST_F(FileCacheTest, DiskCacheProviderGetReadsCommittedPrefixWhileDownloading)
 {
     /// Regression: `status()` reports a `PARTIALLY_DOWNLOADED` segment's

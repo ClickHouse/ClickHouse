@@ -178,12 +178,14 @@ CacheLookupResult DiskCacheHandle::status() const
             if (seg_range.left >= req_obj_end)
                 break;
 
-            /// Translate segment's object-local range to file-level for the
-            /// caller. Segments may extend past `requested_range`; the
-            /// executor clamps hits to its piece and intentionally keeps
-            /// segment-sized misses to let the next cache or the source
-            /// populate this cache fully.
+            /// Hits are segment-aligned (may extend past `requested_range`);
+            /// the executor clamps them to its window. Misses keep their
+            /// head at the segment-aligned boundary so the source overread
+            /// fills the segment prefix, but the tail is clamped to
+            /// `req_obj_end` — fetching past the request would be wasted
+            /// I/O the caller didn't ask for.
             ByteRange r{seg_range.left + object_file_offset, seg_range.size()};
+            const size_t req_end_file = req_obj_end + object_file_offset;
 
             auto state = segment->state();
             if (state == FileSegmentState::DOWNLOADED)
@@ -193,20 +195,18 @@ CacheLookupResult DiskCacheHandle::status() const
             else if (state == FileSegmentState::PARTIALLY_DOWNLOADED
                   || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
             {
-                /// A partial segment has a contiguous downloaded prefix
-                /// `[seg.left, current_write_offset)` that is safe to read; the
-                /// tail still needs to be sourced. Honouring this is what
-                /// makes small files (file_size < segment_size) cacheable —
-                /// their last segment is necessarily a partial fill.
                 size_t cwo_file = segment->getCurrentWriteOffset() + object_file_offset;
                 if (cwo_file > r.offset)
                     result.hit_ranges.push_back(ByteRange{r.offset, cwo_file - r.offset});
-                if (cwo_file < r.end())
-                    result.miss_ranges.push_back(ByteRange{cwo_file, r.end() - cwo_file});
+                const size_t miss_end = std::min(r.end(), req_end_file);
+                if (cwo_file < miss_end)
+                    result.miss_ranges.push_back(ByteRange{cwo_file, miss_end - cwo_file});
             }
             else
             {
-                result.miss_ranges.push_back(r);
+                const size_t miss_end = std::min(r.end(), req_end_file);
+                if (r.offset < miss_end)
+                    result.miss_ranges.push_back(ByteRange{r.offset, miss_end - r.offset});
             }
 
             cursor = std::max(cursor, seg_range.left + seg_range.size());
