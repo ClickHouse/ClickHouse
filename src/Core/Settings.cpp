@@ -2456,11 +2456,11 @@ Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specif
 Default format used by `EXPLAIN PLAN`.
 
 Possible values:
-- `pretty` (default since 26.5) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
-- `legacy` — pre-26.5 verbose output.
+- `pretty` (default since 26.6) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
+- `legacy` — pre-26.6 verbose output.
 
 Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this setting.
-Set setting to `legacy` (or set `compatibility` to any version older than `26.5`) to restore the pre-26.5 verbose output.
+Set setting to `legacy` (or set `compatibility` to any version older than `26.6`) to restore the pre-26.6 verbose output.
 )", 0) \
     \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(

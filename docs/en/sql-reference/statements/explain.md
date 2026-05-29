@@ -182,28 +182,31 @@ Settings:
 - `description` — Prints step description. Default: 1.
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 - `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `actions` — Prints detailed information about step actions. Default: 1 (see `query_plan_pretty_default` below).
+- `actions` — Prints detailed information about step actions. Default: 1 when `explain_query_plan_default` is `pretty`, 0 when it is `legacy` (see the note below).
 - `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
 - `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
-- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1 (see `query_plan_pretty_default` below).
+- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1 when `explain_query_plan_default` is `pretty`, 0 when it is `legacy` (see the note below).
 - `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
 :::note
-Starting from ClickHouse 26.5, the server setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this.
+Starting from ClickHouse 26.6, the server setting `explain_query_plan_default` is `pretty` by default. When it is `pretty`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this.
 
-To restore the pre-26.5 verbose output, either run `SET explain_query_plan_default = 'legacy'` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.5`.
+To restore the pre-26.6 verbose output, either run `SET explain_query_plan_default = 'legacy'` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.6`.
 :::
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 
 Example:
 
+The examples below use `SETTINGS explain_query_plan_default = 'legacy'` to show the verbose, indented output. This is the baseline that the `compact`, `distributed`, and `pretty` sections further down build upon. With the default `pretty` value, `EXPLAIN PLAN` renders the compact, pretty form shown in the `pretty = 1` examples further down.
+
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4
+SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```sql
@@ -487,7 +490,8 @@ With `distributed` = 1, the output includes not only the local query plan but al
 Example with distributed table:
 
 ```sql
-EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
+EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1
+SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```sql
@@ -507,7 +511,8 @@ Example with parallel replicas:
 ```sql
 SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
 
-EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
+EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4
+SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```sql
