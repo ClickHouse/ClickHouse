@@ -37,6 +37,15 @@ public:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
+    /// When the URL scheme dispatches to another engine (file://, s3://, ...), these are forwarded
+    /// to the delegate table function so that schema hints and capabilities are reported correctly.
+    bool needStructureHint() const override;
+    void setStructureHint(const ColumnsDescription & structure_hint_) override;
+    bool supportsReadingSubsetOfColumns(const ContextPtr & context) override;
+    NameSet getVirtualsToCheckBeforeUsingStructureHint() const override;
+    bool hasStaticStructure() const override;
+    void setPartitionBy(const ASTPtr & partition_by_) override;
+
     static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context, bool with_structure)
     {
         if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
@@ -80,16 +89,28 @@ protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override;
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;
 
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
     StorageURL::Configuration configuration;
 
+    /// When the URL scheme maps to another backend (file://, s3://, az://, hdfs://, ...), the `url`
+    /// table function acts as a thin wrapper that delegates to the corresponding table function.
+    /// It is null when the scheme is handled by StorageURL itself (http, https, ...).
+    TableFunctionPtr delegate;
+    const char * delegate_engine_name = "URL";
+
 private:
+    /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate
+    /// table function (`file`, `s3`, `azureBlobStorage`, `hdfs`) from the already-parsed arguments.
+    void buildDelegate(URLSchemeTarget target, const ContextPtr & context);
+
     VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "URL"; }
+    const char * getStorageEngineName() const override { return delegate_engine_name; }
     const String & getFunctionURI() const override { return filename; }
 
     std::optional<String> tryGetFormatFromFirstArgument() override;

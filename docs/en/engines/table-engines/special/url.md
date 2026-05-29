@@ -38,6 +38,17 @@ If `CompressionMethod` is not specified, it defaults to `auto`. This means Click
 
 For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` compression method is applied, but for `URL('http://localhost/test.fr')`, no compression is enabled because the suffix `fr` does not match any compression methods above.
 
+## Dispatching by URL scheme {#scheme-dispatch}
+
+The `URL` engine is a unified wrapper on top of the other file- and object-storage engines: it dispatches to the right backend based on the URL scheme. `http`/`https` (and any unrecognized scheme) are served by the `URL` engine itself; `file://` is served by the [File](../../../engines/table-engines/special/file.md) engine; `s3://`, `gs://`, `gcs://`, `oss://`, `cos://` by the [S3](/engines/table-engines/integrations/s3) engine; `az://`, `azure://`, `abfss://` by the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) engine; and `hdfs://` by the [HDFS](/engines/table-engines/integrations/hdfs) engine.
+
+The [url_base](/operations/settings/settings.md#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
+
+```sql
+CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', CSV);
+CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv', CSV);
+```
+
 ## Usage {#using-the-engine-in-the-clickhouse-server}
 
 `INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,

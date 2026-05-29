@@ -1,0 +1,18 @@
+--- url('file://<absolute>') with explicit format/structure ---
+1	Hello
+2	World
+--- url('file://<relative>') resolves under user_files ---
+1	Hello
+2	World
+--- format auto-detected from the .csv extension ---
+2
+--- url_base routes a relative reference to the File engine ---
+1	Hello
+2	World
+--- CREATE TABLE ... ENGINE = URL('file://...') reads via the File engine ---
+1	Hello
+2	World
+--- INSERT INTO url('file://...') round-trips through the File engine ---
+3	Three
+--- reading outside user_files via a relative file:// path is rejected ---
+rejected

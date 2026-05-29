@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageURLCluster.h>
@@ -93,6 +94,14 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     filename = StorageURL::resolveURLBase(filename, url_base);
     configuration.url = filename;
 
+    /// Dispatch to another backend based on the URL scheme (file://, s3://, az://, hdfs://, ...).
+    /// http(s) and unrecognized schemes keep the plain StorageURL behavior below.
+    if (const auto target = classifyURLScheme(filename); target != URLSchemeTarget::URL)
+    {
+        buildDelegate(target, context);
+        return;
+    }
+
     /// Re-derive format from the resolved URL if still auto, because the original
     /// filename may have been a relative reference (e.g. "?x=1") with no extension.
     /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL
@@ -107,6 +116,101 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         {
         }
     }
+}
+
+void TableFunctionURL::buildDelegate(URLSchemeTarget target, const ContextPtr & context)
+{
+    delegate_engine_name = storageEngineNameForURLScheme(target);
+
+    auto args_list = make_intrusive<ASTExpressionList>();
+
+    if (target == URLSchemeTarget::Azure)
+    {
+        auto parts = parseAzureURL(filename);
+        args_list->children.push_back(make_intrusive<ASTLiteral>(parts.account_url));
+        args_list->children.push_back(make_intrusive<ASTLiteral>(parts.container));
+        args_list->children.push_back(make_intrusive<ASTLiteral>(parts.blob_path));
+
+        /// `azureBlobStorage` positional order after the source triple is (format, compression, structure).
+        const bool need_structure = structure != "auto";
+        const bool need_compression = compression_method != "auto";
+        const bool need_format = format != "auto" || need_compression || need_structure;
+        if (need_format)
+            args_list->children.push_back(make_intrusive<ASTLiteral>(format));
+        if (need_compression || need_structure)
+            args_list->children.push_back(make_intrusive<ASTLiteral>(need_compression ? compression_method : String("auto")));
+        if (need_structure)
+            args_list->children.push_back(make_intrusive<ASTLiteral>(structure));
+    }
+    else
+    {
+        const String source = (target == URLSchemeTarget::File) ? getLocalPathFromFileURL(filename) : filename;
+        args_list->children.push_back(make_intrusive<ASTLiteral>(source));
+
+        /// `file`, `s3` and `hdfs` share the (source, format, structure, compression) positional order.
+        const bool need_compression = compression_method != "auto";
+        const bool need_structure = structure != "auto" || need_compression;
+        const bool need_format = format != "auto" || need_structure;
+        if (need_format)
+            args_list->children.push_back(make_intrusive<ASTLiteral>(format));
+        if (need_structure)
+            args_list->children.push_back(make_intrusive<ASTLiteral>(structure));
+        if (need_compression)
+            args_list->children.push_back(make_intrusive<ASTLiteral>(compression_method));
+    }
+
+    auto delegate_ast = make_intrusive<ASTFunction>();
+    delegate_ast->name = tableFunctionNameForURLScheme(target);
+    delegate_ast->arguments = args_list;
+    delegate_ast->children.push_back(args_list);
+
+    delegate = TableFunctionFactory::instance().get(delegate_ast, context);
+
+    if (!structure_hint.empty())
+        delegate->setStructureHint(structure_hint);
+}
+
+StoragePtr TableFunctionURL::executeImpl(
+    const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
+{
+    if (delegate)
+        return delegate->execute(ast_function, context, table_name, std::move(cached_columns), /*use_global_context=*/false, is_insert_query);
+
+    return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
+}
+
+bool TableFunctionURL::needStructureHint() const
+{
+    return delegate ? delegate->needStructureHint() : ITableFunctionFileLike::needStructureHint();
+}
+
+void TableFunctionURL::setStructureHint(const ColumnsDescription & structure_hint_)
+{
+    ITableFunctionFileLike::setStructureHint(structure_hint_);
+    if (delegate)
+        delegate->setStructureHint(structure_hint_);
+}
+
+bool TableFunctionURL::supportsReadingSubsetOfColumns(const ContextPtr & context)
+{
+    return delegate ? delegate->supportsReadingSubsetOfColumns(context) : ITableFunctionFileLike::supportsReadingSubsetOfColumns(context);
+}
+
+NameSet TableFunctionURL::getVirtualsToCheckBeforeUsingStructureHint() const
+{
+    return delegate ? delegate->getVirtualsToCheckBeforeUsingStructureHint() : ITableFunctionFileLike::getVirtualsToCheckBeforeUsingStructureHint();
+}
+
+bool TableFunctionURL::hasStaticStructure() const
+{
+    /// ITableFunctionFileLike::hasStaticStructure() is private; replicate its logic for the URL path.
+    return delegate ? delegate->hasStaticStructure() : (structure != "auto");
+}
+
+void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
+{
+    if (delegate)
+        delegate->setPartitionBy(partition_by_);
 }
 
 StoragePtr TableFunctionURL::getStorage(
@@ -158,8 +262,11 @@ StoragePtr TableFunctionURL::getStorage(
         /*distributed_processing=*/can_use_distributed_iterator);
 }
 
-ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
+    if (delegate)
+        return delegate->getActualTableStructure(context, is_insert_query);
+
     if (structure == "auto")
     {
         ColumnsDescription columns;

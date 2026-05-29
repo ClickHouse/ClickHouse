@@ -160,6 +160,40 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
+/// The `URL` engine and the `url` table function act as a unified wrapper on top of the
+/// File and object-storage engines: they dispatch to the right backend based on the URL scheme.
+enum class URLSchemeTarget : uint8_t
+{
+    URL,    /// http, https, ftp, ... and anything without a recognized scheme — handled by StorageURL itself.
+    File,   /// file://
+    S3,     /// s3, gs, gcs, oss, cos, cosn, obs, eos, s3express
+    Azure,  /// az, azure, abfss, abfs
+    HDFS,   /// hdfs
+};
+
+/// Classify a (already `url_base`-resolved) URL by its scheme to choose the dispatch target.
+URLSchemeTarget classifyURLScheme(const String & url);
+
+/// Storage engine name registered in StorageFactory for a dispatch target ("File", "S3", ...).
+const char * storageEngineNameForURLScheme(URLSchemeTarget target);
+
+/// Table function name for a dispatch target ("file", "s3", ...).
+const char * tableFunctionNameForURLScheme(URLSchemeTarget target);
+
+/// Extract the local path from a `file://` URL (e.g. `file:///a/b` -> `/a/b`, `file://a.csv` -> `a.csv`).
+String getLocalPathFromFileURL(const String & url);
+
+/// Decomposition of an Azure URL into the arguments the `azureBlobStorage` engine expects.
+struct AzureURLParts
+{
+    String account_url;
+    String container;
+    String blob_path;
+};
+
+/// Decompose an `az://`, `azure://` or `abfss://`/`abfs://` URL into (account_url, container, blob_path).
+AzureURLParts parseAzureURL(const String & url);
+
 class StorageURLSource final : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;

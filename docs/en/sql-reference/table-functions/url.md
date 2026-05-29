@@ -51,6 +51,27 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
+## Dispatching by URL scheme {#scheme-dispatch}
+
+The `url` function acts as a unified wrapper on top of the other file- and object-storage table functions: it dispatches to the right backend based on the URL scheme. This lets you read from any supported location with a single uniform syntax.
+
+| Scheme                                              | Dispatches to                                              |
+|-----------------------------------------------------|------------------------------------------------------------|
+| `http`, `https` (and any unrecognized scheme)       | the `URL` engine itself (HTTP `GET`/`POST`)                |
+| `file`                                              | the [`file`](file.md) function                             |
+| `s3`, `gs`, `gcs`, `oss`, `cos`, `cosn`, `obs`      | the [`s3`](s3.md) function                                 |
+| `az`, `azure`, `abfss`, `abfs`                      | the [`azureBlobStorage`](azureBlobStorage.md) function     |
+| `hdfs`                                              | the [`hdfs`](hdfs.md) function                             |
+
+For `file://`, a relative path (`file://data.csv`) is resolved inside the [user_files](/operations/server-configuration-parameters/settings#user_files_path) directory, and an absolute path (`file:///home/user/data.csv`) must point inside it as usual.
+
+The `format`, `structure` and `compression_method` arguments and the [url_base](#resolving-relative-urls) setting work the same regardless of the dispatch target.
+
+```sql
+SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
+SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
+```
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.

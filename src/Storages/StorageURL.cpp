@@ -50,6 +50,7 @@
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
@@ -1881,6 +1882,134 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
     return normalizeDotSegmentsInURL(merged, authority_start);
 }
 
+namespace
+{
+String extractSchemeLower(const String & url)
+{
+    auto pos = url.find("://");
+    if (pos == String::npos)
+        return {};
+    String scheme = url.substr(0, pos);
+    boost::to_lower(scheme);
+    return scheme;
+}
+}
+
+URLSchemeTarget classifyURLScheme(const String & url)
+{
+    const String scheme = extractSchemeLower(url);
+    if (scheme.empty())
+        return URLSchemeTarget::URL;
+
+    if (scheme == "file")
+        return URLSchemeTarget::File;
+
+    if (scheme == "s3" || scheme == "gs" || scheme == "gcs" || scheme == "oss"
+        || scheme == "cos" || scheme == "cosn" || scheme == "obs" || scheme == "eos"
+        || scheme.starts_with("s3express"))
+        return URLSchemeTarget::S3;
+
+    if (scheme == "az" || scheme == "azure" || scheme == "abfss" || scheme == "abfs")
+        return URLSchemeTarget::Azure;
+
+    if (scheme == "hdfs")
+        return URLSchemeTarget::HDFS;
+
+    /// http, https, ftp, ... are read by StorageURL itself.
+    return URLSchemeTarget::URL;
+}
+
+const char * storageEngineNameForURLScheme(URLSchemeTarget target)
+{
+    switch (target)
+    {
+        case URLSchemeTarget::URL:   return "URL";
+        case URLSchemeTarget::File:  return "File";
+        case URLSchemeTarget::S3:    return "S3";
+        case URLSchemeTarget::Azure: return "AzureBlobStorage";
+        case URLSchemeTarget::HDFS:  return "HDFS";
+    }
+}
+
+const char * tableFunctionNameForURLScheme(URLSchemeTarget target)
+{
+    switch (target)
+    {
+        case URLSchemeTarget::URL:   return "url";
+        case URLSchemeTarget::File:  return "file";
+        case URLSchemeTarget::S3:    return "s3";
+        case URLSchemeTarget::Azure: return "azureBlobStorage";
+        case URLSchemeTarget::HDFS:  return "hdfs";
+    }
+}
+
+String getLocalPathFromFileURL(const String & url)
+{
+    static constexpr std::string_view prefix = "file://";
+    if (!url.starts_with(prefix))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a `file://` URL, got: {}", url);
+    /// `file:///abs/path` -> `/abs/path` (absolute), `file://relative.csv` -> `relative.csv` (relative to user_files).
+    return url.substr(prefix.size());
+}
+
+AzureURLParts parseAzureURL(const String & url)
+{
+    auto scheme_pos = url.find("://");
+    if (scheme_pos == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed Azure URL: {}", url);
+
+    String scheme = url.substr(0, scheme_pos);
+    boost::to_lower(scheme);
+    const String rest = url.substr(scheme_pos + 3);
+
+    AzureURLParts parts;
+
+    /// Hadoop-style `abfss://<container>@<account>.dfs.core.windows.net/<blob path>`.
+    if (scheme == "abfss" || scheme == "abfs")
+    {
+        auto at_pos = rest.find('@');
+        if (at_pos == String::npos)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Azure `{}` URL must be of the form {}://<container>@<account>.dfs.core.windows.net/<path>, got: {}",
+                scheme, scheme, url);
+
+        parts.container = rest.substr(0, at_pos);
+        const String host_and_path = rest.substr(at_pos + 1);
+        auto slash_pos = host_and_path.find('/');
+        const String host = (slash_pos == String::npos) ? host_and_path : host_and_path.substr(0, slash_pos);
+        parts.blob_path = (slash_pos == String::npos) ? "" : host_and_path.substr(slash_pos + 1);
+
+        auto dot_pos = host.find('.');
+        const String account = (dot_pos == String::npos) ? host : host.substr(0, dot_pos);
+        parts.account_url = "https://" + account + ".blob.core.windows.net";
+        return parts;
+    }
+
+    /// `az://<account>.blob.core.windows.net/<container>/<blob>` or `azure://<host>/<container>/<blob>`.
+    auto slash_pos = rest.find('/');
+    const String host = (slash_pos == String::npos) ? rest : rest.substr(0, slash_pos);
+    const String path = (slash_pos == String::npos) ? "" : rest.substr(slash_pos + 1);
+
+    if (host.find('.') == String::npos)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Azure `{}` URL must include the storage account host, e.g. "
+            "{}://<account>.blob.core.windows.net/<container>/<path>; got: {}. "
+            "Use the `azureBlobStorage` table function for connection-string based access.",
+            scheme, scheme, url);
+
+    parts.account_url = "https://" + host;
+    auto path_slash = path.find('/');
+    parts.container = (path_slash == String::npos) ? path : path.substr(0, path_slash);
+    parts.blob_path = (path_slash == String::npos) ? "" : path.substr(path_slash + 1);
+
+    if (parts.container.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Azure URL is missing the container name: {}", url);
+
+    return parts;
+}
+
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
@@ -2000,12 +2129,90 @@ void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
         "URL",
-        [](const StorageFactory::Arguments & args)
+        [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
+            auto context = args.getLocalContext();
+
+            /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
+            /// We only attempt this when the first argument is a positional source string literal
+            /// (the common case); named-collection forms fall through to the plain URL engine.
+            if (!engine_args.empty())
+            {
+                String raw_url;
+                bool got_url = false;
+                try
+                {
+                    auto literal = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context);
+                    raw_url = checkAndGetLiteralArgument<String>(literal, "url");
+                    got_url = true;
+                }
+                catch (...) // NOLINT(bugprone-empty-catch)
+                {
+                    /// Not a positional literal (e.g. a named collection) — keep plain URL behavior.
+                }
+
+                if (got_url)
+                {
+                    const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
+                    const String resolved = StorageURL::resolveURLBase(raw_url, url_base);
+                    const auto target = classifyURLScheme(resolved);
+                    if (target != URLSchemeTarget::URL)
+                    {
+                        /// Rewrite the leading source argument(s) into the form the target engine expects.
+                        /// The `URL` engine takes (url, [format, compression]).
+                        if (target == URLSchemeTarget::File)
+                        {
+                            /// The `File` engine takes (format, path, [compression]) — format comes first.
+                            const String path = getLocalPathFromFileURL(resolved);
+                            String format = "auto";
+                            if (engine_args.size() > 1)
+                                format = checkAndGetLiteralArgument<String>(
+                                    evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], context), "format");
+                            if (format == "auto")
+                                format = FormatFactory::instance().tryGetFormatFromFileName(path).value_or("auto");
+
+                            ASTPtr compression;
+                            if (engine_args.size() > 2)
+                                compression = engine_args[2];
+
+                            engine_args.clear();
+                            engine_args.push_back(make_intrusive<ASTLiteral>(format));
+                            engine_args.push_back(make_intrusive<ASTLiteral>(path));
+                            if (compression)
+                                engine_args.push_back(compression);
+                        }
+                        else if (target == URLSchemeTarget::Azure)
+                        {
+                            /// The `AzureBlobStorage` engine takes (account_url, container, blob_path, ...).
+                            auto parts = parseAzureURL(resolved);
+                            engine_args[0] = make_intrusive<ASTLiteral>(parts.account_url);
+                            engine_args.insert(engine_args.begin() + 1, make_intrusive<ASTLiteral>(parts.blob_path));
+                            engine_args.insert(engine_args.begin() + 1, make_intrusive<ASTLiteral>(parts.container));
+                        }
+                        else
+                        {
+                            /// `S3` and `HDFS` engines take (url, [format, compression]) — same shape as `URL`.
+                            engine_args[0] = make_intrusive<ASTLiteral>(resolved);
+                        }
+
+                        const char * engine_name = storageEngineNameForURLScheme(target);
+                        const auto & storages = StorageFactory::instance().getAllStorages();
+                        auto it = storages.find(engine_name);
+                        if (it == storages.end())
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Table engine {} (required to handle URL '{}' in the unified URL engine) "
+                                "is not available in this build",
+                                engine_name, resolved);
+
+                        return it->second.creator_fn(args);
+                    }
+                }
+            }
+
             auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
-            auto context = args.getLocalContext();
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
