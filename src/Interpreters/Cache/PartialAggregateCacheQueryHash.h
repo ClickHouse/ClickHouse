@@ -22,6 +22,7 @@ struct Settings;
 std::optional<IASTHash> computePartialAggregateCacheQueryHash(
     const PartialAggregateCachePtr & cache,
     const Aggregator::Params & params,
+    const Block & input_header,
     bool group_by_use_nulls,
     bool has_sort_description_for_merging,
     const Names * grouping_set_missing_keys,
@@ -32,6 +33,7 @@ std::optional<IASTHash> tryComputePartialAggregateCacheQueryHash(
     const Settings & settings,
     const PartialAggregateCachePtr & cache,
     const Aggregator::Params & params,
+    const Block & input_header,
     bool group_by_use_nulls,
     bool has_sort_description_for_merging);
 

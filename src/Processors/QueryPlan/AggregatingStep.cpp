@@ -414,6 +414,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 partial_aggregate_query_hash = computePartialAggregateCacheQueryHash(
                     partial_aggregate_cache_holder,
                     params,
+                    *src_header,
                     group_by_use_nulls,
                     !sort_description_for_merging.empty(),
                     nullptr,
@@ -478,6 +479,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params_for_set->partial_aggregate_query_hash = computePartialAggregateCacheQueryHash(
                         transform_params->partial_aggregate_cache,
                         transform_params_for_set->params,
+                        *src_header,
                         group_by_use_nulls,
                         !sort_description_for_merging.empty(),
                         &grouping_sets_params[i].missing_keys,

@@ -4,6 +4,7 @@
 #include <Interpreters/Cache/PartialAggregateCache.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
 
@@ -20,6 +21,7 @@ extern const SettingsBool use_partial_aggregate_cache;
 std::optional<IASTHash> computePartialAggregateCacheQueryHash(
     const PartialAggregateCachePtr & cache,
     const Aggregator::Params & params,
+    const Block & input_header,
     bool group_by_use_nulls,
     bool has_sort_description_for_merging,
     const Names * grouping_set_missing_keys,
@@ -50,6 +52,22 @@ std::optional<IASTHash> computePartialAggregateCacheQueryHash(
     hash.update(params.max_rows_to_group_by);
     for (const auto & key : params.keys)
         hash.update(key);
+
+    try
+    {
+        const Block output_header = params.getHeader(input_header, /*final=*/false);
+        for (const auto & column : output_header)
+        {
+            hash.update(column.name);
+            hash.update(column.type->getName());
+        }
+    }
+    catch (const Exception &)
+    {
+        /// If the current header cannot be reconciled with aggregation params, disable cache keying fail-close.
+        return std::nullopt;
+    }
+
     for (const auto & aggregate : params.aggregates)
     {
         hash.update(aggregate.function->getName());
@@ -75,6 +93,7 @@ std::optional<IASTHash> tryComputePartialAggregateCacheQueryHash(
     const Settings & settings,
     const PartialAggregateCachePtr & cache,
     const Aggregator::Params & params,
+    const Block & input_header,
     bool group_by_use_nulls,
     bool has_sort_description_for_merging)
 {
@@ -83,6 +102,7 @@ std::optional<IASTHash> tryComputePartialAggregateCacheQueryHash(
     return computePartialAggregateCacheQueryHash(
         cache,
         params,
+        input_header,
         group_by_use_nulls,
         has_sort_description_for_merging,
         nullptr,

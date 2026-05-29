@@ -31,6 +31,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -112,6 +113,40 @@ bool astContainsSubquery(const DB::ASTPtr & ast)
     HasSubqueryMatcher::Data data;
     HasSubqueryVisitor(data).visit(ast);
     return data.has_subquery;
+}
+
+bool hasJoinOrMutableTableInputs(const DB::ASTSelectQuery & select)
+{
+    if (select.hasJoin())
+        return true;
+
+    const auto tables_ast = select.tables();
+    if (!tables_ast)
+        return false;
+
+    const auto * tables = tables_ast->as<DB::ASTTablesInSelectQuery>();
+    if (!tables)
+        return true;
+
+    for (const auto & child : tables->children)
+    {
+        const auto * element = child->as<DB::ASTTablesInSelectQueryElement>();
+        if (!element)
+            return true;
+
+        if (!element->table_expression)
+            continue;
+
+        const auto * table_expression = element->table_expression->as<DB::ASTTableExpression>();
+        if (!table_expression)
+            return true;
+
+        /// Table functions and subqueries may read mutable data not represented in the part identity cache key.
+        if (table_expression->table_function || table_expression->subquery)
+            return true;
+    }
+
+    return false;
 }
 
 bool worthConvertToTwoLevel(
@@ -4134,9 +4169,13 @@ UInt64 partialAggregateCacheSemanticKey(
         return 0;
 
     const auto & select = select_query->as<DB::ASTSelectQuery &>();
+    /// JOINs/table functions/subqueries can introduce mutable inputs whose identity is not fully represented in the per-part key.
+    if (hasJoinOrMutableTableInputs(select))
+        return 0;
+
     /// Predicate subqueries may depend on mutable external sources (`WHERE ... IN (SELECT ...)`).
     /// Their freshness is not represented in the partial aggregate cache key, so disable cache fail-close.
-    if (astContainsSubquery(select.prewhere()) || astContainsSubquery(select.where()))
+    if (astContainsSubquery(select.tables()) || astContainsSubquery(select.prewhere()) || astContainsSubquery(select.where()))
         return 0;
 
     const UInt64 base = calculateCacheKey(select_query);

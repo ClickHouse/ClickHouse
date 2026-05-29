@@ -3026,6 +3026,7 @@ void InterpreterSelectQuery::executeAggregation(
         settings,
         Context::getGlobalContextInstance()->getPartialAggregateCache(),
         aggregator_params,
+        *query_plan.getCurrentHeader(),
         settings[Setting::group_by_use_nulls],
         !sort_description_for_merging.empty());
     /// `GROUPING SETS`: disable planning-stage probe only (`partial_aggregate_cache_query_hash_for_pipeline` is a single hash).
