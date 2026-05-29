@@ -90,6 +90,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool nuraft_streaming_mode;
     extern const CoordinationSettingsUInt64 nuraft_max_log_gap_in_stream;
     extern const CoordinationSettingsUInt64 nuraft_max_bytes_in_flight_in_stream;
+    extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
+    extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
@@ -581,6 +583,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::nuraft_max_log_gap_in_stream], "nuraft_max_log_gap_in_stream", log);
     params.max_bytes_in_flight_in_stream_
         = static_cast<int64_t>(coordination_settings[CoordinationSetting::nuraft_max_bytes_in_flight_in_stream]);
+    params.max_uncommitted_log_entries_ = coordination_settings[CoordinationSetting::nuraft_max_uncommitted_log_entries];
+    params.append_entries_backward_probe_throttle_threshold_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::nuraft_append_entries_backward_probe_throttle_threshold],
+        "nuraft_append_entries_backward_probe_throttle_threshold",
+        log);
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
