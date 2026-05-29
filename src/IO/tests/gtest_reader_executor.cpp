@@ -36,6 +36,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -1042,6 +1043,59 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
         /// the throw.
     }
     SUCCEED();
+}
+
+TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
+{
+    /// When a queued prefetch is cancelled on the readNextWindow consume path
+    /// (the next read arrives before the worker starts it), the handle must be
+    /// stashed in `abandoned_prefetches` so ~ReaderExecutor waits for the pool
+    /// worker to take the cancellation path before the executor's state (and
+    /// the enclosing query's memory-tracker chain) is freed. The worker
+    /// attaches a ThreadGroupSwitcher to the submitter's group BEFORE checking
+    /// cancellation, so dropping the handle here risked a use-after-free.
+    String content(2000, 'Z');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 2000);
+
+    /// Real single-worker pool. Occupy its one worker with a blocking task so
+    /// the executor's prefetch stays Queued (the worker can't pull it), which
+    /// makes the consume-path tryCancel succeed deterministically.
+    auto pool = std::make_shared<PrefetchThreadPool>(1);
+
+    std::promise<void> worker_started;
+    std::promise<void> release_worker;
+    auto blocker = pool->submit([&]() -> Rope
+    {
+        worker_started.set_value();
+        release_worker.get_future().wait();
+        return Rope{};
+    });
+    ASSERT_TRUE(blocker != nullptr);
+    worker_started.get_future().wait();   /// the one worker is now busy in `blocker`
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setPrefetchPool(pool);
+
+    /// Window 1: synchronous read, then maybeTriggerPrefetch submits a prefetch
+    /// for window 2 that queues behind the blocked worker.
+    auto w1 = executor.readNextWindow();
+    ASSERT_FALSE(w1.empty());
+    ASSERT_TRUE(executor.hasInflightPrefetch());
+
+    /// Window 2: the prefetch is still Queued, so tryCancel succeeds on the
+    /// consume path and the cancelled handle must be stashed for the drain.
+    auto w2 = executor.readNextWindow();
+    ASSERT_FALSE(w2.empty());
+    EXPECT_EQ(executor.abandonedPrefetchCount(), 1u)
+        << "consume-path cancelled prefetch must be stashed for ~ReaderExecutor to drain";
+
+    /// Release the worker so it finishes `blocker`, then pulls the cancelled
+    /// prefetch (sets the cancellation exception). ~ReaderExecutor's drain then
+    /// get()s it (throws, caught) and returns cleanly.
+    release_worker.set_value();
 }
 
 TEST(ReaderExecutor, LiveBufferReusesConnection)

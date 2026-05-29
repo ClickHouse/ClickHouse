@@ -91,6 +91,10 @@ public:
     size_t getSourceRequestsCount() const { return stats.source_requests; }
     /// Test-only: is there a prefetch currently scheduled for the next window?
     bool hasInflightPrefetch() const { return prefetch_handle != nullptr; }
+    /// Test-only: number of cancelled prefetch handles still awaiting the
+    /// destructor's drain (stashed on cancel so the worker can finish
+    /// attaching before this executor's state is freed).
+    size_t abandonedPrefetchCount() const { return abandoned_prefetches.size(); }
 
     /// Logical file size (physical size minus encryption headers).
     /// Saturates to 0 if the underlying objects sum to fewer bytes than the

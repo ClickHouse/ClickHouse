@@ -680,6 +680,15 @@ Rope ReaderExecutor::readNextWindow()
             rope = decryptRope(readPhysicalWindow(physical_window), position);
             HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
+
+            /// Stash the cancelled handle so ~ReaderExecutor waits for the pool
+            /// worker to take the cancellation path before this executor's
+            /// state is freed. The worker attaches a `ThreadGroupSwitcher` to
+            /// the submitter's group *before* checking cancellation, so simply
+            /// dropping the handle here risked the worker walking a freed
+            /// memory-tracker chain after the query was gone. Mirrors the
+            /// cancel branch of `discardPrefetch`.
+            abandoned_prefetches.push_back(std::move(local_handle));
         }
         else
         {
