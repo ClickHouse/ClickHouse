@@ -1790,6 +1790,38 @@ TEST(ReaderExecutor, UnknownSizeEofIsLatchedUntilSeek)
     EXPECT_EQ(r2.range().offset, 0u);
 }
 
+TEST(ReaderExecutor, UnknownSizeZeroByteTerminalReleasesLiveSlot)
+{
+    /// Unknown-size source whose content is an exact multiple of the window
+    /// size, so the terminal live read returns 0 bytes: readNextWindow returns
+    /// an empty rope and the caller stops, never making the follow-up call that
+    /// would hit the pre-read EOF gate. The live buffer + its SourceBufferLimit
+    /// slot must still be released as soon as EOF is latched, not leaked until
+    /// the executor is destroyed.
+    String content(1000, 'E');   /// exactly 2 * window
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", StoredObject::UnknownSize);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
+    executor.setBufferLimit(limit);
+
+    String collected;
+    while (true)
+    {
+        Rope w = executor.readNextWindow();
+        if (w.empty())
+            break;
+        for (const auto & node : w.getNodes())
+            collected.append(node.data(), node.size);
+    }
+    EXPECT_EQ(collected, content);
+    EXPECT_EQ(limit->getActive().size(), 0u)
+        << "live buffer + slot must be released when EOF is latched on a zero-byte terminal read";
+}
+
 TEST(ReaderExecutor, UnknownSizeMultiObjectRejected)
 {
     /// Multi-object pipelines need each object's `bytes_size` to compute

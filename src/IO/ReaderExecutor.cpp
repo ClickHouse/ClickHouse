@@ -737,6 +737,19 @@ Rope ReaderExecutor::readNextWindow()
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         rope.range().size, rope.getNodes().size(), position);
 
+    /// Unknown-size sources latch EOF via a short/zero-byte read inside the
+    /// window above, not the pre-read `atEnd` gate. When the terminal read
+    /// returns no bytes, the caller stops on this empty rope and never makes
+    /// the follow-up call that would hit that gate — so release the live
+    /// connection and its slot here as soon as EOF is latched, instead of
+    /// leaking a `max_remote_read_connections` slot until executor destruction.
+    if (reached_eof)
+    {
+        live_buffer.reset();
+        inflight_segment_pin.reset();
+        pre_acquired_slot.reset();
+    }
+
     maybeTriggerPrefetch();
 
     return rope;
