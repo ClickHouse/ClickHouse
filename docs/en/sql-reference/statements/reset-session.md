@@ -21,7 +21,7 @@ The statement:
 
 - Resets all session-level settings to the user's profile defaults plus any settings supplied by the authentication server.
 - Restores the current roles to the user's default roles. Externally-granted roles (e.g. LDAP or interserver) installed at session start are re-applied, so the reset session keeps the same privileges a fresh authentication would have.
-- Restores the current database. The candidate chain is: the database the connection was opened with (captured only by the native TCP handler at handshake; all other interfaces — HTTP, gRPC, MySQL, Arrow Flight, and `clickhouse-local` — skip this step because they have no equivalent handshake hook), then the user's `DEFAULT DATABASE`, then the server's current database (matching what a fresh authentication leaves in place when the user has no profile default). The first existing candidate is selected, so an admin-dropped database does not break the reset. This does not apply to the PostgreSQL protocol, where `RESET SESSION` is a no-op (see [below](#postgresql-protocol-no-op)).
+- Restores the current database. The candidate chain is: the database the connection was opened with (captured only by the native TCP handler at handshake; the other interfaces — HTTP, gRPC, Arrow Flight, and `clickhouse-local` — skip this step because they have no equivalent handshake hook), then the user's `DEFAULT DATABASE`, then the server's current database (matching what a fresh authentication leaves in place when the user has no profile default). The first existing candidate is selected, so an admin-dropped database does not break the reset. This does not apply to the PostgreSQL and MySQL protocols, where `RESET SESSION` is a no-op (see [below](#postgresql-and-mysql-protocols-no-op)).
 - Drops every temporary table created in the session.
 - Clears all query parameters set with `SET param_name = ...`.
 - Clears all scalars sent over the protocol.
@@ -41,19 +41,23 @@ Connection-pool implementations that issue `RESET SESSION` before returning a co
 
 ## Scope: protocol-local state is not reset {#scope-protocol-local-state}
 
-`RESET SESSION` resets the ClickHouse session **context** — the state listed above, which the server tracks per session. It does **not** touch state that a wire-protocol handler keeps outside that context. In particular, **prepared statements created over the MySQL, PostgreSQL, and Arrow Flight protocols are not invalidated by `RESET SESSION`**:
+`RESET SESSION` resets the ClickHouse session **context** — the state listed above, which the server tracks per session. On the interfaces where it runs, it does **not** touch state that a wire-protocol handler keeps outside that context. In particular, **prepared statements are not invalidated by `RESET SESSION`**:
 
-- MySQL: statements prepared with `COM_STMT_PREPARE` remain registered. They can be closed individually with `COM_STMT_CLOSE`; ClickHouse's MySQL endpoint does not implement a bulk connection-reset command (`COM_RESET_CONNECTION`), so to fully discard protocol-local state, drop and reopen the connection.
-- PostgreSQL: server-side prepared statements (`PREPARE name AS ...` / extended-query `Parse` messages) remain registered. Remove them individually with `DEALLOCATE name`, or drop and reopen the connection.
 - Arrow Flight: prepared statement handles remain valid until closed via the Flight SQL `ClosePreparedStatement` action or the session is closed.
 
-Do not rely on `RESET SESSION` to clear prepared statements on these protocols.
+Do not rely on `RESET SESSION` to clear prepared statements. (Over the MySQL and PostgreSQL protocols `RESET SESSION` does nothing at all — see [below](#postgresql-and-mysql-protocols-no-op) — so their prepared statements, like everything else, are left untouched.)
 
 This is a deliberate scoping decision for the first version of the statement: `RESET SESSION` is a server-side, session-context reset. Extending it to drive per-protocol cleanup is tracked as future work.
 
-### PostgreSQL protocol: no-op {#postgresql-protocol-no-op}
+### PostgreSQL and MySQL protocols: no-op {#postgresql-and-mysql-protocols-no-op}
 
-`RESET SESSION` is a **no-op over the PostgreSQL wire protocol** and leaves the session unchanged. The PostgreSQL emulation exposes the `pg_*` compatibility views (`pg_type`, `pg_namespace`, ...) as session-scoped temporary tables; a real reset would clear them without re-creating them, breaking later driver metadata queries. Rather than half-reset the session, ClickHouse skips the reset entirely on this interface. To reset a pooled connection reached over the PostgreSQL protocol, drop and reopen it.
+`RESET SESSION` is a **no-op over the PostgreSQL and MySQL wire protocols** and leaves the session unchanged.
+
+The PostgreSQL emulation exposes the `pg_*` compatibility views (`pg_type`, `pg_namespace`, ...) as session-scoped temporary tables; a real reset would clear them without re-creating them, breaking later driver metadata queries.
+
+The MySQL handler keeps protocol-local state outside the session context — the handshake database it applies before the first query, and prepared statements registered with `COM_STMT_PREPARE` — that a session-context reset would not account for, leaving the connection off its post-handshake baseline.
+
+Rather than half-reset the session, ClickHouse skips the reset entirely on these interfaces. To reset a pooled connection reached over the PostgreSQL or MySQL protocol, drop and reopen it.
 
 ### Other known limitations {#known-limitations}
 

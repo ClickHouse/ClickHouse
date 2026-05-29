@@ -14,11 +14,15 @@ BlockIO InterpreterResetSessionQuery::execute()
     auto query_context = getContext();
     const auto interface = query_context->getClientInfo().interface;
 
-    /// No-op over the PostgreSQL protocol: the handler keeps the `pg_*`
-    /// compatibility views as session temp tables, and a real reset would clear
-    /// them without re-creating them (re-init lives in the handler), breaking
-    /// later metadata queries. Skip entirely rather than half-reset. Documented.
-    if (interface == ClientInfo::Interface::POSTGRESQL)
+    /// No-op over the PostgreSQL and MySQL wire protocols. PostgreSQL keeps the
+    /// `pg_*` compatibility views as session temp tables that a real reset would
+    /// clear without re-creating (re-init lives in the handler), breaking later
+    /// metadata queries. MySQL keeps protocol-local state (e.g. the handshake
+    /// database and prepared statements) the session context does not own, so a
+    /// reset would move the session off its post-handshake baseline. Skip
+    /// entirely on both rather than half-reset. Documented.
+    if (interface == ClientInfo::Interface::POSTGRESQL
+        || interface == ClientInfo::Interface::MYSQL)
         return {};
 
     /// gRPC without `session_id` has no session context to reset, so no-op

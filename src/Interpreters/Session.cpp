@@ -608,38 +608,65 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
     auto new_session_context = new_named_session->context;
-    new_session_context->makeSessionContext();
-
-    /// Copy prepared client info to the session context, no matter it's been just created or not.
-    /// If we continue using a previously created session context found by session ID
-    /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
-    new_session_context->setClientInfo(*prepared_client_info);
-    prepared_client_info.reset();
-
-    auto access = new_session_context->getAccess();
     UInt64 max_sessions_for_user = 0;
-    /// Set user information for the new context: current profiles, roles, access rights.
-    if (!access->tryGetUser())
-    {
-        new_session_context->setUser(*user_id, external_roles);
-        max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
 
-        /// Apply auth-server settings on top of the user's profile, mirroring
-        /// the unnamed-session path. Only on the newly-created branch: an
-        /// existing named session has already had this applied (or has been
-        /// further mutated by `SET` since), and reapplying every reuse would
-        /// stomp on those changes.
-        new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
-        new_session_context->applySettingsChanges(settings_from_auth_server);
-    }
-    else
+    /// `acquireSession` has already published a freshly-created session in the
+    /// storage, so any failure while initializing it below (e.g. `setUser` or an
+    /// auth-server `profile` that was since dropped) would leave a half-built
+    /// session behind: `tryGetUser` would succeed for it, so a later request with
+    /// the same `session_id` would reuse it and skip applying the auth settings.
+    /// Remove a newly-created session from the storage on failure so a retry
+    /// rebuilds it cleanly. A reused session is left untouched.
+    try
     {
-        // Always get setting from profile
-        // profile can be changed by ALTER PROFILE during single session
-        auto settings = access->getDefaultSettings();
-        const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
-        if (max_session_for_user_field)
-            max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+        new_session_context->makeSessionContext();
+
+        /// Copy prepared client info to the session context, no matter it's been just created or not.
+        /// If we continue using a previously created session context found by session ID
+        /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
+        new_session_context->setClientInfo(*prepared_client_info);
+        prepared_client_info.reset();
+
+        auto access = new_session_context->getAccess();
+        /// Set user information for the new context: current profiles, roles, access rights.
+        if (!access->tryGetUser())
+        {
+            new_session_context->setUser(*user_id, external_roles);
+            max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
+
+            /// Apply auth-server settings on top of the user's profile, mirroring
+            /// the unnamed-session path. Only on the newly-created branch: an
+            /// existing named session has already had this applied (or has been
+            /// further mutated by `SET` since), and reapplying every reuse would
+            /// stomp on those changes.
+            new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+            new_session_context->applySettingsChanges(settings_from_auth_server);
+
+            /// Stash auth-server settings and pin the authenticated user for
+            /// `RESET SESSION`, same as the unnamed-session path. Done here, as
+            /// part of the guarded newly-created initialization, so the session
+            /// is fully prepared before it is published below — a later failure
+            /// (or a reuse) never sees a session missing this state. A reused
+            /// named session already has both and must not have them re-applied,
+            /// which would clobber state the live session accumulated since.
+            new_session_context->setSettingsFromAuthServer(settings_from_auth_server);
+            new_session_context->rememberAuthenticatedUser();
+        }
+        else
+        {
+            // Always get setting from profile
+            // profile can be changed by ALTER PROFILE during single session
+            auto settings = access->getDefaultSettings();
+            const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
+            if (max_session_for_user_field)
+                max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+        }
+    }
+    catch (...)
+    {
+        if (new_named_session_created)
+            NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_name_, new_named_session);
+        throw;
     }
 
     /// Session context is ready.
@@ -652,16 +679,6 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         *user_id,
         { session_name_ },
         max_sessions_for_user);
-
-    /// Stash auth-server settings and pin the authenticated user for
-    /// `RESET SESSION`, same as the unnamed-session path — but only when newly
-    /// created. A reused named session already has both, and re-applying them
-    /// would clobber state the live session has accumulated since.
-    if (new_named_session_created)
-    {
-        session_context->setSettingsFromAuthServer(settings_from_auth_server);
-        session_context->rememberAuthenticatedUser();
-    }
 
     recordLoginSuccess(session_context);
 

@@ -2128,12 +2128,35 @@ void Context::resetToUserDefaults()
     {
         std::lock_guard lock(mutex);
 
+        /// Swap in the new base settings + profile state, then replay auth-server
+        /// settings on top — the only step here that can throw (e.g. an auth
+        /// response named a `profile` that has since been dropped). Do it before
+        /// touching user / roles / database / session collections, and roll the
+        /// settings + profiles back on failure, so a failed reset leaves the live
+        /// session exactly as it was rather than half-reset. The replay mirrors
+        /// `Session::makeSessionContext`: check then apply via the Context-level
+        /// path so a `profile` entry routes through `setCurrentProfileWithLock`
+        /// rather than being mis-stored as a plain setting. It does not depend on
+        /// the restored user/roles below (profiles resolve from access control by
+        /// name/id), so the reorder is safe.
+        Settings prev_settings = *settings;
+        auto prev_profiles = settings_constraints_and_current_profiles;
         *settings = std::move(new_settings);
         settings_constraints_and_current_profiles = std::move(new_profiles_state);
+        try
+        {
+            checkSettingsConstraintsWithLock(auth_settings_snapshot, SettingSource::QUERY);
+            applySettingsChangesWithLock(auth_settings_snapshot, lock);
+        }
+        catch (...)
+        {
+            *settings = std::move(prev_settings);
+            settings_constraints_and_current_profiles = std::move(prev_profiles);
+            throw;
+        }
 
         /// Restore the authenticated user (undoing any `EXECUTE AS`) and mirror
         /// the ClientInfo names so `currentUser()` / `initialUser()` report it.
-        /// Roles and access below depend on the restored id, so do this first.
         setUserIDWithLock(*snapshot_user_id, lock);
         client_info.current_user = snapshot_current_user_name;
         client_info.initial_user = snapshot_initial_user_name;
@@ -2145,13 +2168,6 @@ void Context::resetToUserDefaults()
         external_roles.reset();
         setExternalRolesWithLock(authenticated_external_roles, lock);
         need_recalculate_access = true;
-
-        /// Replay auth-server settings exactly as `Session::makeSessionContext`
-        /// does after `setUser`: check then apply via the Context-level path, so a
-        /// `profile` entry is routed through `setCurrentProfileWithLock` rather than
-        /// mis-stored as a plain setting. Layers on top of the swapped-in base.
-        checkSettingsConstraintsWithLock(auth_settings_snapshot, SettingSource::QUERY);
-        applySettingsChangesWithLock(auth_settings_snapshot, lock);
 
         current_database = target_database;
 
