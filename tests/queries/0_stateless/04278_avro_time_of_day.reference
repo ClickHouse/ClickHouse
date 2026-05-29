@@ -1,3 +1,6 @@
+=== Writer: Avro schema header contains time-millis / time-micros logical types ===
+time-micros
+time-millis
 === Schema-less inference ===
 t_ms	Time64(3)
 t_us	Time64(6)
@@ -14,10 +17,7 @@ TIME_MICROS -> Time      	01:02:03
 TIME_MICROS -> Time64(0) 	01:02:03
 TIME_MICROS -> Time64(3) 	01:02:03.456
 TIME_MICROS -> Time64(9) 	01:02:03.456789000
-=== Writer: ClickHouse Time / Time64 -> Avro TIME_* (schema check) ===
-schema OK
-=== Writer round-trip via ClickHouse read-back ===
+=== Writer covers ClickHouse Time type as well ===
+time-millis
 t_s	Time64(3)
-t_ms64	Time64(3)
-t_us64	Time64(6)
-12:34:56.000	01:02:03.456	01:02:03.456789
+12:34:56.000
