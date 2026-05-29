@@ -155,6 +155,10 @@ add_headers_and_sources(dbms Common/Scheduler/Workload)
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
 
+add_headers_and_sources(dbms Core/Streaming)
+add_headers_and_sources(dbms Storages/Streaming)
+add_headers_and_sources(dbms Storages/MergeTree/Streaming)
+
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
@@ -356,7 +360,8 @@ ${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
-${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
+${CMAKE_SOURCE_DIR}/programs/server/schema.html")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
@@ -518,6 +523,7 @@ endif()
 
 target_link_libraries(dbms PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
