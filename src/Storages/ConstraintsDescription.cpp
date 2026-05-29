@@ -310,13 +310,13 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
     return *this;
 }
 
-ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) noexcept
+ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other)
     : constraints(std::move(other.constraints))
 {
     update();
 }
 
-ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) noexcept
+ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other)
 {
     constraints = std::move(other.constraints);
     update();

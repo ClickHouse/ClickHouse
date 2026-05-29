@@ -107,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     return *this;
 }
 
-ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noexcept
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other)
 {
     if (this == &other)
         return *this;

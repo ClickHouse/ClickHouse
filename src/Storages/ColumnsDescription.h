@@ -106,8 +106,9 @@ struct ColumnDescription
     ColumnDescription() = default;
     ColumnDescription(const ColumnDescription & other) { *this = other; }
     ColumnDescription & operator=(const ColumnDescription & other);
-    ColumnDescription(ColumnDescription && other) noexcept { *this = std::move(other); }
-    ColumnDescription & operator=(ColumnDescription && other) noexcept;
+    /// Not noexcept: the move-assignment clones the codec/TTL ASTs, which allocates and can throw.
+    ColumnDescription(ColumnDescription && other) { *this = std::move(other); }
+    ColumnDescription & operator=(ColumnDescription && other);
 
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);
