@@ -17,7 +17,7 @@ class PNGOutputFormat final : public IOutputFormat
 public:
     PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
 
-    String getName() const override { return "PNGOutputFormat"; }
+    String getName() const override { return "PNG"; }
 
 private:
     void consume(Chunk chunk) override;
