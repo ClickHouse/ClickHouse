@@ -35,7 +35,7 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE
 Example:
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
+EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```sql
@@ -228,7 +228,7 @@ When `json = 1`, the query plan is represented in JSON format. Every node is a d
 Example:
 
 ```sql
-EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
+EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```json
@@ -278,7 +278,7 @@ With `header` = 1, the `Header` key is added to the step as an array of columns.
 Example:
 
 ```sql
-EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
+EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```json
@@ -414,7 +414,7 @@ With `actions` = 1, added keys depend on step type.
 Example:
 
 ```sql
-EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
+EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```json
@@ -471,7 +471,7 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 With `compact = 1`, each `Expression` step is removed. Along with that, if `actions = 1` is set, then `Actions` and `Positions` lines are hidden, leaving only the step descriptions:
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```text
@@ -562,7 +562,7 @@ when table statistics are available.
 The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
 
 ```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw SETTINGS explain_query_plan_default = 'legacy';
 ```
 
 ```text
