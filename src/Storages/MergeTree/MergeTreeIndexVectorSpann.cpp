@@ -847,6 +847,15 @@ void spannIndexValidator(const IndexDescription & index, bool attach)
         }
     }
 
+    if (index.granularity != 1)
+    {
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "vector_spann index requires GRANULARITY 1 (got {}); "
+            "part-relative offset conversion for multi-granule indexes is not yet implemented",
+            index.granularity);
+    }
+
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     const bool has_three_args = (args.size() == 3);
     const bool has_seven_args = (args.size() == 7);
