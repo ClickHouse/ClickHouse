@@ -658,6 +658,17 @@ bool MergeTreeIndexConditionVectorSpann::alwaysUnknownOrTrue() const
     return false;
 }
 
+std::optional<size_t> MergeTreeIndexConditionVectorSpann::getApproximateNearestNeighborsLimit() const
+{
+    if (!parameters)
+        return std::nullopt;
+
+    size_t limit = parameters->limit;
+    if (parameters->additional_filters_present || is_rescoring)
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+    return limit;
+}
+
 /// Vector search path provides only the deserialized granule (no MergeTreeIndexReader / part streams here).
 NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
@@ -725,9 +736,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
         }
     }
 
-    size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring)
-        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+    const size_t limit = getApproximateNearestNeighborsLimit().value();
 
     auto compare = [](const Candidate & a, const Candidate & b) { return a.distance < b.distance; };
     if (candidates.size() <= limit)
@@ -845,15 +854,6 @@ void spannIndexValidator(const IndexDescription & index, bool attach)
                 "vector_spann index is an experimental feature. "
                 "Set setting `allow_experimental_vector_spann_index = 1` to enable it.");
         }
-    }
-
-    if (index.granularity != 1)
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
-            "vector_spann index requires GRANULARITY 1 (got {}); "
-            "part-relative offset conversion for multi-granule indexes is not yet implemented",
-            index.granularity);
     }
 
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);

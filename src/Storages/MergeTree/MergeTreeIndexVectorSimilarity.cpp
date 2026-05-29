@@ -537,6 +537,17 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     return false;
 }
 
+std::optional<size_t> MergeTreeIndexConditionVectorSimilarity::getApproximateNearestNeighborsLimit() const
+{
+    if (!parameters)
+        return std::nullopt;
+
+    size_t limit = parameters->limit;
+    if (parameters->additional_filters_present || is_rescoring)
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+    return limit;
+}
+
 NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
     if (!parameters)
@@ -556,11 +567,9 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         parameters->reference_vector.data(), parameters->reference_vector.size(),
         granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
 
-    size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring)
-        /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
-        /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
-        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+    /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
+    /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
+    const size_t limit = getApproximateNearestNeighborsLimit().value();
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to

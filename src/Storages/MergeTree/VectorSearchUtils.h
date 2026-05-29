@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <optional>
 #include <Core/Types.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -35,21 +36,29 @@ inline void convertNearestNeighboursToPartOffsets(NearestNeighbours & neighbours
         row += granule_begin_row;
 }
 
-/// Merge per-granule top-k results into a single part-wide top-k (by distance).
-inline void mergeNearestNeighbours(NearestNeighbours & accumulated, NearestNeighbours && granule, size_t limit)
+/// Merge per-granule nearest-neighbour results into a single part-wide set.
+inline void mergeNearestNeighbours(NearestNeighbours & accumulated, NearestNeighbours && granule)
 {
     if (granule.rows.empty())
         return;
 
-    if (accumulated.rows.empty())
-    {
-        accumulated = std::move(granule);
-        return;
-    }
+    accumulated.rows.insert(accumulated.rows.end(), granule.rows.begin(), granule.rows.end());
 
-    if (!accumulated.distances.has_value() || !granule.distances.has_value())
+    if (accumulated.distances.has_value() && granule.distances.has_value())
+        accumulated.distances->insert(accumulated.distances->end(), granule.distances->begin(), granule.distances->end());
+    else
+        accumulated.distances.reset();
+}
+
+/// Keep only the best `limit` neighbours (smallest distance). If distances are unavailable, keep first `limit`.
+inline void truncateNearestNeighbours(NearestNeighbours & neighbours, size_t limit)
+{
+    if (neighbours.rows.size() <= limit)
+        return;
+
+    if (!neighbours.distances.has_value())
     {
-        accumulated.rows.insert(accumulated.rows.end(), granule.rows.begin(), granule.rows.end());
+        neighbours.rows.resize(limit);
         return;
     }
 
@@ -60,27 +69,20 @@ inline void mergeNearestNeighbours(NearestNeighbours & accumulated, NearestNeigh
     };
 
     std::vector<Entry> entries;
-    entries.reserve(accumulated.rows.size() + granule.rows.size());
+    entries.reserve(neighbours.rows.size());
+    for (size_t i = 0; i < neighbours.rows.size(); ++i)
+        entries.push_back({neighbours.rows[i], neighbours.distances->at(i)});
 
-    for (size_t i = 0; i < accumulated.rows.size(); ++i)
-        entries.push_back({accumulated.rows[i], accumulated.distances->at(i)});
-    for (size_t i = 0; i < granule.rows.size(); ++i)
-        entries.push_back({granule.rows[i], granule.distances->at(i)});
-
-    const size_t keep = std::min(limit, entries.size());
     auto compare = [](const Entry & a, const Entry & b) { return a.distance < b.distance; };
-    if (entries.size() <= keep)
-        std::ranges::sort(entries, compare);
-    else
-        std::partial_sort(entries.begin(), entries.begin() + static_cast<std::ptrdiff_t>(keep), entries.end(), compare);
+    std::partial_sort(entries.begin(), entries.begin() + static_cast<std::ptrdiff_t>(limit), entries.end(), compare);
+    entries.resize(limit);
 
-    entries.resize(keep);
-    accumulated.rows.resize(keep);
-    accumulated.distances->resize(keep);
-    for (size_t i = 0; i < keep; ++i)
+    neighbours.rows.resize(limit);
+    neighbours.distances->resize(limit);
+    for (size_t i = 0; i < limit; ++i)
     {
-        accumulated.rows[i] = entries[i].row;
-        accumulated.distances->at(i) = entries[i].distance;
+        neighbours.rows[i] = entries[i].row;
+        neighbours.distances->at(i) = entries[i].distance;
     }
 }
 

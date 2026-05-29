@@ -247,3 +247,55 @@ LIMIT 1
 SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_QUERY }
 
 DROP TABLE tab_spann_dim;
+
+SELECT '10. merge per-granule candidates across full part';
+DROP TABLE IF EXISTS tab_spann_merge_limit;
+
+CREATE TABLE tab_spann_merge_limit
+(
+    id Int32,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_spann('spann', 'L2Distance', 2) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2;
+
+INSERT INTO tab_spann_merge_limit VALUES
+    (0, [100.0, 0.0]), (1, [90.0, 0.0]),
+    (2, [0.0, 0.01]), (3, [0.0, 0.02]),
+    (4, [0.0, 0.03]), (5, [0.0, 0.04]);
+
+SELECT count() FROM (
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_merge_limit
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_merge_limit
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+
+SELECT count() FROM (
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_merge_limit
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 0
+    EXCEPT
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_merge_limit
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
+
+DROP TABLE tab_spann_merge_limit;

@@ -2132,12 +2132,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// this variable is stored to avoid reading the same granule twice.
         MergeTreeIndexGranulePtr granule = nullptr;
         size_t last_index_mark = 0;
+        std::optional<NearestNeighbours> accumulated_vector_search_results;
+        const auto vector_search_merge_limit = condition->getApproximateNearestNeighborsLimit();
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
-            std::optional<NearestNeighbours> accumulated_vector_search_results;
-            size_t vector_search_merge_limit = 0;
 
             for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
             {
@@ -2149,17 +2149,17 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 if (index_helper->isVectorSimilarityIndex())
                 {
                     auto granule_results = condition->calculateApproximateNearestNeighbors(granule);
-                    const UInt64 granule_begin_row = static_cast<UInt64>(index_mark) * skip_index_granularity;
+                    const UInt64 granule_begin_row = part->index_granularity->getMarkStartingRow(
+                        index_mark * skip_index_granularity);
                     convertNearestNeighboursToPartOffsets(granule_results, granule_begin_row);
                     const auto part_offset_rows = granule_results.rows;
 
                     if (!accumulated_vector_search_results)
                     {
                         accumulated_vector_search_results = std::move(granule_results);
-                        vector_search_merge_limit = accumulated_vector_search_results->rows.size();
                     }
                     else
-                        mergeNearestNeighbours(*accumulated_vector_search_results, std::move(granule_results), vector_search_merge_limit);
+                        mergeNearestNeighbours(*accumulated_vector_search_results, std::move(granule_results));
 
                     for (const auto row : part_offset_rows)
                     {
@@ -2197,25 +2197,27 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         res.back().end = data_range.end;
                 }
             }
-
-            if (accumulated_vector_search_results)
-            {
-                read_hints.vector_search_results = std::move(*accumulated_vector_search_results);
-
-                /// We need to sort the result ranges ascendingly
-                auto rows = read_hints.vector_search_results.value().rows;
-                std::sort(rows.begin(), rows.end());
-#ifndef NDEBUG
-                /// Duplicates should in theory not be possible but better be safe than sorry ...
-                const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();
-                if (has_duplicates)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
-#endif
-                if (!(read_hints.vector_search_results.value().distances.has_value()))
-                    read_hints = {};
-            }
-
             last_index_mark = index_range.end - 1;
+        }
+
+        if (accumulated_vector_search_results)
+        {
+            if (vector_search_merge_limit.has_value())
+                truncateNearestNeighbours(*accumulated_vector_search_results, *vector_search_merge_limit);
+
+            read_hints.vector_search_results = std::move(*accumulated_vector_search_results);
+
+            /// We need to sort the result ranges ascendingly
+            auto rows = read_hints.vector_search_results.value().rows;
+            std::sort(rows.begin(), rows.end());
+#ifndef NDEBUG
+            /// Duplicates should in theory not be possible but better be safe than sorry ...
+            const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();
+            if (has_duplicates)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
+#endif
+            if (!(read_hints.vector_search_results.value().distances.has_value()))
+                read_hints = {};
         }
     }
 

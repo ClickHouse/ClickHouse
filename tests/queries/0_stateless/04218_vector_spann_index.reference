@@ -18,3 +18,6 @@ Description: vector_spann GRANULARITY 100000000
 7. b1 quantization rejected
 8. invalid centroid_ratio
 9. dimension mismatch at query time
+10. merge per-granule candidates across full part
+0
+0

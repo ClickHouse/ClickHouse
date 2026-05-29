@@ -175,6 +175,12 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 
+    /// Returns the fetch limit used by `calculateApproximateNearestNeighbors` if available.
+    virtual std::optional<size_t> getApproximateNearestNeighborsLimit() const
+    {
+        return std::nullopt;
+    }
+
     template <typename RPNElement>
     bool rpnEvaluatesAlwaysUnknownOrTrue(
         const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const
