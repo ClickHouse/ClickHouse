@@ -1,2 +1,4 @@
 before:	999	mango	2
 after:	0
+db after use:	1
+db after reset, back off the dirty db:	1

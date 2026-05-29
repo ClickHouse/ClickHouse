@@ -2567,6 +2567,20 @@ void ClientBase::processParsedSingleQuery(
             /// not a hot path.
             if (connection)
             {
+                /// Clear the connection's client-side database override before
+                /// probing. `LocalConnection` (clickhouse-local / embedded)
+                /// holds a `current_database` set by a prior `USE` and forces
+                /// it onto every query context in `LocalConnection::sendQuery`.
+                /// If we left it set, the probe below would run in the stale
+                /// `USE`-d database and `SELECT currentDatabase()` would echo
+                /// that dirty value instead of the reset baseline the session
+                /// context now holds — re-pinning the client to the wrong db.
+                /// Clearing it makes `LocalConnection` fall through to the
+                /// session context (which `RESET SESSION` already restored).
+                /// Harmless for the native `Connection`, which only sends its
+                /// default database in the handshake, not per query.
+                connection->setDefaultDatabase("");
+
                 /// `currentDatabase()` legitimately returns `""` when the
                 /// candidate chain in `Context::resetToUserDefaults` falls
                 /// all the way through (connect-time db dropped, no user
