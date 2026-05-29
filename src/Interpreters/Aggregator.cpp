@@ -4151,6 +4151,10 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
         hash.update(where->getTreeHash(/*ignore_aliases=*/true));
     if (const auto group_by = select.groupBy())
         hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto select_expr = select.select())
+        hash.update(select_expr->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto having = select.having())
+        hash.update(having->getTreeHash(/*ignore_aliases=*/true));
     return hash.get64();
 }
 

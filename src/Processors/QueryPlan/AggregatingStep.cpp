@@ -1036,8 +1036,6 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// So, let's have a flag to disable sending/reading pre-calculated value.
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 16;
-    if (params.query_semantic_hash_for_partial_cache != 0)
-        flags |= 32;
 
     writeIntBinary(flags, ctx.out);
 
@@ -1062,9 +1060,6 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    if (params.query_semantic_hash_for_partial_cache != 0)
-        writeIntBinary(params.query_semantic_hash_for_partial_cache, ctx.out);
-
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
@@ -1082,7 +1077,6 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool group_by_use_nulls = bool(flags & 4);
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
-    bool has_query_semantic_hash_for_partial_cache = bool(flags & 32);
 
     UInt64 num_keys;
     readVarUInt(num_keys, ctx.in);
@@ -1119,8 +1113,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     deserializeAggregateDescriptions(aggregates, ctx.in);
 
     UInt64 query_semantic_hash_for_partial_cache = 0;
-    if (has_query_semantic_hash_for_partial_cache)
-        readIntBinary(query_semantic_hash_for_partial_cache, ctx.in);
+    /// Partial aggregate cache query hash is not serialized — serialized/remote plans fall back
+    /// to computing the hash locally or disabling PAC if semantic key is unavailable.
 
     UInt64 stats_key = 0;
     if (has_stats_key)
