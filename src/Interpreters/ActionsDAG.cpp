@@ -976,18 +976,13 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
     EquivalenceClasses ec(*this);
     std::unordered_map<NodeKey, const Node *, NodeKeyHash> seen;
 
-    /// function results depend on values, not on alias names along the chain
-    auto resolve_through_aliases = [&](const Node * n) -> const Node *
-    {
-        n = ec.find(n);
-        while (n && n->type == ActionType::ALIAS && !n->children.empty())
-            n = ec.find(n->children.front());
-        return n;
-    };
-
     for (const auto & node : nodes)
     {
         if (node.type == ActionType::ARRAY_JOIN)
+            continue;
+        /// duplicate-named INPUTs/PLACEHOLDERs are distinct positions in `mergeInplace` -
+        /// identify them by node pointer (i.e. don't dedup at all)
+        if (node.type == ActionType::INPUT || node.type == ActionType::PLACEHOLDER)
             continue;
         /// COLUMN that came from a non-deterministic source - two such columns aren't interchangeable
         /// even if their current values match
@@ -1011,7 +1006,7 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
         {
             case ActionType::INPUT:
             case ActionType::PLACEHOLDER:
-                key.name = node.result_name;
+                /// skipped above
                 break;
             case ActionType::COLUMN:
                 key.column = node.column;
@@ -1026,8 +1021,23 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
                 if (node.function_base)
                     key.name = node.function_base->getName();
                 key.children.reserve(node.children.size());
-                for (const auto * c : node.children)
-                    key.children.push_back(resolve_through_aliases(c));
+                /// Look through ALIAS only for value-only operators (declared via
+                /// `isNameInsensitive`). `formatRow` and friends would observe the change
+                if (node.function_base && node.function_base->isNameInsensitive())
+                {
+                    for (const auto * c : node.children)
+                    {
+                        const Node * canon = ec.find(c);
+                        while (canon && canon->type == ActionType::ALIAS && !canon->children.empty())
+                            canon = ec.find(canon->children.front());
+                        key.children.push_back(canon);
+                    }
+                }
+                else
+                {
+                    for (const auto * c : node.children)
+                        key.children.push_back(ec.find(c));
+                }
                 break;
             case ActionType::ARRAY_JOIN:
                 break;

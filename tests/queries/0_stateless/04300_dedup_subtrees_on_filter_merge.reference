@@ -4,8 +4,9 @@ dedup hits	1
 99
 100
 1
-one equals + one const	1	1
+equals + const dedup	1	1
 0	1
 2
 3
 0
+1

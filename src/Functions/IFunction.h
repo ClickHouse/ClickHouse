@@ -316,6 +316,13 @@ public:
       */
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /** Whether the function's result depends only on argument *values* (not on their
+      * column names). Most operators are name-insensitive (`equals`, `plus`, `and`).
+      * Counter-examples: `formatRowNoNewline` puts column names into the result,
+      * `toTypeName` returns names. Default is conservative (`false`)
+      */
+    virtual bool isNameInsensitive() const { return false; }
+
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
@@ -573,6 +580,9 @@ public:
 
     /// Higher-order functions accept at least one lambda expression as an argument.
     virtual bool isHigherOrderFunction() const { return false; }
+
+    /// See `IFunctionBase::isNameInsensitive`
+    virtual bool isNameInsensitive() const { return false; }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }
