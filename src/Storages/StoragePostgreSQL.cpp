@@ -103,8 +103,8 @@ StoragePostgreSQL::StoragePostgreSQL(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
@@ -242,7 +242,7 @@ void StoragePostgreSQL::readImpl(
 }
 
 
-class PostgreSQLSink : public SinkToStorage
+class PostgreSQLSink final : public SinkToStorage
 {
 
 using Row = std::vector<std::optional<std::string>>;

@@ -8,12 +8,11 @@ from ``tests/clickhouse-test`` so it uses ``ps -eo pid,ppid,pgid,command``
 Scenario
 --------
 1. ``clickhouse-test`` starts a subprocess (the "test process") in its own
-   process group and records the PGID in the group pid file — exactly as
-   ``_track_pgid`` does on test launch.  In the multi-process variant the test
-   is ``00058_select_sleep_3.sh``, which spawns 5 child ``clickhouse-client``
-   processes running ``SELECT sleep(3)``.
+   process group and writes the PGID to a file via ``write_text_atomic``
+   right after ``Popen()``.  The test is ``01_parallel_sleep.sh``, which
+   spawns 5 child ``sleep`` processes.
 2. ``clickhouse-test`` is killed with ``SIGKILL``, leaving the test process
-   (and its children) orphaned because ``_untrack_pgid`` never ran.
+   (and its children) orphaned because the PGID file is never deleted.
 3. We assert the test process and its 5 child processes are still alive: they
    live in their own process group, so the parent's ``SIGKILL`` cannot reach
    them.
@@ -32,7 +31,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CLICKHOUSE_TEST = str(_REPO_ROOT / "tests" / "clickhouse-test")
-_TEST = "00058_select_sleep_3"
+_TEST = "01_parallel_sleep"
 
 # Import helpers directly from clickhouse-test so path changes propagate
 # automatically.  runpy.run_path handles the missing .py extension and the
@@ -42,9 +41,9 @@ pgrep = _ct["pgrep"]
 _GROUP_PID_PATH = _ct["_GROUP_PID_PATH"]
 _GROUP_PID_NAME = _ct["_GROUP_PID_NAME"]
 
-# clickhouse-test defaults args.tmp to args.queries when running from the repo,
-# so per-test stdout files end up under tests/queries/0_stateless/.
-_SUITE_TMP = _REPO_ROOT / "tests" / "queries" / "0_stateless"
+# clickhouse-test uses --queries ci/tests, so per-test stdout files end up
+# under ci/tests/0_stateless/ (args.tmp defaults to args.queries).
+_STDOUT = _REPO_ROOT / "ci" / "tests" / "0_stateless" / "test.stdout"
 
 
 def test_cleanup_kills_orphaned_test_process():
@@ -58,58 +57,65 @@ def test_cleanup_kills_orphaned_test_process():
 
     # Remove any leftover stdout files from a previous (possibly interrupted) run
     # so we get a clean signal when waiting for the file to appear below.
-    for _f in _SUITE_TMP.glob(f"{_TEST}*.stdout"):
-        _f.unlink(missing_ok=True)
+    _STDOUT.unlink(missing_ok=True)
 
     _ch_proc = subprocess.Popen(
-        [sys.executable, _CLICKHOUSE_TEST, _TEST],
+        [sys.executable, _CLICKHOUSE_TEST, "--queries", "ci/tests", _TEST],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
     try:
-        # Wait for clickhouse-test to open the stdout file for the test, which
-        # happens just before the test subprocess is launched.  This gives us
-        # an early confirmation that the harness is actually running the test
-        # rather than, e.g., still parsing options or connecting to the server.
-        deadline_stdout = time.monotonic() + 5
-        while time.monotonic() < deadline_stdout:
-            p = list(_SUITE_TMP.glob(f"{_TEST}*.stdout"))
-            if not p: continue
-            if p[0].stat().st_size:
-                break
-            time.sleep(0.1)
-        else:
-            assert False, f"{_SUITE_TMP}/{_TEST} has no stdout"
-    
-        # The PGID file is written by clickhouse-test synchronously right after
-        # Popen(), before the bash script starts.  By the time SELECT 1 has
-        # completed and the stdout file has content, the file is likely to exist.
-        p = list(_GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"))[0]
-        pgid = int(p.read_text())
-    
-        def got_procs(procs) -> str:
-            return ", got\n" + '\n'.join(f"{p[0]} {p[3]}" for p in procs)
-    
+        try:
+            # Wait for clickhouse-test to open the stdout file for the test, which
+            # happens just before the test subprocess is launched.  This gives us
+            # an early confirmation that the harness is actually running the test
+            # rather than, e.g., still parsing options or connecting to the server.
+            deadline_stdout = time.monotonic() + 15
+            while time.monotonic() < deadline_stdout:
+                if _STDOUT.exists() and _STDOUT.stat().st_size:
+                    break
+                time.sleep(0.5)
+            else:
+                assert False, f"{_STDOUT} is empty"
+
+            # The PGID file is written by clickhouse-test synchronously right after
+            # Popen(), before the bash script starts.  By the time the test script
+            # writes its output and the stdout file has content, the file is likely to exist.
+            p = list(_GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"))[0]
+            pgid = int(p.read_text())
+
+            def got_procs(procs) -> str:
+                return ", got\n" + '\n'.join(f"{p[0]} {p[3]}" for p in procs)
+
+            # Poll until we see exactly 7 processes: two bash processes (the test
+            # runner wrapper and the test script itself) plus 5 sleep subprocesses
+            # spawned by the test script.
+            deadline_procs = time.monotonic() + 5
+            while time.monotonic() < deadline_procs:
+                procs = pgrep(pgid=pgid)
+                if len(procs) == 7:
+                    break
+                time.sleep(0.05)
+            assert len(procs) == 7, "(Before kill) Expect 7 processes (two bash processes + 5 test processes)" + got_procs(procs)
+
+            # Kill clickhouse-test with SIGKILL — simulates the OOM killer or an
+            # external timeout killing the test runner.
+        finally:
+            os.kill(_ch_proc.pid, signal.SIGKILL)
+
         procs = pgrep(pgid=pgid)
-        assert len(procs) == 7, "(Before kill) Expect 7 processes (two bash processes + 5 test processes)" + got_procs(procs)
-    
-        # Kill clickhouse-test with SIGKILL — simulates the OOM killer or an
-        # external timeout killing the test runner.
+        assert len(procs) == 7, "(After kill) Expect 7 processes" + got_procs(procs)
     finally:
-        os.kill(_ch_proc.pid, signal.SIGKILL)
+        _ch_proc.wait()
+        # Run clickhouse-test --cleanup to kill the orphaned process group.
+        result = subprocess.run(
+            [sys.executable, _CLICKHOUSE_TEST, "--cleanup"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
 
-    procs = pgrep(pgid=pgid)
-    assert len(procs) == 7, "(After kill) Expect 7 processes" + got_procs(procs)
-    _ch_proc.wait()
-
-    # Run clickhouse-test --cleanup to kill the orphaned process group.
-    result = subprocess.run(
-        [sys.executable, _CLICKHOUSE_TEST, "--cleanup"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
     assert result.returncode == 0, (
         f"clickhouse-test --cleanup failed (rc={result.returncode}):\n"
         f"{result.stdout}\n{result.stderr}"

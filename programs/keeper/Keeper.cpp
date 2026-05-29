@@ -20,6 +20,7 @@
 #include <Server/waitServersToFinish.h>
 #include <Server/CloudPlacementInfo.h>
 #include <base/getMemoryAmount.h>
+#include <base/defines.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
@@ -161,12 +162,13 @@ int Keeper::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Keeper::options());
+        std::string app_name = (commandName() == "clickhouse-keeper") ? "clickhouse-keeper" : "clickhouse keeper";
         auto header_str = fmt::format("{0} [OPTION] [-- [ARG]...]\n"
 #if ENABLE_CLICKHOUSE_KEEPER_CLIENT
                                       "{0} client [OPTION]\n"
 #endif
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
+                                      app_name);
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -207,7 +209,7 @@ void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] con
 {
     if (arg == "force-recovery")
     {
-        assert(value.empty());
+        chassert(value.empty());
         config().setBool("keeper_server.force_recovery", true);
         return;
     }
@@ -268,6 +270,16 @@ struct KeeperHTTPContext : public IHTTPContext
     uint64_t getMaxFieldValueSize() const override
     {
         return context->getConfigRef().getUInt64("keeper_server.http_max_field_value_size", 128 * 1024);
+    }
+
+    uint64_t getMaxRequestHeaderSize() const override
+    {
+        return context->getConfigRef().getUInt64("keeper_server.http_max_request_header_size", 0);
+    }
+
+    Poco::Timespan getHeadersReadTimeout() const override
+    {
+        return {context->getConfigRef().getInt64("keeper_server.http_headers_read_timeout", 0), 0};
     }
 
     Poco::Timespan getReceiveTimeout() const override
@@ -352,8 +364,6 @@ try
 
     if (!config().has("keeper_server"))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Keeper configuration (<keeper_server> section) not found in config");
-
-    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
 
     std::string path = getKeeperPath(config());
     std::filesystem::create_directories(path);
@@ -447,6 +457,11 @@ try
         listen_hosts.emplace_back("127.0.0.1");
         listen_try = true;
     }
+
+#if USE_SSL
+    CertificateReloader::instance().tryLoad(config());
+    CertificateReloader::instance().tryLoadClient(config());
+#endif
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */ false);
@@ -618,7 +633,6 @@ try
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             updateLevels(config(), logger());
-            KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
 
             if (config().has("keeper_server"))
                 global_context->updateKeeperConfiguration(config());
@@ -660,7 +674,7 @@ try
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <map>
 #include <filesystem>
@@ -13,6 +15,7 @@ namespace DB
 
 namespace WebAssembly
 {
+    enum class FuelMode : uint8_t;
     class WasmModule;
     class IWasmEngine;
 }
@@ -28,10 +31,11 @@ public:
     void saveModule(std::string_view module_name, std::string_view wasm_code, UInt256 expected_hash = {});
 
     using ModulePtr = std::shared_ptr<WebAssembly::WasmModule>;
-    std::pair<ModulePtr, UInt256> getModule(std::string_view module_name);
+    std::pair<ModulePtr, UInt256> getModule(std::string_view module_name, WebAssembly::FuelMode fuel_mode);
     std::vector<std::pair<std::string, UInt256>> getModulesList() const;
 
     void deleteModuleIfExists(std::string_view module_name);
+    void deleteModuleIfExists(std::function<bool(std::string_view)> name_match);
 
     WasmModuleManager(const WasmModuleManager &) = delete;
     WasmModuleManager & operator=(const WasmModuleManager &) = delete;
@@ -54,7 +58,7 @@ protected:
     {
         /// Module is stored in UserDefinedWebAssemblyFunctions, so we keep only weak_ptr here
         /// Once no functions refer to the module, it can be released from memory
-        std::weak_ptr<WebAssembly::WasmModule> ptr;
+        std::array<std::weak_ptr<WebAssembly::WasmModule>, 2> ptrs;
         UInt256 hash;
     };
 

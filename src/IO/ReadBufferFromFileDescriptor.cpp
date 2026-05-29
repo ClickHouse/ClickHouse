@@ -117,7 +117,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
-    assert(!internal_buffer.empty());
+    chassert(!internal_buffer.empty());
 
     size_t bytes_read = readImpl(internal_buffer.begin(), 1, internal_buffer.size(), file_offset_of_buffer_end);
 
@@ -155,7 +155,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     size_t new_pos;
     if (whence == SEEK_SET)
     {
-        assert(offset >= 0);
+        chassert(offset >= 0);
         new_pos = offset;
     }
     else if (whence == SEEK_CUR)
@@ -179,8 +179,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
 
         pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
 
         return new_pos;
     }
@@ -251,6 +251,10 @@ void ReadBufferFromFileDescriptor::rewind()
     working_buffer.resize(0);
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
+
+    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
+    /// Reset so the next read cycle can proceed normally after rewind.
+    canceled = false;
 }
 
 std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
