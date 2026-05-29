@@ -209,7 +209,15 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             return false;
 
         appendExpression(actions);
-        const auto * filter_expression = findInOutputs(*dag, filter->getFilterColumnName(), filter->removesFilterColumn());
+        /// A `FilterStep` may carry a non-`UInt8` filter column when it was
+        /// produced by row policy / `additional_table_filters` with a bare
+        /// integer column. `FilterTransform` itself accepts every type that
+        /// satisfies `canBeUsedInBooleanContext`, so bail on projection
+        /// optimization instead of throwing -- the query then runs through the
+        /// normal read path. PREWHERE handling above stays strict so explicit
+        /// user `PREWHERE <non-bool>` still surfaces the type error.
+        const auto * filter_expression
+            = findInOutputs(*dag, filter->getFilterColumnName(), filter->removesFilterColumn(), /* lenient_type_check */ true);
         if (!filter_expression)
             return false;
 

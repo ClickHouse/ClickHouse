@@ -62,4 +62,17 @@ SELECT c0 FROM t_106099 ORDER BY c0;
 SELECT count() FROM t_106099;
 
 DROP ROW POLICY pol_106099 ON t_106099;
+
+-- Same producer-side dedup also runs for `additional_table_filters`. Without
+-- the fix at `InterpreterSelectQuery.cpp` the override would force
+-- `FilterTransform` to erase the only `c0` output, breaking `SELECT c0`.
+SELECT c0 FROM t_106099 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 0;
+SELECT c0 FROM t_106099 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 1;
+-- `count()` previously failed with `ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER` because
+-- projection optimization rejected non-`UInt8` filter columns. With the
+-- lenient FilterStep type check the optimizer bails gracefully and the
+-- normal read path runs.
+SELECT count() FROM t_106099 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 0;
+SELECT count() FROM t_106099 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 1;
+
 DROP TABLE t_106099;
