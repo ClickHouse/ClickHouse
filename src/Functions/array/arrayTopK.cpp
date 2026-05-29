@@ -316,7 +316,7 @@ Nulls are skipped. The returned array has element type `T` even when the input h
         {"lambda_simple", "SELECT arrayBottomK((x) -> -x, 2, [5, 9, 1, 3])", "[9,5]"},
         {"lambda_multi", "SELECT arrayBottomK((x, y) -> y, 2, ['a', 'b', 'c'], [3, 1, 2])", "['b','c']"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 5};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
