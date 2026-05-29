@@ -75,7 +75,7 @@ void MergeTreeReaderStream::init()
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
     //// Empty buffer does not makes progress.
-    if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
+    if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
     auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>

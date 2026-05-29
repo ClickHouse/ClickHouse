@@ -1,4 +1,3 @@
-#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <numeric>
@@ -411,7 +410,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         pipeline.transform([&](OutputPortRawPtrs ports)
         {
-            assert(streams * grouping_sets_size == ports.size());
+            chassert(streams * grouping_sets_size == ports.size());
             Processors processors;
             for (size_t i = 0; i < grouping_sets_size; ++i)
             {
@@ -469,7 +468,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 ports.swap(new_ports);
             }
 
-            assert(ports.size() == grouping_sets_size);
+            chassert(ports.size() == grouping_sets_size);
             auto output_header = transform_params->getHeader();
             if (group_by_use_nulls)
                 convertToNullable(output_header, params.keys);
