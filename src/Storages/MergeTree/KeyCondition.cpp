@@ -708,6 +708,27 @@ static const std::map<std::string, std::string> inverse_relations =
     {"notEmpty", "empty"},
 };
 
+/// Returns the comparison operator after reversing comparison direction.
+///
+/// This is needed when normalizing `const op key` into `key op const`, and when
+/// pushing a comparison through a monotonic function chain with negative direction.
+/// For example, `a < b` becomes `b > a`, and for decreasing `f`,
+/// `f(a) < f(b)` is checked as `a > b`.
+///
+/// Symmetric operators, such as `equals` and `notEquals`, are returned unchanged.
+/// Returns an empty view for operators that are not order comparisons, such as
+/// `like` and `startsWith`.
+static std::string_view reverseComparisonOperator(std::string_view op)
+{
+    if (op == "equals") return "equals";
+    if (op == "notEquals") return "notEquals";
+    if (op == "less") return "greater";
+    if (op == "greater") return "less";
+    if (op == "lessOrEquals") return "greaterOrEquals";
+    if (op == "greaterOrEquals") return "lessOrEquals";
+    return {};
+}
+
 
 static bool isLogicalOperator(const String & func_name)
 {
@@ -816,17 +837,13 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     if (node.children.size() != 2)
         return nullptr;
 
-    /// `less(const, x)` ≡ `greater(x, const)`; also the allowlist of ops we rewrite at all.
-    auto mirrored_op = [](std::string_view op) -> std::string_view
-    {
-        if (op == "equals") return "equals";
-        if (op == "less") return "greater";
-        if (op == "greater") return "less";
-        if (op == "lessOrEquals") return "greaterOrEquals";
-        if (op == "greaterOrEquals") return "lessOrEquals";
-        return {};
-    };
-    const std::string_view mirrored = mirrored_op(op_name);
+    /// `notEquals` is excluded because the OR-of-branches rewrite below does not preserve
+    /// SQL three-valued logic for `!=` when intermediate `coalesce` args are NULL.
+    if (op_name == "notEquals")
+        return nullptr;
+
+    /// `less(const, x)` becomes `greater(x, const)`; also the allowlist of ops we rewrite at all.
+    const std::string_view mirrored = reverseComparisonOperator(op_name);
     if (mirrored.empty())
         return nullptr;
 
@@ -1611,8 +1628,11 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     Field & out_value,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool & out_chain_is_positive)
 {
+    out_chain_is_positive = true;
+
     String expr_name = node.getColumnName();
 
     if (!info.key_subexpr_names.contains(expr_name))
@@ -1662,8 +1682,26 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!constant_transformed)
         return false;
 
+    /// Track whether the function chain preserves or reverses comparison order.
+    ///
+    /// If its cumulative monotonicity direction is negative, applying it to the constant
+    /// reverses range comparisons. For example, with `ORDER BY (intDiv(c0, 5) / -7)`,
+    /// `c0 < 0` becomes `divide(intDiv(c0, 5), -7) > divide(intDiv(0, 5), -7)`.
+    ///
+    /// Directions compose by parity: each non-increasing function reverses the current
+    /// direction, so two non-increasing functions preserve the original comparison.
+    bool chain_is_positive = true;
+    for (const auto & func : transform_functions)
+    {
+        auto arg_type = getArgumentTypeOfMonotonicFunction(*func);
+        auto monotonicity = func->getMonotonicityForRange(*arg_type, Field(), Field());
+        if (!monotonicity.is_positive)
+            chain_is_positive = !chain_is_positive;
+    }
+
     out_value = (*transformed_const_column)[0];
     out_type = transformed_const_type;
+    out_chain_is_positive = chain_is_positive;
     return true;
 }
 
@@ -3434,6 +3472,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
             bool condition_is_relaxed = false;
+            bool constant_chain_is_positive = true;
 
             /// If the table sorting key is `x` and the query predicate is `f(x) <op> const`, we try to analyze `f`.
             /// If `f` is a monotonic function chain, we store the chain and later, in `checkInRange`, apply it to
@@ -3463,7 +3502,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (
                 !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, constant_chain_is_positive))
             {
                 condition_is_relaxed = true;
             }
@@ -3482,21 +3521,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
-            /// Replace <const> <sign> <data> on to <data> <-sign> <const>
+            /// Replace <const> <sign> <data> on to <data> <-sign> <const>.
+            /// Ops without a meaningful operand reorder (`like`, `startsWith`, `match`, ...)
+            /// return empty from the helper and are rejected.
             if (key_arg_pos == 1)
             {
-                if (func_name == "less")
-                    func_name = "greater";
-                else if (func_name == "greater")
-                    func_name = "less";
-                else if (func_name == "greaterOrEquals")
-                    func_name = "lessOrEquals";
-                else if (func_name == "lessOrEquals")
-                    func_name = "greaterOrEquals";
-                else if (func_name == "like" || func_name == "notLike" ||
-                         func_name == "ilike" || func_name == "notILike" ||
-                         func_name == "startsWith" || func_name == "startsWithUTF8" || func_name == "match")
+                auto reversed = reverseComparisonOperator(func_name);
+                if (reversed.empty())
                     return false;
+                func_name = String(reversed);
             }
 
             key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
@@ -3606,6 +3639,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     func_name = "greaterOrEquals";
 
                 out.relaxed = true;
+            }
+
+            /// `const_value` has already been transformed into the key-expression domain.
+            /// If that transformation reverses order, reverse the comparison operator too.
+            /// Symmetric operators such as `equals` and `notEquals` are unchanged.
+            if (!constant_chain_is_positive)
+            {
+                if (auto reversed = reverseComparisonOperator(func_name); !reversed.empty())
+                    func_name = String(reversed);
             }
         }
         else
