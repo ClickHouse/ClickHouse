@@ -568,26 +568,57 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
 
 #if USE_EMBEDDED_COMPILER
 
-static CHJIT & getJITInstance()
+namespace
 {
-    static CHJIT jit;
-    return jit;
+    std::mutex aggregator_jit_mutex;
+    /// Shared ownership: in-flight compiles and cache-holder entries both keep their own copy.
+    /// `resetAggregatorJITInstance` only drops this slot's reference; the CHJIT itself dies once
+    /// every user has released its handle, so concurrent operations can never use a destroyed instance.
+    std::shared_ptr<CHJIT> aggregator_jit_instance;
+}
+
+static std::shared_ptr<CHJIT> getJITInstancePtr()
+{
+    std::lock_guard lock(aggregator_jit_mutex);
+    if (!aggregator_jit_instance)
+        aggregator_jit_instance = std::make_shared<CHJIT>();
+    return aggregator_jit_instance;
+}
+
+void resetAggregatorJITInstance()
+{
+    std::lock_guard lock(aggregator_jit_mutex);
+    aggregator_jit_instance.reset();
 }
 
 class CompiledAggregateFunctionsHolder final : public CompiledExpressionCacheEntry
 {
 public:
-    explicit CompiledAggregateFunctionsHolder(CompiledAggregateFunctions compiled_function_)
+    explicit CompiledAggregateFunctionsHolder(CompiledAggregateFunctions compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_aggregate_functions(compiled_function_)
+        , jit_owner(std::move(jit_owner_))
     {}
 
     ~CompiledAggregateFunctionsHolder() override
     {
-        getJITInstance().deleteCompiledModule(compiled_aggregate_functions.compiled_module);
+        try
+        {
+            /// Use the JIT instance that compiled this module, not the current global —
+            /// `resetAggregatorJITInstance` may have swapped the global since.
+            jit_owner->deleteCompiledModule(compiled_aggregate_functions.compiled_module);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     CompiledAggregateFunctions compiled_aggregate_functions;
+
+private:
+    /// Keeps the CHJIT that owns our `JITModuleMemoryManager` alive until eviction.
+    std::shared_ptr<CHJIT> jit_owner;
 };
 
 #endif
@@ -753,8 +784,9 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
     auto compile = [&] ()
     {
         LOG_TRACE(log, "Compile expression {}", functions_description);
-        auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
-        return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
+        auto jit_owner = getJITInstancePtr();
+        auto compiled_aggregate_functions = compileAggregateFunctions(*jit_owner, functions_to_compile, functions_description);
+        return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions), std::move(jit_owner));
     };
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
