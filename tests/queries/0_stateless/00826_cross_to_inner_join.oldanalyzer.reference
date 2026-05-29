@@ -115,7 +115,7 @@ SELECT
     t2_00826.a,
     t2_00826.b
 FROM t1_00826
-ALL INNER JOIN t2_00826 ON and(and(and(equals(a, t2_00826.a), equals(a, t2_00826.a)), equals(a, t2_00826.a)), equals(b, t2_00826.b))
+ALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(a, t2_00826.a), equals(a, t2_00826.a), equals(b, t2_00826.b))
 WHERE and(equals(a, t2_00826.a), and(equals(a, t2_00826.a), and(equals(a, t2_00826.a), equals(b, t2_00826.b))))
 ORDER BY ALL ASC
 --- cross split conjunction ---
@@ -126,7 +126,7 @@ SELECT
     t2_00826.b
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))
-WHERE and(and(and(equals(a, t2_00826.a), equals(b, t2_00826.b)), greaterOrEquals(a, 1)), greater(t2_00826.b, 0))
+WHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b), greaterOrEquals(a, 1), greater(t2_00826.b, 0))
 ORDER BY ALL ASC
 --- and or ---
 SELECT
@@ -136,7 +136,7 @@ SELECT
     t2_00826.b
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON and(equals(a, t2_00826.a), equals(b, t2_00826.b))
-WHERE and(and(equals(a, t2_00826.a), equals(b, t2_00826.b)), or(greaterOrEquals(a, 1), equals(t2_00826.b, 1)))
+WHERE and(equals(a, t2_00826.a), equals(b, t2_00826.b), or(greaterOrEquals(a, 1), equals(t2_00826.b, 1)))
 ORDER BY ALL ASC
 --- arithmetic expr ---
 SELECT
@@ -162,7 +162,7 @@ ORDER BY ALL ASC
 SELECT a AS b
 FROM t1_00826
 CROSS JOIN t2_00826
-WHERE and(equals(b, t2_00826.a), greater((a AS b), 0))
+WHERE and(equals(b, t2_00826.a), greater(a AS b, 0))
 ORDER BY ALL ASC
 --- comma ---
 SELECT

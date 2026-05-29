@@ -1,6 +1,0 @@
-SELECT if(equals(number, 1), \'hello\', if(equals(number, 2), \'world\', \'xyz\'))
-FROM numbers(10)
-SELECT multiIf(equals(number, 1), \'hello\', equals(number, 2), \'world\', \'xyz\')
-FROM numbers(10)
-\N
-\N

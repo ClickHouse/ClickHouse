@@ -1,7 +1,0 @@
-SELECT
-    a,
-    b,
-    c,
-    d
-FROM t1
-WHERE or(and(equals(a, 1), equals(b, 2), equals(c, 3), equals(d, 4), equals(a, 5)), and(equals(a, c), equals(b, 10), equals(1000, d)), and(equals(a, c), equals(b, 10), equals(1000, d)))
