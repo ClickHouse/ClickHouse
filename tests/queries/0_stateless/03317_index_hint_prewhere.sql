@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS test_indexHint_prewhere;

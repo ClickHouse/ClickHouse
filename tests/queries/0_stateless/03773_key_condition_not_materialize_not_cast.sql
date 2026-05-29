@@ -1,7 +1,7 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- add_minmax_index_for_numeric_columns=0: Different plan
 -- EXPLAIN output may differ
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_cast_bug;
 

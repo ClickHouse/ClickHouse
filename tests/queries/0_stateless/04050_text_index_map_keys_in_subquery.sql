@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 -- Test that text indexes on mapKeys(m) do not cause "Not-ready Set" exception
 -- when a query uses map_column['key'] IN (SELECT ... subquery).

@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Test that lazy materialization is applied to all branches of a UNION ALL query
 -- Tags: no-random-settings
+SET explain_query_plan_default = 'legacy';
 
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;

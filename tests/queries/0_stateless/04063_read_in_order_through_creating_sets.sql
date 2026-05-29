@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: long, no-random-settings, no-random-merge-tree-settings
+SET explain_query_plan_default = 'legacy';
 
 -- Test that read-in-order optimization works through CreatingSetsStep (IN subqueries)
 -- when used with full_sorting_merge join.

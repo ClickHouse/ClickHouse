@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = MergeTree ORDER BY tuple();

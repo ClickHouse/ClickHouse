@@ -1,8 +1,8 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- ^ at this moment, EXPLAIN with parallel replicas may run the subqueries,
 -- while this behavior is incorrect, the test focuses on a different thing,
 -- so we disable it under parallel replicas.
+SET explain_query_plan_default = 'legacy';
 
 -- Test for UBSan issue in join order optimization when estimated row count overflows UInt64
 -- The issue occurs when converting a very large double to UInt64 in estimateJoinCardinality

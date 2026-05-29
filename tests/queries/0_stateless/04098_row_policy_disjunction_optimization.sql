@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel, no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_row_policy_or;
 CREATE TABLE t_row_policy_or (id UInt64, value String) ENGINE = MergeTree ORDER BY id;

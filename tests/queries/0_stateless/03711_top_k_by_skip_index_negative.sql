@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas - optimization not supported yet
+SET explain_query_plan_default = 'legacy';
 
 SET query_plan_max_limit_for_top_k_optimization = 1000; -- pin to default so LIMIT 5 always qualifies
 

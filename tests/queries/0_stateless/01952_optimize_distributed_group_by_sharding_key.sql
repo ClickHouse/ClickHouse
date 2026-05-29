@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: distributed
+SET explain_query_plan_default = 'legacy';
 
 set optimize_skip_unused_shards=1;
 set optimize_distributed_group_by_sharding_key=1;

@@ -1,8 +1,8 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 -- no-parallel-replicas: The test really wants lower quality result to be returned from the index
 --                       with rescoring=OFF. That is required to confirm binary quantization works
 --                       as expected. In parallel replicas, rescoring is always ON.
+SET explain_query_plan_default = 'legacy';
 
 -- Test for vector similarity index with binary quantization.
 -- Also has good number of calls to reinterpret() to test conversion of native floats to Array(Float32)

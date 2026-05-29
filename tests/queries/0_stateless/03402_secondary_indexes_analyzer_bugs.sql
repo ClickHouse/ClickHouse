@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 --- #65607
 select 'index is applied while using column alias';

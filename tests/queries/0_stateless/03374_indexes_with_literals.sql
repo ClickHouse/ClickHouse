@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-settings, no-parallel-replicas
 -- add_minmax_index_for_numeric_columns=0: We don't want to use implicit indexes since we are checking the one created manually
+SET explain_query_plan_default = 'legacy';
 
 set enable_analyzer=1;
 

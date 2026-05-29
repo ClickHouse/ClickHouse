@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-ordinary-database
+SET explain_query_plan_default = 'legacy';
 
 -- Tests vector search over vectors with a huge dimension (32k)
 

@@ -1,8 +1,8 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- add_minmax_index_for_numeric_columns=0: Different plan
+SET explain_query_plan_default = 'legacy';
 
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;

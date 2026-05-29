@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas: output of explain is different
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_json_minmax_idx;
 

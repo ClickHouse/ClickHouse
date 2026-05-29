@@ -1,8 +1,8 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 -- BAD_GET exception triggered by various randomized optimize_* settings in canSetValuesBeWrappedByDeterministicFunctions
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
+SET explain_query_plan_default = 'legacy';
 
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_and_compare_chain = 1;

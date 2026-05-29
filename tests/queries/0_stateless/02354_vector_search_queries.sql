@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-ordinary-database
+SET explain_query_plan_default = 'legacy';
 
 -- Tests various simple approximate nearest neighborhood (ANN) queries that utilize vector search indexes.
 

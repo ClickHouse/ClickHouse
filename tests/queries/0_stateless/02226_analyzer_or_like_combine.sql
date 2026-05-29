@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest
 -- no-fasttest: Requires vectorscan
+SET explain_query_plan_default = 'legacy';
 SET allow_hyperscan = 1, max_hyperscan_regexp_length = 0, max_hyperscan_regexp_total_length = 0;
 SET optimize_rewrite_like_perfect_affix = 0; -- prevent input/output intereference from another LIKE rewrite pass
 

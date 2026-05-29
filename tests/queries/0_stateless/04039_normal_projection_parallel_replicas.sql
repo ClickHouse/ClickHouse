@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-settings
+SET explain_query_plan_default = 'legacy';
 
 -- Regression test for normal projections with parallel replicas.
 -- Verifies that the projection optimization is applied and produces

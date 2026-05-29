@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 SET optimize_or_like_chain = 0;
 

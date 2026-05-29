@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 -- Verify that vector search queries on multiple parts use lazy materialization
 

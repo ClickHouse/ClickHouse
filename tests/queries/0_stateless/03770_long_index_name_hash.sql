@@ -1,9 +1,9 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings, no-parallel-replicas
 -- Remove random settings since we want to test specific settings, different parts, hashing, etc.
 -- no-parallel-replicas: EXPLAIN output differs with parallel replicas
 -- Test that skip index file names are hashed when they exceed max_file_name_length
 -- Tests both explicit and implicit indices with compact, and wide parts
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1; -- Old analyzer: EXPLAIN output differs
 SET query_plan_optimize_prewhere = 1;

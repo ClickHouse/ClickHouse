@@ -1,7 +1,7 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+SET explain_query_plan_default = 'legacy';
 
 -- Test that empty() and notEmpty() use the primary key for string columns.
 -- With optimize_empty_string_comparisons=1 (default), `s = ''` is rewritten

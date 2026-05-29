@@ -1,10 +1,10 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-parallel-replicas
 -- Test: tokenbf_v1 and ngrambf_v1 skip index support for JSONAllPaths on JSON data type
 --
 -- Data layout: 2 parts x 2 granules each (index_granularity = 1, ORDER BY tuple()).
 --   Part 1: (1, '{"a": {"b": 1}, "c": "hello"}'), (2, '{"a": {"d": 2}, "e": "world"}')
 --   Part 2: (3, '{"x": {"y": 3}, "z": "test"}'), (4, '{"p": {"q": 4}, "r": "foo"}')
+SET explain_query_plan_default = 'legacy';
 
 -- =============================================================================
 -- Section 1: tokenbf_v1 — Equals

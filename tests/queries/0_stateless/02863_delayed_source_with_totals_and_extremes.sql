@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel
 -- Tag no-parallel: failpoint is used which can force DelayedSource on other tests
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS 02863_delayed_source;
 

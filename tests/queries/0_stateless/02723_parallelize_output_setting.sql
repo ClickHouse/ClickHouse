@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel, no-fasttest
+SET explain_query_plan_default = 'legacy';
 
 insert into function file(data_02723.csv) select number from numbers(5) settings engine_file_truncate_on_insert=1;
 

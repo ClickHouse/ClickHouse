@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- Optimization doen't work with parallel replicas
+SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE t(a UInt32, b UInt32) ENGINE=MergeTree() ORDER BY a SETTINGS index_granularity = 8192;
 

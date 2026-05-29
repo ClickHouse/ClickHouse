@@ -1,5 +1,5 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings
+SET explain_query_plan_default = 'legacy';
 
 set optimize_read_in_order = 1;
 set read_in_order_two_level_merge_threshold=100;

@@ -1,7 +1,7 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: Different plan
 -- Implicit indices should not prevent any ALTERs, even if `alter_column_secondary_index_mode` is set to 'throw'
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer=1; -- Different plan
 SET query_plan_optimize_prewhere=1;

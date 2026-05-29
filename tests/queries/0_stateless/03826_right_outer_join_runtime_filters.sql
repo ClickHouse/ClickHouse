@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings
 -- Test for applying join runtime filters to RIGHT OUTER joins
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;

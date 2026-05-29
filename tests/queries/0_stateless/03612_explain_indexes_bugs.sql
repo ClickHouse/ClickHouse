@@ -1,7 +1,7 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas because the output of explain is different.
 -- add_minmax_index_for_numeric_columns=0: Different plan
+SET explain_query_plan_default = 'legacy';
 set enable_analyzer = 1;
 set use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;

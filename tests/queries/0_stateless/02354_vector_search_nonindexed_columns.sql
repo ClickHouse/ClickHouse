@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest
 -- no-fasttest: vector search needs usearch 3rd party library
+SET explain_query_plan_default = 'legacy';
 
 -- Tests vector search behavior when some vector columns have indexes and others don't.
 -- Verifies behavior of filter strategies for both indexed and non-indexed vector columns

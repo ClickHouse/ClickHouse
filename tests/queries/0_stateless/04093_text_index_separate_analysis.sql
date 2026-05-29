@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas -- direct read is not compatible with parallel replicas
+SET explain_query_plan_default = 'legacy';
 
 -- Test that text index analysis is separated from MergeTreeReaderTextIndex:
 -- 1) Direct read from text index works even when use_skip_indexes_on_data_read = 0

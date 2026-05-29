@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Test for verifying TopN optimizations
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0; -- for stable max_rows_to_read
 SET read_overflow_mode = 'break';

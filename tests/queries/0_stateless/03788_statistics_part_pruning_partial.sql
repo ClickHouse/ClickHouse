@@ -1,7 +1,7 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest
 -- This test validates Statistics-based part pruning functionality when some parts have MinMax statistics
 -- and other parts don't (parts inserted before statistics were added).
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning_partial;
 

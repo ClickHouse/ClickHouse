@@ -1,6 +1,6 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS points;
 CREATE TABLE points(`x` Float64, `y` Float64) ENGINE = MergeTree ORDER BY (x, y) SETTINGS index_granularity = 1000;   

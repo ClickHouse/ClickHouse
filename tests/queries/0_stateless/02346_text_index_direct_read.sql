@@ -1,7 +1,7 @@
-SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel -- due to access to the system.text_log
 -- Tag no-parallel-replicas -- direct read is not compatible with parallel replicas
+SET explain_query_plan_default = 'legacy';
 
 SET log_queries = 1;
 
