@@ -78,10 +78,9 @@ namespace
 
 Int64 getCurrentQueryMemoryUsage()
 {
-    /// Use query-level memory tracker
-    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
-        if (auto * memory_tracker = memory_tracker_child->getParent())
-            return memory_tracker->get();
+    /// Use query-level memory tracker (CurrentThread::getMemoryTracker() is the Process-level tracker)
+    if (auto * memory_tracker = CurrentThread::getMemoryTracker(); memory_tracker && memory_tracker->level == VariableContext::Process)
+        return memory_tracker->get();
     return 0;
 }
 

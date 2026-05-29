@@ -85,7 +85,9 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
 
             try
             {
-                return memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit);
+                auto trace = memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit);
+                current_thread->adjustThreadMemoryUsage(current_untracked_memory);
+                return trace;
             }
             catch (...)
             {
@@ -156,6 +158,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         {
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
+            current_thread->adjustThreadMemoryUsage(untracked_memory);
             return memory_tracker->free(-untracked_memory);
         }
 

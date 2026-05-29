@@ -29,8 +29,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     {
         total_memory_tracker.resetCounters();
         total_memory_tracker.setHardLimit(1_GiB);
-        CurrentThread::get().memory_tracker.resetCounters();
-        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
+        CurrentThread::get().memory_tracker->resetCounters();
+        CurrentThread::get().memory_tracker->setHardLimit(1_GiB);
 
         DB::ReadBufferFromMemory from(data, size);
         DB::CompressedReadBuffer in{from};

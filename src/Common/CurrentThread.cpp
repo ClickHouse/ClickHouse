@@ -55,7 +55,7 @@ MemoryTracker * CurrentThread::getMemoryTracker()
 {
     if (!current_thread) [[unlikely]]
         return nullptr;
-    return &current_thread->memory_tracker;
+    return current_thread->memory_tracker;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)
@@ -227,11 +227,18 @@ MemoryTracker * CurrentThread::getUserMemoryTracker()
     if (unlikely(!current_thread))
         return nullptr;
 
-    auto * tracker = current_thread->memory_tracker.getParent();
+    auto * tracker = current_thread->memory_tracker;
     while (tracker && tracker->level != VariableContext::User)
         tracker = tracker->getParent();
 
     return tracker;
+}
+
+Int64 CurrentThread::getThreadMemoryUsage()
+{
+    if (unlikely(!current_thread))
+        return 0;
+    return current_thread->getThreadMemoryUsage();
 }
 
 void CurrentThread::flushUntrackedMemory()

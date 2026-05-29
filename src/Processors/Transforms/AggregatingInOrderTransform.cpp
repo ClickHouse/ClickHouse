@@ -68,10 +68,8 @@ AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
 
 static Int64 getCurrentMemoryUsage()
 {
-    Int64 current_memory_usage = 0;
-    if (auto * memory_tracker = CurrentThread::getMemoryTracker())
-        current_memory_usage = memory_tracker->get();
-    return current_memory_usage;
+    /// Per-thread memory growth signal (this transform runs single-threaded over its chunk).
+    return CurrentThread::getThreadMemoryUsage();
 }
 
 void AggregatingInOrderTransform::consume(Chunk chunk)

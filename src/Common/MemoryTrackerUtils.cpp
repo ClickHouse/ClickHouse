@@ -6,11 +6,9 @@
 
 std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
-    MemoryTracker * query_memory_tracker;
-    if (query_memory_tracker = DB::CurrentThread::getMemoryTracker(); !query_memory_tracker)
-        return {};
     /// query-level memory tracker
-    if (query_memory_tracker = query_memory_tracker->getParent(); !query_memory_tracker)
+    MemoryTracker * query_memory_tracker = DB::CurrentThread::getMemoryTracker();
+    if (!query_memory_tracker)
         return {};
 
     Int64 available = std::numeric_limits<Int64>::max();
@@ -51,11 +49,7 @@ std::optional<UInt64> getCurrentQueryHardLimit()
 Int64 getCurrentQueryMemoryUsage()
 {
     /// Use query-level memory tracker
-    auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker();
-    if (!thread_memory_tracker || thread_memory_tracker->level != VariableContext::Thread)
-        return 0;
-
-    auto * query_process_memory_tracker = thread_memory_tracker->getParent();
+    auto * query_process_memory_tracker = DB::CurrentThread::getMemoryTracker();
     if (!query_process_memory_tracker || query_process_memory_tracker->level != VariableContext::Process)
         return 0;
 

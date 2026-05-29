@@ -82,7 +82,10 @@ public:
     static void updatePerformanceCountersIfNeeded();
 
     static ProfileEvents::Counters & getProfileEvents();
+    /// The tracker this thread's allocations are accounted to (Process-level group tracker or total).
     static MemoryTracker * getMemoryTracker();
+    /// Current memory consumed by this thread (the thread "delta", may be negative).
+    static Int64 getThreadMemoryUsage();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
