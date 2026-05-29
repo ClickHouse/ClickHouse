@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -20,9 +21,7 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_AZURE_BLOB_STORAGE
     extern const int BAD_ARGUMENTS;
-#endif
 }
 
 namespace DB::S3AuthSetting
@@ -37,11 +36,20 @@ namespace
 {
 
 /// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
-/// The Rust FFI decodes the `(ptr, len)` slices as `&str` and returns an error variant on
-/// invalid UTF-8 (e.g. binary credentials such as raw `MD5(...)` bytes). `unwrapResult` turns
-/// that into a regular exception instead of letting it slip through unchecked.
+/// The Rust FFI decodes the `(ptr, len)` slices as `&str`. Validate the value up front so a
+/// user supplied credential, region, endpoint or SAS token that is not valid UTF-8 (e.g. raw
+/// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
+/// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
+/// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
 void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
 {
+    if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Option '{}' for the DeltaLake engine contains invalid UTF-8 bytes; "
+            "the delta-kernel-rs FFI requires valid UTF-8 input.",
+            name);
+
     KernelUtils::unwrapResult(
         ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
         "set_builder_option");

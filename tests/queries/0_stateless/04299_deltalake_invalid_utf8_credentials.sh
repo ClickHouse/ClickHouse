@@ -8,8 +8,8 @@
 # A binary credential (e.g. raw `MD5(...)` bytes used as a SAS token) used to abort the
 # server: the `delta-kernel-rs` FFI `set_builder_option` called `.unwrap()` on invalid UTF-8,
 # and the resulting panic crossed the `extern "C"` boundary and triggered `panic_in_cleanup`.
-# `set_builder_option` now returns an error variant instead of panicking, which the C++ side
-# turns into a regular exception.
+# The C++ side now validates the option value and rejects invalid UTF-8 with `BAD_ARGUMENTS`
+# (and `set_builder_option` also returns an error instead of panicking as defense in depth).
 #
 # Written as a `.sh` test (not `.sql` with `{ serverError }`) so Bugfix validation can record a
 # clean test-level result against the unfixed binary: the unfixed code aborts the process, so
@@ -22,4 +22,4 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_LOCAL --query "SELECT * FROM deltaLakeAzure('\0', MD5('')) SETTINGS allow_experimental_delta_kernel_rs = 1" 2>&1 \
-    | grep -o -m1 DELTA_KERNEL_ERROR
+    | grep -o -m1 BAD_ARGUMENTS
