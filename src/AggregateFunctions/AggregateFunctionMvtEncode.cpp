@@ -453,7 +453,7 @@ void registerAggregateFunctionMvtEncode(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description = R"(
 Encodes a group of point features into a binary [Mapbox Vector Tile](https://github.com/mapbox/vector-tile-spec) layer.
 
-This is the aggregate counterpart of the scalar function `mvtEncodeGeom`, analogous to PostGIS `ST_AsMVT`. Each input
+This is the aggregate counterpart of the scalar function `mvtEncodeGeom`. Each input
 row becomes one point feature. The geometry argument must be a tuple of tile-space pixel coordinates `(pixel_x, pixel_y)`
 (typically produced by `mvtEncodeGeom`); the optional properties argument is a named tuple whose element names become the
 feature attribute keys and whose element types determine the vector tile value types.

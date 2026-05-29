@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) (MVT) are the protobuf-encoded tiles that web map
 clients such as MapLibre and Mapbox GL render natively. ClickHouse can build such tiles entirely in SQL with a pair of
-cooperating functions, mirroring the PostGIS split into `ST_AsMVTGeom` and `ST_AsMVT`:
+cooperating functions:
 
 - `mvtEncodeGeom` — a scalar function that projects a geographic point into the tile-local pixel space of a slippy-map
   tile.
@@ -72,8 +72,8 @@ SELECT mvtEncodeGeom(13.37, 52.52, 10, 550, 335) AS pixel
 
 ## mvtEncode {#mvtencode}
 
-Encodes a group of point features into a binary Mapbox Vector Tile layer. This is the aggregate counterpart of
-`mvtEncodeGeom`, analogous to PostGIS `ST_AsMVT`. Each input row becomes one point feature.
+Encodes a group of point features into a binary Mapbox Vector Tile layer. This is the aggregate counterpart of the
+scalar function `mvtEncodeGeom`. Each input row becomes one point feature.
 
 The `geometry` argument must be a tuple of tile-space pixel coordinates `(pixel_x, pixel_y)`, typically produced by
 `mvtEncodeGeom`. The optional `properties` argument is a named tuple whose element names become the feature attribute
@@ -223,9 +223,9 @@ SELECT mvtTileBBoxMercator(1, 0, 0) AS bbox
 
 ## Restricting rows to a tile {#restricting-rows-to-a-tile}
 
-A tile must only contain the points that belong to it. Following PostGIS, this is best expressed as two cooperating
-steps: a cheap, index-using bounding-box predicate in the `WHERE` clause (performance), and the `buffer` clip parameter
-of `mvtEncode` (correctness). The clip drops features outside the tile during aggregation, so even a loose bounding-box
+A tile must only contain the points that belong to it. This is best expressed as two cooperating steps: a cheap,
+index-using bounding-box predicate in the `WHERE` clause (performance), and the `buffer` clip parameter of `mvtEncode`
+(correctness). The clip drops features outside the tile during aggregation, so even a loose bounding-box
 predicate cannot leak out-of-tile points into the result.
 
 ```sql
