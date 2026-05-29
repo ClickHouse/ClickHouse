@@ -1,6 +1,7 @@
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Columns/IColumn.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -39,6 +40,8 @@ void LimitByTransform::transform(Chunk & chunk)
 
 void LimitByTransform::transformCommon(Chunk & chunk)
 {
+    LOG_TEST(getLogger("LimitByTransform"), "Transform a chunk in transformCommon");
+
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
@@ -80,6 +83,8 @@ void LimitByTransform::transformCommon(Chunk & chunk)
 
 void LimitByTransform::transformInOrder(Chunk & chunk)
 {
+    LOG_TEST(getLogger("LimitByTransform"), "Transform a chunk in transformInOrder");
+
     UInt64 num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
