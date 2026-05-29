@@ -1146,8 +1146,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
     const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
-    /// SQL standard: only double-quoted identifiers are case-sensitive, all other are case-insensitive
-    const bool use_case_insensitive = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+    /// Alias matching keys off the first part (the alias name itself), so use part 0's quote style
+    const bool use_case_insensitive = standard_mode && !identifier_lookup.isPartDoubleQuoted(0);
 
     QueryTreeNodePtr * it = nullptr;
 
@@ -1296,9 +1296,25 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 {
     auto full_name = identifier_lookup.identifier.getFullName();
     const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
-    if (standard_mode && !identifier_lookup.isLastPartDoubleQuoted())
-        full_name = Poco::toLower(full_name);
+    const bool use_case_insensitive = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+
     auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+    if (cte_query_node_it == scope.cte_name_to_query_node.end() && use_case_insensitive)
+    {
+        /// Unquoted lookup in standard mode — go through the lowercase index
+        auto lower_it = scope.lowercase_cte_to_original_names.find(Poco::toLower(full_name));
+        if (lower_it != scope.lowercase_cte_to_original_names.end())
+        {
+            const auto & originals = lower_it->second;
+            if (originals.size() > 1)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "CTE '{}' is ambiguous: matches multiple CTEs with different cases: '{}' and '{}'. In scope {}",
+                    full_name, originals[0], originals[1],
+                    scope.scope_node->formatASTForErrorMessage());
+            cte_query_node_it = scope.cte_name_to_query_node.find(originals.front());
+            full_name = originals.front();
+        }
+    }
 
     /// CTE may reference table expressions with the same name, e.g.:
     ///
@@ -5676,26 +5692,19 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         bool subquery_is_cte = (subquery_node && subquery_node->isCTE()) || (union_node && union_node->isCTE());
         if (!subquery_is_cte)
             continue;
-        const String original_cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
-        String cte_name = original_cte_name;
+        const String cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
 
-        if (standard_mode)
-            cte_name = Poco::toLower(cte_name);
-
+        /// Keep the original case as the primary key so quoted lookups (`"MyCte"`) hit the same entry
         auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
         if (!inserted)
-        {
-            if (standard_mode && cte_name != original_cte_name)
-                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                    "CTE with name '{}' conflicts with another CTE (case-insensitive match). In scope {}",
-                    original_cte_name,
-                    scope.scope_node->formatASTForErrorMessage());
-            else
-                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                    "CTE with name '{}' already exists. In scope {}",
-                    cte_name,
-                    scope.scope_node->formatASTForErrorMessage());
-        }
+            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                "CTE with name '{}' already exists. In scope {}",
+                cte_name,
+                scope.scope_node->formatASTForErrorMessage());
+
+        /// Track lowercase variants for case-insensitive lookups; ambiguity is reported at lookup time
+        if (standard_mode)
+            scope.lowercase_cte_to_original_names[Poco::toLower(cte_name)].push_back(cte_name);
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions

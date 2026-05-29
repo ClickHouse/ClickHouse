@@ -179,6 +179,17 @@ public:
         alias = std::move(alias_value);
     }
 
+    /// True if the alias text came from a double-quoted identifier (e.g. `1 AS "MyAlias"`)
+    bool isAliasDoubleQuoted() const
+    {
+        return alias_is_double_quoted;
+    }
+
+    void setAliasIsDoubleQuoted(bool value)
+    {
+        alias_is_double_quoted = value;
+    }
+
     /// Remove node alias
     void removeAlias()
     {
@@ -312,6 +323,8 @@ private:
     ASTPtr original_ast;
     /// If the expression has extra parentheses around it in the original query
     bool parenthesized = false;
+    /// True if the alias was double-quoted in the source query
+    bool alias_is_double_quoted = false;
 };
 
 }

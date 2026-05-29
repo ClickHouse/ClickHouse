@@ -858,6 +858,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
 
     result->setAlias(expression->tryGetAlias());
+    if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(expression.get()))
+        result->setAliasIsDoubleQuoted(ast_with_alias->alias_is_double_quoted);
     result->setOriginalAST(expression);
     result->setParenthesized(expression->isParenthesized());
 

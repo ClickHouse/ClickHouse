@@ -155,8 +155,11 @@ struct IdentifierResolveScope
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
-    /// CTE name to query node
+    /// CTE name to query node — stored with original case
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
+
+    /// Lowercase CTE name -> original-case names, populated in standard mode for case-insensitive lookups
+    std::unordered_map<std::string, std::vector<std::string>> lowercase_cte_to_original_names;
 
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;

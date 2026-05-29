@@ -430,6 +430,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto identifier = first_argument_identifier.getIdentifier();
 
         IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+        /// Carry over per-part quote styles so case-sensitivity stays correct for quoted parts (e.g. dictGet("X", ...))
+        const auto & quote_styles = first_argument_identifier.getQuoteStyles();
+        identifier_lookup.is_part_double_quoted.reserve(quote_styles.size());
+        for (auto style : quote_styles)
+            identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
         auto resolve_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
         if (resolve_result.isResolved())

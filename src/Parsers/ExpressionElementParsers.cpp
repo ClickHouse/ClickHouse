@@ -2105,8 +2105,14 @@ bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (name_parts.size() == 1 || name_parts.back() != "COLUMNS")
         return false;
 
+    /// Drop the trailing "COLUMNS" part, and keep the matching quote style for the qualifier
+    auto qualifier_quote_styles = identifier_node_typed.getQuoteStyles();
     name_parts.pop_back();
+    if (!qualifier_quote_styles.empty())
+        qualifier_quote_styles.pop_back();
     identifier_node = make_intrusive<ASTIdentifier>(std::move(name_parts), false, std::move(node->children));
+    if (!qualifier_quote_styles.empty())
+        identifier_node->as<ASTIdentifier &>().setQuoteStyles(std::move(qualifier_quote_styles));
 
     if (!parseColumnsMatcherBody(pos, node, expected, allowed_transformers))
         return false;
@@ -2273,6 +2279,10 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
+
+            /// Remember whether the alias identifier was double-quoted so the analyzer can keep it case-sensitive
+            if (const auto * alias_identifier = alias_node->as<ASTIdentifier>())
+                ast_with_alias->alias_is_double_quoted = alias_identifier->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
 
             // the alias is parametrised and will be resolved later when the query context is known
             if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())
