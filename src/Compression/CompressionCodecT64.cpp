@@ -48,7 +48,6 @@ protected:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override
     {
-        /// uncompressed_size - (uncompressed_size % (sizeof(T) * 64)) + sizeof(UInt64) * sizeof(T) + header_size
         return uncompressed_size + MAX_COMPRESSED_BLOCK_SIZE + HEADER_SIZE;
     }
 
