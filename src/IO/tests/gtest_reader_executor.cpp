@@ -1871,6 +1871,44 @@ TEST(ReaderExecutor, LiveBufferReacquiredAfterSeekBackFromEof)
         << "slot must be re-acquired after backward seek + read";
 }
 
+TEST(ReaderExecutor, CacheOnlyWindowClosesStaleLiveBuffer)
+{
+    /// Window 1 misses -> opens a live connection at the frontier. Window 2 is
+    /// served entirely from cache (no source read), leaving the live buffer
+    /// parked behind the new position where it can no longer continue the
+    /// stream. It must be closed (slot freed) at the end of the cache-only
+    /// window, not held idle until the next source miss / EOF.
+    constexpr size_t window_bytes = 1000;
+    String content(3 * window_bytes, 'X');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 3 * window_bytes);
+
+    /// Segment 1 ([window, 2*window)) pre-marked fully downloaded so window 2
+    /// is a pure cache hit; segments 0 and 2 are empty, so windows 1 and 3
+    /// would read from source.
+    auto cache = std::make_shared<EvictableSegmentMockCache>(window_bytes);
+    cache->downloaded[1] = window_bytes;
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/window_bytes, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// Window 1 [0, window): miss -> source read -> live connection open.
+    auto w1 = executor.readNextWindow();
+    ASSERT_FALSE(w1.empty());
+    EXPECT_EQ(limit->getActive().size(), 1u) << "window 1 opens a live connection";
+
+    /// Window 2 [window, 2*window): full cache hit, no source read.
+    auto w2 = executor.readNextWindow();
+    ASSERT_FALSE(w2.empty());
+    EXPECT_EQ(limit->getActive().size(), 0u)
+        << "cache-only window must close the now-stale live connection";
+}
+
 TEST(ReaderExecutor, SeekClosesStaleLiveBufferEvenWithoutReadFromSource)
 {
     /// Regression: `seek` used to defer closing a stale `live_buffer` to

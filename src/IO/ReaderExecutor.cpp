@@ -1172,6 +1172,24 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         }
     }
 
+    /// Cache-only window: no source read ran (`fetch_ranges` was empty), so the
+    /// live buffer was not advanced. If it can no longer continue the next
+    /// sequential window (its parked offset is behind where the next read
+    /// starts — same continuity check as `seek`/`readFromSource`), close it now
+    /// so its `SourceBufferLimit` slot isn't held idle until the next miss/EOF.
+    /// The pin block below then clears `inflight_segment_pin` via its `else`.
+    if (live_buffer && !reached_eof && fetch_ranges.empty())
+    {
+        const size_t next_physical = physical_window.end();
+        size_t next_obj_file_offset = 0;
+        const StoredObject * next_obj = offset_map.findObjectAt(next_physical, &next_obj_file_offset);
+        const bool live_continues = next_obj
+            && live_buffer->slot.objectPath() == next_obj->remote_path
+            && live_buffer->current_position == next_physical - next_obj_file_offset;
+        if (!live_continues)
+            live_buffer.reset();
+    }
+
     /// Keep the partially-downloaded segment the live connection will continue
     /// into pinned, so a mid-read eviction can't reset the connection (Strategy
     /// A — see design doc). Re-point to the segment under the new frontier and
