@@ -1995,6 +1995,7 @@ void Context::rememberAuthenticatedUser()
     authenticated_user_id = user_id;
     authenticated_current_user_name = client_info.current_user;
     authenticated_initial_user_name = client_info.initial_user;
+    authenticated_external_roles = external_roles ? *external_roles : std::vector<UUID>{};
 }
 
 void Context::resetToUserDefaults()
@@ -2138,7 +2139,11 @@ void Context::resetToUserDefaults()
         client_info.initial_user = snapshot_initial_user_name;
 
         setCurrentRolesWithLock(defaults.default_roles, lock);
+        /// Re-apply the externally-granted roles (LDAP / interserver) installed by
+        /// `setUser` at login, so the reset session keeps the same privileges a
+        /// fresh session for this authentication would have.
         external_roles.reset();
+        setExternalRolesWithLock(authenticated_external_roles, lock);
         need_recalculate_access = true;
 
         /// Replay auth-server settings exactly as `Session::makeSessionContext`

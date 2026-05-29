@@ -387,6 +387,9 @@ protected:
     std::optional<UUID> authenticated_user_id;
     String authenticated_current_user_name;
     String authenticated_initial_user_name;
+    /// Externally-granted roles (LDAP / interserver) passed to `setUser` at login.
+    /// Part of the post-auth baseline, so `RESET SESSION` re-applies them.
+    std::vector<UUID> authenticated_external_roles;
 
     /// Hooks fired at the end of `resetToUserDefaults` for handlers to drop
     /// session-scoped state `Context` doesn't own (e.g. TCP socket timeouts).
