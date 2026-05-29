@@ -135,19 +135,20 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
-    /// Internal state for the post join build phase.
-    struct JoinDataIter
+    /// Internal state for the post-build (row-store transfer) phase.
+    struct BlockToColumnsInfo
     {
-        size_t idx;
-        HashJoin::ScatteredColumnsList::iterator iter;
+        std::vector<ColumnsInfo *> columns_info_list;
     };
 
-    std::vector<JoinDataIter> join_data_iters;
-    size_t current_join_data_idx = 0;
-    std::mutex join_data_mutex;
+    std::vector<BlockToColumnsInfo> blocks_to_columns_info;
+    size_t current_block = 0;
+    std::mutex row_store_transfer_mutex;
 
     bool useZeroCopyApproach(const Block & from_block) const;
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy);
+
+    void finalizeRowStoreStatus();
 };
 
 // The following two methods are deprecated and hopefully will be removed in the future.

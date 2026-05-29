@@ -1947,7 +1947,8 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    chassert(data->row_store_state != RowStoreState::Ready, "Row store should never reach releaseJoinedBlocks.");
+    if (data->row_store_state == RowStoreState::Ready)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row store should never reach releaseJoinedBlocks");
 
     auto extract_source_blocks = [](ScatteredColumnsList && columns_list, const Block & sample_block)
     {

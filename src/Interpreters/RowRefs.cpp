@@ -276,14 +276,6 @@ void ColumnsInfo::transferToRowStore(const ColumnAccessIndexes & access_indexes)
     rebuildReplicatedColumns();
 }
 
-void ColumnsInfo::tryTransferToRowStore(const ColumnAccessIndexes & access_indexes)
-{
-    auto [row_store_columns, remaining_columns] = splitByAccessIndexes(columns, access_indexes);
-    row_store->tryInit(row_store_columns);
-    columns = std::move(remaining_columns);
-    rebuildReplicatedColumns();
-}
-
 AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
 {
     AsofRowRefs result;

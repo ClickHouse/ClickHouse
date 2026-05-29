@@ -3,7 +3,6 @@
 #include <Columns/IColumn_fwd.h>
 #include <Common/PODArray.h>
 
-#include <atomic>
 #include <vector>
 
 
@@ -44,29 +43,16 @@ public:
     /// Initialize the row store from a set of columns.
     void init(const Columns & columns);
 
-    /// Same as above, but ensures the row store is initialized only once.
-    bool tryInit(const Columns & columns);
-
     /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
     /// For nullable fields the null flag is written at the field's first byte followed by the value.
     void gatherRows(const Columns & columns, size_t start, size_t length);
-    void gatherRow(const Columns & columns, size_t row_num);
-
-    /// Scatter `length` consecutive rows starting at `start` from the row-major buffer back into destination `columns`.
-    /// Nullable fields split their stored `[null_byte | value]` into `NullMap` + nested column.
-    void scatterRows(std::vector<IColumn *> & columns, size_t start, size_t length) const;
-    void scatterRows(std::vector<IColumn *> & columns, const PaddedPODArray<UInt64> & row_nums) const;
-    void scatterRow(std::vector<IColumn *> & columns, size_t row_num) const;
 
     FieldLayout getFieldLayout(size_t input_col_index) const;
 
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return chars.size() / row_length; }
-    size_t byteSize() const { return chars.size(); }
     size_t byteSizeAt(size_t /*n*/) const { return row_length; }
     size_t allocatedBytes() const { return chars.allocated_bytes(); }
-
-    MutableColumns buildEmptyColumns() const;
 
 private:
     using Chars = PaddedPODArray<char>;
@@ -75,9 +61,8 @@ private:
     Chars chars;
     RowLayout layout;
     size_t row_length;
-    std::atomic<bool> init_flag{false};
+    bool init_flag = false;
 
-    explicit RowDataStore(const RowLayout & layout_);
     explicit RowDataStore(RowLayout && layout_);
 
     static RowLayout initLayout(const Columns & columns);

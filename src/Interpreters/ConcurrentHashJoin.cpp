@@ -285,9 +285,10 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
     /// We also create the row store here to avoid creating it multiple times on different threads.
+    bool row_store_enabled = getData(hash_joins[0])->row_store_state == HashJoin::RowStoreState::Enabled;
     bool use_zero_copy = useZeroCopyApproach(right_block);
     RowDataStorePtr block_row_store;
-    if (use_zero_copy && getData(hash_joins[0])->row_store_state == HashJoin::RowStoreState::Enabled)
+    if (row_store_enabled && use_zero_copy)
         block_row_store = RowDataStore::create();
 
     auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block), use_zero_copy);
@@ -299,6 +300,10 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             ++blocks_left;
         }
     }
+
+    std::vector<ColumnsInfo *> columns_info_list;
+    if (row_store_enabled)
+        columns_info_list.reserve(dispatched_blocks.size());
 
     while (blocks_left > 0)
     {
@@ -326,7 +331,11 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 }
 
                 auto [block, selector] = std::move(dispatched_block).detachData();
+                const size_t columns_before = getData(hash_join)->columns.size();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits, block_row_store);
+
+                if (row_store_enabled && getData(hash_join)->columns.size() > columns_before)
+                    columns_info_list.push_back(&getData(hash_join)->columns.back().columns_info);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -340,6 +349,12 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         /// for other threads to finish inserting into their respective hash join slots
         if (!made_progress)
             std::this_thread::yield();
+    }
+
+    if (!columns_info_list.empty())
+    {
+        std::lock_guard lock(row_store_transfer_mutex);
+        blocks_to_columns_info.push_back(BlockToColumnsInfo{std::move(columns_info_list)});
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
@@ -897,6 +912,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
     for (const auto & hash_join : hash_joins)
         hash_join->data->onBuildPhaseFinish();
+    finalizeRowStoreStatus();
 
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
@@ -928,54 +944,75 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     }
 
     build_phase_finished = true;
+}
 
-    for (size_t i = 0; i < hash_joins.size(); ++i)
+void ConcurrentHashJoin::finalizeRowStoreStatus()
+{
+    const auto & access_indexes = getData(hash_joins[0])->column_access_indexes;
+    bool row_store_disabled = false;
+    for (const auto & hash_join : hash_joins)
     {
-        auto & data = *getData(hash_joins[i]);
-        if (data.row_store_state == HashJoin::RowStoreState::Enabled)
-            join_data_iters.push_back({i, data.columns.begin()});
+        const auto & data = *getData(hash_join);
+        if (data.columns.empty())
+            continue;
+        if (data.row_store_state != HashJoin::RowStoreState::Enabled || data.column_access_indexes != access_indexes)
+        {
+            row_store_disabled = true;
+            break;
+        }
+    }
+
+    if (!row_store_disabled)
+        return;
+
+    for (auto & hash_join : hash_joins)
+    {
+        auto & data = *getData(hash_join);
+        for (auto & scattered_cols : data.columns)
+            scattered_cols.columns_info.row_store.reset();
+        data.row_store_state = HashJoin::RowStoreState::Disabled;
     }
 }
 
 bool ConcurrentHashJoin::hasPostBuildPhase() const
 {
-    return !join_data_iters.empty();
+    return !blocks_to_columns_info.empty() && getData(hash_joins[0])->row_store_state == HashJoin::RowStoreState::Enabled;
 }
 
 bool ConcurrentHashJoin::runPostBuildPhase()
 {
-    ColumnsInfo * columns_info = nullptr;
-    const ColumnAccessIndexes * access_indexes = nullptr;
+    BlockToColumnsInfo * block = nullptr;
     {
-        std::lock_guard lock(join_data_mutex);
-        while (current_join_data_idx < join_data_iters.size())
-        {
-            auto & join_data_iter = join_data_iters[current_join_data_idx];
-            auto & data = *getData(hash_joins[join_data_iter.idx]);
-            if (join_data_iter.iter != data.columns.end())
-            {
-                columns_info = &join_data_iter.iter->columns_info;
-                access_indexes = &data.column_access_indexes;
-                ++join_data_iter.iter;
-                break;
-            }
-            ++current_join_data_idx;
-        }
+        std::lock_guard lock(row_store_transfer_mutex);
+        if (current_block == blocks_to_columns_info.size())
+            return false;
+
+        block = &blocks_to_columns_info[current_block++];
     }
 
-    if (columns_info)
-        columns_info->tryTransferToRowStore(*access_indexes);
-    return columns_info != nullptr;
+    const auto & access_indexes = getData(hash_joins[0])->column_access_indexes;
+    for (auto & columns_info : block->columns_info_list)
+        columns_info->transferToRowStore(access_indexes);
+    return true;
 }
 
 void ConcurrentHashJoin::onPostBuildPhaseFinish()
 {
-    for (const auto & join_data_iter : join_data_iters)
+    for (auto & hash_join : hash_joins)
     {
-        auto & data = *getData(hash_joins[join_data_iter.idx]);
-        if (data.row_store_state == HashJoin::RowStoreState::Enabled)
-            data.row_store_state = HashJoin::RowStoreState::Ready;
+        auto & data = *getData(hash_join);
+        if (data.row_store_state != HashJoin::RowStoreState::Enabled)
+            continue;
+        data.row_store_state = HashJoin::RowStoreState::Ready;
+
+        size_t new_allocated_size = 0;
+        for (const auto & scattered_cols : data.columns)
+            new_allocated_size += scattered_cols.allocatedBytes();
+        data.allocated_size = new_allocated_size;
     }
+
+    blocks_to_columns_info.clear();
+    blocks_to_columns_info.shrink_to_fit();
 }
 }
 

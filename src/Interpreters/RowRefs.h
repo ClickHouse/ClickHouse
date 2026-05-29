@@ -21,6 +21,8 @@ struct ColumnAccessIndex
     enum Type : uint8_t { Columns, RowStore };
     Type type;
     size_t index;
+
+    bool operator==(const ColumnAccessIndex &) const = default;
 };
 
 using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
@@ -51,9 +53,6 @@ struct ColumnsInfo
 
     /// Tranfers columns that are eligible for row-major storage from `columns` to `row_store`.
     void transferToRowStore(const ColumnAccessIndexes & access_indexes);
-
-    /// Same as above but ensures initializing the row store from multiple threads is safe and deduplicated.
-    void tryTransferToRowStore(const ColumnAccessIndexes & access_indexes);
 };
 
 /// Reference to the row in block.
