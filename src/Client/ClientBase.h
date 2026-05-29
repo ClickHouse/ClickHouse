@@ -262,6 +262,14 @@ private:
     void stopKeystrokeInterceptorIfExists();
 
     /// Execute a query and collect all results as a single string (rows separated by newlines)
+    /// Returns `std::nullopt` if the probe failed (network error, server
+    /// `Exception` packet, etc.) — distinguishing those failures from a
+    /// successful query that legitimately returned an empty string. The
+    /// `executeQueryForSingleString` wrapper below collapses both cases to
+    /// `""` for callers that don't care which one happened.
+    std::optional<std::string> tryExecuteQueryForSingleString(const std::string & query);
+
+    /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
     virtual bool supportsLocalMetaCommands() const { return false; }

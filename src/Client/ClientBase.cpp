@@ -2567,10 +2567,21 @@ void ClientBase::processParsedSingleQuery(
             /// not a hot path.
             if (connection)
             {
-                String server_db = executeQueryForSingleString("SELECT currentDatabase()");
-                if (server_db.empty() && default_database_at_connect.has_value())
-                    server_db = *default_database_at_connect;
-                default_database = server_db;
+                /// `currentDatabase()` legitimately returns `""` when the
+                /// candidate chain in `Context::resetToUserDefaults` falls
+                /// all the way through (connect-time db dropped, no user
+                /// `DEFAULT DATABASE`, no usable global default). Collapsing
+                /// that successful empty answer to "probe failed" and
+                /// restoring `default_database_at_connect` would re-pin the
+                /// connection to the stale name the server just fell back
+                /// away from — and a later reconnect would send it and hit
+                /// `UNKNOWN_DATABASE`. Distinguish "probe failed" (use the
+                /// fallback) from "server returned empty" (trust it).
+                auto probed = tryExecuteQueryForSingleString("SELECT currentDatabase()");
+                if (probed.has_value())
+                    default_database = *probed;
+                else if (default_database_at_connect.has_value())
+                    default_database = *default_database_at_connect;
                 getClientConfiguration().setString("database", default_database);
                 connection->setDefaultDatabase(default_database);
             }
@@ -3298,10 +3309,10 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
     }
 }
 
-std::string ClientBase::executeQueryForSingleString(const std::string & query)
+std::optional<std::string> ClientBase::tryExecuteQueryForSingleString(const std::string & query)
 {
     if (!connection)
-        return "";
+        return std::nullopt;
 
     try
     {
@@ -3333,7 +3344,13 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             {}        /// external_data
         );
 
-        /// Receive and process results
+        /// Receive and process results.
+        /// Returning `std::nullopt` here (or in the catch below) is reserved
+        /// for "the probe failed"; an empty `result` after a clean
+        /// `EndOfStream` is a *successful* query that happened to return
+        /// an empty string — a legitimate outcome for
+        /// `SELECT currentDatabase()` after `RESET SESSION` falls all the
+        /// way through its candidate chain without finding an existing db.
         while (true)
         {
             Packet packet = connection->receivePacket();
@@ -3358,8 +3375,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
                     return result;
 
                 case Protocol::Server::Exception:
-                    /// Return empty string on exception
-                    return "";
+                    return std::nullopt;
 
                 case Protocol::Server::Progress:
                 case Protocol::Server::ProfileInfo:
@@ -3377,8 +3393,17 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     }
     catch (const std::exception &)
     {
-        return "";
+        return std::nullopt;
     }
+}
+
+std::string ClientBase::executeQueryForSingleString(const std::string & query)
+{
+    /// Existing callers (e.g. the AI schema fetcher) treat any failure as
+    /// equivalent to an empty result, so collapse the two cases here.
+    /// Internal callers that need to tell them apart should call
+    /// `tryExecuteQueryForSingleString` directly.
+    return tryExecuteQueryForSingleString(query).value_or("");
 }
 
 #if USE_CLIENT_AI
