@@ -58,6 +58,8 @@ namespace Setting
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ServerSetting
@@ -123,7 +125,12 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             segments_holder.take<PartitionCommands>().push_back(std::move(partition_command.value()));
         }
-        else if (auto mutation_command = MutationCommand::parse(*command_ast))
+        else if (auto mutation_command = MutationCommand::parse(
+                     *command_ast,
+                     /* parse_alter_commands = */ false,
+                     /* with_pure_metadata_commands = */ false,
+                     settings[Setting::max_parser_depth],
+                     settings[Setting::max_parser_backtracks]))
         {
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
@@ -132,7 +139,12 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(*new_alter_command);
+                    mutation_command = MutationCommand::parse(
+                        *new_alter_command,
+                        /* parse_alter_commands = */ false,
+                        /* with_pure_metadata_commands = */ false,
+                        settings[Setting::max_parser_depth],
+                        settings[Setting::max_parser_backtracks]);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
@@ -146,17 +158,22 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             const auto & session_tz = settings[Setting::session_timezone].value;
             if (!session_tz.empty())
             {
-                const auto & source_ast = *mutation_command->ast->as<ASTAlterCommand>();
+                auto source_alter = mutation_command->ast();
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                    *source_alter, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(*tz_alter_command);
+                    mutation_command = MutationCommand::parse(
+                        *tz_alter_command,
+                        /* parse_alter_commands = */ false,
+                        /* with_pure_metadata_commands = */ false,
+                        settings[Setting::max_parser_depth],
+                        settings[Setting::max_parser_backtracks]);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            source_ast.formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
+                            source_alter->formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
                 }
             }
 
