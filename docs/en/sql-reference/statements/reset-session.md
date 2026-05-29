@@ -58,6 +58,7 @@ This is a deliberate scoping decision for the first version of the statement: `R
 ### Other known limitations {#known-limitations}
 
 - **Client-side server-provided settings.** When `apply_settings_from_server` is enabled, `clickhouse-client` keeps the settings it received in the initial handshake until it reconnects. If an administrator changes the user's profile after the connection was opened, `RESET SESSION` picks up the new profile on the server, but the client continues to format and parse with the handshake-time settings until the next reconnect.
+- **`clickhouse-local` command-line settings overridden by the profile.** A setting passed on the `clickhouse-local` command line survives `RESET SESSION` unless the user's profile also sets that same setting. Because reset re-derives settings from the profile, a profile entry takes precedence on reset over the command-line value (at startup the command line wins instead). This affects only settings present both on the command line and in the profile.
 
 ## Comparison with PostgreSQL {#comparison-with-postgresql}
 

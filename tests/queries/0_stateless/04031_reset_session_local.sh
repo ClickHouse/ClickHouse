@@ -31,3 +31,17 @@ SELECT 'db after use:', currentDatabase() = 'local_reset_db';
 RESET SESSION;
 SELECT 'db after reset, back off the dirty db:', currentDatabase() != 'local_reset_db';
 "
+
+# Command-line settings the user's profile does not override survive
+# `RESET SESSION`: they are baked into the global context at startup, and
+# `resetToUserDefaults` rebuilds the session settings from that global context.
+# (A setting the profile DOES set is instead re-derived from the profile on
+# reset — documented as a known limitation on the statement page.)
+# `max_block_size` is not touched by the default profile, so the command-line
+# value 12345 must come back after a session `SET` + reset.
+${CLICKHOUSE_LOCAL} --max_block_size 12345 -m --query "
+SELECT 'cmdline before:', getSetting('max_block_size');
+SET max_block_size = 1;
+RESET SESSION;
+SELECT 'cmdline after reset:', getSetting('max_block_size');
+"
