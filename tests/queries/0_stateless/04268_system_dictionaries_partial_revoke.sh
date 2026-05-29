@@ -35,7 +35,7 @@ ${CLICKHOUSE_CLIENT} -q "GRANT ${ROLE} TO ${USER}"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT name FROM system.dictionaries WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'test_dict_04268'"
 
 # The dictionary should also appear in system.completions
-${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT count() > 0 FROM system.completions WHERE name = 'test_dict_04268'"
+${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT count() > 0 FROM system.completions WHERE word = 'test_dict_04268'"
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} -q "DROP DICTIONARY IF EXISTS ${DICT}"
