@@ -1940,6 +1940,7 @@ clickhousex
 clickmate
 clickstream
 clickvisual
+clicko
 clockhour
 clusterAllReplicas
 cmake
