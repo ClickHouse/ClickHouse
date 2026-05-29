@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -17,6 +18,7 @@ namespace ProfileEvents
     extern const Event TextIndexLazyPackedBlocksDecoded;
     extern const Event TextIndexLazyAdvanceCount;
     extern const Event TextIndexLazySegmentsPrepared;
+    extern const Event TextIndexLazySegmentsBuilt;
     extern const Event TextIndexLazyBruteForceIntersections;
     extern const Event TextIndexLazyLeapfrogIntersections;
     extern const Event TextIndexLazySegmentsSkippedDense;
@@ -65,9 +67,11 @@ inline UInt32 requireUInt32(UInt64 value, std::string_view field_name)
 
 }
 
-PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
+PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache & postings_cache_, const String & index_id_)
     : stream(&stream_)
     , info(&info_)
+    , postings_cache(&postings_cache_)
+    , index_id(index_id_)
     , total_segments(info_.offsets.size())
     , density_val(computeDensity(info_))
 {
@@ -93,6 +97,26 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
     /// lists larger than BLOCK_SIZE because the array lives in the cursor itself.
     decoded_count = embedded_values.size();
     decoded_values_ptr = embedded_values.data();
+}
+
+PostingListCursor::PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_, const TokenPostingsInfo & info_)
+    : owned_info(std::make_shared<TokenPostingsInfo>(info_))
+    , info(owned_info.get())
+    , total_segments(info_.offsets.size())
+    , is_embedded(true)
+    , density_val(computeDensity(info_))
+    , shared_values(std::move(shared_values_))
+{
+    if (!shared_values || shared_values->empty())
+    {
+        is_valid = false;
+        return;
+    }
+
+    /// Zero-copy: iterate directly over the shared, immutable, pre-flattened array.
+    /// No per-cursor Roaring copy or `toUint32Array` materialization.
+    decoded_count = shared_values->size();
+    decoded_values_ptr = shared_values->data();
 }
 
 UInt32 PostingListCursor::cardinality() const
@@ -133,6 +157,44 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
         return;
 
     chassert(segment_idx < total_segments);
+
+    /// Obtain the decoded segment from the cache (keyed by index id + segment byte offset), shared
+    /// across all per-task cursors — and across queries when the global cache is enabled — so the
+    /// payload and block index are read and parsed once instead of once per read task. The cache is
+    /// always set for compressed cursors (this point is unreachable for embedded ones).
+    chassert(postings_cache);
+    UInt64 segment_file_offset = info->offsets[segment_idx];
+    auto key = TextIndexPostingsCache::hash(index_id, segment_file_offset, static_cast<UInt64>(TextIndexPostingsCacheKind::Segment));
+    auto cell = postings_cache->getOrSet(key, [&]
+    {
+        auto new_cell = std::make_shared<TextIndexPostingsCacheCell>();
+        new_cell->value = buildPostingSegment(segment_idx);
+        return new_cell;
+    });
+    current_segment_data = std::get<PostingListSegmentPtr>(cell->value);
+
+    const auto & seg = *current_segment_data;
+    payload_buffer = std::span<const uint8_t>(seg.payload_buffer);
+    block_last_row_ids = std::span<const UInt32>(seg.block_last_row_ids);
+    block_offsets = std::span<const UInt64>(seg.block_offsets);
+
+    segment_doc_count = seg.segment_doc_count;
+    segment_first_row_id = seg.segment_first_row_id;
+    last_decoded_doc_id = seg.segment_first_row_id;
+    block_count = seg.block_count;
+    tail_size = seg.tail_size;
+    current_block = 0;
+    decoded_count = 0;
+    index = 0;
+}
+
+PostingListSegmentPtr PostingListCursor::buildPostingSegment(size_t segment_idx)
+{
+    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsBuilt);
+
+    chassert(segment_idx < total_segments);
+    auto seg = std::make_shared<PostingListSegment>();
+
     UInt64 segment_file_offset = info->offsets[segment_idx];
 
     /// Seek to segment start and read the header.
@@ -154,9 +216,8 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     UInt64 first_row_id;
     readVarUInt(first_row_id, *data_buffer);
 
-    segment_doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
-    last_decoded_doc_id = requireUInt32(first_row_id, "first_row_id");
-    segment_first_row_id = last_decoded_doc_id;
+    seg->segment_doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
+    seg->segment_first_row_id = requireUInt32(first_row_id, "first_row_id");
 
     const auto & segment_range = info->ranges[segment_idx];
 
@@ -169,16 +230,16 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
     const UInt64 range_span = static_cast<UInt64>(segment_range.end) - static_cast<UInt64>(segment_range.begin) + 1;
 
-    if (segment_doc_count > range_span)
+    if (seg->segment_doc_count > range_span)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy posting list cursor: segment cardinality {} exceeds segment row range span {} for segment [{}, {}]",
-            segment_doc_count, range_span, segment_range.begin, segment_range.end);
+            seg->segment_doc_count, range_span, segment_range.begin, segment_range.end);
     }
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation. Per-block
     /// upper bound: `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment).
-    const UInt64 max_blocks_count = (static_cast<UInt64>(segment_doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const UInt64 max_blocks_count = (static_cast<UInt64>(seg->segment_doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
     const UInt64 max_payload_bytes = max_blocks_count * (1 + sizeof(UInt32) * BLOCK_SIZE + 16);
 
     if (payload_bytes > max_payload_bytes)
@@ -186,12 +247,12 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy posting list cursor: payload_bytes {} exceeds upper bound {} "
             "for segment with {} documents",
-            payload_bytes, max_payload_bytes, segment_doc_count);
+            payload_bytes, max_payload_bytes, seg->segment_doc_count);
     }
 
     /// Bulk-read the entire payload into memory.
-    payload_buffer.resize(payload_bytes);
-    data_buffer->readStrict(reinterpret_cast<char *>(payload_buffer.data()), payload_bytes);
+    seg->payload_buffer.resize(payload_bytes);
+    data_buffer->readStrict(reinterpret_cast<char *>(seg->payload_buffer.data()), payload_bytes);
 
     if (!(info->header & PostingsSerialization::Flags::HasBlockIndex))
     {
@@ -209,24 +270,24 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Posting list number of blocks is 0 for segment with {} documents",
-            segment_doc_count);
+            seg->segment_doc_count);
     }
 
-    block_last_row_ids.resize(num_blocks);
-    block_offsets.resize(num_blocks);
+    seg->block_last_row_ids.resize(num_blocks);
+    seg->block_offsets.resize(num_blocks);
 
     for (size_t i = 0; i < num_blocks; ++i)
     {
         UInt64 v;
         readVarUInt(v, *data_buffer);
-        block_last_row_ids[i] = requireUInt32(v, "block_last_row_id");
+        seg->block_last_row_ids[i] = requireUInt32(v, "block_last_row_id");
 
-        if (i > 0 && block_last_row_ids[i] <= block_last_row_ids[i - 1])
+        if (i > 0 && seg->block_last_row_ids[i] <= seg->block_last_row_ids[i - 1])
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupted data in lazy posting list cursor: block_last_row_ids not strictly "
                 "monotonic at block {}: previous = {}, current = {}",
-                i, block_last_row_ids[i - 1], block_last_row_ids[i]);
+                i, seg->block_last_row_ids[i - 1], seg->block_last_row_ids[i]);
         }
     }
 
@@ -234,28 +295,27 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     {
         UInt64 v;
         readVarUInt(v, *data_buffer);
-        block_offsets[i] = v;
+        seg->block_offsets[i] = v;
 
-        if (block_offsets[i] >= payload_bytes)
+        if (seg->block_offsets[i] >= payload_bytes)
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupted data in lazy posting list cursor: block_offsets[{}] = {} is outside payload of {} bytes",
-                i, block_offsets[i], payload_bytes);
+                i, seg->block_offsets[i], payload_bytes);
         }
 
-        if (i > 0 && block_offsets[i] <= block_offsets[i - 1])
+        if (i > 0 && seg->block_offsets[i] <= seg->block_offsets[i - 1])
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupted data in lazy posting list cursor: block_offsets not strictly monotonic at block {}: previous = {}, current = {}",
-                i, block_offsets[i - 1], block_offsets[i]);
+                i, seg->block_offsets[i - 1], seg->block_offsets[i]);
         }
     }
 
-    block_count = num_blocks;
-    tail_size = segment_doc_count % BLOCK_SIZE;
-    current_block = 0;
-    decoded_count = 0;
-    index = 0;
+    seg->block_count = num_blocks;
+    seg->tail_size = seg->segment_doc_count % BLOCK_SIZE;
+
+    return seg;
 }
 
 void PostingListCursor::decodeBlock(size_t block_idx)

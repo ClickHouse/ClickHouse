@@ -2,8 +2,11 @@
 
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListSegment.h>
 
 #include <absl/container/flat_hash_map.h>
+
+#include <variant>
 
 namespace ProfileEvents
 {
@@ -101,16 +104,42 @@ public:
     }
 };
 
-/// Estimate of the memory usage (bytes) of a text index posting list in cache
+/// Discriminators mixed into the cache key so the three cell kinds occupy disjoint key spaces.
+/// Eager posting blocks keep the legacy two-component key `hash(index_id, offset)`; the lazy kinds
+/// add a tag so a segment at byte offset X cannot collide with the eager block decoded from offset X.
+enum class TextIndexPostingsCacheKind : UInt64
+{
+    Segment = 0x5345474D454E54ULL, /// "SEGMENT"
+    Flat = 0x464C4154ULL,          /// "FLAT"
+};
+
+/// A single cell of TextIndexPostingsCache. It holds exactly one of:
+///   - PostingList:           a decoded Roaring bitmap of one posting-list block (eager / materialize path);
+///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (lazy "prebuilt" cursor);
+///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
+/// The two lazy kinds are held by shared_ptr so an active cursor keeps its data alive even after the
+/// cell is evicted from the (bounded) cache.
+struct TextIndexPostingsCacheCell
+{
+    std::variant<PostingList, FlatPostingsPtr, PostingListSegmentPtr> value;
+};
+
+/// Estimate of the memory usage (bytes) of a posting cache cell
 struct TextIndexPostingsWeightFunction
 {
-    size_t operator()(const PostingList & postings) const
+    size_t operator()(const TextIndexPostingsCacheCell & cell) const
     {
-        return postings.getSizeInBytes();
+        if (const auto * postings = std::get_if<PostingList>(&cell.value))
+            return postings->getSizeInBytes();
+        if (const auto * flat = std::get_if<FlatPostingsPtr>(&cell.value))
+            return *flat ? (*flat)->capacity() * sizeof(UInt32) : 0;
+        if (const auto * segment = std::get_if<PostingListSegmentPtr>(&cell.value))
+            return *segment ? (*segment)->bytesAllocated() : 0;
+        return 0;
     }
 };
 
-class TextIndexPostingsCache : public CacheBase<UInt128, PostingList, UInt128TrivialHash, TextIndexPostingsWeightFunction>
+class TextIndexPostingsCache : public CacheBase<UInt128, TextIndexPostingsCacheCell, UInt128TrivialHash, TextIndexPostingsWeightFunction>
 {
 public:
     TextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)

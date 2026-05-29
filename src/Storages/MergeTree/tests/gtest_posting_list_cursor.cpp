@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
@@ -188,6 +189,8 @@ struct MultiBlockTestData
     mutable std::shared_ptr<SingleDiskVolume> volume;
     mutable std::shared_ptr<DataPartStorageOnDiskFull> storage_holder;
     mutable std::unique_ptr<MergeTreeReaderStreamSingleColumnWholePart> stream;
+    /// Fresh per-test segment cache (compressed cursors require one).
+    mutable std::shared_ptr<TextIndexPostingsCache> cache;
 };
 
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
@@ -273,7 +276,10 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     /// before the cursor calls advanceToMark.
     data.stream->getDataBuffer();
 
-    return std::make_shared<PostingListCursor>(*data.stream, data.info);
+    if (!data.cache)
+        data.cache = std::make_shared<TextIndexPostingsCache>("SLRU", 1ULL << 30, 0, 0.5);
+
+    return std::make_shared<PostingListCursor>(*data.stream, data.info, *data.cache);
 }
 
 } // anonymous namespace
@@ -466,7 +472,7 @@ TEST(PostingListCursorTest, MultiBlockCursorsOverSameStreamAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 422u);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info);
+    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, *data.cache);
     cursor2->advance(100);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 100u);

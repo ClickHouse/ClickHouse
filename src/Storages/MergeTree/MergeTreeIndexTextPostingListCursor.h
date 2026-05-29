@@ -7,14 +7,17 @@
 #include <base/types.h>
 
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListSegment.h>
 
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace DB
 {
 
 struct TokenPostingsInfo;
+class TextIndexPostingsCache;
 class IColumn;
 class MergeTreeReaderStream;
 
@@ -45,11 +48,22 @@ class PostingListCursor
 {
 public:
     /// Compressed posting list: state lives in `.pst` and is decoded lazily.
-    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
+    /// Decoded segments are memoized in `postings_cache_` (keyed by `index_id_` and the segment's byte
+    /// offset) and shared across all per-task cursors and queries, avoiding redundant per-task segment
+    /// reads/parsing under parallel reads. The cache is always available — the text-index condition
+    /// creates a per-query one when the global cache is disabled.
+    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache & postings_cache_, const String & index_id_ = {});
 
     /// Embedded posting list (small inline postings, or a materialized rare-token bitmap).
     /// The cursor owns a copy of `info_` and pre-decodes the postings into `embedded_values`.
     explicit PostingListCursor(const TokenPostingsInfo & info_);
+
+    /// Embedded posting list backed by a pre-flattened, shared, immutable sorted array.
+    /// Used for the analyzer-folded postings of eagerly-read tokens: the flattened array is
+    /// built once per granule and shared across all per-task cursors, avoiding a per-cursor
+    /// Roaring deep copy and `toUint32Array` materialization. The cursor only keeps its own
+    /// read position; the array data is read-only and safe to share across threads.
+    PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_, const TokenPostingsInfo & info_);
 
     /// Flushes batched ProfileEvents counters to the global counters.
     ~PostingListCursor();
@@ -82,10 +96,15 @@ public:
 
 private:
     /// Load metadata for `segment_idx`-th segment.
-    /// For compressed postings: reads the Index Section from .pst (packed block index),
-    /// but does NOT decode any packed block data yet.
+    /// For compressed postings: obtains the decoded segment (payload + packed block index) — from the
+    /// shared `TextIndexPostingsCache` if available, otherwise built via `buildPostingSegment` — and
+    /// points the segment views at it. Does NOT decode any packed block data yet.
     /// For embedded postings: no-op — `embedded_values` already holds the decoded array.
     void prepareSegment(size_t segment_idx);
+
+    /// Reads and parses one compressed segment from `stream` into an immutable `PostingListSegment`.
+    /// Invoked on a cache miss (or directly when no posting cache is available).
+    PostingListSegmentPtr buildPostingSegment(size_t segment_idx);
 
     /// Advance to the first doc_id >= target within the current segment.
     /// Uses binary search on `block_last_row_ids` for O(log N) access.
@@ -103,6 +122,13 @@ private:
     std::shared_ptr<TokenPostingsInfo> owned_info;
     const TokenPostingsInfo * info = nullptr;
 
+    /// Bounded cache used to memoize decoded segments across per-task cursors (and queries, when the
+    /// global cache is enabled). Set for compressed cursors via the stream constructor; stays null for
+    /// embedded cursors, which never read segments (`prepareSegment` returns early for `is_embedded`).
+    TextIndexPostingsCache * postings_cache = nullptr;
+    /// Per-part index identifier, mixed into the segment cache key alongside the segment byte offset.
+    String index_id;
+
     size_t total_segments = 0;
     bool is_embedded = false;
     double density_val = 0;
@@ -111,6 +137,12 @@ private:
     /// Inline buffer for small embedded posting lists; spills to the heap when the
     /// materialized list (e.g. a rare-token roaring bitmap) exceeds the inline capacity.
     absl::InlinedVector<uint32_t, MAX_EMBEDDED_POSTING_LIST_ROWS> embedded_values;
+
+    /// When set (shared-array embedded ctor), the embedded postings are read from this shared,
+    /// immutable, sorted array instead of `embedded_values`. Built once per granule and shared
+    /// across per-task cursors. Held to keep the buffer alive for the cursor's lifetime;
+    /// `decoded_values_ptr` points into it.
+    std::shared_ptr<const std::vector<UInt32>> shared_values;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
@@ -130,15 +162,17 @@ private:
     UInt32 last_decoded_doc_id = 0;      /// Last doc_id decoded (delta base for next block).
     UInt32 segment_first_row_id = 0;     /// First row_id of the current segment (for delta base).
 
-    /// Packed block index loaded from Index Section in `prepareSegment`.
-    /// Enables O(log N) advance within a segment.
-    std::vector<UInt32> block_last_row_ids;
-    std::vector<UInt64> block_offsets;
+    /// Decoded data of the current segment. Owned by the shared `TextIndexPostingsCache` (or by the
+    /// cursor itself when no cache is available); held here to keep it alive while the views below
+    /// point at it. Surviving cache eviction is intentional — an in-flight cursor stays valid.
+    PostingListSegmentPtr current_segment_data;
 
-    /// Bulk-loaded segment payload buffer. `prepareSegment` reads the entire
-    /// payload [header_end, index_section_start) into this buffer.
-    /// `decodeBlock` then works from memory instead of seeking the stream per block.
-    std::vector<uint8_t> payload_buffer;
+    /// Non-owning views into `current_segment_data`, refreshed in `prepareSegment`.
+    ///   block_last_row_ids / block_offsets — packed block index, enabling O(log N) advance.
+    ///   payload_buffer — bulk-loaded segment payload; `decodeBlock` works from memory.
+    std::span<const UInt32> block_last_row_ids;
+    std::span<const UInt64> block_offsets;
+    std::span<const uint8_t> payload_buffer;
 
     /// Segment iteration state.
     size_t current_segment_idx = 0;

@@ -308,14 +308,18 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
     if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    auto & postings_cache = *condition_text.postingsCache();
+    const auto & index_id = granule->getIndexIdForCaches();
+
     auto stream_it = large_postings_streams.find(token);
     if (stream_it != large_postings_streams.end())
-        return std::make_shared<PostingListCursor>(*stream_it->second, token_info);
+        return std::make_shared<PostingListCursor>(*stream_it->second, token_info, postings_cache, index_id);
 
     if (!small_postings_stream)
         small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
 
-    return std::make_shared<PostingListCursor>(*small_postings_stream, token_info);
+    return std::make_shared<PostingListCursor>(*small_postings_stream, token_info, postings_cache, index_id);
 }
 
 size_t MergeTreeReaderTextIndex::readRows(
@@ -642,7 +646,6 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     size_t old_size = column_data.size();
-    column_data.resize_fill(old_size + num_rows, 0);
 
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
@@ -655,29 +658,13 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
     if (query_builder.is_failed)
+    {
+        column_data.resize_fill(old_size + num_rows, 0);
         return;
+    }
 
     std::vector<PostingListCursorPtr> cursors;
     cursors.reserve(query_builder.tokens.size());
-
-    if (query_builder.postings && query_builder.postings->cardinality() > 0)
-    {
-        auto [it, inserted] = prebuilt_cursors.try_emplace(column_name);
-
-        if (inserted)
-        {
-            TokenPostingsInfo prebuilt_info;
-            prebuilt_info.header = PostingsSerialization::Flags::EmbeddedPostings;
-            prebuilt_info.cardinality = static_cast<UInt32>(query_builder.postings->cardinality());
-            prebuilt_info.offsets = {0};
-            prebuilt_info.ranges = {{query_builder.postings->minimum(), query_builder.postings->maximum()}};
-            prebuilt_info.embedded_postings = std::make_shared<PostingList>(*query_builder.postings);
-
-            it->second = std::make_shared<PostingListCursor>(prebuilt_info);
-        }
-
-        cursors.push_back(it->second);
-    }
 
     if (query_builder.needReadPostings())
     {
@@ -696,6 +683,60 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
             cursors.push_back(it->second);
         }
     }
+
+    if (query_builder.postings)
+    {
+        /// Check the per-column cache first: the prebuilt cursor is built once and reused across
+        /// marks, so we avoid recomputing `query_builder.postings->cardinality()` (an O(containers)
+        /// Roaring scan) on every mark.
+        auto it = prebuilt_cursors.find(column_name);
+
+        if (it != prebuilt_cursors.end())
+        {
+            cursors.push_back(it->second);
+        }
+        else if (query_builder.postings->cardinality() > 0)
+        {
+            if (cursors.empty())
+            {
+                PostingList range_posting;
+                range_posting.addRangeClosed(static_cast<UInt32>(row_offset), static_cast<UInt32>(row_offset + num_rows - 1));
+                PostingList clipped = *query_builder.postings & range_posting;
+                fillColumn(column, clipped, row_offset, num_rows);
+                return;
+            }
+
+            /// Flatten the analyzer-folded postings to a sorted array once and memoize it in the
+            /// posting cache (keyed by index id + virtual column), shared across all parallel read
+            /// tasks — instead of deep-copying the Roaring bitmap and re-running `toUint32Array` in
+            /// every task. The condition always has a posting cache (a per-query one is created in its
+            /// constructor when the global cache is disabled), so no null check is needed.
+            auto key = TextIndexPostingsCache::hash(
+                granule->getIndexIdForCaches(), column_name, static_cast<UInt64>(TextIndexPostingsCacheKind::Flat));
+
+            auto cell = condition_text.postingsCache()->getOrSet(key, [&]
+            {
+                auto flat = std::make_shared<std::vector<UInt32>>(query_builder.postings->cardinality());
+                query_builder.postings->toUint32Array(flat->data());
+                auto new_cell = std::make_shared<TextIndexPostingsCacheCell>();
+                new_cell->value = FlatPostingsPtr(std::move(flat));
+                return new_cell;
+            });
+
+            auto flat_postings = std::get<FlatPostingsPtr>(cell->value);
+
+            TokenPostingsInfo prebuilt_info;
+            prebuilt_info.header = PostingsSerialization::Flags::EmbeddedPostings;
+            prebuilt_info.cardinality = static_cast<UInt32>(query_builder.postings->cardinality());
+            prebuilt_info.offsets = {0};
+            prebuilt_info.ranges = {{query_builder.postings->minimum(), query_builder.postings->maximum()}};
+
+            auto [emplaced, _] = prebuilt_cursors.emplace(column_name, std::make_shared<PostingListCursor>(std::move(flat_postings), prebuilt_info));
+            cursors.push_back(emplaced->second);
+        }
+    }
+
+    column_data.resize_fill(old_size + num_rows, 0);
 
     if (cursors.empty())
         return;
