@@ -976,15 +976,6 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
     EquivalenceClasses ec(*this);
     std::unordered_map<NodeKey, const Node *, NodeKeyHash> seen;
 
-    /// function results depend on values, not on alias names along the chain
-    auto resolve_through_aliases = [&](const Node * n) -> const Node *
-    {
-        n = ec.find(n);
-        while (n && n->type == ActionType::ALIAS && !n->children.empty())
-            n = ec.find(n->children.front());
-        return n;
-    };
-
     for (const auto & node : nodes)
     {
         if (node.type == ActionType::ARRAY_JOIN)
@@ -1030,7 +1021,7 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
                     key.name = node.function_base->getName();
                 key.children.reserve(node.children.size());
                 for (const auto * c : node.children)
-                    key.children.push_back(resolve_through_aliases(c));
+                    key.children.push_back(ec.find(c));
                 break;
             case ActionType::ARRAY_JOIN:
                 break;

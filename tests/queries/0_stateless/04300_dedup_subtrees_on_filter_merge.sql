@@ -1,3 +1,5 @@
+SET query_plan_merge_filters=1; -- required for this optimization, happens on filter merges
+
 SELECT count() FROM numbers(10000) AS l
 INNER JOIN (SELECT number FROM numbers(10000)) AS r
 ON l.number = r.number AND l.number > 0 AND r.number > 0
@@ -27,7 +29,7 @@ INSERT INTO u_4263 VALUES (10), (20);
 
 SELECT count() FROM (SELECT * FROM u_4263 WHERE uid = 10) WHERE uid = 10;
 
-SELECT 'one equals + one const',
+SELECT 'equals + const dedup',
        countIf(explain LIKE '%FUNCTION equals(uid%'),
        countIf(explain LIKE '%COLUMN Const(UInt8) -> 10_UInt8%')
 FROM (
