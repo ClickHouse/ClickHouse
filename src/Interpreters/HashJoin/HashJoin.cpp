@@ -253,7 +253,7 @@ HashJoin::HashJoin(
 
         if (strictness == JoinStrictness::Asof)
         {
-            assert(disjuncts_num == 1);
+            chassert(disjuncts_num == 1);
 
             /// @note ASOF JOIN is not INNER. It's better avoid use of 'INNER ASOF' combination in messages.
             /// In fact INNER means 'LEFT SEMI ASOF' while LEFT means 'LEFT OUTER ASOF'.
