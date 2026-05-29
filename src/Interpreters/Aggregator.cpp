@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
@@ -4158,10 +4159,69 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
     return hash.get64();
 }
 
+namespace
+{
+bool isPartialAggregateCacheOnlySetting(const String & setting_name)
+{
+    return setting_name == "use_partial_aggregate_cache" || setting_name.starts_with("partial_aggregate_cache");
+}
+
+bool isSettingIgnoredInPartialAggregateCacheSemanticKey(const String & setting_name)
+{
+    if (isPartialAggregateCacheOnlySetting(setting_name))
+        return true;
+
+    if ((setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag")
+        return true;
+
+    if (setting_name == "log_comment"
+        || setting_name.starts_with("output_format_")
+        || setting_name == "http_response_headers"
+        || setting_name == "use_structure_from_insertion_table_in_table_functions")
+        return true;
+
+    /// Stats collection settings do not change grouping keys or aggregate state semantics.
+    if (setting_name == "collect_hash_table_stats_during_aggregation" || setting_name == "max_size_to_preallocate_for_aggregation")
+        return true;
+
+    return false;
+}
+
+void hashSemanticsAffectingSettingsForPartialAggregateCache(const Settings & settings, SipHash & hash)
+{
+    namespace Setting = DB::Setting;
+
+    /// Always hash session timezone: it affects DateTime parsing in GROUP BY keys but may be absent from `changes()`.
+    hash.update(settings[Setting::session_timezone].value);
+
+    auto changed_settings = settings.changes();
+    std::vector<std::pair<String, String>> changed_settings_sorted;
+    changed_settings_sorted.reserve(changed_settings.size());
+    for (const auto & change : changed_settings)
+    {
+        if (isSettingIgnoredInPartialAggregateCacheSemanticKey(change.name))
+            continue;
+        changed_settings_sorted.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+    }
+
+    std::sort(
+        changed_settings_sorted.begin(),
+        changed_settings_sorted.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+    for (const auto & setting : changed_settings_sorted)
+    {
+        hash.update(setting.first);
+        hash.update(setting.second);
+    }
+}
+
+}
+
 UInt64 partialAggregateCacheSemanticKey(
     const DB::ASTPtr & select_query,
     ContextPtr context,
     const String & current_database,
+    const Settings & settings,
     bool apply_deleted_mask,
     bool has_row_level_filter,
     bool has_additional_table_filters)
@@ -4195,6 +4255,7 @@ UInt64 partialAggregateCacheSemanticKey(
     hash.update(base);
     hash.update(current_database);
     hash.update(static_cast<UInt8>(apply_deleted_mask));
+    hashSemanticsAffectingSettingsForPartialAggregateCache(settings, hash);
     return hash.get64();
 }
 }

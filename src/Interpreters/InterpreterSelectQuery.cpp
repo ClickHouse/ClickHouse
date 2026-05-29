@@ -2939,6 +2939,7 @@ static Aggregator::Params getAggregatorParams(
         query_ptr,
         context.getGlobalContext(),
         context.getCurrentDatabase(),
+        settings,
         apply_deleted_mask_value,
         has_row_level_filter,
         has_additional_table_filters);

@@ -624,6 +624,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         select_query_info.query,
         query_context->getGlobalContext(),
         query_context->getCurrentDatabase(),
+        settings,
         apply_deleted_mask_value,
         has_row_level_filter,
         has_additional_table_filters);
