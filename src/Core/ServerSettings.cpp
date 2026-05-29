@@ -1679,7 +1679,6 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         "background_schedule_pool_size",
         "background_message_broker_schedule_pool_size",
         "background_distributed_schedule_pool_size",
-        "background_streaming_schedule_pool_size",
 
         "max_remote_read_network_bandwidth_for_server",
         "max_remote_write_network_bandwidth_for_server",
