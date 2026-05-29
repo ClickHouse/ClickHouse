@@ -73,7 +73,7 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, 
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<Tuple>();
-        assert(tuple.size() == 2);
+        chassert(tuple.size() == 2);
         key_serialization->serializeBinary(tuple[0], ostr, settings);
         value_serialization->serializeBinary(tuple[1], ostr, settings);
     }
