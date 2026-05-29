@@ -107,7 +107,26 @@ FROM format('GeoJSON', '{
         }
     ]
 }')
-SETTINGS input_format_geojson_geometry_collection_handling = 'null';
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null';
+
+-- MultiPoint cannot be represented in the Geometry type: it throws by default instead of silently dropping data.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "MultiPoint", "coordinates": [[0, 0], [1, 1]]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- MultiPoint with null handling inserts NULL for geometry.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "MultiPoint", "coordinates": [[0, 0], [1, 1]]}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null';
 
 -- A duplicate fixed field within a feature is rejected as bad input.
 SELECT id

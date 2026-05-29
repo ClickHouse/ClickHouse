@@ -8033,8 +8033,8 @@ Changes made with `SET` or query-level `SETTINGS` do not change extracted subcol
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
 )", 0) \
     \
-    DECLARE(String, input_format_geojson_geometry_collection_handling, "throw", R"(
-Controls what happens when a `GeometryCollection` geometry type is encountered while reading `GeoJSON` input. `GeometryCollection` cannot be represented in ClickHouse's `Geometry` type.
+    DECLARE(String, input_format_geojson_unsupported_geometry_handling, "throw", R"(
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type is encountered while reading `GeoJSON` input. This includes `GeometryCollection` and `MultiPoint`.
 
 Possible values:
 - `'throw'` (default) — throw an exception.

@@ -53,7 +53,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
 
-    extern const SettingsString input_format_geojson_geometry_collection_handling;
+    extern const SettingsString input_format_geojson_unsupported_geometry_handling;
 
     extern SettingsBool input_format_parallel_parsing;
     extern SettingsBool output_format_parallel_formatting;
@@ -361,14 +361,14 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
     {
-        const String & val = settings[Setting::input_format_geojson_geometry_collection_handling];
+        const String & val = settings[Setting::input_format_geojson_unsupported_geometry_handling];
         if (val == "throw")
-            format_settings.geojson.geometry_collection_handling = FormatSettings::GeometryCollectionHandling::Throw;
+            format_settings.geojson.unsupported_geometry_handling = FormatSettings::UnsupportedGeometryHandling::Throw;
         else if (val == "null")
-            format_settings.geojson.geometry_collection_handling = FormatSettings::GeometryCollectionHandling::Null;
+            format_settings.geojson.unsupported_geometry_handling = FormatSettings::UnsupportedGeometryHandling::Null;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Unknown value '{}' for setting input_format_geojson_geometry_collection_handling. "
+                "Unknown value '{}' for setting input_format_geojson_unsupported_geometry_handling. "
                 "Expected 'throw' or 'null'.", val);
     }
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];

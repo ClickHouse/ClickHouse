@@ -269,26 +269,26 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
         return false;
     });
 
-    if (geo_type == "GeometryCollection")
-    {
-        if (format_settings.geojson.geometry_collection_handling == FormatSettings::GeometryCollectionHandling::Throw)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "GeoJSON: GeometryCollection is not supported because it cannot be represented "
-                "in ClickHouse's Geometry type. Set input_format_geojson_geometry_collection_handling = 'null' "
-                "to insert NULL for such geometries instead of throwing.");
-        variant_col.insertDefault();
-        return;
-    }
-
-    if (geo_type.empty() || raw_coordinates.empty())
-    {
-        variant_col.insertDefault();
-        return;
-    }
-
     auto it = geometry_discriminants.find(geo_type);
     if (it == geometry_discriminants.end())
+    {
+        /// A valid GeoJSON geometry type that cannot be represented in ClickHouse's Geometry type
+        /// (such as GeometryCollection or MultiPoint), or an unrecognized type. Throw by default so
+        /// that data is not silently lost; the user can opt into inserting NULL instead.
+        if (format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
+        {
+            variant_col.insertDefault();
+            return;
+        }
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: geometry type '{}' cannot be represented in ClickHouse's Geometry type. "
+            "Set input_format_geojson_unsupported_geometry_handling = 'null' to insert NULL "
+            "for such geometries instead of throwing.",
+            geo_type);
+    }
+
+    if (raw_coordinates.empty())
     {
         variant_col.insertDefault();
         return;
