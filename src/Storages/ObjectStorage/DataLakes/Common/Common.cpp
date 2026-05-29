@@ -1,12 +1,20 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+
+#include <filesystem>
 
 #include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int PATH_ACCESS_DENIED;
+}
 
 std::vector<String> listFiles(
     const IObjectStorage & object_storage,
@@ -38,5 +46,24 @@ std::vector<String> listFiles(
     }
     LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
     return res;
+}
+
+String resolvePathInsideTable(const String & table_path, const String & relative_path)
+{
+    namespace fs = std::filesystem;
+
+    auto norm_base = fs::path(table_path).lexically_normal();
+    auto combined = (norm_base / relative_path).lexically_normal();
+
+    auto rel = combined.lexically_relative(norm_base);
+
+    if (rel.empty() || rel.begin()->string() == "..")
+        throw Exception(
+            ErrorCodes::PATH_ACCESS_DENIED,
+            "Data lake path `{}` should be inside the table directory `{}`",
+            relative_path,
+            table_path);
+
+    return combined.string();
 }
 }

@@ -29,6 +29,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
@@ -512,7 +513,8 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        std::string full_path = fs::path(context->getDataPath()) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
+        std::string full_path = DB::resolvePathInsideTable(
+            context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
         auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
         object->data_lake_metadata.emplace();
 
