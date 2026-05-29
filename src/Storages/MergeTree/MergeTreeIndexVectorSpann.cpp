@@ -11,15 +11,10 @@
 #include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <Common/setThreadName.h>
-#include <Common/thread_local_rng.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
@@ -54,11 +49,6 @@ namespace Setting
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool allow_experimental_vector_spann_index;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
 }
 
 namespace ErrorCodes
@@ -408,14 +398,11 @@ std::vector<UInt64> MergeTreeIndexAggregatorVectorSpann::selectCentroidsRandom()
     num_centroids = std::max<size_t>(1, num_centroids);
     num_centroids = std::min(num_centroids, n);
 
-    std::vector<UInt64> all_ids(n);
-    for (size_t i = 0; i < n; ++i)
-        all_ids[i] = i;
+    std::vector<UInt64> centroid_ids(num_centroids);
+    for (size_t i = 0; i < num_centroids; ++i)
+        centroid_ids[i] = (i * n) / num_centroids;
 
-    std::shuffle(all_ids.begin(), all_ids.end(), thread_local_rng);
-    all_ids.resize(num_centroids);
-    std::ranges::sort(all_ids);
-    return all_ids;
+    return centroid_ids;
 }
 
 USearchIndexWithSerializationPtr MergeTreeIndexAggregatorVectorSpann::buildCentroidIndex(const std::vector<UInt64> & centroid_row_ids) const
@@ -423,39 +410,24 @@ USearchIndexWithSerializationPtr MergeTreeIndexAggregatorVectorSpann::buildCentr
     auto centroid_index = std::make_shared<USearchIndexWithSerialization>(
         static_cast<size_t>(params.dimensions), params.metric_kind, params.scalar_kind, params.usearch_hnsw_params);
 
-    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
-    if (max_thread_pool_size == 0)
-        max_thread_pool_size = getNumberOfCPUCoresToUse();
-    unum::usearch::index_limits_t lim(roundUpToPowerOfTwoOrZero(centroid_row_ids.size()), max_thread_pool_size);
+    unum::usearch::index_limits_t lim(roundUpToPowerOfTwoOrZero(centroid_row_ids.size()), 1);
     centroid_index->reserve(lim);
-
-    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
-
-    auto add_centroid = [&](unum::usearch::index_dense_t::vector_key_t key, UInt64 row_id_in_accumulated)
+    for (size_t i = 0; i < centroid_row_ids.size(); ++i)
     {
         if (auto query_context = CurrentThread::tryGetQueryContext())
             if (auto query_status = query_context->getProcessListElementSafe())
                 query_status->throwIfKilled();
 
-        const Float32 * ptr = accumulated_vectors[row_id_in_accumulated].data();
+        const Float32 * ptr = accumulated_vectors[centroid_row_ids[i]].data();
         checkVectorIsSane(ptr, params.dimensions, params.scalar_kind, ErrorCodes::INCORRECT_DATA, "indexed vector");
-        unum::usearch::index_dense_t::add_result_t result = centroid_index->add(key, ptr);
+        auto result = centroid_index->add(static_cast<USearchIndex::vector_key_t>(i), ptr);
         if (!result)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add centroid to vector_spann index. Error: {}", result.error.release());
 
         ProfileEvents::increment(ProfileEvents::USearchAddCount);
         ProfileEvents::increment(ProfileEvents::USearchAddVisitedMembers, result.visited_members);
         ProfileEvents::increment(ProfileEvents::USearchAddComputedDistances, result.computed_distances);
-    };
-
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
-    for (size_t i = 0; i < centroid_row_ids.size(); ++i)
-    {
-        const auto key = static_cast<unum::usearch::index_dense_t::vector_key_t>(i);
-        const UInt64 row_id = centroid_row_ids[i];
-        runner.enqueueAndKeepTrack([&add_centroid, key, row_id] { add_centroid(key, row_id); });
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
 
     return centroid_index;
 }
