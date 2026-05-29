@@ -258,31 +258,6 @@ arrow::Status AuthMiddlewareFactory::StartCall(
         else
             session->makeSessionContext(session_id, parseSessionTimeout(server.context()->getConfigRef(), session_timeout), session_check == "1");
 
-        /// Drop Arrow Flight prepared statement handles on `RESET SESSION`.
-        /// Only registered for named sessions: with an empty `session_id`,
-        /// `closeAllPreparedStatements(username, "")` matches every sessionless
-        /// handle for this user, so a sessionless client running `RESET SESSION`
-        /// would invalidate handles owned by other concurrent sessionless
-        /// clients on the same user. The gRPC handler also treats a no-session
-        /// `RESET SESSION` as a no-op for the same reason — see
-        /// `InterpreterResetSessionQuery::execute`.
-        /// Handles live on the server-wide `CallsData`, not on `Context`, so
-        /// without this hook a session that ran `CreatePreparedStatement`
-        /// could continue resolving the old handle via `CommandPreparedStatementQuery`
-        /// after the reset — violating the post-authentication baseline.
-        /// `calls_data` outlives every session (it's owned by `ArrowFlightServer`),
-        /// so capturing by reference is safe. `StartCall` runs per-RPC, but
-        /// `setSessionResetCallback` dedupes by owner key, so re-registration
-        /// on a reused named session simply replaces the previous entry.
-        if (!session_id.empty())
-        {
-            session->sessionContext()->setSessionResetCallback(&calls_data,
-                [&calls_data_ref = calls_data, username, session_id](Context &)
-                {
-                    calls_data_ref.closeAllPreparedStatements(username, session_id);
-                });
-        }
-
         if (auth)
             token = token_storage.getToken(username, password);
 

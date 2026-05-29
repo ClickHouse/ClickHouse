@@ -282,31 +282,6 @@ bool PostgreSQLHandler::startup()
         session->sessionContext()->setDefaultFormat("PostgreSQLWire");
         if (!start_up_msg->database.empty())
             session->sessionContext()->setCurrentDatabase(start_up_msg->database);
-        session->sessionContext()->rememberDatabaseAtSessionStart();
-
-        /// Drop protocol-local state on `RESET SESSION`. The handler is
-        /// single-threaded per connection so no extra synchronisation is
-        /// needed, and it outlives the session
-        /// (`SCOPE_EXIT({ session.reset(); })`), so capturing `this` is safe.
-        ///
-        ///  * Prepared statements: the manager tracks names handed out via
-        ///    `PREPARE`, which the client can't address after reset anyway.
-        ///    Reassign to a fresh instance to drop every entry.
-        ///  * System-table init flag: the `pg_*` compatibility views are
-        ///    `CREATE TEMPORARY VIEW` entries in the session temp-table
-        ///    mapping, which `Context::resetToUserDefaults` clears. Without
-        ///    re-arming `should_init_system_tables`, it stays `false` after
-        ///    the first query and the views are never recreated, so a
-        ///    post-reset driver metadata query like `SELECT * FROM pg_type`
-        ///    fails with `UNKNOWN_TABLE`. Re-arm it so the next query
-        ///    repopulates the catalog (the views are `IF NOT EXISTS`, so
-        ///    re-init is idempotent).
-        session->sessionContext()->setSessionResetCallback(this,
-            [this](Context &)
-            {
-                prepared_statements_manager = PostgreSQLProtocol::PostgresPreparedStatements::PreparedStatemetsManager(std::nullopt);
-                should_init_system_tables = true;
-            });
     }
     catch (const Exception & exc)
     {

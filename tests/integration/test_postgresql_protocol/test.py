@@ -360,67 +360,6 @@ def test_prepared_statement(started_cluster):
         cur.execute("EXECUTE select_test(1);")
 
 
-def test_reset_session_drops_prepared_statements(started_cluster):
-    """`RESET SESSION` must drop names registered via `PREPARE`."""
-    node = started_cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        autocommit=True,
-    )
-    cur = ch.cursor()
-    cur.execute("DROP TABLE IF EXISTS reset_prep_test;")
-    cur.execute("CREATE TABLE reset_prep_test (id Int32) ENGINE = Memory;")
-    cur.execute("INSERT INTO reset_prep_test (id) VALUES (7);")
-
-    cur.execute("PREPARE pickup AS SELECT id FROM reset_prep_test WHERE id = $1;")
-    cur.execute("EXECUTE pickup(7);")
-    assert cur.fetchall() == [(7,)]
-
-    cur.execute("RESET SESSION;")
-    # `RESET SESSION` produces no result set, so the command-complete tag the
-    # client sees must be `RESET` (not the `SELECT 0` fallback that
-    # `CommandComplete::classifyQuery` returns for unrecognised statements).
-    assert cur.statusmessage == "RESET"
-
-    with pytest.raises(Exception):
-        cur.execute("EXECUTE pickup(7);")
-
-    cur.execute("DROP TABLE reset_prep_test;")
-
-
-def test_reset_session_reinitializes_system_tables(started_cluster):
-    """`RESET SESSION` clears the session temporary-table mapping, which holds
-    the PostgreSQL compatibility views (`pg_type`, `pg_namespace`, ...) created
-    lazily as `CREATE TEMPORARY VIEW`. The handler must re-arm
-    `should_init_system_tables` so the next query recreates them; otherwise a
-    post-reset driver metadata query fails with `UNKNOWN_TABLE`.
-    """
-    node = started_cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        autocommit=True,
-    )
-    cur = ch.cursor()
-
-    # Touch a compatibility view to force lazy initialization.
-    cur.execute("SELECT typname FROM pg_type WHERE typname = 'bool';")
-    assert cur.fetchall() == [("bool",)]
-
-    cur.execute("RESET SESSION;")
-
-    # The view must still resolve after the reset re-created the catalog.
-    cur.execute("SELECT typname FROM pg_type WHERE typname = 'bool';")
-    assert cur.fetchall() == [("bool",)]
-
-
 def test_copy_command(started_cluster):
     node = cluster.instances["node"]
 

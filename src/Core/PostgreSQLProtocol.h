@@ -1275,15 +1275,14 @@ public:
         ALTER_TABLE = 14,
         TRUNCATE = 15,
         USE = 16,
-        SET = 17,
-        RESET = 18
+        SET = 17
     };
 private:
-    String enum_to_string[19] =
+    String enum_to_string[18] =
     {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET", "RESET"
+        "TRUNCATE", "USE", "SET"
     };
 
     String value;
@@ -1375,7 +1374,6 @@ public:
             {"COPY", Command::COPY},
             {"PREPARE", Command::PREPARE},
             {"USE", Command::USE}, // ClickHouse-specific, not have in PostgreSQL
-            {"RESET", Command::RESET}, // matches both PostgreSQL `RESET name` and ClickHouse `RESET SESSION`
             {"SET", Command::SET},
         };
 

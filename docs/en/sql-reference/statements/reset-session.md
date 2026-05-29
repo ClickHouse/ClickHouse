@@ -21,7 +21,7 @@ The statement:
 
 - Resets all session-level settings to the user's profile defaults plus any settings supplied by the authentication server.
 - Restores the current roles to the user's default roles and drops any externally-granted roles applied at session start.
-- Restores the current database. The candidate chain is: the database the connection was opened with (captured by the native, MySQL, and PostgreSQL handlers at handshake; HTTP, gRPC, Arrow Flight, and `clickhouse-local` skip this step because they have no equivalent handshake hook), then the user's `DEFAULT DATABASE`, then the server's current database (matching what a fresh authentication leaves in place when the user has no profile default). The first existing candidate is selected, so an admin-dropped database does not break the reset.
+- Restores the current database. The candidate chain is: the database the connection was opened with (captured only by the native TCP handler at handshake; all other interfaces — HTTP, gRPC, MySQL, PostgreSQL, Arrow Flight, and `clickhouse-local` — skip this step because they have no equivalent handshake hook), then the user's `DEFAULT DATABASE`, then the server's current database (matching what a fresh authentication leaves in place when the user has no profile default). The first existing candidate is selected, so an admin-dropped database does not break the reset.
 - Drops every temporary table created in the session.
 - Clears all query parameters set with `SET param_name = ...`.
 - Clears all scalars sent over the protocol.
@@ -39,15 +39,17 @@ The user's profiles are re-read from access control on every `RESET SESSION` cal
 
 Connection-pool implementations that issue `RESET SESSION` before returning a connection to the pool must first `COMMIT` or `ROLLBACK` any open transaction. The intent is to avoid silently discarding writes a client believed it had open.
 
-## Behavior with prepared statements {#behavior-with-prepared-statements}
+## Scope: protocol-local state is not reset {#scope-protocol-local-state}
 
-Protocol-local prepared statement handles are invalidated by `RESET SESSION` and must be re-prepared by the client:
+`RESET SESSION` resets the ClickHouse session **context** — the state listed above, which the server tracks per session. It does **not** touch state that a wire-protocol handler keeps outside that context. In particular, **prepared statements created over the MySQL, PostgreSQL, and Arrow Flight protocols are not invalidated by `RESET SESSION`**:
 
-- MySQL wire protocol: handles created with `COM_STMT_PREPARE` are dropped.
-- PostgreSQL wire protocol: server-side prepared statements (`PREPARE name AS ...` / extended-query `Parse` messages) are dropped.
-- Arrow Flight: prepared statement handles owned by the current session are dropped. Sessionless Arrow Flight calls (no `x-clickhouse-session-id` header) treat `RESET SESSION` as a no-op for prepared statements, since there is no session boundary to scope the reset to.
+- MySQL: statements prepared with `COM_STMT_PREPARE` remain registered.
+- PostgreSQL: server-side prepared statements (`PREPARE name AS ...` / extended-query `Parse` messages) remain registered.
+- Arrow Flight: prepared statement handles remain valid.
 
-Connection-pool implementations that reuse server-side prepared statement handles across `RESET SESSION` must re-prepare them after the reset.
+Clients that pool connections over these protocols should use the protocol's own reset mechanism for protocol-local state — for example, MySQL `COM_RESET_CONNECTION` or PostgreSQL `DISCARD ALL` / `DEALLOCATE` — and should not rely on `RESET SESSION` to clear prepared statements.
+
+This is a deliberate scoping decision for the first version of the statement: `RESET SESSION` is a server-side, session-context reset. Extending it to drive per-protocol cleanup is tracked as future work.
 
 ## Comparison with PostgreSQL {#comparison-with-postgresql}
 

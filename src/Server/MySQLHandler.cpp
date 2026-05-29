@@ -291,28 +291,6 @@ void MySQLHandler::run()
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
                 session->sessionContext()->setCurrentDatabase(handshake_response.database);
-            session->sessionContext()->rememberDatabaseAtSessionStart();
-
-            /// Drop prepared statements and refresh socket timeouts on
-            /// `RESET SESSION`. Both are protocol-local state that `Context`
-            /// can't reach: the prepared statements map lives on this handler,
-            /// and the socket timeouts are kept on the Poco socket. The
-            /// MySQLHandler outlives the session, so capturing `this` is safe.
-            /// The session context is passed in by reference rather than
-            /// captured by `shared_ptr` so we don't pin the very `Context` that
-            /// owns this callback list.
-            session->sessionContext()->setSessionResetCallback(this,
-                [this](Context & session_context)
-                {
-                    {
-                        std::lock_guard lock(prepared_statements_mutex);
-                        prepared_statements.clear();
-                        current_prepared_statement_id = 0;
-                    }
-                    const Settings & current_settings = session_context.getSettingsRef();
-                    socket().setReceiveTimeout(current_settings[Setting::receive_timeout]);
-                    socket().setSendTimeout(current_settings[Setting::send_timeout]);
-                });
         }
         catch (const Exception & exc)
         {
