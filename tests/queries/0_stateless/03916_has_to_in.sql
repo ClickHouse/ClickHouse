@@ -13,7 +13,11 @@ CREATE TABLE tab
     a Array(UInt32)
 )
 Engine = MergeTree
-ORDER BY id;
+ORDER BY id
+-- The granule-pruning assertion below counts `Granules: 0` lines in `EXPLAIN indexes=1`
+-- and expects exactly one (the primary key). The default-on minmax index would add a
+-- second pruning index, so opt out here to keep the test focused on the primary key.
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab SELECT number, concat('Number', toString(number)), [number, number + 1, number + 2] from numbers(10000);
 
