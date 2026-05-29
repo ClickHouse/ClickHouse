@@ -26,7 +26,9 @@ struct BlockIO
     BlockIO() = default;
     BlockIO(BlockIO &&) = default;
 
-    BlockIO & operator= (BlockIO && rhs) noexcept;
+    /// Not noexcept: moves the QueryPipeline, whose move-assignment appends resources and can
+    /// throw MEMORY_LIMIT_EXCEEDED.
+    BlockIO & operator= (BlockIO && rhs);
     ~BlockIO();
 
     BlockIO(const BlockIO &) = delete;

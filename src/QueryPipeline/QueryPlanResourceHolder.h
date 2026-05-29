@@ -33,8 +33,10 @@ struct QueryPlanResourceHolder
     QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &) = delete;
 
     /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
-    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&) noexcept;
-    QueryPlanResourceHolder & append(const QueryPlanResourceHolder & rhs) noexcept;
+    /// Note: append (and thus this assignment) allocates through the memory-tracking containers,
+    /// so it can throw MEMORY_LIMIT_EXCEEDED and must not be noexcept.
+    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&);
+    QueryPlanResourceHolder & append(const QueryPlanResourceHolder & rhs);
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.
     /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,

@@ -4,7 +4,7 @@
 namespace DB
 {
 
-QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourceHolder & rhs) noexcept
+QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourceHolder & rhs)
 {
     table_locks.insert(table_locks.end(), rhs.table_locks.begin(), rhs.table_locks.end());
     storage_holders.insert(storage_holders.end(), rhs.storage_holders.begin(), rhs.storage_holders.end());
@@ -17,7 +17,7 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourc
     return *this;
 }
 
-QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs) noexcept
+QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs)
 {
     append(rhs);
     return *this;
