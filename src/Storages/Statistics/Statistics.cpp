@@ -61,6 +61,65 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     }
 }
 
+namespace
+{
+
+/// Wider integer type used to compute `(v - mn)` and `(mx - mn)` without overflow,
+/// before the result is converted to Float64.
+template <typename T> struct WiderIntType { using type = T; };
+template <> struct WiderIntType<UInt64>  { using type = UInt128; };
+template <> struct WiderIntType<Int64>   { using type = Int128; };
+template <> struct WiderIntType<UInt128> { using type = UInt256; };
+template <> struct WiderIntType<Int128>  { using type = Int256; };
+
+/// Computes (v - mn) / (mx - mn) * row_count as Float64. Widens to a larger type before
+/// subtracting so that values near 2^53 are not collapsed by the eventual Float64 conversion
+/// (this matters for `UInt64` / `Int64` ranges). Assumes mn <= v <= mx and mn < mx.
+template <typename T>
+Float64 interpolateLessLinearTyped(const Field & val, const Field & min, const Field & max, UInt64 row_count)
+{
+    T v = val.safeGet<T>();
+    T mn = min.safeGet<T>();
+    T mx = max.safeGet<T>();
+    if (v < mn) return 0.0;
+    if (v > mx) return static_cast<Float64>(row_count);
+    if (mn == mx) return (v == mx) ? static_cast<Float64>(row_count) : 0.0;
+    using W = typename WiderIntType<T>::type;
+    return static_cast<Float64>(static_cast<W>(v) - static_cast<W>(mn))
+         / static_cast<Float64>(static_cast<W>(mx) - static_cast<W>(mn))
+         * static_cast<Float64>(row_count);
+}
+
+}
+
+std::optional<Float64> StatisticsUtils::interpolateLessLinear(
+    const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type)
+{
+    /// Native-precision path when all three fields share the same numeric type.
+    if (val.getType() == min.getType() && val.getType() == max.getType())
+    {
+        switch (val.getType())
+        {
+            case Field::Types::UInt64:  return interpolateLessLinearTyped<UInt64>(val, min, max, row_count);
+            case Field::Types::Int64:   return interpolateLessLinearTyped<Int64>(val, min, max, row_count);
+            case Field::Types::UInt128: return interpolateLessLinearTyped<UInt128>(val, min, max, row_count);
+            case Field::Types::Int128:  return interpolateLessLinearTyped<Int128>(val, min, max, row_count);
+            case Field::Types::UInt256: return interpolateLessLinearTyped<UInt256>(val, min, max, row_count);
+            case Field::Types::Int256:  return interpolateLessLinearTyped<Int256>(val, min, max, row_count);
+            case Field::Types::Float64: return interpolateLessLinearTyped<Float64>(val, min, max, row_count);
+            default: break;
+        }
+    }
+
+    /// Fallback: convert all three to Float64 (e.g. mismatched types or Decimal).
+    auto val_as_float = tryConvertToFloat64(val, data_type);
+    auto min_as_float = tryConvertToFloat64(min, data_type);
+    auto max_as_float = tryConvertToFloat64(max, data_type);
+    if (!val_as_float || !min_as_float || !max_as_float)
+        return std::nullopt;
+    return interpolateLessLinearTyped<Float64>(Field(*val_as_float), Field(*min_as_float), Field(*max_as_float), row_count);
+}
+
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
     : stat(stat_)
 {

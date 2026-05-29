@@ -34,6 +34,14 @@ struct StatisticsUtils
     /// Returns std::nullopt if input Field cannot be converted to a concrete value
     /// - `data_type` is the type of the column on which the statistics object was build on
     static std::optional<Float64> tryConvertToFloat64(const Field & value, const DataTypePtr & data_type);
+
+    /// Linearly interpolate the number of rows whose value is less than `val` over `[min, max]`,
+    /// scaled by `row_count`. Uses widened-integer arithmetic when all three fields share the
+    /// same integer type so that values near `2^53` are not collapsed by the Float64 conversion;
+    /// falls back to Float64 otherwise. Returns std::nullopt if the Fields cannot be brought to
+    /// a common numeric representation.
+    static std::optional<Float64> interpolateLessLinear(
+        const Field & val, const Field & min, const Field & max, UInt64 row_count, const DataTypePtr & data_type);
 };
 
 class IStatistics;

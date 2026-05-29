@@ -259,20 +259,7 @@ std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const
     if (non_null == 0)
         return 0.0;
 
-    auto interpolate = [non_null](Float64 v, Float64 mn, Float64 mx) -> Float64
-    {
-        if (v < mn) return 0.0;
-        if (v > mx) return static_cast<Float64>(non_null);
-        if (mn == mx) return (v == mx) ? static_cast<Float64>(non_null) : 0.0;
-        return (v - mn) / (mx - mn) * static_cast<Float64>(non_null);
-    };
-
-    auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
-    auto min_as_float = StatisticsUtils::tryConvertToFloat64(min, data_type);
-    auto max_as_float = StatisticsUtils::tryConvertToFloat64(max, data_type);
-    if (!val_as_float || !min_as_float || !max_as_float)
-        return std::nullopt;
-    return interpolate(*val_as_float, *min_as_float, *max_as_float);
+    return StatisticsUtils::interpolateLessLinear(val, min, max, non_null, data_type);
 }
 
 String StatisticsBasic::getNameForLogs() const

@@ -1325,13 +1325,13 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum*, IPv4 | String or FixedString |
-|-----------|----------------------------------------------------------|-----------------------|
-| Basic     | ✔                                                        | ✔                     |
-| CountMin  | ✔                                                        | ✔                     |
-| MinMax    | ✔                                                        | ✗                     |
-| TDigest   | ✔                                                        | ✗                     |
-| Uniq      | ✔                                                        | ✔                     |
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
+|-----------|----------------------------------------------------|------|-----------------------|
+| Basic     | ✔                                                  | ✔    | ✔                     |
+| CountMin  | ✔                                                  | ✔    | ✔                     |
+| MinMax    | ✔                                                  | ✔    | ✗                     |
+| TDigest   | ✔                                                  | ✗    | ✗                     |
+| Uniq      | ✔                                                  | ✔    | ✔                     |
 
 All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
@@ -1339,11 +1339,15 @@ All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers 
 
 |           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
 |-----------|-----------------------|--------------------------------|
-| Basic     | ✗                     | ✔                              |
+| Basic     | ✗                     | ✔ (numeric columns only)       |
 | CountMin  | ✔                     | ✗                              |
-| MinMax    | ✗                     | ✔                              |
-| TDigest   | ✗                     | ✔                              |
+| MinMax    | ✗                     | ✔ (numeric columns only)       |
+| TDigest   | ✗                     | ✔ (numeric columns only)       |
 | Uniq      | ✔                     | ✗                              |
+
+For `Basic` on `String` / `FixedString` columns the statistic only records the total
+non-NULL byte length (used to estimate average string length) and the null count;
+range filters and part pruning are not driven by it.
 
 ## Column-level settings {#column-level-settings}
 
