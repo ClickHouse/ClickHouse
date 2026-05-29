@@ -400,11 +400,32 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
 
         if (const auto * insert_query = state->parsed_query ? state->parsed_query->as<ASTInsertQuery>() : nullptr)
         {
-            if (replacePipelineWithInsertReturningAfterPush(state->io, *insert_query, query_context, state->stage))
+            /// Building the RETURNING `SELECT` after the push can throw (unknown identifier, rejected `SETTINGS`,
+            /// ...) once the INSERT has already finished. Route such failures through the exception path so the
+            /// query is logged as `ExceptionWhileProcessing` and not finalized as success by a later `onFinish`.
+            try
             {
-                state->block = state->io.pipeline.getHeader();
-                state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
-                state->io.pipeline.setConcurrencyControl(false);
+                if (replacePipelineWithInsertReturningAfterPush(state->io, *insert_query, query_context, state->stage))
+                {
+                    state->block = state->io.pipeline.getHeader();
+                    state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+                    state->io.pipeline.setConcurrencyControl(false);
+                }
+            }
+            catch (const Exception & e)
+            {
+                state->io.onException();
+                state->exception.reset(e.clone());
+            }
+            catch (const std::exception & e)
+            {
+                state->io.onException();
+                state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+            }
+            catch (...) // Ok: wrap unknown exception for the client
+            {
+                state->io.onException();
+                state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
             }
         }
 

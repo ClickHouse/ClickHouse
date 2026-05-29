@@ -188,7 +188,7 @@ INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ... RETURNING (SELECT ...)
 
 The parenthesized subquery is required. The client receives a single result set: the result of the `RETURNING` subquery.
 
-The `INSERT` runs first using the normal insert pipeline. If the `INSERT` fails, the `RETURNING` subquery is not executed. If the `INSERT` succeeds, the subquery runs in the same session with the same settings. The subquery can reference any table and use the full `SELECT` grammar.
+The `INSERT` runs first using the normal insert pipeline. If the `INSERT` fails, the `RETURNING` subquery is not executed. If the `INSERT` succeeds, the subquery runs in the same session, can reference any table and use the full `SELECT` grammar. The subquery may carry its own `SETTINGS`, except for the query-global resource and execution limits listed under Limitations.
 
 Planning and executing the `RETURNING` subquery happens only after the `INSERT` pipeline has finished successfully, for all transports (including inlined `VALUES`/`FORMAT`). If planning the subquery fails (for example unknown column name), inserted rows remain — the insert is **not rolled back**.
 
@@ -197,6 +197,7 @@ This feature is **not atomic**. Concurrent writers can insert rows between the `
 Limitations:
 
 - Not compatible with `async_insert=1`.
+- Query-global resource and execution limits cannot be set in the `RETURNING` subquery's `SETTINGS`. `max_memory_usage`, `max_memory_usage_for_user`, `max_execution_time` and `timeout_overflow_mode` are rejected with `NOT_IMPLEMENTED`, because the `INSERT` and `RETURNING` phases share a single query whose memory tracker and time limit are established once from the outer settings. Result-shaping settings such as `max_result_rows`, `max_result_bytes` and `result_overflow_mode` are applied to the subquery result.
 - On `Replicated` tables, the `RETURNING` subquery may read from a replica that has not yet received the insert. Use `select_sequential_consistency=1` and `insert_quorum` when read-your-own-writes semantics are required.
 - If the `INSERT` succeeds but the `RETURNING` subquery fails, the inserted data is not rolled back.
 

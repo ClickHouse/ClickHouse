@@ -60,6 +60,13 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_memory_usage=1000000) VALUES (104, 'memlimit'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_memlimit FROM t_insert_returning WHERE id = 104;
 
+-- A different allow_experimental_analyzer in the RETURNING subquery must not be validated before the INSERT runs
+-- (the subquery is an independent query planned only after the INSERT persists)
+SELECT 'returning analyzer setting';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) SETTINGS allow_experimental_analyzer=1 RETURNING (SELECT 1 SETTINGS allow_experimental_analyzer=0) VALUES (105, 'analyzer');
+SELECT count() AS inserted_after_returning_analyzer FROM t_insert_returning WHERE id = 105;
+
 -- async_insert is rejected
 SELECT 'async insert rejection';
 SET async_insert = 1;

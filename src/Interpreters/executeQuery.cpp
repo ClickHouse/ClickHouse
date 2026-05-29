@@ -1024,10 +1024,18 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
             }
         }
 
+        /// The RETURNING subquery of an `INSERT ... RETURNING` is planned only after the INSERT completes, so its
+        /// settings (including `allow_experimental_analyzer`) must not be validated here — doing so would throw
+        /// before the INSERT runs and leave no inserted rows, breaking the "RETURNING failures happen after a
+        /// successful INSERT" ordering. It is validated later, on the delayed RETURNING planning path.
+        const auto * insert = node->as<ASTInsertQuery>();
         for (auto child : node->children)
         {
-            if (child)
-                nodes_to_process.push_back(std::move(child));
+            if (!child)
+                continue;
+            if (insert && child.get() == insert->returning_select.get())
+                continue;
+            nodes_to_process.push_back(std::move(child));
         }
     }
 }
