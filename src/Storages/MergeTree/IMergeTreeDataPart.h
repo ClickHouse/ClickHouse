@@ -3,6 +3,7 @@
 #include <atomic>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
+#include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/WriteSettings.h>
 #include <Storages/ColumnSize.h>
