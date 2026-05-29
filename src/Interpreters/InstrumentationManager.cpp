@@ -24,7 +24,9 @@
 #include <llvm/XRay/InstrumentationMap.h>
 
 #include <chrono>
+#include <cmath>
 #include <filesystem>
+#include <limits>
 #include <thread>
 #include <random>
 #include <ranges>
@@ -48,6 +50,55 @@ static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
 
 static auto logger = getLogger("InstrumentationManager");
+
+static Float64 getSleepArgumentValue(const InstrumentationManager::InstrumentedArgument & arg)
+{
+    if (std::holds_alternative<Int64>(arg))
+        return static_cast<Float64>(std::get<Int64>(arg));
+    if (std::holds_alternative<Float64>(arg))
+        return std::get<Float64>(arg);
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric argument (Int64 or Float64) for sleep, but got something else");
+}
+
+static Int64 getSleepDurationMilliseconds(Float64 seconds)
+{
+    if (!std::isfinite(seconds))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be finite");
+
+    if (seconds < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+
+    const auto milliseconds = static_cast<long double>(seconds) * 1000.0L;
+    if (milliseconds > static_cast<long double>(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration is too large to represent in milliseconds");
+
+    return static_cast<Int64>(milliseconds);
+}
+
+static Float64 validateSleepArgumentValue(const InstrumentationManager::InstrumentedArgument & arg)
+{
+    auto value = getSleepArgumentValue(arg);
+    getSleepDurationMilliseconds(value);
+
+    return value;
+}
+
+static void validateSleepArguments(const std::vector<InstrumentationManager::InstrumentedArgument> & args)
+{
+    if (args.empty() || args.size() > 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected one or two arguments for sleep instrumentation, but got {}", args.size());
+
+    auto min = validateSleepArgumentValue(args[0]);
+
+    if (args.size() == 2)
+    {
+        auto max = validateSleepArgumentValue(args[1]);
+
+        if (min > max)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep minimum duration must be less than or equal to maximum duration");
+    }
+}
 
 namespace Instrumentation
 {
@@ -78,26 +129,26 @@ String entryTypeToString(EntryType entry_type)
 String InstrumentationManager::InstrumentedPointInfo::toString() const
 {
     String entry_type_str = entryTypeToString(entry_type);
-    String parameters_str;
+    String arguments_str;
 
-    parameters_str = ", parameters [";
-    for (size_t i = 0; i < parameters.size(); ++i)
+    arguments_str = ", arguments [";
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
-        const auto & param = parameters[i];
-        if (std::holds_alternative<String>(param))
-            parameters_str += fmt::format("{}", std::get<String>(param));
-        else if (std::holds_alternative<Int64>(param))
-            parameters_str += fmt::format("{}", std::get<Int64>(param));
-        else if (std::holds_alternative<Float64>(param))
-            parameters_str += fmt::format("{}", std::get<Float64>(param));
+        const auto & arg = arguments[i];
+        if (std::holds_alternative<String>(arg))
+            arguments_str += fmt::format("{}", std::get<String>(arg));
+        else if (std::holds_alternative<Int64>(arg))
+            arguments_str += fmt::format("{}", std::get<Int64>(arg));
+        else if (std::holds_alternative<Float64>(arg))
+            arguments_str += fmt::format("{}", std::get<Float64>(arg));
 
-        if (i < parameters.size() - 1)
-            parameters_str += ", ";
+        if (i < arguments.size() - 1)
+            arguments_str += ", ";
     }
-    parameters_str += "]";
+    arguments_str += "]";
 
     return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
-        id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
+        id, function_id, function_name, handler_name, entry_type_str, symbol, arguments_str);
 }
 
 InstrumentationManager::InstrumentationManager()
@@ -192,12 +243,15 @@ bool InstrumentationManager::shouldPatchFunction(String function_to_patch, Strin
     return false;
 }
 
-void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters)
+void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedArgument> & arguments)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 
     if (std::ranges::none_of(handler_name_to_function, [&](const auto & pair) { return pair.first == handler_name_lower; }))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
+
+    if (handler_name_lower == SLEEP_HANDLER)
+        validateSleepArguments(arguments);
 
     /// Lazy load the XRay instrumentation map only once we need to set up a handler
     ensureInitialization();
@@ -237,7 +291,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     {
         patchFunctionIfNeeded(function_id);
 
-        InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
+        InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, arguments};
         LOG_INFO(logger, "Adding instrumentation point for {}", info.toString());
         instrumented_points.emplace(std::move(info));
         instrumented_point_ids++;
@@ -440,37 +494,23 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
     static thread_local pcg64_fast random_generator{randomSeed()};
 
-    const auto & params = instrumented_point.parameters;
-    if (params.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
+    const auto & args = instrumented_point.arguments;
+    validateSleepArguments(args);
 
-    auto get_value = [](auto param)
+    Int64 duration_ms;
+
+    if (args.size() == 1)
     {
-        if (std::holds_alternative<Int64>(param))
-            return static_cast<Float64>(std::get<Int64>(param));
-        else if (std::holds_alternative<Float64>(param))
-            return std::get<Float64>(param);
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
-    };
-
-    Int64 duration_ms = -1;
-
-    if (params.size() == 1)
-    {
-        duration_ms = static_cast<Int64>(1000 * get_value(params[0]));
+        duration_ms = getSleepDurationMilliseconds(getSleepArgumentValue(args[0]));
     }
     else
     {
-        auto min = get_value(params[0]);
-        auto max = get_value(params[1]);
+        auto min = getSleepArgumentValue(args[0]);
+        auto max = getSleepArgumentValue(args[1]);
 
         std::uniform_real_distribution<> distrib(min, max);
-        duration_ms = static_cast<Int64>(1000 * distrib(random_generator));
+        duration_ms = getSleepDurationMilliseconds(distrib(random_generator));
     }
-
-    if (duration_ms < 0)
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
 
     LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {} ms", instrumented_point.function_name, instrumented_point.function_id, duration_ms);
     auto now = std::chrono::system_clock::now();
@@ -485,18 +525,18 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
 void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
-    const auto & params = instrumented_point.parameters;
-    if (params.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
+    const auto & args = instrumented_point.arguments;
+    if (args.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing arguments for log instrumentation");
 
-    if (params.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
+    if (args.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one argument for log instrumentation, but got {}", args.size());
 
-    const auto & param = params[0];
+    const auto & arg = args[0];
 
-    if (std::holds_alternative<String>(param))
+    if (std::holds_alternative<String>(arg))
     {
-        String logger_info = std::get<String>(param);
+        String logger_info = std::get<String>(arg);
         StackTrace stack_trace;
         String stack_trace_str = StackTrace::toString(stack_trace.getFramePointers().data(), stack_trace.getOffset(), stack_trace.getSize() - stack_trace.getOffset());
 
