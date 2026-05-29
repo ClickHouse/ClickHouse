@@ -764,6 +764,13 @@ public:
     std::optional<ColumnDefaultnessStats>
     getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const override;
 
+protected:
+    /// Active parts to consult when aggregating whole-table column statistics. The base
+    /// returns `getVisibleDataPartsVector`; `StorageReplicatedMergeTree` overrides this
+    /// to honor `select_sequential_consistency` the same way `totalRows` does.
+    virtual DataPartsVector getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const;
+public:
+
     size_t getAllPartsCount() const;
     size_t getActivePartsCount() const;
     size_t getOutdatedPartsCount() const;

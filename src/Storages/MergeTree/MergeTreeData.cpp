@@ -5900,7 +5900,7 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     }
 
     ColumnDefaultnessStats aggregate;
-    for (const auto & part : getVisibleDataPartsVector(query_context))
+    for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
     {
         const auto & infos = part->getSerializationInfos();
         auto it = infos.find(column_name);
@@ -5922,6 +5922,12 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         aggregate.num_defaults += info_data.num_defaults;
     }
     return aggregate;
+}
+
+MergeTreeData::DataPartsVector
+MergeTreeData::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
+{
+    return getVisibleDataPartsVector(query_context);
 }
 
 size_t MergeTreeData::getActivePartsCount() const
