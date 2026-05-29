@@ -133,6 +133,7 @@ extern const SettingsBool allow_experimental_geo_types_in_iceberg;
 extern const SettingsBool allow_iceberg_remove_orphan_files;
 extern const SettingsBool allow_experimental_expire_snapshots;
 extern const SettingsBool iceberg_delete_data_on_drop;
+extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 }
 
 namespace
@@ -533,14 +534,16 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     auto metadata_object = getMetadataJSONObject(
         metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
 
-    insertRowToLogTable(
-        local_context,
-        dumpMetadataObjectToString(metadata_object),
-        DB::IcebergMetadataLogLevel::Metadata,
-        persistent_components.path_resolver.getTableRoot(),
-        Iceberg::IcebergPathFromMetadata::deserialize(metadata_path),
-        std::nullopt,
-        std::nullopt);
+    const IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
+    if (log_level >= DB::IcebergMetadataLogLevel::Metadata)
+        insertRowToLogTable(
+            local_context,
+            dumpMetadataObjectToString(metadata_object),
+            DB::IcebergMetadataLogLevel::Metadata,
+            persistent_components.path_resolver.getTableRoot(),
+            Iceberg::IcebergPathFromMetadata::deserialize(metadata_path),
+            std::nullopt,
+            std::nullopt);
 
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
