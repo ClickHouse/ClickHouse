@@ -8,6 +8,9 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/StreamLocalLimits.h>
@@ -19,11 +22,49 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+    /// The INSERT and RETURNING phases share one query and one `ProcessListElement`. Query-global memory limits
+    /// are applied once by `ProcessList::insert` from the outer INSERT-phase settings and cannot be re-applied for
+    /// the RETURNING phase on the shared query memory tracker. Rather than silently ignore such settings when they
+    /// appear in the RETURNING subquery's `SETTINGS` clause, reject them explicitly. Settings that can be enforced on
+    /// the result pipeline (`max_result_rows`, `max_result_bytes`, `max_execution_time`, ...) remain supported.
+    void rejectUnsupportedReturningSettings(const ASTPtr & returning_select)
+    {
+        const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();
+        if (!select_with_union || !select_with_union->list_of_selects)
+            return;
+
+        const auto & selects = select_with_union->list_of_selects->children;
+        if (selects.empty())
+            return;
+
+        /// Only the last `SELECT`'s `SETTINGS` are applied to the subquery context (see `applySettingsFromQuery`).
+        const auto * last_select = selects.back()->as<ASTSelectQuery>();
+        if (!last_select || !last_select->settings())
+            return;
+
+        for (const auto & change : last_select->settings()->as<ASTSetQuery &>().changes)
+        {
+            if (change.name == "max_memory_usage" || change.name == "max_memory_usage_for_user")
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
+                    change.name);
+        }
+    }
 }
 
 ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, ContextPtr context)
 {
     auto returning_context = Context::createCopy(context);
+    /// `Context::createCopy` gives the subquery an independent `QueryAccessInfo`, so the tables and columns read by
+    /// the RETURNING subquery would be missing from `system.query_log`. Share the outer query's access info (the same
+    /// approach as the materialized-view path in `InsertDependenciesBuilder`) so the accesses are recorded.
+    returning_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
     InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
     return returning_context;
 }
@@ -40,6 +81,7 @@ namespace Setting
 
 QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
 {
+    rejectUnsupportedReturningSettings(returning_select);
     auto returning_context = makeReturningSelectContext(returning_select, context);
     const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
     if (returning_context->getSettingsRef()[Setting::allow_experimental_analyzer])

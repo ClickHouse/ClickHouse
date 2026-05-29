@@ -19,4 +19,6 @@ returning settings after insert
 1
 returning max_execution_time
 1
+returning memory limit rejection
+1
 async insert rejection
