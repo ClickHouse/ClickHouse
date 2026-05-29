@@ -246,12 +246,15 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         return false;
     });
 
+    /// `id` is optional in a GeoJSON feature, but `geometry` and `properties` are required members
+    /// (`geometry` may be an explicit JSON `null`). Default only the optional `id`; reject a feature
+    /// that is missing a requested required member instead of silently inserting a default value.
     if (!has_id && id_col_idx.has_value())
         columns[*id_col_idx]->insertDefault();
     if (!has_geometry && geometry_col_idx.has_value())
-        columns[*geometry_col_idx]->insertDefault();
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: feature is missing the required 'geometry' member");
     if (!has_properties && properties_col_idx.has_value())
-        columns[*properties_col_idx]->insertDefault();
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: feature is missing the required 'properties' member");
 
     ext.read_columns.assign(columns.size(), 1);
     return true;
@@ -280,12 +283,16 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
         return false;
     });
 
-    auto it = geometry_discriminants.find(geo_type);
-    if (it == geometry_discriminants.end())
+    /// GeoJSON geometry types that ClickHouse's Geometry type can represent. Note that `Ring` is part of the
+    /// Geometry Variant but is NOT a valid GeoJSON geometry type, so it is intentionally excluded here.
+    static const std::unordered_set<String> supported_geojson_types
+        = {"Point", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+    /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's Geometry type.
+    static const std::unordered_set<String> unrepresentable_geojson_types = {"GeometryCollection", "MultiPoint"};
+
+    if (!supported_geojson_types.contains(geo_type))
     {
-        /// Valid GeoJSON geometry types that cannot be represented in ClickHouse's Geometry type.
-        static const std::unordered_set<String> known_unsupported_types = {"GeometryCollection", "MultiPoint"};
-        if (known_unsupported_types.contains(geo_type))
+        if (unrepresentable_geojson_types.contains(geo_type))
         {
             /// Throw by default so that data is not silently lost; the user can opt into inserting NULL instead.
             if (format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
@@ -301,9 +308,9 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
                 geo_type);
         }
 
-        /// An unknown or missing geometry type is malformed input and is always rejected.
+        /// An unknown, missing, or non-GeoJSON geometry type (such as `Ring`) is malformed input.
         throw Exception(
-            ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or missing geometry type '{}'", geo_type);
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: unknown or invalid geometry type '{}'", geo_type);
     }
 
     /// A supported geometry type without a 'coordinates' member is malformed (an explicit JSON `null`
@@ -313,7 +320,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
             ErrorCodes::INCORRECT_DATA,
             "GeoJSON: geometry of type '{}' is missing the 'coordinates' member", geo_type);
 
-    ColumnVariant::Discriminator global_discr = it->second;
+    ColumnVariant::Discriminator global_discr = geometry_discriminants.at(geo_type);
     auto & sub_col = variant_col.getVariantByGlobalDiscriminator(global_discr);
     auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
     size_t offset = sub_col.size();

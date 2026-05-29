@@ -25,7 +25,7 @@ Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produce
 | `geometry`   | `Geometry`        | The feature's geometry, stored as a `Geometry` variant type.                                |
 | `properties` | `JSON`            | The feature's `properties` object, stored as a semi-structured `JSON` column.              |
 
-The `Geometry` type is a `Variant` that can hold `Point`, `LineString`, `Polygon`, `MultiPolygon`, `MultiLineString`, or `Ring`. The `geometry` column is `NULL` when the feature's geometry is `null` or when the geometry type cannot be mapped to a supported variant (e.g. `GeometryCollection` — see [Handling GeometryCollection objects](#geometry-collection) below).
+The `Geometry` type is a `Variant` that can hold `Point`, `LineString`, `Polygon`, `MultiPolygon`, `MultiLineString`, or `Ring`. The `geometry` column is `NULL` only when the feature's geometry is an explicit JSON `null`. A valid GeoJSON geometry type that cannot be mapped to a supported variant (e.g. `GeometryCollection` or `MultiPoint`) throws by default; this can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below.
 
 Extra keys in the `FeatureCollection` object (such as `name` or `crs`) and extra keys inside each `Feature` object (such as `type` or `bbox`) are ignored.
 

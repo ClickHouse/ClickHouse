@@ -172,3 +172,30 @@ FROM format('GeoJSON', '{
 SELECT count()
 FROM format('GeoJSON', '{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":{}} {"type":"Feature","geometry":null,"properties":{}}]}'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 
+-- 'Ring' is part of ClickHouse's Geometry type but is not a valid GeoJSON geometry type, so it is rejected.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Ring", "coordinates": [[0, 0], [1, 1]]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- 'geometry' is a required member of a feature: a feature without it is rejected.
+SELECT id
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- 'properties' is a required member of a feature: a feature without it is rejected.
+SELECT id
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "geometry": null}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
