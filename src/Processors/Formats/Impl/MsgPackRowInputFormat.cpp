@@ -1,6 +1,5 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
-#include <Core/UUID.h>
 
 #if USE_MSGPACK
 
@@ -444,7 +443,7 @@ bool MsgPackVisitor::end_array_item() // NOLINT
         info_stack.pop();
     else
     {
-        chassert(info_stack.top().array_size.has_value());
+        assert(info_stack.top().array_size.has_value());
         auto & current_array_size = *info_stack.top().array_size;
         --current_array_size;
         if (current_array_size == 0)

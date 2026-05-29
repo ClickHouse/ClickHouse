@@ -104,7 +104,7 @@ public:
     /// Introspection functions for 4lw commands
     virtual int64_t getLastProcessedZxid() const = 0;
 
-    virtual KeeperStorageStats getStorageStats() const = 0;
+    virtual const KeeperStorageStats & getStorageStats() const = 0;
 
     virtual uint64_t getNodesCount() const = 0;
     virtual uint64_t getTotalWatchesCount() const = 0;
@@ -246,7 +246,6 @@ public:
     // in a reasonable way.
     Storage & getStorageUnsafe()
     {
-        chassert(storage);
         return *storage;
     }
 
@@ -264,7 +263,7 @@ public:
     /// Introspection functions for 4lw commands
     int64_t getLastProcessedZxid() const override;
 
-    KeeperStorageStats getStorageStats() const override;
+    const KeeperStorageStats & getStorageStats() const override;
 
     uint64_t getNodesCount() const override;
     uint64_t getTotalWatchesCount() const override;

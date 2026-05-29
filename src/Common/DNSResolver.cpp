@@ -138,7 +138,7 @@ DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     /// - Poco::Net::IPAddress::tryParse() expect hex string for IPv6 (without brackets)
     if (host.starts_with('['))
     {
-        chassert(host.ends_with(']'));
+        assert(host.ends_with(']'));
         if (Poco::Net::IPAddress::tryParse(host.substr(1, host.size() - 2), ip))
             return DNSResolver::IPAddresses(1, ip);
     }

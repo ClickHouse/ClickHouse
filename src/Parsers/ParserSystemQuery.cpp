@@ -17,8 +17,6 @@
 
 #include <base/EnumReflection.h>
 
-#include <limits>
-
 
 namespace DB
 {
@@ -963,7 +961,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
             {
-                expected.add(pos, "handler name (LOG, SLEEP, or PROFILE)");
+                expected.add(pos, "handler name (LOG or PROFILE)");
                 return false;
             }
 
@@ -993,36 +991,23 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
 
-            ASTPtr arg_ast;
-            while (ParserLiteral{}.parse(pos, arg_ast, expected))
+            ASTPtr params_ast;
+            while (ParserLiteral{}.parse(pos, params_ast, expected))
             {
-                const auto & value = arg_ast->as<ASTLiteral &>().value;
+                const auto & value = params_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
-                    res->instrumentation_arguments.emplace_back(value.safeGet<String>());
+                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
                 else if (value.getType() == Field::Types::Int64)
-                    res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
                 else if (value.getType() == Field::Types::UInt64)
-                {
-                    UInt64 uint_value = value.safeGet<UInt64>();
-                    if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                    {
-                        expected.add(pos, "integer literal not exceeding Int64 maximum");
-                        return false;
-                    }
-                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
-                }
+                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
                 else if (value.getType() == Field::Types::Float64)
-                    res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
-                else
-                {
-                    expected.add(pos, "string, integer, or float literal argument");
-                    return false;
-                }
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
             }
 
-            if (res->instrumentation_arguments.empty())
+            if (res->instrumentation_parameters.empty())
             {
-                expected.add(pos, "at least one argument (string, integer, or float literal)");
+                expected.add(pos, "at least one parameter (string literal)");
                 return false;
             }
 

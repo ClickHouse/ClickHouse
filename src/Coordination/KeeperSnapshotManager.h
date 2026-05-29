@@ -214,11 +214,6 @@ public:
 
     SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
 
-    SnapshotMetadataPtr deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
-
-    /// Deserialize pinned snapshot from disk into compressed nuraft buffer.
-    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const;
-
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
 

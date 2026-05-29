@@ -25,7 +25,6 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
-#include <Common/Concepts.h>
 #include <Common/StringUtils.h>
 #include <Common/exp10_i32.h>
 
@@ -174,8 +173,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <StdVector V>
-void readVectorBinary(V & v, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1854,8 +1853,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <StdVector V>
-void readBinary(V & x, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1868,8 +1867,8 @@ void readBinary(V & x, ReadBuffer & buf)
         readBinary(x[i], buf);
 }
 
-template <StdVector V>
-void readQuoted(V & x, ReadBuffer & buf)
+template <typename T>
+void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1885,14 +1884,14 @@ void readQuoted(V & x, ReadBuffer & buf)
 
         first = false;
 
-        x.emplace_back();
+        x.push_back(T());
         readQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <StdVector V>
-void readDoubleQuoted(V & x, ReadBuffer & buf)
+template <typename T>
+void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1908,14 +1907,14 @@ void readDoubleQuoted(V & x, ReadBuffer & buf)
 
         first = false;
 
-        x.emplace_back();
+        x.push_back(T());
         readDoubleQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <StdVector V>
-void readText(V & x, ReadBuffer & buf)
+template <typename T>
+void readText(std::vector<T> & x, ReadBuffer & buf)
 {
     readQuoted(x, buf);
 }
