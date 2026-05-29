@@ -1,0 +1,74 @@
+-- cache disabled: x re-resolved per IN (distinct plus node ids) --
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+    a UInt8
+    b UInt8
+  PROJECTION
+    LIST id: 1, nodes: 3
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+            CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 7, function_name: in, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 8, nodes: 2
+            FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 5
+                  CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 13, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_3), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+      FUNCTION id: 14, function_name: in, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 15, nodes: 2
+            FUNCTION id: 16, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 17, nodes: 2
+                  COLUMN id: 18, column_name: number, result_type: UInt64, source_id: 5
+                  CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 20, constant_value: Tuple_(UInt64_4, UInt64_5, UInt64_6), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 21, nodes: 1
+          CONSTANT id: 22, constant_value: UInt64_5, constant_value_type: UInt8
+  SETTINGS enable_identifier_resolve_cache=0
+-- cache enabled: x resolved once, the same plus node is reused across both INs --
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt64
+    a UInt8
+    b UInt8
+  PROJECTION
+    LIST id: 1, nodes: 3
+      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+            CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 7, function_name: in, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 8, nodes: 2
+            FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 5
+                  CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 13, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_3), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+      FUNCTION id: 14, function_name: in, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 15, nodes: 2
+            FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 5
+                  CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
+            CONSTANT id: 16, constant_value: Tuple_(UInt64_4, UInt64_5, UInt64_6), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 17, nodes: 1
+          CONSTANT id: 18, constant_value: UInt64_5, constant_value_type: UInt8
+  SETTINGS enable_identifier_resolve_cache=1

@@ -2,6 +2,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -28,6 +29,11 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
+
+        if (parent_scope->identifier_resolve_cache_force_disabled)
+            disableIdentifierCachePermanently();
+        else if (!parent_scope->identifier_resolve_cache_enabled)
+            disableIdentifierCache();
     }
     else
         projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
@@ -119,6 +125,100 @@ void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
 void IdentifierResolveScope::popExpressionNode()
 {
     expressions_in_resolve_process_stack.pop();
+}
+
+namespace
+{
+
+/// Whether `node`'s subtree (including `node` itself) contains any node from `nodes`,
+/// using the set's hash-ignore-types comparison.
+bool subtreeContainsAnyNode(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashIgnoreTypesSet & nodes)
+{
+    if (nodes.contains(node))
+        return true;
+    for (const auto & child : node->getChildren())
+        if (child && subtreeContainsAnyNode(child, nodes))
+            return true;
+    return false;
+}
+
+}
+
+bool IdentifierResolveScope::canCacheIdentifier(
+    const IdentifierLookup & lookup,
+    const IdentifierResolveContext & resolve_context) const
+{
+    if (!identifier_resolve_cache_enabled)
+        return false;
+
+    /// Cannot use cache when the resolve context differs from the default — a cached
+    /// result from a permissive lookup must not be reused in a stricter context that
+    /// disables CTE, database catalog, niladic function, or other resolution paths.
+    if (!resolve_context.isDefaultContext())
+        return false;
+
+    /// Cannot use cache when there is an expression being resolved that has the
+    /// same alias as the identifier we're looking up. Caching in this situation
+    /// would cause transitive aliases to resolve incorrectly.
+    /// Example: SELECT (id + 2) AS id, id AS b FROM test_table;
+    /// Here, `id` inside `(id + 2)` resolves to test_table.id, but `id` in `id AS b`
+    /// should resolve to the alias `(id + 2)`. Caching the first result would break the second.
+    /// Match on the first identifier component, mirroring alias binding in
+    /// tryResolveIdentifierFromAliases: a compound lookup like `value.a` binds to an
+    /// in-flight alias named `value`, so it must be excluded from the cache as well.
+    if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
+        return false;
+
+    return true;
+}
+
+std::optional<IdentifierResolveResult> IdentifierResolveScope::findCachedIdentifier(
+    const IdentifierLookup & lookup,
+    const IdentifierResolveContext & resolve_context) const
+{
+    if (!canCacheIdentifier(lookup, resolve_context))
+        return {};
+
+    auto it = identifier_resolve_cache.find(lookup);
+    if (it == identifier_resolve_cache.end())
+        return {};
+
+    return it->second;
+}
+
+void IdentifierResolveScope::tryCacheIdentifier(
+    const IdentifierLookup & lookup,
+    const IdentifierResolveResult & result,
+    const IdentifierResolveContext & resolve_context)
+{
+    if (!canCacheIdentifier(lookup, resolve_context))
+        return;
+
+    /// Only cache node types that are expensive to clone (have children).
+    /// ColumnNode, ConstantNode, IdentifierNode are cheap O(1) clones — not worth
+    /// the COW complexity of sharing them.
+    auto node_type = result.resolved_identifier->getNodeType();
+    switch (node_type)
+    {
+        case QueryTreeNodeType::FUNCTION:
+        case QueryTreeNodeType::QUERY:
+        case QueryTreeNodeType::UNION:
+        case QueryTreeNodeType::LAMBDA:
+        case QueryTreeNodeType::LIST:
+            break;
+        default:
+            return;
+    }
+
+    /// Don't cache a result whose subtree contains a `nullable_group_by_keys` node — its
+    /// type depends on context: non-nullable inside aggregate functions, nullable outside
+    /// (see convertToNullable calls after resolution). This must cover not just the key
+    /// itself but any function alias over it (e.g. `k + 1 AS a`), whose resolved subtree
+    /// references the key and would otherwise be shared across contexts with the wrong type.
+    if (!nullable_group_by_keys.empty() && subtreeContainsAnyNode(result.resolved_identifier, nullable_group_by_keys))
+        return;
+
+    identifier_resolve_cache[lookup] = result;
 }
 
 namespace
