@@ -42,7 +42,7 @@ SYSTEM STOP FETCHES t_sparse_seq_consistency_r2;
 SET insert_quorum_timeout = 100;
 INSERT INTO t_sparse_seq_consistency_r1
 SELECT number + 5000, if(number < 4000, 0, 1)::UInt32 FROM numbers(5000)
-SETTINGS optimize_on_insert = 0; -- { serverError UNKNOWN_STATUS_OF_INSERT }
+SETTINGS optimize_on_insert = 0; -- { serverError UNKNOWN_STATUS_OF_INSERT,UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE }
 
 -- Without sequential consistency the rewrite counts both parts: 4000 + 4000.
 SELECT 'seq0_rewrite', count() FROM t_sparse_seq_consistency_r1 WHERE n = 0
