@@ -175,6 +175,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     /// Start queue processing
     storage.background_operations_assignee.start();
+    storage.background_streaming_assignee.start();
     storage.queue_updating_task->activateAndSchedule();
     storage.mutations_updating_task->activateAndSchedule();
     storage.mutations_finalizing_task->activateAndSchedule();
@@ -225,7 +226,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr()->withMetadataVersion(replica_metadata_version));
+            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr(storage.getContext(), false)->withMetadataVersion(replica_metadata_version));
         }
         else
         {

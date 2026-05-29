@@ -21,6 +21,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -138,7 +139,7 @@ constexpr std::string_view monthsShort[] = {"Jan", "Feb", "Mar", "Apr", "May", "
   * PS. We can make this function to return FixedString. Currently it returns String.
   */
 template <typename Name, SupportInteger support_integer, FormatSyntax format_syntax>
-class FunctionFormatDateTimeImpl : public IFunction
+class FunctionFormatDateTimeImpl final : public IFunction
 {
 private:
     /// Time is either UInt32 for DateTime or UInt16 for Date.
@@ -863,7 +864,7 @@ private:
     static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
+        static constexpr std::array variable_width_formatter_M_is_month_name = {'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
         static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
@@ -874,6 +875,12 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
+
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
+
                     if (mysql_M_is_month_name)
                     {
                         if (std::any_of(
@@ -895,13 +902,7 @@ private:
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
-                    else
-                    {
-                        if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
+
                     i += 1;
                     continue;
                 default:
@@ -1087,7 +1088,7 @@ public:
             : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
-        std::vector<Instruction<T>> instructions;
+        VectorWithMemoryTracking<Instruction<T>> instructions;
         String out_template;
         size_t out_template_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
@@ -1178,7 +1179,7 @@ public:
     }
 
     template <typename T>
-    size_t parseFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         static_assert(format_syntax == FormatSyntax::MySQL || format_syntax == FormatSyntax::Joda);
 
@@ -1189,7 +1190,7 @@ public:
     }
 
     template <typename T>
-    size_t parseMySQLFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseMySQLFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         auto add_extra_shift = [&](size_t amount)
         {
@@ -1723,7 +1724,7 @@ public:
     }
 
     template <typename T>
-    size_t parseJodaFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32, bool, String &) const
+    size_t parseJodaFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32, bool, String &) const
     {
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
