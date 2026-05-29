@@ -495,11 +495,14 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
     }
     Float64 rows = static_cast<Float64>(stats->getNumRows());
     Float64 selectivity = result / rows;
-    /// Clamp `true_sel` to [0, 1]. Selectivity can exceed 1 when summing estimates across
-    /// multiple ranges (e.g. IN with many values) that together exceed total rows.
-    /// `null_sel` is the share of NULL rows (range predicates evaluate to NULL on them).
-    return {std::max(0.0, std::min(1.0, selectivity)),
-            static_cast<Float64>(stats->getNullCount()) / rows};
+    /// Range predicates evaluate to NULL on NULL rows, so `true_sel` cannot exceed the
+    /// non-NULL share of the column. Without this bound, summing estimates across many
+    /// disjoint ranges (e.g. IN with many values) on a column with a large NULL share can
+    /// produce `true_sel = 1, null_sel = 0.9`, leaving `false_sel = 1 - true_sel - null_sel`
+    /// negative — which then breaks `applyAnd` / `applyOr` / `applyNot`.
+    Float64 null_sel = static_cast<Float64>(stats->getNullCount()) / rows;
+    Float64 non_null_share = std::max(0.0, 1.0 - null_sel);
+    return {std::max(0.0, std::min(non_null_share, selectivity)), null_sel};
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
@@ -769,10 +772,12 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         }
         else if (function == FUNCTION_AND)
         {
-            /// `x IS NULL AND <other predicate on x>` is unsatisfiable: any non-IS-NULL
-            /// predicate on the same column has `true_sel = 0` on NULL rows, so the AND is 0.
-            selectivity = Selectivity(0, cur_selectivity);
-            return;
+            /// `x IS NULL AND <other predicate on x>`: any non-IS-NULL predicate on the same
+            /// column has `true_sel = 0` on NULL rows, so the AND's `true_sel` is 0. The NULL
+            /// share is `P(x IS NULL)` — IS NULL is TRUE there but the range predicate is NULL,
+            /// so the AND evaluates to NULL on those rows. Store this per-column result so the
+            /// final cross-column AND keeps folding in predicates on other columns.
+            estimate_results[column_name] = Selectivity(0, cur_selectivity);
         }
         else
         {

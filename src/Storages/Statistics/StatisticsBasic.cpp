@@ -123,14 +123,17 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
 void StatisticsBasic::build(const ColumnPtr & column)
 {
     const size_t column_size = column->size();
+    const UInt64 nulls_in_block = tracks_null ? countNullsInColumn(column) : 0;
 
     if (tracks_null)
-        null_count += countNullsInColumn(column);
+        null_count += nulls_in_block;
 
-    if (tracks_numeric)
+    /// Skip the min/max update for blocks with no non-NULL rows. `ColumnNullable::getExtremes`
+    /// returns the `POSITIVE_INFINITY/POSITIVE_INFINITY` sentinel for an all-NULL block, which
+    /// would otherwise be merged into the running bounds and poison the stored max for the
+    /// whole part as soon as the sentinel meets a real bound from another block.
+    if (tracks_numeric && nulls_in_block < column_size)
     {
-        /// `IColumn::getExtremes` ignores NULLs on a `ColumnNullable`, and Sparse is handled via
-        /// the conversion in `convertToFullColumnIfSparse` inside `getExtremes`.
         Field min_field;
         Field max_field;
         column->getExtremes(min_field, max_field, 0, column_size);
