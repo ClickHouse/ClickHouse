@@ -733,6 +733,13 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         : columns_descriptions.original;
 }
 
+String IMergeTreeDataPart::getNameWithParent() const
+{
+    if (!isProjectionPart())
+        return name;
+    return fmt::format("{}:{}", parent_part_name, name);
+}
+
 String IMergeTreeDataPart::getProjectionName() const
 {
     if (!parent_part)

@@ -113,6 +113,7 @@ analyzeSparseColumnGranules(
     const size_t cache_marks_count = part->index_granularity->getMarksCount();
     const bool has_final_mark = part->index_granularity->hasFinalMark();
     const UUID table_uuid = storage.getStorageID().uuid;
+    const String cache_part_name = part->getNameWithParent();
 
     /// Setting is per-query, so it must come from `query_context`, not from the storage's
     /// startup context.
@@ -123,8 +124,8 @@ analyzeSparseColumnGranules(
     {
         const UInt64 hash_defaults = syntheticConditionHash(CACHE_DOMAIN_DEFAULTS, column_name);
         const UInt64 hash_non_defaults = syntheticConditionHash(CACHE_DOMAIN_NON_DEFAULTS, column_name);
-        auto cached_defaults = cache->read(table_uuid, part->name, hash_defaults);
-        auto cached_non_defaults = cache->read(table_uuid, part->name, hash_non_defaults);
+        auto cached_defaults = cache->read(table_uuid, cache_part_name, hash_defaults);
+        auto cached_non_defaults = cache->read(table_uuid, cache_part_name, hash_non_defaults);
         if (cached_defaults && cached_non_defaults
             && cached_defaults->size() >= cache_marks_count
             && cached_non_defaults->size() >= cache_marks_count)
@@ -333,7 +334,7 @@ analyzeSparseColumnGranules(
             if (!results[j].offsets)
                 continue;
             offsets_share->insert(
-                part->name,
+                cache_part_name,
                 column_name,
                 chunks[j],
                 part->index_granularity->getMarkStartingRow(chunks[j].begin),
@@ -360,11 +361,11 @@ analyzeSparseColumnGranules(
     /// so any predicate of the matching class on the same column will hit this.
     if (cache && table_uuid != UUIDHelpers::Nil)
     {
-        writeBitmapToCache(*cache, table_uuid, part->name,
+        writeBitmapToCache(*cache, table_uuid, cache_part_name,
             syntheticConditionHash(CACHE_DOMAIN_DEFAULTS, column_name),
             CACHE_DOMAIN_DEFAULTS,
             analysis.granule_has_only_defaults, cache_marks_count, has_final_mark);
-        writeBitmapToCache(*cache, table_uuid, part->name,
+        writeBitmapToCache(*cache, table_uuid, cache_part_name,
             syntheticConditionHash(CACHE_DOMAIN_NON_DEFAULTS, column_name),
             CACHE_DOMAIN_NON_DEFAULTS,
             analysis.granule_has_only_non_defaults, cache_marks_count, has_final_mark);

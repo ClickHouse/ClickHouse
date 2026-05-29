@@ -539,7 +539,7 @@ void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
     {
         cached_share_bucket.column_name_key = column_name_in_storage;
         cached_share_bucket.bucket = sparse_offsets_share->findBucket(
-            data_part_info_for_read->getPartName(), column_name_in_storage);
+            data_part_info_for_read->getNameWithParent(), column_name_in_storage);
         cached_share_bucket.initialized = true;
     }
 

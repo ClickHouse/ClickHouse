@@ -499,6 +499,12 @@ public:
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
     String getParentPartName() const { return parent_part_name; }
 
+    /// `parent:projection` identity that uniquely keys this part across all parents.
+    /// For regular parts it equals `name`. Use this when keying caches or shared state
+    /// by part (e.g. `QueryConditionCache`, `SparseOffsetsShare`) so two parent parts
+    /// don't collide on the same projection name.
+    String getNameWithParent() const;
+
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
     MergeTreeDataPartBuilder
