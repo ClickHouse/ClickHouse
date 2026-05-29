@@ -45,6 +45,13 @@ public:
     bool checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const;
     bool checkHTTPBasicCredentials(const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const;
 
+    /// Resolves an LDAP user name to "exists in directory" + role mappings, using the
+    /// service-bind credentials configured on the named LDAP server. Returns false (without
+    /// throwing) if the server is unknown, the service-bind credentials are not configured,
+    /// or the user does not exist. Used by `LDAPAccessStorage::findImpl(..., force_external_lookup=true)`.
+    bool findLDAPUser(const String & server, const String & user_name,
+        const LDAPClient::RoleSearchParamsList * role_search_params = nullptr, LDAPClient::SearchResultsList * role_search_results = nullptr) const;
+
     GSSAcceptorContext::Params getKerberosParams() const;
 
 private:

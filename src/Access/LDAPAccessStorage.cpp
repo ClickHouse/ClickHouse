@@ -407,6 +407,41 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
 }
 
 
+std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name, bool force_external_lookup) const
+{
+    std::lock_guard lock(mutex);
+
+    if (auto id = memory_storage.find(type, name))
+        return id;
+
+    /// Only USER lookups go to LDAP; other entity types (roles, profiles, ...) live
+    /// elsewhere and are not resolvable through the LDAP directory.
+    if (!force_external_lookup || type != AccessEntityType::USER)
+        return {};
+
+    LDAPClient::SearchResultsList external_roles;
+    const bool has_role_mapping = !role_search_params.empty();
+    if (!access_control.getExternalAuthenticators().findLDAPUser(
+            ldap_server_name,
+            name,
+            has_role_mapping ? &role_search_params : nullptr,
+            has_role_mapping ? &external_roles : nullptr))
+    {
+        return {};
+    }
+
+    /// Materialize the user with the resolved role mapping. The shape mirrors the
+    /// already-tested first-login path in `authenticateImpl`, so the entry is
+    /// indistinguishable from one created by a real LDAP login.
+    auto new_user = std::make_shared<User>();
+    new_user->setName(name);
+    new_user->authentication_methods.emplace_back(AuthenticationType::LDAP);
+    new_user->authentication_methods.back().setLDAPServerName(ldap_server_name);
+    assignRolesNoLock(*new_user, external_roles);
+    return memory_storage.insert(new_user);
+}
+
+
 std::vector<UUID> LDAPAccessStorage::findAllImpl(AccessEntityType type) const
 {
     std::lock_guard lock(mutex);

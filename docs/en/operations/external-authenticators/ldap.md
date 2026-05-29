@@ -80,6 +80,8 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 | `tls_ca_cert_dir` | — | Path to the directory containing CA certificates. |
 | `tls_cipher_suite` | — | Allowed cipher suite (in OpenSSL notation). |
 | `search_limit` | `256` | Maximum number of entries that can be returned by LDAP search queries performed by this server definition (for user DN detection and role mapping). |
+| `lookup_bind_dn` | — | Optional. DN of a service account used to resolve user names without the user's own password. Required by `EXECUTE AS` so an LDAP-backed user can be impersonated before they have authenticated against this server. Requires `user_dn_detection` to also be configured. Must be provided together with `lookup_password`. |
+| `lookup_password` | — | Password for `lookup_bind_dn`. |
 
 **`user_dn_detection` sub-parameters**
 

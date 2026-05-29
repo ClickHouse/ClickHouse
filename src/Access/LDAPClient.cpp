@@ -64,6 +64,8 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, bind_dn);
     ::updateHash(hash, user);
     ::updateHash(hash, password);
+    ::updateHash(hash, lookup_bind_dn);
+    ::updateHash(hash, lookup_password);
     ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
 
     if (user_dn_detection)
@@ -211,7 +213,7 @@ void LDAPClient::handleError(int result_code, String text)
     }
 }
 
-bool LDAPClient::openConnection()
+bool LDAPClient::openConnection(BindMode mode)
 {
     std::lock_guard lock(ldap_global_mutex);
 
@@ -356,16 +358,21 @@ bool LDAPClient::openConnection()
     final_bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", final_user_name} });
     final_user_dn = final_bind_dn; // The default value... may be updated right after a successful bind.
 
+    /// In `Service` mode the bind credentials come from the configured lookup account; the
+    /// user being looked up still drives the `{user_name}` placeholder in `user_dn_detection`.
+    const String & bind_dn_to_use = (mode == BindMode::Service) ? params.lookup_bind_dn : final_bind_dn;
+    const String & password_to_use = (mode == BindMode::Service) ? params.lookup_password : params.password;
+
     switch (params.sasl_mechanism)
     {
         case LDAPClient::Params::SASLMechanism::SIMPLE:
         {
             ::berval cred;
-            cred.bv_val = const_cast<char *>(params.password.c_str());
-            cred.bv_len = params.password.size();
+            cred.bv_val = const_cast<char *>(password_to_use.c_str());
+            cred.bv_len = password_to_use.size();
 
             {
-                const auto rc = ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+                const auto rc = ldap_sasl_bind_s(handle, bind_dn_to_use.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
 
                 // Handle invalid credentials gracefully.
                 if (rc == LDAP_INVALID_CREDENTIALS)
@@ -380,7 +387,13 @@ bool LDAPClient::openConnection()
                 const auto user_dn_search_results = search(*params.user_dn_detection);
 
                 if (user_dn_search_results.empty())
+                {
+                    /// In `Service` mode an empty search result is the canonical signal that
+                    /// the user does not exist in the directory; surface it as a non-error.
+                    if (mode == BindMode::Service)
+                        return false;
                     throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: empty search results");
+                }
 
                 if (user_dn_search_results.size() > 1)
                     throw Exception(ErrorCodes::LDAP_ERROR, "Failed to detect user DN: more than one entry in the search results");
@@ -597,6 +610,46 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
     return result;
 }
 
+bool LDAPSimpleAuthClient::find(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results)
+{
+    if (params.user.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP lookup of a user with empty name is not allowed");
+
+    if (!role_search_params != !role_search_results)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot return LDAP search results");
+
+    /// The service-bind path requires lookup credentials AND `user_dn_detection`. The DN
+    /// search is the only mechanism we have to confirm that the user actually exists in the
+    /// directory; without it any non-empty name would be silently accepted, which would let
+    /// an account holding `IMPERSONATE ON *` materialize arbitrary users.
+    if (params.lookup_bind_dn.empty() || !params.user_dn_detection)
+        return false;
+
+    SCOPE_EXIT({ closeConnection(); });
+
+    if (!openConnection(BindMode::Service))
+        return false;
+
+    if (role_search_params)
+    {
+        role_search_results->clear();
+        role_search_results->reserve(role_search_params->size());
+
+        try
+        {
+            for (const auto & params_instance : *role_search_params)
+                role_search_results->emplace_back(search(params_instance));
+        }
+        catch (...)
+        {
+            role_search_results->clear();
+            throw;
+        }
+    }
+
+    return true;
+}
+
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results)
 {
     if (params.user.empty())
@@ -645,7 +698,7 @@ void LDAPClient::handleError(const int, String)
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
 
-bool LDAPClient::openConnection()
+bool LDAPClient::openConnection(BindMode)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }
@@ -660,6 +713,11 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams &)
 }
 
 bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList *, SearchResultsList *)
+{
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
+}
+
+bool LDAPSimpleAuthClient::find(const RoleSearchParamsList *, SearchResultsList *)
 {
     throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without LDAP support");
 }

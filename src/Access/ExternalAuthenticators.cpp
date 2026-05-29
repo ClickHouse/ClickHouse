@@ -71,6 +71,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
     const bool has_user_dn_detection = config.has(ldap_server_config + ".user_dn_detection");
+    const bool has_lookup_bind_dn = config.has(ldap_server_config + ".lookup_bind_dn");
+    const bool has_lookup_password = config.has(ldap_server_config + ".lookup_password");
     const bool has_verification_cooldown = config.has(ldap_server_config + ".verification_cooldown");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
     const bool has_tls_minimum_protocol_version = config.has(ldap_server_config + ".tls_minimum_protocol_version");
@@ -114,6 +116,27 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         }
 
         parseLDAPSearchParams(*params.user_dn_detection, config, ldap_server_config + ".user_dn_detection");
+    }
+
+    /// Optional service-account credentials used by
+    /// `IAccessStorage::find(..., force_external_lookup=true)` to resolve a user name
+    /// without the user's own password. Both must be provided together, and the lookup
+    /// path also requires `user_dn_detection` to confirm the user exists.
+    if (has_lookup_bind_dn != has_lookup_password)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Both 'lookup_bind_dn' and 'lookup_password' must be specified together");
+
+    if (has_lookup_bind_dn)
+    {
+        params.lookup_bind_dn = config.getString(ldap_server_config + ".lookup_bind_dn");
+        params.lookup_password = config.getString(ldap_server_config + ".lookup_password");
+
+        if (params.lookup_bind_dn.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_bind_dn' entry");
+
+        if (!params.user_dn_detection)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'lookup_bind_dn' requires 'user_dn_detection' to be configured");
     }
 
     if (has_verification_cooldown)
@@ -520,6 +543,38 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
     }
 
     return result;
+}
+
+bool ExternalAuthenticators::findLDAPUser(const String & server, const String & user_name,
+    const LDAPClient::RoleSearchParamsList * role_search_params, LDAPClient::SearchResultsList * role_search_results) const
+{
+    if (user_name.empty())
+        return false;
+
+    std::optional<LDAPClient::Params> params;
+
+    {
+        std::lock_guard lock(mutex);
+
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit == ldap_client_params_blueprint.end())
+            return false;
+
+        /// The service-bind path is opt-in: a server without `lookup_bind_dn` configured does
+        /// not participate in forced lookups. Returning false here lets the caller fall through
+        /// to other access storages.
+        if (pit->second.lookup_bind_dn.empty())
+            return false;
+
+        params = pit->second;
+        params->user = user_name;
+        /// The user's own password is not used in service-bind mode; clear it so it cannot
+        /// accidentally bleed into the LDAP exchange via cached state.
+        params->password.clear();
+    }
+
+    LDAPSimpleAuthClient client(params.value());
+    return client.find(role_search_params, role_search_results);
 }
 
 bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const

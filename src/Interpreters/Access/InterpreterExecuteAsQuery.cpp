@@ -1,20 +1,14 @@
 #include <Interpreters/Access/InterpreterExecuteAsQuery.h>
 
 #include <Access/AccessControl.h>
-#include <Access/Credentials.h>
-#include <Access/ExternalAuthenticators.h>
-#include <Access/IAccessStorage.h>
 #include <Access/User.h>
 #include <Core/Settings.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/executeQuery.h>
-#include <Poco/Net/IPAddress.h>
-#include <Poco/Net/SocketAddress.h>
 
 
 namespace DB
@@ -23,55 +17,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNKNOWN_USER;
 }
 
 namespace
 {
     /// Resolves the target user name to a UUID.
-    /// Falls back to the LDAP user-directory materialization path when the user is not yet
-    /// known locally: external user directories (notably LDAP) populate their in-memory entry
-    /// only on first successful authentication, so after a server restart `EXECUTE AS` may
-    /// reference an LDAP-backed user that no session has logged in as yet. In that case we
-    /// drive the access storage's `authenticate` path with `AlwaysAllowCredentials`, which
-    /// short-circuits the LDAP bind and triggers the same user entry materialization that a
-    /// real login would perform.
+    /// `force_external_lookup=true` lets `LDAPAccessStorage` resolve names that are not yet
+    /// in its in-memory cache by querying the upstream directory with the configured
+    /// service-bind credentials. This covers users provisioned in LDAP who have not yet
+    /// authenticated against this server since the last restart.
     UUID resolveImpersonationTargetUser(const ContextPtr & context, const String & target_user_name)
     {
         const auto & access_control = context->getAccessControl();
-        try
-        {
-            return access_control.getID<User>(target_user_name);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::UNKNOWN_USER)
-                throw;
-
-            const auto & client_info = context->getClientInfo();
-            const auto address = client_info.current_address
-                ? client_info.current_address->host()
-                : Poco::Net::IPAddress{};
-
-            /// Call `IAccessStorage::authenticate` (the inherited overload that returns
-            /// `optional<AuthResult>`) to give every nested storage a chance to discover the
-            /// user without consuming the authentication quota or logging spurious auth
-            /// failures, which `AccessControl::authenticate` would do.
-            const auto & iaccess_storage = static_cast<const IAccessStorage &>(access_control);
-            auto auth_result = iaccess_storage.authenticate(
-                AlwaysAllowCredentials{target_user_name},
-                address,
-                access_control.getExternalAuthenticators(),
-                client_info,
-                /* throw_if_user_not_exists = */ false,
-                /* allow_no_password = */ true,
-                /* allow_plaintext_password = */ true);
-            if (auth_result)
-                return auth_result->user_id;
-
-            /// No storage could materialize the user: re-throw the original UNKNOWN_USER.
-            throw;
-        }
+        if (auto id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
+            return *id;
+        /// No storage can resolve the name. Use the standard `getID` path so the caller
+        /// sees the canonical `UNKNOWN_USER` error message.
+        return access_control.getID<User>(target_user_name);
     }
 
     /// Creates another query context to execute a query as another user.

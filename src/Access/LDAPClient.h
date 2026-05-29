@@ -113,6 +113,14 @@ public:
         String user;
         String password;
 
+        /// Optional service-account credentials used for lookups that do not have the user's
+        /// password available (e.g. resolving an LDAP-backed name on `EXECUTE AS` before the
+        /// user has authenticated). When `bind_dn` and `password` are empty the service-bind
+        /// path is disabled and `IAccessStorage::find(..., force_external_lookup=true)` is a
+        /// no-op for this server.
+        String lookup_bind_dn;
+        String lookup_password;
+
         std::optional<SearchParams> user_dn_detection;
 
         std::chrono::seconds verification_cooldown{0};
@@ -135,9 +143,19 @@ public:
     LDAPClient & operator= (const LDAPClient &) = delete;
     LDAPClient & operator= (LDAPClient &&) = delete;
 
+    enum class BindMode : uint8_t
+    {
+        /// Bind as the user being authenticated (the existing behavior).
+        User,
+        /// Bind with the service account (`params.lookup_bind_dn`, `params.lookup_password`)
+        /// and use `user_dn_detection` to confirm the target user exists. Used when looking
+        /// up a user without their password.
+        Service,
+    };
+
 protected:
     MAYBE_NORETURN void handleError(int result_code, String text = "");
-    MAYBE_NORETURN bool openConnection();
+    MAYBE_NORETURN bool openConnection(BindMode mode = BindMode::User);
     void closeConnection() noexcept;
     SearchResults search(const SearchParams & search_params);
 
@@ -156,6 +174,14 @@ class LDAPSimpleAuthClient
 public:
     using LDAPClient::LDAPClient;
     bool authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
+
+    /// Looks up a user in LDAP using the service-account credentials configured in
+    /// `params.lookup_bind_dn` / `params.lookup_password`. The user's existence is
+    /// verified via `params.user_dn_detection`, which must also be configured.
+    /// Returns true if the user was found. Optionally fills `role_search_results`.
+    /// Returns false (without throwing) if the user does not exist, if the service-bind
+    /// credentials are not configured, or if `user_dn_detection` is not configured.
+    bool find(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
 };
 
 }

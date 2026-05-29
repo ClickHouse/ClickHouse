@@ -71,6 +71,18 @@ std::optional<UUID> IAccessStorage::find(AccessEntityType type, const String & n
 }
 
 
+std::optional<UUID> IAccessStorage::find(AccessEntityType type, const String & name, bool force_external_lookup) const
+{
+    return findImpl(type, name, force_external_lookup);
+}
+
+
+std::optional<UUID> IAccessStorage::findImpl(AccessEntityType type, const String & name, bool /* force_external_lookup */) const
+{
+    return findImpl(type, name);
+}
+
+
 std::vector<UUID> IAccessStorage::find(AccessEntityType type, const Strings & names) const
 {
     std::vector<UUID> ids;
