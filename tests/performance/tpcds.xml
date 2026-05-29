@@ -6,14 +6,44 @@
 
 <substitutions>
     <substitution>
-        <name>table</name>
+        <name>database</name>
         <values>
             <value>tpcds</value>
         </values>
     </substitution>
+    <substitution>
+        <name>table</name>
+        <values>
+            <value>call_center</value>
+            <value>catalog_page</value>
+            <value>catalog_returns</value>
+            <value>catalog_sales</value>
+            <value>customer_address</value>
+            <value>customer_demographics</value>
+            <value>customer</value>
+            <value>date_dim</value>
+            <value>household_demographics</value>
+            <value>income_band</value>
+            <value>inventory</value>
+            <value>item</value>
+            <value>promotion</value>
+            <value>reason</value>
+            <value>ship_mode</value>
+            <value>store_returns</value>
+            <value>store_sales</value>
+            <value>store</value>
+            <value>time_dim</value>
+            <value>warehouse</value>
+            <value>web_page</value>
+            <value>web_returns</value>
+            <value>web_sales</value>
+            <value>web_site</value>
+        </values>
+    </substitution>
 </substitutions>
 
-<fill_query>USE {table}</fill_query>
+<fill_query>USE {database}</fill_query>
+<fill_query>ALTER TABLE {table} MATERIALIZE STATISTICS ALL SETTINGS mutations_sync=1</fill_query>
 
 <!-- Q1 -->  <query file="../benchmarks/tpc-ds/queries/query_01.sql"/>
 <!-- Q2 -->  <query file="../benchmarks/tpc-ds/queries/query_02.sql"/>
