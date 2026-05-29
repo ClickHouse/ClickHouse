@@ -10,6 +10,7 @@
 #include <base/cgroupsv2.h>
 #include <base/range.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <thread>
 #include <set>
@@ -194,4 +195,12 @@ unsigned getNumberOfCPUCoresToUse()
     /// Calculate once.
     static const unsigned cores = getNumberOfCPUCoresToUseImpl();
     return cores;
+}
+
+size_t resolveAutoPoolSize(size_t configured_size, size_t min_threads, double cores_ratio)
+{
+    if (configured_size > 0)
+        return configured_size;
+    size_t cores = getNumberOfCPUCoresToUse();
+    return std::max(min_threads, static_cast<size_t>(cores * cores_ratio));
 }
