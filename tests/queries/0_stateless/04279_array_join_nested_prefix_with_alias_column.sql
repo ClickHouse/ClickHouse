@@ -26,4 +26,14 @@ SETTINGS enable_analyzer = 1;
 SELECT loc.x, loc.y FROM t_array_join_alias_nested ARRAY JOIN loc
 SETTINGS enable_analyzer = 1;
 
+-- Identifier qualified by table alias must be stripped before retrying as Nested prefix.
+SELECT s.loc.x FROM t_array_join_alias_nested AS s ARRAY JOIN s.loc
+SETTINGS enable_analyzer = 1;
+
+-- Identifier qualified by table name.
+SELECT t_array_join_alias_nested.loc.x
+FROM t_array_join_alias_nested
+ARRAY JOIN t_array_join_alias_nested.loc
+SETTINGS enable_analyzer = 1;
+
 DROP TABLE t_array_join_alias_nested;
