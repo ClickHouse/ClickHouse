@@ -1993,7 +1993,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "background_processing_pool_task_sleep_seconds_when_no_work_multiplier",
         "background_processing_pool_task_sleep_seconds_when_no_work_random_part",
         "background_move_processing_pool_thread_sleep_seconds",
+        "background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do",
+        "background_move_processing_pool_thread_sleep_seconds_random_part",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_min",
         "background_move_processing_pool_task_sleep_seconds_when_no_work_max",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_random_part",
 
         /// Schema inference cache settings
         "schema_inference_cache_max_elements_for_s3",
