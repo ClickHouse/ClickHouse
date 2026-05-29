@@ -6,7 +6,7 @@
 -- under sequential consistency it returns the quorum-acknowledged count, not the
 -- local-only one.
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_sparse_seq_consistency_r1 SYNC;
 DROP TABLE IF EXISTS t_sparse_seq_consistency_r2 SYNC;

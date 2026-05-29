@@ -24,9 +24,14 @@ namespace
 /// comparing. The Nullable wrapper is kept on purpose: for a Nullable column the
 /// per column `num_defaults` counts NULLs, so a literal like `0` does not match the
 /// Nullable default (`NULL`) and the predicate falls through here.
+///
+/// `strict = true` rejects lossy conversions: a constant like `toDecimal32('0.001', 3)`
+/// truncates to `0.00` under a `Decimal(9, 2)` column and would otherwise compare
+/// equal to the default, classifying `d = 0.001` as `MatchesDefault` even though
+/// default rows do not satisfy the original predicate.
 bool constantEqualsTypeDefault(const Field & value, const DataTypePtr & type)
 {
-    Field converted = convertFieldToType(value, *type);
+    Field converted = convertFieldToType(value, *type, /*from_type_hint=*/nullptr, /*format_settings=*/{}, /*strict=*/true);
     if (converted.isNull())
         return false;
     return converted == type->getDefault();

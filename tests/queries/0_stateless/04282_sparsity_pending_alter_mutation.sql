@@ -5,7 +5,7 @@
 -- rewrite must opt out under any pending alter mutation: otherwise predicates whose
 -- default/non-default partition changes across the conversion return wrong counts.
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_alter_sparse_pending;
 

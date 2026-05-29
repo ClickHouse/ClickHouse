@@ -5,7 +5,7 @@
 -- whole-table `num_defaults` / `num_rows` stats. EXPLAIN PLAN should show
 -- `ReadFromMergeTree`, never `ReadFromPreparedSource`.
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET enable_streaming_queries = 1;
 
 DROP TABLE IF EXISTS t_sparsity_stream;

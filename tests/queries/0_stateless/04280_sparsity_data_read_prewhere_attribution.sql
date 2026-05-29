@@ -8,7 +8,7 @@
 -- report this through `canSkipAnyMark`, otherwise those marks get attributed
 -- to the PREWHERE predicate and poison the query condition cache.
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_sparsity_prewhere;
 
