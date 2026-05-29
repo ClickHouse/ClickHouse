@@ -70,7 +70,23 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
     session->authenticate("default", "", Poco::Net::SocketAddress{});
     ContextMutablePtr session_context = session->makeSessionContext();
     /// Re-apply settings from the command line arguments
-    session_context->applySettingsChanges(getContext()->getSettingsRef().changes());
+    auto startup_settings_changes = getContext()->getSettingsRef().changes();
+    session_context->applySettingsChanges(startup_settings_changes);
+
+    /// `RESET SESSION` rebuilds the session settings from the global context
+    /// plus the user profile. That drops settings applied only to the client
+    /// context at startup and never propagated to the global context — most
+    /// notably `implicit_table_at_top_level`, which backs `clickhouse-local`'s
+    /// implicit input table. `LocalConnection::sendQuery` runs every query from
+    /// this session context (it ignores the per-query `Settings *`), so without
+    /// re-applying the baseline the reset would silently change how the next
+    /// query is processed compared to a fresh start with the same command line.
+    /// Re-apply the startup settings after each reset to restore the
+    /// post-startup baseline, mirroring how a native client re-sends its
+    /// command-line settings after the server-side reset.
+    session_context->setSessionResetCallback(
+        this,
+        [startup_settings_changes](Context & ctx) { ctx.applySettingsChanges(startup_settings_changes); });
 }
 
 LocalConnection::LocalConnection(

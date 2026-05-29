@@ -55,6 +55,11 @@ This is a deliberate scoping decision for the first version of the statement: `R
 
 `RESET SESSION` is a **no-op over the PostgreSQL wire protocol** and leaves the session unchanged. The PostgreSQL emulation exposes the `pg_*` compatibility views (`pg_type`, `pg_namespace`, ...) as session-scoped temporary tables; a real reset would clear them without re-creating them, breaking later driver metadata queries. Rather than half-reset the session, ClickHouse skips the reset entirely on this interface. To reset a pooled connection reached over the PostgreSQL protocol, drop and reopen it.
 
+### Other known limitations {#known-limitations}
+
+- **Authentication-server `profile` settings.** Settings returned by an external authentication server are replayed on reset, but a `profile` entry in that response is applied as a plain setting rather than re-derived through the profile machinery. If your auth server returns a `profile`, prefer assigning the profile to the user in access control so it is restored as part of the normal profile re-derivation.
+- **Client-side server-provided settings.** When `apply_settings_from_server` is enabled, `clickhouse-client` keeps the settings it received in the initial handshake until it reconnects. If an administrator changes the user's profile after the connection was opened, `RESET SESSION` picks up the new profile on the server, but the client continues to format and parse with the handshake-time settings until the next reconnect.
+
 ## Comparison with PostgreSQL {#comparison-with-postgresql}
 
 The behaviour is closest to PostgreSQL's `DISCARD ALL`. PostgreSQL's `RESET ALL` only restores settings (`GUC` parameters) and does not drop temporary tables or other session state; `RESET SESSION` in ClickHouse is broader.
