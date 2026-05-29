@@ -103,3 +103,8 @@ SELECT h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.8133189999832
 
 SELECT h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+-- Argument 1 = MultiLineString -> ILLEGAL_TYPE_OF_ARGUMENT.
+SELECT h3PolygonToCellsWithContainment(
+    CAST([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]], 'MultiLineString'),
+    7,
+    0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
