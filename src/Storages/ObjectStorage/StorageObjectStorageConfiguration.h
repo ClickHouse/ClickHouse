@@ -236,6 +236,7 @@ public:
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
+        StoragePtr /*storage_ptr*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
