@@ -4726,7 +4726,9 @@ This setting is useful for ensuring that materialized views do not contain dupli
 - [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
     DECLARE(Bool, materialized_views_ignore_errors, false, R"(
-Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the table regardless of MVs
+If enabled, exceptions thrown while pushing data to a dependent materialized view (in its `SELECT` or in the inner table sink) are logged as a warning and the `INSERT` statement succeeds. If disabled (default), such an exception propagates and the `INSERT` statement fails.
+
+This setting controls only error reporting. It does not roll back a write to the source table, and it does not guarantee whether the original block has already been committed to the source table when an error occurs in a dependent view's pipeline. When disabled (default), the `INSERT` fails on a view error — retry it with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) for exactly-once delivery to the source table and all dependent views. When enabled, the `INSERT` reports success despite partial delivery to failing views and their downstream chains; use this only when source-table writes must not be blocked by view-side problems (for example, `system.*_log` tables). See the `CREATE VIEW` docs for full semantics.
 )", 0) \
     DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
 Ignore MVs with dropped target table during pushing to views
@@ -5671,6 +5673,9 @@ Supported only with the analyzer (`enable_analyzer = 1`).
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
+)", 0) \
+    DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
+Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
 )", 0) \
     DECLARE(Bool, optimize_dictget_tuple_element, true, R"(
 Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('dict', 'b', key)` to avoid fetching unnecessary dictionary attributes. Supports positional (`.1`, `.2`, ...) and named (`.b`) access, and also applies to `dictGetOrDefault` when the default argument is a constant tuple or a `tuple(...)` of constants.
@@ -7289,9 +7294,9 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
-Enables showing data lake catalogs in system tables.
-)", 0) \
+    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
+Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+)", 0, show_data_lake_catalogs_in_system_tables) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
