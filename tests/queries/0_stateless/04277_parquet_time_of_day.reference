@@ -8,5 +8,6 @@ ts_us	Nullable(DateTime64(6, \'UTC\'))
 === Explicit type hints under non-UTC session_timezone ===
 Time64(3)	01:02:03.456
 Time	01:02:03
+DateTime(UTC)	1970-01-01 01:02:03
 DateTime64(3, UTC)	1970-01-01 01:02:03.456
 Int64	3723

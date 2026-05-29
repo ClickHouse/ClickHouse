@@ -60,6 +60,7 @@ echo "=== Explicit type hints under non-UTC session_timezone ==="
 # non-UTC session_timezone.
 #   - Time64(3)              -> 01:02:03.456    (direct, no cast)
 #   - Time                   -> 01:02:03        (Time64 -> Time cast, seconds precision)
+#   - DateTime('UTC')        -> 1970-01-01 01:02:03  (Time64 -> DateTime cast, legacy 00900 path)
 #   - DateTime64(3, 'UTC')   -> 1970-01-01 01:02:03.456  (Time64 -> DateTime64 with explicit tz)
 #   - Int64                  -> 3723            (Time64 -> Int64, Decimal->Int discards scale)
 $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
@@ -67,6 +68,8 @@ $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
         FROM file('$DATA_FILE', 'Parquet', 't_ms Time64(3)');
     SELECT 'Time' AS hint, toString(t_ms) AS v
         FROM file('$DATA_FILE', 'Parquet', 't_ms Time');
+    SELECT 'DateTime(UTC)' AS hint, toString(t_ms) AS v
+        FROM file('$DATA_FILE', 'Parquet', \$\$t_ms DateTime('UTC')\$\$);
     SELECT 'DateTime64(3, UTC)' AS hint, toString(t_ms) AS v
         FROM file('$DATA_FILE', 'Parquet', \$\$t_ms DateTime64(3, 'UTC')\$\$);
     SELECT 'Int64' AS hint, toString(t_ms) AS v
