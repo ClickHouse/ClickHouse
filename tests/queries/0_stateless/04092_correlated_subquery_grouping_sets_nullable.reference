@@ -1,2 +1,1 @@
-0
-\N
+FUNCTION bitNot(__table3.number : 0) -> bitNot(__table3.number) Nullable(UInt64)
