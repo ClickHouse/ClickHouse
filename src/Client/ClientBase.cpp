@@ -8,6 +8,7 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
+#include <Core/UUID.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -520,7 +521,7 @@ void ClientBase::adjustQueryEnd(
     // all_queries_end);
     if (newline <= next_query_begin)
     {
-        assert(newline >= this_query_end);
+        chassert(newline >= this_query_end);
         this_query_end = newline;
     }
     else
@@ -1416,7 +1417,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
         }
     }
-    assert(retries_left > 0);
+    chassert(retries_left > 0);
 }
 
 
