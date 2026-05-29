@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-RowDataStore::RowLayout RowDataStore::initLayout(const Columns & columns)
+RowDataStore::RowLayout RowDataStore::computeLayout(const Columns & columns)
 {
     RowLayout layout;
     layout.reserve(columns.size());
@@ -56,20 +56,13 @@ std::shared_ptr<RowDataStore> RowDataStore::create()
     return std::shared_ptr<RowDataStore>(new RowDataStore(RowLayout{}));
 }
 
-std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
-{
-    auto row_store = create();
-    row_store->init(columns);
-    return row_store;
-}
-
 void RowDataStore::init(const Columns & columns)
 {
     if (init_flag)
         return;
     init_flag = true;
 
-    layout = initLayout(columns);
+    layout = computeLayout(columns);
     row_length = layout.empty() ? 0 : layout.back().offset + layout.back().size;
 
     if (!columns.empty() && !columns[0]->empty())

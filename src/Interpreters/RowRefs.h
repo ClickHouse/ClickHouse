@@ -22,6 +22,11 @@ struct ColumnAccessIndex
     Type type;
     size_t index;
 
+    /// Valid only when type is RowStore.
+    size_t field_offset = 0;
+    size_t field_size = 0;
+    bool is_nullable = false;
+
     bool operator==(const ColumnAccessIndex &) const = default;
 };
 

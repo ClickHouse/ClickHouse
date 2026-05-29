@@ -1,3 +1,6 @@
+--- Verify row store enabled / disabled ---
+1	0	0
+--- Verify different join types ---
 --- INNER JOIN ---
 7	2024-01-01 00:00:07	7	0	0
 8	2024-01-01 00:00:08	8	1	1

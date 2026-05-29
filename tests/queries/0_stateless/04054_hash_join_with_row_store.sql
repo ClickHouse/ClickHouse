@@ -18,6 +18,32 @@ INSERT INTO right_storage_join SELECT * FROM right;
 SET join_algorithm = 'hash';
 SET min_columns_for_hash_join_row_store = 1;
 
+-- Disable other post build phase optimizations.
+SET allow_experimental_join_right_table_sorting = 0;
+SET enable_join_fixed_hash_table_conversion = 0;
+
+SELECT '--- Verify row store enabled / disabled ---';
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null SETTINGS log_comment = 'rs_04054_enabled';
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null SETTINGS max_bytes_for_hash_join_row_store = 1, log_comment = 'rs_04054_max_bytes';
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = 0, log_comment = 'rs_04054_min_cols_zero';
+
+SYSTEM FLUSH LOGS;
+
+SELECT
+    sumIf(num, log_comment = 'rs_04054_enabled') > 0 AS enabled,
+    sumIf(num, log_comment = 'rs_04054_max_bytes') AS disabled_by_max_bytes,
+    sumIf(num, log_comment = 'rs_04054_min_cols_zero') AS disabled_by_min_columns
+FROM (
+    SELECT q.log_comment AS log_comment, count() AS num
+    FROM system.query_log q
+    INNER JOIN system.processors_profile_log p USING (query_id)
+    WHERE q.log_comment IN ('rs_04054_enabled', 'rs_04054_max_bytes', 'rs_04054_min_cols_zero')
+      AND q.type = 'QueryFinish'
+      AND p.name = 'FinalizingRightJoinSide'
+    GROUP BY q.log_comment
+);
+
+SELECT '--- Verify different join types ---';
 SELECT '--- INNER JOIN ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL;
 

@@ -37,8 +37,9 @@ public:
 
     using RowLayout = std::vector<FieldLayout>;
 
+    static RowLayout computeLayout(const Columns & columns);
+
     static std::shared_ptr<RowDataStore> create();
-    static std::shared_ptr<RowDataStore> create(const Columns & columns);
 
     /// Initialize the row store from a set of columns.
     void init(const Columns & columns);
@@ -64,8 +65,6 @@ private:
     bool init_flag = false;
 
     explicit RowDataStore(RowLayout && layout_);
-
-    static RowLayout initLayout(const Columns & columns);
 };
 
 bool isRowStorageUseful(const ColumnPtr & column);

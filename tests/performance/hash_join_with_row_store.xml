@@ -1,12 +1,5 @@
 <test>
     <substitutions>
-        <substitution>
-            <name>row_store</name>
-            <values>
-                <value>0</value>
-                <value>3</value>
-            </values>
-        </substitution>
         <!-- Match rate determines the join selectivity -->
         <substitution>
             <name>match_rate</name>
@@ -51,33 +44,33 @@
     <fill_query>INSERT INTO rs_probe_200m SELECT number FROM numbers(200000000) ORDER BY rand()</fill_query>
 
     <!-- Unique keys + non-nullable payload -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100m r ON ((l.k * 2) % toUInt64(100000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100m r ON ((l.k * 2) % toUInt64(100000000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0</query>
 
     <!-- Unique keys + nullable payload -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k_nullable r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m_nullable r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k_nullable r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_10m_nullable r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- Other JOIN types -->
-    <query>SELECT * FROM rs_probe_200m l ANY JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM rs_probe_200m l LEFT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM rs_probe_200m l RIGHT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM rs_probe_200m l FULL JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l ANY JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_200m l LEFT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_200m l RIGHT JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM rs_probe_200m l FULL JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- 10 matches per key + non-nullable payload -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k_x10 r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
-    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_1k_x10 r ON (l.k % toUInt64(1000 / {match_rate})) = r.k FORMAT Null</query>
+    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- 10 matches per key + nullable payload -->
-    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_nullable_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM (SELECT * FROM rs_probe_200m LIMIT 20000000) l JOIN rs_right_1m_nullable_x10 r ON (l.k % toUInt64(1000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- Mix of fixed sized and String columns -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_mixed_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_mixed_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- With join spilling -->
-    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS min_columns_for_hash_join_row_store = {row_store}, max_bytes_before_external_join = 10000000, max_bytes_ratio_before_external_join = 0</query>
+    <query>SELECT * FROM rs_probe_200m l JOIN rs_right_100k r ON (l.k % toUInt64(100000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 10000000, max_bytes_ratio_before_external_join = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS rs_probe_200m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_1k</drop_query>

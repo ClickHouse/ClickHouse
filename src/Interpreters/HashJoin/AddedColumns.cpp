@@ -20,9 +20,9 @@ JoinOnKeyColumns::JoinOnKeyColumns(
 template<typename F>
 void LazyOutput::dispatchOutputs(F && f) const
 {
-    if (row_store_outputs.empty())
+    if (!has_row_store)
         f.template operator()<false, true>();
-    else if (column_outputs.empty())
+    else if (!has_columns)
         f.template operator()<true, false>();
     else
         f.template operator()<true, true>();
@@ -68,36 +68,26 @@ size_t LazyOutput::buildOutput(
                 buildOutputFromBlocks<true, from_row_store, from_columns>(size_to_reserve, columns, row_refs_begin, row_refs_end);
             });
         else
-            dispatchOutputs([&]<bool from_row_store, bool from_columns>()
-            {
-                buildOutputFromRowRefLists<from_row_store, from_columns>(size_to_reserve, columns, row_refs_begin, row_refs_end);
-            });
+            buildOutputFromRowRefLists(size_to_reserve, columns, row_refs_begin, row_refs_end);
     }
     /// Without rows_limit, all possible rows are added and result value is not used.
     return 0;
 }
 
-template<bool from_row_store, bool from_columns>
 void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
-    if constexpr (from_row_store)
-    {
-        chassert(!join_data_sorted, "Row store should be disabled when join data rerange optimization is used.");
-        for (auto [dst_idx, _1, offset, size, _2] : row_store_outputs)
-        {
-            auto & col = columns[dst_idx];
-            col->reserve(col->size() + size_to_reserve);
-            columns[dst_idx]->fillFromRowRefsWithRowStore(type_name[dst_idx].type, offset, size, row_refs_begin, row_refs_end);
-        }
-    }
+    chassert(!has_row_store || !join_data_sorted, "Row store should be disabled when join data rerange optimization is used.");
 
-    if constexpr (from_columns)
-        for (auto [dst_idx, column_idx] : column_outputs)
-        {
-            auto & col = columns[dst_idx];
-            col->reserve(col->size() + size_to_reserve);
-            col->fillFromRowRefs(type_name[dst_idx].type, column_idx, row_refs_begin, row_refs_end, join_data_sorted);
-        }
+    for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+    {
+        const auto & access_index = output_access_indexes[dst_idx];
+        auto & col = columns[dst_idx];
+        col->reserve(col->size() + size_to_reserve);
+        if (access_index.type == ColumnAccessIndex::Type::RowStore)
+            col->fillFromRowRefsWithRowStore(type_name[dst_idx].type, access_index.field_offset, access_index.field_size, row_refs_begin, row_refs_end);
+        else
+            col->fillFromRowRefs(type_name[dst_idx].type, access_index.index, row_refs_begin, row_refs_end, join_data_sorted);
+    }
 }
 
 std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index)
@@ -107,14 +97,15 @@ std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, 
     return {(*row_ref->columns_info).columns[column_index].get(), row_ref->row_num};
 }
 
-template<bool from_row_store, bool from_columns>
-void LazyOutput::doBuildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
+void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
-    if constexpr (from_row_store)
-        for (auto [dst_idx, _, offset, size, is_nullable] : row_store_outputs)
+    for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+    {
+        const auto & access_index = output_access_indexes[dst_idx];
+        auto & col = columns[dst_idx];
+        col->reserve(col->size() + size_to_reserve);
+        if (access_index.type == ColumnAccessIndex::Type::RowStore)
         {
-            auto & col = columns[dst_idx];
-            col->reserve(col->size() + size_to_reserve);
             for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
             {
                 if (!*row_ref_i)
@@ -125,21 +116,17 @@ void LazyOutput::doBuildJoinGetOutput(size_t size_to_reserve, MutableColumns & c
                 const auto * row_ref = reinterpret_cast<const RowRef *>(*row_ref_i);
                 const char * row_data = row_ref->columns_info->row_store->getRowAt(row_ref->row_num);
 
-                if (is_nullable)
+                if (access_index.is_nullable)
                 {
                     auto & nullable_column = assert_cast<ColumnNullable &>(*col);
-                    nullable_column.insertDataNullable(row_data + offset, size);
+                    nullable_column.insertDataNullable(row_data + access_index.field_offset, access_index.field_size);
                 }
                 else
-                    col->insertData(row_data + offset, size);
+                    col->insertData(row_data + access_index.field_offset, access_index.field_size);
             }
         }
-
-    if constexpr (from_columns)
-        for (auto [dst_idx, column_idx] : column_outputs)
+        else
         {
-            auto & col = columns[dst_idx];
-            col->reserve(col->size() + size_to_reserve);
             for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
             {
                 if (!*row_ref_i)
@@ -148,21 +135,14 @@ void LazyOutput::doBuildJoinGetOutput(size_t size_to_reserve, MutableColumns & c
                     continue;
                 }
                 const auto * row_ref = reinterpret_cast<const RowRef *>(*row_ref_i);
-                const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, column_idx);
+                const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, access_index.index);
                 if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block->isNullable())
                     nullable_col->insertFromNotNullable(*column_from_block, row_num);
                 else
                     col->insertFrom(*column_from_block, row_num);
             }
         }
-}
-
-void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
-{
-    dispatchOutputs([&]<bool from_row_store, bool from_columns>()
-    {
-        doBuildJoinGetOutput<from_row_store, from_columns>(size_to_reserve, columns, row_refs_begin, row_refs_end);
-    });
+    }
 }
 
 /// Returns how many rows were added to columns, up to rows_limit
@@ -258,13 +238,14 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
         }
     }
 
-    if constexpr (from_row_store)
-        for (auto [dst_idx, _1, offset, size, _2] : row_store_outputs)
-            columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, offset, size);
-
-    if constexpr (from_columns)
-        for (auto [dst_idx, column_idx] : column_outputs)
-            columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, column_idx, columns_with_row_numbers);
+    for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+    {
+        const auto & access_index = output_access_indexes[dst_idx];
+        if (access_index.type == ColumnAccessIndex::Type::RowStore)
+            columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, access_index.field_offset, access_index.field_size);
+        else
+            columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, access_index.index, columns_with_row_numbers);
+    }
 
     return added_rows;
 }
@@ -331,13 +312,14 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
         }
     }
 
-    if constexpr (from_row_store)
-        for (auto [dst_idx, _1, offset, size, _2] : row_store_outputs)
-            columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, offset, size);
-
-    if constexpr (from_columns)
-        for (auto [dst_idx, column_idx] : column_outputs)
-            columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, column_idx, columns_with_row_numbers);
+    for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+    {
+        const auto & access_index = output_access_indexes[dst_idx];
+        if (access_index.type == ColumnAccessIndex::Type::RowStore)
+            columns[dst_idx]->fillFromRowStorePtrs(type_name[dst_idx].type, row_store_ptrs, access_index.field_offset, access_index.field_size);
+        else
+            columns[dst_idx]->fillFromBlocksAndRowNumbers(type_name[dst_idx].type, access_index.index, columns_with_row_numbers);
+    }
 }
 
 template<>
@@ -363,38 +345,45 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
 #ifndef NDEBUG
     checkColumns(*row_ref->columns_info);
 #endif
-    if (!lazy_output.row_store_outputs.empty())
+    const char * row_data = lazy_output.has_row_store ? row_ref->columns_info->row_store->getRowAt(row_ref->row_num) : nullptr;
+
+    auto insert_from_row_store = [&](size_t dst_idx, const ColumnAccessIndex & access_index)
     {
-        const char * row_data = row_ref->columns_info->row_store->getRowAt(row_ref->row_num);
-        for (auto & [dst_idx, _, offset, size, is_nullable] : lazy_output.row_store_outputs)
-        {
-            if (is_nullable)
-            {
-                auto & nullable_column = assert_cast<ColumnNullable &>(*columns[dst_idx]);
-                nullable_column.insertDataNullable(row_data + offset, size);
-            }
-            else
-                columns[dst_idx]->insertData(row_data + offset, size);
-        }
-    }
+        if (access_index.is_nullable)
+            assert_cast<ColumnNullable &>(*columns[dst_idx]).insertDataNullable(row_data + access_index.field_offset, access_index.field_size);
+        else
+            columns[dst_idx]->insertData(row_data + access_index.field_offset, access_index.field_size);
+    };
 
     if (is_join_get)
     {
-        for (auto & [dst_idx, col_idx] : lazy_output.column_outputs)
+        for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
         {
-            const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, col_idx);
-            if (auto * nullable_col = nullable_column_ptrs[dst_idx])
-                nullable_col->insertFromNotNullable(*column_from_block, row_num);
+            const auto & access_index = lazy_output.output_access_indexes[dst_idx];
+            if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                insert_from_row_store(dst_idx, access_index);
             else
-                columns[dst_idx]->insertFrom(*column_from_block, row_num);
+            {
+                const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, access_index.index);
+                if (auto * nullable_col = nullable_column_ptrs[dst_idx])
+                    nullable_col->insertFromNotNullable(*column_from_block, row_num);
+                else
+                    columns[dst_idx]->insertFrom(*column_from_block, row_num);
+            }
         }
     }
     else
     {
-        for (auto & [dst_idx, col_idx] : lazy_output.column_outputs)
+        for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
         {
-            const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, col_idx);
-            columns[dst_idx]->insertFrom(*column_from_block, row_num);
+            const auto & access_index = lazy_output.output_access_indexes[dst_idx];
+            if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                insert_from_row_store(dst_idx, access_index);
+            else
+            {
+                const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, access_index.index);
+                columns[dst_idx]->insertFrom(*column_from_block, row_num);
+            }
         }
     }
 }

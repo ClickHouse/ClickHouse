@@ -46,29 +46,16 @@ struct LazyOutput
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all RowRef-s and RowRefList-s
 
-    struct RowStoreOutput
-    {
-        size_t dst_idx;
-        size_t row_store_idx;
-        size_t field_offset;
-        size_t field_size;
-        bool is_nullable;
-    };
-
-    struct ColumnOutput
-    {
-        size_t dst_idx;
-        size_t col_idx;
-    };
-
-    std::vector<RowStoreOutput> row_store_outputs;
-    std::vector<ColumnOutput> column_outputs;
     NamesAndTypes type_name;
 
     bool join_data_sorted = false;
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
+
+    ColumnAccessIndexes output_access_indexes;
+    bool has_row_store = false;
+    bool has_columns = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
@@ -112,7 +99,6 @@ struct LazyOutput
     template<bool from_row_list, bool from_row_store, bool from_columns>
     void buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    template<bool from_row_store, bool from_columns>
     void buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
     template<bool from_row_store, bool from_columns>
@@ -122,8 +108,6 @@ struct LazyOutput
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 
 private:
-    template<bool from_row_store, bool from_columns>
-    void doBuildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
     template<typename F>
     void dispatchOutputs(F && f) const;
 };
@@ -205,33 +189,23 @@ public:
 
         const auto & access_indexes = join.getJoinedData()->column_access_indexes;
 
+        lazy_output.output_access_indexes.reserve(right_indexes.size());
         if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Ready)
         {
-            using AccessType = ColumnAccessIndex::Type;
-            Columns row_store_sample_columns;
-            for (size_t i = 0; i < saved_block_sample.columns(); ++i)
+            for (size_t right_index : right_indexes)
             {
-                if (access_indexes[i].type == AccessType::RowStore)
-                    row_store_sample_columns.push_back(saved_block_sample.getByPosition(i).column->cloneEmpty());
-            }
-            auto sample_row_store = RowDataStore::create(row_store_sample_columns);
-
-            for (size_t i = 0; i < right_indexes.size(); ++i)
-            {
-                auto idx = access_indexes[right_indexes[i]];
-                if (idx.type == AccessType::RowStore)
-                {
-                    auto [_, offset, size, is_nullable] = sample_row_store->getFieldLayout(idx.index);
-                    lazy_output.row_store_outputs.push_back({i, idx.index, offset, size, is_nullable});
-                }
+                const ColumnAccessIndex & access_index = access_indexes[right_index];
+                if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                    lazy_output.has_row_store = true;
                 else
-                    lazy_output.column_outputs.push_back({i, idx.index});
+                    lazy_output.has_columns = true;
+                lazy_output.output_access_indexes.push_back(access_index);
             }
         }
         else
         {
-            for (size_t i = 0; i < right_indexes.size(); ++i)
-                lazy_output.column_outputs.push_back({i, right_indexes[i]});
+            for (size_t right_index : right_indexes)
+                lazy_output.output_access_indexes.push_back({ColumnAccessIndex::Type::Columns, right_index});
         }
     }
 
@@ -356,16 +330,19 @@ private:
                                 demangle(typeid(*dest_column).name()), demangle(typeid(*column_from_block).name()));
         };
 
-        for (const auto & [dst_idx, col_idx] : lazy_output.column_outputs)
-            check(dst_idx, to_check.columns.at(col_idx).get());
-
-        if (to_check.hasRowStore())
+        for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
         {
-            for (const auto & out : lazy_output.row_store_outputs)
+            const auto & output_access_index = lazy_output.output_access_indexes[dst_idx];
+            if (output_access_index.type == ColumnAccessIndex::Type::RowStore)
             {
-                auto sample_col = to_check.row_store->getFieldLayout(out.row_store_idx).sample_column;
-                check(out.dst_idx, sample_col.get());
+                if (to_check.hasRowStore())
+                {
+                    auto sample_col = to_check.row_store->getFieldLayout(output_access_index.index).sample_column;
+                    check(dst_idx, sample_col.get());
+                }
             }
+            else
+                check(dst_idx, to_check.columns.at(output_access_index.index).get());
         }
     }
 

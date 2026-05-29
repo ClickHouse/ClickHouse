@@ -1495,33 +1495,23 @@ public:
         const auto & access_indexes = parent.data->column_access_indexes;
         const Block & saved_block_sample = parent.savedBlockSample();
 
+        output_access_indexes.reserve(saved_block_sample.columns());
         if (parent.data->row_store_state == HashJoin::RowStoreState::Ready)
         {
-            using AccessType = ColumnAccessIndex::Type;
-            Columns row_store_sample_columns;
             for (size_t i = 0; i < saved_block_sample.columns(); ++i)
             {
-                if (access_indexes[i].type == AccessType::RowStore)
-                    row_store_sample_columns.push_back(saved_block_sample.getByPosition(i).column->cloneEmpty());
-            }
-            auto sample_row_store = RowDataStore::create(row_store_sample_columns);
-
-            for (size_t i = 0; i < saved_block_sample.columns(); ++i)
-            {
-                auto idx = access_indexes[i];
-                if (idx.type == AccessType::RowStore)
-                {
-                    auto [_, offset, size, is_nullable] = sample_row_store->getFieldLayout(idx.index);
-                    row_store_outputs.push_back({i, idx.index, offset, size, is_nullable});
-                }
+                const ColumnAccessIndex & access_index = access_indexes[i];
+                if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                    has_row_store = true;
                 else
-                    column_outputs.push_back({i, idx.index});
+                    has_columns = true;
+                output_access_indexes.push_back(access_index);
             }
         }
         else
         {
             for (size_t i = 0; i < saved_block_sample.columns(); ++i)
-                column_outputs.push_back({i, i});
+                output_access_indexes.push_back({ColumnAccessIndex::Type::Columns, i});
         }
     }
 
@@ -1562,21 +1552,6 @@ public:
     }
 
 private:
-    struct RowStoreOutput
-    {
-        size_t dst_idx;
-        size_t row_store_idx;
-        size_t field_offset;
-        size_t field_size;
-        bool is_nullable;
-    };
-
-    struct ColumnOutput
-    {
-        size_t dst_idx;
-        size_t col_idx;
-    };
-
     const HashJoin & parent;
     UInt64 max_block_size;
     bool flag_per_row;
@@ -1589,8 +1564,9 @@ private:
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
     std::optional<HashJoin::ScatteredColumnsList::const_iterator> used_position;
 
-    std::vector<RowStoreOutput> row_store_outputs;
-    std::vector<ColumnOutput> column_outputs;
+    ColumnAccessIndexes output_access_indexes;
+    bool has_row_store = false;
+    bool has_columns = false;
 
     bool isBucketInRange(size_t bucket) const
     {
@@ -1600,9 +1576,9 @@ private:
     template <typename F>
     void dispatchOutputs(F && f) const
     {
-        if (row_store_outputs.empty())
+        if (!has_row_store)
             f.template operator()<false, true>();
-        else if (column_outputs.empty())
+        else if (!has_columns)
             f.template operator()<true, false>();
         else
             f.template operator()<true, true>();
@@ -1613,11 +1589,14 @@ private:
         const ColumnsWithRowNumbers & columns_with_row_numbers,
         const PaddedPODArray<const char *> & row_store_ptrs)
     {
-        for (auto [dst_idx, _1, offset, size, _2] : row_store_outputs)
-            columns_right[dst_idx]->fillFromRowStorePtrs(row_store_ptrs, offset, size);
-
-        for (auto [dst_idx, col_idx] : column_outputs)
-            columns_right[dst_idx]->fillFromBlocksAndRowNumbers(col_idx, columns_with_row_numbers);
+        for (size_t dst_idx = 0; dst_idx < output_access_indexes.size(); ++dst_idx)
+        {
+            const auto & output_access_index = output_access_indexes[dst_idx];
+            if (output_access_index.type == ColumnAccessIndex::Type::RowStore)
+                columns_right[dst_idx]->fillFromRowStorePtrs(row_store_ptrs, output_access_index.field_offset, output_access_index.field_size);
+            else
+                columns_right[dst_idx]->fillFromBlocksAndRowNumbers(output_access_index.index, columns_with_row_numbers);
+        }
     }
 
     size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
@@ -2426,23 +2405,38 @@ void HashJoin::finalizeRowStoreStatus()
     }
 
     const Block & saved = savedBlockSample();
+
     ColumnAccessIndexes access_indexes;
     access_indexes.reserve(saved.columns());
-    size_t row_store_count = 0;
+    Columns row_store_columns;
     size_t columns_count = 0;
     for (size_t i = 0; i < saved.columns(); ++i)
     {
         const auto & col = saved.getByPosition(i).column;
         if (isRowStorageUseful(col) && !data->column_replicated_flags[i])
-            access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_count++});
+        {
+            access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns.size()});
+            row_store_columns.push_back(col);
+        }
         else
             access_indexes.push_back({ColumnAccessIndex::Type::Columns, columns_count++});
     }
 
-    if (row_store_count < table_join->minColumnsForHashJoinRowStore())
+    if (row_store_columns.size() < table_join->minColumnsForHashJoinRowStore())
     {
         disable_row_store();
         return;
+    }
+
+    const auto layout = RowDataStore::computeLayout(row_store_columns);
+    for (auto & access_index : access_indexes)
+    {
+        if (access_index.type != ColumnAccessIndex::Type::RowStore)
+            continue;
+        const auto & field = layout[access_index.index];
+        access_index.field_offset = field.offset;
+        access_index.field_size = field.size;
+        access_index.is_nullable = field.is_nullable;
     }
 
     data->column_access_indexes = std::move(access_indexes);
