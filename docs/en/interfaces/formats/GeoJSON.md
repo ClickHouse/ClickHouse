@@ -4,6 +4,8 @@ description: 'Input format that reads a GeoJSON FeatureCollection and produces o
 input_format: true
 output_format: false
 keywords: ['GeoJSON']
+sidebar_label: 'GeoJSON'
+sidebar_position: 1
 slug: /interfaces/formats/GeoJSON
 title: 'GeoJSON'
 doc_type: 'reference'
@@ -119,7 +121,7 @@ variantType(geometry): Polygon
 And we can extract the underlying data like this:
 
 ```sql title="Query"
-SELECT properties.name AS name, variantType(geometry) geometry.Point, geometry.LineString, geometry.Polygon
+SELECT properties.name AS name, variantType(geometry), geometry.Point, geometry.LineString, geometry.Polygon
 FROM file('london.geojson', GeoJSON);
 ```
 
@@ -198,9 +200,9 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 └────────────┴──────────┘
 ```
 
-## Handling GeometryCollection objects {#geometry-collection}
+## Handling unsupported geometry types {#unsupported-geometry}
 
-One of the GeoJSON objects is `GeometryCollection`, which can't be represented by ClickHouse's `Geometry` type.  You can control what happens if `GeometryCollection` is encountered using the `input_format_geojson_geometry_collection_handling` setting. Possible values are:
+Some valid GeoJSON geometry types &mdash; such as `GeometryCollection` and `MultiPoint` &mdash; can't be represented by ClickHouse's `Geometry` type. You can control what happens when such a geometry is encountered using the `input_format_geojson_unsupported_geometry_handling` setting. Possible values are:
 
 * `'throw'` — throw an exception (default)
 * `'null'` — insert a `NULL` value for the `geometry` column and continue parsing
