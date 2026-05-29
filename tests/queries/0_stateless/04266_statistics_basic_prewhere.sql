@@ -183,3 +183,38 @@ SELECT count() FROM (
 ) WHERE explain LIKE '%Prewhere filter column%b%a%';
 
 DROP TABLE test_fallback_selectivity;
+
+-- =============================================================================
+-- Const-null inserts: `INSERT ... SELECT NULL` can hand the statistics builder
+-- a `ColumnConst(Nullable(...))`. The basic statistic must still see the rows
+-- as NULL, otherwise IS NULL estimates collapse to zero for all-null blocks
+-- and prewhere ordering treats the all-NULL column as the most selective one.
+-- =============================================================================
+DROP TABLE IF EXISTS test_const_null;
+
+CREATE TABLE test_const_null (
+    a Nullable(Int64),
+    b Nullable(Int64)
+) Engine = MergeTree() ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
+
+ALTER TABLE test_const_null ADD STATISTICS a TYPE basic;
+ALTER TABLE test_const_null ADD STATISTICS b TYPE basic;
+
+-- a: all NULL via constant expression; b: 50% NULL via per-row expression.
+INSERT INTO test_const_null
+SELECT NULL, if(number % 2 = 0, NULL, number)
+FROM numbers(1000);
+
+-- `a IS NULL` matches every row (least selective) and should be ordered AFTER
+-- `b IS NULL` (matches 50%) in prewhere. Without the const-column fix the
+-- basic statistic for `a` would report null_count=0, making `a IS NULL` look
+-- maximally selective and pushing it first.
+SELECT 'Const-null insert: basic null count drives correct prewhere ordering';
+SELECT position(prewhere_line, 'b.null') < position(prewhere_line, 'a.null') AS b_first FROM (
+    SELECT extractAll(explain, 'Prewhere filter column: ([^\n]+)')[1] AS prewhere_line FROM (
+        EXPLAIN actions=1 SELECT count(*) FROM test_const_null WHERE a IS NULL AND b IS NULL
+    ) WHERE explain LIKE '%Prewhere filter column%'
+);
+
+DROP TABLE test_const_null;

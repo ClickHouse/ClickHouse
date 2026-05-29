@@ -20,3 +20,5 @@ Actual counts for validation
 5000
 Fallback selectivity uses non-null row count (b before a)
 1
+Const-null insert: basic null count drives correct prewhere ordering
+1

@@ -771,7 +771,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         {
             /// `x IS NULL AND <other predicate on x>` is unsatisfiable: any non-IS-NULL
             /// predicate on the same column has `true_sel = 0` on NULL rows, so the AND is 0.
-            selectivity = Selectivity();
+            selectivity = Selectivity(0, cur_selectivity);
             return;
         }
         else

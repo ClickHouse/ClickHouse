@@ -37,7 +37,10 @@ enum BasicFeatureMask : UInt8
 
 UInt64 countNullsInColumn(const ColumnPtr & column)
 {
-    auto full = column->convertToFullColumnIfSparse();
+    /// `ColumnConst(Nullable(...))` reaches us from pipelines like `INSERT ... SELECT NULL`;
+    /// `convertToFullColumnIfConst` unwraps it so the Nullable/LowCardinality branches below
+    /// can see the real column.
+    auto full = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(full.get()))
     {
@@ -74,7 +77,7 @@ const NullMap * tryGetNullMap(const IColumn & column)
 /// (the null map lives on the inner `Nullable`, not the outer LC).
 UInt64 sumNonNullStringBytes(const ColumnPtr & column)
 {
-    auto full = column->convertToFullColumnIfSparse();
+    auto full = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
     if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(full.get()))
         full = lc->convertToFullColumn();
     const NullMap * null_map = tryGetNullMap(*full);
