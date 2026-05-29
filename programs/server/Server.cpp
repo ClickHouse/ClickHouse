@@ -1416,16 +1416,17 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
+    /// Under thread sanitizer we use frame-pointer-based unwinding (via abseil) which does not
+    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed.
+#if defined(THREAD_SANITIZER)
+    bool has_trace_collector = config().has("trace_log");
+    LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
+#else
     bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
-
-#if defined(SANITIZER)
-    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
-        " when two different stack unwinding methods will interfere with each other.");
-#endif
-
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
+#endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
