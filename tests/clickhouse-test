@@ -285,6 +285,9 @@ class SharedEngineReplacer:
         return line
 
     def _need_to_replace_something(self):
+        # No file to process (e.g. a test without a reference file): nothing to replace.
+        if self.file_name is None:
+            return False
         return (
             (
                 (self.replace_replicated or self.replace_non_replicated)
