@@ -65,6 +65,8 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ErrorCodes
@@ -504,7 +506,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_REFRESH;
-        command.refresh = command_ast->refresh;
+        command.refresh = command_ast->refresh->ptr();
         return command;
     }
     if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
@@ -1283,7 +1285,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.type = MutationCommand::Type::READ_COLUMN;
         result.column_name = column_name;
         result.data_type = data_type;
-        result.predicate = nullptr;
     }
     else if (type == DROP_COLUMN)
     {
@@ -1291,9 +1292,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = column_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-        result.predicate = nullptr;
     }
     else if (type == DROP_INDEX)
     {
@@ -1301,10 +1299,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = index_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == DROP_STATISTICS)
     {
@@ -1313,10 +1307,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == DROP_PROJECTION)
     {
@@ -1324,10 +1314,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = projection_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1336,7 +1322,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.rename_to = rename_to;
     }
 
-    result.ast = ast->clone();
+    result.ast_text = ast->formatWithSecretsOneLine();
+    const auto & settings = context->getSettingsRef();
+    result.max_parser_depth = settings[Setting::max_parser_depth];
+    result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
     apply(metadata, context);
     return result;
 }
@@ -2019,7 +2008,7 @@ static MutationCommand createMaterializeTTLCommand()
     auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
-    command.ast = std::move(ast);
+    command.ast_text = ast->formatWithSecretsOneLine();
     return command;
 }
 
@@ -2036,6 +2025,10 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     /// to metadata that already contains auto-added statistics would throw a duplicate error.
     removeImplicitStatistics(metadata.columns);
 
+    const auto & settings = context->getSettingsRef();
+    const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
+    const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
+
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
@@ -2045,7 +2038,12 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         }
         else if (with_alters)
         {
-            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
+            result.push_back(MutationCommand{
+                .ast_text = alter_cmd.ast->formatWithSecretsOneLine(),
+                .max_parser_depth = max_parser_depth,
+                .max_parser_backtracks = max_parser_backtracks,
+                .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
+            });
         }
     }
 

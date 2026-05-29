@@ -182,7 +182,7 @@ public:
     ASTPtr add_enum_values;
 
     /// For MODIFY REFRESH
-    ASTPtr refresh;
+    IAST * refresh = nullptr;
 
     bool detach = false;        /// true for DETACH PARTITION
 
