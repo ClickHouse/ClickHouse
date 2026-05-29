@@ -1,4 +1,9 @@
 #include <Interpreters/Context.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/System/StorageSystemMerges.h>
 #include <Access/ContextAccess.h>
@@ -35,6 +40,12 @@ ColumnsDescription StorageSystemMerges::getColumnsDescription()
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread ID of the merge process."},
         {"merge_type", std::make_shared<DataTypeString>(), "The type of current merge. Empty if it's an mutation."},
         {"merge_algorithm", std::make_shared<DataTypeString>(), "The algorithm used in current merge. Empty if it's an mutation."},
+        {"current_projection", std::make_shared<DataTypeString>(), "The name of the projection currently being merged or rebuilt. Empty if not in the projection merge stage."},
+        {"current_projection_progress", std::make_shared<DataTypeFloat64>(), "The progress of the current projection merge from 0 to 1."},
+        {"current_projection_parts_merging", std::make_shared<DataTypeUInt64>(), "The number of projection parts currently being merged."},
+        {"current_projection_parts_remaining", std::make_shared<DataTypeUInt64>(), "The number of projection parts remaining to be merged for the current projection."},
+        {"projections_completed", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of projections that have been merged or rebuilt so far."},
+        {"projections_remaining", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of projections that still need to be merged or rebuilt."},
     };
 }
 
@@ -82,6 +93,12 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, ContextPtr cont
             res_columns[i++]->insertDefault();
             res_columns[i++]->insertDefault();
         }
+        res_columns[i++]->insert(merge.current_projection);
+        res_columns[i++]->insert(merge.current_projection_progress);
+        res_columns[i++]->insert(merge.current_projection_parts_merging);
+        res_columns[i++]->insert(merge.current_projection_parts_remaining);
+        res_columns[i++]->insert(merge.projections_completed);
+        res_columns[i++]->insert(merge.projections_remaining);
     }
 }
 

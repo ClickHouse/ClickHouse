@@ -49,6 +49,7 @@
 
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -195,6 +196,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         /// SQL standard VALUES clause: (VALUES (1, 'a'), (2, 'b'))
         /// Rewrite as SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+
         auto args = make_intrusive<ASTExpressionList>();
         ParserExpression expr_parser;
 
@@ -454,6 +458,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
+    bool has_uuid_clause = false;
 
     if (table_name_with_optional_uuid)
     {
@@ -467,11 +472,13 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            has_uuid_clause = true;
         }
 
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
+        node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
     else
         node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
@@ -1680,6 +1687,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "STREAM",
     "UNION",
     "USING",
     "WHERE",

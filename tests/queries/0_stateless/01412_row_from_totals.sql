@@ -18,7 +18,7 @@ FROM
     WHERE (EventDate >= toDate('2020-07-10')) AND (EventDate <= toDate('2020-07-11')) AND (APIKey = 2)
     GROUP BY EventDate
 )
-FULL OUTER JOIN 
+FULL OUTER JOIN
 (
     SELECT EventDate
     FROM remote('127.0.0.{1,3}', currentDatabase(), open_events_tmp) AS t2

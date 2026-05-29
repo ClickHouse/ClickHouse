@@ -2,6 +2,8 @@
 #include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
@@ -11,10 +13,14 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <QueryPipeline/Pipe.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Dictionaries/SystemDictionaryUUIDs.h>
+#endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Core/ServerSettings.h>
@@ -107,12 +113,21 @@ StorageDictionary::StorageDictionary(
     const String & comment,
     Location location_,
     ContextPtr context_)
-    : IStorage(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
+    : StorageWithCommonVirtualColumns(table_id_), WithContext(context_->getGlobalContext()), dictionary_name(dictionary_name_), location(location_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageDictionary::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -145,6 +160,10 @@ StorageDictionary::StorageDictionary(
         Location::SameDatabaseAndNameAsDictionary,
         context_)
 {
+#if CLICKHOUSE_CLOUD
+    if (table_id.database_name == "system")
+        SystemDictionaryUUIDs::instance().add(table_id.uuid);
+#endif
     configuration = dictionary_configuration;
 
     auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
@@ -153,6 +172,10 @@ StorageDictionary::StorageDictionary(
 
 StorageDictionary::~StorageDictionary()
 {
+#if CLICKHOUSE_CLOUD
+    if (getStorageID().database_name == "system")
+        SystemDictionaryUUIDs::instance().remove(getStorageID().uuid);
+#endif
     removeDictionaryConfigurationFromRepository();
 }
 
@@ -312,7 +335,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     if (location == Location::Custom)
         return;
 
-    auto new_comment = getInMemoryMetadataPtr()->comment;
+    auto new_comment = getInMemoryMetadataPtr(alter_context, false)->comment;
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.

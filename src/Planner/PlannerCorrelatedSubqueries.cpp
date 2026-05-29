@@ -384,7 +384,8 @@ QueryPlan decorrelateQueryPlan(
             SortDescription{} /*group_by_sort_description_*/,
             aggeregating_step->shouldProduceResultsInBucketOrder(),
             aggeregating_step->usingMemoryBoundMerging(),
-            aggeregating_step->explicitSortingRequired()
+            aggeregating_step->explicitSortingRequired(),
+            false /*enable_sharding_aggregator_*/
         );
         result_step->setStepDescription(*aggeregating_step);
 
@@ -553,7 +554,10 @@ Planner buildPlannerForCorrelatedSubquery(
     const SharedHeader & outer_query_header)
 {
     auto subquery_options = select_query_options.subquery();
-    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    /// Register table expression data for correlated columns sources in the global context.
+    /// Table expression data would be reused because it can't be initialized
+    /// during plan construction for correlated subquery.
     global_planner_context->collectTableExpressionDataForCorrelatedColumns(correlated_subquery.query_tree, planner_context);
     global_planner_context->setOuterQueryHeader(outer_query_header);
 

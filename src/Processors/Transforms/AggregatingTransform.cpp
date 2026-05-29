@@ -11,6 +11,8 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -230,6 +232,16 @@ public:
 
     String getName() const override { return "ConvertingAggregatedToChunksWithMergingSource"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// When 2-level aggregation is being used ConvertingAggregatedToChunksTransform expects
+        /// to receive data from all sources, so we do not need to stop the processor here.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+
 protected:
     Chunk generate() override
     {
@@ -445,7 +457,7 @@ public:
         }
     }
 
-    Processors expandPipeline() override
+    PipelineUpdate updatePipeline() override
     {
         for (auto & source : processors)
         {
@@ -455,7 +467,7 @@ public:
             inputs.back().setNeeded();
         }
 
-        return std::move(processors);
+        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
     }
 
     IProcessor::Status prepare() override
@@ -486,7 +498,7 @@ public:
             return Status::Ready;
 
         if (!processors.empty())
-            return Status::ExpandPipeline;
+            return Status::UpdatePipeline;
 
         if (!single_level_chunks.empty())
             return preparePushToOutput();
@@ -764,7 +776,6 @@ private:
     void createSources()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
-        processors.reserve(num_threads);
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
@@ -783,7 +794,6 @@ private:
         /// Disable min max optimization to avoid race condition.
         params->aggregator.disableMinMaxOptimizationForFixedHashMaps(*data);
 
-        processors.reserve(num_threads);
         AggregatedDataVariantsPtr & first = data->at(0);
         for (size_t thread = 0; thread < num_threads; ++thread)
         {
@@ -866,7 +876,7 @@ IProcessor::Status AggregatingTransform::prepare()
     }
 
     if (is_generate_initialized.test() && !is_pipeline_created && !processors.empty())
-        return Status::ExpandPipeline;
+        return Status::UpdatePipeline;
 
     /// Only possible while consuming.
     if (read_current_chunk)
@@ -927,15 +937,15 @@ void AggregatingTransform::work()
     }
 }
 
-Processors AggregatingTransform::expandPipeline()
+IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
 {
     if (processors.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not expandPipeline in AggregatingTransform. This is a bug.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not updatePipeline in AggregatingTransform. This is a bug.");
     auto & out = processors.back()->getOutputs().front();
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());
     is_pipeline_created = true;
-    return std::move(processors);
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
 void AggregatingTransform::consume(Chunk chunk)
@@ -1065,7 +1075,7 @@ void AggregatingTransform::initGenerate()
                                 return std::make_shared<SimpleSquashingChunksTransform>(header, params->params.max_block_size, oneMB);
                             });
                     }
-                    /// AggregatingTransform::expandPipeline expects single output port.
+                    /// AggregatingTransform::updatePipeline expects single output port.
                     /// It's not a big problem because we do resize() to max_threads after AggregatingTransform.
                     pipe.resize(1);
                 }

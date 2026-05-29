@@ -1,3 +1,4 @@
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/ICompressionCodec.h>
@@ -295,7 +296,7 @@ private:
         UInt32 exceptions_count;
     };
 
-    std::vector<EncodingParams> param_candidates;
+    VectorWithMemoryTracking<EncodingParams> param_candidates;
     BlockState block;
 
     char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
@@ -448,7 +449,7 @@ private:
             EncodingParams params;
             UInt32 occurred_times;
         };
-        std::unordered_map<UInt16, Estimation> estimations_map;
+        UnorderedMapWithMemoryTracking<UInt16, Estimation> estimations_map;
 
         // Take ALP_PARAMS_ESTIMATION_SAMPLES samples from the entire column for global parameter estimation.
         // Evenly select sample positions across the column.
@@ -633,6 +634,13 @@ private:
 
         // Read bits
         const UInt8 bits = static_cast<UInt8>(*source++);
+        if (unlikely(bits > sizeof(UInt64) * 8))
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP-encoded data, invalid bit-width: {}, max allowed: {}",
+                static_cast<UInt32>(bits),
+                static_cast<UInt32>(sizeof(UInt64) * 8));
+
         const UInt32 bitpacked_size = Compression::FFOR::calculateBitpackedBytes<ALP_BLOCK_MAX_FLOAT_COUNT>(bits);
 
         // Read frame of reference
