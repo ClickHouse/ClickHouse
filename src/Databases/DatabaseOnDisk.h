@@ -117,7 +117,7 @@ protected:
                                    const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
 
     virtual void setDetachedTableNotInUseForce(const UUID & /*uuid*/) { }
-    virtual void removeTableFromPermanentlyDetachedTables(const String & /*table_name*/) { }
+    virtual void removeTableFromPermanentlyDetachedTables(const UUID & /*uuid*/) { }
 
     void createDirectories();
     void createDirectoriesUnlocked() TSA_REQUIRES(mutex);

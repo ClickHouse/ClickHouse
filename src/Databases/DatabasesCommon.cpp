@@ -559,11 +559,16 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     }
 }
 
-void DatabaseWithOwnTablesBase::dropTableFromSnapshotDetachedTables(const String & table_name)
+void DatabaseWithOwnTablesBase::dropTableFromSnapshotDetachedTables(const String & table_name, const UUID & uuid)
 {
-    LOG_DEBUG(log, "Remove table {} from snapshot detached tables", table_name);
+    LOG_DEBUG(log, "Remove table {} (uuid: {}) from snapshot detached tables", table_name, uuid);
     std::lock_guard lock(mutex);
-    snapshot_detached_tables.erase(table_name);
+
+    // Only remove if the UUID matches - this prevents removing a different table
+    // that happens to have the same name
+    auto it = snapshot_detached_tables.find(table_name);
+    if (it != snapshot_detached_tables.end() && it->second.uuid == uuid)
+        snapshot_detached_tables.erase(it);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

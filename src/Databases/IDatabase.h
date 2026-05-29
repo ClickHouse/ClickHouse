@@ -119,6 +119,12 @@ struct SnapshotDetachedTable final
     bool is_permanently{};
 };
 
+struct PermanentlyDetachedTableInfo final
+{
+    UUID uuid;
+    String table_name;
+};
+
 class DatabaseDetachedTablesSnapshotIterator
 {
 private:

@@ -898,9 +898,9 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
 
 void DatabaseOnDisk::removeDetachedTableInfo(const StorageID & table_id)
 {
-    dropTableFromSnapshotDetachedTables(table_id.table_name);
+    dropTableFromSnapshotDetachedTables(table_id.table_name, table_id.uuid);
     setDetachedTableNotInUseForce(table_id.uuid);
-    removeTableFromPermanentlyDetachedTables(table_id.table_name);
+    removeTableFromPermanentlyDetachedTables(table_id.uuid);
 }
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr)

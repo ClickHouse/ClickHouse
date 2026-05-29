@@ -1698,11 +1698,10 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     removeDetachedPermanentlyFlag(db_disk, table);
+    removeDetachedTableInfo(table);
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
-
-    removeDetachedTableInfo(table);
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
