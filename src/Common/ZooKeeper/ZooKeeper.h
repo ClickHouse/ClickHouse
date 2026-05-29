@@ -449,6 +449,33 @@ public:
 
     Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
+    /// Register a persistent or persistent-recursive watch on `path`. Unlike
+    /// the per-call `watch` parameter of `get`/`exists`/`getChildren`, the
+    /// watch installed here keeps firing for every matching event until it is
+    /// removed via `removeWatches` or the session ends.
+    void addWatch(
+        const std::string & path,
+        Coordination::AddWatchRequest::AddWatchMode mode,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback);
+
+    Coordination::Error tryAddWatch(
+        const std::string & path,
+        Coordination::AddWatchRequest::AddWatchMode mode,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback);
+
+    /// Remove watches of the given `type` from `path`. See
+    /// `Coordination::RemoveWatchRequest::WatchType` for the supported
+    /// selectors (data / children / persistent / persistent-recursive / any).
+    void removeWatches(const std::string & path, Coordination::RemoveWatchRequest::WatchType type);
+
+    Coordination::Error tryRemoveWatches(const std::string & path, Coordination::RemoveWatchRequest::WatchType type);
+
+    /// Returns ZOK if the current session has at least one matching watch on `path`,
+    /// or ZNOWATCHER otherwise. Other Keeper errors propagate as usual.
+    void checkWatches(const std::string & path, Coordination::CheckWatchRequest::CheckWatchType type);
+
+    Coordination::Error tryCheckWatches(const std::string & path, Coordination::CheckWatchRequest::CheckWatchType type);
+
     Int64 getClientID() const;
 
     Coordination::IKeeper::WatchesSnapshot getWatchesSnapshot() const;

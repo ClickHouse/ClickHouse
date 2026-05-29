@@ -193,6 +193,22 @@ public:
         int32_t version,
         CheckCallback callback) override;
 
+    void addWatch(
+        const String & path,
+        AddWatchRequest::AddWatchMode mode,
+        AddWatchCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
+
+    void removeWatches(
+        const String & path,
+        RemoveWatchRequest::WatchType type,
+        RemoveWatchCallback callback) override;
+
+    void checkWatches(
+        const String & path,
+        CheckWatchRequest::CheckWatchType type,
+        CheckWatchCallback callback) override;
+
     void sync(
          const String & path,
          SyncCallback callback) override;
@@ -313,6 +329,8 @@ private:
 
     WatchesWithCreateInfo watches TSA_GUARDED_BY(watches_mutex);
     WatchesWithCreateInfo list_watches TSA_GUARDED_BY(watches_mutex);
+    WatchesWithCreateInfo persistent_watches TSA_GUARDED_BY(watches_mutex);
+    WatchesWithCreateInfo persistent_recursive_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference

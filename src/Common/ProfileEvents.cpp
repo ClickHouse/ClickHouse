@@ -331,6 +331,9 @@
     M(ZooKeeperReconfig, "Number of 'reconfig' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperClose, "Number of times connection with ZooKeeper has been closed voluntary.", ValueType::Number) \
     M(ZooKeeperGetACL, "Number of 'getACL' requests to ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperAddWatch, "Number of 'AddWatch' requests to ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperRemoveWatch, "Number of 'RemoveWatch' requests to ZooKeeper.", ValueType::Number) \
+    M(ZooKeeperCheckWatch, "Number of 'CheckWatch' requests to ZooKeeper.", ValueType::Number) \
     M(ZooKeeperWatchResponse, "Number of times watch notification has been received from ZooKeeper.", ValueType::Number) \
     M(ZooKeeperUserExceptions, "Number of exceptions while working with ZooKeeper related to the data (no node, bad version or similar).", ValueType::Number) \
     M(ZooKeeperHardwareExceptions, "Number of exceptions while working with ZooKeeper related to network (connection loss or similar).", ValueType::Number) \
