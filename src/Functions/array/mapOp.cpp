@@ -12,8 +12,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/arithmeticOverflow.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include <cassert>
 
 namespace DB
 {
@@ -35,7 +36,7 @@ struct TupArg
     const IColumn::Offsets & val_offsets;
     bool is_const;
 };
-using TupleMaps = std::vector<TupArg>;
+using TupleMaps = VectorWithMemoryTracking<TupArg>;
 
 enum class OpTypes : uint8_t
 {
@@ -192,7 +193,7 @@ private:
         }
         else
         {
-            assert(res_type->getTypeId() == TypeIndex::Map);
+            chassert(res_type->getTypeId() == TypeIndex::Map);
 
             auto * to_map = assert_cast<ColumnMap *>(res_column.get());
             auto & to_wrapper_arr = to_map->getNestedColumn();
@@ -203,7 +204,7 @@ private:
             to_vals_data = &to_map_tuple.getColumn(1);
         }
 
-        std::map<KeyType, ValType> summing_map;
+        MapWithMemoryTracking<KeyType, ValType> summing_map;
 
         for (size_t i = 0; i < row_count; ++i)
         {
