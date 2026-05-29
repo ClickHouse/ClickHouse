@@ -412,6 +412,9 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
             executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
     executor.execute();
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -470,6 +473,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
 
     logProcessorProfile(context, pipeline.getProcessors());
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 
     return set_and_key->set;
 }
