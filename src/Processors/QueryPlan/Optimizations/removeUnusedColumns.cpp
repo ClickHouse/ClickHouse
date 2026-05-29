@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 
 #include <numeric>
 #include <Core/Names.h>
@@ -173,7 +174,7 @@ struct ChildUpdateResult
     bool added_discarding_step = false;
 };
 
-ChildUpdateResult removeSingleChildOutput(
+static ChildUpdateResult removeSingleChildOutput(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & node,
     const size_t child_id,
