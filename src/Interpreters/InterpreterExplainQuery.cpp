@@ -425,6 +425,7 @@ struct QueryPipelineSettings
             {"graph", graph},
             {"compact", compact},
             {"distributed", query_pipeline_options.distributed},
+            {"compact_repeated_processor_chains", query_pipeline_options.compact_repeated_processor_chains},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
