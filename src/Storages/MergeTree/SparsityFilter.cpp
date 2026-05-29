@@ -9,6 +9,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/convertFieldToType.h>
 
 
@@ -18,23 +19,26 @@ namespace DB
 namespace
 {
 
-/// `Field::operator==` is type strict: `Field(UInt64{0})` (how literal `0` parses)
-/// does not compare equal to `Field(Int64{0})` (Int16's default). Convert through
-/// the column's data type so both sides share the same `Types::Which` before
-/// comparing. The Nullable wrapper is kept on purpose: for a Nullable column the
-/// per column `num_defaults` counts NULLs, so a literal like `0` does not match the
-/// Nullable default (`NULL`) and the predicate falls through here.
-///
-/// `strict = true` rejects lossy conversions: a constant like `toDecimal32('0.001', 3)`
-/// truncates to `0.00` under a `Decimal(9, 2)` column and would otherwise compare
-/// equal to the default, classifying `d = 0.001` as `MatchesDefault` even though
-/// default rows do not satisfy the original predicate.
-bool constantEqualsTypeDefault(const Field & value, const DataTypePtr & type)
+/// Mirrors how the analyzer compares two values of related but not identical
+/// types (e.g. `DateTime` column vs `DateTime64` constant): promote both sides
+/// to their least common supertype and compare there. `strict = true` rejects
+/// lossy conversions, e.g. `toDecimal32('0.001', 3)` truncated to `0.00` under
+/// a `Decimal(9, 2)` column. The Nullable wrapper is kept on purpose: for a
+/// Nullable column the per-column `num_defaults` counts NULLs, so a literal
+/// like `0` does not match the Nullable default (`NULL`) and the predicate
+/// falls through here.
+bool constantEqualsTypeDefault(const Field & value, const DataTypePtr & value_type, const DataTypePtr & column_type)
 {
-    Field converted = convertFieldToType(value, *type, /*from_type_hint=*/nullptr, /*format_settings=*/{}, /*strict=*/true);
-    if (converted.isNull())
+    auto common_type = tryGetLeastSupertype(DataTypes{value_type, column_type});
+    if (!common_type)
         return false;
-    return converted == type->getDefault();
+    Field lhs = tryConvertFieldToType(value, *common_type, value_type.get(), {}, /*strict=*/true);
+    if (lhs.isNull())
+        return false;
+    Field rhs = tryConvertFieldToType(column_type->getDefault(), *common_type, column_type.get(), {}, /*strict=*/true);
+    if (rhs.isNull())
+        return false;
+    return lhs == rhs;
 }
 
 /// Range predicates on unsigned integers like `col > 0` match all non default rows.
@@ -108,12 +112,9 @@ tryAsNullSubcolumnOf(const QueryTreeNodePtr & node, const QueryTreeNodePtr & exp
     return base;
 }
 
-std::optional<Field> tryAsConstantValue(const QueryTreeNodePtr & node)
+const ConstantNode * tryAsConstantNode(const QueryTreeNodePtr & node)
 {
-    const auto * c = node->as<ConstantNode>();
-    if (!c)
-        return std::nullopt;
-    return c->getValue();
+    return node->as<ConstantNode>();
 }
 
 bool isZero(const Field & value)
@@ -205,19 +206,19 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
 
     /// For symmetric operators we also try the (const, col) ordering.
     auto col_opt = tryAsColumnRef(args[0], table_expression_node);
-    auto const_opt = col_opt ? tryAsConstantValue(args[1]) : std::nullopt;
+    const auto * const_node = col_opt ? tryAsConstantNode(args[1]) : nullptr;
     bool symmetric = (name == "equals" || name == "notEquals");
-    if (!col_opt || !const_opt.has_value())
+    if (!col_opt || !const_node)
     {
         if (!symmetric)
             return std::nullopt;
         col_opt = tryAsColumnRef(args[1], table_expression_node);
-        const_opt = col_opt ? tryAsConstantValue(args[0]) : std::nullopt;
-        if (!col_opt || !const_opt.has_value())
+        const_node = col_opt ? tryAsConstantNode(args[0]) : nullptr;
+        if (!col_opt || !const_node)
             return std::nullopt;
     }
     const auto & col = *col_opt;
-    const auto & value = *const_opt;
+    const auto & value = const_node->getValue();
 
     if (value.isNull())
         return std::nullopt;
@@ -228,7 +229,7 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
 
     if (name == "equals")
     {
-        if (constantEqualsTypeDefault(value, col.type))
+        if (constantEqualsTypeDefault(value, const_node->getResultType(), col.type))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesDefault};
         if (col_is_bool && isOne(value))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesNonDefault};
@@ -236,7 +237,7 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
     }
     if (name == "notEquals")
     {
-        if (constantEqualsTypeDefault(value, col.type))
+        if (constantEqualsTypeDefault(value, const_node->getResultType(), col.type))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesNonDefault};
         if (col_is_bool && isOne(value))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesDefault};
@@ -249,31 +250,31 @@ classifySparsityPredicate(const QueryTreeNodePtr & predicate, const QueryTreeNod
         return std::nullopt;
 
     auto orig_col = tryAsColumnRef(args[0], table_expression_node);
-    auto orig_const = orig_col ? tryAsConstantValue(args[1]) : std::nullopt;
-    if (!orig_col || !orig_const.has_value())
+    const auto * orig_const = orig_col ? tryAsConstantNode(args[1]) : nullptr;
+    if (!orig_col || !orig_const)
         return std::nullopt;
 
     if (name == "greater")
     {
-        if (isZero(*orig_const))
+        if (isZero(orig_const->getValue()))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesNonDefault};
         return std::nullopt;
     }
     if (name == "greaterOrEquals")
     {
-        if (isOne(*orig_const))
+        if (isOne(orig_const->getValue()))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesNonDefault};
         return std::nullopt;
     }
     if (name == "less")
     {
-        if (isOne(*orig_const))
+        if (isOne(orig_const->getValue()))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesDefault};
         return std::nullopt;
     }
     if (name == "lessOrEquals")
     {
-        if (isZero(*orig_const))
+        if (isZero(orig_const->getValue()))
             return RecognisedSparsityPredicate{col.name, SparsityPredicateClass::MatchesDefault};
         return std::nullopt;
     }

@@ -804,12 +804,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
 }
 
-Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
+Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
     /// TODO: implement proper tryConvertFieldToType without try/catch by adding template flag to convertFieldToTypeImpl to not throw an exception.
     try
     {
-        return convertFieldToType(from_value, to_type, from_type_hint, format_settings);
+        return convertFieldToType(from_value, to_type, from_type_hint, format_settings, strict);
     }
     catch (...) // Ok: tryConvertFieldToType is a try-pattern
     {
