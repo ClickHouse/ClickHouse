@@ -22,10 +22,11 @@ struct ReaderExecutorLogElement
     /// a meaningful logical file size in that case.
     std::optional<UInt64> total_size;
 
-    UInt64 cache_hit_bytes = 0;
-    UInt64 cache_miss_bytes = 0;
-    UInt64 cache_populated_bytes = 0;
-    UInt64 allocated_bytes = 0;
+    UInt64 bytes_from_page_cache = 0;
+    UInt64 bytes_from_filesystem_cache = 0;
+    UInt64 bytes_from_source = 0;
+    UInt64 bytes_pushed_to_cache_sync = 0;
+    UInt64 bytes_pushed_to_cache_async = 0;
 
     UInt64 cache_get_requests = 0;
     UInt64 cache_populate_requests = 0;
@@ -43,7 +44,7 @@ struct ReaderExecutorLogElement
     UInt64 prefetch_pool_full = 0;
     UInt64 prefetch_discarded_running = 0;
     UInt64 prefetch_discard_wait_us = 0;
-    UInt64 prefetch_discarded_bytes = 0;
+    UInt64 prefetch_wasted_bytes = 0;
 
     static std::string name() { return "ReaderExecutorLog"; }
 

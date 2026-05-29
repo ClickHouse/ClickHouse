@@ -1,9 +1,15 @@
 #include <IO/Rope.h>
+#include <Common/CurrentMetrics.h>
 #include <gtest/gtest.h>
 
 #include <cstring>
 
 using namespace DB;
+
+namespace CurrentMetrics
+{
+    extern const Metric ReaderExecutorRopeBytes;
+}
 
 TEST(ByteRange, Basic)
 {
@@ -27,6 +33,25 @@ TEST(OwnedRopeBuffer, AllocateAndAccess)
     std::memset(buf->data(), 'A', 1024);
     EXPECT_EQ(buf->data()[0], 'A');
     EXPECT_EQ(buf->data()[1023], 'A');
+}
+
+/// The `ReaderExecutorRopeBytes` gauge tracks live rope-buffer memory: it goes
+/// up by `size` while an `OwnedRopeBuffer` is alive and returns to baseline once
+/// it is freed. This is the async/current-value replacement for the old
+/// cumulative `allocated_bytes` counter.
+TEST(OwnedRopeBuffer, RopeBytesGaugeTracksLiveAllocation)
+{
+    const auto baseline = CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes);
+    {
+        auto outer = std::make_shared<OwnedRopeBuffer>(4096);
+        EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes) - baseline, 4096);
+        {
+            auto inner = std::make_shared<OwnedRopeBuffer>(2048);
+            EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes) - baseline, 4096 + 2048);
+        }
+        EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes) - baseline, 4096);
+    }
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorRopeBytes), baseline);
 }
 
 TEST(RopeNode, SliceOfBuffer)

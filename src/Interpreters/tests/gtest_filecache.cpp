@@ -3243,6 +3243,7 @@ namespace
             return std::make_unique<RecordingHandle>(hit_range, recorded_gets, data);
         }
         String name() const override { return "Recording"; }
+        CacheTier tier() const override { return CacheTier::FilesystemCache; }
     };
 }
 

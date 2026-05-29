@@ -73,11 +73,24 @@ public:
     virtual CacheSegmentPin pinSegmentAt(size_t /*file_offset*/) const { return nullptr; }
 };
 
+/// Which storage tier a cache provider represents. Drives per-tier byte
+/// attribution in observability (`ReaderExecutorBytesFromPageCache` vs
+/// `ReaderExecutorBytesFromFilesystemCache`).
+enum class CacheTier
+{
+    PageCache,
+    FilesystemCache,
+};
+
 /// Cache provider interface. `ReadPipeline` configures the chain.
 class ICacheProvider
 {
 public:
     virtual ~ICacheProvider() = default;
+
+    /// The storage tier this provider represents, used to attribute served
+    /// bytes to the right counter.
+    virtual CacheTier tier() const = 0;
 
     /// Lookup a range of `object` inside the file.
     ///   - `object` is the per-object identity (`remote_path` / `local_path`).

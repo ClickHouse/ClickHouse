@@ -64,8 +64,11 @@ namespace DB::FileCacheSetting
 
 namespace ProfileEvents
 {
-    extern const Event ReaderExecutorCacheHitBytes;
-    extern const Event ReaderExecutorCacheMissBytes;
+    extern const Event ReaderExecutorBytesFromPageCache;
+    extern const Event ReaderExecutorBytesFromFilesystemCache;
+    extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorBytesPushedToCacheSync;
+    extern const Event ReaderExecutorBytesPushedToCacheAsync;
 }
 
 using namespace DB;
@@ -419,8 +422,8 @@ TEST_F(ReaderExecutorCacheChain, FsHitWhenPageColdRepopulatesPage)
 /// Scenario 4: partial fs hit. Executor#1 reads only the prefix `[0, half)`
 /// (one window) and warms the fs prefix. Executor#2 reads the whole file: the
 /// prefix is served from fs, the tail from source. We attribute via
-/// `ProfileEvents`: `ReaderExecutorCacheHitBytes` ~ prefix and
-/// `ReaderExecutorCacheMissBytes` ~ tail.
+/// `ProfileEvents`: `ReaderExecutorBytesFromFilesystemCache` ~ prefix and
+/// `ReaderExecutorBytesFromSource` ~ tail.
 ///
 /// The executor increments these thread-local counters (propagated through the
 /// fixture's `QueryScope` thread group); we measure the delta ACROSS executor#2
@@ -457,8 +460,8 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
     }
 
     auto & counters = CurrentThread::getProfileEvents();
-    const auto hit_before = counters[ProfileEvents::ReaderExecutorCacheHitBytes].load(std::memory_order_relaxed);
-    const auto miss_before = counters[ProfileEvents::ReaderExecutorCacheMissBytes].load(std::memory_order_relaxed);
+    const auto hit_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed);
+    const auto miss_before = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
 
     /// Executor #2: read the whole file. Prefix from fs, tail from source.
     {
@@ -468,14 +471,66 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
         EXPECT_GT(executor.getSourceRequestsCount(), 0u) << "the tail must be fetched from source";
     }
 
-    const auto hit_delta = counters[ProfileEvents::ReaderExecutorCacheHitBytes].load(std::memory_order_relaxed) - hit_before;
-    const auto miss_delta = counters[ProfileEvents::ReaderExecutorCacheMissBytes].load(std::memory_order_relaxed) - miss_before;
+    const auto hit_delta = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed) - hit_before;
+    const auto miss_delta = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed) - miss_before;
 
-    /// Prefix served from cache, tail from source.
+    /// Prefix served from the filesystem cache, tail from source.
     EXPECT_EQ(hit_delta, half)
-        << "the warmed prefix must be a cache hit (not re-read from source)";
+        << "the warmed prefix must be a filesystem-cache hit (not re-read from source)";
     EXPECT_EQ(miss_delta, file_size - half)
         << "only the tail must miss";
+}
+
+
+/// Per-tier attribution: a hit served by the page cache lands in
+/// `ReaderExecutorBytesFromPageCache`, leaving the filesystem-cache and source
+/// counters untouched. `PartialFsHitTailFromSource` covers the
+/// filesystem-cache side, so together they pin down the page/fs split.
+TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
+{
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 320;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(page_provider);
+
+    /// Warm the page cache.
+    {
+        ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
+        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        EXPECT_EQ(drainAll(executor), content);
+    }
+
+    auto & counters = CurrentThread::getProfileEvents();
+    const auto page_before = counters[ProfileEvents::ReaderExecutorBytesFromPageCache].load(std::memory_order_relaxed);
+    const auto fs_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed);
+    const auto src_before = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
+
+    /// Warm read: the page cache serves the whole file.
+    {
+        ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
+        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        EXPECT_EQ(drainAll(executor), content);
+        EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
+            << "the warm read must be served entirely from the page cache";
+    }
+
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromPageCache].load(std::memory_order_relaxed) - page_before, file_size)
+        << "the warm read must be attributed to the page-cache tier";
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed) - fs_before, 0u)
+        << "no filesystem cache is in the chain";
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed) - src_before, 0u)
+        << "the source must not be touched on a page hit";
 }
 
 

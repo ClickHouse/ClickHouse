@@ -20,10 +20,11 @@ namespace ProfileEvents
     extern const Event LiveSourceBufferHits;
     extern const Event LiveSourceBufferFallbacks;
     extern const Event LiveSourceBufferBytes;
-    extern const Event ReaderExecutorCacheHitBytes;
-    extern const Event ReaderExecutorCacheMissBytes;
-    extern const Event ReaderExecutorCachePopulatedBytes;
-    extern const Event ReaderExecutorAllocatedBytes;
+    extern const Event ReaderExecutorBytesFromPageCache;
+    extern const Event ReaderExecutorBytesFromFilesystemCache;
+    extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorBytesPushedToCacheSync;
+    extern const Event ReaderExecutorBytesPushedToCacheAsync;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorSourceRequests;
@@ -38,7 +39,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchPoolFull;
     extern const Event ReaderExecutorPrefetchDiscardedRunning;
     extern const Event ReaderExecutorPrefetchDiscardWaitMicroseconds;
-    extern const Event ReaderExecutorPrefetchDiscardedBytes;
+    extern const Event ReaderExecutorPrefetchWastedBytes;
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
 }
@@ -182,10 +183,11 @@ ReaderExecutor::~ReaderExecutor()
     drainAbandonedPrefetches(/*wait_finished=*/true);
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheHitBytes, stats.cache_hit_bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheMissBytes, stats.cache_miss_bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulatedBytes, stats.cache_populated_bytes);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorAllocatedBytes, stats.allocated_bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromPageCache, stats.bytes_from_page_cache);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromFilesystemCache, stats.bytes_from_filesystem_cache);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, stats.bytes_from_source);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheSync, stats.bytes_pushed_to_cache_sync);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheAsync, stats.bytes_pushed_to_cache_async);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, stats.cache_get_requests);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, stats.cache_populate_requests);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, stats.source_requests);
@@ -200,23 +202,24 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, stats.prefetch_pool_full);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedRunning, stats.prefetch_discarded_running);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardWaitMicroseconds, stats.prefetch_discard_wait_us);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedBytes, stats.prefetch_discarded_bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedBytes, stats.prefetch_wasted_bytes);
 
     LOG_DEBUG(log,
-        "Destroyed: cache_hit_bytes={} miss_bytes={} populated={} allocated={} "
+        "Destroyed: from_page_cache={} from_filesystem_cache={} from_source={} "
+        "pushed_to_cache_sync={} pushed_to_cache_async={} "
         "get_reqs={} populate_reqs={} src_reqs={} "
         "get_us={} populate_us={} src_us={} decrypt_us={} "
         "prefetch_wait_us={} sync_read_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
-        "prefetch_discarded_running={} prefetch_discard_wait_us={} prefetch_discarded_bytes={}",
-        stats.cache_hit_bytes, stats.cache_miss_bytes,
-        stats.cache_populated_bytes, stats.allocated_bytes,
+        "prefetch_discarded_running={} prefetch_discard_wait_us={} prefetch_wasted_bytes={}",
+        stats.bytes_from_page_cache, stats.bytes_from_filesystem_cache, stats.bytes_from_source,
+        stats.bytes_pushed_to_cache_sync, stats.bytes_pushed_to_cache_async,
         stats.cache_get_requests, stats.cache_populate_requests, stats.source_requests,
         stats.cache_get_us, stats.cache_populate_us,
         stats.source_read_us, stats.decrypt_us,
         stats.prefetch_wait_us, stats.sync_read_us,
         stats.prefetch_hits, stats.prefetch_cancelled, stats.prefetch_pool_full,
-        stats.prefetch_discarded_running, stats.prefetch_discard_wait_us, stats.prefetch_discarded_bytes);
+        stats.prefetch_discarded_running, stats.prefetch_discard_wait_us, stats.prefetch_wasted_bytes);
 
     if (reader_executor_log)
     {
@@ -226,15 +229,16 @@ ReaderExecutor::~ReaderExecutor()
         elem.source_file_path = log_file_path;
         /// Logical (user-visible) bytes — `totalSize()` subtracts
         /// `data_start_offset` for encrypted reads so the value lines up
-        /// with `cache_hit_bytes` / `cache_miss_bytes`. `nullopt` when the
-        /// underlying object had `StoredObject::UnknownSize`.
+        /// with the per-tier byte counters. `nullopt` when the underlying
+        /// object had `StoredObject::UnknownSize`.
         elem.total_size = offset_map.hasUnknownSize()
             ? std::optional<UInt64>{}
             : std::optional<UInt64>{totalSize()};
-        elem.cache_hit_bytes = stats.cache_hit_bytes;
-        elem.cache_miss_bytes = stats.cache_miss_bytes;
-        elem.cache_populated_bytes = stats.cache_populated_bytes;
-        elem.allocated_bytes = stats.allocated_bytes;
+        elem.bytes_from_page_cache = stats.bytes_from_page_cache;
+        elem.bytes_from_filesystem_cache = stats.bytes_from_filesystem_cache;
+        elem.bytes_from_source = stats.bytes_from_source;
+        elem.bytes_pushed_to_cache_sync = stats.bytes_pushed_to_cache_sync;
+        elem.bytes_pushed_to_cache_async = stats.bytes_pushed_to_cache_async;
         elem.cache_get_requests = stats.cache_get_requests;
         elem.cache_populate_requests = stats.cache_populate_requests;
         elem.source_requests = stats.source_requests;
@@ -249,7 +253,7 @@ ReaderExecutor::~ReaderExecutor()
         elem.prefetch_pool_full = stats.prefetch_pool_full;
         elem.prefetch_discarded_running = stats.prefetch_discarded_running;
         elem.prefetch_discard_wait_us = stats.prefetch_discard_wait_us;
-        elem.prefetch_discarded_bytes = stats.prefetch_discarded_bytes;
+        elem.prefetch_wasted_bytes = stats.prefetch_wasted_bytes;
         reader_executor_log->add(std::move(elem));
     }
 }
@@ -404,7 +408,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     auto handle = prefetch_pool->submit([this, next_physical_window, next_logical_offset]()
     {
-        return decryptRope(readPhysicalWindow(next_physical_window), next_logical_offset);
+        return decryptRope(readPhysicalWindow(next_physical_window, /*from_prefetch=*/true), next_logical_offset);
     });
 
     if (!handle)
@@ -449,7 +453,7 @@ void ReaderExecutor::discardPrefetch()
     try
     {
         auto rope = local_handle->get();
-        stats.prefetch_discarded_bytes += rope.totalBytes();
+        stats.prefetch_wasted_bytes += rope.totalBytes();
     }
     catch (...)
     {
@@ -528,7 +532,7 @@ void ReaderExecutor::initDecryption()
     LOG_DEBUG(log, "initDecryption: reading {} headers ({} bytes)",
         decryption_layers.size(), data_start_offset);
 
-    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset});
+    Rope header_rope = readPhysicalWindow(ByteRange{0, data_start_offset}, /*from_prefetch=*/false);
 
     /// Under size-unknown sources `readPhysicalWindow` latches `reached_eof`
     /// on short returns instead of throwing, so an empty rope means
@@ -691,7 +695,7 @@ Rope ReaderExecutor::readNextWindow()
                 : std::min(effectiveWindowSize(), logical_size - position);
             ByteRange physical_window{position + data_start_offset, win_size};
             StopwatchAccumulator sync_scope(stats.sync_read_us);
-            rope = decryptRope(readPhysicalWindow(physical_window), position);
+            rope = decryptRope(readPhysicalWindow(physical_window, /*from_prefetch=*/false), position);
             HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
 
@@ -742,7 +746,7 @@ Rope ReaderExecutor::readNextWindow()
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
         StopwatchAccumulator sync_scope(stats.sync_read_us);
-        rope = decryptRope(readPhysicalWindow(physical_window), position);
+        rope = decryptRope(readPhysicalWindow(physical_window, /*from_prefetch=*/false), position);
         HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
             static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
     }
@@ -1008,9 +1012,10 @@ Rope ReaderExecutor::readFromSource(
     return rope;
 }
 
-Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
+Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_prefetch)
 {
-    LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
+    LOG_TRACE(log, "readPhysicalWindow [{}, {}) from_prefetch={}",
+        physical_window.offset, physical_window.end(), from_prefetch);
 
     Rope result;
     IntervalSet covered;   /// disjoint logical bytes already materialised in `result`
@@ -1028,6 +1033,11 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     for (auto & cache : caches)
     {
         VectorWithMemoryTracking<ByteRange> still_missing;
+
+        /// Attribute every byte this tier serves to the matching counter.
+        size_t & hit_bytes = cache->tier() == CacheTier::PageCache
+            ? stats.bytes_from_page_cache
+            : stats.bytes_from_filesystem_cache;
 
         for (const auto & r : remaining)
         {
@@ -1070,12 +1080,11 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                     Rope hit_rope = handle->get(clamped);
                     HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
                         static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
-                    stats.allocated_bytes += hit_rope.totalBytes();
                     for (const auto & sub : useful)
                     {
                         result.append(hit_rope.extract(sub));
                         covered.add(sub);
-                        stats.cache_hit_bytes += sub.size;
+                        hit_bytes += sub.size;
                     }
                     any_hit_done = true;
                 }
@@ -1134,13 +1143,12 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             std::sort(splits.begin(), splits.end());
 
             auto blocks = allocateBlocks(pr.size, effectiveBlockSize(), splits);
-            stats.allocated_bytes += pr.size;
             StopwatchAccumulator src_scope(stats.source_read_us);
             Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             size_t actual = source_rope.totalBytes();
-            stats.cache_miss_bytes += actual;
+            stats.bytes_from_source += actual;
             /// Size-known short reads are fatal (the map promised those bytes;
             /// silently shrinking would shift later logical offsets). Size-unknown
             /// short reads are the only way to learn EOF — latch `reached_eof`.
@@ -1180,7 +1188,10 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 continue;
             ++stats.cache_populate_requests;
             StopwatchAccumulator put_scope(stats.cache_populate_us);
-            stats.cache_populated_bytes += handle->put(miss, std::move(slice));
+            size_t & pushed_bytes = from_prefetch
+                ? stats.bytes_pushed_to_cache_async
+                : stats.bytes_pushed_to_cache_sync;
+            pushed_bytes += handle->put(miss, std::move(slice));
             HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
                 static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
         }

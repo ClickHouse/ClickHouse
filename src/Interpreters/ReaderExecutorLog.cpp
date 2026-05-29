@@ -28,10 +28,11 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"source_file_path", std::make_shared<DataTypeString>(), "Cache-key path the executor was reading. Typically the first object's `remote_path`."},
         {"total_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Total logical size in bytes the executor was set up to read across all objects. `NULL` when the underlying object had no known size (e.g. S3 HEAD without `Content-Length`)."},
 
-        {"cache_hit_bytes", std::make_shared<DataTypeUInt64>(), "Bytes served from cache layers."},
-        {"cache_miss_bytes", std::make_shared<DataTypeUInt64>(), "Bytes fetched from source."},
-        {"cache_populated_bytes", std::make_shared<DataTypeUInt64>(), "Bytes written back into caches via `put`."},
-        {"allocated_bytes", std::make_shared<DataTypeUInt64>(), "Bytes allocated for `OwnedRopeBuffer` during cache `get` and source read."},
+        {"bytes_from_page_cache", std::make_shared<DataTypeUInt64>(), "Bytes served to the consumer from the page cache tier."},
+        {"bytes_from_filesystem_cache", std::make_shared<DataTypeUInt64>(), "Bytes served to the consumer from the filesystem cache tier."},
+        {"bytes_from_source", std::make_shared<DataTypeUInt64>(), "Bytes fetched from source after missing all cache tiers."},
+        {"bytes_pushed_to_cache_sync", std::make_shared<DataTypeUInt64>(), "Bytes written back into cache tiers via `put` from a foreground (synchronous) read."},
+        {"bytes_pushed_to_cache_async", std::make_shared<DataTypeUInt64>(), "Bytes written back into cache tiers via `put` from a background prefetch read."},
 
         {"cache_get_requests", std::make_shared<DataTypeUInt64>(), "Number of `ICacheHandle::get` invocations."},
         {"cache_populate_requests", std::make_shared<DataTypeUInt64>(), "Number of `ICacheHandle::put` invocations."},
@@ -49,7 +50,7 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"prefetch_pool_full", std::make_shared<DataTypeUInt64>(), "Number of times `PrefetchThreadPool::submit` returned `nullptr` (queue full)."},
         {"prefetch_discarded_running", std::make_shared<DataTypeUInt64>(), "Number of times `discardPrefetch` blocked on `get()` because the worker had already started; everything the worker produced is wasted."},
         {"prefetch_discard_wait_microseconds", std::make_shared<DataTypeUInt64>(), "Time blocked in `discardPrefetch::get` waiting for a running prefetch to finish before its result was thrown away."},
-        {"prefetch_discarded_bytes", std::make_shared<DataTypeUInt64>(), "Bytes the worker delivered in the rope that `discardPrefetch` threw away."},
+        {"prefetch_wasted_bytes", std::make_shared<DataTypeUInt64>(), "Bytes a running prefetch materialised into a rope that was then discarded. Excludes cache `put`s made in the same window, which persist for later reads."},
     };
 }
 
@@ -66,10 +67,11 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     else
         columns[i++]->insertDefault();
 
-    columns[i++]->insert(cache_hit_bytes);
-    columns[i++]->insert(cache_miss_bytes);
-    columns[i++]->insert(cache_populated_bytes);
-    columns[i++]->insert(allocated_bytes);
+    columns[i++]->insert(bytes_from_page_cache);
+    columns[i++]->insert(bytes_from_filesystem_cache);
+    columns[i++]->insert(bytes_from_source);
+    columns[i++]->insert(bytes_pushed_to_cache_sync);
+    columns[i++]->insert(bytes_pushed_to_cache_async);
 
     columns[i++]->insert(cache_get_requests);
     columns[i++]->insert(cache_populate_requests);
@@ -87,7 +89,7 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(prefetch_pool_full);
     columns[i++]->insert(prefetch_discarded_running);
     columns[i++]->insert(prefetch_discard_wait_us);
-    columns[i++]->insert(prefetch_discarded_bytes);
+    columns[i++]->insert(prefetch_wasted_bytes);
 }
 
 }

@@ -1,11 +1,17 @@
 #include <IO/Rope.h>
 #include <Common/Allocator.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Defines.h>
 
 #include <algorithm>
 #include <cstring>
+
+namespace CurrentMetrics
+{
+    extern const Metric ReaderExecutorRopeBytes;
+}
 
 namespace DB
 {
@@ -19,10 +25,12 @@ OwnedRopeBuffer::OwnedRopeBuffer(size_t size)
     : buf_data(static_cast<char *>(rope_allocator.alloc(size + PADDING_FOR_SIMD)))
     , buf_size(size)
 {
+    CurrentMetrics::add(CurrentMetrics::ReaderExecutorRopeBytes, buf_size);
 }
 
 OwnedRopeBuffer::~OwnedRopeBuffer()
 {
+    CurrentMetrics::sub(CurrentMetrics::ReaderExecutorRopeBytes, buf_size);
     rope_allocator.free(buf_data, buf_size + PADDING_FOR_SIMD);
 }
 

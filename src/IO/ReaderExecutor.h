@@ -120,7 +120,9 @@ public:
 
 private:
     /// Read a specific physical range through the cache chain and source.
-    Rope readPhysicalWindow(ByteRange physical_window);
+    /// `from_prefetch` is true when called from a prefetch worker; it routes
+    /// cache-populate bytes to the sync vs. async counter.
+    Rope readPhysicalWindow(ByteRange physical_window, bool from_prefetch);
 
     /// Read from source into the pre-allocated `blocks`. Tries live buffer first, falls back to stateless.
     /// `blocks` is consumed: blocks that receive data become RopeNodes in the returned Rope;
@@ -278,10 +280,16 @@ private:
     /// triaging a slow query needs only the server log, not a separate trace.
     struct Stats
     {
-        size_t cache_hit_bytes = 0;
-        size_t cache_miss_bytes = 0;
-        size_t cache_populated_bytes = 0;
-        size_t allocated_bytes = 0;
+        /// Bytes delivered to the consumer, split by where they came from.
+        /// Attributed by the serving provider's `tier()`.
+        size_t bytes_from_page_cache = 0;
+        size_t bytes_from_filesystem_cache = 0;
+        size_t bytes_from_source = 0;
+        /// Bytes written back into cache layers via `put`, split by the
+        /// context that ran the populating window: a foreground (synchronous)
+        /// read vs. a background prefetch worker.
+        size_t bytes_pushed_to_cache_sync = 0;
+        size_t bytes_pushed_to_cache_async = 0;
         size_t cache_get_requests = 0;
         size_t cache_populate_requests = 0;
         size_t source_requests = 0;
@@ -299,7 +307,11 @@ private:
         /// All work the worker did is thrown away.
         size_t prefetch_discarded_running = 0;
         UInt64 prefetch_discard_wait_us = 0;
-        size_t prefetch_discarded_bytes = 0;
+        /// Bytes a running prefetch materialised into a rope that was then
+        /// discarded (consumer seeked/closed away before consuming it). The
+        /// cache `put` that ran in the same window is NOT counted here — those
+        /// bytes persist in cache for a later read.
+        size_t prefetch_wasted_bytes = 0;
     };
     /// `mutable` so the `const` `decryptRope` can accumulate `decrypt_us`.
     /// `decryptRope`'s `const` documents thread-safety for parallel calls

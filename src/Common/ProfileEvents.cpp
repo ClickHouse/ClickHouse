@@ -805,10 +805,11 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     \
-    M(ReaderExecutorCacheHitBytes, "Bytes served from the ReaderExecutor cache chain (PageCache + DiskCache) without going to source.", ValueType::Bytes) \
-    M(ReaderExecutorCacheMissBytes, "Bytes that missed all ReaderExecutor caches and were fetched from source.", ValueType::Bytes) \
-    M(ReaderExecutorCachePopulatedBytes, "Bytes the ReaderExecutor wrote back into a cache layer via put.", ValueType::Bytes) \
-    M(ReaderExecutorAllocatedBytes, "Bytes allocated by ReaderExecutor for OwnedRopeBuffer instances during cache get / source read.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromPageCache, "Bytes ReaderExecutor served to the consumer from the page cache tier.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromFilesystemCache, "Bytes ReaderExecutor served to the consumer from the filesystem cache tier.", ValueType::Bytes) \
+    M(ReaderExecutorBytesFromSource, "Bytes ReaderExecutor fetched from source after missing all cache tiers.", ValueType::Bytes) \
+    M(ReaderExecutorBytesPushedToCacheSync, "Bytes ReaderExecutor wrote back into cache tiers via put from a foreground (synchronous) read.", ValueType::Bytes) \
+    M(ReaderExecutorBytesPushedToCacheAsync, "Bytes ReaderExecutor wrote back into cache tiers via put from a background prefetch read.", ValueType::Bytes) \
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
@@ -823,7 +824,7 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submit returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
     M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's discardPrefetch blocked on a running prefetch's get() because tryCancel lost the race; the work the worker did is wasted.", ValueType::Number) \
     M(ReaderExecutorPrefetchDiscardWaitMicroseconds, "Time blocked in ReaderExecutor's discardPrefetch waiting for a running prefetch to finish before throwing its result away.", ValueType::Microseconds) \
-    M(ReaderExecutorPrefetchDiscardedBytes, "Bytes a running ReaderExecutor prefetch delivered before discardPrefetch threw the rope away.", ValueType::Bytes) \
+    M(ReaderExecutorPrefetchWastedBytes, "Bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded (consumer seeked/closed away). Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
     M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a SourceBufferLimit slot for a live-buffer read.", ValueType::Number) \
     M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a SourceBufferLimit slot.", ValueType::Number) \
     \

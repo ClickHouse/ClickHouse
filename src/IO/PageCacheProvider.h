@@ -108,6 +108,7 @@ public:
         size_t object_file_offset,
         ByteRange range_in_file) override;
     String name() const override { return "PageCache"; }
+    CacheTier tier() const override { return CacheTier::PageCache; }
 
 private:
     PageCachePtr cache;

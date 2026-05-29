@@ -110,6 +110,7 @@ public:
         size_t object_file_offset,
         ByteRange range_in_file) override;
     String name() const override { return "DiskCache"; }
+    CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
 private:
     FileCachePtr cache;

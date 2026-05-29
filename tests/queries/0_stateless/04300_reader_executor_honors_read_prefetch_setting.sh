@@ -35,12 +35,12 @@ $CLICKHOUSE_CLIENT --use_reader_executor=1 --remote_filesystem_read_prefetch=1 -
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
 # prefetch=0 -> no prefetch pool attached -> zero prefetch activity, while the
-# executor still ran (read misses from source). The CacheMissBytes guard makes
+# executor still ran (read misses from source). The BytesFromSource guard makes
 # this non-vacuous (fails if the executor path was not taken at all).
 $CLICKHOUSE_CLIENT --query "
     SELECT throwIf(
         sum(ProfileEvents['ReaderExecutorPrefetchHits'] + ProfileEvents['ReaderExecutorPrefetchCancelled']) != 0
-        OR sum(ProfileEvents['ReaderExecutorCacheMissBytes']) = 0,
+        OR sum(ProfileEvents['ReaderExecutorBytesFromSource']) = 0,
         'executor prefetched despite remote_filesystem_read_prefetch=0 (or executor did not run)')
     FROM system.query_log
     WHERE query LIKE '%re\\_prefetch\\_off%' AND type = 'QueryFinish' AND current_database = currentDatabase()

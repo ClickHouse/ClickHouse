@@ -261,6 +261,7 @@ public:
     }
 
     String name() const override { return "MockCache"; }
+    CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index) > 0; }
 
@@ -911,6 +912,8 @@ namespace ProfileEvents
     extern const Event LiveSourceBufferFallbacks;
     extern const Event LiveSourceBufferBytes;
     extern const Event ReaderExecutorBufferSlotAcquired;
+    extern const Event ReaderExecutorBytesPushedToCacheSync;
+    extern const Event ReaderExecutorBytesPushedToCacheAsync;
 }
 
 namespace
@@ -1239,6 +1242,7 @@ public:
     std::unique_ptr<ICacheHandle> lookup(const StoredObject &, size_t, ByteRange range) override;
 
     String name() const override { return "EvictableSegmentMock"; }
+    CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
     /// Evict every segment not currently pinned by a caller.
     void evictUnpinned()
@@ -2136,6 +2140,7 @@ public:
     }
 
     String name() const override { return provider_name; }
+    CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index); }
 
@@ -2392,6 +2397,7 @@ namespace
             return std::make_unique<TrackingCacheHandle>(range_in_file);
         }
         String name() const override { return "Tracking"; }
+        CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
         std::vector<TrackedLookup> log;
     };
@@ -2670,6 +2676,54 @@ TEST(ReaderExecutor, UnknownSizePrefetchedFinalBytesAreServed)
     /// Third call: no pending prefetch, `reached_eof` still set → real EOF.
     auto r3 = executor.readNextWindow();
     EXPECT_TRUE(r3.empty());
+}
+
+/// Cache populates are split by the context that produced them: a foreground
+/// (synchronous) read credits `ReaderExecutorBytesPushedToCacheSync`, while a
+/// prefetch worker credits `ReaderExecutorBytesPushedToCacheAsync`. `stats` are
+/// flushed to `ProfileEvents` in `~ReaderExecutor`, so each delta is read only
+/// after the executor scope closes.
+TEST(ReaderExecutor, PopulateBytesSplitSyncVsAsync)
+{
+    constexpr size_t file_size = 2048;
+    constexpr size_t window = 512;
+    String content(file_size, 'P');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto & pe = CurrentThread::getProfileEvents();
+
+    /// No prefetch pool: every populate runs on the foreground path.
+    {
+        const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
+        const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
+        {
+            auto cache = std::make_shared<MockCacheProvider>(window);
+            ReaderExecutor executor(source, objects, {cache}, window);
+            while (!executor.readNextWindow().empty()) {}
+        }
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before, file_size)
+            << "without a prefetch pool every populate is synchronous";
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u);
+    }
+
+    /// `SyncPrefetchPool` runs each submitted task inline; the windows it reads
+    /// ahead populate the (fresh) cache through the prefetch path.
+    {
+        const auto async_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed);
+        {
+            auto cache = std::make_shared<MockCacheProvider>(window);
+            auto pool = std::make_shared<SyncPrefetchPool>();
+            ReaderExecutor executor(source, objects, {cache}, window);
+            executor.setPrefetchPool(pool);
+            while (!executor.readNextWindow().empty()) {}
+        }
+        EXPECT_GT(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheAsync].load(std::memory_order_relaxed) - async_before, 0u)
+            << "prefetch-driven populates must be attributed to the async counter";
+    }
 }
 
 /// `ReadBufferFromOwnMemoryFile` (used by `BackupInMemory::readFile`, and
