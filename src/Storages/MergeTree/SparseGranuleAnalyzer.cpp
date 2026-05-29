@@ -303,36 +303,20 @@ analyzeSparseColumnGranules(
     }
     else
     {
-        using RunnerT = ThreadPoolCallbackRunnerLocal<ChunkResult>;
-        RunnerT runner(getIOThreadPool().get(), ThreadName::MERGETREE_READ);
-        std::vector<std::shared_ptr<RunnerT::Task>> task_handles;
-        task_handles.reserve(chunks.size());
-        for (auto chunk : chunks)
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::MERGETREE_READ);
+        for (size_t i = 0; i < chunks.size(); ++i)
         {
-            task_handles.push_back(runner.enqueueAndGiveOwnership(
-                [process_chunk, chunk]() { return process_chunk(chunk); }));
+            runner.enqueueAndKeepTrack(
+                [i, chunk = chunks[i], process_chunk, &results] { results[i] = process_chunk(chunk); });
         }
-        /// `future.get()` rethrows any worker exception; treat that as "abandon analysis"
-        /// rather than letting it escape, same as the synchronous catch in `process_chunk`.
-        for (size_t i = 0; i < task_handles.size(); ++i)
-        {
-            try
-            {
-                results[i] = task_handles[i]->future.get();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, fmt::format(
-                    "Analyzer chunk for column {} of part {} threw; skipping sparsity classification",
-                    column_name, part->name));
-                results[i].ok = false;
-            }
-        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
 
     for (const auto & r : results)
+    {
         if (!r.ok)
             return std::nullopt;
+    }
 
     /// Store each chunk as its own entry in the share. Scan `readRows` calls are
     /// `max_block_size` rows wide (typically a small multiple of one mark) while
