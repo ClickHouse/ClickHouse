@@ -177,6 +177,93 @@ def test_cluster_discovery_no_crash_on_empty_static_cluster(start_cluster):
     )
 
 
+def test_cluster_discovery_keeper_restart(start_cluster):
+    """
+    Regression test: data nodes must re-register ephemeral discovery znodes
+    after Keeper session expiry caused by Keeper restart.
+
+    Regression introduced in b932cce8805 (v25.12) which removed the timeout
+    from Flags::wait(), causing the main loop to block forever after session
+    expiry when ZK watches are invalidated.
+
+    Bug path (without fix):
+    1. All Keeper nodes restart -> all client sessions expire -> ephemeral znodes deleted.
+    2. ClickHouse data nodes reconnect to Keeper with new sessions.
+    3. ClusterDiscovery::runMainThread is blocked on Flags::wait() -- ZK watches were
+       invalidated on the old session, so the condition variable is never notified.
+    4. force_update_interval check and re-registration logic exist but are unreachable.
+    5. Observer nodes see an incomplete/empty cluster indefinitely.
+
+    With fix: Flags::wait() uses wait_for() with a timeout, so the main loop unblocks
+    periodically and re-registers the node.
+    """
+    import time
+
+    observer = nodes["node_observer"]
+    member_nodes = [nodes[n] for n in ("node0", "node1", "node2", "node3", "node4")]
+    total_nodes = len(member_nodes)
+
+    def get_registration_count():
+        return int(
+            observer.query(
+                "SELECT count() FROM system.zookeeper "
+                "WHERE path = '/clickhouse/discovery/test_auto_cluster/shards'"
+            ).strip()
+        )
+
+    def wait_for_registration_count(expected, attempts=30, delay=10):
+        registrations = None
+        last_exception = None
+        for attempt in range(attempts):
+            try:
+                registrations = get_registration_count()
+                if registrations == expected:
+                    return
+            except Exception as ex:
+                last_exception = ex
+
+            if attempt + 1 < attempts:
+                time.sleep(delay)
+
+        raise AssertionError(
+            f"Wrong ZK registration count: {registrations}, "
+            f"expected: {expected}, last exception: {last_exception}"
+        )
+
+    # Verify cluster is fully up, both in observer cache and in Keeper registrations.
+    check_on_cluster(
+        [observer], total_nodes, what="count()", msg="Pre-test cluster count wrong"
+    )
+    wait_for_registration_count(total_nodes, attempts=6, delay=2)
+
+    # Stop all ZK nodes to force session expiry.
+    zk_nodes = ["zoo1", "zoo2", "zoo3"]
+    cluster.stop_zookeeper_nodes(zk_nodes)
+
+    # Wait long enough for session timeout to expire (default 10-30s).
+    time.sleep(30)
+
+    # Restart ZK -- sessions are expired, ephemeral znodes are gone.
+    cluster.start_zookeeper_nodes(zk_nodes)
+    cluster.wait_zookeeper_nodes_to_start(zk_nodes)
+
+    # With the fix, re-registration should happen within force_update_interval (2 min).
+    # Check Keeper directly instead of system.clusters because existing observers can keep
+    # stale cluster_impls cached even when ephemeral znodes are missing.
+    wait_for_registration_count(total_nodes)
+
+    # Restart the observer to drop the old in-memory system.clusters cache, then verify
+    # a fresh observer sees the re-registered nodes from Keeper.
+    observer.restart_clickhouse()
+    check_on_cluster(
+        [observer],
+        total_nodes,
+        what="count()",
+        msg="Fresh observer should see all nodes after Keeper restart",
+        retries=6,
+    )
+
+
 def test_cluster_discovery_macros(start_cluster):
     # wait for all nodes to be started
     check_nodes_count = functools.partial(

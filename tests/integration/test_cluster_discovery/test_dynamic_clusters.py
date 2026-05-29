@@ -34,16 +34,55 @@ def start_cluster():
         cluster.shutdown()
 
 
-def get_clusters_hosts(node, expected):
-    count = 30
+def get_clusters_hosts(node, expected, retries=30):
     while True:
         resp = node.query("SELECT cluster, host_name FROM system.clusters ORDER BY cluster, host_name FORMAT JSONCompact")
         hosts = json.loads(resp)["data"]
-        if count <= 0 or len(hosts) == expected:
+        if retries <= 0 or len(hosts) == expected:
             break
         time.sleep(1)
-        count -= 1
+        retries -= 1
     return hosts
+
+
+def wait_for_clusters_hosts(node, expected, retries=30):
+    hosts = []
+    while True:
+        resp = node.query("SELECT cluster, host_name FROM system.clusters ORDER BY cluster, host_name FORMAT JSONCompact")
+        hosts = json.loads(resp)["data"]
+        if retries <= 0 or hosts == expected:
+            break
+        time.sleep(1)
+        retries -= 1
+    assert hosts == expected
+
+
+def get_registration_count(node, path):
+    return int(
+        node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{path}'"
+        ).strip()
+    )
+
+
+def wait_for_registration_count(node, path, expected, attempts=30, delay=10):
+    registrations = None
+    last_exception = None
+    for attempt in range(attempts):
+        try:
+            registrations = get_registration_count(node, path)
+            if registrations == expected:
+                return
+        except Exception as ex:
+            last_exception = ex
+
+        if attempt + 1 < attempts:
+            time.sleep(delay)
+
+    raise AssertionError(
+        f"Wrong ZK registration count for {path}: {registrations}, "
+        f"expected: {expected}, last exception: {last_exception}"
+    )
 
 
 def test_cluster_discovery_startup_and_stop(start_cluster):
@@ -93,3 +132,24 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     for node in ["node0", "node2", "node3", "node_observer"]:
         clusters = get_clusters_hosts(nodes[node], 3)
         assert clusters == expect5
+
+    # test_auto_cluster3 was discovered dynamically after observer startup. It must be kept
+    # in the observer's periodic update set, otherwise a Keeper session expiry can invalidate
+    # its children watch and leave the observer with stale membership forever.
+    zk_nodes = ["zoo1", "zoo2", "zoo3"]
+    cluster.stop_zookeeper_nodes(zk_nodes)
+    time.sleep(30)
+    cluster.start_zookeeper_nodes(zk_nodes)
+    cluster.wait_zookeeper_nodes_to_start(zk_nodes)
+
+    for path in [
+        "/clickhouse/discovery/test_auto_cluster1/shards",
+        "/clickhouse/discovery/test_auto_cluster2/shards",
+        "/clickhouse/discovery2/test_auto_cluster3/shards",
+    ]:
+        wait_for_registration_count(nodes["node_observer"], path, 1)
+
+    nodes["node3"].stop_clickhouse(kill=True)
+
+    expect6 = [["test_auto_cluster1", "node0"], ["test_auto_cluster2", "node2"]]
+    wait_for_clusters_hosts(nodes["node_observer"], expect6, retries=300)

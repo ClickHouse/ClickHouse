@@ -132,10 +132,14 @@ public:
             flags.erase(key);
     }
 
-    std::unordered_map<T, bool> wait(bool & finished)
+    /// Wait for any flag to be set, or until timeout expires.
+    /// The timeout ensures the caller's periodic maintenance (e.g. force_update_interval
+    /// checks and ephemeral znode re-registration) runs even when ZK watches are lost
+    /// after a Keeper session expiry.
+    std::unordered_map<T, bool> wait(bool & finished, std::chrono::milliseconds timeout)
     {
         std::unique_lock<std::mutex> lk(mu);
-        cv.wait(lk, [this]() -> bool { return any_need_update || stop_flag; });
+        cv.wait_for(lk, timeout, [this]() -> bool { return any_need_update || stop_flag; });
         finished = stop_flag;
 
         any_need_update = false;
@@ -698,7 +702,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     while (!finished)
     {
         bool all_up_to_date = true;
-        auto clusters = clusters_to_update->wait(finished);
+        auto clusters = clusters_to_update->wait(finished, force_update_interval);
         if (finished)
             break;
 
@@ -768,6 +772,9 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                 continue;
             }
             auto & cluster_info = cluster_info_it->second;
+            /// Keep newly discovered dynamic clusters in the periodic update set so they can self-heal
+            /// if their ZooKeeper watches are later lost after a Keeper session expiry.
+            clusters_to_update->set(cluster_name, false);
             if (upsertCluster(cluster_info))
             {
                 cluster_info.watch.restart();
