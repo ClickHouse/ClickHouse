@@ -1,6 +1,8 @@
 -- Shared `x > 0` predicate from both join sides becomes the same canonical node
 -- after dedup; runtime evaluates the greater only once per side
 
+SET query_plan_merge_filters=1; -- required for this optimization, happens on filter merges
+
 SELECT count() FROM numbers(10000) AS l
 INNER JOIN (SELECT number FROM numbers(10000)) AS r
 ON l.number = r.number AND l.number > 0 AND r.number > 0
