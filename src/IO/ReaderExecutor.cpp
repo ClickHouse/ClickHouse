@@ -9,6 +9,9 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/getRandomASCIIString.h>
+#include <base/getThreadId.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/ReaderExecutorLog.h>
 #include <chrono>
 
@@ -179,7 +182,8 @@ ReaderExecutor::ReaderExecutor(
 
 ReaderExecutor::~ReaderExecutor()
 {
-    discardPrefetch();
+    /// Cleanup, not a seek-away: `UNNEEDED` is not logged (matches legacy).
+    discardPrefetch(FilesystemPrefetchState::UNNEEDED);
     drainAbandonedPrefetches(/*wait_finished=*/true);
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
@@ -306,6 +310,34 @@ void ReaderExecutor::setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log
     reader_executor_log = std::move(log_);
 }
 
+void ReaderExecutor::setFilesystemReadPrefetchesLog(std::shared_ptr<FilesystemReadPrefetchesLog> log_)
+{
+    prefetches_log = std::move(log_);
+    if (prefetches_log)
+        prefetch_reader_id = getRandomASCIIString(8);
+}
+
+void ReaderExecutor::emitPrefetchLog(FilesystemPrefetchState state, Int64 size)
+{
+    if (!prefetches_log)
+        return;
+
+    FilesystemReadPrefetchesLogElement elem;
+    elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    elem.query_id = creator_query_id;
+    elem.path = log_file_path;
+    elem.offset = prefetch_range.offset;
+    elem.size = size;
+    elem.prefetch_submit_time = prefetch_submit_time;
+    elem.execution_watch = prefetch_execution_watch;
+    /// The executor's prefetch pool has no per-prefetch priority concept.
+    elem.priority = Priority{};
+    elem.state = state;
+    elem.thread_id = getThreadId();
+    elem.reader_id = prefetch_reader_id;
+    prefetches_log->add(std::move(elem));
+}
+
 std::optional<SourceBufferSlot> ReaderExecutor::acquireSlotCounted(const StoredObject & object)
 {
     auto slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, object.local_path, String(CurrentThread::getQueryId()));
@@ -406,9 +438,19 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {})", next_physical_window.offset, next_physical_window.end());
 
+    /// Prefetch-log timing. Reset `execution_watch` before submit so a
+    /// never-run (cancelled-while-queued) prefetch logs no execution timing;
+    /// the worker fills it only if it actually runs `readPhysicalWindow`.
+    prefetch_submit_time = std::chrono::system_clock::now();
+    prefetch_execution_watch.reset();
+
     auto handle = prefetch_pool->submit([this, next_physical_window, next_logical_offset]()
     {
-        return decryptRope(readPhysicalWindow(next_physical_window, /*from_prefetch=*/true), next_logical_offset);
+        Stopwatch watch;
+        auto rope = decryptRope(readPhysicalWindow(next_physical_window, /*from_prefetch=*/true), next_logical_offset);
+        watch.stop();
+        prefetch_execution_watch = watch;
+        return rope;
     });
 
     if (!handle)
@@ -424,7 +466,7 @@ void ReaderExecutor::maybeTriggerPrefetch()
     prefetch_range = ByteRange{next_logical_offset, next_size};
 }
 
-void ReaderExecutor::discardPrefetch()
+void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
 {
     drainAbandonedPrefetches();
 
@@ -434,34 +476,41 @@ void ReaderExecutor::discardPrefetch()
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
 
-    /// `tryCancel` succeeded: the worker hadn't started yet. Stash the
-    /// handle for the destructor to wait on — the worker, when it picks
-    /// the task up, takes the cancellation-exception path and never
-    /// touches this executor's mutable state.
     if (local_handle->tryCancel())
     {
+        /// `tryCancel` succeeded: the worker hadn't started yet. Stash the
+        /// handle for the destructor to wait on — the worker, when it picks
+        /// the task up, takes the cancellation-exception path and never
+        /// touches this executor's mutable state. `execution_watch` stays
+        /// unset, so the prefetch-log row below records no execution timing.
         abandoned_prefetches.push_back(std::move(local_handle));
-        return;
+    }
+    else
+    {
+        /// `tryCancel` lost the race — the worker is mid-`readPhysicalWindow`,
+        /// mutating `live_buffer`, `reached_eof`, `stats` via the captured
+        /// `this`. Block so the caller can safely overwrite that state on
+        /// return. Everything the worker produced is wasted.
+        ++stats.prefetch_discarded_running;
+        StopwatchAccumulator wait_scope(stats.prefetch_discard_wait_us);
+        try
+        {
+            auto rope = local_handle->get();
+            stats.prefetch_wasted_bytes += rope.totalBytes();
+        }
+        catch (...)
+        {
+            /// Cancellation throws `PrefetchHandle: task was cancelled` here —
+            /// expected when we cancel the in-flight prefetch. Log at debug
+            /// to avoid flooding the error log on every `discardPrefetch`.
+            tryLogCurrentException(log, "Discarded prefetch task threw", LogsLevel::debug);
+        }
     }
 
-    /// `tryCancel` lost the race — the worker is mid-`readPhysicalWindow`,
-    /// mutating `live_buffer`, `reached_eof`, `stats` via the captured
-    /// `this`. Block so the caller can safely overwrite that state on
-    /// return. Everything the worker produced is wasted.
-    ++stats.prefetch_discarded_running;
-    StopwatchAccumulator wait_scope(stats.prefetch_discard_wait_us);
-    try
-    {
-        auto rope = local_handle->get();
-        stats.prefetch_wasted_bytes += rope.totalBytes();
-    }
-    catch (...)
-    {
-        /// Cancellation throws `PrefetchHandle: task was cancelled` here —
-        /// expected when we cancel the in-flight prefetch. Log at debug
-        /// to avoid flooding the error log on every `discardPrefetch`.
-        tryLogCurrentException(log, "Discarded prefetch task threw", LogsLevel::debug);
-    }
+    /// Log the dropped prefetch (seek-away). Destructor cleanup passes
+    /// `UNNEEDED`, which the legacy path never logs — skip it too.
+    if (reason != FilesystemPrefetchState::UNNEEDED)
+        emitPrefetchLog(reason, static_cast<Int64>(prefetch_range.size));
 }
 
 void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)
@@ -718,6 +767,9 @@ Rope ReaderExecutor::readNextWindow()
             ++stats.prefetch_hits;
             HistogramMetrics::ReaderExecutorPrefetchWaitLatency.observe(
                 static_cast<HistogramMetrics::Value>(wait_scope.elapsedMicroseconds()));
+            /// Log before the seek-trim below so `size` is the full prefetched
+            /// payload (what the prefetch actually delivered).
+            emitPrefetchLog(FilesystemPrefetchState::USED, static_cast<Int64>(rope.totalBytes()));
 
             if (!rope.empty() && position > rope.range().offset)
             {
@@ -787,7 +839,7 @@ void ReaderExecutor::seek(size_t new_position)
         return;
     }
 
-    discardPrefetch();
+    discardPrefetch(FilesystemPrefetchState::CANCELLED_WITH_SEEK);
 
     const size_t new_physical = new_position + data_start_offset;
     size_t new_obj_file_offset = 0;

@@ -423,6 +423,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     if (buffer_limit)
         executor->setBufferLimit(buffer_limit);
 
+    /// Preserve the legacy prefetch-logging contract: the executor bypasses the
+    /// `AsynchronousBoundedReadBuffer` wrapper that would populate
+    /// `system.filesystem_read_prefetches_log`, so hand it the sink directly and
+    /// let it emit its own rows for prefetches it issues.
+    if (settings.enable_filesystem_read_prefetches_log && async_prefetch && async_prefetch->prefetches_log)
+        executor->setFilesystemReadPrefetchesLog(async_prefetch->prefetches_log);
+
     if (settings.enable_reader_executor_log)
     {
         if (auto global = Context::getGlobalContextInstance())

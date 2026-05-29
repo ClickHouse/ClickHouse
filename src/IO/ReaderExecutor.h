@@ -7,8 +7,10 @@
 #include <IO/SourceBufferLimit.h>
 
 #include <Common/Logger.h>
+#include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
+#include <chrono>
 #include <functional>
 #include <future>
 #include <memory>
@@ -26,6 +28,8 @@ namespace DB
 class PrefetchThreadPool;
 class ReaderExecutorLog;
 class PrefetchHandle;
+class FilesystemReadPrefetchesLog;
+enum class FilesystemPrefetchState : uint8_t;
 
 class ReaderExecutor
 {
@@ -73,6 +77,11 @@ public:
     void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
     void setBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
     void setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log_);
+    /// Sink for `system.filesystem_read_prefetches_log`. When set, each
+    /// resolved prefetch emits a row (USED on consume, CANCELLED_WITH_SEEK on
+    /// seek-away) — preserving the legacy `AsynchronousBoundedReadBuffer`
+    /// prefetch-logging contract under the executor.
+    void setFilesystemReadPrefetchesLog(std::shared_ptr<FilesystemReadPrefetchesLog> log_);
 
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
@@ -145,7 +154,15 @@ private:
         size_t size, size_t block_size, const VectorWithMemoryTracking<size_t> & splits = {});
 
     void maybeTriggerPrefetch();
-    void discardPrefetch();
+    /// `reason` is the prefetch-log state recorded for the in-flight prefetch
+    /// being dropped: `CANCELLED_WITH_SEEK` from `seek`, `UNNEEDED` from the
+    /// destructor (the latter is never logged, matching the legacy path).
+    void discardPrefetch(FilesystemPrefetchState reason);
+
+    /// Append one row to `system.filesystem_read_prefetches_log` for the
+    /// in-flight prefetch (described by `prefetch_range` / `prefetch_submit_time`
+    /// / `prefetch_execution_watch`). No-op without a sink or for `UNNEEDED`.
+    void emitPrefetchLog(FilesystemPrefetchState state, Int64 size);
 
     void drainAbandonedPrefetches(bool wait_finished = false);
 
@@ -210,6 +227,14 @@ private:
     /// the handle is non-null.
     std::unique_ptr<PrefetchHandle> prefetch_handle;
     ByteRange prefetch_range;
+    /// Prefetch-log metadata for the in-flight prefetch. `submit_time` is set
+    /// at submit; `execution_watch` is set by the worker around its
+    /// `readPhysicalWindow` (read on the foreground thread after `get()`, whose
+    /// happens-before edge makes the cross-thread handoff safe — same model as
+    /// `stats`). Reset at submit so a never-run (cancelled) prefetch logs no
+    /// execution timing. Only meaningful when `prefetch_handle != nullptr`.
+    std::chrono::system_clock::time_point prefetch_submit_time;
+    std::optional<Stopwatch> prefetch_execution_watch;
     /// Cancelled prefetches whose worker may still be inside the pool job
     /// slot. The destructor waits on each; running calls sweep finished ones
     /// to keep the vector bounded under seek-heavy workloads.
@@ -238,7 +263,12 @@ private:
     ICacheHandle::CacheSegmentPin inflight_segment_pin;
     std::shared_ptr<SourceBufferLimit> buffer_limit;
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;
+    std::shared_ptr<FilesystemReadPrefetchesLog> prefetches_log;
     String creator_query_id;
+    /// Stable per-executor id for the `reader_id` column of
+    /// `system.filesystem_read_prefetches_log` (random 8-char, like the legacy
+    /// per-buffer id). Empty until the prefetches-log sink is attached.
+    String prefetch_reader_id;
 
     /// Slot pre-acquired at the top of readNextWindow. When present, the
     /// next source read is guaranteed to be promoted to live (no re-attempt
