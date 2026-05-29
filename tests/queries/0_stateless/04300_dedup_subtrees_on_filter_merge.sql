@@ -84,3 +84,9 @@ SELECT count() FROM (SELECT rand() AS x FROM numbers(100)) WHERE rand() = x;
 SELECT count() FROM (
     SELECT number AS a, number AS b, formatRowNoNewline('JSONEachRow', a) AS fa FROM numbers(1)
 ) WHERE formatRowNoNewline('JSONEachRow', b) != fa;
+
+-- Two propagated-constant `COLUMN` outputs with the same value but different names
+-- (`SELECT 1 AS a, 1 AS b`) must not collapse - a name-sensitive parent would otherwise
+-- see the same canonical and produce identical JSON
+SELECT * FROM (SELECT 1 AS a, 1 AS b)
+WHERE formatRowNoNewline('JSONEachRow', a) != formatRowNoNewline('JSONEachRow', b);

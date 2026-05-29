@@ -1009,6 +1009,10 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
                 /// skipped above
                 break;
             case ActionType::COLUMN:
+                /// keep the name - column names are observable for name-sensitive parents
+                /// (`formatRowNoNewline` uses them as JSON keys), and downstream code
+                /// looks up outputs by name
+                key.name = node.result_name;
                 key.column = node.column;
                 break;
             case ActionType::ALIAS:
