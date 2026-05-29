@@ -1,4 +1,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
 #include <base/hex.h>
@@ -97,73 +99,6 @@ UserDefinedWebAssemblyFunction::UserDefinedWebAssemblyFunction(
 {
 }
 
-/// Maps ClickHouse numeric types to their WASM storage type.
-/// Small integer types (Int8, UInt8, Int16, UInt16) are widened to uint32_t (i32).
-/// All other supported types map 1:1 via NativeToWasmType.
-template <typename T>
-struct WasmStorageType
-{
-    using Type = typename NativeToWasmType<T>::Type;
-};
-
-template <> struct WasmStorageType<Int8>   { using Type = uint32_t; };
-template <> struct WasmStorageType<UInt8>  { using Type = uint32_t; };
-template <> struct WasmStorageType<Int16>  { using Type = uint32_t; };
-template <> struct WasmStorageType<UInt16> { using Type = uint32_t; };
-
-template <typename T>
-constexpr WasmValKind wasmKindFor()
-{
-    return WasmValTypeToKind<typename WasmStorageType<T>::Type>::value;
-}
-
-template <typename Callable, typename... Args>
-static bool tryExecuteForNumericTypes(Callable && callable, Args &&... args)
-{
-    return (
-        callable.template operator()<Int8>(args...)
-        || callable.template operator()<UInt8>(args...)
-        || callable.template operator()<Int16>(args...)
-        || callable.template operator()<UInt16>(args...)
-        || callable.template operator()<Int32>(args...)
-        || callable.template operator()<UInt32>(args...)
-        || callable.template operator()<Int64>(args...)
-        || callable.template operator()<UInt64>(args...)
-        || callable.template operator()<Float32>(args...)
-        || callable.template operator()<Float64>(args...)
-        || callable.template operator()<Int128>(args...)
-        || callable.template operator()<UInt128>(args...)
-    );
-}
-
-static std::optional<WasmValKind> wasmKindForDataType(const IDataType * type)
-{
-    std::optional<WasmValKind> kind;
-    tryExecuteForNumericTypes([type, &kind]<typename T>()
-    {
-        if (typeid_cast<const DataTypeNumber<T> *>(type))
-        {
-            kind = wasmKindFor<T>();
-            return true;
-        }
-        return false;
-    });
-    return kind;
-}
-
-/// Returns true when `from` can be implicitly coerced to `to`.
-/// Allowed: same kind; i32→i64; any int→any float; f32→f64.
-static bool canCoerce(WasmValKind from, WasmValKind to)
-{
-    if (from == to) return true;
-    if (from == WasmValKind::I32 && to == WasmValKind::I64) return true;
-    if (from == WasmValKind::F32 && to == WasmValKind::F64) return true;
-    const bool from_int = from == WasmValKind::I32 || from == WasmValKind::I64;
-    if (from_int && (to == WasmValKind::F32 || to == WasmValKind::F64)) return true;
-    return false;
-}
-
-
 class UserDefinedWebAssemblyFunctionSimple : public UserDefinedWebAssemblyFunction
 {
 public:
@@ -232,7 +167,7 @@ public:
         };
 
         MutableColumnPtr result_column = result_type->createColumn();
-        auto invoke_and_set_column = [&]<typename T>(const std::vector<WasmVal> & args)
+        auto invoke_and_set_column = [&]<typename T>(const VectorWithMemoryTracking<WasmVal> & args)
         {
             if (auto * column_typed = typeid_cast<ColumnVector<T> *>(result_column.get()))
             {
@@ -244,7 +179,7 @@ public:
         };
 
         size_t num_columns = block.columns();
-        std::vector<WasmVal> wasm_args(num_columns);
+        VectorWithMemoryTracking<WasmVal> wasm_args(num_columns);
         for (size_t row_idx = 0; row_idx < num_rows; ++row_idx)
         {
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
@@ -300,17 +235,9 @@ public:
 
         auto raw_buffer_span = compartment->getMemory(handle, sizeof(WasmBuffer));
         const auto * raw_buffer_ptr = raw_buffer_span.data();
-        WasmBuffer buffer;
-        if (reinterpret_cast<uintptr_t>(raw_buffer_ptr) % alignof(WasmBuffer) != 0)
-        {
-            std::memcpy(&buffer, raw_buffer_ptr, sizeof(WasmBuffer));
-        }
-        else
-        {
-            buffer = *reinterpret_cast<const WasmBuffer *>(raw_buffer_ptr);
-        }
-
-        return compartment->getMemory(buffer.ptr, buffer.size);
+        auto ptr = loadFromWasmMemory<WasmPtr>(raw_buffer_ptr);
+        auto size = loadFromWasmMemory<WasmSizeT>(raw_buffer_ptr + sizeof(WasmPtr));
+        return compartment->getMemory(ptr, size);
     }
 
 private:
@@ -413,7 +340,7 @@ public:
 
         ProfileEventTimeIncrement<Microseconds> timer_deserialize(ProfileEvents::WasmDeserializationMicroseconds);
 
-        Block result_header({ColumnWithTypeAndName(nullptr, result_type, "result")});
+        Block result_header({ColumnWithTypeAndName(result_type->createColumn(), result_type, "result")});
 
         auto pipeline = QueryPipeline(
             Pipe(context->getInputFormat(format_name, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
@@ -449,6 +376,9 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
         case WasmAbiVersion::BufferedV1:
             return std::make_unique<UserDefinedWebAssemblyFunctionBufferedV1>(
                 wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
+        case WasmAbiVersion::AssemblyScript:
+            return createUserDefinedWebAssemblyFunctionAssemblyScript(
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -462,6 +392,8 @@ String toString(WasmAbiVersion abi_type)
             return "ROW_DIRECT";
         case WasmAbiVersion::BufferedV1:
             return "BUFFERED_V1";
+        case WasmAbiVersion::AssemblyScript:
+            return "ASSEMBLYSCRIPT";
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -469,7 +401,7 @@ String toString(WasmAbiVersion abi_type)
 
 WasmAbiVersion getWasmAbiFromString(const String & str)
 {
-    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1})
+    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 
@@ -484,10 +416,14 @@ public:
     using ObjectPtr = Base::ObjectPtr;
 
     explicit WasmCompartmentPool(
-        unsigned limit, std::shared_ptr<WebAssembly::WasmModule> wasm_module_, WebAssembly::WasmModule::Config module_cfg_)
+        unsigned limit,
+        std::shared_ptr<WebAssembly::WasmModule> wasm_module_,
+        WebAssembly::WasmModule::Config module_cfg_,
+        StopToken stop_token_)
         : Base(limit, getLogger("WasmCompartmentPool"))
         , wasm_module(std::move(wasm_module_))
         , module_cfg(std::move(module_cfg_))
+        , stop_token(std::move(stop_token_))
     {
         LOG_DEBUG(log, "WasmCompartmentPool created with limit: {}", limit);
     }
@@ -498,18 +434,21 @@ protected:
     ObjectPtr allocObject() override
     {
         LOG_DEBUG(log, "Allocating new WasmCompartment");
-        return wasm_module->instantiate(module_cfg);
+        return wasm_module->instantiate(module_cfg, stop_token);
     }
 
 private:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
     WebAssembly::WasmModule::Config module_cfg;
+
+    std::mutex acquire_mutex;
+    StopToken stop_token;
 };
 
 
-WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
+WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context, WebAssembly::FuelMode fuel_mode)
 {
-    WebAssembly::WasmModule::Config cfg;
+    WebAssembly::WasmModule::Config cfg(fuel_mode);
 
     UInt64 max_fuel = context->getSettingsRef()[Setting::webassembly_udf_max_fuel];
     if (common::mulOverflow(max_fuel, 1024, cfg.fuel_limit))
@@ -520,7 +459,7 @@ WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
     return cfg;
 }
 
-class FunctionUserDefinedWasm : public IFunction
+class FunctionUserDefinedWasm final : public IFunction
 {
 public:
     FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_, ContextPtr context_)
@@ -529,10 +468,12 @@ public:
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
         , context(std::move(context_))
+        , interrupt_source()
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
               wasm_module,
-              getWasmModuleConfig(context))
+              getWasmModuleConfig(context, user_defined_function->getSettings().getFuelMode()),
+              interrupt_source.get_token())
     {
     }
 
@@ -588,7 +529,17 @@ public:
     {
         auto compartment_entry = compartment_pool.acquire();
         auto * compartment_ptr = &(*compartment_entry);
-        return execute(compartment_ptr, arguments, input_rows_count);
+        try
+        {
+            return execute(compartment_ptr, arguments, input_rows_count);
+        }
+        catch (...)
+        {
+            /// A trapped/faulted compartment may have leftovers, half-allocated buffers,
+            /// or otherwise inconsistent guest state. Drop it so the pool recreates it.
+            compartment_entry.expire();
+            throw;
+        }
     }
 
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -678,7 +629,8 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
             create_function_query ? create_function_query->formatForErrorMessage() : "nullptr");
 
     auto function_def = create_query->validateAndGetDefinition();
-    auto [wasm_module, module_hash] = module_manager.getModule(function_def.module_name);
+    auto fuel_mode = function_def.settings.getFuelMode();
+    auto [wasm_module, module_hash] = module_manager.getModule(function_def.module_name, fuel_mode);
     transformEndianness<std::endian::big>(module_hash);
     String module_hash_str = getHexUIntLowercase(module_hash);
     if (function_def.module_hash.empty())
@@ -760,10 +712,10 @@ bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function
     return registry.erase(function_name) > 0;
 }
 
-std::vector<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> UserDefinedWebAssemblyFunctionFactory::getAllFunctions() const
+VectorWithMemoryTracking<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> UserDefinedWebAssemblyFunctionFactory::getAllFunctions() const
 {
     std::shared_lock lock(registry_mutex);
-    std::vector<RegisteredFunction> result;
+    VectorWithMemoryTracking<RegisteredFunction> result;
     result.reserve(registry.size());
     for (const auto & [sql_name, entry] : registry)
         result.push_back(RegisteredFunction{sql_name, entry.function, entry.create_query});
@@ -780,14 +732,14 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 {
     struct SettingDefinition
     {
-        explicit SettingDefinition(std::function<void(std::string_view, const Field &)> check_, Field default_value_)
-            : default_value(std::move(default_value_)), check(std::move(check_))
+        explicit SettingDefinition(std::function<void(std::string_view, Field &)> normalize_and_check_, Field default_value_)
+            : default_value(std::move(default_value_)), normalize_and_check(std::move(normalize_and_check_))
         {
-            chassert(check);
+            chassert(normalize_and_check);
         }
 
         Field default_value;
-        std::function<void(std::string_view, const Field &)> check;
+        std::function<void(std::string_view, Field &)> normalize_and_check;
     };
 
     struct SettingStringFromSet
@@ -795,7 +747,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         SettingDefinition withDefault(String default_value) const
         {
             return SettingDefinition(
-                [values_ = this->values](std::string_view name, const Field & value) // NOLINT
+                [values_ = this->values](std::string_view name, Field & value) // NOLINT
                 {
                     if (value.getType() != Field::Types::String)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected String, got '{}'", value.getTypeName());
@@ -809,29 +761,63 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
                 },
                 Field(default_value));
         }
-        std::unordered_set<String> values;
+        UnorderedSetWithMemoryTracking<String> values;
     };
 
-    const std::unordered_map<String, SettingDefinition> settings_def = {
-        /// Serialization format for input/output data for ABI what uses serialization
-        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
-    };
-
-    std::vector<String> getAllRegisteredNames() const override
+    struct SettingBool
     {
-        std::vector<String> result;
+        SettingDefinition withDefault(bool default_value) const
+        {
+            return SettingDefinition(
+                [](std::string_view name, Field & value)
+                {
+                    if (value.getType() == Field::Types::Bool)
+                        return;
+
+                    if (value.getType() == Field::Types::UInt64)
+                    {
+                        UInt64 u = value.safeGet<UInt64>();
+                        if (u != 0 && u != 1)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Setting '{}' must be 0/1 or false/true, got {}",
+                                name,
+                                u);
+                        value = Field(static_cast<bool>(u));
+                        return;
+                    }
+
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Setting '{}' must be a boolean, got {}",
+                        name,
+                        value.getTypeName());
+                },
+                Field(default_value));
+        }
+    };
+
+    const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {
+        /// Serialization format for input/output data for ABI what uses serialization
+        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
+        {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
+    };
+
+    Strings getAllRegisteredNames() const override
+    {
+        Strings result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);
         return result;
     }
 
-    void check(const String & name, const Field & value) const
+    void normalizeAndCheck(const String & name, Field & value) const
     {
         auto it = settings_def.find(name);
         if (it == settings_def.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting name: '{}'{}", name, getHintsMessage(name));
-        it->second.check(name, value);
+        it->second.normalize_and_check(name, value);
     }
 
     Field getDefault(const String & name) const
@@ -851,7 +837,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
 void WebAssemblyFunctionSettings::trySet(const String & name, Field value)
 {
-    WebAssemblyFunctionSettingsConstraits::instance().check(name, value);
+    WebAssemblyFunctionSettingsConstraits::instance().normalizeAndCheck(name, value);
     settings.emplace(name, std::move(value));
 }
 
@@ -861,6 +847,16 @@ Field WebAssemblyFunctionSettings::getValue(const String & name) const
     if (it == settings.end())
         return WebAssemblyFunctionSettingsConstraits::instance().getDefault(name);
     return it->second;
+}
+
+bool WebAssemblyFunctionSettings::isFuelEnabled() const
+{
+    return getValue("webassembly_udf_enable_fuel").safeGet<bool>();
+}
+
+WebAssembly::FuelMode WebAssemblyFunctionSettings::getFuelMode() const
+{
+    return isFuelEnabled() ? WebAssembly::FuelMode::Enabled : WebAssembly::FuelMode::Disabled;
 }
 
 }

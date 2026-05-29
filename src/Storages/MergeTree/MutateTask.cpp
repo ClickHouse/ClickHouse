@@ -1,9 +1,13 @@
 #include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
@@ -95,6 +99,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char merge_task_projection_stage_pause[];
 }
 
 namespace ErrorCodes
@@ -125,8 +130,12 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
                 return true;
         }
 
-        for (const auto & [column_name, _] : command.column_to_update_expression)
+        auto alter = command.ast();
+        if (!alter || !alter->update_assignments)
+            continue;
+        for (const auto & child : alter->update_assignments->children)
         {
+            const auto & column_name = child->as<ASTAssignment &>().column_name;
             auto column = data_part->tryGetColumn(column_name);
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
@@ -240,8 +249,11 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
-                for (const auto & [column_name, expr] : command.column_to_update_expression)
-                    mutated_columns.emplace(column_name);
+                if (auto alter = command.ast(); alter && alter->update_assignments)
+                {
+                    for (const auto & child : alter->update_assignments->children)
+                        mutated_columns.emplace(child->as<ASTAssignment &>().column_name);
+                }
 
                 if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
                 {
@@ -313,7 +325,7 @@ static void splitAndModifyMutationCommands(
                     if (has_nested_column)
                     {
                         const auto & nested = part_columns.getNested(command.column_name);
-                        assert(!nested.empty());
+                        chassert(!nested.empty());
                         for (const auto & nested_column : nested)
                             mutated_columns.emplace(nested_column.name);
                     }
@@ -595,10 +607,13 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
 
     if (command.type == MutationCommand::UPDATE)
     {
-        return std::ranges::find_if(command.column_to_update_expression, [](const auto & pair)
+        auto alter = command.ast();
+        if (!alter || !alter->update_assignments)
+            return false;
+        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
         {
-            return pair.first == RowExistsColumn::name;
-        }) != command.column_to_update_expression.end();
+            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
+        });
     }
 
     return false;
@@ -1366,7 +1381,7 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->minmax_idx = source_part->minmax_idx;
+    new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -1449,6 +1464,7 @@ struct MutationContext
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    NamesAndTypesList minmax_idx_columns{};
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
@@ -1602,6 +1618,13 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
     }
 
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        for (const auto * projection : ctx->projections_to_build)
+            elem->projections_pending.push_back(projection->name);
+    }
+
     if (!ctx->text_indices_to_recalc.empty())
     {
         createBuildTextIndexesTask();
@@ -1629,7 +1652,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
         if (!ctx->all_gathered_data.statistics.empty())
             ctx->all_gathered_data.statistics.buildIfExists(cur_block);
@@ -1707,7 +1730,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         result,
         projection,
         ctx->new_data_part.get(),
-        ++projection_block_num);
+        ++projection_block_num,
+        ctx->context);
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1740,10 +1764,24 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->mutate_entry,
             ctx->time_of_mutation,
             ctx->new_data_part,
-            ctx->space_reservation
+            ctx->space_reservation,
+            (*ctx->mutate_entry)->ptr()
         );
 
         merge_subtasks.push_back(std::move(merge_task));
+    }
+
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        for (const auto * proj : ctx->projections_to_build)
+        {
+            if (!projection_parts.contains(proj->name))
+            {
+                std::erase(elem->projections_pending, proj->name);
+                elem->projections_done.push_back(proj->name);
+            }
+        }
     }
 
     if (build_text_index_transform)
@@ -1776,11 +1814,42 @@ bool PartMergerWriter::iterateThroughAllMergeSubtasks()
         return false;
 
     auto & task = merge_subtasks.back();
+    auto projection_name = task->getProjectionName();
+
+    if (!projection_name.empty())
+    {
+        bool new_projection = false;
+        {
+            auto * elem = (*ctx->mutate_entry)->ptr();
+            std::lock_guard lock(elem->projection_introspection_mutex);
+            if (elem->current_projection != projection_name)
+            {
+                elem->current_projection = projection_name;
+                new_projection = true;
+            }
+        }
+        if (new_projection)
+            FailPointInjection::pauseFailPoint(FailPoints::merge_task_projection_stage_pause);
+    }
+
     if (task->executeStep())
         return true;
 
     task->addToChecksums(ctx->new_data_part->checksums);
     merge_subtasks.pop_back();
+
+    if (!projection_name.empty())
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        std::erase(elem->projections_pending, projection_name);
+        elem->projections_done.push_back(projection_name);
+        elem->current_projection.clear();
+        elem->current_projection_progress.store(0, std::memory_order_relaxed);
+        elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+        elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
+    }
+
     return !merge_subtasks.empty();
 }
 
@@ -2056,6 +2125,7 @@ private:
         }
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
@@ -2094,7 +2164,7 @@ private:
     void finalize()
     {
         bool noop;
-        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
+        ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
@@ -2520,7 +2590,8 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->txn);
+        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(
+            part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
         ctx->new_data_part = std::move(mutable_empty_part);
     }
 };
@@ -2662,9 +2733,9 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (command.partition)
+    if (auto alter = command.ast(); alter && alter->partition)
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
+        auto command_partition_id = part->storage.getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         if (part->info.getPartitionId() != command_partition_id)
             return true;
     }
@@ -2887,6 +2958,7 @@ bool MutateTask::prepare()
                 ctx->future_part->part_info,
                 ctx->source_part->partition,
                 ctx->future_part->name,
+                ctx->source_part->getMetadataSnapshot(),
                 ctx->txn);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);

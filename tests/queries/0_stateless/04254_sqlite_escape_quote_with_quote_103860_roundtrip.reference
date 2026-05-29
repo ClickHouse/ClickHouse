@@ -1,0 +1,13 @@
+--- JSON, SQL-style apostrophe escape (was broken pre-fix) ---
+{"k":"a\'b"}
+
+--- JSON, legacy backslash apostrophe escape (must still parse) ---
+{"k":"a\'b"}
+
+--- Enum, SQL-style apostrophe escape ---
+a\'b
+
+--- Bool (CustomSimpleText) ---
+false
+true
+
