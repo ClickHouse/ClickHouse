@@ -17,7 +17,7 @@ returning analysis after insert
 1
 returning settings after insert
 1
-returning max_execution_time
+returning max_execution_time rejection
 1
 returning memory limit rejection
 1

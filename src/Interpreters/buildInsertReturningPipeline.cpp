@@ -15,6 +15,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
+#include <string_view>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -27,13 +30,22 @@ namespace ErrorCodes
 
 namespace
 {
-    /// The INSERT and RETURNING phases share one query and one `ProcessListElement`. Query-global memory limits
-    /// are applied once by `ProcessList::insert` from the outer INSERT-phase settings and cannot be re-applied for
-    /// the RETURNING phase on the shared query memory tracker. Rather than silently ignore such settings when they
-    /// appear in the RETURNING subquery's `SETTINGS` clause, reject them explicitly. Settings that can be enforced on
-    /// the result pipeline (`max_result_rows`, `max_result_bytes`, `max_execution_time`, ...) remain supported.
+    /// The INSERT and RETURNING phases share one query, one `ProcessListElement` and one thread-group
+    /// `MemoryTracker`, all set up once by `ProcessList::insert` from the outer INSERT-phase settings. Query-global
+    /// resource and execution limits therefore cannot be re-applied for the RETURNING phase: memory limits would have
+    /// no effect, and the query time limit is measured from INSERT registration (so it cannot bound the subquery
+    /// alone). Rather than silently ignore such settings when they appear in the RETURNING subquery's `SETTINGS`
+    /// clause, reject them explicitly. Settings enforceable on the result pipeline (`max_result_rows`,
+    /// `max_result_bytes`, `result_overflow_mode`) remain supported.
     void rejectUnsupportedReturningSettings(const ASTPtr & returning_select)
     {
+        static const std::unordered_set<std::string_view> unsupported_settings = {
+            "max_memory_usage",
+            "max_memory_usage_for_user",
+            "max_execution_time",
+            "timeout_overflow_mode",
+        };
+
         const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();
         if (!select_with_union || !select_with_union->list_of_selects)
             return;
@@ -49,7 +61,7 @@ namespace
 
         for (const auto & change : last_select->settings()->as<ASTSetQuery &>().changes)
         {
-            if (change.name == "max_memory_usage" || change.name == "max_memory_usage_for_user")
+            if (unsupported_settings.contains(change.name))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "Setting '{}' is not supported in the SETTINGS clause of an INSERT ... RETURNING subquery",
@@ -75,8 +87,6 @@ namespace Setting
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsOverflowMode result_overflow_mode;
-    extern const SettingsSeconds max_execution_time;
-    extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
 QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
@@ -113,11 +123,6 @@ void setupPullingQueryPipeline(
             settings[Setting::max_result_rows],
             settings[Setting::max_result_bytes],
             settings[Setting::result_overflow_mode]);
-        /// The INSERT and RETURNING phases share one query (and `ProcessListElement`), whose time limits were
-        /// captured from the INSERT-phase settings. Enforce the RETURNING subquery's `max_execution_time` on the
-        /// result pipeline explicitly so `RETURNING (SELECT ... SETTINGS max_execution_time=...)` is honored.
-        limits.speed_limits.max_execution_time = settings[Setting::max_execution_time];
-        limits.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
         pipeline.setLimitsAndQuota(limits, context->getQuota());
     }
 }

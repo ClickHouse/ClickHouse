@@ -47,14 +47,14 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS no_such_setting=1) VALUES (102, 'settings'); -- { serverError UNKNOWN_SETTING }
 SELECT count() AS inserted_after_bad_returning_settings FROM t_insert_returning WHERE id = 102;
 
--- RETURNING subquery max_execution_time is enforced on the result pipeline (INSERT still runs first)
-SELECT 'returning max_execution_time';
+-- Query-global execution/resource limits in the RETURNING subquery are rejected (cannot be enforced per-phase on
+-- the shared query: memory trackers and the query time limit are set once from the INSERT settings), while the
+-- INSERT still completes first
+SELECT 'returning max_execution_time rejection';
 TRUNCATE TABLE t_insert_returning;
-INSERT INTO t_insert_returning (id, name) RETURNING (SELECT sleepEachRow(0.2) FROM numbers(20) SETTINGS max_block_size=1, max_execution_time=1, timeout_overflow_mode='throw') VALUES (103, 'timeout'); -- { serverError TIMEOUT_EXCEEDED }
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_execution_time=1) VALUES (103, 'timeout'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_timeout FROM t_insert_returning WHERE id = 103;
 
--- Query-global memory limits in the RETURNING subquery are rejected (cannot be enforced on the shared query
--- memory tracker), while the INSERT still completes first
 SELECT 'returning memory limit rejection';
 TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_memory_usage=1000000) VALUES (104, 'memlimit'); -- { serverError NOT_IMPLEMENTED }
