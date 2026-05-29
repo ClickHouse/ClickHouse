@@ -356,36 +356,50 @@ struct ConverterNumeric
     }
 };
 
-template <typename TYPE>
+template <typename TYPE, typename To>
 struct ConverterTimeType64WithMultiplierImpl
 {
-    using Statistics = StatisticsNumeric<Int64, Int64>;
+    using Statistics = StatisticsNumeric<To, To>;
 
     using Col = ColumnDecimal<TYPE>;
     const Col & column;
     Int64 multiplier;
-    PODArray<Int64> buf;
+    PODArray<To> buf;
 
     ConverterTimeType64WithMultiplierImpl(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
 
-    const Int64 * getBatch(size_t offset, size_t count)
+    const To * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
             Int64 value = column.getData()[offset + i].value;
-            if (common::mulOverflow(value, multiplier, buf[i]))
+            Int64 scaled_value = 0;
+            if (common::mulOverflow(value, multiplier, scaled_value))
                 throw Exception(
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "DateTime64 value {} is out of range for Parquet timestamp (multiplier {})",
                     value, multiplier);
+
+            if constexpr (sizeof(To) < sizeof(Int64))
+            {
+                if (scaled_value > std::numeric_limits<To>::max() || scaled_value < std::numeric_limits<To>::min())
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "DateTime64 value {} is out of range for Parquet time (multiplier {})",
+                        value, multiplier);
+                buf[i] = static_cast<To>(scaled_value);
+            }
+            else
+                buf[i] = static_cast<To>(scaled_value);
         }
         return buf.data();
     }
 };
 
-using ConverterDateTime64WithMultiplier = ConverterTimeType64WithMultiplierImpl<DateTime64>;
-using ConverterTime64WithMultiplier = ConverterTimeType64WithMultiplierImpl<Time64>;
+using ConverterDateTime64WithMultiplier = ConverterTimeType64WithMultiplierImpl<DateTime64, Int64>;
+using ConverterTime64WithMultiplier = ConverterTimeType64WithMultiplierImpl<Time64, Int64>;
+using ConverterTime64WithMultiplierInt32 = ConverterTimeType64WithMultiplierImpl<Time64, Int32>;
 
 /// Multiply DateTime by 1000 to get milliseconds (because Parquet doesn't support seconds).
 struct ConverterDateTime
@@ -407,25 +421,48 @@ struct ConverterDateTime
     }
 };
 
-struct ConverterTime
+template <typename To>
+struct ConverterTimeWithMultiplierImpl
 {
-    using Statistics = StatisticsNumeric<Int64, Int64>;
+    using Statistics = StatisticsNumeric<To, To>;
 
     using Col = ColumnVector<Int32>;
     const Col & column;
-    PODArray<Int64> buf;
+    PODArray<To> buf;
     Int64 multiplier;
 
-    ConverterTime(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
+    ConverterTimeWithMultiplierImpl(const ColumnPtr & c, Int64 multiplier_) : column(assert_cast<const Col &>(*c)), multiplier(multiplier_) {}
 
-    const Int64 * getBatch(size_t offset, size_t count)
+    const To * getBatch(size_t offset, size_t count)
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-            buf[i] = static_cast<Int64>(column.getData()[offset + i]) * multiplier;
+        {
+            Int64 scaled_value = 0;
+            if (common::mulOverflow(static_cast<Int64>(column.getData()[offset + i]), multiplier, scaled_value))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Time value {} is out of range for Parquet time (multiplier {})",
+                    column.getData()[offset + i], multiplier);
+
+            if constexpr (sizeof(To) < sizeof(Int64))
+            {
+                if (scaled_value > std::numeric_limits<To>::max() || scaled_value < std::numeric_limits<To>::min())
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Time value {} is out of range for Parquet time (multiplier {})",
+                        column.getData()[offset + i], multiplier);
+                buf[i] = static_cast<To>(scaled_value);
+            }
+            else
+                buf[i] = static_cast<To>(scaled_value);
+        }
         return buf.data();
     }
 };
+
+using ConverterTimeInt32 = ConverterTimeWithMultiplierImpl<Int32>;
+using ConverterTimeInt64 = ConverterTimeWithMultiplierImpl<Int64>;
 
 struct ConverterString
 {
@@ -1236,7 +1273,12 @@ void writeColumnChunkBody(
         }
         case TypeIndex::Int32:
             if (s.type->getTypeId() == TypeIndex::Time)
-                writeColumnImpl<parquet::Int64Type>(s, options, out, ConverterTime(s.primitive_column, s.datetime_multiplier));
+            {
+                if (s.column_chunk.meta_data.type == parq::Type::INT32)
+                    writeColumnImpl<parquet::Int32Type>(s, options, out, ConverterTimeInt32(s.primitive_column, s.datetime_multiplier));
+                else
+                    writeColumnImpl<parquet::Int64Type>(s, options, out, ConverterTimeInt64(s.primitive_column, s.datetime_multiplier));
+            }
             else
                 N(Int32,  Int32Type);
             break;
@@ -1327,14 +1369,24 @@ void writeColumnChunkBody(
         #undef D
 
         case TypeIndex::Time64:
-            if (s.datetime_multiplier == 1)
+            if (s.column_chunk.meta_data.type == parq::Type::INT32)
+            {
+                writeColumnImpl<parquet::Int32Type>(
+                    s, options, out, ConverterTime64WithMultiplierInt32(
+                        s.primitive_column, s.datetime_multiplier));
+            }
+            else if (s.datetime_multiplier == 1)
+            {
                 writeColumnImpl<parquet::Int64Type>(
                     s, options, out, ConverterNumeric<ColumnDecimal<Time64>, Int64, Int64>(
                         s.primitive_column));
+            }
             else
+            {
                 writeColumnImpl<parquet::Int64Type>(
                     s, options, out, ConverterTime64WithMultiplier(
                         s.primitive_column, s.datetime_multiplier));
+            }
             break;
 
         default:

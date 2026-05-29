@@ -151,6 +151,8 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             break;
         case TypeIndex::Date32:
             [[fallthrough]];
+        case TypeIndex::Time:
+            [[fallthrough]];
         case TypeIndex::Int32:
             convertAndInsert<T, Int32>(assert_cast<ColumnInt32 &>(column), value, type.idx);
             break;

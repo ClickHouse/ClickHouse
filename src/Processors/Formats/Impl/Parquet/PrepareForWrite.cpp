@@ -481,7 +481,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Time:
         {
             parq::TimeUnit unit;
-            unit.__set_MICROS({});
+            unit.__set_MILLIS({});
 
             parq::TimeType tt;
             tt.__set_isAdjustedToUTC(false);
@@ -489,8 +489,8 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
             parq::LogicalType t;
             t.__set_TIME(tt);
-            types(T::INT64, parq::ConvertedType::TIME_MICROS, t);
-            state.datetime_multiplier = 1'000'000;
+            types(T::INT32, parq::ConvertedType::TIME_MILLIS, t);
+            state.datetime_multiplier = 1000;
             break;
         }
 
@@ -501,7 +501,13 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             const auto & dt = assert_cast<const DataTypeTime64 &>(*type);
             UInt32 scale = dt.getScale();
             UInt32 converted_scale;
-            if (scale <= 6)
+            if (scale <= 3)
+            {
+                converted = parq::ConvertedType::TIME_MILLIS;
+                unit.__set_MILLIS({});
+                converted_scale = 3;
+            }
+            else if (scale <= 6)
             {
                 converted = parq::ConvertedType::TIME_MICROS;
                 unit.__set_MICROS({});
@@ -522,7 +528,10 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             tt.__set_unit(unit);
             parq::LogicalType t;
             t.__set_TIME(tt);
-            types(T::INT64, converted, t);
+            if (scale <= 3)
+                types(T::INT32, converted, t);
+            else
+                types(T::INT64, converted, t);
             state.datetime_multiplier = DataTypeTime64::getScaleMultiplier(converted_scale - scale);
             break;
         }
