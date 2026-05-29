@@ -17,7 +17,7 @@ CREATE TABLE t_sparsity_prune
     mixed UInt32
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, index_granularity = 8192;
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9, compute_exact_num_defaults_for_sparse_columns = 1, index_granularity = 8192;
 
 SYSTEM STOP MERGES t_sparsity_prune;
 

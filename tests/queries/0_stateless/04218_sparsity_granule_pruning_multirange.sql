@@ -14,7 +14,7 @@ CREATE TABLE t_sparse_multirange
     x UInt32
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 100, ratio_of_defaults_for_sparse_serialization = 0.5;
+SETTINGS index_granularity = 100, ratio_of_defaults_for_sparse_serialization = 0.5, compute_exact_num_defaults_for_sparse_columns = 1;
 
 SYSTEM STOP MERGES t_sparse_multirange;
 

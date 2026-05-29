@@ -13,6 +13,11 @@ struct SerializationInfoSettings
 {
     double ratio_of_defaults_for_sparse = 1.0;
     bool choose_kind = false;
+    /// When true, `SerializationInfo::Data::add(const IColumn &)` counts defaults
+    /// exactly (O(rows) per column) and marks the result with `exact_num_defaults`.
+    /// When false, defaults are estimated by the sampling logic used to pick sparse
+    /// serialization; the resulting stat is unfit for trivial-count/pruning consumers.
+    bool compute_exact_num_defaults = false;
 
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
@@ -25,6 +30,7 @@ struct SerializationInfoSettings
     SerializationInfoSettings(
         double ratio_of_defaults_for_sparse_,
         bool choose_kind_,
+        bool compute_exact_num_defaults_,
         MergeTreeSerializationInfoVersion version_,
         MergeTreeStringSerializationVersion string_serialization_version_,
         MergeTreeNullableSerializationVersion nullable_serialization_version_,

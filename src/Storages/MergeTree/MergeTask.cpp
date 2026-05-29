@@ -134,6 +134,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
@@ -803,6 +804,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
         true,
+        (*merge_tree_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],

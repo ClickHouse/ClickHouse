@@ -21,6 +21,7 @@ $CLICKHOUSE_CLIENT -q "
     )
     ENGINE = MergeTree ORDER BY id
     SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5,
+             compute_exact_num_defaults_for_sparse_columns = 1,
              serialization_info_version = 'with_types',
              min_bytes_for_wide_part = 0,
              index_granularity = 1024

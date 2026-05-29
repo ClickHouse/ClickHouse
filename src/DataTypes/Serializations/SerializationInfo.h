@@ -45,7 +45,10 @@ public:
         /// rewrite, sparsity pruning) must require this flag.
         bool exact_num_defaults = false;
 
-        void add(const IColumn & column);
+        /// `exact` controls whether `num_defaults` is computed precisely (O(rows)
+        /// per column, sets `exact_num_defaults`) or sampled (cheap, leaves the flag
+        /// at its current value).
+        void add(const IColumn & column, bool exact);
         void add(const Data & other);
         void remove(const Data & other);
         void addDefaults(size_t length);

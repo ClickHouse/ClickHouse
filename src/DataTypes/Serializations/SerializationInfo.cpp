@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
@@ -64,16 +65,25 @@ void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
 
 }
 
-void SerializationInfo::Data::add(const IColumn & column)
+void SerializationInfo::Data::add(const IColumn & column, bool exact)
 {
-    /// Count defaults exactly: downstream consumers (trivial count rewrite,
-    /// sparse-based part/granule pruning) cannot accept the sampling estimate.
     bool was_empty = (num_rows == 0);
-    num_rows += column.size();
-    num_defaults += column.getNumberOfDefaultRows();
-    /// First exact contribution into a fresh `Data` starts exact tracking.
-    if (was_empty)
-        exact_num_defaults = true;
+    size_t rows = column.size();
+    num_rows += rows;
+
+    if (exact)
+    {
+        num_defaults += column.getNumberOfDefaultRows();
+        /// First exact contribution into a fresh `Data` starts exact tracking.
+        if (was_empty)
+            exact_num_defaults = true;
+    }
+    else
+    {
+        /// Sampled estimate: cheap, but unfit for trivial-count / pruning consumers.
+        double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
+        num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
+    }
 }
 
 void SerializationInfo::Data::add(const Data & other)
@@ -121,7 +131,7 @@ SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, cons
 
 void SerializationInfo::add(const IColumn & column)
 {
-    data.add(column);
+    data.add(column, settings.compute_exact_num_defaults);
     if (settings.choose_kind)
         kind_stack = chooseKindStack(data, settings);
 }
@@ -607,6 +617,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     SerializationInfoSettings settings(
         1.0 /* Doesn't matter when constructing from JSON */,
         false /* Cannot choose kind when constructing from JSON */,
+        false /* compute_exact_num_defaults: irrelevant when reading existing JSON */,
         version,
         string_serialization_version,
         nullable_serialization_version,

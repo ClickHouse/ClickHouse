@@ -15,6 +15,7 @@ CREATE TABLE t_sparse_seq_consistency_r1 (id UInt64, n UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_04283/t', 'r1')
 ORDER BY id
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5,
+         compute_exact_num_defaults_for_sparse_columns = 1,
          serialization_info_version = 'with_types',
          min_bytes_for_wide_part = 0;
 
@@ -22,6 +23,7 @@ CREATE TABLE t_sparse_seq_consistency_r2 (id UInt64, n UInt32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_04283/t', 'r2')
 ORDER BY id
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5,
+         compute_exact_num_defaults_for_sparse_columns = 1,
          serialization_info_version = 'with_types',
          min_bytes_for_wide_part = 0;
 

@@ -18,6 +18,7 @@ CREATE TABLE t_sparsity
 ENGINE = MergeTree ORDER BY id
 SETTINGS
     ratio_of_defaults_for_sparse_serialization = 0.9,
+    compute_exact_num_defaults_for_sparse_columns = 1,
     nullable_serialization_version = 'allow_sparse';
 
 INSERT INTO t_sparsity

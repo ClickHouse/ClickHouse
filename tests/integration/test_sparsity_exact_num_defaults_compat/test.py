@@ -79,6 +79,7 @@ def test_exact_num_defaults_compat(started_cluster):
         ENGINE = MergeTree ORDER BY id
         SETTINGS index_granularity = 512,
                  ratio_of_defaults_for_sparse_serialization = 0.5,
+                 compute_exact_num_defaults_for_sparse_columns = 1,
                  serialization_info_version = 'basic',
                  min_bytes_for_wide_part = 0
         """

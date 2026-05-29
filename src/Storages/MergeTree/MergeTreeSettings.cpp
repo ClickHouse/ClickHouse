@@ -198,6 +198,15 @@ namespace ErrorCodes
     └────────┴────────────────────┘
     ```
     )", 0) \
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+    Compute the exact count of default values per column during inserts and
+    merges, instead of the cheaper sampling estimate used to decide on sparse
+    serialization. The exact count is required by sparsity-based pruning and the
+    sparsity-aware trivial-count rewrite. Leaving it disabled keeps inserts/merges
+    as fast as before; enabling it adds an O(rows) pass per sparse-eligible
+    column, in exchange for letting `use_sparsity_info_for_pruning` and
+    `optimize_trivial_count_with_sparsity_filter` consume the stat.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128
