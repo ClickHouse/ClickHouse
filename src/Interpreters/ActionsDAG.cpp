@@ -899,7 +899,7 @@ std::optional<Resolved> resolveConstThroughMaterialize(const ActionsDAG::Node * 
         node = skipAliases(node->children.front());
     }
     if (node && node->column && isColumnConst(*node->column))
-        return Resolved{node->column, node->is_deterministic_constant, through_materialize};
+        return Resolved{node->column, node->isDeterministic(), through_materialize};
     return std::nullopt;
 }
 
