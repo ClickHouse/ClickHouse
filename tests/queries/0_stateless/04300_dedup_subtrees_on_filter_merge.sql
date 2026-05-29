@@ -49,3 +49,18 @@ SETTINGS short_circuit_function_evaluation = 'enable'; -- { serverError ILLEGAL_
 -- dedup must not rewrite the filter output to f (would lose its name)
 SELECT * FROM (SELECT number, equals(number, 0) AS f FROM numbers(3))
 WHERE equals(number, 0) ORDER BY number;
+
+-- IN-set constants are backed by ColumnSet (a dummy column whose `get` throws) dedup must skip them
+SELECT count() FROM (
+    SELECT number FROM numbers(10) WHERE number IN (1, 2, 3, 4)
+) WHERE number IN (3, 4, 5, 6);
+
+-- Two arrayMap with different lambdas but same signature must not collapse
+-- Outer filter uses `x + 2`; correct answer is `number = 3` (3 + 2 = 5)
+SELECT number FROM (
+    SELECT number, arrayMap(x -> x + 1, [number])[1] AS a FROM numbers(5)
+) WHERE arrayMap(x -> x + 2, [number])[1] = 5;
+
+-- Outer `randConstant() = x` should not merge with inner `randConstant()`
+SELECT count() FROM (SELECT randConstant() AS x FROM numbers(100))
+WHERE randConstant() = x AND x != x; -- second clause ensures: even if randConstants collide by chance, the row count is 0

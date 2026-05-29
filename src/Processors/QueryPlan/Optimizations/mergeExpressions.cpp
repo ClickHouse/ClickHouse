@@ -76,6 +76,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
         merged.deduplicateSubtrees();
+        /// drop orphan nodes left behind by dedup so they don't get executed
+        merged.removeUnusedActions(false);
 
         auto filter = std::make_unique<FilterStep>(
             child_expr->getInputHeaders().front(),
@@ -130,7 +132,6 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         outputs.insert(outputs.begin(), &condition);
 
         child_actions.deduplicateSubtrees();
-
         child_actions.removeUnusedActions(false);
 
         auto filter = std::make_unique<FilterStep>(child_filter->getInputHeaders().front(),

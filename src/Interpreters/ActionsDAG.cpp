@@ -871,6 +871,16 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
+/// dummy columns (ColumnSet for IN, ColumnFunction for lambdas) don't have a Field-representable value
+bool hasDummyInside(const ColumnPtr & col)
+{
+    if (!col)
+        return false;
+    if (const auto * cc = typeid_cast<const ColumnConst *>(col.get()))
+        return cc->getDataColumn().isDummy();
+    return col->isDummy();
+}
+
 /// same scalar can show up as different ColumnConst objects after merge
 bool constColumnsEqual(const ColumnPtr & a, const ColumnPtr & b)
 {
@@ -879,6 +889,8 @@ bool constColumnsEqual(const ColumnPtr & a, const ColumnPtr & b)
     if (!a || !b)
         return false;
     if (a->size() != b->size())
+        return false;
+    if (hasDummyInside(a) || hasDummyInside(b))
         return false;
     Field fa;
     Field fb;
@@ -977,10 +989,18 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
     {
         if (node.type == ActionType::ARRAY_JOIN)
             continue;
-        /// two calls to rand() give different values
-        if (node.type == ActionType::FUNCTION
-            && node.function_base
-            && !node.function_base->isDeterministicInScopeOfQuery())
+        /// COLUMN that came from a non-deterministic source - two such columns aren't interchangeable
+        /// even if their current values match
+        if (node.type == ActionType::COLUMN && !node.is_deterministic_constant)
+            continue;
+        if (node.type == ActionType::FUNCTION && node.function_base)
+        {
+            /// `rand()` / `randConstant` may produce different values per call - merging changes semantics
+            if (!node.function_base->isDeterministic())
+                continue;
+        }
+        /// Lambda-typed values (like results of `FunctionCapture`) carry inner DAG that we don't see here
+        if (node.result_type && WhichDataType(node.result_type).isFunction())
             continue;
 
         NodeKey key;
