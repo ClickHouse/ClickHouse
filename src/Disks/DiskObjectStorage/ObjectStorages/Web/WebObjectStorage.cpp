@@ -189,7 +189,12 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     std::optional<size_t>) const
 {
     auto urls = object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path);
-    const bool use_external_buffer = read_settings.remote_read_buffer_use_external_buffer && urls.size() == 1;
+    /// The async reader (`AsynchronousBoundedReadBuffer` -> `ThreadPoolRemoteFSReader`) reads into an
+    /// external buffer regardless of the number of failover URLs, and asserts that the wrapped reader
+    /// honors it. So `use_external_buffer` must follow `remote_read_buffer_use_external_buffer` even
+    /// when `urls.size() > 1`; `ReadBufferFromWebServer` selects a working failover URL with a separate
+    /// connectivity probe in that case.
+    const bool use_external_buffer = read_settings.remote_read_buffer_use_external_buffer;
 
     return std::make_unique<ReadBufferFromWebServer>(
         std::move(urls),

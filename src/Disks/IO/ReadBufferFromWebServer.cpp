@@ -97,6 +97,24 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
         Poco::URI uri(url);
         try
         {
+            /// External buffer reads require `delay_initialization = true`, which defers the HTTP
+            /// request until the external buffer is set in `nextImpl`. That makes it impossible to
+            /// detect a failing failover option here and skip it. Probe connectivity with a throwaway,
+            /// eagerly initialized buffer first, so that a failing option falls through to the next URL.
+            if (use_external_buffer && urls.size() > 1)
+            {
+                BuilderRWBufferFromHTTP(uri)
+                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                    .withSettings(read_settings)
+                    .withTimeouts(connection_timeouts)
+                    .withBufSize(buf_size)
+                    .withHostFilter(&context->getRemoteHostFilter())
+                    .withHeaders(headers)
+                    .withExternalBuf(false)
+                    .withDelayInit(false)
+                    .create(credentials);
+            }
+
             auto res = BuilderRWBufferFromHTTP(uri)
                            .withConnectionGroup(HTTPConnectionGroupType::DISK)
                            .withSettings(read_settings)
