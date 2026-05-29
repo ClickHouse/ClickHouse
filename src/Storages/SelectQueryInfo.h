@@ -229,6 +229,9 @@ struct SelectQueryInfo
 
     bool isFinal() const;
 
+    /// Whether the table expression has the STREAM modifier.
+    bool isStream() const;
+
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
