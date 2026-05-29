@@ -12,8 +12,10 @@ ${CLICKHOUSE_CLIENT} -q "
         properties JSON
     ) ENGINE = MergeTree ORDER BY tuple()"
 
-cat "$CUR_DIR/data_geojson/countries.geojson" \
-    | ${CLICKHOUSE_CLIENT} -q "INSERT INTO countries FORMAT GeoJSON"
+${CLICKHOUSE_CLIENT} -q "
+    INSERT INTO countries
+    FROM INFILE '$CUR_DIR/data_geojson/countries.geojson.zst'
+    FORMAT GeoJSON"
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM countries"
 
