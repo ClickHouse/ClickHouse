@@ -8,6 +8,7 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
+#include <Core/UUID.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -520,7 +521,7 @@ void ClientBase::adjustQueryEnd(
     // all_queries_end);
     if (newline <= next_query_begin)
     {
-        assert(newline >= this_query_end);
+        chassert(newline >= this_query_end);
         this_query_end = newline;
     }
     else
@@ -763,7 +764,7 @@ try
                 if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
                         std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
                 }
 
@@ -1416,7 +1417,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
         }
     }
-    assert(retries_left > 0);
+    chassert(retries_left > 0);
 }
 
 
