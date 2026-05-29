@@ -102,7 +102,8 @@ void StorageObjectStorageConfiguration::initialize(
     ContextPtr local_context,
     bool with_table_structure,
     const StorageID * table_id,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -139,9 +140,14 @@ void StorageObjectStorageConfiguration::initialize(
         String compression_method_lower = configuration_to_initialize.compression_method;
         boost::algorithm::to_lower(compression_method_lower);
         /// Gate the rejection on `mode < ATTACH` so existing tables created before this
-        /// validation landed can still attach after upgrade. The canonicalization below
-        /// runs unconditionally so attached tables also benefit from the lowercase fix.
+        /// validation landed can still attach after upgrade. `RESTORE TABLE` arrives with
+        /// `mode == SECONDARY_CREATE` (same as a fresh secondary create), so we also skip
+        /// the rejection when `is_restore_from_backup` is set, otherwise a backup taken
+        /// before this PR with `compression_method='lzma'/'gzip'` in metadata would fail to
+        /// restore. The canonicalization below runs unconditionally so attached / restored
+        /// tables also benefit from the lowercase fix.
         if (mode < LoadingStrictnessLevel::ATTACH
+            && !is_restore_from_backup
             && !compression_method_lower.empty()
             && compression_method_lower != "auto"
             && compression_method_lower != "none")

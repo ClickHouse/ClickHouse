@@ -83,33 +83,31 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_none_mixed"
 # 8 / 9. `ATTACH` path: existing tables persisted before this validation landed can
 #        carry a non-default `compression_method` in their metadata. The rejection
 #        above must be gated on `LoadingStrictnessLevel < ATTACH` so server restart
-#        and explicit `ATTACH` can still load such tables. We use the deprecated
-#        Ordinary engine because the Atomic engine forbids the full-spec
-#        `ATTACH TABLE name (cols) ENGINE = ...` form used to simulate a metadata
-#        replay. For each table we check (a) that the rejection error string was
-#        not printed (grep -c expects 0) and (b) that the table actually exists
-#        in the catalog afterwards (EXISTS expects 1). The positive assertion (b)
-#        guards against ATTACH failing for any unrelated reason, where grep alone
-#        would still print 0.
-ORD_DB="${TABLE_PREFIX}_ord"
-${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
-    CREATE DATABASE ${ORD_DB} ENGINE = Ordinary
-"
-
-${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
-    ATTACH TABLE ${ORD_DB}.t_attach_lzma (c0 Int)
-    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_lzma', 'Parquet', 'lzma')
-" 2>&1 | grep -c "not supported by data lake engines" || true
-${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ORD_DB}.t_attach_lzma"
-
-${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query "
-    ATTACH TABLE ${ORD_DB}.t_attach_gzip (c0 Int)
-    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_attach_gzip', 'Parquet', 'gzip')
-" 2>&1 | grep -c "not supported by data lake engines" || true
-${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ORD_DB}.t_attach_gzip"
+#        and explicit `ATTACH` can still load such tables. We simulate this by
+#        creating with allowed `'auto'`, detaching, rewriting the on-disk metadata
+#        to inject the forbidden value, and reattaching. ATTACH must succeed without
+#        the rejection error (grep returns 0) AND the table must actually exist
+#        afterwards (EXISTS returns 1). The positive existence check guards against
+#        ATTACH failing for any unrelated reason where grep alone would still print 0.
+DEFAULT_DISK_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name = 'default'")
+for forbidden in lzma gzip; do
+    ATTACH_TABLE="${TABLE_PREFIX}_attach_${forbidden}"
+    ${CLICKHOUSE_CLIENT} --query "
+        CREATE TABLE ${ATTACH_TABLE} (c0 Int)
+        ENGINE = IcebergLocal('${USER_FILES_PATH}/${ATTACH_TABLE}', 'Parquet', 'auto')
+    "
+    METADATA_REL=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT metadata_path FROM system.tables WHERE database = currentDatabase() AND name = '${ATTACH_TABLE}'
+    ")
+    METADATA_ABS="${DEFAULT_DISK_PATH}${METADATA_REL}"
+    ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${ATTACH_TABLE}"
+    sed -i "s|'auto'|'${forbidden}'|" "${METADATA_ABS}"
+    ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${ATTACH_TABLE}" 2>&1 \
+        | grep -c "not supported by data lake engines" || true
+    ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ATTACH_TABLE}"
+done
 
 # Cleanup.
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${ORD_DB} SYNC"
 for table in "${TABLES[@]}"; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${table}"
     rm -rf "${USER_FILES_PATH:?}/${table}"
