@@ -11,6 +11,7 @@ CREATE TABLE t_returning_access_dst (id UInt64) ENGINE = Memory;
 
 INSERT INTO t_returning_access_src VALUES (7);
 
+-- The RETURNING subquery result (7) is emitted as the statement's output.
 INSERT INTO t_returning_access_dst (id) RETURNING (SELECT id FROM t_returning_access_src WHERE id = 7) VALUES (1);
 
 SYSTEM FLUSH LOGS query_log;
