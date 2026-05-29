@@ -36,9 +36,9 @@ class FunctionAiClassify final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiClassify";
 
-    explicit FunctionAiClassify(ContextPtr context) : FunctionBaseAI(context) {}
+    explicit FunctionAiClassify(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiClassify>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiClassify>(context_); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -71,17 +71,14 @@ private:
     size_t promptArgumentIndex() const override { return prompt_arg_index; }
     size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
 
-    void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
+    void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         /// An empty category list would produce `"enum": []` in the response-format schema, which no provider can
         /// satisfy. Fail early with a deterministic local exception instead of waiting for a provider-side error.
-        if (input_rows_count)
-        {
-            const auto & col_categories = assert_cast<const ColumnConst &>(*arguments[categories_arg_index].column);
-            auto categories = (*col_categories.getDataColumnPtr())[0].safeGet<Array>();
-            if (categories.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiClassify: 'categories' must contain at least one label");
-        }
+        const auto & col_categories = assert_cast<const ColumnConst &>(*arguments[categories_arg_index].column);
+        auto categories = (*col_categories.getDataColumnPtr())[0].safeGet<Array>();
+        if (categories.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiClassify: 'categories' must contain at least one label");
     }
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
