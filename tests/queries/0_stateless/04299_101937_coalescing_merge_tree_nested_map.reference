@@ -1,0 +1,8 @@
+array - before final	1	['a']	[10]
+array - before final	1	['b']	[20]
+array - FINAL	1	['b']	[20]
+array - after optimize	1	['b']	[20]
+mixed - FINAL	1	['::1']	42
+mixed - after optimize	1	['::1']	42
+lc - FINAL	1	['y']	[200]
+lc - after optimize	1	['y']	[200]
