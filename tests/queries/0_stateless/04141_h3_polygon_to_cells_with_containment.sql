@@ -39,7 +39,7 @@ SELECT
     AND arraySort(arrayMap(x -> h3ToString(x), h3PolygonToCellsWithContainment(ring, resolution, 1)))
         != arraySort(arrayMap(x -> h3ToString(x), h3PolygonToCellsWithContainment(ring, resolution, 2)))
     AND arraySort(arrayMap(x -> h3ToString(x), h3PolygonToCellsWithContainment(ring, resolution, 2)))
-        != arraySort(arrayMap(x -> h3ToString(x), h3PolygonToCellsWithContainment(ring, resolution, 3));
+        != arraySort(arrayMap(x -> h3ToString(x), h3PolygonToCellsWithContainment(ring, resolution, 3)));
 
 WITH
     [(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)] AS ring,
