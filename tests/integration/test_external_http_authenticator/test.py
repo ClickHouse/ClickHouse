@@ -138,6 +138,11 @@ def test_session_settings_from_auth_response(started_cluster: ClickHouseCluster)
 
         if isinstance(response, dict):
             for key, value in response.get("settings", {}).items():
+                # `profile` is applied through the settings-profile machinery,
+                # not surfaced as a plain entry in the query-log Settings map,
+                # so it has no `query_settings` counterpart to compare against.
+                if key == "profile":
+                    continue
                 assert query_settings.get(key) == value
 
 
@@ -192,5 +197,48 @@ def test_reset_session_restores_auth_server_settings(
         "dirtied_by_set\t999\n"
         "-- post-reset --\n"
         "test_user\t15\n"
+    )
+    assert result == expected
+
+
+def test_reset_session_restores_auth_server_profile(
+    started_cluster: ClickHouseCluster,
+):
+    """`RESET SESSION` must replay an auth-server `profile` entry through the
+    profile-aware path, exactly as login does. `test_user_5`'s auth response
+    sets `profile = 'reset_auth_profile'`, which sets `max_threads = 33`.
+
+    Before the fix, the reset replayed `settings_from_auth_server` with raw
+    `Settings::applyChanges`, which does not special-case `profile`: it would
+    be mis-stored as a plain/custom setting and the profile's `max_threads`
+    would not be restored (and could even fail as an unknown setting). The fix
+    routes the replay through `applySettingsChangesWithLock`, so `profile` goes
+    through `setCurrentProfileWithLock`.
+
+    All statements run in a single TCP session (one `clickhouse-client`
+    invocation) so `RESET SESSION` sees the dirtied state.
+    """
+    sql = (
+        # The profile from the auth response is in effect right after login.
+        "SELECT '-- after auth --';"
+        " SELECT getSetting('max_threads');"
+        # Dirty the profile-provided setting.
+        " SET max_threads = 1;"
+        " SELECT '-- dirtied --';"
+        " SELECT getSetting('max_threads');"
+        # Reset must re-apply the auth-server profile, restoring max_threads=33.
+        " RESET SESSION;"
+        " SELECT '-- post-reset --';"
+        " SELECT getSetting('max_threads');"
+    )
+
+    result = instance.query(sql, user="test_user_5", password=GOOD_PASSWORD)
+    expected = (
+        "-- after auth --\n"
+        "33\n"
+        "-- dirtied --\n"
+        "1\n"
+        "-- post-reset --\n"
+        "33\n"
     )
     assert result == expected

@@ -2106,26 +2106,29 @@ void Context::resetToUserDefaults()
         auth_settings_snapshot = settings_from_auth_server;
     }
 
-    /// Pre-compute the post-reset settings into a local instance so any failure
-    /// from constraint checks or applying changes happens before we mutate the
-    /// live context. The session is then either fully reset or not reset at all.
-    ///
-    /// The construction mirrors the real post-authentication pipeline so that
-    /// reset reproduces the actual post-auth state — not a fresh-defaults
-    /// approximation of it:
+    /// Pre-compute the base post-reset settings (global defaults + the user's
+    /// profile) into a local instance, then swap it in under the lock. This
+    /// mirrors the real post-authentication pipeline so reset reproduces the
+    /// actual post-auth state — not a fresh-defaults approximation of it:
     ///   1. Start from the global context's current settings (re-derived now,
     ///      so admin edits to server-level defaults take effect immediately).
     ///      This matches `createCopy(global_context)` at session creation.
     ///   2. Apply the user's profile changes + quirks + sanity clamp, the way
     ///      `setCurrentProfilesWithLock` (with `check_constraints=false`)
     ///      does at login.
-    ///   3. Apply the auth-server settings with the same constraint-check /
-    ///      apply / quirks pipeline `Session::makeSessionContext` runs after
-    ///      `setUser`.
     /// The constraint chain is built on top of the global context's existing
     /// constraints, matching how `setCurrentProfilesWithLock` chains them.
     ///
-    /// We don't share code with the live-context apply machinery in step (2)/(3)
+    /// The auth-server settings (step 3 at login) are applied separately,
+    /// under the lock after the swap, via the same `checkSettingsConstraints` /
+    /// `applySettingsChanges` calls `Session::makeSessionContext` uses — see the
+    /// locked section below. They cannot be folded into the local `Settings`
+    /// here because a `profile` entry must be routed through
+    /// `setCurrentProfileWithLock` (which mutates the live profile/constraint
+    /// state); applying it to a detached `Settings` would mis-store it as a
+    /// plain setting and never restore the profile.
+    ///
+    /// We don't share code with the live-context apply machinery in step (2)
     /// because that machinery operates against `this->settings` under lock; the
     /// reset path needs to build the result in a local `Settings` and atomically
     /// swap. Sharing the inner quirks-and-clamp tail via a lambda is the easiest
@@ -2144,13 +2147,6 @@ void Context::resetToUserDefaults()
 
     auto new_profiles_state = defaults.enabled_profiles->getConstraintsAndProfileIDs(
         getGlobalContext()->getSettingsConstraintsAndCurrentProfiles());
-
-    new_profiles_state->constraints.check(new_settings, auth_settings_snapshot, SettingSource::QUERY);
-    /// The login path runs the server-level sanity clamp after the auth-server
-    /// settings are applied (via `applySettingChangeWithLock` which clamps
-    /// per-setting); the lambda runs it once at the end here to land in the
-    /// same state.
-    apply_and_clamp(new_settings, auth_settings_snapshot);
 
     /// Take ownership of fields whose destructors do non-trivial work and run
     /// those destructors after we drop the lock. `TemporaryTableHolder::~`
@@ -2185,6 +2181,18 @@ void Context::resetToUserDefaults()
         setCurrentRolesWithLock(defaults.default_roles, lock);
         external_roles.reset();
         need_recalculate_access = true;
+
+        /// Replay the auth-server settings exactly as `Session::makeSessionContext`
+        /// does after `setUser` at login: check constraints, then apply through the
+        /// Context-level path. Applying via `applySettingsChangesWithLock` (rather
+        /// than folding into `new_settings` above) is what routes a `profile` entry
+        /// through `setCurrentProfileWithLock`, updating the current profiles and
+        /// constraint chain — instead of mis-storing `profile` as a plain setting,
+        /// which would silently fail to restore the auth-provided profile. The base
+        /// settings/profiles are already swapped in above, so this layers on top of
+        /// them just like at login.
+        checkSettingsConstraintsWithLock(auth_settings_snapshot, SettingSource::QUERY);
+        applySettingsChangesWithLock(auth_settings_snapshot, lock);
 
         current_database = target_database;
 

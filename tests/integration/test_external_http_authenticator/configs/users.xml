@@ -2,6 +2,12 @@
     <profiles>
         <default>
         </default>
+        <!-- Distinctive profile returned by the auth server for test_user_5,
+             used to verify RESET SESSION replays an auth-server `profile`
+             through the profile-aware path. -->
+        <reset_auth_profile>
+            <max_threads>33</max_threads>
+        </reset_auth_profile>
     </profiles>
     <users>
         <good_user>
@@ -60,5 +66,16 @@
             <profile>default</profile>
             <quota>default</quota>
         </test_user_4>
+        <test_user_5>
+            <http_authentication>
+                <server>basic_server</server>
+                <scheme>basic</scheme>
+            </http_authentication>
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </test_user_5>
     </users>
 </clickhouse>
