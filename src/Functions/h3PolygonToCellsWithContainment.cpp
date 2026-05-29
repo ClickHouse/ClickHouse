@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
@@ -54,6 +55,23 @@ LatLng toH3LatLng(const SphericalPointInRadians & point)
     result.lat = point.get<1>();
     result.lng = point.get<0>();
     return result;
+}
+
+[[noreturn]] void throwInvalidContainmentFlag(Int64 flags, std::string_view function_name)
+{
+    throw Exception(
+        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+        "The argument 'flags' ({}) of function {} is invalid (must be 0..3: "
+        "0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING, "
+        "3=CONTAINMENT_OVERLAPPING_BBOX)",
+        toString(flags),
+        function_name);
+}
+
+void validateContainmentFlag(Int64 flags, std::string_view function_name)
+{
+    if (flags < 0 || flags >= static_cast<Int64>(CONTAINMENT_INVALID))
+        throwInvalidContainmentFlag(flags, function_name);
 }
 
 }
@@ -110,30 +128,58 @@ public:
                 "Illegal column type {} of argument 2 of function {}. Must be UInt8",
                 arguments[1].column->getName(), getName());
         const auto & data_resolution = col_resolution->getData();
+        const String function_name = getName();
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const UInt8 resolution = data_resolution[row];
+            if (resolution > MAX_H3_RES)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'resolution' ({}) of function {} is out of bounds (max {})",
+                    toString(resolution),
+                    function_name,
+                    toString(MAX_H3_RES));
+        }
 
         /// H3 polygonToCellsExperimental expects uint32_t flags.
-        /// Fast path: UInt8 literals (0..3) and UInt32 columns (toUInt32); otherwise accurate cast to UInt32.
+        /// Fast path: UInt8 literals (0..3) and UInt32 columns; otherwise cast to Int64 and validate 0..3.
+        /// All flag values are validated before geometry conversion.
         auto col_flags_materialized = arguments[2].column->convertToFullColumnIfConst();
 
         const ColumnUInt8::Container * flags_data_u8 = nullptr;
         const ColumnUInt32::Container * flags_data_u32 = nullptr;
-        ColumnPtr flags_column_casted;
+        const ColumnInt64::Container * flags_data_i64 = nullptr;
+        ColumnPtr flags_column_holder;
 
         if (const auto * col_flags_u8 = checkAndGetColumn<ColumnUInt8>(col_flags_materialized.get()))
+        {
             flags_data_u8 = &col_flags_u8->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+                validateContainmentFlag(static_cast<Int64>((*flags_data_u8)[row]), function_name);
+        }
         else if (const auto * col_flags_u32 = checkAndGetColumn<ColumnUInt32>(col_flags_materialized.get()))
+        {
             flags_data_u32 = &col_flags_u32->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+                validateContainmentFlag(static_cast<Int64>((*flags_data_u32)[row]), function_name);
+        }
         else
         {
-            flags_column_casted = castColumnAccurate(
+            flags_column_holder = castColumnAccurate(
                 {col_flags_materialized, arguments[2].type, {}},
-                std::make_shared<DataTypeUInt32>());
-            const auto * col_flags_u32_casted = checkAndGetColumn<ColumnUInt32>(flags_column_casted.get());
-            if (!col_flags_u32_casted)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                std::make_shared<DataTypeInt64>());
+            const auto * col_flags_i64 = checkAndGetColumn<ColumnInt64>(flags_column_holder.get());
+            if (!col_flags_i64)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal column type {} of argument 3 of function {}. Must be integer",
-                    arguments[2].column->getName(), getName());
-            flags_data_u32 = &col_flags_u32_casted->getData();
+                    arguments[2].column->getName(),
+                    function_name);
+
+            flags_data_i64 = &col_flags_i64->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+                validateContainmentFlag((*flags_data_i64)[row], function_name);
         }
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
@@ -181,21 +227,12 @@ public:
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                UInt8 resolution = data_resolution[row];
-                if (resolution > MAX_H3_RES)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'resolution' ({}) of function {} is out of bounds (max {})",
-                        toString(resolution), getName(), toString(MAX_H3_RES));
-
-                UInt32 flags = flags_data_u8
+                const UInt8 resolution = data_resolution[row];
+                const UInt32 flags = flags_data_u8
                     ? static_cast<UInt32>((*flags_data_u8)[row])
-                    : (*flags_data_u32)[row];
-                if (flags >= CONTAINMENT_INVALID)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'flags' ({}) of function {} is invalid (must be 0..3: "
-                        "0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING, "
-                        "3=CONTAINMENT_OVERLAPPING_BBOX)",
-                        toString(flags), getName());
+                    : flags_data_u32
+                        ? (*flags_data_u32)[row]
+                        : static_cast<UInt32>((*flags_data_i64)[row]);
 
                 SphericalMultiPolygon row_multi_polygon;
                 if (!is_const_geometry)
