@@ -2389,16 +2389,31 @@ bool HashJoin::isRowStoreSupported() const
 
 void HashJoin::finalizeRowStoreStatus()
 {
-    auto disable_row_store = [&]() {
+    auto disable_row_store = [&]
+    {
         for (auto & cols : data->columns)
             cols.columns_info.row_store.reset();
         data->row_store_state = RowStoreState::Disabled;
     };
 
+    const size_t max_bytes_for_row_store = table_join->maxBytesForHashJoinRowStore();
+    LOG_DEBUG(
+        log,
+        "{}finalizeRowStoreStatus: build side allocated {} ({} bytes), cap {} ({} bytes, max_bytes_for_hash_join_row_store), "
+        "state_enabled={}, columns_empty={}, can_be_reranged={}",
+        instance_log_id,
+        ReadableSize(data->allocated_size),
+        data->allocated_size,
+        ReadableSize(max_bytes_for_row_store),
+        max_bytes_for_row_store,
+        data->row_store_state == RowStoreState::Enabled,
+        data->columns.empty(),
+        rightTableCanBeReranged());
+
     if (data->row_store_state != RowStoreState::Enabled
         || data->columns.empty()
         || rightTableCanBeReranged()
-        || (table_join->maxBytesForHashJoinRowStore() > 0 && data->allocated_size > table_join->maxBytesForHashJoinRowStore()))
+        || (max_bytes_for_row_store > 0 && data->allocated_size > max_bytes_for_row_store))
     {
         disable_row_store();
         return;

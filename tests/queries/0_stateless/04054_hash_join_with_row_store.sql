@@ -38,6 +38,7 @@ FROM (
     FROM system.query_log q
     INNER JOIN system.processors_profile_log p USING (query_id)
     WHERE q.log_comment IN ('rs_04054_enabled', 'rs_04054_max_bytes', 'rs_04054_min_cols_zero')
+      AND q.current_database = currentDatabase()
       AND q.type = 'QueryFinish'
       AND p.name = 'FinalizingRightJoinSide'
     GROUP BY q.log_comment
