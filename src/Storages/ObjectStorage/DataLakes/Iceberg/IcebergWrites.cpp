@@ -1037,7 +1037,7 @@ bool IcebergStorageSink::initializeMetadata()
             /// Skip writing `vN.metadata.json` ourselves only when the catalog generates it server-side
             /// (Iceberg REST / OneLake). For file-based catalogs (Glue, Hive) and no-catalog mode,
             /// the client is responsible for writing the metadata.json file.
-            const bool catalog_writes_metadata_file = catalog && catalog->generatesMetadataFile();
+            const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
             if (!catalog_writes_metadata_file && !writeMetadataFileAndVersionHint(
                     persistent_table_components.path_resolver,
                     metadata_info,
