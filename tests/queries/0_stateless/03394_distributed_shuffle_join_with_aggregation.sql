@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 SET distributed_plan_optimize_exchanges = 1;
 
 DROP TABLE IF EXISTS test;

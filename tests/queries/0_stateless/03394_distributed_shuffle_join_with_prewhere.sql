@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 SET distributed_plan_optimize_exchanges = 1;
 
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree()

@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
