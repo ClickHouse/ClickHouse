@@ -28,6 +28,7 @@
 namespace DB
 {
 struct ReadSettings;
+struct FilesystemCacheSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -235,7 +236,7 @@ public:
     std::vector<FileSegment::Info> sync();
 
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
