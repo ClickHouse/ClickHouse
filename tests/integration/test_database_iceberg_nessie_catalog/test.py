@@ -24,6 +24,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV, csv_compare
 
+BASE_URL_LOCAL = "http://localhost:19120/iceberg/"
 BASE_URL = "http://nessie:19120/iceberg/"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "warehouse"
@@ -75,7 +76,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "warehouse", 
-        "storage_endpoint": "http://minio1:9001/warehouse-rest",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
     }
 
     settings.update(additional_settings)
@@ -93,17 +94,14 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
-def get_nessie_local_url(cluster):
-    return f"http://localhost:{cluster.iceberg_rest_catalog_port}/iceberg/"
-
-
 def load_catalog_impl(started_cluster):
-    s3_endpoint = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+    minio_ip = started_cluster.get_instance_ip('minio')
+    s3_endpoint = f"http://{minio_ip}:9002"
 
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
-        uri=get_nessie_local_url(started_cluster),
+        uri=BASE_URL_LOCAL,
         token="dummy",
         **{
             "s3.endpoint": s3_endpoint,
@@ -354,7 +352,7 @@ def test_backup_database(started_cluster):
     node.query(f"RESTORE DATABASE backup_database FROM {backup_name}", settings={"allow_experimental_database_iceberg": 1})
     assert (
         node.query("SHOW CREATE DATABASE backup_database")
-        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio1:9001/warehouse-rest\\'\n"
+        == "CREATE DATABASE backup_database\\nENGINE = DataLakeCatalog(\\'http://nessie:19120/iceberg/\\', \\'minio\\', \\'[HIDDEN]\\')\\nSETTINGS catalog_type = \\'rest\\', warehouse = \\'warehouse\\', storage_endpoint = \\'http://minio:9000/warehouse-rest\\'\n"
     )
 
 def test_timestamps(started_cluster):
@@ -406,7 +404,7 @@ def test_timestamps(started_cluster):
         extracted_table_path = table_location.split("warehouse-rest/")[1]
 
     result = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`")
-    assert result == f"CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6))\\n)\\nENGINE = Iceberg(\\'http://minio1:9001/warehouse-rest/{extracted_table_path}/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
+    assert result == f"CREATE TABLE {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`\\n(\\n    `timestamp` Nullable(DateTime64(6)),\\n    `timestamptz` Nullable(DateTime64(6))\\n)\\nENGINE = Iceberg(\\'http://minio:9000/warehouse-rest/{extracted_table_path}/\\', \\'minio\\', \\'[HIDDEN]\\')\n"
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{test_namespace[0]}.{table_name}`") == "2024-01-01 12:00:00.000000\t2024-01-01 12:00:00.000000\n"
 
 def test_insert(started_cluster):
