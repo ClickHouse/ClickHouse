@@ -11,3 +11,10 @@ ReadFromMergeTree (prj)
 1	190	0
 2	0	2000
 3	0	2100
+ReadFromMergeTree (default.t_sumif_proj)
+ReadFromMergeTree (default.t_sumif_proj)
+ReadFromMergeTree (prj)
+0	180	0
+1	190	0
+2	0	2000
+3	0	2100

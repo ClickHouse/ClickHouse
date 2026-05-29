@@ -6,6 +6,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 
 #include <stack>
 
@@ -18,7 +20,11 @@ extern const int LOGICAL_ERROR;
 
 namespace DB
 {
-MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
+MatchedTrees::Matches matchTrees(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag,
+    const ActionsDAG & outer_dag,
+    bool check_monotonicity,
+    size_t max_size_for_sets_from_tuple_to_compare)
 {
     using Parents = std::set<const ActionsDAG::Node *>;
     std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
@@ -188,15 +194,36 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                             else if (const auto * inner_set = typeid_cast<const ColumnSet *>(
                                                          &assert_cast<const ColumnConst &>(*inner_col).getDataColumn()))
                                             {
-                                                /// ColumnSet::operator[] returns an empty Field{} regardless of set
-                                                /// contents, so getField() cannot distinguish different IN-clause sets.
-                                                /// Compare by content hash instead (computed order-independently in
-                                                /// FutureSetFromTuple constructor).
+                                                /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
+                                                /// set contents, so `getField()` cannot distinguish different
+                                                /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
+                                                /// hash (computed order-independently in its constructor) when both
+                                                /// fit under the size limit. Subquery/storage sets fall through to
+                                                /// non-matching: their content isn't known at planning time, and
+                                                /// matching them structurally here would be unsound.
+                                                all_children_matched = false;
                                                 const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(
                                                     &assert_cast<const ColumnConst &>(*outer_col).getDataColumn()) : nullptr;
-                                                all_children_matched = outer_set
-                                                    && inner_set->getData()->getContentHash()
-                                                        == outer_set->getData()->getContentHash();
+                                                if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
+                                                {
+                                                    const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
+                                                        inner_set->getData().get());
+                                                    const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(
+                                                        outer_set->getData().get());
+                                                    if (inner_tuple && outer_tuple)
+                                                    {
+                                                        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
+                                                        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
+                                                        /// Sizes are deduplicated counts; different sizes ⇒ different
+                                                        /// contents, so skip hashing in that case.
+                                                        if (inner_rows == outer_rows
+                                                            && inner_rows <= max_size_for_sets_from_tuple_to_compare)
+                                                        {
+                                                            all_children_matched =
+                                                                inner_tuple->getContentHash() == outer_tuple->getContentHash();
+                                                        }
+                                                    }
+                                                }
                                             }
                                             else
                                             {

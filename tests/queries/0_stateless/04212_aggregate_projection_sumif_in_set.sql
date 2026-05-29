@@ -111,4 +111,44 @@ FROM t_sumif_proj
 GROUP BY grp ORDER BY grp
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
+-- -----------------------------------------------------------------------
+-- `query_plan_max_set_size_for_projection_match` gates the content-hash
+-- comparison: when the limit is smaller than the IN-set, the matcher must
+-- treat the sets as non-equal and fall back to the base table. Setting it
+-- to 0 disables the comparison entirely.
+-- -----------------------------------------------------------------------
+
+-- Limit = 1, set size = 2: projection must NOT be used.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN projections = 1
+    SELECT grp, sumIf(val1, col IN ('a', 'b')) AS m1
+    FROM t_sumif_proj GROUP BY grp
+    SETTINGS optimize_use_projections = 1, query_plan_max_set_size_for_projection_match = 1
+) WHERE explain LIKE '%ReadFromMergeTree%';
+
+-- Limit = 0 (disabled): projection must NOT be used.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN projections = 1
+    SELECT grp, sumIf(val1, col IN ('a', 'b')) AS m1
+    FROM t_sumif_proj GROUP BY grp
+    SETTINGS optimize_use_projections = 1, query_plan_max_set_size_for_projection_match = 0
+) WHERE explain LIKE '%ReadFromMergeTree%';
+
+-- Limit = 2 (exact size): projection must be used again.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN projections = 1
+    SELECT grp, sumIf(val1, col IN ('a', 'b')) AS m1
+    FROM t_sumif_proj GROUP BY grp
+    SETTINGS optimize_use_projections = 1, query_plan_max_set_size_for_projection_match = 2
+) WHERE explain LIKE '%ReadFromMergeTree%';
+
+-- Correctness: results with the comparison disabled must still match the
+-- results computed with the projection.
+SELECT grp,
+       sumIf(val1, col IN ('a', 'b')) AS m1,
+       sumIf(val2, col IN ('c', 'd')) AS m2
+FROM t_sumif_proj
+GROUP BY grp ORDER BY grp
+SETTINGS optimize_use_projections = 1, query_plan_max_set_size_for_projection_match = 0;
+
 DROP TABLE t_sumif_proj;

@@ -63,9 +63,6 @@ public:
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
 
-    /// Hash based on the actual set element data, independent of how the set was specified.
-    virtual Hash getContentHash() const = 0;
-
     virtual ASTPtr getSourceAST() const = 0;
 };
 
@@ -82,7 +79,6 @@ public:
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
     Hash getHash() const override;
-    Hash getContentHash() const override { return getHash(); }
     ASTPtr getSourceAST() const override { return ast; }
 
     const std::optional<StorageID> & getStorageID() const { return storage_id; }
@@ -107,7 +103,13 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
-    Hash getContentHash() const override;
+    /// Hash based on actual set element data, computed order-independently so that two IN-clause
+    /// sets with the same values (regardless of insertion order or duplicates) hash equal. Lives
+    /// only on `FutureSetFromTuple` because only tuple-literal sets have content available at
+    /// planning time; storage / subquery sets are matched by their structural (AST) hash via
+    /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
+    /// (see `query_plan_max_set_size_for_projection_match`).
+    Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns() const;
 private:
@@ -170,7 +172,6 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
-    Hash getContentHash() const override { return getHash(); }
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
