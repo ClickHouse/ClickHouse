@@ -411,7 +411,7 @@ void MemoryWorker::updateResidentMemoryThread()
     OSThreadNiceValue::set(-20);
 
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
-    [[maybe_unused]] bool first_run = true;
+    bool first_run = true;
     std::unique_lock rss_update_lock(rss_update_mutex);
 
 #if USE_JEMALLOC
@@ -441,8 +441,13 @@ void MemoryWorker::updateResidentMemoryThread()
             /// closes the gap. `ratio = 0` disables the speculation (`rss = resident`); sanitizer
             /// builds default to `0` (computed at compile time in `getDefaultMemoryWorkerRssSpeculativeReserveRatio`)
             /// because shadow-memory overhead dominates the gap there.
+            /// Skip speculation on the very first run: there is no previous interval to
+            /// extrapolate from, and `tracked` can still lag the bootstrap allocations until
+            /// the `MemoryTracker::updateAllocated` correction at the end of this loop iteration.
+            /// Using the inflated `resident - tracked` gap here would publish a too-high `rss`
+            /// for one tick and could trigger false `MEMORY_LIMIT_EXCEEDED` decisions.
             Int64 speculative_rss = resident;
-            if (rss_speculative_reserve_ratio > 0.0)
+            if (!first_run && rss_speculative_reserve_ratio > 0.0)
             {
                 /// `total_memory_tracker.get()` can legitimately go negative (the lazy
                 /// correction below handles this via `MemoryTracker::updateAllocated`).
