@@ -1,8 +1,11 @@
 #include <Common/MemoryPressureMonitor.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/VariableContext.h>
 #include <base/defines.h>
 
+#include <algorithm>
 #include <chrono>
 
 namespace DB
@@ -13,21 +16,33 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_ns)
+uint8_t PressureLevelMachine::rawLevelLocked(double pressure) const
 {
-    std::lock_guard lk(mutex);
-
     const double t1 = threshold_l1 / 100.0;
     const double t2 = threshold_l2 / 100.0;
     const double t3 = threshold_l3 / 100.0;
 
-    uint8_t raw_level = 0;
     if (pressure >= t3)
-        raw_level = 3;
-    else if (pressure >= t2)
-        raw_level = 2;
-    else if (pressure >= t1)
-        raw_level = 1;
+        return 3;
+    if (pressure >= t2)
+        return 2;
+    if (pressure >= t1)
+        return 1;
+    return 0;
+}
+
+MemoryPressureLevel PressureLevelMachine::levelForPressure(double pressure) const
+{
+    std::lock_guard lk(mutex);
+    /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+    return static_cast<MemoryPressureLevel>(rawLevelLocked(pressure));
+}
+
+MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_ns)
+{
+    std::lock_guard lk(mutex);
+
+    const uint8_t raw_level = rawLevelLocked(pressure);
 
     if (raw_level >= level)
     {
@@ -100,9 +115,36 @@ uint64_t steadyNowNs()
 
 }
 
+double localMemoryPressureFromChain(MemoryTracker * start)
+{
+    double worst = 0.0;
+    for (MemoryTracker * t = start; t != nullptr; t = t->getParent())
+    {
+        /// The server total (`Global`) is handled by the cooldown-smoothed
+        /// total-pressure path; here we react only to the transient per-query
+        /// (`Process`) and per-user (`User`) limits.
+        if (t->level == VariableContext::Global)
+            continue;
+        const Int64 limit = t->getHardLimit();
+        if (limit <= 0)
+            continue;
+        const Int64 used = t->get();
+        if (used <= 0)
+            continue;
+        worst = std::max(worst, static_cast<double>(used) / static_cast<double>(limit));
+    }
+    return worst;
+}
+
 MemoryPressureLevel MemoryPressureMonitor::currentLevel()
 {
-    return machine.sample(readTotalPressure(), steadyNowNs());
+    /// Server-wide pressure keeps its 60s sticky-downward cooldown.
+    const MemoryPressureLevel total_level = machine.sample(readTotalPressure(), steadyNowNs());
+    /// Per-query / per-user limits are transient: react immediately, with no
+    /// sticky state that could leak one query's pressure into another's.
+    const MemoryPressureLevel local_level =
+        machine.levelForPressure(localMemoryPressureFromChain(CurrentThread::getMemoryTracker()));
+    return std::max(total_level, local_level);
 }
 
 MemoryPressureLevel FakeMemoryPressureMonitor::currentLevel()

@@ -6,6 +6,9 @@
 #include <cstdint>
 #include <mutex>
 
+/// `MemoryTracker` lives in the global namespace (see Common/MemoryTracker.h).
+class MemoryTracker;
+
 namespace DB
 {
 
@@ -67,10 +70,19 @@ public:
     static constexpr uint64_t COOLDOWN_NS = 60ULL * 1000ULL * 1000ULL * 1000ULL;
 
     MemoryPressureLevel sample(double pressure, uint64_t now_ns);
+
+    /// Map a pressure ratio to a level using the current thresholds, WITHOUT
+    /// the cooldown state machine — for transient (per-query / per-user)
+    /// pressure that must react immediately and leave no sticky state.
+    MemoryPressureLevel levelForPressure(double pressure) const;
+
     void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct);
     MemoryPressureThresholds getThresholds() const;
 
 private:
+    /// Raw level for `pressure` against the threshold ladder. Caller holds `mutex`.
+    uint8_t rawLevelLocked(double pressure) const;
+
     /// `sample` is a read-modify-write across `(level, last_at_or_above_ns)`
     /// and `setThresholds` publishes three values that must be visible as a
     /// triple. Guard both with one mutex so a concurrent `sample` cannot
@@ -122,6 +134,15 @@ private:
     std::atomic<uint64_t> now_ns;
     PressureLevelMachine machine;
 };
+
+/// Most-constraining transient memory pressure in `start`'s tracker chain:
+/// `used / hard_limit` walked over `start` and its parents, taking the max
+/// across the per-query (`Process`) and per-user (`User`) levels. `Global`
+/// (the server total) is skipped — it is handled, with cooldown smoothing, by
+/// the total-pressure path. Trackers without a hard limit are skipped.
+/// `start == nullptr` (no current thread) yields 0. Pure; used by the
+/// production monitor and unit-tested directly with a hand-built chain.
+double localMemoryPressureFromChain(MemoryTracker * start);
 
 /// Active monitor accessor. Production code (`ReaderExecutor`, `Server.cpp`)
 /// always uses this. Defaults to a Meyers `MemoryPressureMonitor` singleton.

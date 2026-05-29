@@ -1,5 +1,6 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 
 #include <gtest/gtest.h>
 
@@ -137,4 +138,66 @@ TEST(MemoryPressureMonitor, ScopedRestoresPriorMonitor)
         EXPECT_EQ(memoryPressureMonitor().currentLevel(), MemoryPressureLevel::Critical);
     }
     EXPECT_EQ(&memoryPressureMonitor(), before);
+}
+
+/// `levelForPressure` maps a ratio to a level with no cooldown / no sticky
+/// state — each call is independent (used for transient per-query pressure).
+TEST(MemoryPressureMonitor, LevelForPressureIsStatelessThresholdMap)
+{
+    PressureLevelMachine m; /// default thresholds 75 / 90 / 95
+    EXPECT_EQ(m.levelForPressure(0.50), MemoryPressureLevel::Normal);
+    EXPECT_EQ(m.levelForPressure(0.80), MemoryPressureLevel::Elevated);
+    EXPECT_EQ(m.levelForPressure(0.92), MemoryPressureLevel::High);
+    EXPECT_EQ(m.levelForPressure(0.98), MemoryPressureLevel::Critical);
+    /// A high reading must NOT persist into the next call (unlike `sample`).
+    EXPECT_EQ(m.levelForPressure(0.10), MemoryPressureLevel::Normal);
+}
+
+/// The query-level (`Process`) limit governs when it is the most constraining,
+/// and the walk reacts to it directly — this is the signal the total-only
+/// reader used to miss. Root chain at `parent == nullptr` (non-Global) so the
+/// test allocates no real global memory.
+TEST(MemoryPressureMonitor, LocalPressureUsesQueryLevelLimit)
+{
+    EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(nullptr), 0.0);
+
+    MemoryTracker user(nullptr, VariableContext::User, false);
+    MemoryTracker query(&user, VariableContext::Process, false);
+    MemoryTracker thread(&query, VariableContext::Thread, false);
+
+    /// No limits anywhere → no pressure.
+    EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(&thread), 0.0);
+
+    query.setHardLimit(1000);
+    thread.adjustWithUntrackedMemory(960); /// propagates up: thread=query=user=960
+    EXPECT_NEAR(localMemoryPressureFromChain(&thread), 0.96, 1e-9);
+    thread.adjustWithUntrackedMemory(-960);
+}
+
+/// When the query level has no limit, the walk escalates to the next level
+/// that does (here, the user/`User` tracker).
+TEST(MemoryPressureMonitor, LocalPressureFallsBackToUserLevel)
+{
+    MemoryTracker user(nullptr, VariableContext::User, false);
+    MemoryTracker query(&user, VariableContext::Process, false); /// no limit
+    MemoryTracker thread(&query, VariableContext::Thread, false);
+
+    user.setHardLimit(2000);
+    thread.adjustWithUntrackedMemory(1500); /// user = 1500 / 2000 = 0.75
+    EXPECT_NEAR(localMemoryPressureFromChain(&thread), 0.75, 1e-9);
+    thread.adjustWithUntrackedMemory(-1500);
+}
+
+/// The server total (`Global`) is intentionally skipped here — it is handled,
+/// with cooldown smoothing, by the separate total-pressure path. Even a
+/// near-limit Global tracker contributes nothing to the local pressure.
+TEST(MemoryPressureMonitor, LocalPressureSkipsGlobalLevel)
+{
+    MemoryTracker total(nullptr, VariableContext::Global);
+    MemoryTracker thread(&total, VariableContext::Thread, false);
+
+    total.setHardLimit(1000);
+    thread.adjustWithUntrackedMemory(990); /// Global at 99%, but must be ignored
+    EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(&thread), 0.0);
+    thread.adjustWithUntrackedMemory(-990);
 }
