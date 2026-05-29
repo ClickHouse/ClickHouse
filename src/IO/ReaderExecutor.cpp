@@ -71,6 +71,7 @@ namespace DB::ErrorCodes
 #endif
 
 #include <Common/logger_useful.h>
+#include <Core/LogsLevel.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <algorithm>
 #include <cstring>
@@ -436,7 +437,10 @@ void ReaderExecutor::discardPrefetch()
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Discarded prefetch task threw");
+        /// Cancellation throws `PrefetchHandle: task was cancelled` here —
+        /// expected when we cancel the in-flight prefetch. Log at debug
+        /// to avoid flooding the error log on every `discardPrefetch`.
+        tryLogCurrentException(log, "Discarded prefetch task threw", LogsLevel::debug);
     }
 }
 
@@ -454,7 +458,10 @@ void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, "Abandoned prefetch task threw");
+                    /// Cancellation throws `PrefetchHandle: task was cancelled`
+                    /// — every abandoned-on-cancel handle reaches here. Debug
+                    /// level keeps the error log clean.
+                    tryLogCurrentException(log, "Abandoned prefetch task threw", LogsLevel::debug);
                 }
                 return true;
             }),
