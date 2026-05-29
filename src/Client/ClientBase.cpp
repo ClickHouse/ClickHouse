@@ -933,21 +933,12 @@ void ClientBase::initClientContext(ContextMutablePtr context)
 
 void ClientBase::snapshotConnectionBaseline()
 {
-    /// Snapshot the database / settings / query-parameter values the client
-    /// started with — before any in-session `USE` / `SET` / `SET param_*`
-    /// can mutate them. Subclasses call this once their startup mutations
-    /// are applied, which can be later than `initClientContext`:
-    ///   - `Client::main` runs `processConfig` and
-    ///     `adjustSettings(client_context)` after `processOptions` has
-    ///     already called `initClientContext`. `processConfig` applies
-    ///     `--inline-insert-data` and `adjustSettings` overrides Pretty
-    ///     output limits when stdout is not a TTY.
-    ///   - `LocalServer` sets `implicit_table_at_top_level` after
-    ///     `initClientContext`.
-    /// Capturing inside `initClientContext` would miss all of the above
-    /// and leave `RESET SESSION` restoring an incomplete baseline. One-shot:
-    /// subsequent calls (e.g. after a reconnect) must not overwrite the
-    /// snapshot with post-reset / post-`SET` state.
+    /// Snapshot the connect-time database / settings / query parameters for
+    /// `RESET SESSION` to restore. Subclasses call this once their startup
+    /// mutations are applied — later than `initClientContext`, since
+    /// `Client::main` runs `processConfig` + `adjustSettings` and `LocalServer`
+    /// sets `implicit_table_at_top_level` afterwards. One-shot: a reconnect must
+    /// not overwrite the snapshot with post-`SET` state.
     if (connect_snapshot_taken)
         return;
     default_database_at_connect = default_database;
@@ -2540,57 +2531,30 @@ void ClientBase::processParsedSingleQuery(
         }
         if (parsed_query->as<ASTResetSessionQuery>())
         {
-            /// The server has cleared its session state; mirror that on the client
-            /// side so we don't re-send stale state on the next query.
-            /// Restore startup `--param_*` values (analogous to settings and the
-            /// default database below): they're part of the connection baseline,
-            /// not in-session state.
+            /// Mirror the server's reset on the client so we don't re-send stale
+            /// state next query. Query parameters and settings are restored to
+            /// the connect-time snapshot (which includes command-line overrides);
+            /// the server holds the profile values.
             query_parameters = query_parameters_at_connect.value_or(NameToNameMap{});
             client_context->setQueryParameters(query_parameters);
-            /// Settings are reset to the snapshot taken at connect time, which
-            /// includes any command-line `--setting` overrides supplied to the
-            /// client binary. The server has the profile values; this snapshot
-            /// captures the *client*-side baseline.
             client_context->setSettings(settings_at_connect ? *settings_at_connect : Settings());
-            /// Sync the client-side default database to whatever the server
-            /// actually landed on after the reset. The server runs a fallback
-            /// chain (connect-time db → user `DEFAULT DATABASE` → global
-            /// default) and can pick something other than the connect-time
-            /// value — e.g. if the connect-time db was dropped mid-session,
-            /// or the user has no `DEFAULT DATABASE` and the connection had
-            /// none baked in.
-            /// Blindly restoring `default_database_at_connect` here would
-            /// leave the client's local copy diverged from the server, which
-            /// is invisible until the connection drops and the client
-            /// reconnects with a now-`UNKNOWN_DATABASE` name. Ask the server
-            /// instead. The extra round-trip is cheap; `RESET SESSION` is
-            /// not a hot path.
             if (connection)
             {
-                /// Clear the connection's client-side database override before
-                /// probing. `LocalConnection` (clickhouse-local / embedded)
-                /// holds a `current_database` set by a prior `USE` and forces
-                /// it onto every query context in `LocalConnection::sendQuery`.
-                /// If we left it set, the probe below would run in the stale
-                /// `USE`-d database and `SELECT currentDatabase()` would echo
-                /// that dirty value instead of the reset baseline the session
-                /// context now holds — re-pinning the client to the wrong db.
-                /// Clearing it makes `LocalConnection` fall through to the
-                /// session context (which `RESET SESSION` already restored).
-                /// Harmless for the native `Connection`, which only sends its
-                /// default database in the handshake, not per query.
+                /// The server's database fallback chain may not land on the
+                /// connect-time db, so probe for the actual value rather than
+                /// assuming — otherwise the client diverges and a later reconnect
+                /// could send a now-`UNKNOWN_DATABASE` name.
+                ///
+                /// Clear the override first: `LocalConnection` forces its
+                /// `current_database` (from a prior `USE`) onto every query, which
+                /// would make the probe echo the dirty db instead of the reset
+                /// baseline. Harmless for the native `Connection` (it only sends
+                /// the database in the handshake).
                 connection->setDefaultDatabase("");
 
-                /// `currentDatabase()` legitimately returns `""` when the
-                /// candidate chain in `Context::resetToUserDefaults` falls
-                /// all the way through (connect-time db dropped, no user
-                /// `DEFAULT DATABASE`, no usable global default). Collapsing
-                /// that successful empty answer to "probe failed" and
-                /// restoring `default_database_at_connect` would re-pin the
-                /// connection to the stale name the server just fell back
-                /// away from — and a later reconnect would send it and hit
-                /// `UNKNOWN_DATABASE`. Distinguish "probe failed" (use the
-                /// fallback) from "server returned empty" (trust it).
+                /// `nullopt` = probe failed (use the fallback); an empty string
+                /// is a real answer (the chain fell through to no database) and
+                /// must be trusted, not treated as failure.
                 auto probed = tryExecuteQueryForSingleString("SELECT currentDatabase()");
                 if (probed.has_value())
                     default_database = *probed;
@@ -3332,13 +3296,10 @@ std::optional<std::string> ClientBase::tryExecuteQueryForSingleString(const std:
     {
         std::string result;
 
-        /// Send the query with an initial-query `ClientInfo`. Passing
-        /// `nullptr` here causes `Connection::sendQuery` to write a default
-        /// `ClientInfo` whose `query_kind` is `NO_QUERY`, which the native
-        /// `TCPHandler` rejects with `INCORRECT_DATA` before creating a
-        /// query context — and then closes the connection. Mirror the
-        /// pattern used by `Suggest::load` at the bottom of `ClientBase`
-        /// where the same internal-probe pattern is wired up correctly.
+        /// Send with an initial-query `ClientInfo`: a null `client_info` makes
+        /// `Connection::sendQuery` write `query_kind = NO_QUERY`, which the native
+        /// `TCPHandler` rejects (`INCORRECT_DATA`) and then closes the connection.
+        /// Same pattern as `Suggest::load`.
         ClientInfo client_info;
         if (client_context)
             client_info = client_context->getClientInfo();
@@ -3358,13 +3319,9 @@ std::optional<std::string> ClientBase::tryExecuteQueryForSingleString(const std:
             {}        /// external_data
         );
 
-        /// Receive and process results.
-        /// Returning `std::nullopt` here (or in the catch below) is reserved
-        /// for "the probe failed"; an empty `result` after a clean
-        /// `EndOfStream` is a *successful* query that happened to return
-        /// an empty string — a legitimate outcome for
-        /// `SELECT currentDatabase()` after `RESET SESSION` falls all the
-        /// way through its candidate chain without finding an existing db.
+        /// `std::nullopt` is reserved for "probe failed" (here and in the catch);
+        /// an empty `result` after a clean `EndOfStream` is a successful empty
+        /// answer and must stay distinguishable from failure.
         while (true)
         {
             Packet packet = connection->receivePacket();
@@ -3413,10 +3370,8 @@ std::optional<std::string> ClientBase::tryExecuteQueryForSingleString(const std:
 
 std::string ClientBase::executeQueryForSingleString(const std::string & query)
 {
-    /// Existing callers (e.g. the AI schema fetcher) treat any failure as
-    /// equivalent to an empty result, so collapse the two cases here.
-    /// Internal callers that need to tell them apart should call
-    /// `tryExecuteQueryForSingleString` directly.
+    /// Collapse failure to "" for callers (e.g. the AI schema fetcher) that
+    /// don't distinguish it; others call `tryExecuteQueryForSingleString`.
     return tryExecuteQueryForSingleString(query).value_or("");
 }
 

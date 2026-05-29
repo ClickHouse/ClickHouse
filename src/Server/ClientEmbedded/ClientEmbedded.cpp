@@ -215,10 +215,8 @@ try
     initClientContext(session->sessionContext());
     /// Note, QueryScope will be initialized in the LocalConnection
 
-    /// Lock in the connection baseline for `RESET SESSION`. Embedded mode
-    /// has no `processConfig` / `adjustSettings` mutating the context
-    /// after `initClientContext`, so taking the snapshot here matches the
-    /// pre-deferral behaviour.
+    /// Snapshot the `RESET SESSION` baseline (embedded mode has no post-
+    /// `initClientContext` settings mutations).
     snapshotConnectionBaseline();
 
     if (is_interactive)

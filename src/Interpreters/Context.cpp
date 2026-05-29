@@ -1999,20 +1999,12 @@ void Context::rememberAuthenticatedUser()
 
 void Context::resetToUserDefaults()
 {
-    /// Read all the early-rejection state under a shared lock. Every other
-    /// access to `user_id`, `session_context`, and `merge_tree_transaction` in
-    /// this class is mutex-guarded; matching that convention keeps the next
-    /// reader from having to relearn which fields are racy.
-    ///
-    /// The user to reset *to* is the authenticated-user baseline, not the
-    /// current `user_id` — if an in-session `EXECUTE AS` impersonated the
-    /// session, the current id points at the impersonation target and
-    /// re-deriving defaults from it would leave the connection silently
-    /// impersonating the previous user across the reset. The authenticated
-    /// id is captured by `rememberAuthenticatedUser` at session creation,
-    /// before any impersonation is possible. Fall back to the current
-    /// `user_id` only on a context that pre-dates the baseline (e.g. a
-    /// `clickhouse-local` session that never went through `Session`).
+    /// Reset to the authenticated-user baseline, not the current `user_id`: an
+    /// in-session `EXECUTE AS` repoints `user_id` at the impersonation target,
+    /// so re-deriving from it would leave the reset session still impersonating.
+    /// `authenticated_user_id` is pinned at session creation; fall back to
+    /// `user_id` for contexts that never went through `Session` (clickhouse-local).
+    /// Read under the shared lock, as with the other racy fields here.
     std::optional<UUID> snapshot_user_id;
     String snapshot_current_user_name;
     String snapshot_initial_user_name;
@@ -2030,41 +2022,30 @@ void Context::resetToUserDefaults()
     if (!snapshot_user_id)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "resetToUserDefaults() called on a context without a user");
 
-    /// `resetToUserDefaults` is meant to operate on the session context itself.
-    /// Calling it on a query context would silently misbehave: the new
-    /// `settings_from_auth_server` / `database_at_session_start` fields default
-    /// initialise on copy, so they would be empty here. Enforce.
+    /// Must run on the session context: on a query-context copy the
+    /// `settings_from_auth_server` / `database_at_session_start` fields are
+    /// empty, so the reset would silently misbehave.
     if (!is_session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RESET SESSION must be executed against the session context");
 
-    /// Refuse to reset while the session is inside an active transaction.
-    /// Silently rolling it back would lose work without warning; pretending to
-    /// reset while leaving the transaction in place would let a pooled
-    /// connection inherit the previous snapshot and uncommitted writes.
-    /// Require the caller to commit or roll back first.
+    /// Refuse to reset inside an active transaction: rolling it back would lose
+    /// work silently, and leaving it would leak a snapshot and uncommitted writes
+    /// to the next pool borrower. The caller must COMMIT or ROLLBACK first.
     if (inside_transaction)
         throw Exception(ErrorCodes::INVALID_TRANSACTION,
             "RESET SESSION is not allowed inside an active transaction. "
             "COMMIT or ROLLBACK first.");
 
-    /// Re-derive everything from access control (outside the lock — `deriveUserDefaults`
-    /// performs IO). Sharing this helper with `setUser` keeps the two code paths
-    /// in lock-step.
+    /// Re-derive from access control outside the lock (this does IO). Shared
+    /// with `setUser` to keep reset and login in lock-step.
     auto defaults = deriveUserDefaults(getAccessControl(), *snapshot_user_id);
     const String user_default_database = defaults.user->default_database;
 
-    /// Decide the target database eagerly so the locked section never has to
-    /// recover from a failed `setCurrentDatabaseWithLock`. Fall back chain:
-    ///   1. the database the connection was opened with (captured by
-    ///      `rememberDatabaseAtSessionStart`);
-    ///   2. the user's profile default;
-    ///   3. the global context's current database — what `Context::setUser`
-    ///      leaves in place when the user has no `DEFAULT DATABASE`, so this
-    ///      matches the freshly-authenticated state for HTTP, gRPC, and
-    ///      `clickhouse-local` users that lack a profile default;
-    ///   4. empty (only if even the global context has no current database).
-    /// Each candidate is probed against the catalog so a dropped database
-    /// neither breaks the reset nor shadows the next fallback.
+    /// Resolve the target database eagerly (before the lock). Fallback chain,
+    /// first existing wins: connection-start db (`rememberDatabaseAtSessionStart`)
+    /// → user `DEFAULT DATABASE` → global current db (what `setUser` leaves for
+    /// users without a default) → empty. Probing the catalog lets a dropped
+    /// database fall through instead of breaking the reset.
     auto database_exists = [](const String & db) -> bool
     {
         if (db.empty())
@@ -2076,9 +2057,8 @@ void Context::resetToUserDefaults()
         }
         catch (const Exception & e)
         {
-            /// The database went away (admin dropped it). Fall through to the
-            /// next candidate. Any other failure (catalog internal error,
-            /// permission issue) is genuinely surprising — let it propagate.
+            /// Dropped database: fall through to the next candidate. Anything
+            /// else is unexpected — let it propagate.
             if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
                 throw;
             return false;
@@ -2098,41 +2078,26 @@ void Context::resetToUserDefaults()
         /// else: empty.
     }
 
-    /// Snapshot the auth-server settings under a shared lock to avoid a data
-    /// race with a hypothetical concurrent setSettingsFromAuthServer.
+    /// Snapshot under the shared lock against a concurrent setSettingsFromAuthServer.
     SettingsChanges auth_settings_snapshot;
     {
         SharedLockGuard lock(mutex);
         auth_settings_snapshot = settings_from_auth_server;
     }
 
-    /// Pre-compute the base post-reset settings (global defaults + the user's
-    /// profile) into a local instance, then swap it in under the lock. This
-    /// mirrors the real post-authentication pipeline so reset reproduces the
-    /// actual post-auth state — not a fresh-defaults approximation of it:
-    ///   1. Start from the global context's current settings (re-derived now,
-    ///      so admin edits to server-level defaults take effect immediately).
-    ///      This matches `createCopy(global_context)` at session creation.
-    ///   2. Apply the user's profile changes + quirks + sanity clamp, the way
-    ///      `setCurrentProfilesWithLock` (with `check_constraints=false`)
-    ///      does at login.
-    /// The constraint chain is built on top of the global context's existing
-    /// constraints, matching how `setCurrentProfilesWithLock` chains them.
+    /// Build the base post-reset settings locally (global defaults + user
+    /// profile), then swap them in under the lock — mirroring session creation:
+    /// start from the global context's current settings (so admin edits to
+    /// server defaults apply), then layer the user's profile + quirks + clamp,
+    /// chaining constraints onto the global ones as `setCurrentProfilesWithLock`
+    /// does at login. The local-build/atomic-swap shape is why this doesn't reuse
+    /// the live apply machinery; the lambda shares the quirks-and-clamp tail to
+    /// avoid drift.
     ///
-    /// The auth-server settings (step 3 at login) are applied separately,
-    /// under the lock after the swap, via the same `checkSettingsConstraints` /
-    /// `applySettingsChanges` calls `Session::makeSessionContext` uses — see the
-    /// locked section below. They cannot be folded into the local `Settings`
-    /// here because a `profile` entry must be routed through
-    /// `setCurrentProfileWithLock` (which mutates the live profile/constraint
-    /// state); applying it to a detached `Settings` would mis-store it as a
-    /// plain setting and never restore the profile.
-    ///
-    /// We don't share code with the live-context apply machinery in step (2)
-    /// because that machinery operates against `this->settings` under lock; the
-    /// reset path needs to build the result in a local `Settings` and atomically
-    /// swap. Sharing the inner quirks-and-clamp tail via a lambda is the easiest
-    /// guard against the two paths drifting.
+    /// Auth-server settings are NOT folded in here: a `profile` entry must go
+    /// through `setCurrentProfileWithLock` (which mutates live profile/constraint
+    /// state), so they're replayed under the lock after the swap, via the same
+    /// calls login uses (see below).
     const auto apply_and_clamp = [this](Settings & s, const SettingsChanges & changes)
     {
         s.applyChanges(changes);
@@ -2148,14 +2113,11 @@ void Context::resetToUserDefaults()
     auto new_profiles_state = defaults.enabled_profiles->getConstraintsAndProfileIDs(
         getGlobalContext()->getSettingsConstraintsAndCurrentProfiles());
 
-    /// Take ownership of fields whose destructors do non-trivial work and run
-    /// those destructors after we drop the lock. `TemporaryTableHolder::~`
-    /// reaches into DatabaseCatalog / DatabaseMemory locks; holding our own
-    /// mutex across that is both slow and a lock-ordering hazard.
-    /// `BackupsInMemoryHolder` keeps `BACKUP ... TO Memory(...)` payloads and
-    /// can be large; clear it the same way so a session that ran
-    /// `BACKUP ... TO Memory('b')` can't `RESTORE FROM Memory('b')` (or hit
-    /// `BACKUP_ALREADY_EXISTS`) after `RESET SESSION`.
+    /// Swap these out under the lock and let their destructors run after it:
+    /// `TemporaryTableHolder::~` takes DatabaseCatalog/DatabaseMemory locks (a
+    /// lock-ordering hazard under our mutex), and `BackupsInMemoryHolder` (the
+    /// `BACKUP ... TO Memory(...)` payloads) can be large. Clearing the latter
+    /// is also what stops a post-reset `RESTORE FROM Memory(...)`.
     TemporaryTablesMapping tables_to_drop;
     Scalars scalars_to_drop;
     Scalars special_scalars_to_drop;
@@ -2168,12 +2130,9 @@ void Context::resetToUserDefaults()
         *settings = std::move(new_settings);
         settings_constraints_and_current_profiles = std::move(new_profiles_state);
 
-        /// Restore the authenticated user as the session's `user_id`. If an
-        /// in-session `EXECUTE AS` had impersonated the session, this undoes
-        /// it. Mirror the ClientInfo name fields so `currentUser()` /
-        /// `initialUser()` report the authenticated identity after reset.
-        /// `setCurrentRolesWithLock` and the access-control snapshot below
-        /// must run against the restored id, so do this first.
+        /// Restore the authenticated user (undoing any `EXECUTE AS`) and mirror
+        /// the ClientInfo names so `currentUser()` / `initialUser()` report it.
+        /// Roles and access below depend on the restored id, so do this first.
         setUserIDWithLock(*snapshot_user_id, lock);
         client_info.current_user = snapshot_current_user_name;
         client_info.initial_user = snapshot_initial_user_name;
@@ -2182,15 +2141,10 @@ void Context::resetToUserDefaults()
         external_roles.reset();
         need_recalculate_access = true;
 
-        /// Replay the auth-server settings exactly as `Session::makeSessionContext`
-        /// does after `setUser` at login: check constraints, then apply through the
-        /// Context-level path. Applying via `applySettingsChangesWithLock` (rather
-        /// than folding into `new_settings` above) is what routes a `profile` entry
-        /// through `setCurrentProfileWithLock`, updating the current profiles and
-        /// constraint chain — instead of mis-storing `profile` as a plain setting,
-        /// which would silently fail to restore the auth-provided profile. The base
-        /// settings/profiles are already swapped in above, so this layers on top of
-        /// them just like at login.
+        /// Replay auth-server settings exactly as `Session::makeSessionContext`
+        /// does after `setUser`: check then apply via the Context-level path, so a
+        /// `profile` entry is routed through `setCurrentProfileWithLock` rather than
+        /// mis-stored as a plain setting. Layers on top of the swapped-in base.
         checkSettingsConstraintsWithLock(auth_settings_snapshot, SettingSource::QUERY);
         applySettingsChangesWithLock(auth_settings_snapshot, lock);
 
@@ -2202,26 +2156,16 @@ void Context::resetToUserDefaults()
         backups_to_drop.swap(backups_in_memory);
         query_parameters.clear();
 
-        /// Snapshot under the lock so the invocation below sees a stable set
-        /// even if a concurrent `setSessionResetCallback` races. Snapshotting
-        /// is cheap — these vectors hold a handful of entries.
+        /// Snapshot under the lock so the loop below sees a stable set if a
+        /// concurrent `setSessionResetCallback` races.
         callbacks_snapshot = session_reset_callbacks;
     }
-    /// `tables_to_drop`, `scalars_to_drop`, `special_scalars_to_drop`,
-    /// `backups_to_drop` destructors run here, outside the lock.
+    /// The swapped-out collections' destructors run here, outside the lock.
 
-    /// Fire handler-registered hooks outside the lock so callbacks can take
-    /// their own locks without re-entering ours. A throwing callback must not
-    /// prevent other handlers from cleaning up (otherwise one broken hook
-    /// could leave another handler's session-scoped state dirty), but the
-    /// reset as a whole must still fail — a partially-reset connection going
-    /// back to a pool as "clean" would silently re-leak the very state we
-    /// were called to drop. So: keep going through every callback, capturing
-    /// the first exception, then rethrow it after the loop.
-    /// TODO: no callback in tree currently throws, so this rethrow-after-loop
-    /// behaviour is only covered by code review. A gtest would need to spin
-    /// up a Context with a real user/session, which no existing test does;
-    /// worth revisiting when that infrastructure lands.
+    /// Fire handler hooks outside the lock (callbacks take their own locks).
+    /// Run every callback even if one throws — otherwise a broken hook leaves
+    /// another handler's state dirty — but still rethrow afterwards so a
+    /// partially-reset connection isn't returned to a pool as "clean".
     std::exception_ptr first_callback_exception;
     for (auto & [_, callback] : callbacks_snapshot)
     {

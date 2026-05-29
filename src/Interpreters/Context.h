@@ -371,39 +371,28 @@ protected:
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
-    /// Settings supplied by the authentication server at auth time. Persisted on
-    /// the session context so they can be replayed by `RESET SESSION` without
-    /// re-running authentication. Empty on non-session contexts.
+    /// Auth-server settings, persisted on the session context so `RESET SESSION`
+    /// can replay them without re-authenticating. Empty on non-session contexts.
     SettingsChanges settings_from_auth_server;
 
-    /// The `current_database` value right after the connection handshake (after
-    /// the user's profile default and any connection-level default database have
-    /// been applied). Captured via `rememberDatabaseAtSessionStart`. Used as the
-    /// restore target for `RESET SESSION`.
+    /// `current_database` right after the handshake, captured via
+    /// `rememberDatabaseAtSessionStart`. The first candidate `RESET SESSION`
+    /// restores the database to.
     std::optional<String> database_at_session_start;
 
-    /// The authenticated user's `user_id` captured at session start, before
-    /// any in-session `EXECUTE AS` impersonation can mutate `user_id` away
-    /// from it. `RESET SESSION` re-derives defaults from this id and
-    /// restores the `ClientInfo` user names below to the authenticated
-    /// user, so a pooled connection returned after `EXECUTE AS` cannot be
-    /// handed to the next borrower still impersonating the previous
-    /// target. Captured via `rememberAuthenticatedUser`.
+    /// The authenticated user (and `ClientInfo` names) captured at session start,
+    /// before any `EXECUTE AS` can repoint `user_id`. `RESET SESSION` resets to
+    /// this baseline so a pooled connection can't be returned still impersonating.
+    /// Captured via `rememberAuthenticatedUser`.
     std::optional<UUID> authenticated_user_id;
     String authenticated_current_user_name;
     String authenticated_initial_user_name;
 
-    /// Callbacks fired at the end of `resetToUserDefaults`. Protocol handlers
-    /// register here to drop session-scoped state that lives outside `Context`
-    /// (e.g. MySQL/Postgres prepared statements, cached socket timeouts).
-    /// Keyed by an owner pointer so re-registration from the same handler
-    /// (e.g. Arrow Flight `StartCall` firing per-RPC against a reused named
-    /// session) replaces the previous entry instead of appending a duplicate.
-    /// The closure receives the session `Context` by reference so handlers
-    /// don't need to capture a `shared_ptr` back to us: such a capture would
-    /// be a cycle (this vector lives on the `Context`, and would then hold a
-    /// `shared_ptr` to that same `Context`) and would keep the `Context`
-    /// alive past session shutdown.
+    /// Hooks fired at the end of `resetToUserDefaults` for handlers to drop
+    /// session-scoped state `Context` doesn't own (e.g. TCP socket timeouts).
+    /// Keyed by owner pointer so a handler re-registering replaces its entry.
+    /// The closure takes `Context &` rather than capturing a `shared_ptr` back
+    /// to us, which would be a reference cycle keeping the `Context` alive.
     using SessionResetCallback = std::function<void(Context &)>;
     std::vector<std::pair<const void *, SessionResetCallback>> session_reset_callbacks;
 
@@ -897,39 +886,29 @@ public:
     /// Stored on the session context so `RESET SESSION` can replay them without re-authenticating.
     void setSettingsFromAuthServer(const SettingsChanges & settings_changes);
 
-    /// Lock in the current `current_database` value as the database the session
-    /// was opened with. To be called by a protocol handler after it has finished
-    /// applying handshake-level state (e.g. a TCP/MySQL/Postgres Hello packet's
-    /// default_database). `RESET SESSION` restores `current_database` to this
-    /// value rather than to the user's profile default, so a client that opened
-    /// the connection with `--database X` lands back in `X` after the reset.
+    /// Lock in the current `current_database` as the session-start database, so
+    /// `RESET SESSION` restores it rather than the profile default. Called by a
+    /// protocol handler once it has applied handshake-level state (e.g. a Hello
+    /// packet's default_database).
     void rememberDatabaseAtSessionStart();
 
-    /// Snapshot the current `user_id` and `ClientInfo` user names as the
-    /// authenticated-user baseline that `RESET SESSION` returns the session
-    /// to. To be called by `Session` exactly once per session, right after
-    /// `setUser` has installed the freshly-authenticated user. Without this
-    /// baseline, `resetToUserDefaults` would re-derive defaults from
-    /// whatever `EXECUTE AS` may have impersonated the session into.
+    /// Snapshot the current `user_id` / `ClientInfo` names as the
+    /// authenticated-user baseline for `RESET SESSION`. Called by `Session` once,
+    /// right after `setUser`, before any `EXECUTE AS` can repoint the user.
     void rememberAuthenticatedUser();
 
-    /// Restore the session context to the state it had right after the
-    /// authentication and handshake: re-derives profiles / roles from access
-    /// control, restores the database the connection was opened with, replays
-    /// the settings supplied by the auth server, and drops session-scoped
-    /// temporary tables, query parameters, and scalars.
-    /// Preserves user identity, client info, and the handshake-negotiated
+    /// Restore the session context to its post-authentication state: re-derive
+    /// profiles/roles from access control, restore the session-start database,
+    /// replay auth-server settings, and drop temporary tables, query parameters,
+    /// and scalars. Preserves user identity, client info, and the negotiated
     /// output format.
     void resetToUserDefaults();
 
-    /// Register a callback to be invoked at the end of `resetToUserDefaults`.
-    /// Protocol handlers use this to drop their own session-scoped state
-    /// (prepared statements, cached socket timeouts) that `Context` doesn't
-    /// own. `owner` is any stable pointer (typically `this` of the registering
-    /// handler) used to deduplicate registrations: re-registering with the
-    /// same `owner` replaces the previous closure rather than appending. The
-    /// callback is invoked outside `Context::mutex`; the registered closure
-    /// must not call back into `Context::resetToUserDefaults`.
+    /// Register a hook run at the end of `resetToUserDefaults` for a handler to
+    /// drop session-scoped state `Context` doesn't own (e.g. socket timeouts).
+    /// `owner` (a stable pointer, typically the handler's `this`) dedups: re-
+    /// registering with the same `owner` replaces the closure. Invoked outside
+    /// `Context::mutex`; the closure must not re-enter `resetToUserDefaults`.
     void setSessionResetCallback(const void * owner, SessionResetCallback callback);
 
     std::optional<UUID> getUserID() const;

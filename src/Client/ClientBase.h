@@ -261,12 +261,9 @@ private:
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
 
-    /// Execute a query and collect all results as a single string (rows separated by newlines)
-    /// Returns `std::nullopt` if the probe failed (network error, server
-    /// `Exception` packet, etc.) — distinguishing those failures from a
-    /// successful query that legitimately returned an empty string. The
-    /// `executeQueryForSingleString` wrapper below collapses both cases to
-    /// `""` for callers that don't care which one happened.
+    /// Execute a query and collect all rows as one newline-separated string.
+    /// `std::nullopt` means the probe failed (network error, server `Exception`),
+    /// as opposed to a successful query that returned an empty string.
     std::optional<std::string> tryExecuteQueryForSingleString(const std::string & query);
 
     /// Execute a query and collect all results as a single string (rows separated by newlines)
@@ -311,17 +308,12 @@ protected:
     /// Initializes the client context.
     void initClientContext(ContextMutablePtr context);
 
-    /// Lock in the current `default_database`, `Settings`, and
-    /// `query_parameters` on `client_context` as the connection baseline
-    /// `RESET SESSION` restores to. Subclasses call this once their
-    /// startup-time mutations (command-line / config / `adjustSettings` /
-    /// any post-`initClientContext` `setSetting`) are settled — taking
-    /// the snapshot inside `initClientContext` is too early because
-    /// `Client::main` runs `processConfig` and `adjustSettings(client_context)`
-    /// after `processOptions` has already constructed the context, and
-    /// `LocalServer` sets `implicit_table_at_top_level` after
-    /// `initClientContext` too. One-shot: subsequent calls (e.g. after a
-    /// reconnect) are no-ops.
+    /// Snapshot the connect-time `default_database` / `Settings` /
+    /// `query_parameters` as the baseline `RESET SESSION` restores to.
+    /// Subclasses call this once startup mutations have settled (later than
+    /// `initClientContext`: `Client::main` runs `processConfig`/`adjustSettings`
+    /// and `LocalServer` sets `implicit_table_at_top_level` afterwards).
+    /// One-shot — later calls (e.g. on reconnect) are no-ops.
     void snapshotConnectionBaseline();
 
     void setDefaultFormatsAndCompressionFromConfiguration();
@@ -339,13 +331,9 @@ protected:
     ContextMutablePtr client_context;
 
     String default_database;
-    /// Snapshot of the connection-start values for `default_database`,
-    /// the post-command-line / post-`adjustSettings` `Settings`, and
-    /// `query_parameters`, captured by `snapshotConnectionBaseline`.
-    /// `RESET SESSION` restores from these. `connect_snapshot_taken`
-    /// guards the one-shot capture so reconnects don't overwrite the
-    /// snapshot with the post-reconnect (and therefore post-`SET` /
-    /// post-`USE`) state.
+    /// Connect-time baseline captured by `snapshotConnectionBaseline` and
+    /// restored by `RESET SESSION`; `connect_snapshot_taken` guards the
+    /// one-shot capture against reconnects.
     bool connect_snapshot_taken = false;
     std::optional<String> default_database_at_connect;
     String query_id;
@@ -404,19 +392,12 @@ protected:
     std::unique_ptr<Settings> cmd_settings;
     std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
 
-    /// Effective settings on the client context at the time of the first
-    /// successful connection (i.e. after command-line `--setting` overrides
-    /// have been applied but before any in-session `SET`). `RESET SESSION`
-    /// restores to this snapshot rather than to compiled-in defaults, so a
-    /// client invoked with e.g. `--max_threads 4` keeps that value after a
-    /// reset.
+    /// Client settings after command-line overrides but before any in-session
+    /// `SET`. `RESET SESSION` restores to this, so e.g. `--max_threads 4` is kept.
     std::unique_ptr<Settings> settings_at_connect;
 
-    /// Query parameters supplied via `--param_*` at startup. `RESET SESSION`
-    /// restores `query_parameters` to this set (rather than clearing it), so
-    /// startup parameters are part of the connection baseline alongside the
-    /// startup `default_database` and `settings`. In-session `SET param_*`
-    /// changes are dropped on reset, matching the server-side behavior.
+    /// Startup `--param_*` values; `RESET SESSION` restores `query_parameters` to
+    /// these (in-session `SET param_*` changes are dropped, as on the server).
     std::optional<NameToNameMap> query_parameters_at_connect;
 
     ServerConnectionPtr connection;

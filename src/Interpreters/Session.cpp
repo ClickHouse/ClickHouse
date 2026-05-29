@@ -653,22 +653,13 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         { session_name_ },
         max_sessions_for_user);
 
-    /// Stash the auth-server settings so `RESET SESSION` can replay them,
-    /// same as in the unnamed-session path. Only on the newly-created branch:
-    /// on reuse, the live session context has been mutated by `SET` since,
-    /// and overwriting its stash with the current request's auth-server
-    /// settings would let a future `RESET SESSION` apply settings the live
-    /// session never had — diverging from "the state right after this
-    /// session's authentication" the docs promise.
+    /// Stash auth-server settings and pin the authenticated user for
+    /// `RESET SESSION`, same as the unnamed-session path — but only when newly
+    /// created. A reused named session already has both, and re-applying them
+    /// would clobber state the live session has accumulated since.
     if (new_named_session_created)
     {
         session_context->setSettingsFromAuthServer(settings_from_auth_server);
-        /// Pin the authenticated user only when the named session is newly
-        /// created. A reused named session already has the original
-        /// authenticated id baked in; re-pinning on every reuse would
-        /// overwrite the baseline with whatever user the current reuse came
-        /// in as (which is the same in practice today, but the invariant
-        /// belongs with the rest of the create-only login pipeline above).
         session_context->rememberAuthenticatedUser();
     }
 

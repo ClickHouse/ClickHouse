@@ -1725,9 +1725,8 @@ static BlockIO executeQueryImpl(
             if (!get_result_from_query_result_cache())
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots.
-                /// `RESET SESSION` is excluded because (a) it rejects active transactions itself and (b) it must be able to clear an
-                /// `implicit_transaction = 1` set by the previous borrower of a pooled connection — wrapping it in an implicit
-                /// transaction would make that case (and clean-session idempotency) unreachable.
+                /// `RESET SESSION` is excluded: it rejects active transactions itself, and must be able to clear an inherited
+                /// `implicit_transaction = 1` — wrapping it would make that (and clean-session idempotency) unreachable.
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction]
                     && !(out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTResetSessionQuery>())))
                 {
@@ -1757,11 +1756,9 @@ static BlockIO executeQueryImpl(
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {
-                    /// `RESET SESSION` is intentionally exempt from this gate: the
-                    /// interpreter rejects active transactions itself in
-                    /// `Context::resetToUserDefaults` with `INVALID_TRANSACTION`, the
-                    /// statement-specific error code. Letting the generic
-                    /// `NOT_IMPLEMENTED` path fire here would short-circuit that.
+                    /// `RESET SESSION` is exempt: it rejects active transactions
+                    /// itself with the specific `INVALID_TRANSACTION` code, which the
+                    /// generic `NOT_IMPLEMENTED` here would otherwise pre-empt.
                     if (!interpreter->supportsTransactions() && !(out_ast && out_ast->as<ASTResetSessionQuery>()))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
 
@@ -1980,11 +1977,10 @@ static BlockIO executeQueryImpl(
                 }
                 else if (auto txn = context->getCurrentTransaction())
                 {
-                    /// `RESET SESSION` refuses to run inside an active transaction
-                    /// (throws `INVALID_TRANSACTION`) and never mutates the
-                    /// transaction itself, so it must not trigger the rollback/cancel
-                    /// hook — otherwise the caller's open transaction would be poisoned
-                    /// before they get the chance to `COMMIT` or `ROLLBACK`.
+                    /// `RESET SESSION` rejects an active transaction without
+                    /// mutating it, so it must not trip the rollback/cancel hook —
+                    /// that would poison the caller's transaction before they can
+                    /// COMMIT/ROLLBACK.
                     if (!(out_ast && out_ast->as<ASTResetSessionQuery>()))
                         txn->onException();
                 }

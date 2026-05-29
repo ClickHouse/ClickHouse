@@ -752,9 +752,8 @@ try
     if (!table_name.empty())
         client_context->setSetting("implicit_table_at_top_level", table_name);
 
-    /// Pin the post-startup settings as the `RESET SESSION` baseline AFTER
-    /// `implicit_table_at_top_level` has been applied — snapshotting inside
-    /// `initClientContext` above would miss it.
+    /// Snapshot the `RESET SESSION` baseline after `implicit_table_at_top_level`
+    /// is applied (snapshotting inside `initClientContext` would miss it).
     snapshotConnectionBaseline();
 
     connect();

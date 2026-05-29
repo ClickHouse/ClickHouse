@@ -447,10 +447,9 @@ void TCPHandler::runImpl()
             /// `RESET SESSION` can restore it later.
             session->sessionContext()->rememberDatabaseAtSessionStart();
 
-            /// Refresh the connection-level setting cache (idle/send/receive
-            /// timeouts, poll interval, etc.) after `RESET SESSION` re-derives
-            /// the session settings. The TCPHandler outlives the session
-            /// context that owns the callback list, so capturing `this` is safe.
+            /// Refresh the connection-level setting cache (send/receive/idle
+            /// timeouts, etc.) after `RESET SESSION` re-derives the settings.
+            /// The handler outlives the session, so capturing `this` is safe.
             session->sessionContext()->setSessionResetCallback(this,
                 [this](Context & session_context)
                 {
