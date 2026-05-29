@@ -1,6 +1,5 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/buildInsertReturningPipeline.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -1086,8 +1085,9 @@ BlockIO InterpreterInsertQuery::execute()
         res.pipeline = buildInsertPipeline(query, table);
     }
 
-    if (query.returning_select && !res.pipeline.pushing())
-        res.pipeline = buildInsertReturningPipeline(std::move(res.pipeline), query.returning_select, context);
+    /// For INSERT ... RETURNING the RETURNING `SELECT` is wrapped later, in `executeQueryImpl`, after the query
+    /// start has been logged. This keeps a failure while planning the RETURNING subquery (which runs after the
+    /// INSERT has persisted rows) from being logged as EXCEPTION_BEFORE_START.
 
     res.pipeline.addStorageHolder(table);
 

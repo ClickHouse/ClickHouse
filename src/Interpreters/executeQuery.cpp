@@ -1412,6 +1412,11 @@ static BlockIO executeQueryImpl(
     String query_database;
     String query_table;
 
+    /// Set once the query start has been recorded in the query log. After that point a failure must be logged as
+    /// EXCEPTION_WHILE_PROCESSING (using `query_log_elem`), not EXCEPTION_BEFORE_START.
+    bool query_log_started = false;
+    QueryLogElement query_log_elem;
+
     try
     {
         if (auto txn = context->getCurrentTransaction())
@@ -1848,16 +1853,6 @@ static BlockIO executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    if (insert_query)
-                    {
-                        if (insert_query->returning_select && res.pipeline.pushing() && insert_query->hasInlinedData())
-                        {
-                            auto pipe = getSourceFromASTInsertQuery(out_ast, true, res.pipeline.getHeader(), context, nullptr);
-                            res.pipeline.complete(std::move(pipe));
-                            res.pipeline = buildInsertReturningPipeline(std::move(res.pipeline), insert_query->returning_select, context);
-                        }
-                    }
-
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context))
@@ -1959,7 +1954,7 @@ static BlockIO executeQueryImpl(
 
         /// Everything related to query log.
         {
-            QueryLogElement elem = logQueryStart(
+            query_log_elem = logQueryStart(
                 query_start_time,
                 context,
                 query_for_logging,
@@ -1971,6 +1966,8 @@ static BlockIO executeQueryImpl(
                 query_database,
                 query_table,
                 async_insert);
+            query_log_started = true;
+            auto & elem = query_log_elem;
 
             /// Also make possible for caller to log successful query finish and exception during execution.
 
@@ -2034,6 +2031,39 @@ static BlockIO executeQueryImpl(
             res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
         }
+
+        /// For INSERT ... RETURNING, run the INSERT and build the RETURNING `SELECT` pipeline only now — after the
+        /// query start has been logged and the finish/exception callbacks are installed. If planning the RETURNING
+        /// subquery throws (unknown identifier, rejected SETTINGS, ...) after the INSERT has already persisted rows,
+        /// the failure is then logged as EXCEPTION_WHILE_PROCESSING instead of EXCEPTION_BEFORE_START, so the query
+        /// log reflects that the statement started and had side effects. The native-protocol push path performs the
+        /// equivalent wrap in the protocol handler (`replacePipelineWithInsertReturningAfterPush`).
+        if (insert_query && insert_query->returning_select)
+        {
+            auto wrap_returning = [&]()
+            {
+                res.pipeline = buildInsertReturningPipeline(std::move(res.pipeline), insert_query->returning_select, context);
+                if (res.finish_callback_state)
+                    res.finish_callback_state->insert_returning_result_as_select = true;
+                if (insert_table)
+                    res.pipeline.addStorageHolder(insert_table);
+                setupPullingQueryPipeline(res.pipeline, context, stage, insert_query->returning_select);
+            };
+
+            if (!res.pipeline.pushing())
+            {
+                /// INSERT ... SELECT ... RETURNING: the INSERT pipeline is already completed.
+                wrap_returning();
+            }
+            else if (insert_query->hasInlinedData())
+            {
+                /// INSERT VALUES/FORMAT <inlined data> ... RETURNING: attach the inlined source, then wrap.
+                auto pipe = getSourceFromASTInsertQuery(out_ast, true, res.pipeline.getHeader(), context, nullptr);
+                res.pipeline.complete(std::move(pipe));
+                wrap_returning();
+            }
+            /// else: native-protocol push insert; the RETURNING wrap happens in the protocol handler after the push.
+        }
     }
     catch (...)
     {
@@ -2046,7 +2076,17 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        if (query_log_started)
+        {
+            /// The query already logged its start (e.g. an INSERT ... RETURNING whose subquery failed to plan after
+            /// the INSERT persisted). Log it as a started query that failed, not as EXCEPTION_BEFORE_START.
+            if (!internal)
+                if (auto query_exception_quota = context->getQuota())
+                    query_exception_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+            logQueryException(query_log_elem, context, start_watch, out_ast, query_span, internal, /* log_error = */ true);
+        }
+        else
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
 
         throw;
     }
