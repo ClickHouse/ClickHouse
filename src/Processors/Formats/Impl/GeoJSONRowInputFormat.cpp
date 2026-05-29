@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
 
@@ -122,15 +123,18 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
         {
             geometry_col_idx = i;
             const auto * variant_type = typeid_cast<const DataTypeVariant *>(col.type.get());
-            if (variant_type)
+            if (!variant_type)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The 'geometry' column of the GeoJSON input format must have type 'Geometry', but it has type '{}'",
+                    col.type->getName());
+
+            for (const auto & geo_type_name :
+                 {"Point", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"})
             {
-                for (const auto & geo_type_name :
-                     {"Point", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"})
-                {
-                    auto discr = variant_type->tryGetVariantDiscriminator(geo_type_name);
-                    if (discr.has_value())
-                        geometry_discriminants[geo_type_name] = *discr;
-                }
+                auto discr = variant_type->tryGetVariantDiscriminator(geo_type_name);
+                if (discr.has_value())
+                    geometry_discriminants[geo_type_name] = *discr;
             }
         }
         else if (col.name == "properties")
@@ -189,6 +193,8 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     {
         if (key == "id" && id_col_idx.has_value())
         {
+            if (has_id)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'id' field in a feature");
             SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
                 *columns[*id_col_idx], buf, format_settings, serializations[*id_col_idx]);
             has_id = true;
@@ -196,12 +202,16 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         }
         if (key == "geometry" && geometry_col_idx.has_value())
         {
+            if (has_geometry)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'geometry' field in a feature");
             readGeometry(*columns[*geometry_col_idx]);
             has_geometry = true;
             return true;
         }
         if (key == "properties" && properties_col_idx.has_value())
         {
+            if (has_properties)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: duplicate 'properties' field in a feature");
             SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(
                 *columns[*properties_col_idx], buf, format_settings, serializations[*properties_col_idx]);
             has_properties = true;

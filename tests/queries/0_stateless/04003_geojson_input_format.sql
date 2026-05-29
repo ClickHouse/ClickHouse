@@ -109,3 +109,16 @@ FROM format('GeoJSON', '{
 }')
 SETTINGS input_format_geojson_geometry_collection_handling = 'null';
 
+-- A duplicate fixed field within a feature is rejected as bad input.
+SELECT id
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "id": "1", "id": "2", "geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A 'geometry' column that is not of type Geometry is rejected instead of causing undefined behaviour.
+SELECT *
+FROM format('GeoJSON', 'id String, geometry String, properties JSON', '{"type":"FeatureCollection","features":[]}'); -- { serverError BAD_ARGUMENTS }
+
