@@ -6,7 +6,6 @@
 #include <unordered_map>
 
 #include <Core/Field.h>
-#include <Core/Types.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -27,7 +26,7 @@ public:
 
     static bool has(const String & function_name, ContextPtr context);
 
-    static Strings getRegisteredNames(ContextPtr context);
+    static std::vector<String> getRegisteredNames(ContextPtr context);
 
 };
 

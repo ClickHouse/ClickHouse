@@ -1,12 +1,10 @@
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -50,7 +48,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
-#include <Common/ThreadPool.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 
@@ -116,13 +113,12 @@ namespace ErrorCodes
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
     extern const int SAMPLING_NOT_SUPPORTED;
-    extern const int ILLEGAL_STREAM;
 }
 
 
 MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection)
     : data(data_)
-    , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
+    , data_settings(data.getSettings(projection))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }
@@ -179,10 +175,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool enable_parallel_reading) const
 {
-    if (query_info.isStream() && enable_parallel_reading)
-        throw Exception(ErrorCodes::ILLEGAL_STREAM,
-            "STREAM is not supported with parallel replicas");
-
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     auto step = readFromParts(
@@ -627,18 +619,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
 
-    if (minmax_idx_condition)
-        minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
-
-    if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
-        && (!minmax_idx_condition || minmax_idx_condition->alwaysUnknownOrTrue())
-        && (!partition_pruner || partition_pruner->isUseless()))
+    if (metadata_snapshot->hasPartitionKey())
     {
+        chassert(minmax_idx_condition && partition_pruner);
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        const auto & partition_columns_names = partition_key.expression->getRequiredColumns();
-        throw Exception(ErrorCodes::INDEX_NOT_USED,
-            "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
-            fmt::join(partition_columns_names, ", "));
+        minmax_columns_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+
+        if (settings[Setting::force_index_by_date] && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
+        {
+            auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+            throw Exception(ErrorCodes::INDEX_NOT_USED,
+                "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
+                fmt::join(minmax_columns_names, ", "));
+        }
     }
 
     auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
@@ -677,7 +670,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     {
         auto description = minmax_idx_condition->getDescription();
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::MinMax,
+            .type = ReadFromMergeTree::IndexType::PartitionMinMax,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
@@ -698,47 +691,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     return res;
 }
-
-std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
-    const MergeTreeIndexPtr & index,
-    const StorageMetadataPtr & metadata_snapshot,
-    const NameSet & all_updated_columns)
-{
-    if (all_updated_columns.empty())
-        return {};
-
-    /// Two dotted column names overlap when they are equal, or when one is an ancestor
-    /// of the other in the subcolumn hierarchy (a `.`-separated prefix). For example,
-    /// `document` overlaps `document.country` (parent/child), but `document.city` and
-    /// `document.country` do not (sibling subcolumns are independent).
-    auto overlaps = [](std::string_view updated, std::string_view required)
-    {
-        if (updated.size() > required.size())
-            std::swap(updated, required);
-        return required.starts_with(updated)
-            && (updated.size() == required.size() || required[updated.size()] == '.');
-    };
-
-    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
-    auto required_columns_names = index->getColumnsRequiredForIndexCalc();
-    auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
-
-    for (const auto & required_column : required_columns_list)
-    {
-        for (const auto & updated_column : all_updated_columns)
-        {
-            if (overlaps(updated_column, required_column.name))
-            {
-                return std::unexpected(PreformattedMessage::create(
-                    "Index {} depends on column `{}` which will be updated on the fly (by update of `{}`)",
-                    index->index.name, required_column.name, updated_column));
-            }
-        }
-    }
-
-    return {};
-}
-
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     const RangesInDataParts & parts,
@@ -813,7 +765,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     return res_parts;
 }
-
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
 {
@@ -991,14 +942,27 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
                 {
-                    auto check_result = canUseIndex(index, metadata_snapshot, all_updated_columns);
-                    if (!check_result)
+                    if (all_updated_columns.empty())
+                        return {};
+
+                    auto options = GetColumnsOptions(GetColumnsOptions::Kind::All).withSubcolumns();
+                    auto required_columns_names = index ->getColumnsRequiredForIndexCalc();
+                    auto required_columns_list = metadata_snapshot->getColumns().getByNames(options, required_columns_names);
+
+                    auto it = std::ranges::find_if(required_columns_list, [&](const auto & column)
                     {
-                        return std::unexpected(PreformattedMessage::create(
-                            "Index {} is not used for part {}. Reason: {}",
-                            index->index.name, ranges.data_part->name, check_result.error().text));
-                    }
-                    return {};
+                        return all_updated_columns.contains(column.getNameInStorage());
+                    });
+
+                    if (it == required_columns_list.end())
+                        return {};
+
+                    return std::unexpected(
+                        PreformattedMessage::create(
+                            "Index {} is not used for part {} because it depends on column `{}` which will be updated on the fly",
+                            index->index.name,
+                            ranges.data_part->name,
+                            it->getNameInStorage()));
                 };
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
@@ -1517,18 +1481,13 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {
-        if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
+        if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
     /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
-    {
-        if (!query_info.isStream())
-            return {};
-
-        parts = std::make_shared<const RangesInDataParts>();
-    }
-    else if (parts->empty() && !query_info.isStream())
+        return {};
+    else if (parts->empty())
         return {};
 
     return std::make_unique<ReadFromMergeTree>(
@@ -2019,25 +1978,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
         {
-            const size_t max_position = std::min(key_condition_rpn_template->getRPN().size(), MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT);
-            return [range_begin, max_position, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            return [range_begin, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
             {
-                /// Index conditions may have extra condition-local RPN nodes after rewrites.
-                /// `mergePartialResultsForDisjunctions` reads only positions from
-                /// `key_condition_rpn_template`, so leave extra positions at the default.
-                if (is_unknown || position >= max_position)
-                    return;
-
-                const auto bit_index = (range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position;
-                if (bit_index >= partial_disjunction_result.size())
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Partial disjunction result bit index {} is out of range, bitset size: {}, mark: {}, position: {}",
-                        bit_index, partial_disjunction_result.size(), range_begin, position);
-                }
-
-                partial_disjunction_result[bit_index] = element_result;
+                if (!is_unknown)
+                    partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
             };
         }
         return nullptr;
@@ -2218,12 +2162,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & prev_part : parts)
     {
         const auto & part_or_projection = prev_part.data_part;
-        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-        const auto num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
 
         if (query_status)
             query_status->checkTimeLimit();
 
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && !part_values->contains(part->name))
             continue;
 
@@ -2237,11 +2180,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
                 continue;
         }
 
+        size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
+
         counters.num_initial_selected_parts += 1;
         counters.num_initial_selected_granules += num_granules;
 
-        /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
+                part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -2284,8 +2229,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            size_t num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
-
             if (part_values && !part_values->contains(part->name))
                 continue;
 
@@ -2303,11 +2246,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
                 continue;
 
+            size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
+
             counters.num_initial_selected_parts += 1;
             counters.num_initial_selected_granules += num_granules;
 
-            /// hyperrectangle must come from the part whose metadata built the condition.
-            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+            if (minmax_idx_condition
+                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types)
+                        .can_be_true)
                 continue;
 
             counters.num_parts_after_minmax += 1;

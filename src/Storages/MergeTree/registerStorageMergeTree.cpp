@@ -10,8 +10,6 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Common/Jemalloc.h>
-#include <Common/JemallocMergeTreeArena.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -31,10 +29,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <Disks/DiskType.h>
-#include <Disks/IDisk.h>
-#include <Disks/StoragePolicy.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -47,7 +41,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
-    extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool create_table_empty_primary_key_by_default;
@@ -65,14 +58,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
-    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
-    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
-    extern const MergeTreeSettingsBool enable_block_number_column;
-    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool escape_index_filenames;
-    extern const MergeTreeSettingsString disk;
-    extern const MergeTreeSettingsString storage_policy;
 }
 
 namespace ServerSetting
@@ -319,7 +306,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         /// TODO maybe use hostname if {replica} is not defined?
 
         /// Modify query, so default values will be written to metadata
-        chassert(arg_num == 0);
+        assert(arg_num == 0);
         ASTs old_args;
         std::swap(engine_args, old_args);
         auto path_arg = make_intrusive<ASTLiteral>("");
@@ -408,20 +395,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         */
 
     auto component_guard = Coordination::setCurrentComponent("registerStorageMergeTree::create");
-
-    /// Route every long-lived allocation built up while constructing this MergeTree-family
-    /// storage into the dedicated MergeTree arena. This covers the `MergeTreeSettings` deep
-    /// copy a few dozen lines below (`make_unique<MergeTreeSettings>(*initial_storage_settings)`),
-    /// the `StorageInMemoryMetadata` populated here (columns, partition / sorting / sampling
-    /// keys, secondary indices, projections, TTLs, comment), the `MergingParams` constructed
-    /// for {Summing,Replacing,...}MergeTree, and the AST clones for keys/expressions stored
-    /// on the resulting metadata. All of these are subsequently moved into the storage object
-    /// (see the `make_shared<Storage{Replicated,}MergeTree>(... metadata, ... storage_settings)`
-    /// at the bottom) and live for the table's lifetime. The deeper `MergeTreeData::setProperties`
-    /// has its own `ScopedJemallocThreadArena`; nesting is a no-op (RAII saves/restores the
-    /// previous index), so this does not break that wrapping.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
     bool is_extended_storage_def = args.engine_args.empty() || isExtendedStorageDef(args.query);
 
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();
@@ -736,74 +709,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context);
 
-        if (args.storage_def->unique_key)
-        {
-            /// Gate on CREATE only; ATTACH must load existing metadata regardless of session setting.
-            if (args.mode <= LoadingStrictnessLevel::CREATE
-                && !local_settings[Setting::allow_experimental_unique_key])
-            {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "UNIQUE KEY is an experimental feature. "
-                    "Set the session setting `allow_experimental_unique_key = 1` to enable it.");
-            }
-
-            /// Reject expression-style elements at parse time: runtime consumers
-            /// look up keys via `block.getByName(<column name>)`, so an
-            /// expression-style UK passes DDL but crashes the first INSERT.
-            {
-                const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
-                auto is_plain_identifier = [](const ASTPtr & node) -> bool
-                {
-                    return node && node->as<ASTIdentifier>() != nullptr;
-                };
-
-                const auto * as_function = uk_ast->as<ASTFunction>();
-                if (as_function && as_function->name == "tuple")
-                {
-                    if (as_function->arguments)
-                    {
-                        for (const auto & child : as_function->arguments->children)
-                        {
-                            if (!is_plain_identifier(child))
-                            {
-                                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "UNIQUE KEY must be a list of column identifiers. "
-                                    "Expression-style elements such as `{}` are not yet supported; "
-                                    "only bare column names are allowed.",
-                                    child ? child->formatForErrorMessage() : String("<null>"));
-                            }
-                        }
-                    }
-                }
-                else if (!is_plain_identifier(uk_ast))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "UNIQUE KEY must be a list of column identifiers. "
-                        "Expression-style keys such as `{}` are not yet supported; "
-                        "only bare column names are allowed.",
-                        uk_ast->formatForErrorMessage());
-                }
-            }
-
-            metadata.unique_key = KeyDescription::getKeyFromAST(
-                args.storage_def->unique_key->ptr(), metadata.columns, metadata.virtuals, context);
-
-            if (metadata.unique_key.column_names.empty())
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "UNIQUE KEY must contain at least one column");
-            }
-
-            NameSet seen_uk_columns;
-            for (const auto & uk_column : metadata.unique_key.column_names)
-            {
-                if (!seen_uk_columns.insert(uk_column).second)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "UNIQUE KEY contains duplicate column `{}`",
-                        uk_column);
-            }
-        }
-
         bool allow_suspicious_ttl
             = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
 
@@ -813,16 +718,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
         }
 
-        /// We use the local (query) context here so that user-level settings profiles can control
-        /// access to dynamic disk features such as `from_env`, `include`, and `from_zk`
-        /// (settings `dynamic_disk_allow_from_env`, `dynamic_disk_allow_include`, `dynamic_disk_allow_from_zk`).
-        /// When loading from existing metadata (`FORCE_ATTACH` / `FORCE_RESTORE`, e.g. server
-        /// restart or `UNDROP TABLE`), security checks inside `getDiskConfigurationFromAST` are
-        /// intentionally skipped because the disk configuration was already validated when the
-        /// table was originally created.
-        /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
-        /// still be subject to these checks.
-        storage_settings->loadFromQuery(*args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode));
+        storage_settings->loadFromQuery(*args.storage_def, context, LoadingStrictnessLevel::ATTACH <= args.mode);
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
@@ -832,33 +728,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
-        /// UNIQUE KEY tables must reside on local-only storage policies.
-        /// CREATE only; ATTACH must still load existing tables.
-        if (metadata.hasUniqueKey() && args.mode <= LoadingStrictnessLevel::CREATE)
-        {
-            StoragePolicyPtr resolved_storage_policy = (*storage_settings)[MergeTreeSetting::disk].changed
-                ? context->getStoragePolicyFromDisk((*storage_settings)[MergeTreeSetting::disk])
-                : context->getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
-
-            for (const auto & disk : resolved_storage_policy->getDisks())
-            {
-                const auto & desc = disk->getDataSourceDescription();
-                if (desc.type != DataSourceType::Local)
-                {
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "UNIQUE KEY on non-local disks is not yet supported "
-                        "(disk `{}` has source type `{}`). "
-                        "UNIQUE KEY tables must currently reside on a local-only storage policy.",
-                        disk->getName(), desc.toString());
-                }
-            }
-        }
-
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
         metadata.add_minmax_index_for_temporal_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-        metadata.add_minmax_index_for_block_number_column = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_number_column] && (*storage_settings)[MergeTreeSetting::enable_block_number_column];
-        metadata.add_minmax_index_for_block_offset_column = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_offset_column] && (*storage_settings)[MergeTreeSetting::enable_block_offset_column];
         metadata.escape_index_filenames = (*storage_settings)[MergeTreeSetting::escape_index_filenames];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
@@ -867,12 +739,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
-                auto using_auto_minmax_index =
-                       metadata.add_minmax_index_for_numeric_columns
-                    || metadata.add_minmax_index_for_string_columns
-                    || metadata.add_minmax_index_for_temporal_columns
-                    || metadata.add_minmax_index_for_block_number_column
-                    || metadata.add_minmax_index_for_block_offset_column;
+                auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
+                    || metadata.add_minmax_index_for_temporal_columns;
                 if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -899,7 +767,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.addImplicitIndicesForColumn(column, context);
         }
-        metadata.addImplicitIndicesForVirtualColumns(context);
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
@@ -914,7 +781,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -1081,7 +948,6 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
-        .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
@@ -1097,7 +963,6 @@ void registerStorageMergeTree(StorageFactory & factory)
     features.supports_replication = true;
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
-    features.supports_unique_key = false;
 
     factory.registerStorage("ReplicatedMergeTree", create, features);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create, features);

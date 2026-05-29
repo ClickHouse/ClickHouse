@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 
 
@@ -123,13 +122,9 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
-    if (DatabaseCatalog::instance().isRemoteDatabase(database))
-        query_context->setSetting("show_remote_databases_in_system_tables", true);
 
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }

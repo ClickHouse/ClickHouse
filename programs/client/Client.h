@@ -63,8 +63,6 @@ protected:
         std::vector<Arguments> & hosts_and_ports_arguments) override;
 
 private:
-    String getHelpHeader() const;
-    String getHelpFooter() const;
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE

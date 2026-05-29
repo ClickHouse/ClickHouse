@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionCutURLParameter final : public IFunction
+class FunctionCutURLParameter : public IFunction
 {
 public:
     static constexpr auto name = "cutURLParameter";
