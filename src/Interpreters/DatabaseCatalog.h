@@ -88,7 +88,11 @@ class BackgroundSchedulePoolTaskHolder;
 
 struct GetDatabasesOptions
 {
-    bool with_datalake_catalogs{false};
+    /// Include remote databases (data lake catalogs, MySQL, PostgreSQL).
+    /// These are excluded by default because listing their tables can be expensive
+    /// (network calls to remote services). Controlled by the
+    /// `show_remote_databases_in_system_tables` setting in system.tables/columns/completions.
+    bool with_remote_databases{false};
 };
 
 /// For some reason Context is required to get Storage from Database object.
@@ -155,14 +159,14 @@ public:
     bool isDatabaseExist(std::string_view database_name) const;
 
     String tryResolveDatabaseNameCaseInsensitive(std::string_view database_name) const;
-    /// Datalake catalogs are implement at IDatabase level in ClickHouse.
-    /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
-    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
-    /// to not accidentally query external non-free service for some trivial things like
-    /// autocompletion hints or system.tables / system.columns queries. We have a setting which allow to show
-    /// these databases everywhere, but user must explicitly specify it.
-    /// Note: system.databases always passes with_datalake_catalogs = true because listing a database name
-    /// is purely local metadata and never requires calls to an external catalog service.
+
+    /// Remote databases (data lake catalogs, MySQL, PostgreSQL) are implemented at IDatabase level in ClickHouse.
+    /// Listing their tables typically requires calls to a remote service (sometimes paid).
+    /// GetDatabasesOptions::with_remote_databases explicitly protects us from accidentally querying the remote service for trivial
+    /// things like autocompletion hints or system.tables / system.columns queries.
+    /// The `show_remote_databases_in_system_tables` setting allows the user to opt in.
+    /// Note: system.databases always passes with_remote_databases = true because listing a database
+    /// name is purely local metadata and never requires calls to a remote service.
     Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
@@ -278,8 +282,8 @@ public:
     bool canPerformReplicatedDDLQueries() const;
 
     void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
-    bool hasDatalakeCatalogs() const;
-    bool isDatalakeCatalog(const String & database_name) const;
+    bool hasRemoteDatabases() const;
+    bool isRemoteDatabase(const String & database_name) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -327,9 +331,9 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
-    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
-    /// Map from lowercase database name to set of original database names
-    /// Multiple entries indicate case-ambiguity
+    Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
+    /// Lowercase database name -> set of original-case names, used by case-insensitive resolution.
+    /// More than one entry means a case-only collision (e.g. `Foo` and `foo` both exist)
     std::unordered_map<String, std::unordered_set<String>> lowercase_db_to_original_names TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
