@@ -17,4 +17,6 @@ returning analysis after insert
 1
 returning settings after insert
 1
+returning max_execution_time
+1
 async insert rejection

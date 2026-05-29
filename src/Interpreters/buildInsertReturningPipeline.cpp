@@ -34,6 +34,8 @@ namespace Setting
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
 QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
@@ -69,6 +71,11 @@ void setupPullingQueryPipeline(
             settings[Setting::max_result_rows],
             settings[Setting::max_result_bytes],
             settings[Setting::result_overflow_mode]);
+        /// The INSERT and RETURNING phases share one query (and `ProcessListElement`), whose time limits were
+        /// captured from the INSERT-phase settings. Enforce the RETURNING subquery's `max_execution_time` on the
+        /// result pipeline explicitly so `RETURNING (SELECT ... SETTINGS max_execution_time=...)` is honored.
+        limits.speed_limits.max_execution_time = settings[Setting::max_execution_time];
+        limits.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
         pipeline.setLimitsAndQuota(limits, context->getQuota());
     }
 }

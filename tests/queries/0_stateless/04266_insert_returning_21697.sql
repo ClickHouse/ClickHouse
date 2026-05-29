@@ -47,6 +47,12 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS no_such_setting=1) VALUES (102, 'settings'); -- { serverError UNKNOWN_SETTING }
 SELECT count() AS inserted_after_bad_returning_settings FROM t_insert_returning WHERE id = 102;
 
+-- RETURNING subquery max_execution_time is enforced on the result pipeline (INSERT still runs first)
+SELECT 'returning max_execution_time';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT sleepEachRow(0.2) FROM numbers(20) SETTINGS max_block_size=1, max_execution_time=1, timeout_overflow_mode='throw') VALUES (103, 'timeout'); -- { serverError TIMEOUT_EXCEEDED }
+SELECT count() AS inserted_after_returning_timeout FROM t_insert_returning WHERE id = 103;
+
 -- async_insert is rejected
 SELECT 'async insert rejection';
 SET async_insert = 1;
