@@ -8,9 +8,11 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
@@ -2231,6 +2233,50 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
     return std::make_shared<ReplicatedMergeTreeZooKeeperMergePredicate>(*this, zookeeper, std::move(partition_ids_hint));
 }
 
+CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr & zookeeper)
+{
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeQueue::buildPromoters");
+    const Strings partition_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
+
+    std::vector<zkutil::ZooKeeper::FutureGetChildren> futures;
+    futures.reserve(partition_ids.size());
+    for (const auto & partition_id : partition_ids)
+        futures.push_back(zookeeper->asyncGetChildren(fs::path(zookeeper_path) / "block_numbers" / partition_id));
+
+    std::map<String, std::set<Int64>> committing_block_numbers;
+    for (size_t i = 0; i < partition_ids.size(); ++i)
+    {
+        const auto & partition_id = partition_ids[i];
+        auto response = futures[i].get();
+
+        if (response.error != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(response.error, fs::path(zookeeper_path) / "block_numbers" / partition_id);
+
+        auto & set = committing_block_numbers[partition_id];
+        for (const String & entry : response.names)
+        {
+            if (!startsWith(entry, "block-"))
+                continue;
+
+            set.insert(parse<Int64>(entry.substr(strlen("block-"))));
+        }
+    }
+
+    /// Flush the local queue so `virtual_parts` is up to date and include committing blocks changes.
+    pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::OTHER);
+    std::vector<MergeTreePartInfo> virtual_infos;
+    {
+        std::lock_guard lock(state_mutex);
+        virtual_infos = virtual_parts.getPartInfos();
+    }
+
+    std::map<String, PartBlockNumberRanges> partition_ranges;
+    for (const auto & info : virtual_infos)
+        partition_ranges[info.getPartitionId()].addPart(info.min_block, info.max_block);
+
+    return constructPromoters(std::move(committing_block_numbers), std::move(partition_ranges));
+}
+
 ReplicatedMergeTreeQueue::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByPartititon mutations_by_partition_, DataPartsVector patches_)
     : MergeTreeData::MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
     , mutations_by_partition(std::move(mutations_by_partition_))
@@ -2700,13 +2746,10 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 
         for (const MutationCommand & command : entry.commands)
         {
-            WriteBufferFromOwnString buf;
-            IAST::FormatSettings format_settings(/*one_line=*/true);
-            command.ast->format(buf, format_settings);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,
-                buf.str(),
+                command.ast_text,
                 entry.create_time,
                 entry.block_numbers,
                 parts_in_progress,
