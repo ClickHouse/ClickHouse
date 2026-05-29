@@ -1003,7 +1003,12 @@ void buildCombinedDAGForMergeChildPlan(
     size_t & limit)
 {
     if (child_plan && child_plan->isInitialized())
-        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit);
+    {
+        /// The FINAL limit pushdown gate is checked only on the `ReadFromMergeTree` path, not on
+        /// the `ReadFromMerge` child-plan path handled here, so the filter-step flag is unused.
+        bool has_filter_step_unused = false;
+        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit, has_filter_step_unused);
+    }
 
     if (outer_dag)
     {
