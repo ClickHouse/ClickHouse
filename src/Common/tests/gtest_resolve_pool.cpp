@@ -271,6 +271,47 @@ TEST_F(ResolvePoolTest, CanFail)
     }
 }
 
+TEST_F(ResolvePoolTest, WeightsConsistentWhenFailRefreshThrows)
+{
+    /// `setFail` records the per-address failure and then performs a DNS refresh via
+    /// `update`, which can throw (e.g. NXDOMAIN or an empty result). The failed address
+    /// must still be excluded from selection right away: its selection weight has to be
+    /// recomputed under the lock before the throwing refresh, otherwise `selectBest`
+    /// would keep handing out the just-failed address from a stale weight table.
+    bool throw_on_resolve = false;
+    std::multiset<String> local_addresses{"127.0.0.1", "127.0.0.2", "127.0.0.3"};
+
+    auto resolve_func = [&] (const String &)
+    {
+        std::vector<Poco::Net::IPAddress> result;
+        if (throw_on_resolve)
+            return result; /// Empty result makes `HostResolver::update` throw `DNS_ERROR`.
+        result.reserve(local_addresses.size());
+        for (const auto & item : local_addresses)
+            result.push_back(Poco::Net::IPAddress(item));
+        return result;
+    };
+
+    /// Large history so the ban does not expire and no background refresh fires during the loop.
+    auto resolver = std::make_shared<ResolvePoolMock>("some_host", Poco::Timespan(10 * 1000 * 1000), std::move(resolve_func));
+
+    auto failed_addr = resolver->resolve();
+    String failed = *failed_addr;
+
+    /// Force the DNS refresh triggered inside `setFail` to throw.
+    throw_on_resolve = true;
+    EXPECT_ANY_THROW(failed_addr.setFail());
+    throw_on_resolve = false;
+
+    /// The just-failed address must not be selected anymore despite the failed refresh.
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        auto next_addr = resolver->resolve();
+        ASSERT_NE(*next_addr, failed);
+        next_addr.setUnused();
+    }
+}
+
 TEST_F(ResolvePoolTest, SetUnusedHasNoSideEffects)
 {
     auto resolver = make_resolver();

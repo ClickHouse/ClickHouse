@@ -176,7 +176,18 @@ void HostResolver::setFail(const Poco::Net::IPAddress & address)
             return;
 
         if (it->setFail(now))
+        {
             CurrentMetrics::add(metrics.banned_count);
+
+            /// The address just transitioned to failed, so its weight is now zero.
+            /// Recompute `weight_prefix_sum` right here, under the lock, before the
+            /// DNS refresh in `update` below - which can throw (e.g. NXDOMAIN or an
+            /// empty result) and never reach `updateImpl`/`updateWeights`. Without
+            /// this, the failed address would keep its stale weight in the selection
+            /// table and `selectBest` could keep handing it out even though it is
+            /// known-bad. This mirrors the immediate `updateWeights` in `setSuccess`.
+            updateWeights();
+        }
     }
 
     ProfileEvents::increment(metrics.failed);
