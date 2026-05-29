@@ -90,6 +90,10 @@ class AggregateFunctionMvtEncode final
 private:
     const String layer_name;
     const UInt32 extent;
+    const bool has_clip;
+    /// Inclusive pixel bounds of the clip window [-buffer, extent + buffer]; only used when has_clip.
+    const Int64 clip_lower;
+    const Int64 clip_upper;
     const bool has_properties;
     std::vector<MvtProperty> properties;
 
@@ -179,11 +183,15 @@ private:
     }
 
 public:
-    AggregateFunctionMvtEncode(const DataTypes & argument_types_, const Array & parameters_, String layer_name_, UInt32 extent_)
+    AggregateFunctionMvtEncode(
+        const DataTypes & argument_types_, const Array & parameters_, String layer_name_, UInt32 extent_, bool has_clip_, UInt32 buffer_)
         : IAggregateFunctionDataHelper<AggregateFunctionMvtEncodeData, AggregateFunctionMvtEncode>(
               argument_types_, parameters_, std::make_shared<DataTypeString>())
         , layer_name(std::move(layer_name_))
         , extent(extent_)
+        , has_clip(has_clip_)
+        , clip_lower(-static_cast<Int64>(buffer_))
+        , clip_upper(static_cast<Int64>(extent_) + static_cast<Int64>(buffer_))
         , has_properties(argument_types_.size() == 2)
     {
         const auto * geometry_type = typeid_cast<const DataTypeTuple *>(argument_types_[0].get());
@@ -234,6 +242,10 @@ public:
         const auto & geometry = assert_cast<const ColumnTuple &>(*columns[0]);
         const Int32 pixel_x = static_cast<Int32>(std::lround(geometry.getColumn(0).getFloat64(row_num)));
         const Int32 pixel_y = static_cast<Int32>(std::lround(geometry.getColumn(1).getFloat64(row_num)));
+
+        /// Clip to the tile expanded by the buffer (in pixel/extent units); points outside it are dropped.
+        if (has_clip && (pixel_x < clip_lower || pixel_x > clip_upper || pixel_y < clip_lower || pixel_y > clip_upper))
+            return;
 
         String record;
         appendFixedInt32(record, pixel_x);
@@ -390,10 +402,10 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {} requires a layer name parameter, e.g. mvtEncode('layer')(geometry, properties)",
             name);
-    if (parameters.size() > 2)
+    if (parameters.size() > 3)
         throw Exception(
             ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
-            "Aggregate function {} accepts at most 2 parameters (layer_name[, extent]), got {}",
+            "Aggregate function {} accepts at most 3 parameters (layer_name[, extent[, buffer]]), got {}",
             name,
             parameters.size());
 
@@ -402,7 +414,7 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
     const String layer_name = parameters[0].safeGet<String>();
 
     UInt32 extent = 4096;
-    if (parameters.size() == 2)
+    if (parameters.size() >= 2)
     {
         const auto type = parameters[1].getType();
         if (type != Field::Types::UInt64 && type != Field::Types::Int64)
@@ -413,7 +425,23 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
         extent = static_cast<UInt32>(value);
     }
 
-    return std::make_shared<AggregateFunctionMvtEncode>(argument_types, parameters, layer_name, extent);
+    /// The optional third parameter enables clipping: features whose tile-pixel coordinates fall outside
+    /// [-buffer, extent + buffer] are dropped during aggregation. When absent, no clipping is performed.
+    bool has_clip = false;
+    UInt32 buffer = 0;
+    if (parameters.size() == 3)
+    {
+        const auto type = parameters[2].getType();
+        if (type != Field::Types::UInt64 && type != Field::Types::Int64)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third parameter (buffer) of aggregate function {} must be a non-negative integer", name);
+        const Int64 value = type == Field::Types::UInt64 ? static_cast<Int64>(parameters[2].safeGet<UInt64>()) : parameters[2].safeGet<Int64>();
+        if (value < 0 || value > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The third parameter (buffer) of aggregate function {} must be in the range [0, 4294967295], got {}", name, value);
+        has_clip = true;
+        buffer = static_cast<UInt32>(value);
+    }
+
+    return std::make_shared<AggregateFunctionMvtEncode>(argument_types, parameters, layer_name, extent, has_clip, buffer);
 }
 
 }
@@ -437,11 +465,15 @@ Clustering is expressed in SQL, not by the function: aggregate the rows that sha
 `count()` and `any()` grouped by the pixel coordinates), then pass one row per cluster to `mvtEncode`. The result is the raw
 bytes of a single-layer tile, which can be returned directly over the HTTP interface with `FORMAT RawBLOB`.
 
+When the optional `buffer` parameter is given, the tile is clipped: features whose pixel coordinates fall outside the tile
+expanded by `buffer` pixels (the range `[-buffer, extent + buffer]`) are dropped. This lets the `WHERE` clause use a coarse
+bounding-box prefilter (see `mvtTileBBox`) for performance while the exact tile boundary is enforced here.
+
 Supported property element types are String, FixedString, Float32, Float64, (U)Int8/16/32/64, Date and DateTime,
 optionally wrapped in Nullable and/or LowCardinality; a NULL value omits that attribute for the feature. Only point
 geometry is supported.
     )";
-    FunctionDocumentation::Syntax syntax = "mvtEncode(layer_name[, extent])(geometry[, properties])";
+    FunctionDocumentation::Syntax syntax = "mvtEncode(layer_name[, extent[, buffer]])(geometry[, properties])";
     FunctionDocumentation::Arguments arguments = {
         {"geometry", "Tile-space pixel coordinates of the point as a tuple `(pixel_x, pixel_y)`, e.g. from `mvtEncodeGeom`.", {"Tuple(Float64, Float64)"}},
         {"properties", "Optional named tuple of feature attributes. Element names become attribute keys.", {"Tuple"}},
@@ -449,6 +481,7 @@ geometry is supported.
     FunctionDocumentation::Parameters parameters = {
         {"layer_name", "Name of the vector tile layer.", {"String"}},
         {"extent", "Tile extent in pixels per side. Defaults to `4096`.", {"UInt32"}},
+        {"buffer", "Optional clip buffer in pixels. When given, features outside `[-buffer, extent + buffer]` are dropped.", {"UInt32"}},
     };
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns the binary contents of a single-layer Mapbox Vector Tile.", {"String"}};
