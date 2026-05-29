@@ -2,7 +2,9 @@
 
 #include "config.h"
 
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
@@ -21,7 +23,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
-#include <optional>
+#include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -30,12 +32,12 @@
 #include <Common/filesystemHelpers.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/GlueCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/Settings.h>
 
 #include <fmt/ranges.h>
@@ -70,9 +72,6 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
 
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
-
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
 
@@ -91,9 +90,6 @@ public:
     StorageObjectStorageConfiguration::Path getRawPath() const override
     {
         auto result = BaseStorageConfiguration::getRawPath().path;
-        if (result.empty())
-            return StorageObjectStorageConfiguration::Path("");
-
         return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
 
@@ -149,31 +145,30 @@ public:
 
     void mutate(const MutationCommands & commands,
         ContextPtr context,
-        StoragePtr storage_ptr,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const std::optional<FormatSettings> & format_settings) override
     {
         assertInitialized();
-        current_metadata->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
+        current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
-    void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
+    void checkMutationIsPossible(const MutationCommands & commands) override
     {
-        lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         current_metadata->checkMutationIsPossible(commands);
     }
 
-    void checkAlterIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const AlterCommands & commands) override
+    void checkAlterIsPossible(const AlterCommands & commands) override
     {
-        lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         current_metadata->checkAlterIsPossible(commands);
     }
 
-    void alter(ObjectStoragePtr object_storage, const AlterCommands & params, ContextPtr context) override
+    void alter(const AlterCommands & params, ContextPtr context) override
     {
-        lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         current_metadata->alter(params, context);
 
     }
@@ -339,27 +334,49 @@ public:
             catalog);
     }
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] const StorageID & table_id) const override
+    std::shared_ptr<DataLake::ICatalog> getCatalog([[maybe_unused]] ContextPtr context, [[maybe_unused]] bool is_attach) const override
     {
-#if USE_AVRO && USE_PARQUET
-        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Don't use deprecated settings storage_catalog_type and storage_catalog_url");
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(db_name);
-        if (!database)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database {} not found", db_name);
-        auto datalake_database = std::dynamic_pointer_cast<DatabaseDataLake>(database);
-        if (!datalake_database)
-            return nullptr;
-        return datalake_database->getCatalog();
-#else
-        return nullptr;
+#if USE_AWS_S3 && USE_AVRO
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::GLUE)
+        {
+            auto catalog_parameters = DataLake::CatalogSettings{
+                .storage_endpoint = (*settings)[DataLakeStorageSetting::object_storage_endpoint].value,
+                .aws_access_key_id = (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].value,
+                .aws_secret_access_key = (*settings)[DataLakeStorageSetting::storage_aws_secret_access_key].value,
+                .region = (*settings)[DataLakeStorageSetting::storage_region].value,
+                .aws_role_arn = (*settings)[DataLakeStorageSetting::storage_aws_role_arn].value,
+                .aws_role_session_name = (*settings)[DataLakeStorageSetting::storage_aws_role_session_name].value
+            };
+
+            return std::make_shared<DataLake::GlueCatalog>(
+                (*settings)[DataLakeStorageSetting::storage_catalog_url].value,
+                context,
+                catalog_parameters,
+                /* table_engine_definition */nullptr
+            );
+        }
+        /// Attach condition is provided for compatibility.
+        if ((*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::ICEBERG_REST ||
+            (is_attach && (*settings)[DataLakeStorageSetting::storage_catalog_type].value == DatabaseDataLakeCatalogType::NONE && !(*settings)[DataLakeStorageSetting::storage_catalog_url].value.empty()))
+        {
+            return std::make_shared<DataLake::RestCatalog>(
+                (*settings)[DataLakeStorageSetting::storage_warehouse].value,
+                (*settings)[DataLakeStorageSetting::storage_catalog_url].value,
+                (*settings)[DataLakeStorageSetting::storage_catalog_credential].value,
+                (*settings)[DataLakeStorageSetting::storage_auth_scope].value,
+                (*settings)[DataLakeStorageSetting::storage_auth_header],
+                (*settings)[DataLakeStorageSetting::storage_oauth_server_uri].value,
+                (*settings)[DataLakeStorageSetting::storage_oauth_server_use_request_body].value,
+                context);
+        }
+
 #endif
+        return nullptr;
     }
 
-    bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
     {
-        lazyInitializeIfNeeded(object_storage, context);
+        assertInitialized();
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 

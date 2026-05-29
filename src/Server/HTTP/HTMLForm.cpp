@@ -191,7 +191,7 @@ void HTMLForm::readQuery(ReadBuffer & in)
 void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 {
     /// Assume there is always a boundary provided.
-    chassert(!boundary.empty());
+    assert(!boundary.empty());
 
     size_t fields = 0;
     MultipartReadBuffer in(in_, boundary);
@@ -302,7 +302,7 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 
         if (in.eof()) break;
 
-        chassert(ch == '\r');
+        assert(ch == '\r');
 
         if (in.peek(ch) && ch == '\n')
         {
@@ -322,7 +322,7 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     if (boundary_hit)
         return false;
 
-    chassert(position() >= in.position());
+    assert(position() >= in.position());
 
     in.position() = position();
 
