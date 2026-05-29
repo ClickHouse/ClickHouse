@@ -837,8 +837,9 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     if (node.children.size() != 2)
         return nullptr;
 
-    /// `notEquals` is excluded because the OR-of-branches rewrite below does not preserve
-    /// SQL three-valued logic for `!=` when intermediate `coalesce` args are NULL.
+    /// Do not rewrite `notEquals`: if an earlier `coalesce` argument is `NULL`, the branch-wise `OR`
+    /// can produce `NULL` where the original predicate is `false`. For example, `coalesce(NULL, 5) != 5`
+    /// is `false`, but the rewritten form `(NULL != 5) OR (isNull(NULL) AND 5 != 5)` is `NULL`.
     if (op_name == "notEquals")
         return nullptr;
 
