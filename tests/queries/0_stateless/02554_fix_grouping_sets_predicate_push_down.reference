@@ -24,7 +24,7 @@ WHERE type_1 = \'all\'
 (Expression)
 ExpressionTransform × 8
   (Filter)
-  FilterTransform × 24
+  FilterTransform × 16
     (Aggregating)
     Resize 2 → 8
       ExpressionTransform × 2
