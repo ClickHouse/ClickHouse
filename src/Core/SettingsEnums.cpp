@@ -136,6 +136,10 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
+IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
+     {"lazy", TextIndexPostingListApplyMode::LAZY}})
+
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
