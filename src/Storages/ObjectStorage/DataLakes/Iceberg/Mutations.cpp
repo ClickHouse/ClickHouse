@@ -370,7 +370,6 @@ static bool writeMetadataFiles(
     SharedHeader data_sample_block)
 {
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
-    auto storage_metadata_name = path_resolver.resolve(metadata_info.path);
     Int64 parent_snapshot = -1;
     if (metadata->has(Iceberg::f_current_snapshot_id))
         parent_snapshot = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
