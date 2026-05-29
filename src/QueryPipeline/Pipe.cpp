@@ -1,4 +1,5 @@
 #include <QueryPipeline/Pipe.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
@@ -177,7 +178,7 @@ Pipe::Pipe(ProcessorPtr source)
 Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(processors_))
 {
     /// Create hash table with processors.
-    std::unordered_set<const IProcessor *> set;
+    UnorderedSetWithMemoryTracking<const IProcessor *> set;
     for (const auto & processor : *processors)
         set.emplace(processor.get());
 
@@ -641,7 +642,7 @@ void Pipe::addSimpleTransform(const ProcessorGetterSharedHeader & getter)
     addSimpleTransform([&](const SharedHeader & stream_header_ptr, StreamType) { return getter(stream_header_ptr); });
 }
 
-void Pipe::addChains(std::vector<Chain> chains)
+void Pipe::addChains(VectorWithMemoryTracking<Chain> chains)
 {
     if (output_ports.size() != chains.size())
         throw Exception(
@@ -900,7 +901,7 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     auto new_processors = transformer(output_ports);
 
     /// Create hash table with new processors.
-    std::unordered_set<const IProcessor *> set;
+    UnorderedSetWithMemoryTracking<const IProcessor *> set;
     for (const auto & processor : new_processors)
         set.emplace(processor.get());
 
