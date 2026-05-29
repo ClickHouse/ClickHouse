@@ -1,6 +1,6 @@
 -- pre-reset (cli flag flipped to 0) --
-0
+false
 -- after SET (overridden back to 1) --
-1
+true
 -- post-reset (snapshot must include the cli flip; should be 0) --
-0
+false
