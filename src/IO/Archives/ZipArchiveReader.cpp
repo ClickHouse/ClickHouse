@@ -332,9 +332,9 @@ public:
         return *file_info;
     }
 
-    std::vector<std::string> getAllFiles(NameFilter filter)
+    Strings getAllFiles(NameFilter filter)
     {
-        std::vector<std::string> files;
+        Strings files;
         resetFileInfo();
         int err = unzGoToFirstFile(raw_handle);
         rethrowStreamException();
@@ -681,12 +681,12 @@ std::unique_ptr<ZipArchiveReader::FileEnumerator> ZipArchiveReader::currentFile(
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-std::vector<std::string> ZipArchiveReader::getAllFiles()
+Strings ZipArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-std::vector<std::string> ZipArchiveReader::getAllFiles(NameFilter filter)
+Strings ZipArchiveReader::getAllFiles(NameFilter filter)
 {
     auto handle = acquireHandle();
     return handle.getAllFiles(filter);
