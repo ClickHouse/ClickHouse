@@ -1835,6 +1835,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "ldap_servers",
         "kerberos",
         "jwt",
+        "jwt_authenticators",
         "http_authentication_servers",
         "connections_credentials",
         "custom_settings_prefixes",
