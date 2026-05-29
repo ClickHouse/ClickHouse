@@ -1982,6 +1982,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2007,6 +2008,7 @@ TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2066,6 +2068,7 @@ TEST_F(FileCacheTest, DiskCacheProviderHonoursFullRangeWhenBatchSizeIsOne)
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider},
         /*window_size=*/30,
         /*min_bytes_for_seek=*/0,
+        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
         file_path);
 
     PipelineReadBuffer buf(std::move(executor));
@@ -2122,6 +2125,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/10,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2139,6 +2143,7 @@ TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/10,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2691,6 +2696,7 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/20,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2714,6 +2720,7 @@ TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
             /*window_size=*/20,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2792,6 +2799,7 @@ TEST_F(FileCacheTest, DiskCacheProviderStackedQueryOrderOuterFirst)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2824,6 +2832,7 @@ TEST_F(FileCacheTest, DiskCacheProviderStackedQueryOrderOuterFirst)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider, inner_provider},
             /*window_size=*/30,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2890,6 +2899,7 @@ TEST_F(FileCacheTest, DiskCacheProviderBypassReportsUncoveredRangesAsMiss)
             VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider},
             /*window_size=*/10,
             /*min_bytes_for_seek=*/0,
+            /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
             file_path);
 
         PipelineReadBuffer buf(std::move(executor));
@@ -2991,6 +3001,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
         /*window_size=*/ReaderExecutor::DEFAULT_WINDOW_SIZE,
         /*min_bytes_for_seek=*/0,
+        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
         file_path);
 
     PipelineReadBuffer buf(std::move(executor));
@@ -3081,6 +3092,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider},
         /*window_size=*/16,
         /*min_bytes_for_seek=*/0,
+        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
         file_path);
     PipelineReadBuffer buf(std::move(executor));
 
@@ -3193,6 +3205,7 @@ TEST_F(FileCacheTest, ReaderExecutorClampsHitToRequestedWindow)
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{recording},
         /*window_size=*/10,
         /*min_bytes_for_seek=*/0,
+        /*block_size=*/ReaderExecutor::ROPE_BLOCK_SIZE,
         file_path);
 
     PipelineReadBuffer buf(std::move(executor));

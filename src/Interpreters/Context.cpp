@@ -345,6 +345,9 @@ namespace Setting
     extern const SettingsBool use_page_cache_with_distributed_cache;
     extern const SettingsBool use_reader_executor;
     extern const SettingsBool enable_reader_executor_log;
+    extern const SettingsUInt64 reader_executor_window_size;
+    extern const SettingsUInt64 reader_executor_block_size;
+    extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
@@ -7796,6 +7799,9 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
     res.use_reader_executor = settings_ref[Setting::use_reader_executor];
     res.enable_reader_executor_log = settings_ref[Setting::enable_reader_executor_log];
+    res.reader_executor_window_size = settings_ref[Setting::reader_executor_window_size];
+    res.reader_executor_block_size = settings_ref[Setting::reader_executor_block_size];
+    res.reader_executor_min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
 
     return res;
 }

@@ -294,7 +294,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// Returns nullptr (so the caller falls back to the legacy path) for
     /// source variants the executor does not yet support.
     std::shared_ptr<ISourceReader> source_reader;
-    size_t min_bytes_for_seek = ReaderExecutor::DEFAULT_MIN_BYTES_FOR_SEEK;
+    size_t min_bytes_for_seek = settings.reader_executor_min_bytes_for_seek;
 
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
@@ -412,8 +412,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
         source_reader,
         source->objects,
         std::move(executor_caches),
-        ReaderExecutor::DEFAULT_WINDOW_SIZE,
+        settings.reader_executor_window_size,
         min_bytes_for_seek,
+        settings.reader_executor_block_size,
         std::move(log_file_path));
 
     if (prefetch_pool)

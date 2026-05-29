@@ -757,6 +757,12 @@ Possible values:
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, use_reader_executor, false, R"(
 Use `ReaderExecutor`-based read pipeline instead of the matryoshka `ReadBuffer` assembly. Experimental.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_window_size, 8388608, R"(
+Read-ahead window size for the experimental `ReaderExecutor` (`use_reader_executor`) at normal memory pressure.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_block_size, 1048576, R"(
+Rope-node / block size for the experimental `ReaderExecutor`; also the window used for live and local reads.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_min_bytes_for_seek, 8388608, R"(
+Minimum gap between miss ranges before the `ReaderExecutor` issues a separate source read instead of merging.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

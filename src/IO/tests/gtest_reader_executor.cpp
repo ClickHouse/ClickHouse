@@ -1046,6 +1046,59 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
     SUCCEED();
 }
 
+TEST(ReaderExecutor, LocalReadUsesSingleBlockWindow)
+{
+    /// Local reads have no SourceBufferLimit / live buffer, so without a shrink
+    /// they would allocate the full DEFAULT_WINDOW_SIZE (8 MiB) rope per window
+    /// even though local buffers are tiny. Like the live-connection path, a
+    /// local read should use a single ROPE_BLOCK_SIZE node; the wide window is
+    /// kept only for stateless remote reads (to amortise connection setup).
+    constexpr size_t file_size = 2 * ReaderExecutor::ROPE_BLOCK_SIZE;
+    String content(file_size, 'L');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    /// No buffer_limit, no caches -> local read path; default 8 MiB window.
+    ReaderExecutor executor(source, objects, {});
+
+    auto w = executor.readNextWindow();
+    ASSERT_FALSE(w.empty());
+    EXPECT_LE(w.range().size, ReaderExecutor::ROPE_BLOCK_SIZE)
+        << "local read window must be shrunk to a single block, not the full 8 MiB window";
+    EXPECT_EQ(w.getNodes().size(), 1u) << "a single-block window is one rope node";
+}
+
+TEST(ReaderExecutor, ConfiguredBlockSizeControlsWindow)
+{
+    /// A local read shrinks the window to one configured block (see
+    /// `LocalReadUsesSingleBlockWindow`). Construct with a non-default block
+    /// size and confirm the first window honours it: the window must be
+    /// capped at the configured 256 KiB block, not the default 1 MiB, proving
+    /// the `block_size` ctor arg drives `effectiveBlockSize`/`effectiveWindowSize`.
+    constexpr size_t configured_block = 256 * 1024;
+    constexpr size_t file_size = 4 * configured_block;
+    String content(file_size, 'B');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    /// No buffer_limit, no caches -> local read path.
+    ReaderExecutor executor(
+        source, objects, {},
+        /*window_size=*/4 * 1024 * 1024,
+        /*min_bytes_for_seek=*/0,
+        /*block_size=*/configured_block);
+
+    auto w = executor.readNextWindow();
+    ASSERT_FALSE(w.empty());
+    EXPECT_LE(w.range().size, configured_block)
+        << "window must shrink to the configured block size, not the default 1 MiB block";
+    EXPECT_EQ(w.getNodes().size(), 1u) << "a single-block window is one rope node";
+}
+
 TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
 {
     /// When a queued prefetch is cancelled on the readNextWindow consume path

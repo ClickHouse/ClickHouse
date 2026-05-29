@@ -159,6 +159,7 @@ ReaderExecutor::ReaderExecutor(
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches_,
     size_t window_size_,
     size_t min_bytes_for_seek_,
+    size_t block_size_,
     String log_file_path_)
     : source(std::move(source_))
     , stored_objects(objects)
@@ -166,12 +167,13 @@ ReaderExecutor::ReaderExecutor(
     , log_file_path(std::move(log_file_path_))
     , window_size(window_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , block_size(block_size_)
 {
     CurrentMetrics::add(CurrentMetrics::ReaderExecutorActive);
     offset_map.build(stored_objects);
     creator_query_id = String(CurrentThread::getQueryId());
-    LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, {} caches",
-        objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, caches.size());
+    LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, block_size={}, {} caches",
+        objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, block_size, caches.size());
 }
 
 ReaderExecutor::~ReaderExecutor()
@@ -343,36 +345,43 @@ struct WindowAndBlock
     size_t block_bytes;
 };
 
-constexpr WindowAndBlock LEVEL_SIZES[memoryPressureLevelCount()] = {
-    {8ULL << 20,   1ULL << 20  },  // Normal
-    {2ULL << 20,   512ULL << 10},  // Elevated
-    {512ULL << 10, 512ULL << 10},  // High
-    {128ULL << 10, 128ULL << 10},  // Critical
-};
+/// Per-memory-pressure-level reduction factors applied to the configured base
+/// window/block sizes (indexed by `MemoryPressureLevel`: Normal, Elevated,
+/// High, Critical). Level 0 (Normal) divides by 1, i.e. uses the configured
+/// base. Explicit per-level arrays so the ladder is readable and each level is
+/// tunable independently; with the default 8 MiB / 1 MiB base these reproduce
+/// the previous hard-coded table exactly (incl. the 512 KiB block at High).
+constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
+constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()]  = {1, 2, 2,  8};
 
-WindowAndBlock sizesAtCurrentPressure()
+/// The configured base is the ceiling; the 128 KiB floor only bounds the
+/// pressure shrink and never raises a base that is itself below it (e.g. a tiny
+/// test/manual window). The block never exceeds the window.
+WindowAndBlock sizesAtCurrentPressure(size_t base_window, size_t base_block)
 {
-    return LEVEL_SIZES[static_cast<size_t>(memoryPressureMonitor().currentLevel())];
+    const size_t level = static_cast<size_t>(memoryPressureMonitor().currentLevel());
+    static constexpr size_t FLOOR = 128ULL << 10;
+    const size_t window = std::min(std::max(base_window / WINDOW_REDUCTION[level], FLOOR), base_window);
+    size_t block = std::min(std::max(base_block / BLOCK_REDUCTION[level], FLOOR), base_block);
+    block = std::min(block, window);
+    return {window, block};
 }
 
-}
-
-size_t ReaderExecutor::effectiveWindowSize() const
-{
-    /// On the live path the buffer streams one block at a time, so a wider
-    /// window only inflates the in-flight rope; clamp to `effectiveBlockSize`.
-    /// The stateless path keeps the full window to amortise HTTP setup.
-    /// Both clamp against the memory-pressure ceiling.
-    const size_t pressure_window = sizesAtCurrentPressure().window_bytes;
-    if (live_buffer || pre_acquired_slot)
-        return std::min({window_size, effectiveBlockSize(), pressure_window});
-    return std::min(window_size, pressure_window);
 }
 
 size_t ReaderExecutor::effectiveBlockSize() const
 {
-    const size_t pressure_block = sizesAtCurrentPressure().block_bytes;
-    return std::min(ROPE_BLOCK_SIZE, pressure_block);
+    return sizesAtCurrentPressure(window_size, block_size).block_bytes;
+}
+
+size_t ReaderExecutor::effectiveWindowSize() const
+{
+    const auto sizes = sizesAtCurrentPressure(window_size, block_size);
+    /// Live path and local reads stream one block at a time; only stateless
+    /// remote reads keep the full (pressure-scaled) window to amortise setup.
+    if (live_buffer || pre_acquired_slot || !buffer_limit)
+        return sizes.block_bytes;
+    return sizes.window_bytes;
 }
 
 void ReaderExecutor::maybeTriggerPrefetch()
@@ -1257,7 +1266,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     /// spam `system.reader_executor_log`.
     auto t = std::make_unique<ReaderExecutor>(
         source, stored_objects, caches,
-        window_size, min_bytes_for_seek, log_file_path);
+        window_size, min_bytes_for_seek, block_size, log_file_path);
 
     t->buffer_limit = buffer_limit;
 

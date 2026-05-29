@@ -40,6 +40,7 @@ public:
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches,
         size_t window_size = DEFAULT_WINDOW_SIZE,
         size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
+        size_t block_size = ROPE_BLOCK_SIZE,
         String log_file_path = {});
 
     /// Destructor must be out-of-line because LiveBuffer holds unique_ptr<ReadBufferFromFileBase>.
@@ -158,8 +159,8 @@ private:
     /// Try to acquire a buffer_limit slot up front so the next source read can
     /// be promoted to live without re-checking. When a slot is held (either
     /// pre-acquired or via an existing live_buffer), the read window shrinks
-    /// to ROPE_BLOCK_SIZE because the live buffer streams 1 MiB at a time and
-    /// allocating a larger rope just inflates the in-flight memory.
+    /// to one `block_size` block because the live buffer streams a block at a
+    /// time and allocating a larger rope just inflates the in-flight memory.
     void ensurePreAcquiredSlot();
 
     /// Acquire a `buffer_limit` slot for `object` and record the outcome in the
@@ -174,8 +175,8 @@ private:
     /// Caller still caps by remaining file bytes.
     size_t effectiveWindowSize() const;
 
-    /// Effective per-block allocation size: `ROPE_BLOCK_SIZE` at normal memory,
-    /// shrinks under pressure (see `MemoryPressureMonitor`). Used for both the
+    /// Effective per-block allocation size: the configured `block_size` at
+    /// normal memory, shrinks under pressure (see `MemoryPressureMonitor`). Used for both the
     /// `allocateBlocks` source-read tile and `decryptRope`'s output blocks so
     /// the in-flight allocation per call falls when free memory does.
     size_t effectiveBlockSize() const;
@@ -198,6 +199,7 @@ private:
     String log_file_path;
     size_t window_size;
     size_t min_bytes_for_seek;
+    size_t block_size;
     size_t position = 0;
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
@@ -238,8 +240,8 @@ private:
 
     /// Slot pre-acquired at the top of readNextWindow. When present, the
     /// next source read is guaranteed to be promoted to live (no re-attempt
-    /// in readFromSource), and we use a 1 MiB read window because the live
-    /// buffer streams 1 MiB at a time anyway. The slot is consumed (moved
+    /// in readFromSource), and we use a one-block read window because the live
+    /// buffer streams a block at a time anyway. The slot is consumed (moved
     /// into live_buffer) on the first source read of this window; if the
     /// open fails it's released here. The reserved-for-path lives in
     /// `pre_acquired_slot->objectPath()`.
