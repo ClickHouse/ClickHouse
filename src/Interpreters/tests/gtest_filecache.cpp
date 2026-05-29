@@ -2505,6 +2505,87 @@ TEST_F(FileCacheTest, DiskCacheProviderGetReadsCommittedPrefixWhileDownloading)
 /// `PARTIALLY_DOWNLOADED` segment and null otherwise. The bare ref makes the
 /// segment non-releasable (`releasable()` == `isSharedPtrUnique`), so eviction
 /// pressure from another key cannot evict the pinned partial prefix.
+TEST_F(FileCacheTest, DiskCacheHandleStatusCreditsDownloadingPrefix)
+{
+    /// While one reader is mid-download of a segment (state DOWNLOADING, with a
+    /// committed prefix), a second reader's `status` must credit that prefix as
+    /// a hit and miss only the tail — mirroring what `get` already serves — so
+    /// the concurrent reader reads the committed prefix from the cache instead
+    /// of re-fetching it from the source.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("disk_cache_downloading_status");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 1024;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::max_file_segment_size] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 20;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("disk_cache_downloading_status", settings);
+    cache->initialize();
+
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key = DB::FileCacheKey::fromPath("downloading_object_key");
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DiskCacheProvider>(
+        cache, cache_settings, /*query_id_=*/String{},
+        /*local_throttler_=*/nullptr,
+        /*cache_log_=*/nullptr,
+        /*custom_cache_key_=*/std::optional<FileCacheKey>(key),
+        /*custom_origin_=*/std::nullopt);
+
+    constexpr size_t file_size = 20;
+    constexpr size_t prefix = 8;
+
+    /// Become the downloader and write a committed prefix WITHOUT completing,
+    /// leaving the segment DOWNLOADING with current-write-offset == prefix.
+    auto dl_holder = cache->getOrSet(key, 0, file_size, file_size, DB::CreateFileSegmentSettings{}, 0, origin);
+    auto segment = dl_holder->getSingleFileSegment();
+    ASSERT_EQ(segment->getOrSetDownloader(), DB::FileSegment::getCallerId());
+    std::string failure_reason;
+    ASSERT_TRUE(segment->reserve(prefix, 1000, failure_reason));
+    std::string payload(prefix, 'X');
+    segment->write(payload.data(), prefix, segment->getCurrentWriteOffset());
+    ASSERT_EQ(segment->state(), DB::FileSegment::State::DOWNLOADING);
+    ASSERT_EQ(segment->getCurrentWriteOffset(), prefix);
+
+    /// A concurrent reader's status over the same segment.
+    StoredObject object{"downloading_object", "", file_size};
+    auto handle = provider->lookup(object, /*object_file_offset=*/0, ByteRange{0, file_size});
+    auto status = handle->status();
+
+    bool prefix_hit = false;
+    for (const auto & h : status.hit_ranges)
+        if (h.offset == 0 && h.size == prefix)
+            prefix_hit = true;
+    EXPECT_TRUE(prefix_hit) << "status must credit the DOWNLOADING committed prefix [0, " << prefix << ") as a hit";
+
+    bool tail_miss = false;
+    for (const auto & m : status.miss_ranges)
+        if (m.offset == prefix && m.end() == file_size)
+            tail_miss = true;
+    EXPECT_TRUE(tail_miss) << "status must miss only the tail past the committed prefix";
+
+    segment->completePartAndResetDownloader();
+}
+
 TEST_F(FileCacheTest, DiskCacheHandlePinSurvivesEviction)
 {
     ServerUUID::setRandomForUnitTests();

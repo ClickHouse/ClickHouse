@@ -193,8 +193,16 @@ CacheLookupResult DiskCacheHandle::status() const
                 result.hit_ranges.push_back(r);
             }
             else if (state == FileSegmentState::PARTIALLY_DOWNLOADED
-                  || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+                  || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+                  || state == FileSegmentState::DOWNLOADING)
             {
+                /// Credit the committed prefix [seg.left, cwo) as a hit and miss
+                /// only the tail past `cwo`. For DOWNLOADING this mirrors what
+                /// `get` already serves (it reads up to `getCurrentWriteOffset`),
+                /// so a concurrent reader of a segment another reader is still
+                /// downloading reads the committed prefix from the cache instead
+                /// of re-fetching it from the source. `cwo` is a stable lower
+                /// bound: the downloader only appends past it.
                 size_t cwo_file = segment->getCurrentWriteOffset() + object_file_offset;
                 if (cwo_file > r.offset)
                     result.hit_ranges.push_back(ByteRange{r.offset, cwo_file - r.offset});
