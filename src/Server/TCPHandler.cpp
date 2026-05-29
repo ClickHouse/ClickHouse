@@ -440,12 +440,16 @@ void TCPHandler::runImpl()
             extractConnectionSettingsFromContext(*session->sessionContext());
 
             /// When connecting, the default database could be specified.
+            /// Only then lock it in as the session-start value for `RESET SESSION`
+            /// to restore. If the handshake sent no database, leave it unset so the
+            /// reset re-reads the user's `DEFAULT DATABASE` from access control
+            /// (picking up an in-session `ALTER USER ... DEFAULT DATABASE`) rather
+            /// than pinning a stale copy of it.
             if (!default_database.empty())
+            {
                 session->sessionContext()->setCurrentDatabase(default_database);
-
-            /// Lock in the post-handshake database as the session-start value, so
-            /// `RESET SESSION` can restore it later.
-            session->sessionContext()->rememberDatabaseAtSessionStart();
+                session->sessionContext()->rememberDatabaseAtSessionStart();
+            }
 
             /// Refresh the connection-level setting cache (send/receive/idle
             /// timeouts, etc.) after `RESET SESSION` re-derives the settings.

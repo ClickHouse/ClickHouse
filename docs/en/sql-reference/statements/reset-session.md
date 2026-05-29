@@ -20,7 +20,7 @@ Restores the current session to the state it was in immediately after authentica
 The statement:
 
 - Resets all session-level settings to the user's profile defaults plus any settings supplied by the authentication server.
-- Restores the current roles to the user's default roles and drops any externally-granted roles applied at session start.
+- Restores the current roles to the user's default roles. Externally-granted roles (e.g. LDAP or interserver) installed at session start are re-applied, so the reset session keeps the same privileges a fresh authentication would have.
 - Restores the current database. The candidate chain is: the database the connection was opened with (captured only by the native TCP handler at handshake; all other interfaces — HTTP, gRPC, MySQL, Arrow Flight, and `clickhouse-local` — skip this step because they have no equivalent handshake hook), then the user's `DEFAULT DATABASE`, then the server's current database (matching what a fresh authentication leaves in place when the user has no profile default). The first existing candidate is selected, so an admin-dropped database does not break the reset. This does not apply to the PostgreSQL protocol, where `RESET SESSION` is a no-op (see [below](#postgresql-protocol-no-op)).
 - Drops every temporary table created in the session.
 - Clears all query parameters set with `SET param_name = ...`.
