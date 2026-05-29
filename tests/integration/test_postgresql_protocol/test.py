@@ -574,3 +574,43 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     cur = ch.cursor()
     cur.execute("DROP USER IF EXISTS pg_restricted")
     ch.close()
+
+
+def test_reset_session_is_noop_over_postgres(started_cluster):
+    """`RESET SESSION` is intentionally a no-op over the PostgreSQL wire
+    protocol: a real reset would clear the session temporary-table mapping that
+    holds the lazily-created `pg_*` compatibility views, breaking later driver
+    metadata queries. Verify that (1) session state set with `SET` is NOT reset,
+    and (2) the `pg_*` compatibility views still resolve afterwards.
+    """
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        autocommit=True,
+    )
+    cur = ch.cursor()
+
+    # Touch a compatibility view to force lazy initialization.
+    cur.execute("SELECT typname FROM pg_type WHERE typname = 'bool';")
+    assert cur.fetchall() == [("bool",)]
+
+    # Dirty a session-level setting.
+    cur.execute("SET max_threads = 7;")
+    cur.execute("SELECT getSetting('max_threads');")
+    assert cur.fetchall() == [(7,)]
+
+    cur.execute("RESET SESSION;")
+
+    # No-op over PostgreSQL: the setting must NOT have been reset.
+    cur.execute("SELECT getSetting('max_threads');")
+    assert cur.fetchall() == [(7,)]
+
+    # And the compatibility views must still resolve (not cleared by the reset).
+    cur.execute("SELECT typname FROM pg_type WHERE typname = 'bool';")
+    assert cur.fetchall() == [("bool",)]
+
+    ch.close()

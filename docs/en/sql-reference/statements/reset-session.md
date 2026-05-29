@@ -51,6 +51,10 @@ Do not rely on `RESET SESSION` to clear prepared statements on these protocols.
 
 This is a deliberate scoping decision for the first version of the statement: `RESET SESSION` is a server-side, session-context reset. Extending it to drive per-protocol cleanup is tracked as future work.
 
+### PostgreSQL protocol: no-op {#postgresql-protocol-no-op}
+
+`RESET SESSION` is a **no-op over the PostgreSQL wire protocol** and leaves the session unchanged. The PostgreSQL emulation exposes the `pg_*` compatibility views (`pg_type`, `pg_namespace`, ...) as session-scoped temporary tables; a real reset would clear them without re-creating them, breaking later driver metadata queries. Rather than half-reset the session, ClickHouse skips the reset entirely on this interface. To reset a pooled connection reached over the PostgreSQL protocol, drop and reopen it.
+
 ## Comparison with PostgreSQL {#comparison-with-postgresql}
 
 The behaviour is closest to PostgreSQL's `DISCARD ALL`. PostgreSQL's `RESET ALL` only restores settings (`GUC` parameters) and does not drop temporary tables or other session state; `RESET SESSION` in ClickHouse is broader.
