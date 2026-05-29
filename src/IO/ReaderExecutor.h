@@ -162,6 +162,12 @@ private:
     /// allocating a larger rope just inflates the in-flight memory.
     void ensurePreAcquiredSlot();
 
+    /// Acquire a `buffer_limit` slot for `object` and record the outcome in the
+    /// `ReaderExecutorBufferSlot{Acquired,Failed}` counters. Shared by the
+    /// pre-acquire path and the in-`readFromSource` fallback so both account
+    /// every `SourceBufferLimit` attempt. Caller must hold a non-null buffer_limit.
+    std::optional<SourceBufferSlot> acquireSlotCounted(const StoredObject & object);
+
     /// Effective window size for the next read: `effectiveBlockSize()` when we're
     /// (or about to be) on the live path, otherwise the constructor-supplied
     /// `window_size` clamped down by the current `MemoryPressureMonitor` level.

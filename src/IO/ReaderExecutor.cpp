@@ -300,6 +300,16 @@ void ReaderExecutor::setReaderExecutorLog(std::shared_ptr<ReaderExecutorLog> log
     reader_executor_log = std::move(log_);
 }
 
+std::optional<SourceBufferSlot> ReaderExecutor::acquireSlotCounted(const StoredObject & object)
+{
+    auto slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, object.local_path, String(CurrentThread::getQueryId()));
+    if (slot)
+        ProfileEvents::increment(ProfileEvents::ReaderExecutorBufferSlotAcquired);
+    else
+        ProfileEvents::increment(ProfileEvents::ReaderExecutorBufferSlotFailed);
+    return slot;
+}
+
 void ReaderExecutor::ensurePreAcquiredSlot()
 {
     if (live_buffer || pre_acquired_slot || !buffer_limit)
@@ -310,16 +320,11 @@ void ReaderExecutor::ensurePreAcquiredSlot()
     if (!object)
         return;
 
-    auto slot = buffer_limit->tryAcquire(buffer_limit, object->remote_path, object->local_path, String(CurrentThread::getQueryId()));
+    auto slot = acquireSlotCounted(*object);
     if (slot)
     {
         LOG_TRACE(log, "ensurePreAcquiredSlot: got slot for {}", object->remote_path);
         pre_acquired_slot.emplace(std::move(*slot));
-        ProfileEvents::increment(ProfileEvents::ReaderExecutorBufferSlotAcquired);
-    }
-    else
-    {
-        ProfileEvents::increment(ProfileEvents::ReaderExecutorBufferSlotFailed);
     }
 }
 
@@ -930,7 +935,7 @@ Rope ReaderExecutor::readFromSource(
     }
     else if (buffer_limit)
     {
-        slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, object.local_path, String(CurrentThread::getQueryId()));
+        slot = acquireSlotCounted(object);
     }
 
     if (slot)

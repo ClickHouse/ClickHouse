@@ -910,6 +910,7 @@ namespace ProfileEvents
     extern const Event LiveSourceBufferHits;
     extern const Event LiveSourceBufferFallbacks;
     extern const Event LiveSourceBufferBytes;
+    extern const Event ReaderExecutorBufferSlotAcquired;
 }
 
 namespace
@@ -2382,6 +2383,31 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     EXPECT_EQ(tracker->log[1].object_file_offset, 300u);
     EXPECT_EQ(tracker->log[1].range_in_file.offset, 300u);
     EXPECT_EQ(tracker->log[1].range_in_file.size, 200u);
+}
+
+TEST(ReaderExecutor, FallbackSlotAcquireIsCounted)
+{
+    /// A gather window that spans two objects pre-acquires a slot for the first
+    /// object (counted in ensurePreAcquiredSlot) and then acquires a second
+    /// slot for the next object via the fallback tryAcquire in readFromSource.
+    /// Both acquisitions must be reflected in ReaderExecutorBufferSlotAcquired.
+    TestThreadGroup tg;
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"a", String(500, 'A')}, {"b", String(500, 'B')}});
+    StoredObjects objects;
+    objects.emplace_back("a", "", 500);
+    objects.emplace_back("b", "", 500);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    /// One window [0, 1000) spans both objects: piece "a" consumes the
+    /// pre-acquired slot, piece "b" goes through the fallback acquisition.
+    auto rope = executor.readNextWindow();
+    ASSERT_EQ(rope.range().size, 1000u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBufferSlotAcquired), 2)
+        << "both the pre-acquired and the fallback slot acquisitions must be counted";
 }
 
 TEST(ReaderExecutor, PreAcquiredSlotMatchesObjectAtCursor)
