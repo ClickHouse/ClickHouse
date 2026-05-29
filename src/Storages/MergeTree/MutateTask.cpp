@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
@@ -98,6 +99,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char merge_task_projection_stage_pause[];
 }
 
 namespace ErrorCodes
@@ -1553,6 +1555,13 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
     }
 
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        for (const auto * projection : ctx->projections_to_build)
+            elem->projections_pending.push_back(projection->name);
+    }
+
     if (!ctx->text_indices_to_recalc.empty())
     {
         createBuildTextIndexesTask();
@@ -1692,10 +1701,24 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->mutate_entry,
             ctx->time_of_mutation,
             ctx->new_data_part,
-            ctx->space_reservation
+            ctx->space_reservation,
+            (*ctx->mutate_entry)->ptr()
         );
 
         merge_subtasks.push_back(std::move(merge_task));
+    }
+
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        for (const auto * proj : ctx->projections_to_build)
+        {
+            if (!projection_parts.contains(proj->name))
+            {
+                std::erase(elem->projections_pending, proj->name);
+                elem->projections_done.push_back(proj->name);
+            }
+        }
     }
 
     if (build_text_index_transform)
@@ -1728,11 +1751,42 @@ bool PartMergerWriter::iterateThroughAllMergeSubtasks()
         return false;
 
     auto & task = merge_subtasks.back();
+    auto projection_name = task->getProjectionName();
+
+    if (!projection_name.empty())
+    {
+        bool new_projection = false;
+        {
+            auto * elem = (*ctx->mutate_entry)->ptr();
+            std::lock_guard lock(elem->projection_introspection_mutex);
+            if (elem->current_projection != projection_name)
+            {
+                elem->current_projection = projection_name;
+                new_projection = true;
+            }
+        }
+        if (new_projection)
+            FailPointInjection::pauseFailPoint(FailPoints::merge_task_projection_stage_pause);
+    }
+
     if (task->executeStep())
         return true;
 
     task->addToChecksums(ctx->new_data_part->checksums);
     merge_subtasks.pop_back();
+
+    if (!projection_name.empty())
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        std::erase(elem->projections_pending, projection_name);
+        elem->projections_done.push_back(projection_name);
+        elem->current_projection.clear();
+        elem->current_projection_progress.store(0, std::memory_order_relaxed);
+        elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+        elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
+    }
+
     return !merge_subtasks.empty();
 }
 
