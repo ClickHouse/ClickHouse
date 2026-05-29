@@ -871,16 +871,6 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 namespace
 {
 
-/// `and`/`or` are not here because with `short_circuit_function_evaluation` the
-/// argument order is observable
-bool isCommutativeForDedup(std::string_view name)
-{
-    return name == "equals" || name == "notEquals" || name == "xor"
-        || name == "plus" || name == "multiply"
-        || name == "least" || name == "greatest"
-        || name == "bitAnd" || name == "bitOr" || name == "bitXor";
-}
-
 /// same scalar can show up as different ColumnConst objects after merge
 bool constColumnsEqual(const ColumnPtr & a, const ColumnPtr & b)
 {
@@ -1018,8 +1008,6 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
                 key.children.reserve(node.children.size());
                 for (const auto * c : node.children)
                     key.children.push_back(resolve_through_aliases(c));
-                if (isCommutativeForDedup(key.name))
-                    std::sort(key.children.begin(), key.children.end());
                 break;
             case ActionType::ARRAY_JOIN:
                 break;
