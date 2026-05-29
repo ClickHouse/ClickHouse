@@ -3068,3 +3068,161 @@ def test_aggregation_operators():
     #         ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:00.000',80)]"],
     #     ],
     # )
+
+
+def test_label_manipulation_functions():
+    # Add a new label using a regex capture from an existing label.
+    do_query_test(
+        'label_replace(up, "new_job", "renamed-$1", "job", "(.*)")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "job": "prometheus", "new_job": "renamed-prometheus"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','up'),('job','prometheus'),('new_job','renamed-prometheus')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # Overwrite an existing label with a constant replacement.
+    do_query_test(
+        'label_replace(up, "job", "static", "job", ".*")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "job": "static"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','up'),('job','static')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # When the regex does not match, the series is returned unchanged.
+    do_query_test(
+        'label_replace(up, "new_label", "x", "job", "nomatch")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "job": "prometheus"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','up'),('job','prometheus')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # Set __name__ to a constant: there is no tag "", so its value is treated as "" which always matches regex "",
+    # so the following will always set the metric name to "service_up".
+    do_query_test(
+        'label_replace(up, "__name__", "service_up", "", "")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "service_up", "job": "prometheus"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','service_up'),('job','prometheus')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # Multi-series: derive a new label per series; original labelsets remain distinct.
+    do_query_test(
+        'label_replace(http_errors, "code_class", "${1}xx", "http_code", "(.).+")[10:10]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "http_errors", "code_class": "4xx", "http_code": "401"}, "values": [[200, "4"]]}, {"metric": {"__name__": "http_errors", "code_class": "4xx", "http_code": "404"}, "values": [[200, "5"]]}]}',
+        [
+            [
+                "[('__name__','http_errors'),('code_class','4xx'),('http_code','401')]",
+                "[('1970-01-01 00:03:20.000',4)]",
+            ],
+            [
+                "[('__name__','http_errors'),('code_class','4xx'),('http_code','404')]",
+                "[('1970-01-01 00:03:20.000',5)]",
+            ],
+        ],
+    )
+
+    # Named capture group: reference it as ${name} in the replacement.
+    do_query_test(
+        'label_replace(http_errors, "code_class", "${digit}xx", "http_code", "(?P<digit>.).+")[10:10]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "http_errors", "code_class": "4xx", "http_code": "401"}, "values": [[200, "4"]]}, {"metric": {"__name__": "http_errors", "code_class": "4xx", "http_code": "404"}, "values": [[200, "5"]]}]}',
+        [
+            [
+                "[('__name__','http_errors'),('code_class','4xx'),('http_code','401')]",
+                "[('1970-01-01 00:03:20.000',4)]",
+            ],
+            [
+                "[('__name__','http_errors'),('code_class','4xx'),('http_code','404')]",
+                "[('1970-01-01 00:03:20.000',5)]",
+            ],
+        ],
+    )
+
+    # Collapsing two series into the same labelset must throw.
+    do_query_test_expect_error(
+        'label_replace(http_errors, "http_code", "same", "", "")',
+        200,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags",
+    )
+
+    # Wrong number of arguments.
+    do_query_test_expect_error(
+        'label_replace(up, "x", "y")',
+        1753176757.89,
+        'expected 5 argument(s) in call to "label_replace", got 3',
+        "Function 'label_replace' expects 5 arguments, but was called with 3 arguments",
+    )
+
+    # Invalid regular expression.
+    do_query_test_expect_error(
+        'label_replace(up, "x", "y", "job", "((")',
+        1753176757.89,
+        "invalid regular expression",
+        "Invalid regular expression '(('",
+    )
+
+    # Join two source labels with a separator.
+    do_query_test(
+        'label_join(up, "combined", "-", "__name__", "job")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "combined": "up-prometheus", "job": "prometheus"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','up'),('combined','up-prometheus'),('job','prometheus')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # Join into __name__.
+    do_query_test(
+        'label_join(up, "__name__", "_", "__name__", "job")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up_prometheus", "job": "prometheus"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','up_prometheus'),('job','prometheus')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # A single source label effectively copies its value into the destination label.
+    do_query_test(
+        'label_join(up, "alias", "", "job")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "alias": "prometheus", "job": "prometheus"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','up'),('alias','prometheus'),('job','prometheus')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # Zero source labels: dst is set to "" which removes the label from each series.
+    do_query_test(
+        'label_join(up, "job", "_")',
+        1753176757.89,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up"}, "value": [1753176757.89, "1"]}]}',
+        [["[('__name__','up')]", "2025-07-22 09:32:37.890", "1"]],
+    )
+
+    # Multi-series: derive a unique destination value per series from existing labels.
+    do_query_test(
+        'label_join(http_errors, "tag", "/", "__name__", "http_code")[10:10]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "http_errors", "http_code": "401", "tag": "http_errors/401"}, "values": [[200, "4"]]}, {"metric": {"__name__": "http_errors", "http_code": "404", "tag": "http_errors/404"}, "values": [[200, "5"]]}]}',
+        [
+            [
+                "[('__name__','http_errors'),('http_code','401'),('tag','http_errors/401')]",
+                "[('1970-01-01 00:03:20.000',4)]",
+            ],
+            [
+                "[('__name__','http_errors'),('http_code','404'),('tag','http_errors/404')]",
+                "[('1970-01-01 00:03:20.000',5)]",
+            ],
+        ],
+    )
+
+    # Collapsing two series into the same labelset must throw.
+    do_query_test_expect_error(
+        'label_join(http_errors, "http_code", "_", "__name__")',
+        200,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags",
+    )
+
+    # Too few arguments.
+    do_query_test_expect_error(
+        'label_join(up, "x")',
+        1753176757.89,
+        'expected at least 3 argument(s) in call to "label_join", got 2',
+        "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
+    )

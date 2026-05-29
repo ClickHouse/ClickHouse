@@ -25,6 +25,7 @@ struct ServerSideEncryptionKMSConfig
 #if USE_AWS_S3
 
 #include <Common/assert_cast.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
@@ -60,10 +61,10 @@ struct ClientCache
     void clearCache();
 
     mutable std::mutex region_cache_mutex;
-    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
+    NameToNameMap region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
     mutable std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
+    UnorderedMapWithMemoryTracking<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
@@ -89,9 +90,9 @@ private:
     void pruneExpiredCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::pair<std::weak_ptr<ClientCache>, size_t>> client_caches TSA_GUARDED_BY(clients_mutex);
+    UnorderedMapWithMemoryTracking<ClientCache *, std::pair<std::weak_ptr<ClientCache>, size_t>> client_caches TSA_GUARDED_BY(clients_mutex);
     std::mutex cache_by_key_mutex;
-    std::unordered_map<UInt128, std::weak_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
+    UnorderedMapWithMemoryTracking<UInt128, std::weak_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
