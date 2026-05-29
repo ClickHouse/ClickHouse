@@ -1,5 +1,6 @@
 #include <Interpreters/ASTNonDeterministicFunctions.h>
 
+#include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -82,6 +83,9 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     if (!ast || !context)
         return true;
+
+    /// FunctionFactory::tryGet records used functions in query_log; suppress for eligibility checks.
+    Context::SuppressQueryFactoriesInfoScope suppress_query_factories_info;
 
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
