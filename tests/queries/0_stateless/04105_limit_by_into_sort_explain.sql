@@ -4,6 +4,7 @@
 -- { echo }
 
 SET query_plan_push_limit_by_into_sort = 1;
+SET explain_query_plan_default = 'legacy';
 SET max_threads = 12;
 
 -- `LIMIT BY` keys are not a prefix of the sort keys, so the optimization is not applied.

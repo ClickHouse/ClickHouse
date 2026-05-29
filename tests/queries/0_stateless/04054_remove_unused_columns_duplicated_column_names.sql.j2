@@ -1,6 +1,7 @@
 SET enable_analyzer = 1;
 SET any_join_distinct_right_table_keys = 1;
 SET joined_subquery_requires_alias = 0;
+SET explain_query_plan_default = 'legacy';
 -- 0 to verify that the duplicated columns name are present, 1 to verify that the duplicated columns name are removed
 {% for enable_remove_unused_columns in [0, 1] -%}
 {% for explain in [0, 1] -%}
