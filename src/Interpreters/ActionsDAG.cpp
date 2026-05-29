@@ -868,6 +868,160 @@ void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
     }
 }
 
+namespace
+{
+
+bool isCommutativeForDedup(std::string_view name)
+{
+    return name == "equals" || name == "notEquals"
+        || name == "and" || name == "or" || name == "xor"
+        || name == "plus" || name == "multiply"
+        || name == "least" || name == "greatest"
+        || name == "bitAnd" || name == "bitOr" || name == "bitXor";
+}
+
+/// same scalar can show up as different ColumnConst objects after merge
+bool constColumnsEqual(const ColumnPtr & a, const ColumnPtr & b)
+{
+    if (a.get() == b.get())
+        return true;
+    if (!a || !b)
+        return false;
+    if (a->size() != b->size())
+        return false;
+    Field fa;
+    Field fb;
+    a->get(0, fa);
+    b->get(0, fb);
+    return fa == fb;
+}
+
+struct NodeKey
+{
+    ActionsDAG::ActionType type{};
+    String name;
+    DataTypePtr result_type;
+    ColumnPtr column;
+    std::vector<const ActionsDAG::Node *> children;
+
+    bool operator==(const NodeKey & o) const
+    {
+        if (type != o.type || name != o.name || children != o.children)
+            return false;
+        if (bool(result_type) != bool(o.result_type))
+            return false;
+        if (result_type && !result_type->equals(*o.result_type))
+            return false;
+        if (type == ActionsDAG::ActionType::COLUMN)
+            return constColumnsEqual(column, o.column);
+        return true;
+    }
+};
+
+struct NodeKeyHash
+{
+    size_t operator()(const NodeKey & k) const
+    {
+        SipHash h;
+        h.update(static_cast<UInt8>(k.type));
+        h.update(k.name);
+        for (const auto * c : k.children)
+            h.update(reinterpret_cast<uintptr_t>(c));
+        if (k.result_type)
+            h.update(k.result_type->getName());
+        if (k.column && k.column->size() == 1)
+            k.column->updateHashWithValue(0, h);
+        return h.get64();
+    }
+};
+
+}
+
+void ActionsDAG::deduplicateSubtrees()
+{
+    std::unordered_map<const Node *, const Node *> canonical;
+    std::unordered_map<NodeKey, const Node *, NodeKeyHash> seen;
+
+    auto resolve = [&](const Node * n) -> const Node *
+    {
+        auto it = canonical.find(n);
+        return it != canonical.end() ? it->second : n;
+    };
+
+    /// function results depend on values, not on the alias names along the chain
+    auto resolve_through_aliases = [&](const Node * n) -> const Node *
+    {
+        n = resolve(n);
+        while (n && n->type == ActionType::ALIAS && !n->children.empty())
+            n = resolve(n->children.front());
+        return n;
+    };
+
+    for (const auto & node : nodes)
+    {
+        if (node.type == ActionType::ARRAY_JOIN)
+        {
+            canonical[&node] = &node;
+            continue;
+        }
+        /// two calls to rand() give different values - merging them changes semantics
+        if (node.type == ActionType::FUNCTION
+            && node.function_base
+            && !node.function_base->isDeterministicInScopeOfQuery())
+        {
+            canonical[&node] = &node;
+            continue;
+        }
+
+        NodeKey key;
+        key.type = node.type;
+        key.result_type = node.result_type;
+
+        switch (node.type)
+        {
+            case ActionType::INPUT:
+            case ActionType::PLACEHOLDER:
+                key.name = node.result_name;
+                break;
+            case ActionType::COLUMN:
+                key.column = node.column;
+                break;
+            case ActionType::ALIAS:
+                /// keep alias name in the key - downstream may look up the column by name
+                key.name = node.result_name;
+                if (!node.children.empty())
+                    key.children.push_back(resolve(node.children.front()));
+                break;
+            case ActionType::FUNCTION:
+                if (node.function_base)
+                    key.name = node.function_base->getName();
+                key.children.reserve(node.children.size());
+                for (const auto * c : node.children)
+                    key.children.push_back(resolve_through_aliases(c));
+                if (isCommutativeForDedup(key.name))
+                    std::sort(key.children.begin(), key.children.end());
+                break;
+            case ActionType::ARRAY_JOIN:
+                break;
+        }
+
+        auto it = seen.find(key);
+        if (it != seen.end())
+            canonical[&node] = it->second;
+        else
+        {
+            seen.emplace(std::move(key), &node);
+            canonical[&node] = &node;
+        }
+    }
+
+    for (auto & node : nodes)
+        for (auto & child : node.children)
+            child = resolve(child);
+    for (auto & out : outputs)
+        out = resolve(out);
+}
+
 ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases)
 {
     std::unordered_map<const Node *, const Node *> copy_map;
