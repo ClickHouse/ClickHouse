@@ -389,7 +389,6 @@ void StorageMergeTree::startup()
                     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
                     cleanup_thread.start();
                     background_operations_assignee.start();
-                    background_streaming_assignee.start();
                     startBackgroundMovesIfNeeded();
                 }
                 else
@@ -410,7 +409,6 @@ void StorageMergeTree::startup()
 
                     background_operations_assignee.finish();
                     background_moves_assignee.finish();
-                    background_streaming_assignee.finish();
                     cleanup_thread.stop();
 
                     /// Followers periodically re-scan shared object storage so that `SELECT`
@@ -428,6 +426,12 @@ void StorageMergeTree::startup()
             /// leadership, the `became_leader=true` branch above deactivates this task.
             if (refresh_parts_task)
                 refresh_parts_task->activateAndSchedule();
+
+            /// The streaming assignee enriches streaming `SELECT` subscriptions from the local
+            /// part set (`scheduleStreamingJob`); it performs no writes, merges, or mutations.
+            /// Start it unconditionally — like the follower refresh task — so streaming reads
+            /// remain available on followers, which must stay readable under leader election.
+            background_streaming_assignee.start();
 
             leader_election_ptr->start();
         }
