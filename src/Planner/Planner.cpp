@@ -423,7 +423,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
     {
         Int64 int_value = converted_value_int.safeGet<Int64>();
 
-        assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
         const UInt64 magnitude = -static_cast<UInt64>(int_value);
         return {magnitude, 0, true};
@@ -2684,4 +2684,3 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
-
