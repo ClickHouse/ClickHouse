@@ -8,6 +8,10 @@
 #include <Core/Names.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -67,6 +71,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/StringUtils.h>
 #include <Common/thread_local_rng.h>
 
 #include <algorithm>
@@ -1515,8 +1520,138 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Whether a non-key physical column can affect SummingSortedAlgorithm's zero-row decision in the
+/// query-time FINAL path (aggregate_all_columns=false). Mirrors defineColumns' dispatch exactly:
+///   * a `*Map`-suffixed Nested array member is a summed-map candidate regardless of columns_to_sum
+///     (maps are discovered before, and independently of, the scalar columns_to_sum filter);
+///   * a scalar / (Simple)AggregateFunction column is summed only if its type is summable (or an
+///     aggregate function) AND, when an explicit columns_to_sum is given, it is named in it.
+/// Everything else (a String, a plain non-Map array, a scalar absent from an explicit columns_to_sum)
+/// the algorithm copies last-value into column_numbers_not_to_aggregate, so it never changes the
+/// keep/drop outcome and is safe to prune. Over-keeping a *Map group is conservative (a later
+/// defineColumns validation may still leave it unsummed); under-keeping reintroduces the dropped-row bug.
+static bool isSummingColumnRelevantForFinal(const String & name, const IDataType & type, const NameSet & columns_to_sum)
+{
+    const bool is_simple_agg = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(type.getCustomName()) != nullptr;
+    WhichDataType which(type);
+    if (which.isArray() && !is_simple_agg)
+    {
+        const auto table_name = Nested::extractTableName(name);
+        return table_name != name && endsWith(table_name, "Map");
+    }
+    if (!(is_simple_agg || which.isAggregateFunction() || type.isSummable()))
+        return false;
+    return columns_to_sum.empty() || columns_to_sum.contains(name);
+}
+
+/// Whether the flattened tuple leaf `name`, or one of its true tuple ancestors, is in `names`.
+/// Mirrors defineColumns' isColumnOrAncestorInNames over flattened leaves: `ancestors` is the same
+/// list of ancestor paths flattenTupleRecursive records in flatten_ancestors[i].
+static bool isLeafOrAncestorInNames(const String & name, const Strings & ancestors, const NameSet & names)
+{
+    if (names.contains(name))
+        return true;
+    for (const auto & ancestor : ancestors)
+        if (names.contains(ancestor))
+            return true;
+    return false;
+}
+
+/// Whether any leaf that recursive tuple flattening produces from (name, type) would be summed by the
+/// algorithm under allow_tuple_element_aggregation. defineColumns flattens Tuple columns with
+/// Nested::flattenTupleRecursive and then sums the leaves, so a Tuple physical column is relevant when
+/// at least one leaf is. `ancestors` carries the leaf's true tuple ancestor paths (the same data
+/// defineColumns keeps in flatten_ancestors), built here exactly as flattenTupleRecursive builds it
+/// (push the current name before descending). The gates below match defineColumns' treatment of
+/// flattened leaves:
+///   * a scalar / (Simple)AggregateFunction leaf is summed only when summable (or an aggregate) AND,
+///     with an explicit columns_to_sum, the leaf or an ancestor is named (isColumnOrAncestorInNames);
+///   * a `*Map`-suffixed array leaf is a summed-map candidate only when its synthesized parent is a
+///     real tuple ancestor (a leaf such as metrics.ratesMap.ID whose parent metrics.ratesMap is a real
+///     tuple node, not a parent fabricated from a dotted element name), AND, with an explicit
+///     columns_to_sum, the leaf or an ancestor is named. defineColumns applies both checks to flattened
+///     leaves before treating them as maps.
+/// Everything else (a plain non-Map array, a non-summable scalar, or a scalar/map excluded by an
+/// explicit columns_to_sum) the algorithm copies last-value, so it never changes the zero-row outcome.
+static bool tupleHasSummableLeafForFinal(
+    const String & name, const DataTypePtr & type, const NameSet & columns_to_sum, const Strings & ancestors)
+{
+    if (const auto * tuple = Nested::tryGetFlattenableTuple(type))
+    {
+        const auto & element_types = tuple->getElements();
+        const auto & element_names = tuple->getElementNames();
+        Strings element_ancestors = ancestors;
+        element_ancestors.push_back(name);
+        for (size_t i = 0; i < element_types.size(); ++i)
+            if (tupleHasSummableLeafForFinal(
+                    Nested::concatenateName(name, element_names[i]), element_types[i], columns_to_sum, element_ancestors))
+                return true;
+        return false;
+    }
+
+    const bool is_simple_agg = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()) != nullptr;
+    WhichDataType which(*type);
+    if (which.isArray() && !is_simple_agg)
+    {
+        const auto map_name = Nested::splitName(name, /*reverse=*/true).first;
+        if (map_name == name || !endsWith(map_name, "Map"))
+            return false;
+        const bool is_real_map = std::find(ancestors.begin(), ancestors.end(), map_name) != ancestors.end();
+        const bool excluded_by_columns_list
+            = !columns_to_sum.empty() && !isLeafOrAncestorInNames(name, ancestors, columns_to_sum);
+        return is_real_map && !excluded_by_columns_list;
+    }
+    if (!(is_simple_agg || which.isAggregateFunction() || type->isSummable()))
+        return false;
+    return columns_to_sum.empty() || isLeafOrAncestorInNames(name, ancestors, columns_to_sum);
+}
+
+/// Physical columns a SummingMergeTree FINAL read must keep so on-the-fly merging matches a real merge.
+/// SummingSortedAlgorithm decides "drop the group's row when all summing columns are zero" over the
+/// summing columns present in its input header, which is the table sample block (all physical columns:
+/// ordinary + materialized). Column pruning can narrow a SELECT FINAL read set to a strict subset of the
+/// summing columns; the rule then misfires and drops a row whose full stored form is non-zero in a pruned
+/// column, while a real on-disk merge keeps it. So pin every physical column the algorithm could sum.
+/// One predicate handles both implicit and explicit columns_to_sum so the two cannot diverge: in explicit
+/// mode a named scalar is kept, an unnamed scalar is pruned, and a `*Map` Nested member is kept regardless
+/// of columns_to_sum (matching defineColumns, where map discovery ignores the scalar columns_to_sum filter).
+/// When allow_tuple_element_aggregation is set, the algorithm flattens Tuple columns and sums their leaves,
+/// so a Tuple column is kept when any flattened leaf is summable (the whole physical column is read, which
+/// gives the merge every leaf). Reading a tuple subset of leaves is not possible here, hence the all-or-nothing.
+static Names getSummingColumnsRequiredForFinal(
+    const StorageInMemoryMetadata & metadata,
+    const Names & columns_to_sum,
+    bool allow_tuple_element_aggregation)
+{
+    NameSet key_columns;
+    for (const auto & name : metadata.getColumnsRequiredForSortingKey())
+        key_columns.insert(name);
+    if (metadata.getPartitionKey().expression)
+        for (const auto & name : metadata.getPartitionKey().expression->getRequiredColumns())
+            key_columns.insert(name);
+
+    const NameSet wanted(columns_to_sum.begin(), columns_to_sum.end());
+
+    Names result;
+    for (const auto & column : metadata.getColumns().getAllPhysical())
+    {
+        if (key_columns.contains(column.name))
+            continue;
+
+        const bool keep = allow_tuple_element_aggregation && Nested::tryGetFlattenableTuple(column.type)
+            ? tupleHasSummableLeafForFinal(column.name, column.type, wanted, /*ancestors=*/{})
+            : isSummingColumnRelevantForFinal(column.name, *column.type, wanted);
+        if (keep)
+            result.push_back(column.name);
+    }
+    return result;
+}
+
 /// Returns the list of column names required for the transforms in addMergingFinal
-static NameSet getColumnsRequiredForMergingFinal(const SortDescription & sort_description, MergeTreeData::MergingParams merging_params)
+static NameSet getColumnsRequiredForMergingFinal(
+    const SortDescription & sort_description,
+    const MergeTreeData::MergingParams & merging_params,
+    const StorageInMemoryMetadata & metadata)
 {
     NameSet required_columns = sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; })
         | std::ranges::to<NameSet>();
@@ -1527,9 +1662,14 @@ static NameSet getColumnsRequiredForMergingFinal(const SortDescription & sort_de
         case MergeTreeData::MergingParams::Aggregating:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Coalescing:
-            [[fallthrough]];
-        case MergeTreeData::MergingParams::Summing:
             break;
+        case MergeTreeData::MergingParams::Summing:
+        {
+            for (const auto & name : getSummingColumnsRequiredForFinal(
+                     metadata, merging_params.columns_to_sum, merging_params.allow_tuple_element_aggregation))
+                required_columns.insert(name);
+            break;
+        }
         case MergeTreeData::MergingParams::VersionedCollapsing:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Collapsing: {
@@ -3162,6 +3302,18 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         if (!data.merging_params.version_column.empty() && names.emplace(data.merging_params.version_column).second)
             column_names_to_read.push_back(data.merging_params.version_column);
 
+        /// Keep all of SummingMergeTree's summing columns under FINAL so on-the-fly merging matches a real
+        /// merge's zero-row rule even when column pruning narrows the read set (see helper above, #106125).
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Summing)
+        {
+            for (const auto & column_name : getSummingColumnsRequiredForFinal(
+                     *storage_snapshot->metadata,
+                     data.merging_params.columns_to_sum,
+                     data.merging_params.allow_tuple_element_aggregation))
+                if (names.emplace(column_name).second)
+                    column_names_to_read.push_back(column_name);
+        }
+
         return spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),
             index_build_context,
@@ -4510,7 +4662,7 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     if (query_info.isFinal())
     {
         // Cannot remove columns if FINAL requires them for merging
-        NameSet required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+        NameSet required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params, *getStorageMetadata());
         const auto has_column_that_is_not_required_for_final
             = std::ranges::any_of(all_column_names, [&](const auto & column_name) { return !required_for_final.contains(column_name); });
 
@@ -4547,7 +4699,7 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
     NameSet columns_to_keep;
 
     if (query_info.isFinal())
-        columns_to_keep = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+        columns_to_keep = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params, *getStorageMetadata());
 
     for (size_t pos : required_output_positions)
         columns_to_keep.insert(output_header->getByPosition(pos).name);
