@@ -4505,8 +4505,9 @@ served from the per-column `num_defaults` / `num_rows` counters that MergeTree a
 keeps in `serialization.json`, with no data scan.
 
 Patterns recognised: `col = default(col)`, `col != default(col)`, `IS NULL` / `IS NOT NULL`
-on Nullable columns, `empty(col)` / `notEmpty(col)` on String columns, and (for unsigned
-integer columns) `col > 0`, `col >= 1`, `col < 1`, `col <= 0`.
+on Nullable columns, `empty(col)` / `notEmpty(col)` on String columns, `col = true` /
+`col != true` on Bool columns, and (for unsigned integer columns) `col > 0`, `col >= 1`,
+`col < 1`, `col <= 0`.
 
 Possible values:
 
@@ -4529,10 +4530,11 @@ Possible values:
    - `off`       — No sparsity-based pruning.
    - `planning`  — Part-level and granule-level pruning at plan time. The pruned
                    mark count is visible in `EXPLAIN indexes = 1` and downstream
-                   stages (parallel replicas, FINAL exact mode, `max_rows_to_read`
-                   with `throw`) see the correct mark count. May load offsets-stream
-                   marks for the predicate column upfront, which can be costly on
-                   very wide / TB-size columns.
+                   stages (parallel replicas, `max_rows_to_read` with `throw`)
+                   see the correct mark count. May load offsets-stream marks for
+                   the predicate column upfront, which can be costly on very wide
+                   / TB-size columns. Disabled for `FINAL`, pending mutations or
+                   patch parts, and active transactions.
    - `data_read` — Part-level pruning at plan time; granule-level pruning deferred
                    to scan time. Scales to TB-size columns because offsets-stream
                    marks are only paged in for parts actually being scanned. Not
