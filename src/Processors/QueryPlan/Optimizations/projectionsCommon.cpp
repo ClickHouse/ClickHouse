@@ -126,10 +126,17 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
             if (node->result_type->onlyNull())
                 return nullptr;
 
+            /// Non-UInt8 filters are still valid at runtime (`FilterTransform`
+            /// accepts any type that satisfies `canBeUsedInBooleanContext`).
+            /// Projection optimization, however, only supports UInt8 (the
+            /// const-1 substitution at the bottom of this function assumes a
+            /// boolean filter). For other types, gracefully give up so the
+            /// query falls back to the normal read path instead of failing
+            /// with `ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER` -- see issue #106099,
+            /// where a row policy `USING <int_column>` made every aggregation
+            /// query on the table fail even though the filter itself is fine.
             if (!isUInt8(removeNullable(removeLowCardinality(node->result_type))))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                    "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
-                    node->result_type->getName(), name);
+                return nullptr;
 
             if (remove)
             {
