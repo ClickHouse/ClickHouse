@@ -1,6 +1,7 @@
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <base/defines.h>
 
 #include <chrono>
 
@@ -31,8 +32,7 @@ MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_n
     if (raw_level >= level)
     {
         /// Snap up immediately; refresh the "still elevated" timestamp.
-        if (raw_level > level)
-            level = raw_level;
+        level = raw_level;
         last_at_or_above_ns = now_ns;
     }
     else if (level > 0 && now_ns >= last_at_or_above_ns + COOLDOWN_NS)
@@ -43,6 +43,8 @@ MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_n
         last_at_or_above_ns = now_ns;
     }
 
+    chassert(level <= 3);
+    /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     return static_cast<MemoryPressureLevel>(level);
 }
 
