@@ -107,8 +107,8 @@ struct ColumnDescription
     ColumnDescription(const ColumnDescription & other) { *this = other; }
     ColumnDescription & operator=(const ColumnDescription & other);
     /// Not noexcept: the move-assignment clones the codec/TTL ASTs, which allocates and can throw.
-    ColumnDescription(ColumnDescription && other) { *this = std::move(other); }
-    ColumnDescription & operator=(ColumnDescription && other);
+    ColumnDescription(ColumnDescription && other) { *this = std::move(other); } /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    ColumnDescription & operator=(ColumnDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     ColumnDescription(String name_, DataTypePtr type_);
     ColumnDescription(String name_, DataTypePtr type_, String comment_);

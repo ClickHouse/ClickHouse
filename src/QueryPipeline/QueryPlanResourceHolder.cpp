@@ -17,7 +17,7 @@ QueryPlanResourceHolder & QueryPlanResourceHolder::append(const QueryPlanResourc
     return *this;
 }
 
-QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs)
+QueryPlanResourceHolder & QueryPlanResourceHolder::operator=(QueryPlanResourceHolder && rhs) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 {
     append(rhs);
     return *this;

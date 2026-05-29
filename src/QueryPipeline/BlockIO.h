@@ -28,7 +28,7 @@ struct BlockIO
 
     /// Not noexcept: moves the QueryPipeline, whose move-assignment appends resources and can
     /// throw MEMORY_LIMIT_EXCEEDED.
-    BlockIO & operator= (BlockIO && rhs);
+    BlockIO & operator= (BlockIO && rhs); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     ~BlockIO();
 
     BlockIO(const BlockIO &) = delete;

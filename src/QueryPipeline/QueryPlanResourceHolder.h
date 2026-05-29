@@ -35,7 +35,7 @@ struct QueryPlanResourceHolder
     /// Custom move assignment does not destroy data from lhs. It appends data from rhs to lhs.
     /// append (and thus this assignment) allocates, so it can throw (`std::bad_alloc`, or
     /// `MEMORY_LIMIT_EXCEEDED` from the memory-tracking containers) and must not be noexcept.
-    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&);
+    QueryPlanResourceHolder & operator=(QueryPlanResourceHolder &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     QueryPlanResourceHolder & append(const QueryPlanResourceHolder & rhs);
 
     /// Some processors may implicitly use Context or temporary Storage created by Interpreter.

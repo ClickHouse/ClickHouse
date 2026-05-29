@@ -94,7 +94,7 @@ public:
     QueryPlan(QueryPlan &&) noexcept;
     /// Not noexcept: move-assignment appends the QueryPlanResourceHolder, which allocates and can
     /// throw. The move constructor stays noexcept because it steals the holder instead of appending.
-    QueryPlan & operator=(QueryPlan &&);
+    QueryPlan & operator=(QueryPlan &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);

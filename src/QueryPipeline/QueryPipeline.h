@@ -55,7 +55,7 @@ public:
 
     /// Not noexcept: move-assignment appends QueryPlanResourceHolder resources, which allocates
     /// through memory-tracking containers and can throw MEMORY_LIMIT_EXCEEDED.
-    QueryPipeline & operator=(QueryPipeline &&);
+    QueryPipeline & operator=(QueryPipeline &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     QueryPipeline & operator=(const QueryPipeline &) = delete;
 
     ~QueryPipeline();

@@ -107,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     return *this;
 }
 
-ColumnDescription & ColumnDescription::operator=(ColumnDescription && other)
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 {
     if (this == &other)
         return *this;

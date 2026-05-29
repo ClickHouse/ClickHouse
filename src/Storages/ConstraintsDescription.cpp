@@ -310,13 +310,13 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
     return *this;
 }
 
-ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other)
+ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     : constraints(std::move(other.constraints))
 {
     update();
 }
 
-ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other)
+ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 {
     constraints = std::move(other.constraints);
     update();
