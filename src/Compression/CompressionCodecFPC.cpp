@@ -186,7 +186,7 @@ private:
         }
     }
 
-    std::vector<TUInt> table;
+    VectorWithMemoryTracking<TUInt> table;
     TUInt prev_value;
     size_t hash;
 };
@@ -227,7 +227,7 @@ private:
         }
     }
 
-    std::vector<TUInt> table;
+    VectorWithMemoryTracking<TUInt> table;
     size_t hash;
 };
 

@@ -547,6 +547,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     query_info.is_internal = options.is_internal;
 
+    if (auto tables = getSelectQuery().tables())
+    {
+        for (const auto & child : tables->children)
+        {
+            const auto * table_element = child->as<ASTTablesInSelectQueryElement>();
+            if (!table_element || !table_element->table_expression)
+                continue;
+
+            const auto & table_expression = table_element->table_expression->as<ASTTableExpression &>();
+            if (table_expression.stream_settings)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries are not supported with the old analyzer.");
+        }
+    }
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for

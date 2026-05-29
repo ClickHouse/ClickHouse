@@ -217,9 +217,9 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 const bool has_file_size = isBufferWithFileSize(buf);
                 auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
-                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
+                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_settings.prefetch && has_file_size && seekable_in
                     && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
-                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
+                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
                 res = std::make_shared<NativeORCBlockInputFormat>(
                     buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
             }

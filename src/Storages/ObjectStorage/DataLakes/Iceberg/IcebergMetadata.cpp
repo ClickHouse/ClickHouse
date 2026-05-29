@@ -576,7 +576,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
 
 void IcebergMetadata::mutate(
     const MutationCommands & commands,
-    StorageObjectStorageConfigurationPtr /*configuration*/,
+    StoragePtr storage_ptr,
     ContextPtr context,
     const StorageID & storage_id,
     StorageMetadataPtr metadata_snapshot,
@@ -594,6 +594,7 @@ void IcebergMetadata::mutate(
     DB::Iceberg::mutate(
         commands,
         context,
+        storage_ptr,
         metadata_snapshot,
         storage_id,
         object_storage,

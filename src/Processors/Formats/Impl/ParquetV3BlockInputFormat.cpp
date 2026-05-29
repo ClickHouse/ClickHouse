@@ -347,7 +347,7 @@ void registerInputFormatParquet(FormatFactory & factory)
            const ContextPtr & context) -> InputFormatPtr
         {
             size_t min_bytes_for_seek
-                = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+                = is_remote_fs ? read_settings.remote_fs_settings.min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
             /// `tryGet` keeps the metadata-aware creator usable from contexts that don't
             /// initialise the cache (e.g. the client side of `INSERT ... FROM INFILE`).
             /// In such contexts we just don't memoise the footer — the format itself works
@@ -375,7 +375,7 @@ void registerInputFormatParquet(FormatFactory & factory)
         FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
     {
         size_t min_bytes_for_seek
-            = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            = is_remote_fs ? read_settings.remote_fs_settings.min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
         return std::make_shared<ParquetV3BlockInputFormat>(
             buf,
             std::make_shared<const Block>(sample),

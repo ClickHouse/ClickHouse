@@ -1,5 +1,6 @@
 #include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadPipeline.h>

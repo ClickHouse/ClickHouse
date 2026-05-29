@@ -157,8 +157,8 @@ public:
         }
 
         /// Apply read buffer prefetch for HiveText format, because it is read sequentially
-        if (read_settings.remote_fs_prefetch)
-            read_settings.remote_fs_prefetch = format == "HiveText";
+        if (read_settings.remote_fs_settings.prefetch)
+            read_settings.remote_fs_settings.prefetch = format == "HiveText";
 
         /// Decide if we could generate blocks from partition values
         /// Only for ORC or Parquet format file, we could get number of rows from metadata without scanning the whole file
@@ -230,7 +230,7 @@ public:
                 {
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
-                        bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+                        bool thread_pool_read = read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
                         {
                             auto buf = std::make_unique<ReadBufferFromHDFS>(
@@ -254,7 +254,7 @@ public:
                     };
 
                     raw_read_buf = get_raw_read_buf();
-                    if (read_settings.remote_fs_prefetch)
+                    if (read_settings.remote_fs_settings.prefetch)
                         raw_read_buf->prefetch(DEFAULT_PREFETCH_PRIORITY);
                 }
                 catch (const Exception & e)

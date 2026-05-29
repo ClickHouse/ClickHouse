@@ -404,25 +404,25 @@ void DiskLocal::prepareRead(
     ///     throws `CANNOT_SEEK_THROUGH_FILE`;
     ///   - O_DIRECT when `page_cache_block_size` is not aligned to the direct
     ///     IO sector size (additional check below).
-    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache
-        && settings.local_fs_method != LocalFSReadMethod::io_uring
-        && settings.local_fs_method != LocalFSReadMethod::pread_fake_async
-        && settings.local_fs_method != LocalFSReadMethod::pread_threadpool
-        && settings.local_fs_method != LocalFSReadMethod::mmap;
+    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache_settings.cache
+        && settings.local_fs_settings.method != LocalFSReadMethod::io_uring
+        && settings.local_fs_settings.method != LocalFSReadMethod::pread_fake_async
+        && settings.local_fs_settings.method != LocalFSReadMethod::pread_threadpool
+        && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
 
     {
         /// Use the same estimated size basis as createReadBufferFromFileBase:
         /// read_hint first, then file_size. A large file with a small read_hint
         /// won't trigger O_DIRECT, so page cache remains safe.
         size_t estimated_size = read_hint.value_or(file_size);
-        if (use_page_cache && settings.direct_io_threshold
-            && estimated_size >= settings.direct_io_threshold
-            && settings.page_cache_block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
+        if (use_page_cache && settings.local_fs_settings.direct_io_threshold
+            && estimated_size >= settings.local_fs_settings.direct_io_threshold
+            && settings.page_cache_settings.block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
             use_page_cache = false;
     }
 
     if (use_page_cache)
-        pipeline.needMemoryCache(settings.page_cache, "local:", settings.getPageCacheSettings());
+        pipeline.needMemoryCache("local:", settings.page_cache_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -672,7 +672,7 @@ try
 {
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
-    read_settings.direct_io_threshold = 1;
+    read_settings.local_fs_settings.direct_io_threshold = 1;
     auto buf = readFile(disk_checker_path, read_settings, {});
     UInt32 magic_number;
     readIntBinary(magic_number, *buf);
