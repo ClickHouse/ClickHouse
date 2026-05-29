@@ -122,3 +122,11 @@ FROM format('GeoJSON', '{
 SELECT *
 FROM format('GeoJSON', 'id String, geometry String, properties JSON', '{"type":"FeatureCollection","features":[]}'); -- { serverError BAD_ARGUMENTS }
 
+-- A 'geometry' column that is only a partial Geometry Variant is rejected (would otherwise lose data as NULL).
+SELECT *
+FROM format('GeoJSON', 'geometry Variant(Point), properties JSON', '{"type":"FeatureCollection","features":[]}'); -- { serverError BAD_ARGUMENTS }
+
+-- An unsupported column is rejected (would otherwise produce inconsistently sized columns).
+SELECT *
+FROM format('GeoJSON', 'geometry Geometry, extra Int32', '{"type":"FeatureCollection","features":[]}'); -- { serverError BAD_ARGUMENTS }
+

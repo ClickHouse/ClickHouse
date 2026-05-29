@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/GeoJSONRowInputFormat.h>
 
+#include <array>
+
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -122,25 +124,38 @@ GeoJSONRowInputFormat::GeoJSONRowInputFormat(
         else if (col.name == "geometry")
         {
             geometry_col_idx = i;
+            static constexpr std::array geo_type_names
+                = {"Point", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"};
+
             const auto * variant_type = typeid_cast<const DataTypeVariant *>(col.type.get());
-            if (!variant_type)
+            if (variant_type)
+            {
+                for (const auto & geo_type_name : geo_type_names)
+                {
+                    auto discr = variant_type->tryGetVariantDiscriminator(geo_type_name);
+                    if (discr.has_value())
+                        geometry_discriminants[geo_type_name] = *discr;
+                }
+            }
+
+            /// The format always produces one of the geometry types of the `Geometry` type, so the column must
+            /// contain the full set of them. Otherwise geometries would be silently inserted as NULL (data loss).
+            if (geometry_discriminants.size() != geo_type_names.size())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "The 'geometry' column of the GeoJSON input format must have type 'Geometry', but it has type '{}'",
                     col.type->getName());
-
-            for (const auto & geo_type_name :
-                 {"Point", "LineString", "Polygon", "MultiPolygon", "Ring", "MultiLineString"})
-            {
-                auto discr = variant_type->tryGetVariantDiscriminator(geo_type_name);
-                if (discr.has_value())
-                    geometry_discriminants[geo_type_name] = *discr;
-            }
         }
         else if (col.name == "properties")
         {
             properties_col_idx = i;
         }
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported column '{}' for the GeoJSON input format. "
+                "Only 'id', 'geometry', and 'properties' columns are supported.",
+                col.name);
     }
 }
 
