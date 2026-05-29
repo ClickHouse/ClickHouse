@@ -112,6 +112,7 @@ public:
     Columns getKeyColumns() const;
 private:
     void fillSetElementsOnce() const;
+    Columns getUniqueKeyColumns() const;
     Hash computeContentHash() const;
 
     Hash hash;
