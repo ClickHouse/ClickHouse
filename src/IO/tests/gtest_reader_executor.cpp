@@ -2794,6 +2794,18 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
     /// `CurrentThread::getQueryId()`, so a real `ThreadStatus` + `QueryScope`
     /// (with a query context) must be in scope — same setup as
     /// `gtest_filecache.cpp`'s `DiskCacheHandlePinSurvivesEviction`.
+    ///
+    /// Another test in the binary may have instantiated the `MainThreadStatus`
+    /// singleton (e.g. via `MainThreadStatus::getInstance()`), leaving
+    /// `current_thread` set for the rest of the process; `ThreadStatus`'s ctor
+    /// asserts `!current_thread`. Clear it for our own status and restore the
+    /// previous pointer on exit (the singleton's process-exit dtor asserts it
+    /// is still `current_thread`). Mirrors `FileCacheTest`'s SetUp/TearDown —
+    /// without it this test aborts under shuffled / sanitizer CI runs.
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
     DB::ThreadStatus thread_status;
 
     Poco::XML::DOMParser dom_parser;
