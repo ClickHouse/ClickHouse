@@ -443,8 +443,12 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots)
+    bool use_previous_snapshots,
+    const std::vector<Iceberg::FileContentType> & per_entry_content_types)
 {
+    if (!per_entry_content_types.empty() && per_entry_content_types.size() != manifest_entry_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "per_entry_content_types size does not match manifest entries");
+
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
     String schema_representation;
     if (version == 1)
@@ -462,12 +466,15 @@ void generateManifestList(
         avro::GenericDatum entry_datum(schema.root());
         avro::GenericRecord & entry = entry_datum.value<avro::GenericRecord>();
 
+        const Iceberg::FileContentType entry_content
+            = per_entry_content_types.empty() ? content_type : per_entry_content_types[entry_idx];
+
         entry.field(Iceberg::f_manifest_path) = manifest_entry_names[entry_idx].serialize();
         entry.field(Iceberg::f_manifest_length) = manifest_entry_sizes[entry_idx];
         entry.field(Iceberg::f_partition_spec_id) = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
         if (version > 1)
         {
-            entry.field(Iceberg::f_content) = static_cast<Int32>(content_type);
+            entry.field(Iceberg::f_content) = static_cast<Int32>(entry_content);
             entry.field(Iceberg::f_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
             entry.field(Iceberg::f_min_sequence_number) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
         }
@@ -494,13 +501,21 @@ void generateManifestList(
         };
         entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
+
+        Int64 entry_added_rows = 0;
+        if (entry_content == Iceberg::FileContentType::DATA)
+        {
+            if (summary->has(Iceberg::f_added_records))
+                entry_added_rows = summary->getValue<Int64>(Iceberg::f_added_records);
+        }
+        else if (summary->has(Iceberg::f_added_position_deletes))
+            entry_added_rows = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
+
         if (version == 1)
         {
             set_versioned_field(1, Iceberg::f_added_files_count);
             set_versioned_field(std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
             set_versioned_field(0, Iceberg::f_deleted_files_count);
-            if (summary->has(Iceberg::f_added_position_deletes))
-                set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_deleted_rows_count);
         }
         else
         {
@@ -508,24 +523,10 @@ void generateManifestList(
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
-
-            if (summary->has(Iceberg::f_added_position_deletes))
-                entry.field(Iceberg::f_deleted_rows_count) = summary->getValue<Int64>(Iceberg::f_added_position_deletes);
         }
 
-        if (summary->has(Iceberg::f_added_records))
-        {
-            set_versioned_field(
-                summary->getValue<Int64>(Iceberg::f_added_records),
-                Iceberg::f_added_rows_count);
-        }
-        else
-        {
-            set_versioned_field(summary->getValue<Int64>(Iceberg::f_added_position_deletes), Iceberg::f_added_rows_count);
-        }
-        set_versioned_field(
-            0,
-            Iceberg::f_existing_rows_count);
+        set_versioned_field(entry_added_rows, Iceberg::f_added_rows_count);
+        set_versioned_field(0, Iceberg::f_existing_rows_count);
         set_versioned_field(0, Iceberg::f_deleted_rows_count);
 
         writer.write(entry_datum);
@@ -1034,7 +1035,8 @@ bool IcebergStorageSink::initializeMetadata()
 
             LOG_DEBUG(log, "Writing new metadata file {}", metadata_info.path);
             auto hint_path = filename_generator.generateVersionHint();
-            if (!writeMetadataFileAndVersionHint(
+            const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+            if (!catalog_writes_metadata_file && !writeMetadataFileAndVersionHint(
                     persistent_table_components.path_resolver,
                     metadata_info,
                     json_representation,
