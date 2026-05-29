@@ -319,18 +319,20 @@ public:
         ColumnPtr column = arguments[0].column;
         if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
         {
-            /// LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
-            /// `cast_ipv4_ipv6_default_on_conversion_error`, so materialize the column and fall through to
-            /// the regular path which already handles the mode selection.
+            /// The LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
+            /// `cast_ipv4_ipv6_default_on_conversion_error`, and it only supports a `String` dictionary with
+            /// `UInt8`/`UInt16`/`UInt32` indexes. In any unsupported case, materialize the column and fall
+            /// through to the regular path which already handles every argument type and mode.
+            bool can_use_fast_path = true;
             if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+                can_use_fast_path = !cast_ipv4_ipv6_default_on_conversion_error;
+
+            if (can_use_fast_path)
             {
-                if (cast_ipv4_ipv6_default_on_conversion_error)
-                    column = col_lc->convertToFullColumnIfLowCardinality();
-                else
-                    return executeLowCardinality(*col_lc, input_rows_count);
+                if (auto result = executeLowCardinality(*col_lc, input_rows_count))
+                    return result;
             }
-            else
-                return executeLowCardinality(*col_lc, input_rows_count);
+            column = col_lc->convertToFullColumnIfLowCardinality();
         }
 
         ColumnPtr null_map_column;
@@ -387,9 +389,11 @@ private:
         }
 
 
+        /// Only a `String` dictionary is handled here; signal the caller to use the regular path otherwise
+        /// (e.g. for a `FixedString` dictionary).
         const auto * column_string = checkAndGetColumn<ColumnString>(nested_column);
         if (!column_string)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String", nested_column->getName());
+            return {};
 
         auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
 
@@ -424,7 +428,8 @@ private:
         else if (const auto * col32 = checkAndGetColumn<ColumnUInt32>(index_column))
             process_indexes(col32->getData());
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal index column type {}. Expected UInt8 or UInt16 or UInt32", index_column->getName());
+            /// A wider index type (e.g. `UInt64`) is not handled here; signal the caller to use the regular path.
+            return {};
 
         if ((has_null || exception_mode == IPStringToNumExceptionMode::Null) && !col_res->isNullable())
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
@@ -577,18 +582,20 @@ public:
         ColumnPtr column = arguments[0].column;
         if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
         {
-            /// LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
-            /// `cast_ipv4_ipv6_default_on_conversion_error`, so materialize the column and fall through to
-            /// the regular path which already handles the mode selection.
+            /// The LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
+            /// `cast_ipv4_ipv6_default_on_conversion_error`, and it only supports a `String` dictionary with
+            /// `UInt8`/`UInt16`/`UInt32` indexes. In any unsupported case, materialize the column and fall
+            /// through to the regular path which already handles every argument type and mode.
+            bool can_use_fast_path = true;
             if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+                can_use_fast_path = !cast_ipv4_ipv6_default_on_conversion_error;
+
+            if (can_use_fast_path)
             {
-                if (cast_ipv4_ipv6_default_on_conversion_error)
-                    column = col_lc->convertToFullColumnIfLowCardinality();
-                else
-                    return executeLowCardinality(*col_lc, input_rows_count);
+                if (auto result = executeLowCardinality(*col_lc, input_rows_count))
+                    return result;
             }
-            else
-                return executeLowCardinality(*col_lc, input_rows_count);
+            column = col_lc->convertToFullColumnIfLowCardinality();
         }
         ColumnPtr null_map_column;
         const NullMap * null_map = nullptr;
@@ -644,9 +651,11 @@ private:
         }
 
 
+        /// Only a `String` dictionary is handled here; signal the caller to use the regular path otherwise
+        /// (e.g. for a `FixedString` dictionary).
         const auto * column_string = checkAndGetColumn<ColumnString>(nested_column);
         if (!column_string)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type {}. Expected String", nested_column->getName());
+            return {};
 
         auto check_is_null = [&](size_t idx) { return has_null && idx == dictionary.getNullValueIndex(); };
 
@@ -679,7 +688,8 @@ private:
         else if (const auto * col32 = checkAndGetColumn<ColumnUInt32>(index_column))
             process_indexes(col32->getData());
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal index column type {}. Expected UInt8 or UInt16 or UInt32", index_column->getName());
+            /// A wider index type (e.g. `UInt64`) is not handled here; signal the caller to use the regular path.
+            return {};
 
         if ((has_null || exception_mode == IPStringToNumExceptionMode::Null) && !col_res->isNullable())
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
