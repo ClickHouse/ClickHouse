@@ -57,3 +57,16 @@ SELECT '-- mvtEncode: an out-of-range buffer parameter is rejected';
 SELECT mvtEncode('points', 4096, -1)(mvtEncodeGeom(13.37, 52.52, 10, 550, 335)); -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE mvt_clip_pts;
+
+SELECT '-- tile indices must be < 2^zoom in mvtEncodeGeom, mvtTileBBox and mvtTileBBoxMercator';
+SELECT mvtEncodeGeom(0, 0, 0, 1, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT mvtEncodeGeom(0, 0, 1, 0, 2); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT mvtTileBBox(0, 1, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT mvtTileBBoxMercator(0, 0, 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+SELECT '-- the largest valid tile index for a zoom is accepted';
+SELECT mvtTileBBox(1, 1, 1) IS NOT NULL, mvtEncodeGeom(13.37, 52.52, 1, 1, 0) IS NOT NULL;
+
+SELECT '-- mvtEncode: a coordinate beyond Int32::max is encoded (not wrapped) when the extent allows it';
+SELECT length(mvtEncode('t', 3000000000, 0)(tuple(3000000000.0, 0.0))) > 0 AS kept_when_in_range;
+SELECT length(mvtEncode('t', 4096, 0)(tuple(3000000000.0, 0.0))) AS dropped_when_out_of_range;

@@ -280,7 +280,7 @@ A `GET /tile/10/550/335` then returns the encoded tile. Omit the inner `GROUP BY
 
 ## Limitations {#limitations}
 
-- Point geometry only; line and polygon geometry are not supported. Clipping (the `buffer` argument of `mvtEncodeGeom`)
+- Point geometry only; line and polygon geometry are not supported. Clipping (the `buffer` parameter of `mvtEncode`)
   is likewise point-only.
 - The Web Mercator projection clamps latitude to `±85.05112878°` and does not handle antimeridian-crossing inputs.
 - No explicit feature `id` field.

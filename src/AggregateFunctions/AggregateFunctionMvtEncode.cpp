@@ -1,8 +1,6 @@
 #include <cmath>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <vector>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -18,6 +16,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -88,6 +88,8 @@ class AggregateFunctionMvtEncode final
     : public IAggregateFunctionDataHelper<AggregateFunctionMvtEncodeData, AggregateFunctionMvtEncode>
 {
 private:
+    using Base = IAggregateFunctionDataHelper<AggregateFunctionMvtEncodeData, AggregateFunctionMvtEncode>;
+
     const String layer_name;
     const UInt32 extent;
     const bool has_clip;
@@ -95,7 +97,7 @@ private:
     const Int64 clip_lower;
     const Int64 clip_upper;
     const bool has_properties;
-    std::vector<MvtProperty> properties;
+    VectorWithMemoryTracking<MvtProperty> properties;
 
     static MvtValueKind kindForType(const DataTypePtr & element_type, const String & function_name)
     {
@@ -122,21 +124,21 @@ private:
             function_name);
     }
 
-    static void appendFixedInt32(String & out, Int32 value)
+    static void appendFixedInt64(String & out, Int64 value)
     {
-        const UInt32 bits = static_cast<UInt32>(value);
+        const UInt64 bits = static_cast<UInt64>(value);
         for (size_t i = 0; i < sizeof(bits); ++i)
             out.push_back(static_cast<char>((bits >> (8 * i)) & 0xFF));
     }
 
-    static Int32 readFixedInt32(const char *& pos, const char * end)
+    static Int64 readFixedInt64(const char *& pos, const char * end)
     {
-        if (sizeof(UInt32) > static_cast<size_t>(end - pos))
+        if (sizeof(UInt64) > static_cast<size_t>(end - pos))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated coordinate");
-        UInt32 bits = 0;
+        UInt64 bits = 0;
         for (size_t i = 0; i < sizeof(bits); ++i)
-            bits |= static_cast<UInt32>(static_cast<unsigned char>(*pos++)) << (8 * i);
-        return static_cast<Int32>(bits);
+            bits |= static_cast<UInt64>(static_cast<unsigned char>(*pos++)) << (8 * i);
+        return static_cast<Int64>(bits);
     }
 
     static UInt64 readVarint(const char *& pos, const char * end)
@@ -240,16 +242,17 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const auto & geometry = assert_cast<const ColumnTuple &>(*columns[0]);
-        const Int32 pixel_x = static_cast<Int32>(std::lround(geometry.getColumn(0).getFloat64(row_num)));
-        const Int32 pixel_y = static_cast<Int32>(std::lround(geometry.getColumn(1).getFloat64(row_num)));
+        /// Int64 coordinates so the documented extent range (up to 2^32) round-trips exactly without narrowing.
+        const Int64 pixel_x = static_cast<Int64>(std::llround(geometry.getColumn(0).getFloat64(row_num)));
+        const Int64 pixel_y = static_cast<Int64>(std::llround(geometry.getColumn(1).getFloat64(row_num)));
 
         /// Clip to the tile expanded by the buffer (in pixel/extent units); points outside it are dropped.
         if (has_clip && (pixel_x < clip_lower || pixel_x > clip_upper || pixel_y < clip_lower || pixel_y > clip_upper))
             return;
 
         String record;
-        appendFixedInt32(record, pixel_x);
-        appendFixedInt32(record, pixel_y);
+        appendFixedInt64(record, pixel_x);
+        appendFixedInt64(record, pixel_y);
 
         if (has_properties)
         {
@@ -270,24 +273,24 @@ public:
             }
         }
 
-        auto & state = this->data(place);
+        auto & state = Base::data(place);
         state.append(record.data(), record.size(), arena);
         ++state.num_features;
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        const auto & rhs_state = this->data(rhs);
+        const auto & rhs_state = Base::data(rhs);
         if (rhs_state.data_size == 0)
             return;
-        auto & state = this->data(place);
+        auto & state = Base::data(place);
         state.append(rhs_state.data, rhs_state.data_size, arena);
         state.num_features += rhs_state.num_features;
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /*version*/) const override
     {
-        const auto & state = this->data(place);
+        const auto & state = Base::data(place);
         writeVarUInt(state.num_features, buf);
         writeVarUInt(state.data_size, buf);
         buf.write(state.data, state.data_size);
@@ -295,7 +298,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /*version*/, Arena * arena) const override
     {
-        auto & state = this->data(place);
+        auto & state = Base::data(place);
         if (state.data_size != 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "mvtEncode deserialize() expects an empty state");
 
@@ -314,15 +317,15 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto & state = this->data(place);
+        auto & state = Base::data(place);
         if (state.num_features == 0)
         {
             to.insertDefault();
             return;
         }
 
-        std::vector<String> value_pool;
-        std::unordered_map<String, UInt32> value_index;
+        VectorWithMemoryTracking<String> value_pool;
+        UnorderedMapWithMemoryTracking<String, UInt32> value_index;
 
         String features;
         const char * pos = state.data;
@@ -330,8 +333,8 @@ public:
 
         for (UInt64 feature = 0; feature < state.num_features; ++feature)
         {
-            const Int32 pixel_x = readFixedInt32(pos, end);
-            const Int32 pixel_y = readFixedInt32(pos, end);
+            const Int64 pixel_x = readFixedInt64(pos, end);
+            const Int64 pixel_y = readFixedInt64(pos, end);
 
             String tags;
             for (size_t i = 0; i < properties.size(); ++i)

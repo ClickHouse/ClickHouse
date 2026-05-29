@@ -99,6 +99,18 @@ public:
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The 'extent' argument of function {} must be positive", getName());
 
+            const UInt64 tile_x = col_tile_x.getUInt(row);
+            const UInt64 tile_y = col_tile_y.getUInt(row);
+            const UInt64 num_tiles = UInt64{1} << zoom;
+            if (tile_x >= num_tiles || tile_y >= num_tiles)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The tile indices (tile_x = {}, tile_y = {}) of function {} must be less than 2^zoom = {}",
+                    tile_x,
+                    tile_y,
+                    getName(),
+                    num_tiles);
+
             const double longitude = std::clamp(col_lon.getFloat64(row), -180.0, 180.0);
             const double latitude = std::clamp(col_lat.getFloat64(row), -latitude_limit, latitude_limit);
 
@@ -108,8 +120,8 @@ public:
 
             /// The full UInt32 Mercator space is divided into 2^zoom tiles per axis; tile_size is the side of one tile.
             const double tile_size = std::exp2(static_cast<double>(32 - zoom));
-            const double tile_x_begin = static_cast<double>(col_tile_x.getUInt(row)) * tile_size;
-            const double tile_y_begin = static_cast<double>(col_tile_y.getUInt(row)) * tile_size;
+            const double tile_x_begin = static_cast<double>(tile_x) * tile_size;
+            const double tile_y_begin = static_cast<double>(tile_y) * tile_size;
 
             const double scale = static_cast<double>(extent) / tile_size;
             pixel_x_data[row] = std::round((mercator_x - tile_x_begin) * scale);

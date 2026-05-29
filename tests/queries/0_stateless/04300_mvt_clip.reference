@@ -19,3 +19,9 @@
 -- mvtEncode: clipping leaves the result a String
 String
 -- mvtEncode: an out-of-range buffer parameter is rejected
+-- tile indices must be < 2^zoom in mvtEncodeGeom, mvtTileBBox and mvtTileBBoxMercator
+-- the largest valid tile index for a zoom is accepted
+1	1
+-- mvtEncode: a coordinate beyond Int32::max is encoded (not wrapped) when the extent allows it
+1
+0

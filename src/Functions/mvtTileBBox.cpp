@@ -121,15 +121,27 @@ public:
                     zoom,
                     getName());
 
+            const UInt64 tile_x = col_tile_x.getUInt(row);
+            const UInt64 tile_y = col_tile_y.getUInt(row);
+            const UInt64 num_tiles = UInt64{1} << zoom;
+            if (tile_x >= num_tiles || tile_y >= num_tiles)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The tile indices (tile_x = {}, tile_y = {}) of function {} must be less than 2^zoom = {}",
+                    tile_x,
+                    tile_y,
+                    getName(),
+                    num_tiles);
+
             const double tile_size = std::exp2(static_cast<double>(32 - zoom));
             const double margin = has_margin ? col_margin->getFloat64(row) : 0.0;
             const double pad = margin * tile_size;
 
             /// The full UInt32 Mercator space; y grows downward (north at the top), matching `mvtEncodeGeom`.
-            const double min_x = std::clamp(static_cast<double>(col_tile_x.getUInt(row)) * tile_size - pad, 0.0, mercator_max);
-            const double max_x = std::clamp((static_cast<double>(col_tile_x.getUInt(row)) + 1.0) * tile_size + pad, 0.0, mercator_max);
-            const double min_y = std::clamp(static_cast<double>(col_tile_y.getUInt(row)) * tile_size - pad, 0.0, mercator_max);
-            const double max_y = std::clamp((static_cast<double>(col_tile_y.getUInt(row)) + 1.0) * tile_size + pad, 0.0, mercator_max);
+            const double min_x = std::clamp(static_cast<double>(tile_x) * tile_size - pad, 0.0, mercator_max);
+            const double max_x = std::clamp((static_cast<double>(tile_x) + 1.0) * tile_size + pad, 0.0, mercator_max);
+            const double min_y = std::clamp(static_cast<double>(tile_y) * tile_size - pad, 0.0, mercator_max);
+            const double max_y = std::clamp((static_cast<double>(tile_y) + 1.0) * tile_size + pad, 0.0, mercator_max);
 
             if constexpr (space == BBoxSpace::Geographic)
             {
