@@ -102,12 +102,7 @@ S3RequestSettings::S3RequestSettings(const S3RequestSettings & settings)
 {
 }
 
-S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept
-    : request_throttler(std::move(settings.request_throttler))
-    , proxy_resolver(std::move(settings.proxy_resolver))
-    , impl(std::make_unique<S3RequestSettingsImpl>(std::move(*settings.impl)))
-{
-}
+S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept = default;
 
 S3RequestSettings::S3RequestSettings(
     const Poco::Util::AbstractConfiguration & config,
