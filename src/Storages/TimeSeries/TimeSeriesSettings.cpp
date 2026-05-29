@@ -42,11 +42,7 @@ TimeSeriesSettings::TimeSeriesSettings(const TimeSeriesSettings & settings) : im
 
 TimeSeriesSettings::TimeSeriesSettings(TimeSeriesSettings && settings) noexcept = default;
 
-TimeSeriesSettings & TimeSeriesSettings::operator=(TimeSeriesSettings && settings) noexcept
-{
-    *impl = std::move(*settings.impl);
-    return *this;
-}
+TimeSeriesSettings & TimeSeriesSettings::operator=(TimeSeriesSettings && settings) noexcept = default;
 
 TimeSeriesSettings::~TimeSeriesSettings() = default;
 

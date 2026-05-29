@@ -82,11 +82,7 @@ FileCacheSettings::FileCacheSettings(const FileCacheSettings & settings)
 
 FileCacheSettings::FileCacheSettings(FileCacheSettings && settings) noexcept = default;
 
-FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept
-{
-    *impl = std::move(*settings.impl);
-    return *this;
-}
+FileCacheSettings & FileCacheSettings::operator=(FileCacheSettings && settings) noexcept = default;
 
 bool FileCacheSettings::operator==(const FileCacheSettings & settings) const noexcept
 {
