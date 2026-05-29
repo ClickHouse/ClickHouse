@@ -175,7 +175,7 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<DateTime64> &>(column), value, type.idx);
             break;
         case TypeIndex::Time64:
-            assert_cast<ColumnDecimal<Time64> &>(column).insertValue(static_cast<Int64>(value));
+            convertAndInsert<T, Int64>(assert_cast<ColumnDecimal<Time64> &>(column), value, type.idx);
             break;
         case TypeIndex::IPv4:
             convertAndInsert<T, UInt32, ColumnIPv4, true>(assert_cast<ColumnIPv4 &>(column), value, type.idx);
