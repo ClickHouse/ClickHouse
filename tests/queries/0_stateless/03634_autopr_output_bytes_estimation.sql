@@ -10,6 +10,10 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- Override randomized max_threads to avoid timeout on slow builds (ASan)
 SET max_threads=0;
 
+-- The runtime dataflow output-bytes estimate is sensitive to the block size, so pin
+-- `max_block_size` to its default to keep the estimate stable against randomization.
+SET max_block_size=65409;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`
