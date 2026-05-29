@@ -725,13 +725,9 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
 
             auto flat_postings = std::get<FlatPostingsPtr>(cell->value);
 
-            TokenPostingsInfo prebuilt_info;
-            prebuilt_info.header = PostingsSerialization::Flags::EmbeddedPostings;
-            prebuilt_info.cardinality = static_cast<UInt32>(query_builder.postings->cardinality());
-            prebuilt_info.offsets = {0};
-            prebuilt_info.ranges = {{query_builder.postings->minimum(), query_builder.postings->maximum()}};
-
-            auto [emplaced, _] = prebuilt_cursors.emplace(column_name, std::make_shared<PostingListCursor>(std::move(flat_postings), prebuilt_info));
+            /// The flattened array is sorted and self-describing (cardinality, range, density all
+            /// derive from it), so the cursor needs no separate `TokenPostingsInfo`.
+            auto [emplaced, _] = prebuilt_cursors.emplace(column_name, std::make_shared<PostingListCursor>(std::move(flat_postings)));
             cursors.push_back(emplaced->second);
         }
     }

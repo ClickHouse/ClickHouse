@@ -97,14 +97,17 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
     /// lists larger than BLOCK_SIZE because the array lives in the cursor itself.
     decoded_count = embedded_values.size();
     decoded_values_ptr = embedded_values.data();
+
+    if (!info->ranges.empty())
+    {
+        embedded_range_begin = info->ranges.front().begin;
+        embedded_range_end = info->ranges.back().end;
+        embedded_has_range = true;
+    }
 }
 
-PostingListCursor::PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_, const TokenPostingsInfo & info_)
-    : owned_info(std::make_shared<TokenPostingsInfo>(info_))
-    , info(owned_info.get())
-    , total_segments(info_.offsets.size())
-    , is_embedded(true)
-    , density_val(computeDensity(info_))
+PostingListCursor::PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_)
+    : is_embedded(true)
     , shared_values(std::move(shared_values_))
 {
     if (!shared_values || shared_values->empty())
@@ -117,11 +120,23 @@ PostingListCursor::PostingListCursor(std::shared_ptr<const std::vector<UInt32>> 
     /// No per-cursor Roaring copy or `toUint32Array` materialization.
     decoded_count = shared_values->size();
     decoded_values_ptr = shared_values->data();
+
+    /// The array is sorted, so the row-id range and density follow directly from its first
+    /// and last elements — no `TokenPostingsInfo` needed.
+    embedded_range_begin = shared_values->front();
+    embedded_range_end = shared_values->back();
+    embedded_has_range = true;
+
+    double span = static_cast<double>(embedded_range_end) - static_cast<double>(embedded_range_begin) + 1.0;
+    density_val = span > 0.0 ? static_cast<double>(decoded_count) / span : 0.0;
 }
 
 UInt32 PostingListCursor::cardinality() const
 {
-    return info->cardinality;
+    /// Embedded cursors materialize the whole posting list up front, so `decoded_count` is the
+    /// total cardinality. Compressed cursors decode one block at a time, so the total comes from
+    /// the on-disk info instead.
+    return is_embedded ? static_cast<UInt32>(decoded_count) : info->cardinality;
 }
 
 PostingListCursor::~PostingListCursor()
@@ -612,16 +627,14 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             return;
 
         /// Level 1 (dense memset): if every row in the range is in the posting list, just memset.
-        if (!info->ranges.empty())
+        if (embedded_has_range)
         {
-            size_t range_begin = info->ranges.front().begin;
-            size_t range_end = info->ranges.back().end;
-            size_t range_span = range_end - range_begin + 1;
+            size_t range_span = embedded_range_end - embedded_range_begin + 1;
 
-            if (info->cardinality == range_span)
+            if (decoded_count == range_span)
             {
-                size_t clip_begin = std::max(range_begin, row_offset);
-                size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
+                size_t clip_begin = std::max(embedded_range_begin, row_offset);
+                size_t clip_end = std::min(embedded_range_end + 1, row_offset + num_rows);
                 if (clip_begin < clip_end)
                 {
                     ++counters.segments_skipped_dense;
@@ -755,16 +768,14 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
     {
         /// Dense shortcut: if every row in the range is in the posting list,
         /// just increment the entire clipped region without binary search.
-        if (!info->ranges.empty())
+        if (embedded_has_range)
         {
-            size_t range_begin = info->ranges.front().begin;
-            size_t range_end = info->ranges.back().end;
-            size_t range_span = range_end - range_begin + 1;
+            size_t range_span = embedded_range_end - embedded_range_begin + 1;
 
-            if (info->cardinality == range_span)
+            if (decoded_count == range_span)
             {
-                size_t clip_begin = std::max(range_begin, row_offset);
-                size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
+                size_t clip_begin = std::max(embedded_range_begin, row_offset);
+                size_t clip_end = std::min(embedded_range_end + 1, row_offset + num_rows);
 
                 if (clip_begin < clip_end)
                 {

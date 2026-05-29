@@ -61,9 +61,11 @@ public:
     /// Embedded posting list backed by a pre-flattened, shared, immutable sorted array.
     /// Used for the analyzer-folded postings of eagerly-read tokens: the flattened array is
     /// built once per granule and shared across all per-task cursors, avoiding a per-cursor
-    /// Roaring deep copy and `toUint32Array` materialization. The cursor only keeps its own
-    /// read position; the array data is read-only and safe to share across threads.
-    PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_, const TokenPostingsInfo & info_);
+    /// Roaring deep copy and `toUint32Array` materialization. Cardinality, density and the
+    /// row-id range are derived directly from the (sorted) array, so no `TokenPostingsInfo`
+    /// is needed. The cursor only keeps its own read position; the array data is read-only
+    /// and safe to share across threads.
+    explicit PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_);
 
     /// Flushes batched ProfileEvents counters to the global counters.
     ~PostingListCursor();
@@ -143,6 +145,14 @@ private:
     /// across per-task cursors. Held to keep the buffer alive for the cursor's lifetime;
     /// `decoded_values_ptr` points into it.
     std::shared_ptr<const std::vector<UInt32>> shared_values;
+
+    /// Row-id range [begin, end] covered by an embedded posting list, used for the dense-range
+    /// shortcut in `linearOr` / `linearAnd`. Populated by both embedded constructors (from
+    /// `info_.ranges`, or from the sorted array's first/last element). `embedded_has_range` is
+    /// false when the range is unknown (empty `info_.ranges`), disabling the shortcut.
+    bool embedded_has_range = false;
+    size_t embedded_range_begin = 0;
+    size_t embedded_range_end = 0;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
