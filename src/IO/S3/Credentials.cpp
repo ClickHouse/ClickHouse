@@ -4,6 +4,9 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Server/CloudPlacementInfo.h>
@@ -108,6 +111,42 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
     return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
 }
 
+struct ResolvedWebIdentitySettings
+{
+    Aws::String role_arn;
+    Aws::String token_file;
+    Aws::String session_name;
+    String tmp_region;
+};
+
+ResolvedWebIdentitySettings resolveWebIdentitySettingsFromEnvironmentAndProfile(const String & role_arn_)
+{
+    ResolvedWebIdentitySettings resolved;
+    // check environment variables
+    resolved.tmp_region = Aws::Environment::GetEnv("AWS_DEFAULT_REGION");
+    resolved.role_arn = role_arn_.empty() ? Aws::Environment::GetEnv("AWS_ROLE_ARN") : role_arn_;
+    resolved.token_file = Aws::Environment::GetEnv("AWS_WEB_IDENTITY_TOKEN_FILE");
+    resolved.session_name = Aws::Environment::GetEnv("AWS_ROLE_SESSION_NAME");
+
+    // check profile_config if either m_roleArn or m_tokenFile is not loaded from environment variable
+    // region source is not enforced, but we need it to construct sts endpoint, if we can't find from environment, we should check if it's set in config file.
+    if (resolved.role_arn.empty() || resolved.token_file.empty() || resolved.tmp_region.empty())
+    {
+        auto profile = Aws::Config::GetCachedConfigProfile(Aws::Auth::GetConfigProfileName());
+        if (resolved.tmp_region.empty())
+            resolved.tmp_region = profile.GetRegion();
+        // If either of these two were not found from environment, use whatever found for all three in config file
+        if (resolved.role_arn.empty() || resolved.token_file.empty())
+        {
+            resolved.role_arn = profile.GetRoleArn();
+            resolved.token_file = profile.GetValue("web_identity_token_file");
+            resolved.session_name = profile.GetValue("role_session_name");
+        }
+    }
+
+    return resolved;
+}
+
 const char SSO_CREDENTIALS_PROVIDER_LOG_TAG[] = "SSOCredentialsProvider";
 constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 
@@ -200,11 +239,11 @@ private:
         CredentialsProviderPtr credentials;
     };
 
-    using CredentialsLRUQueue = std::list<CacheValue>;
+    using CredentialsLRUQueue = ListWithMemoryTracking<CacheValue>;
 
     std::atomic<size_t> max_credentials;
     std::mutex mutex;
-    std::unordered_map<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
+    UnorderedMapWithMemoryTracking<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
     CredentialsLRUQueue credentials_lru;
 };
 
@@ -246,7 +285,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentials() const
     if (trimmed_credentials_string.empty())
         return {};
 
-    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
+    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} returned credential string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_credentials_string);
@@ -301,7 +340,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     String profile_string = GetResourceWithAWSWebServiceResult(profile_request).GetPayload();
 
     String trimmed_profile_string = Aws::Utils::StringUtils::Trim(profile_string.c_str());
-    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
+    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} with token returned profile string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_profile_string);
@@ -488,7 +527,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     using AZGetter = std::function<String()>;
 
-    std::vector<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
+    VectorWithMemoryTracking<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
     {
         /// mimics original behavior Placement logic relies on
         ///   skip AWS_ZONE_ID (in favour of AWS_ZONE_NAME) and CLICKHOUSE
@@ -500,7 +539,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     if (az_facility == AZFacilities::AWS_ZONE_NAME_THEN_GCP_ZONE)
     {
-        std::vector<std::string> ex_msgs;
+        Strings ex_msgs;
 
         /// it is expected that some facilities do not work, we are prepared for exceptions
         for (auto & getter : az_getters)
@@ -666,34 +705,23 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey::updateHash(Si
     hash.update(session_name);
 }
 
+bool AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(const String & role_arn_)
+{
+    auto resolved = resolveWebIdentitySettingsFromEnvironmentAndProfile(role_arn_);
+    // Either field set means that the operator likely intends web identity, so we still add the provider to warn about misconf. later
+    return !resolved.token_file.empty() || !resolved.role_arn.empty();
+}
+
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::create(
     DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, String role_arn_)
 {
     auto logger = getLogger("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider");
 
-    // check environment variables
-    String tmp_region = Aws::Environment::GetEnv("AWS_DEFAULT_REGION");
-    Aws::String role_arn = role_arn_.empty() ? Aws::Environment::GetEnv("AWS_ROLE_ARN") : role_arn_;
-    Aws::String token_file = Aws::Environment::GetEnv("AWS_WEB_IDENTITY_TOKEN_FILE");
-    Aws::String session_name = Aws::Environment::GetEnv("AWS_ROLE_SESSION_NAME");
-
-    // check profile_config if either m_roleArn or m_tokenFile is not loaded from environment variable
-    // region source is not enforced, but we need it to construct sts endpoint, if we can't find from environment, we should check if it's set in config file.
-    if (role_arn.empty() || token_file.empty() || tmp_region.empty())
-    {
-        auto profile = Aws::Config::GetCachedConfigProfile(Aws::Auth::GetConfigProfileName());
-        if (tmp_region.empty())
-        {
-            tmp_region = profile.GetRegion();
-        }
-        // If either of these two were not found from environment, use whatever found for all three in config file
-        if (role_arn.empty() || token_file.empty())
-        {
-            role_arn = profile.GetRoleArn();
-            token_file = profile.GetValue("web_identity_token_file");
-            session_name = profile.GetValue("role_session_name");
-        }
-    }
+    auto resolved = resolveWebIdentitySettingsFromEnvironmentAndProfile(role_arn_);
+    Aws::String role_arn = std::move(resolved.role_arn);
+    Aws::String token_file = std::move(resolved.token_file);
+    Aws::String session_name = std::move(resolved.session_name);
+    String tmp_region = std::move(resolved.tmp_region);
 
     auto empty_credentials = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
     if (token_file.empty())
@@ -764,7 +792,7 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
-    std::vector<String> retryable_errors;
+    Strings retryable_errors;
     retryable_errors.push_back("IDPCommunicationError");
     retryable_errors.push_back("InvalidIdentityToken");
 
@@ -981,6 +1009,9 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         ///
         /// AWS API tries credentials providers one by one. Some of providers (like ProfileConfigFileAWSCredentialsProvider) can be
         /// quite verbose even if nobody configured them. So we use our provider first and only after it use default providers.
+        /// STS web identity is added only when role ARN or token file are configured (likely a misconfiguration)
+        //  additionally, plain EC2/IMDS setups avoid extra warning
+        if (AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(credentials_configuration.kms_role_arn))
         {
             DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
                 configuration.region,

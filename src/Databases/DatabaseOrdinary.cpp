@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
@@ -790,7 +791,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
         DatabaseMetadataDiskSettings database_metadata_disk_settings;
         auto * engine_define = args.create_query.storage;
         chassert(engine_define);
-        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, args.create_query.attach);
+        database_metadata_disk_settings.loadFromQuery(*engine_define, args.context, isLoadingFromExistingMetadata(args.mode));
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };

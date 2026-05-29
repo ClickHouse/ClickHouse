@@ -44,6 +44,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/validateGroupByKeyType.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -69,6 +70,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
@@ -83,6 +85,7 @@ namespace Setting
     extern const SettingsBool joined_subquery_requires_alias;
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_subquery_depth;
+    extern const SettingsUInt64 recursive_cte_max_steps_in_type_inference;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsBool rewrite_count_distinct_if_with_count_distinct_implementation;
     extern const SettingsBool single_join_prefer_left_table;
@@ -110,7 +113,9 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int ILLEGAL_FINAL;
+    extern const int ILLEGAL_STREAM;
     extern const int SAMPLING_NOT_SUPPORTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
@@ -595,6 +600,7 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromUserDefinedSQLFunctions(const AS
     return result_node;
 }
 
+
 void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope)
 {
     auto & window_node_typed = window_node->as<WindowNode &>();
@@ -815,6 +821,32 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "Storage {} doesn't support sampling",
                     storage->getStorageID().getFullNameNotQuoted());
+
+            if (table_expression_modifiers->hasStream())
+            {
+                #ifndef OS_LINUX
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux.");
+                #else
+                    if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
+
+                    if (storage->isSystemStorage())
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                            "STREAM is not supported for system tables");
+
+                    if (!storage->supportsStreaming())
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                            "Storage {} doesn't support STREAM",
+                            storage->getName());
+
+                    if (table_expression_modifiers->hasFinal()
+                        || table_expression_modifiers->hasSampleSizeRatio()
+                        || table_expression_modifiers->hasSampleOffsetRatio())
+                        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
+                #endif
+            }
         }
     }
 }
@@ -2246,7 +2278,71 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    /// When an APPLY transformer creates an aggregate function (e.g. `* APPLY x -> argMax(x, number)`
+    /// or `* APPLY x -> toString(argMax(x, number))`), the matched columns must NOT be converted to
+    /// Nullable here. Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable
+    /// wrapping is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
+    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the actual
+    /// columns in the Aggregating step are non-Nullable.
+    /// This causes a crash in AggregateFunctionNullVariadic::addBatchSinglePlace.
+    ///
+    /// We traverse the APPLY expression tree because the aggregate function may be nested
+    /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
+    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
+    /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
+    auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
+    {
+        if (!root)
+            return false;
+
+        std::vector<const IQueryTreeNode *> nodes_to_process;
+        nodes_to_process.push_back(root);
+
+        while (!nodes_to_process.empty())
+        {
+            const auto * subtree_node = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (const auto * func = subtree_node->as<FunctionNode>())
+            {
+                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName()))
+                    return true;
+            }
+
+            for (const auto & child : subtree_node->getChildren())
+            {
+                if (child)
+                    nodes_to_process.push_back(child.get());
+            }
+        }
+
+        return false;
+    };
+
+    bool has_aggregate_apply_transformer = false;
+    for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+    {
+        if (auto * apply = transformer->as<ApplyColumnTransformerNode>())
+        {
+            const IQueryTreeNode * expr_to_check = nullptr;
+            if (apply->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
+            {
+                if (const auto * lambda = apply->getExpressionNode()->as<LambdaNode>())
+                    expr_to_check = lambda->getExpression().get();
+            }
+            else if (apply->getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
+            {
+                expr_to_check = apply->getExpressionNode().get();
+            }
+            if (expr_to_check && has_aggregate_function_in_tree(expr_to_check))
+            {
+                has_aggregate_apply_transformer = true;
+                break;
+            }
+        }
+    }
+
+    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -2308,7 +2404,17 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto function_to_resolve_untyped = expression_node->clone();
                     auto & function_to_resolve_typed = function_to_resolve_untyped->as<FunctionNode &>();
                     function_to_resolve_typed.getArguments().getNodes().push_back(node);
+                    /// Push the function onto the resolve stack so that argument resolution
+                    /// sees this scope as being inside the function. This matters for aggregate
+                    /// functions: without it, matched columns appended as arguments would be
+                    /// converted to Nullable in resolveExpressionNode (when group_by_use_nulls=1
+                    /// and the column is a GROUP BY key), causing a type mismatch with the
+                    /// non-Nullable aggregation input. The lambda branch is unaffected because
+                    /// resolveLambda resolves the body via resolveExpressionNode, which itself
+                    /// pushes the aggregate function before resolving its arguments.
+                    scope.pushExpressionNode(function_to_resolve_untyped);
                     node_projection_names = resolveFunction(function_to_resolve_untyped, scope);
+                    scope.popExpressionNode();
                     node = function_to_resolve_untyped;
                 }
                 else
@@ -2664,6 +2770,9 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
         scope,
         false /*allow_lambda_expression*/,
         false /*allow_table_expression*/);
+
+    for (const auto & partition_by_node : window_node.getPartitionBy().getNodes())
+        validateGroupByKeyType(partition_by_node->getResultType(), scope);
 
     ProjectionNames order_by_projection_names = resolveSortNodeList(window_node.getOrderByNode(), scope);
 
@@ -3573,22 +3682,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
   */
 void QueryAnalyzer::validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const
 {
-    if (scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_group_by])
-        return;
-
-    auto check = [](const IDataType & type)
-    {
-        if (isDynamic(type) || isVariant(type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Data types Variant/Dynamic are not allowed in GROUP BY keys, because it can lead to unexpected results. "
-                "Consider using a subcolumn with a specific data type instead (for example 'column.Int64' or 'json.some.path.:Int64' if "
-                "its a JSON path subcolumn) or casting this column to a specific data type. "
-                "Set setting allow_suspicious_types_in_group_by = 1 in order to allow it");
-    };
-
-    check(*group_by_key_type);
-    group_by_key_type->forEachChild(check);
+    DB::validateGroupByKeyType(group_by_key_type, scope.context->getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
 }
 
 /** Resolve interpolate columns nodes list.
@@ -5805,29 +5899,102 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
             ? non_recursive_query->as<QueryNode &>().getProjectionColumns()
             : non_recursive_query->as<UnionNode &>().computeProjectionColumns();
 
-        auto temporary_table_holder = std::make_shared<TemporaryTableHolder>(
-            non_recursive_query_mutable_context,
-            ColumnsDescription{NamesAndTypesList{temporary_table_columns.begin(), temporary_table_columns.end()}},
-            ConstraintsDescription{},
-            nullptr /*query*/,
-            true /*create_for_global_subquery*/);
-        auto temporary_table_storage = temporary_table_holder->getTable();
+        /// Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive
+        /// and recursive sides until the types stabilize (or until the configured limit of widening steps).
+        /// Each widening step requires re-resolving the recursive queries with the new column types,
+        /// so we save clones of the unresolved recursive queries up-front and reuse them on each pass.
+        const size_t max_widening_steps = non_recursive_query_mutable_context->getSettingsRef()[Setting::recursive_cte_max_steps_in_type_inference];
 
-        recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
-        recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+        std::vector<QueryTreeNodePtr> original_recursive_queries;
+        if (max_widening_steps > 0)
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+                original_recursive_queries.push_back(queries_nodes[i]->clone());
 
-        recursive_cte_table.emplace(std::move(temporary_table_holder), std::move(temporary_table_storage), std::move(temporary_table_columns));
+        TemporaryTableHolderPtr final_temporary_table_holder;
+        StoragePtr final_temporary_table_storage;
+
+        auto resolve_recursive_queries_with_current_types = [&]
+        {
+            auto temporary_table_holder = std::make_shared<TemporaryTableHolder>(
+                non_recursive_query_mutable_context,
+                ColumnsDescription{NamesAndTypesList{temporary_table_columns.begin(), temporary_table_columns.end()}},
+                ConstraintsDescription{},
+                nullptr /*query*/,
+                true /*create_for_global_subquery*/);
+            auto temporary_table_storage = temporary_table_holder->getTable();
+
+            recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
+            recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+            {
+                auto & query_node = queries_nodes[i];
+
+                IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
+                subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
+
+                auto query_node_type = query_node->getNodeType();
+                if (query_node_type == QueryTreeNodeType::QUERY)
+                    resolveQuery(query_node, subquery_scope);
+                else if (query_node_type == QueryTreeNodeType::UNION)
+                    resolveUnion(query_node, subquery_scope);
+                else
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "UNION unsupported node {}. In scope {}",
+                        query_node->formatASTForErrorMessage(),
+                        scope.scope_node->formatASTForErrorMessage());
+            }
+
+            final_temporary_table_holder = std::move(temporary_table_holder);
+            final_temporary_table_storage = std::move(temporary_table_storage);
+        };
+
+        /// Initial resolve with column types from the non-recursive query.
+        resolve_recursive_queries_with_current_types();
+
+        /// Iteratively widen column types via getLeastSupertype, re-resolving the recursive queries each time.
+        for (size_t step = 0; step < max_widening_steps; ++step)
+        {
+            bool types_changed = false;
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+            {
+                auto & query_node = queries_nodes[i];
+                NamesAndTypes recursive_projection;
+                if (auto * qn = query_node->as<QueryNode>())
+                    recursive_projection = qn->getProjectionColumns();
+                else if (auto * un = query_node->as<UnionNode>())
+                    recursive_projection = un->computeProjectionColumns();
+
+                for (size_t col = 0; col < temporary_table_columns.size() && col < recursive_projection.size(); ++col)
+                {
+                    DataTypes types_to_merge = {temporary_table_columns[col].type, recursive_projection[col].type};
+                    auto merged_type = getLeastSupertype(types_to_merge);
+                    if (!merged_type->equals(*temporary_table_columns[col].type))
+                    {
+                        temporary_table_columns[col].type = merged_type;
+                        types_changed = true;
+                    }
+                }
+            }
+
+            if (!types_changed)
+                break;
+
+            for (size_t i = 1; i < queries_nodes.size(); ++i)
+                queries_nodes[i] = original_recursive_queries[i - 1]->clone();
+
+            resolve_recursive_queries_with_current_types();
+        }
+
+        recursive_cte_table.emplace(std::move(final_temporary_table_holder), std::move(final_temporary_table_storage), std::move(temporary_table_columns));
     }
 
     size_t queries_nodes_size = queries_nodes.size();
-    for (size_t i = recursive_cte_table.has_value(); i < queries_nodes_size; ++i)
+    for (size_t i = recursive_cte_table.has_value() ? queries_nodes_size : 0; i < queries_nodes_size; ++i)
     {
         auto & query_node = queries_nodes[i];
 
         IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
-
-        if (recursive_cte_table_node)
-            subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
 
         auto query_node_type = query_node->getNodeType();
 

@@ -25,6 +25,7 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
+#include <Common/Concepts.h>
 #include <Common/StringUtils.h>
 #include <Common/exp10_i32.h>
 
@@ -173,8 +174,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
+template <StdVector V>
+void readVectorBinary(V & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -707,6 +708,7 @@ inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateL
 }
 
 UUID parseUUID(std::span<const UInt8> src);
+bool tryParseUUID(std::span<const UInt8> src, UUID & uuid);
 
 template <typename ReturnType = void>
 inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
@@ -724,7 +726,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
             if (size != 36)
             {
-                s[std::min(size, size_t(36))] = 0;
+                s[std::min(size, size_t(35))] = 0;
 
                 if constexpr (throw_exception)
                 {
@@ -737,11 +739,19 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
             }
         }
 
-        uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
+        if constexpr (throw_exception)
+        {
+            uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
+        }
+        else
+        {
+            if (!tryParseUUID({reinterpret_cast<const UInt8 *>(s), size}, uuid))
+                return ReturnType(false);
+        }
         return ReturnType(true);
     }
 
-    s[std::min(size, size_t(36))] = 0;
+    s[std::min(size, size_t(35))] = 0;
 
     if constexpr (throw_exception)
     {
@@ -1844,8 +1854,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
+template <StdVector V>
+void readBinary(V & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1858,8 +1868,8 @@ void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
         readBinary(x[i], buf);
 }
 
-template <typename T>
-void readQuoted(std::vector<T> & x, ReadBuffer & buf)
+template <StdVector V>
+void readQuoted(V & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1875,14 +1885,14 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 
         first = false;
 
-        x.push_back(T());
+        x.emplace_back();
         readQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <typename T>
-void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
+template <StdVector V>
+void readDoubleQuoted(V & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1898,14 +1908,14 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 
         first = false;
 
-        x.push_back(T());
+        x.emplace_back();
         readDoubleQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <typename T>
-void readText(std::vector<T> & x, ReadBuffer & buf)
+template <StdVector V>
+void readText(V & x, ReadBuffer & buf)
 {
     readQuoted(x, buf);
 }

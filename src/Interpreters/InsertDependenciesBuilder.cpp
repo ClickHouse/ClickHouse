@@ -783,9 +783,9 @@ struct SquashingTransformContext
 
 }
 
-std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
+VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    std::vector<Chain> insert_chains;
+    VectorWithMemoryTracking<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
         StorageIDMaybeEmpty,
@@ -903,7 +903,7 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
         result_data.push_back(std::make_pair(std::move(processor_list), std::move(resources)));
     }
 
-    std::vector<Chain> result_chains;
+    VectorWithMemoryTracking<Chain> result_chains;
     result_chains.reserve(result_data.size());
 
     for (auto & [processor_list, resources] : result_data)
@@ -1108,6 +1108,22 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     chassert(storage);
     auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
+    auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
+
+    if (materialized_view && current != init_table_id)
+    {
+        StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
+        if (select_table_id != parent)
+        {
+            /// It may happen if materialized view query was changed and it doesn't depend on this source table anymore.
+            /// See setting `allow_experimental_alter_materialized_view_structure`.
+            /// A stale dependency can also point through a table name that now belongs to another valid dependency.
+            /// Validate the relation before updating the shared maps, so rejecting this path cannot remove the valid one.
+            LOG_INFO(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                parent, current, select_table_id);
+            return false;
+        }
+    }
 
     storages[current] = storage;
     metadata_snapshots[current] = metadata;
@@ -1133,23 +1149,13 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         dependent_views[root_view] = {};
     };
 
-    if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
+    if (materialized_view)
     {
         if (current == init_table_id)
         {
             set_defaults_for_root_view(init_table_id, materialized_view->getTargetTableId());
             view_types[init_table_id] = QueryViewsLogElement::ViewType::MATERIALIZED;
             return true;
-        }
-
-        StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
-        if (select_table_id != parent)
-        {
-            /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
-            /// See setting `allow_experimental_alter_materialized_view_structure`
-            LOG_INFO(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
-                parent, current, select_table_id);
-            return false;
         }
 
         inner_tables[current] = materialized_view->getTargetTableId();
@@ -1476,7 +1482,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     if (dependent_views_ids.empty())
         return {};
 
-    std::vector<Chain> view_chains;
+    VectorWithMemoryTracking<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
     std::vector<Block> output_view_chains_headers;
