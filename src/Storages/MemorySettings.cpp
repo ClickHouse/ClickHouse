@@ -33,9 +33,7 @@ MemorySettings::MemorySettings(const MemorySettings & settings) : impl(std::make
 {
 }
 
-MemorySettings::MemorySettings(MemorySettings && settings) noexcept : impl(std::make_unique<MemorySettingsImpl>(std::move(*settings.impl)))
-{
-}
+MemorySettings::MemorySettings(MemorySettings && settings) noexcept = default;
 
 MemorySettings::~MemorySettings() = default;
 
