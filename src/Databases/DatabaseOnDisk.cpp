@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Disks/DiskLocal.h>
@@ -37,6 +38,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 
 
 namespace fs = std::filesystem;
