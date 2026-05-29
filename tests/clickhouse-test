@@ -6589,6 +6589,37 @@ if __name__ == "__main__":
     else:
         args.client_options_query_str = ""
 
+    if args.llvm_coverage:
+        # Pin the seeds of random-by-default mechanisms so the set of branches
+        # exercised inside the server is stable run-to-run. Without this the
+        # LLVM coverage report flickers on files reachable from these injection
+        # points (keeper fault injection, etc.).
+        # `--allow_repeated_settings` is already appended later by the per-test
+        # composition, so a test that explicitly sets one of these still wins.
+        coverage_pinned_settings = {
+            "backup_restore_keeper_fault_injection_seed": 1,
+            "insert_keeper_fault_injection_seed": 1,
+        }
+        coverage_pinned_cli = " ".join(
+            f"--{k}={v}" for k, v in coverage_pinned_settings.items()
+        )
+        coverage_pinned_url = "&".join(
+            f"{k}={v}" for k, v in coverage_pinned_settings.items()
+        )
+
+        existing_client_opt = os.environ.get("CLICKHOUSE_CLIENT_OPT", "").rstrip()
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            f"{existing_client_opt} {coverage_pinned_cli} ".lstrip()
+        )
+
+        existing_url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "").rstrip("&")
+        if existing_url_params:
+            os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                f"{existing_url_params}&{coverage_pinned_url}"
+            )
+        else:
+            os.environ["CLICKHOUSE_URL_PARAMS"] = coverage_pinned_url
+
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
 

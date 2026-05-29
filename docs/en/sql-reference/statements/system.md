@@ -251,7 +251,7 @@ There are three different kind of handlers to add to functions:
 
 **Syntax**
 ```sql
-SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
 ```
 
 where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
@@ -297,7 +297,7 @@ Removes either a single instrumentation point with:
 SYSTEM INSTRUMENT REMOVE ID
 ```
 
-all of them using the `ALL` parameter:
+all of them using the `ALL` keyword:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE ALL

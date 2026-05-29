@@ -139,20 +139,7 @@ static constexpr auto DEFAULT_PAGE_CACHE_MIN_SIZE = 100_MiB;
 /// It's ok that max < min. Max takes precedence, i.e. max = 0 disables the cache even if min > 0.
 static constexpr auto DEFAULT_PAGE_CACHE_MAX_SIZE = 0_MiB;
 
-/// Query profiler cannot work with sanitizers.
-/// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
-/// And they do unwinding frequently (on every malloc/free, thread/mutex operations, etc).
-/// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwinding
-///  and query profiler decide to unwind stack with libunwind at this moment.
-///
-/// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
-///
-/// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
-#if !defined(SANITIZER)
 static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 1000000000;
-#else
-static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 0;
-#endif
 
 static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
 
