@@ -1104,7 +1104,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     if (effective_read_settings.use_reader_executor)
     {
-        pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
+        /// Honor `remote_filesystem_read_prefetch`: attach the prefetch pool
+        /// only when prefetch is enabled. The buffer limit (connection reuse)
+        /// is independent of prefetch and stays unconditional.
+        if (effective_read_settings.remote_fs_settings.prefetch)
+            pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
         pipeline.needBufferLimit(context_->getSourceBufferLimit());
     }
 

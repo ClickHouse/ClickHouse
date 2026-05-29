@@ -838,7 +838,13 @@ void DiskObjectStorage::prepareRead(
 
     if (read_settings.use_reader_executor)
     {
-        pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
+        /// Honor `remote_filesystem_read_prefetch`: attach the prefetch pool
+        /// only when prefetch is enabled, so `remote_filesystem_read_prefetch=0`
+        /// suppresses the executor's background reads just like the legacy path
+        /// (`ReaderExecutor::maybeTriggerPrefetch` no-ops without a pool). The
+        /// buffer limit (connection reuse) is independent of prefetch.
+        if (read_settings.remote_fs_settings.prefetch)
+            pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
         pipeline.needBufferLimit(global_context->getSourceBufferLimit());
     }
 }
