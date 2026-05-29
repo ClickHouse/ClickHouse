@@ -192,7 +192,7 @@ static DataTypePtr parseORCType(
     const orc::StripeInformation * stripe_info,
     bool & skipped)
 {
-    chassert(orc_type != nullptr);
+    assert(orc_type != nullptr);
 
     const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
     switch (orc_type->getKind())
@@ -1048,7 +1048,7 @@ std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_str
 
 bool NativeORCBlockInputFormat::prepareStripeReader()
 {
-    chassert(file_reader);
+    assert(file_reader);
 
     if (read_iterator >= selected_stripes.size())
         return false;

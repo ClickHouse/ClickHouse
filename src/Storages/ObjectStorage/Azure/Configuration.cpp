@@ -356,7 +356,7 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
 
     fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
 
-    connection_params.endpoint.container_already_exists = true;
+    connection_params.endpoint.additional_params = "resource=REDACTED&directory=REDACTED&recursive=REDACTED";
 
     auto request_settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);

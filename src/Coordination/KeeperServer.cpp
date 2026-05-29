@@ -33,7 +33,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStatus.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -1010,7 +1009,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                chassert(entry->get_val_type() == nuraft::app_log);
+                assert(entry->get_val_type() == nuraft::app_log);
                 auto next_zxid = state_machine->getNextZxid();
 
                 auto entry_buf = entry->get_buf_ptr();
@@ -1076,7 +1075,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                chassert(entry->get_val_type() == nuraft::app_log);
+                assert(entry->get_val_type() == nuraft::app_log);
 
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf, true);

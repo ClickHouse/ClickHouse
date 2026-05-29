@@ -134,8 +134,6 @@ public:
         bool header = false;
         /// Show remote pipelines for distributed query.
         bool distributed = false;
-        /// Compact repeated processor chains.
-        bool compact_repeated_processor_chains = false;
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;

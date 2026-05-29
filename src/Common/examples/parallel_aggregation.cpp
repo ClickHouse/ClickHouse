@@ -380,7 +380,7 @@ private:
                 Cell * result = nullptr;
                 bool inserted = false;
                 emplaceNoResize(cell.key, result, inserted);
-                chassert(result != nullptr);
+                assert(result != nullptr);
                 if (inserted)
                     result->value = cell.value;
                 else
@@ -1116,7 +1116,7 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
     {
         if (prev_it != end && *it == *prev_it)
         {
-            chassert(found != nullptr);
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -1124,7 +1124,7 @@ void aggregate12(Map & map, Source::const_iterator begin, Source::const_iterator
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        chassert(found != nullptr);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -1242,7 +1242,7 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
     {
         if (!first && *it == *prev_it)
         {
-            chassert(found != nullptr);
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -1251,7 +1251,7 @@ void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source::const_
 
         bool inserted;
         map.emplace(*it, found, inserted);
-        chassert(found != nullptr);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }
