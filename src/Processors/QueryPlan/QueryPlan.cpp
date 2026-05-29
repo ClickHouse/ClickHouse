@@ -55,7 +55,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
 QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) = default;
 
 void QueryPlan::checkInitialized() const
 {
