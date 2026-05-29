@@ -4166,7 +4166,12 @@ UInt64 partialAggregateCacheSemanticKey(
     bool has_row_level_filter,
     bool has_additional_table_filters)
 {
-    if (astContainsNonDeterministicFunctions(select_query, context))
+    /// Prefer query context for `FunctionFactory::tryGet` (stateful functions need it); callers may pass global context.
+    ContextPtr context_for_function_check = context;
+    if (context && context->hasQueryContext())
+        context_for_function_check = context->getQueryContext();
+
+    if (astContainsNonDeterministicFunctions(select_query, context_for_function_check))
         return 0;
 
     if (has_row_level_filter || has_additional_table_filters)
