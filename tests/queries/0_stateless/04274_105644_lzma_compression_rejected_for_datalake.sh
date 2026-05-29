@@ -107,6 +107,21 @@ for forbidden in lzma gzip; do
     ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ATTACH_TABLE}"
 done
 
+# 10. Table-function path: data lake table functions also call `initialize` with
+#     the default `CREATE` mode through `TableFunctionObjectStorage::parseArgumentsImpl`,
+#     so the rejection fires for them too. Arg order for the table function is
+#     `path, format, structure, compression_method`, so we pass an explicit structure
+#     before the forbidden codec. The rejection fires during argument parsing before
+#     any file access, so a non-existent path is fine.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT * FROM icebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_tf_lzma', 'Parquet', 'c0 Int32', 'lzma')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 11. Same for `'gzip'` via the table-function path.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT * FROM icebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_tf_gzip', 'Parquet', 'c0 Int32', 'gzip')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
 # Cleanup.
 for table in "${TABLES[@]}"; do
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${table}"

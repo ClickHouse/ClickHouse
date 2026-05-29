@@ -545,7 +545,7 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
          {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
             .examples{{DeltaLakeAzureDefinition::name, "SELECT * FROM deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, \"\n"
- "                \"[account_name, account_key, format, compression, structure])", ""}},
+ "                \"[account_name, account_key, format, structure])", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
