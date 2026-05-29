@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/PNGWriter.h>
 #include <Common/Exception.h>
+#include <Common/NaNUtils.h>
+#include <Common/StringUtils.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
@@ -62,7 +64,7 @@ namespace
             case TypeIndex::Float64:
             {
                 Float64 value = data_column->getFloat64(row_num);
-                if (!std::isfinite(value))
+                if (!isFinite(value))
                     return 0;
                 value = std::clamp(value, 0.0, 1.0);
                 return static_cast<UInt8>(std::lround(value * 255.0));
@@ -114,7 +116,7 @@ namespace
         String result;
         result.reserve(name.size());
         for (char c : name)
-            result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            result.push_back(toLowerIfAlphaASCII(c));
         return result;
     }
 }
@@ -154,7 +156,9 @@ private:
     std::optional<size_t> v_idx;
 
     bool explicit_coords = false;
-    size_t implicit_position = 0;
+    /// Current pixel position in implicit (scanline) coordinate mode, advanced incrementally per row.
+    size_t implicit_x = 0;
+    size_t implicit_y = 0;
 
     std::vector<UInt8> pixels;
     std::vector<ColumnPtr> src_columns;
@@ -363,14 +367,17 @@ void PNGSerializer::Impl::writeRow(size_t row_num)
     }
     else
     {
-        if (implicit_position >= width * height)
+        /// The image is filled in scanline order; advance x and y incrementally.
+        if (implicit_y >= height)
             return;
 
-        size_t x = implicit_position % width;
-        size_t y = implicit_position / width;
-        ++implicit_position;
+        writePixel(implicit_x, implicit_y, components);
 
-        writePixel(x, y, components);
+        if (++implicit_x == width)
+        {
+            implicit_x = 0;
+            ++implicit_y;
+        }
     }
 }
 
@@ -384,7 +391,8 @@ void PNGSerializer::Impl::reset()
 {
     std::fill(pixels.begin(), pixels.end(), UInt8(0));
     src_columns.clear();
-    implicit_position = 0;
+    implicit_x = 0;
+    implicit_y = 0;
 }
 
 PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settings, PNGWriter & writer)
@@ -411,7 +419,7 @@ void PNGSerializer::finalizeWrite()
 
 void PNGSerializer::reset()
 {
-    impl->reset();
+    (*impl).reset();
 }
 
 }
