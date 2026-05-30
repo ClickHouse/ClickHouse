@@ -85,7 +85,13 @@ class KeeperRequestDispatcher
 public:
     explicit KeeperRequestDispatcher(KeeperServer * server_);
 
-    void startup();
+    /// Start response draining before Raft startup. NuRaft can commit catch-up
+    /// entries during `KeeperServer::startup`, before request dispatch is safe.
+    void startupResponseThread();
+
+    /// Start request dispatch after `KeeperServer::startup`, because `dispatchThread`
+    /// uses `raft_instance` to open a client append stream.
+    void startupDispatchThread();
 
     /// closed_all_connections is used just for an assert: if true, we expect that all
     /// onResponseDeallocated calls were made, so the tracked response queue size should be zero.

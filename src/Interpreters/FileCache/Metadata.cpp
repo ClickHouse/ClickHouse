@@ -886,7 +886,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     buf->set(memory->data(), std::min(size_to_download, memory->size()));
 
     const auto reserve_space_lock_wait_timeout_milliseconds =
-        Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+        Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds;
 
     size_t offset = file_segment.getCurrentWriteOffset();
     if (offset != static_cast<size_t>(buf->getPosition()))
