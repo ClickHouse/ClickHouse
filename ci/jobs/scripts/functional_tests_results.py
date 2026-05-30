@@ -1,6 +1,9 @@
 import dataclasses
 import re
+import runpy
+import signal
 import traceback
+from pathlib import Path
 from typing import List, Optional
 
 from praktika.result import Result
@@ -11,9 +14,44 @@ UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
-SERVER_DIED_SIGN = "Server died, terminating all processes"
-SERVER_DIED_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
+
+# Pick up `STOP_TESTING_EXIT_CODE` straight from `tests/clickhouse-test` so
+# the contract has a single source of truth.
+_clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-test"
+STOP_TESTING_EXIT_CODE = runpy.run_path(str(_clickhouse_test))["STOP_TESTING_EXIT_CODE"]
+
+# Exit codes that mean the run was aborted mid-flight, so per-test results
+# (if any) are incomplete and we cannot trust which test "caused" the
+# failure. `STOP_TESTING_EXIT_CODE` is the in-band signal — the parent
+# raised `StopTesting` and reached the outer handler. The kill-by-signal
+# variants cover the out-of-band cases where the parent was killed before
+# it could exit through that handler (currently reachable via the
+# worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
+# parent terminates re-broadcasts SIGTERM to the whole process group via
+# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`;
+# also covers external kills like job-level timeouts and runner shutdown).
+#
+# Both `128 + N` (bash's convention when its child died from signal N) and
+# the negative form `-N` are included: `Shell.run` wraps the command in
+# `bash -c`, so most kills surface as `128 + N` via bash's exit status, but
+# `Shell._check_timeout` calls `os.killpg` on the whole group, so the
+# wrapper bash can itself die from the signal — and Python's
+# `subprocess.Popen.returncode` reports that as `-N`, not `128 + N`.
+#
+# Exit code 1 is deliberately NOT in this set: it is set by end-of-run
+# checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
+# that run AFTER all tests have finished. Per-test results in that case are
+# complete and authoritative and must not be demoted.
+ABORTED_RUN_EXIT_CODES = frozenset(
+    {
+        STOP_TESTING_EXIT_CODE,
+        128 + signal.SIGTERM,  # 143
+        128 + signal.SIGKILL,  # 137
+        -signal.SIGTERM,  # -15
+        -signal.SIGKILL,  # -9
+    }
+)
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
@@ -41,7 +79,6 @@ class FTResultsProcessor:
         success: int
         test_results: List[Result]
         hung: bool = False
-        server_died: bool = False
         retries: bool = False
         success_finish: bool = False
         test_end: bool = True
@@ -57,7 +94,6 @@ class FTResultsProcessor:
         failed = 0
         success = 0
         hung = False
-        server_died = False
         retries = False
         success_finish = False
         test_results = []
@@ -75,8 +111,6 @@ class FTResultsProcessor:
                 if HUNG_SIGN in line:
                     hung = True
                     break
-                if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line:
-                    server_died = True
                 if RETRIES_SIGN in line:
                     retries = True
 
@@ -167,7 +201,6 @@ class FTResultsProcessor:
             success=success,
             test_results=test_results,
             hung=hung,
-            server_died=server_died,
             success_finish=success_finish,
             retries=retries,
         )
@@ -188,7 +221,7 @@ class FTResultsProcessor:
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
-        elif s.server_died:
+        elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
