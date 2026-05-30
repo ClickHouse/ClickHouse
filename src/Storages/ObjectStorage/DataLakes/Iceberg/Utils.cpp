@@ -8,7 +8,6 @@
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -171,18 +170,16 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             path);
     }
     String version_str;
-    /// `vN.metadata.json` or `vN-<uuid>.metadata.json` (the latter is what
-    /// `apache/iceberg-rest-fixture` and other iceberg-java REST catalogs
-    /// write when committing a new metadata file).
+    /// v<V>.metadata.json
     if (file_name.starts_with('v'))
     {
-        auto end_pos = file_name.find_first_of(".-");
-        if (end_pos == String::npos || end_pos <= 1)
+        auto dot_pos = file_name.find_first_of('.');
+        if (dot_pos == String::npos || dot_pos <= 1)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
-        version_str = String(file_name.begin() + 1, file_name.begin() + end_pos);
+        version_str = String(file_name.begin() + 1, file_name.begin() + dot_pos);
     }
     /// <V>-<random-uuid>.metadata.json
     else
@@ -191,16 +188,14 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
         if (dash_pos == String::npos || dash_pos == 0)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
         version_str = String(file_name.begin(), file_name.begin() + dash_pos);
     }
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Bad metadata file name: '{}'. Expected `vN.metadata.json`, `vN-<uuid>.metadata.json`, or `N-<uuid>.metadata.json` where N is a version number",
-            file_name);
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
@@ -502,6 +497,13 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+        {
+            /// Bool is stored as UInt8 internally, distinguish by type name
+            if (type->getName() == "Bool")
+                return {"boolean", true};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
             return {"int", true};
@@ -580,12 +582,6 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             return {getIcebergType(type_nullable->getNestedType(), iter).first, false};
         }
-        case TypeIndex::Variant:
-        {
-            if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
-                return {Iceberg::f_geometry, false};
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
-        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
@@ -595,10 +591,6 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt8:
-        case TypeIndex::Int8:
-        case TypeIndex::UInt16:
-        case TypeIndex::Int16:
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
         case TypeIndex::Date:
@@ -703,12 +695,12 @@ Poco::JSON::Object::Ptr getPartitionField(
     }
     else if (partition_function->name == "toRelativeDayNum")
     {
-        result->set(Iceberg::f_transform, "days");
+        result->set(Iceberg::f_transform, "day");
         return result;
     }
     else if (partition_function->name == "toRelativeHourNum")
     {
-        result->set(Iceberg::f_transform, "hours");
+        result->set(Iceberg::f_transform, "hour");
         return result;
     }
     else if (partition_function->name == "icebergTruncate")
@@ -759,7 +751,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
         }
     }
     else
-        partition_iter = 0;
+        partition_iter = 999;
 
     result->set(Iceberg::f_fields, fields);
     return {result, partition_iter};
@@ -980,12 +972,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_last_partition_id, last_partition_id);
     new_metadata_file_content->set(Iceberg::f_current_snapshot_id, -1);
 
+    /// Per Iceberg spec, refs should be empty when there are no snapshots.
+    /// A branch ref must point to a valid snapshot-id.
     Poco::JSON::Object::Ptr refs = new Poco::JSON::Object;
-    Poco::JSON::Object::Ptr main_branch = new Poco::JSON::Object;
-    main_branch->set(Iceberg::f_metadata_snapshot_id, -1);
-    main_branch->set(Iceberg::f_type, "branch");
-    refs->set(Iceberg::f_main, main_branch);
-
     new_metadata_file_content->set(Iceberg::f_refs, refs);
     new_metadata_file_content->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     new_metadata_file_content->set(Iceberg::f_statistics, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
@@ -1419,25 +1408,6 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
     }
     sortBlock(block, result_sort_description);
-}
-
-void forEachAvroEntry(
-    const String & filename,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    const String & logger_name,
-    std::function<void(const avro::GenericDatum &)> callback)
-{
-    RelativePathWithMetadata relative_path_with_metadata(filename);
-    auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
-
-    auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
-    auto reader_base = std::make_unique<avro::DataFileReaderBase>(std::move(input_stream), MAX_AVRO_SCHEMA_DEPTH);
-    avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
-
-    avro::GenericDatum datum(reader.readerSchema());
-    while (reader.read(datum))
-        callback(datum);
 }
 
 }

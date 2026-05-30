@@ -438,27 +438,6 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
-ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
-{
-    /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
-    /// web-identity, etc.) refreshes its cached credentials internally before
-    /// expiry. The bug we are fixing is that `setCredentials` captures the result
-    /// of `GetAWSCredentials` once at table-load time and embeds the access key,
-    /// secret, and session token as static literals in the storage args, so the
-    /// S3 client is pinned to a snapshot that goes stale on long reads. This
-    /// callback re-asks the same provider for current credentials each time
-    /// `ReadBufferFromS3` reports an `ExpiredToken`, letting the read recover.
-    return [this, storage_id]() -> std::shared_ptr<IStorageCredentials>
-    {
-        LOG_DEBUG(log, "Refreshing AWS credentials for {} after expired token", storage_id.getNameForLogs());
-        auto credentials = credentials_provider->GetAWSCredentials();
-        return std::make_shared<S3Credentials>(
-            credentials.GetAWSAccessKeyId(),
-            credentials.GetAWSSecretKey(),
-            credentials.GetSessionToken());
-    };
-}
-
 bool GlueCatalog::empty() const
 {
     auto all_databases = getDatabases("");
@@ -638,15 +617,27 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
 {
+    /// First, fetch the existing table to preserve its StorageDescriptor (columns, SerdeInfo, etc.)
+    Aws::Glue::Model::GetTableRequest get_request;
+    get_request.SetDatabaseName(namespace_name);
+    get_request.SetName(table_name);
+
+    auto get_outcome = glue_client->GetTable(get_request);
+    if (!get_outcome.IsSuccess())
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not get table from glue catalog for update: {}", get_outcome.GetError().GetMessage());
+
+    const auto & existing_table = get_outcome.GetResult().GetTable();
+
     Aws::Glue::Model::UpdateTableRequest request;
     request.SetDatabaseName(namespace_name);
 
     Aws::Glue::Model::TableInput table_input;
     table_input.SetName(table_name);
 
-    Aws::Glue::Model::StorageDescriptor sd;
+    /// Preserve the existing StorageDescriptor (columns, SerdeInfo, InputFormat, OutputFormat, etc.)
+    /// and only update the Location.
+    Aws::Glue::Model::StorageDescriptor sd = existing_table.GetStorageDescriptor();
     fs::path original_path = new_metadata_path;
-
     fs::path parent = original_path.parent_path();
     fs::path grandparent = parent.parent_path();
 

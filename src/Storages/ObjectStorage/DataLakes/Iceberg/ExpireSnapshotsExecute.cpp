@@ -742,6 +742,22 @@ ExpireSnapshotsResult expireSnapshots(
 
         Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
+        /// Register all schemas and snapshot→schema mappings so that
+        /// ManifestFileIterator can resolve the write schema for each entry's snapshot_id.
+        if (metadata->has(Iceberg::f_schemas))
+        {
+            auto schemas = metadata->getArray(Iceberg::f_schemas);
+            for (size_t si = 0; si < schemas->size(); ++si)
+                persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(static_cast<UInt32>(si)));
+        }
+        for (UInt32 si = 0; si < snapshots->size(); ++si)
+        {
+            auto snap = snapshots->getObject(si);
+            persistent_table_components.schema_processor->registerSnapshotWithSchemaId(
+                snap->getValue<Int64>(Iceberg::f_metadata_snapshot_id),
+                snap->getValue<Int32>(Iceberg::f_schema_id));
+        }
+
         std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_paths;
         std::set<Iceberg::IcebergPathFromMetadata> retained_data_file_paths;
         std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_list_paths;

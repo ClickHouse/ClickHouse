@@ -171,6 +171,22 @@ ReachableFilesResult collectReachableFiles(
 
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
 
+    /// Register all schemas and snapshot→schema mappings so that
+    /// ManifestFileIterator can resolve the write schema for each entry's snapshot_id.
+    if (metadata->has(f_schemas))
+    {
+        auto schemas = metadata->getArray(f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
+            persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(static_cast<UInt32>(i)));
+    }
+    for (UInt32 i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(i);
+        auto snap_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
+        auto snap_schema_id = snapshot->getValue<Int32>(f_schema_id);
+        persistent_table_components.schema_processor->registerSnapshotWithSchemaId(snap_id, snap_schema_id);
+    }
+
     auto snapshot_files = collectSnapshotReferencedFiles(
         snapshots, object_storage, persistent_table_components, context, log, current_schema_id);
 
