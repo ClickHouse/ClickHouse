@@ -239,7 +239,13 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit, bool & has_filter_step)
+/// `has_row_reducing_step` is set when a step that can remove rows *after* the FINAL merge is
+/// encountered (preliminary `DISTINCT` or non-left `ARRAY JOIN`). Unlike PREWHERE/row-level
+/// filtering (which runs within each part before the merge and only clears `limit`), such steps
+/// make FINAL LIMIT pushdown unsafe: stopping the merge after `N` rows can drop keys that would
+/// have survived into the top-`N` once the row-reducing step is applied. `FilterStep` and joins
+/// are tracked separately (`has_filter_step` and `FindReadingStepContext::has_join_on_path`).
+void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit, bool & has_filter_step, bool & has_row_reducing_step)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -275,11 +281,12 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     if (node.children.empty())
         return;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, has_filter_step);
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit, has_filter_step, has_row_reducing_step);
 
     if (typeid_cast<const DistinctStep *>(step))
     {
         limit = 0;
+        has_row_reducing_step = true;
     }
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
@@ -288,7 +295,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
 
         /// Should ignore limit because arrayJoin() can reduce the number of rows in case of empty array.
         if (actions.hasArrayJoin())
+        {
             limit = 0;
+            has_row_reducing_step = true;
+        }
 
         appendExpression(dag, actions);
     }
@@ -309,7 +319,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
         if (!array_join->isLeft())
+        {
             limit = 0;
+            has_row_reducing_step = true;
+        }
 
         const auto & array_joined_columns = array_join->getColumns();
 
@@ -1007,7 +1020,8 @@ void buildCombinedDAGForMergeChildPlan(
         /// The FINAL limit pushdown gate is checked only on the `ReadFromMergeTree` path, not on
         /// the `ReadFromMerge` child-plan path handled here, so the filter-step flag is unused.
         bool has_filter_step_unused = false;
-        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit, has_filter_step_unused);
+        bool has_row_reducing_step_unused = false;
+        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
     }
 
     if (outer_dag)
@@ -1192,7 +1206,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     bool has_filter_step = false;
-    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step);
+    bool has_row_reducing_step = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step, has_row_reducing_step);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1288,9 +1303,17 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             /// that as the authoritative signal — `joins_to_keep_in_order` alone is not
             /// enough because it intentionally records only `JoinStep` for downstream
             /// `keepLeftPipelineInOrder` calls.
+            ///
+            /// Similarly, a row-reducing step that runs *after* the FINAL merge (preliminary
+            /// `DISTINCT` or non-left `ARRAY JOIN`) makes pushdown unsafe: stopping the merge
+            /// after `N` rows can drop keys that would have survived into the top-`N` once the
+            /// step is applied. `buildSortingDAG` clears the local `limit` for these too, but
+            /// since we bypass that cleared `limit`, we gate on the dedicated
+            /// `has_row_reducing_step` flag instead.
             bool sorting_key_covers_order_by = order_info.input_order->sort_description_for_merging.size() == description.size();
             bool has_deferred_filters = reading->getDeferredRowLevelFilter() || reading->getDeferredPrewhereInfo();
-            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && !has_deferred_filters && !find_reading_ctx.has_join_on_path && sorting_key_covers_order_by)
+            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && !has_row_reducing_step
+                && !has_deferred_filters && !find_reading_ctx.has_join_on_path && sorting_key_covers_order_by)
                 reading->setFinalLimit(sorting.getLimit());
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
@@ -1359,7 +1382,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     bool has_filter_step_unused = false;
-    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused);
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1482,7 +1506,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     bool has_filter_step_unused = false;
-    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused);
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(node, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1580,7 +1605,8 @@ bool wouldReadInOrderBeUseful(
     FixedColumns fixed_columns;
     size_t limit = sorting.getLimit();
     bool has_filter_step_unused = false;
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit, has_filter_step_unused);
+    bool has_row_reducing_step_unused = false;
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit, has_filter_step_unused, has_row_reducing_step_unused);
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
