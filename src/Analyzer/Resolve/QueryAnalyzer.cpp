@@ -70,6 +70,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
@@ -112,7 +113,9 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int ILLEGAL_FINAL;
+    extern const int ILLEGAL_STREAM;
     extern const int SAMPLING_NOT_SUPPORTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int NO_COMMON_TYPE;
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
@@ -818,6 +821,32 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "Storage {} doesn't support sampling",
                     storage->getStorageID().getFullNameNotQuoted());
+
+            if (table_expression_modifiers->hasStream())
+            {
+                #ifndef OS_LINUX
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux.");
+                #else
+                    if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
+
+                    if (storage->isSystemStorage())
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                            "STREAM is not supported for system tables");
+
+                    if (!storage->supportsStreaming())
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+                            "Storage {} doesn't support STREAM",
+                            storage->getName());
+
+                    if (table_expression_modifiers->hasFinal()
+                        || table_expression_modifiers->hasSampleSizeRatio()
+                        || table_expression_modifiers->hasSampleOffsetRatio())
+                        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
+                #endif
+            }
         }
     }
 }
@@ -1820,7 +1849,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
-    assert(matcher_node_typed.isQualified());
+    chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
@@ -1941,7 +1970,7 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
-    assert(matcher_node_typed.isUnqualified());
+    chassert(matcher_node_typed.isUnqualified());
 
     /** There can be edge case if matcher is inside lambda expression.
       * Try to find parent query expression using parent scopes.
