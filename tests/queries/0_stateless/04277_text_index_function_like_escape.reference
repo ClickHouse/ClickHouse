@@ -33,3 +33,4 @@ Text index with array tokenizer also uses the index with LIKE ESCAPE
 Description: text GRANULARITY 100000000
 Parts: 1/4
 Granules: 1024/4096
+A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call

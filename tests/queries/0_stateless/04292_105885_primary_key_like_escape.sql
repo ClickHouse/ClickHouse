@@ -55,4 +55,12 @@ SELECT 'Correctness check: NOT LIKE ... ESCAPE excludes rows starting with abc% 
 
 SELECT * FROM tab WHERE s NOT LIKE 'abc|%done%' ESCAPE '|' ORDER BY s;
 
+SELECT 'A non-ASCII ESCAPE byte is rejected at planning time by the primary-key analyzer';
+
+-- Mirrors the execution-layer validation in `FunctionsStringSearch::executeImpl`:
+-- a single non-ASCII byte is not a valid ESCAPE, so the predicate must be rejected
+-- by `KeyCondition::extractAtomFromTree` before any optimization can drop it.
+SELECT * FROM tab WHERE like(s, 'abc%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
+EXPLAIN indexes = 1 SELECT * FROM tab WHERE like(s, 'abc%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE tab;
