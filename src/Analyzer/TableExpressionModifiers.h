@@ -99,6 +99,9 @@ inline bool operator==(const WatermarkSettings & lhs, const WatermarkSettings & 
     if (lhs.column != rhs.column)
         return false;
 
+    if (lhs.idle_timeout != rhs.idle_timeout)
+        return false;
+
     if ((lhs.expression == nullptr) != (rhs.expression == nullptr))
         return false;
 
