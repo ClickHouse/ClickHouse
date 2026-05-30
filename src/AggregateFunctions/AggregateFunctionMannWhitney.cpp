@@ -142,6 +142,7 @@ private:
     bool continuity_correction{true};
 
 public:
+    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
@@ -312,7 +313,7 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, {}, documentation});
+    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, documentation, {}});
 }
 
 }

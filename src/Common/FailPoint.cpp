@@ -28,8 +28,8 @@ static struct InitFiu
 /// We should define different types of failpoints here. There are four types of them:
 /// - ONCE: the failpoint will only be triggered once.
 /// - REGULAR: the failpoint will always be triggered until disableFailPoint is called.
-/// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, util disableFailPoint is called.
-/// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, util disableFailPoint is called.
+/// - PAUSEABLE_ONCE: the failpoint will be blocked one time when pauseFailPoint is called, until disableFailPoint is called.
+/// - PAUSEABLE: the failpoint will be blocked every time when pauseFailPoint is called, until disableFailPoint is called.
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
@@ -44,6 +44,7 @@ static struct InitFiu
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
     ONCE(smt_commit_write_zk_fail_before_op) \
+    ONCE(smt_restore_attach_retry) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     ONCE(smt_commit_merge_change_version_before_op) \
@@ -61,14 +62,25 @@ static struct InitFiu
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(s3_read_buffer_throw_expired_token) \
+    ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
+    ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_cancel_in_generate) \
+    ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
+    PAUSEABLE(file_cache_pause_before_do_eviction) \
+    REGULAR(cache_filesystem_failure) \
+    REGULAR(file_segment_range_writer_partial_write_then_network_error) \
+    REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
+    ONCE(distributed_cache_simulate_stale_connection) \
+    REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
+    REGULAR(object_storage_queue_fail_after_insert) \
     REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
@@ -78,13 +90,19 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
+    PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
+    PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
+    PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -93,6 +111,7 @@ static struct InitFiu
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
+    ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
@@ -109,6 +128,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
+    PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
@@ -121,9 +141,12 @@ static struct InitFiu
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
+    ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
+    PAUSEABLE_ONCE(backup_pause_on_start) \
+    PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
     REGULAR(sc_intentions_commit_fail) \
@@ -131,6 +154,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
@@ -138,8 +162,11 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
-    PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
-    PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
+    REGULAR(merge_tree_load_statistics_throw) \
+    PAUSEABLE(smt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \
+    REGULAR(smt_merge_selecting_task_reach_memory_limit) \
+    REGULAR(smt_merge_selecting_task_max_part_size) \
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
@@ -147,8 +174,20 @@ static struct InitFiu
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
-    ONCE(parallel_replicas_check_read_mode_always)\
-    REGULAR(lightweight_show_tables)
+    REGULAR(lightweight_show_tables) \
+    REGULAR(smt_part_update_duplicated_part) \
+    REGULAR(check_database_datalake_negative) \
+    REGULAR(restart_replica_fail_after_detach) \
+    REGULAR(database_replicated_force_metadata_digest_check) \
+    PAUSEABLE(truncate_database_tables_pause) \
+    REGULAR(datalake_try_get_table_return_nullptr) \
+    PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    REGULAR(storage_merge_tree_background_schedule_merge_fail) \
+    REGULAR(patch_parts_reverse_column_order) \
+    REGULAR(wide_part_writer_fail_in_add_streams) \
+    REGULAR(compact_part_writer_fail_in_add_streams) \
+    REGULAR(transaction_force_unknown_state_after_commit) \
+    PAUSEABLE(transaction_after_commit_pause)
 
 namespace FailPoints
 {
@@ -170,18 +209,30 @@ struct FailPointChannel
     /// Condition variable for target threads to wait for resume notification
     std::condition_variable resume_cv;
 
-    /// Number of threads currently paused at this failpoint
-    size_t pause_count = 0;
-
     /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
     /// Threads record the epoch when they start waiting, and only wake up
     /// if the current epoch is greater than their recorded epoch.
     size_t resume_epoch = 0;
+
+    /// Pause epoch: incremented each time a thread pauses at this failpoint.
+    /// Used by waitForPause to distinguish new pauses from stale ones:
+    /// after a notify, waitForPause waits for pause_epoch > resume_epoch,
+    /// ensuring the pause happened after the most recent resume.
+    size_t pause_epoch = 0;
+
+    /// Set to true by disableFailPoint so that waitForPause can return
+    /// even when no thread has paused (pause_epoch <= resume_epoch).
+    bool disabled = false;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 {
     fiu_do_on(fail_point_name.c_str(), FailPointInjection::notifyPauseAndWaitForResume(fail_point_name););
+}
+
+bool FailPointInjection::hasAnyFailPointBeenRegistered()
+{
+    return atomic_load_explicit(&has_any_failpoint_been_registered, memory_order_relaxed) != 0;
 }
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
@@ -219,6 +270,7 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     {
         /// Increment resume_epoch to wake up all waiting threads.
         ++iter->second->resume_epoch;
+        iter->second->disabled = true;
         iter->second->resume_cv.notify_all();
         iter->second->pause_cv.notify_all();
         fail_point_wait_channels.erase(iter);
@@ -252,16 +304,13 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     size_t my_resume_epoch = channel->resume_epoch;
 
     /// Signal that a thread has reached and paused at this failpoint
-    ++channel->pause_count;
+    ++channel->pause_epoch;
     channel->pause_cv.notify_all();
 
     /// Wait for resume_epoch to be incremented by notify or disable
     channel->resume_cv.wait(lock, [&] {
         return channel->resume_epoch > my_resume_epoch;
     });
-
-    --channel->pause_count;
-
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -273,9 +322,9 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
     auto channel = iter->second;
 
-    /// Wait until at least one thread has paused at this failpoint
+    /// Wait until a thread has paused at this failpoint after the most recent resume.
     channel->pause_cv.wait(lock, [&] {
-        return channel->pause_count > 0;
+        return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });
 }
 
@@ -295,10 +344,40 @@ void FailPointInjection::waitForResume(const String & fail_point_name)
     });
 }
 
+std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
+{
+    std::vector<FailPointInfo> result;
+
+#define SUB_M(NAME, TP)                                   \
+    result.push_back(                                     \
+        FailPointInfo{                                    \
+            .name = FailPoints::NAME,                     \
+            .type = FailPointType::TP,                    \
+            .enabled = fiu_status(FailPoints::NAME) != 0, \
+        });
+#define ADD_ONCE(NAME) SUB_M(NAME, Once)
+#define ADD_REGULAR(NAME) SUB_M(NAME, Regular)
+#define ADD_PAUSEABLE_ONCE(NAME) SUB_M(NAME, PauseableOnce)
+#define ADD_PAUSEABLE(NAME) SUB_M(NAME, Pauseable)
+    APPLY_FOR_FAILPOINTS(ADD_ONCE, ADD_REGULAR, ADD_PAUSEABLE_ONCE, ADD_PAUSEABLE)
+#undef SUB_M
+#undef ADD_ONCE
+#undef ADD_REGULAR
+#undef ADD_PAUSEABLE_ONCE
+#undef ADD_PAUSEABLE
+
+    return result;
+}
+
 #else // USE_LIBFIU
 
 void FailPointInjection::pauseFailPoint(const String &)
 {
+}
+
+bool FailPointInjection::hasAnyFailPointBeenRegistered()
+{
+    return false;
 }
 
 void FailPointInjection::enableFailPoint(const String &)
@@ -338,6 +417,13 @@ void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfig
 
     if (!fail_point_names.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
+}
+
+std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
+{
+    std::vector<FailPointInfo> result;
+
+    return result;
 }
 
 #endif // USE_LIBFIU

@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -182,7 +180,6 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -261,5 +258,3 @@ catch (...)
 }
 
 }
-
-#endif

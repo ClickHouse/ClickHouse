@@ -235,7 +235,7 @@ public:
             } \
         }
 
-DECLARE_AVX2_SPECIFIC_CODE(
+DECLARE_X86_64_V3_SPECIFIC_CODE(
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
 using MortonND_4D = mortonnd::MortonNDBmi<4, uint64_t>;
@@ -291,8 +291,8 @@ public:
                                         TargetSpecific::Default::FunctionMortonDecode>();
 
 #if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::AVX2,
-                                        TargetSpecific::AVX2::FunctionMortonDecode>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+                                        TargetSpecific::x86_64_v3::FunctionMortonDecode>();
 #endif
     }
 

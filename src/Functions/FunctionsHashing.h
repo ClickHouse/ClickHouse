@@ -26,12 +26,8 @@
 #include <bit>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -81,14 +77,11 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
-        const ColumnArray::Offsets * offsets = nullptr;
 
         size_t size() const
         {
-            assert(key0 && key1);
-            assert(key0->size() == key1->size());
-            if (offsets != nullptr && !offsets->empty())
-                return offsets->back();
+            chassert(key0 && key1);
+            chassert(key0->size() == key1->size());
             return key0->size();
         }
 
@@ -96,18 +89,18 @@ namespace impl
         {
             if (is_const)
                 i = 0;
-            assert(key0->size() == key1->size());
-            if (offsets != nullptr && i > 0)
-            {
-                const auto * const begin = std::upper_bound(offsets->begin(), offsets->end(), i - 1);
-                const auto * upper = std::upper_bound(begin, offsets->end(), i);
-                if (upper != offsets->end())
-                    i = upper - begin;
-            }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
-            assert(key0->size() > i);
+            chassert(key0->size() > i);
             return {key0data[i], key1data[i]};
+        }
+
+        /// Replicate key columns so that each array element gets the key of its parent row.
+        SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
+        {
+            if (is_const)
+                return *this;
+            return {.key0 = key0->replicate(offsets), .key1 = key1->replicate(offsets), .is_const = false};
         }
     };
 
@@ -133,8 +126,8 @@ namespace impl
 
         SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        assert(result.key0);
-        assert(result.key1);
+        chassert(result.key0);
+        chassert(result.key1);
 
         if (!checkColumn<ColumnUInt64>(*result.key0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
@@ -885,10 +878,10 @@ public:
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v4,
+            TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
     #endif
     }
 
@@ -943,10 +936,8 @@ private:
 
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
-                    if constexpr (std::is_same_v<ToType, UInt64>)
-                        hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
-                    else
-                        hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                    static_assert(std::is_same_v<ToType, UInt64>, "");
+                    hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
                 }
                 else
                 {
@@ -976,15 +967,18 @@ private:
                     return executeIntType<FromType, first>(key_cols, full_column.get(), vec_to);
                 }
             }
-            auto value = col_from_const->template getValue<FromType>();
+            FromType value;
+            if constexpr (std::is_same_v<FromType, float>)
+                /// Float32 doesn't reliably roundtrip through Field (which only has Float64) in practice.
+                value = assert_cast<const ColumnFloat32 &>(col_from_const->getDataColumn()).getData()[0];
+            else
+                value = col_from_const->template getValue<FromType>();
 
             ToType hash;
             if constexpr (Impl::use_int_hash_for_pods)
             {
-                if constexpr (std::is_same_v<ToType, UInt64>)
-                    hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
-                else
-                    hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+                static_assert(std::is_same_v<ToType, UInt64>, "");
+                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
             }
             else
             {
@@ -1228,9 +1222,8 @@ private:
 
             if constexpr (Keyed)
             {
-                KeyColumnsType key_cols_tmp{key_cols};
-                key_cols_tmp.offsets = &offsets;
-                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
+                auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
             }
             else
                 executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
@@ -1571,9 +1564,9 @@ public:
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
         selector
-            .registerImplementation<TargetArch::AVX512F, TargetSpecific::AVX512F::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+            .registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 #endif
     }
 
@@ -1665,7 +1658,7 @@ struct URLHierarchyHashImpl
 };
 
 
-class FunctionURLHash : public IFunction
+class FunctionURLHash final : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";

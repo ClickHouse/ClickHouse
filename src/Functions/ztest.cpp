@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionTwoSampleProportionsZTest : public IFunction
+class FunctionTwoSampleProportionsZTest final : public IFunction
 {
 public:
     static constexpr auto POOLED = "pooled";
@@ -248,7 +248,7 @@ SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
     FunctionDocumentation::IntroducedIn introduced_in = {22, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionTwoSampleProportionsZTest>();
+    factory.registerFunction<FunctionTwoSampleProportionsZTest>(documentation);
 }
 
 }

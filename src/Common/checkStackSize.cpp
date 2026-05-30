@@ -3,6 +3,7 @@
 #include <base/scope_guard.h>
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/Fiber.h>
 #include <sys/resource.h>
 #include <pthread.h>

@@ -3,6 +3,7 @@
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
+#include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
@@ -10,11 +11,15 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
 
 
 #if USE_AVRO && USE_PARQUET
 
-#include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Core/Settings.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -42,6 +47,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 
 namespace DB
 {
@@ -53,6 +59,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
@@ -66,6 +73,15 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsString google_project_id;
+    extern const DatabaseDataLakeSettingsString google_service_account;
+    extern const DatabaseDataLakeSettingsString google_metadata_service;
+    extern const DatabaseDataLakeSettingsString google_adc_client_id;
+    extern const DatabaseDataLakeSettingsString google_adc_client_secret;
+    extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
+    extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
+    extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
+    extern const DatabaseDataLakeSettingsBool force_add_bucket;
 }
 
 namespace Setting
@@ -100,6 +116,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char lightweight_show_tables[];
+    extern const char datalake_try_get_table_return_nullptr[];
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -139,11 +156,11 @@ void DatabaseDataLake::validateSettings()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
-    if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
-
     if (catalog_impl)
         return catalog_impl;
+
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
     auto catalog_parameters = DataLake::CatalogSettings{
         .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
@@ -171,7 +188,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
-            catalog_impl = std::make_shared<DataLake::RestCatalog>(
+            catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
@@ -180,6 +197,36 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        {
+            std::string google_project_id = settings[DatabaseDataLakeSetting::google_project_id].value;
+            std::string google_service_account = settings[DatabaseDataLakeSetting::google_service_account].value;
+            std::string google_metadata_service = settings[DatabaseDataLakeSetting::google_metadata_service].value;
+            std::string google_adc_client_id = settings[DatabaseDataLakeSetting::google_adc_client_id].value;
+            std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
+            std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
+            std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
+
+            if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "reading google credentials from file is deprecated");
+            }
+
+            catalog_impl = std::make_shared<DataLake::BigLakeCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                google_project_id,
+                google_service_account,
+                google_metadata_service,
+                google_adc_client_id,
+                google_adc_client_secret,
+                google_adc_refresh_token,
+                google_adc_quota_project_id,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -248,6 +295,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             break;
         }
     }
+
     return catalog_impl;
 }
 
@@ -278,6 +326,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         }
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
+        case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
         {
             switch (type)
             {
@@ -429,7 +478,7 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
 }
 
 bool DatabaseDataLake::empty() const
@@ -452,6 +501,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     /// This is added to test that lightweight queries like 'SHOW TABLES' dont end up fetching the table
     fiu_do_on(FailPoints::lightweight_show_tables,
@@ -459,8 +510,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         std::this_thread::sleep_for(std::chrono::seconds(10));
     });
 
+    fiu_do_on(FailPoints::datalake_try_get_table_return_nullptr,
+    {
+        return nullptr;
+    });
+
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
-    if (!lightweight && with_vended_credentials)
+    if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
@@ -499,7 +555,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// so we have a separate setting to know whether we should even try to fetch them.
     if (args.size() == 1)
     {
-        std::array<DatabaseDataLakeCatalogType, 2> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
+        std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
         if (table_metadata.hasStorageCredentials())
         {
             LOG_DEBUG(log, "Getting credentials");
@@ -568,7 +624,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
         if (!azure_configuration)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
-        auto rest_catalog = std::static_pointer_cast<DataLake::RestCatalog>(catalog);
+        auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
         azure_configuration->setInitializationAsOneLake(
@@ -578,6 +634,23 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
+#endif
+    }
+
+    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
+    {
+#if USE_AWS_S3
+        auto s3_configuration = std::dynamic_pointer_cast<StorageS3Configuration>(configuration);
+        if (!s3_configuration)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not S3 type for BigLake catalog");
+        auto biglake_catalog = std::static_pointer_cast<DataLake::BigLakeCatalog>(catalog);
+        s3_configuration->setInitializationAsBigLake(
+            biglake_catalog->getGoogleADCClientId(),
+            biglake_catalog->getGoogleADCClientSecret(),
+            biglake_catalog->getGoogleADCRefreshToken()
+        );
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
 #endif
     }
 
@@ -595,9 +668,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    const auto catalog_uuid = table_metadata.getTableUUID();
+    const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
+
     if (can_use_parallel_replicas && !is_secondary_query)
     {
-        auto storage_id = StorageID(getDatabaseName(), name);
+        auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
@@ -621,9 +697,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name, table_uuid))),
         context_copy,
-        StorageID(getDatabaseName(), name),
+        StorageID(getDatabaseName(), name, table_uuid),
         /* columns */columns,
         /* constraints */ConstraintsDescription{},
         /* comment */"",
@@ -659,14 +735,13 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
     bool skip_not_loaded) const
 {
     Tables tables;
-    auto catalog = getCatalog();
     DB::Names iceberg_tables;
 
     /// Do not throw here, because this might be, for example, a query to system.tables.
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = catalog->getTables();
+        iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
@@ -693,6 +768,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
                     StoragePtr storage = nullptr;
                     try
                     {
+                        LOG_INFO(log, "Get table information for table {}", table_name);
                         storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
                     }
                     catch (...)
@@ -736,8 +812,12 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        [[maybe_unused]] bool inserted = tables.emplace(table_name, futures[future_index].get()).second;
-        chassert(inserted);
+        auto table_ptr = futures[future_index].get();
+        if (table_ptr)
+        {
+            [[maybe_unused]] bool inserted = tables.emplace(table_name, table_ptr).second;
+            chassert(inserted);
+        }
         future_index++;
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
@@ -748,7 +828,6 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     const FilterByNameFunction & filter_by_table_name,
     bool /*skip_not_loaded*/) const
 {
-    auto catalog = getCatalog();
     DB::Names iceberg_tables;
     std::vector<LightWeightTableDetails> result;
 
@@ -756,7 +835,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = catalog->getTables();
+        iceberg_tables = getCatalog()->getTables();
     }
     catch (...)
     {
@@ -782,6 +861,17 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     return create_query;
 }
 
+void DatabaseDataLake::checkDatabase() const
+{
+    auto catalog = getCatalog();
+    /// This function checks if we can access catalog and get tables list.
+    /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
+    std::ignore = catalog->empty();
+
+
+    LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
+}
+
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
@@ -789,6 +879,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
@@ -861,6 +953,23 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
+        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        if (!auth_header_str.empty())
+        {
+            /// Validate `auth_header` against the forbidden HTTP header filter at creation time.
+            /// Only headers with a valid `name: value` format are accepted.
+            auto pos = auth_header_str.find(':');
+            if (pos != std::string::npos)
+            {
+                DB::HTTPHeaderEntries header_entries{{auth_header_str.substr(0, pos), auth_header_str.substr(pos + 1)}};
+                args.context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auth header format. Expected 'HeaderName: HeaderValue'");
+            }
+        }
+
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
         /// There is no URL you need to provide in constructor, even if we would want it
@@ -903,6 +1012,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
+            case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
@@ -979,7 +1089,14 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             std::move(engine_for_tables),
             args.uuid);
     };
-    factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
+    /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
+    /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
+    /// for runtime-dependent or composite source checks exist.
+    factory.registerDatabase("DataLakeCatalog", create_fn, {
+        .supports_arguments = true,
+        .supports_settings = true,
+        .is_external = true,
+    });
 }
 
 }

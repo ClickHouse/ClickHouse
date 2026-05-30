@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class FunctionGetMaxTableNameLengthForDatabase : public IFunction
+class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
@@ -90,6 +90,7 @@ REGISTER_FUNCTION(getMaxTableName)
             └─────────────────────────────────────────────┘
             )"
         }},
+        .introduced_in = {25, 1},
         .category = FunctionDocumentation::Category::Other
     });
 }

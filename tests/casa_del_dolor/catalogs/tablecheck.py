@@ -167,8 +167,7 @@ class SparkAndClickHouseCheck:
                 [col.column_name for col in order_by_cols]
             )
             # Generate hash for each row in ClickHouse
-            clickhouse_hash = client.query(
-                f"""
+            clickhouse_hash = client.query(f"""
             SELECT lower(hex(MD5(arrayStringConcat(groupArray(row_hash), '')))) as table_hash
             FROM (
                 SELECT lower(hex(MD5({concat_cols}))) as row_hash
@@ -176,8 +175,7 @@ class SparkAndClickHouseCheck:
                       FROM {table.get_clickhouse_path()}) x
                 ORDER BY {', '.join([f'{k} ASC NULLS FIRST' for k in clickhouse_strings.keys()])}
             ){clickhouse_predicate};
-            """
-            )
+            """)
             if not isinstance(clickhouse_hash, str) or clickhouse_hash == "":
                 self.logger.error(f"No hash found for {table.get_clickhouse_path()}")
                 return False
@@ -189,5 +187,5 @@ class SparkAndClickHouseCheck:
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()
-            self.logger.error(str(e))
+            self.logger.exception(e)
         return True

@@ -20,20 +20,22 @@
 #include <Common/CurrentMetrics.h>
 
 
-using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
-using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
-
-using Key = UInt64;
-using Value = UInt64;
-using Source = std::vector<Key>;
-
-
 namespace CurrentMetrics
 {
     extern const Metric LocalThread;
     extern const Metric LocalThreadActive;
     extern const Metric LocalThreadScheduled;
 }
+
+namespace
+{
+
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
+
+using Key = UInt64;
+using Value = UInt64;
+using Source = std::vector<Key>;
 
 template <typename Map>
 struct AggregateIndependent
@@ -99,7 +101,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        assert(place != nullptr);
+                        chassert(place != nullptr);
                         updater(place->getMapped()); // NOLINT
                         continue;
                     }
@@ -107,7 +109,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
 
                     bool inserted;
                     map.emplace(*it, place, inserted);
-                    assert(place != nullptr);
+                    chassert(place != nullptr);
 
                     if (inserted)
                         creator(place->getMapped());
@@ -276,8 +278,9 @@ struct Merger
     void operator()(Value & dst, const Value & src) const { dst += src; }
 };
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleParallelAggregation2(int argc, char ** argv)
 {
     size_t n = std::stol(argv[1]);
     size_t num_threads = std::stol(argv[2]);

@@ -16,9 +16,11 @@
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/getBackupDataFileName.h>
+#include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
+#include <Common/FailPoint.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BackupLog.h>
@@ -68,6 +70,12 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
+}
+
+namespace FailPoints
+{
+    extern const char backup_pause_on_start[];
+    extern const char restore_pause_on_start[];
 }
 
 namespace ErrorCodes
@@ -148,7 +156,7 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
+        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = backup_settings.read_from_filesystem_cache;
         return read_settings;
     }
 
@@ -165,8 +173,8 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         read_settings.read_through_distributed_cache = false;
+        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = false;
         return read_settings;
     }
 
@@ -384,10 +392,7 @@ struct BackupsWorker::BackupStarter
         , backup_context(Context::createCopy(query_context))
     {
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
-
         backup_context->makeQueryContext();
-        backup_context->checkSettingsConstraints(backup_settings.core_settings, SettingSource::QUERY);
-        backup_context->applySettingsChanges(backup_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
@@ -395,7 +400,7 @@ struct BackupsWorker::BackupStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_backup && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+        if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
@@ -463,6 +468,8 @@ struct BackupsWorker::BackupStarter
 
     void doBackup()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::backup_pause_on_start);
+
         chassert(!backup_coordination);
         if (on_cluster && !is_internal_backup)
         {
@@ -579,7 +586,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }
@@ -861,10 +868,7 @@ struct BackupsWorker::RestoreStarter
         , restore_context(Context::createCopy(query_context))
     {
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
-
         restore_context->makeQueryContext();
-        restore_context->checkSettingsConstraints(restore_settings.core_settings, SettingSource::QUERY);
-        restore_context->applySettingsChanges(restore_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
@@ -872,7 +876,7 @@ struct BackupsWorker::RestoreStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+        if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
@@ -920,6 +924,8 @@ struct BackupsWorker::RestoreStarter
 
     void doRestore()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::restore_pause_on_start);
+
         chassert(!restore_coordination);
         if (on_cluster && !is_internal_restore)
         {
@@ -1005,7 +1011,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }

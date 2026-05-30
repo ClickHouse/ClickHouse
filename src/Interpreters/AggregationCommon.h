@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <Columns/IColumn.h>
@@ -249,7 +250,7 @@ static T inline packFixedShuffle(
     size_t idx,
     const uint8_t * __restrict masks)
 {
-    assert(num_srcs > 0);
+    chassert(num_srcs > 0);
 
     __m128i res = _mm_shuffle_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(srcs[0] + elem_sizes[0] * idx)),

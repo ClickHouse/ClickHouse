@@ -35,9 +35,10 @@ class StorageDictionary;
 class IKeyValueEntity;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
 struct Settings;
+struct ExplainFormatSettings;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -98,7 +99,7 @@ public:
 
         size_t keysCount() const
         {
-            assert(key_names_left.size() == key_names_right.size());
+            chassert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 
@@ -122,11 +123,14 @@ public:
             return key_names_left.empty() && key_names_right.empty() && !on_filter_condition_left && !on_filter_condition_right
                 && analyzer_left_filter_condition_column_name.empty() && analyzer_right_filter_condition_column_name.empty();
         }
+
+        String formatPretty(const ExplainFormatSettings & settings) const;
     };
 
     using Clauses = std::vector<JoinOnClause>;
 
     static std::string formatClauses(const Clauses & clauses, bool short_format = false);
+    static std::string formatClausesPretty(const Clauses & clauses, const ExplainFormatSettings & settings);
 
 private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
@@ -148,6 +152,7 @@ private:
     const size_t max_joined_block_rows = 0;
     const size_t max_joined_block_bytes = 0;
     const bool joined_block_split_single_row = false;
+    const bool parallel_non_joined_rows_processing = true;
     std::vector<JoinAlgorithm> join_algorithms;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
@@ -160,6 +165,9 @@ private:
     const bool allow_join_sorting = false;
     const bool allow_dynamic_type_in_join_keys = false;
     const bool enable_lazy_columns_replication = false;
+    const bool enable_software_prefetch_in_join = false;
+    const size_t max_bytes_before_external_join = 0;
+    const bool enable_join_fixed_hash_table_conversion = false;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -311,6 +319,7 @@ public:
     bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
+    bool allowParallelNonJoinedRowsProcessing() const { return parallel_non_joined_rows_processing; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }
@@ -320,6 +329,9 @@ public:
     UInt64 temporaryFilesBufferSize() const { return temporary_files_buffer_size; }
     bool needStreamWithNonJoinedRows() const;
     bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }
+    bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
+    size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
+    bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
 
     bool oneDisjunct() const;
 

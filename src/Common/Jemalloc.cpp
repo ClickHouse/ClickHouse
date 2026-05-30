@@ -2,34 +2,23 @@
 
 #if USE_JEMALLOC
 
-#include <Common/FramePointers.h>
-#include <Common/StringUtils.h>
-#include <Common/getExecutablePath.h>
-#include <Common/Exception.h>
-#include <Common/StackTrace.h>
-#include <Common/Stopwatch.h>
-#include <Common/TraceSender.h>
-#include <Common/MemoryTracker.h>
-#include <Common/logger_useful.h>
-#include <Core/ServerSettings.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <ranges>
-#include <base/hex.h>
+#    include <Common/Exception.h>
+#    include <Common/FramePointers.h>
+#    include <Common/MemoryTracker.h>
+#    include <Common/StackTrace.h>
+#    include <Common/Stopwatch.h>
+#    include <Common/TraceSender.h>
+#    include <Common/logger_useful.h>
 
-#include <unordered_set>
-
-#define STRINGIFY_HELPER(x) #x
-#define STRINGIFY(x) STRINGIFY_HELPER(x)
+#    define STRINGIFY_HELPER(x) #x
+#    define STRINGIFY(x) STRINGIFY_HELPER(x)
 
 namespace ProfileEvents
 {
-    extern const Event MemoryAllocatorPurge;
-    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
-    extern const Event JemallocFailedAllocationSampleTracking;
-    extern const Event JemallocFailedDeallocationSampleTracking;
+extern const Event MemoryAllocatorPurge;
+extern const Event MemoryAllocatorPurgeTimeMicroseconds;
+extern const Event JemallocFailedAllocationSampleTracking;
+extern const Event JemallocFailedDeallocationSampleTracking;
 }
 
 namespace DB
@@ -37,7 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace Jemalloc
@@ -46,7 +35,7 @@ namespace Jemalloc
 void purgeArenas()
 {
     Stopwatch watch;
-    mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+    je_mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
 }
@@ -55,7 +44,7 @@ void checkProfilingEnabled()
 {
     bool active = true;
     size_t active_size = sizeof(active);
-    mallctl("opt.prof", &active, &active_size, nullptr, 0);
+    je_mallctl("opt.prof", &active, &active_size, nullptr, 0);
 
     if (!active)
         throw Exception(
@@ -64,31 +53,15 @@ void checkProfilingEnabled()
             "set: MALLOC_CONF=background_thread:true,prof:true");
 }
 
-void setProfileActive(bool value)
-{
-    checkProfilingEnabled();
-    bool active = true;
-    size_t active_size = sizeof(active);
-    mallctl("prof.active", &active, &active_size, nullptr, 0);
-    if (active == value)
-    {
-        LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is already {}", active ? "enabled" : "disabled");
-        return;
-    }
-
-    setValue("prof.active", value);
-    LOG_TRACE(getLogger("SystemJemalloc"), "Profiling is {}", value ? "enabled" : "disabled");
-}
-
-std::string_view flushProfile(const std::string & file_prefix)
+std::string_view flushProfile(const char * file_prefix)
 {
     checkProfilingEnabled();
     char * prefix_buffer;
     size_t prefix_size = sizeof(prefix_buffer);
-    int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
+    int n = je_mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
-        mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
+        je_mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
         return getLastFlushProfileForThread();
     }
 
@@ -96,7 +69,7 @@ std::string_view flushProfile(const std::string & file_prefix)
     std::string profile_dump_path = fmt::format("{}.{}.{}.heap", file_prefix, getpid(), profile_counter.fetch_add(1));
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
-    mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
+    je_mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return getLastFlushProfileForThread();
 }
 
@@ -110,138 +83,31 @@ void setMaxBackgroundThreads(size_t max_threads)
     setValue("max_background_threads", max_threads);
 }
 
-void symbolizeHeapProfile(const std::string & input_filename, const std::string & output_filename)
+void setProfileSamplingRate(size_t lg_prof_sample)
 {
-    ReadBufferFromFile in(input_filename);
-    WriteBufferFromFile out(output_filename);
+    /// `prof.lg_sample` / `prof.reset` only exist on jemalloc builds with `JEMALLOC_PROF`.
+    /// When absent, treat the call as a no-op (just like the other `prof.*` setters in `setup`)
+    /// instead of asserting via the strict `getValue`.
+    if (size_t current = 0; !tryGetValue("prof.lg_sample", current) || current == lg_prof_sample)
+        return;
 
-    /// Collect all unique addresses from the heap profile
-    std::unordered_set<UInt64> addresses;
-    std::string profile_data;
-    std::string line;
+    je_mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
+}
 
-    /// Helper to parse hex address from string_view and advance it
-    auto parse_hex = [](std::string_view & src) -> std::optional<UInt64>
+
+std::string getStats()
+{
+    std::string result;
+    auto callback = [](void * opaque, const char * data)
     {
-        /// Skip "0x" prefix if present
-        if (src.size() >= 2 && src[0] == '0' && (src[1] == 'x' || src[1] == 'X'))
-            src.remove_prefix(2);
-
-        if (src.empty())
-            return std::nullopt;
-
-        UInt64 address = 0;
-        size_t processed = 0;
-
-        /// Parse hex digits
-        for (size_t i = 0; i < src.size() && processed < 16; ++i)
-        {
-            char c = src[i];
-            if (isHexDigit(c))
-            {
-                address = (address << 4) | unhex(c);
-                ++processed;
-            }
-            else
-                break;
-        }
-
-        if (processed == 0)
-            return std::nullopt;
-
-        src.remove_prefix(processed);
-        return address;
+        auto * str = static_cast<std::string *>(opaque);
+        str->append(data);
     };
-
-    /// Collect addresses
-    while (!in.eof())
-    {
-        line.clear();
-        readStringUntilNewlineInto(line, in);
-        in.tryIgnore(1); /// skip EOL (if not EOF)
-
-        profile_data += line;
-        profile_data += '\n';
-
-        if (line.empty())
-            continue;
-
-        /// Stack traces start with '@' followed by hex addresses
-        if (line[0] == '@')
-        {
-            std::string_view line_addresses(line.data() + 1, line.size() - 1);
-
-            bool first = true;
-            while (!line_addresses.empty())
-            {
-                trimLeft(line_addresses);
-                if (line_addresses.empty())
-                    break;
-
-                auto address = parse_hex(line_addresses);
-                if (!address.has_value())
-                    break;
-
-                /// Need to subtract 1 for non first addresses to apply the same fix as in jeprof::FixCallerAddresses()
-                addresses.insert(first ? address.value() : address.value() - 1);
-
-                first = false;
-            }
-        }
-    }
-
-    /// Symbolized profile header
-    writeString("--- symbol\n", out);
-    if (auto binary_path = getExecutablePath(); !binary_path.empty())
-    {
-        writeString("binary=", out);
-        writeString(binary_path, out);
-        writeChar('\n', out);
-    }
-
-    /// Symbolize each unique address
-    for (UInt64 address : addresses)
-    {
-        FramePointers fp;
-        fp[0] = reinterpret_cast<void *>(address);
-
-        /// Note, callback calls inlines first, while jeprof needs the opposite
-        /// Note, cannot use frame.virtual_addr since it is empty for inlines
-        std::vector<std::string> symbols;
-        auto symbolize_callback = [&](const StackTrace::Frame & frame)
-        {
-            if (!frame.virtual_addr)
-            {
-                /// jeprof adds [inline] on it's own, so no need to do this here
-                symbols.push_back(frame.symbol.value_or("??"));
-            }
-            else
-                symbols.push_back(frame.symbol.value_or("??"));
-        };
-        /// Note, @fatal (handling inlines) is slow (few milliseconds vs ~10 seconds)
-        /// We can add SYSTEM JEMALLOC FLUSH FAST (or similar)
-        ///
-        /// TODO: introduce cache (we have multiple caches for this, need some generic approach)
-        StackTrace::forEachFrame(fp, 0, 1, symbolize_callback, /* fatal= */ true);
-
-        writePointerHex(reinterpret_cast<const void *>(address), out);
-
-        std::string_view separator(" ");
-        /// Reverse, since forEachFrame() adds inline frames first
-        for (const auto & symbol : std::ranges::reverse_view(symbols))
-        {
-            writeString(separator, out);
-            writeString(symbol, out);
-            separator = std::string_view("--");
-        }
-        writeChar('\n', out);
-    }
-
-    writeString("---\n", out);
-    writeString("--- heap\n", out);
-    writeString(profile_data, out);
-
-    out.finalize();
+    size_t epoch = 1;
+    size_t sz = sizeof(epoch);
+    je_mallctl("epoch", &epoch, &sz, &epoch, sz);
+    je_malloc_stats_print(callback, &result, nullptr);
+    return result;
 }
 
 namespace
@@ -270,7 +136,7 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
                 .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
     }
-    catch (...)
+    catch (...) // Ok: non-critical profiling, tracked via ProfileEvents
     {
         ProfileEvents::increment(ProfileEvents::JemallocFailedAllocationSampleTracking);
     }
@@ -293,7 +159,7 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
                 .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
     }
-    catch (...)
+    catch (...) // Ok: non-critical profiling, tracked via ProfileEvents
     {
         ProfileEvents::increment(ProfileEvents::JemallocFailedDeallocationSampleTracking);
     }
@@ -321,7 +187,8 @@ void setup(
     bool enable_global_profiler,
     bool enable_background_threads,
     size_t max_background_threads_num,
-    bool collect_global_profile_samples_in_trace_log)
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate)
 {
     if (enable_global_profiler)
     {
@@ -334,10 +201,55 @@ void setup(
     if (max_background_threads_num)
         setValue("max_background_threads", max_background_threads_num);
 
+    if (profiler_sampling_rate != default_profiler_sampling_rate)
+        setProfileSamplingRate(profiler_sampling_rate);
+
     collect_global_profiles_in_trace_log = collect_global_profile_samples_in_trace_log;
     setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
     setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
     setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
+}
+
+void verifySetup(
+    bool enable_global_profiler,
+    bool enable_background_threads,
+    size_t max_background_threads_num,
+    bool collect_global_profile_samples_in_trace_log,
+    size_t profiler_sampling_rate)
+{
+    /// Verify that the settings match what was configured by the earlier `setup` call.
+    /// Catch mismatches between server settings defaults and the manually defined config names in `BaseDaemon`.
+    auto log_warning = [](std::string_view setting)
+    {
+        chassert(false, fmt::format("Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting));
+        LOG_WARNING(
+            &Poco::Logger::get("Jemalloc"), "Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting);
+    };
+
+    /// `prof.*` mallctls (including `prof.thread_active_init` / `prof.lg_sample`) only exist when
+    /// jemalloc was built with `JEMALLOC_PROF`. When absent, `setup` could not have applied the
+    /// corresponding settings either (the writes were no-ops), so there is nothing to verify and
+    /// reading a missing MIB must not abort debug builds.
+    if (bool current_thread_active_init = false; getThreadProfileInitMib().tryGetValue(current_thread_active_init)
+        && current_thread_active_init != enable_global_profiler)
+        log_warning(config_enable_global_profiler);
+    /// `background_thread` and `max_background_threads` mallctls only exist when jemalloc was built
+    /// with `JEMALLOC_BACKGROUND_THREAD` (e.g. not on macOS). When unavailable, `je_mallctl` returns
+    /// `ENOENT` and any `setBackgroundThreads`/`setMaxBackgroundThreads` calls in `setup` were no-ops,
+    /// so we have nothing to verify and must not compare against an uninitialized read.
+    if (bool current_background_thread = false; tryGetValue("background_thread", current_background_thread)
+        && current_background_thread != enable_background_threads)
+        log_warning(config_enable_background_threads);
+    if (size_t current_max_background_threads = 0; max_background_threads_num
+        && tryGetValue("max_background_threads", current_max_background_threads)
+        && current_max_background_threads != max_background_threads_num)
+        log_warning(config_max_background_threads_num);
+    if (size_t current_lg_sample = 0; profiler_sampling_rate != default_profiler_sampling_rate
+        && tryGetValue("prof.lg_sample", current_lg_sample)
+        && current_lg_sample != profiler_sampling_rate)
+        log_warning(config_profiler_sampling_rate);
+    if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
+        log_warning(config_collect_global_profile_samples_in_trace_log);
 }
 
 
@@ -345,7 +257,6 @@ const MibCache<bool> & getThreadProfileActiveMib()
 {
     static MibCache<bool> thread_profile_active("thread.prof.active");
     return thread_profile_active;
-
 }
 
 const MibCache<bool> & getThreadProfileInitMib()
@@ -359,6 +270,28 @@ std::string_view getLastFlushProfileForThread()
     return last_flush_profile;
 }
 
+}
+
+ScopedJemallocThreadArena::ScopedJemallocThreadArena(unsigned arena_idx)
+{
+    if (arena_idx == 0)
+        return;
+
+    /// `thread.arena` returns the previous value via the read pointer and sets the new one.
+    size_t previous_size = sizeof(previous_arena);
+    int err = je_mallctl("thread.arena", &previous_arena, &previous_size, &arena_idx, sizeof(arena_idx));
+    /// We deliberately don't throw here: if jemalloc rejects the switch (e.g. arena doesn't exist),
+    /// fall back to the previous behavior of allocating in the default arena. The cost is fragmentation,
+    /// not correctness.
+    active = (err == 0);
+}
+
+ScopedJemallocThreadArena::~ScopedJemallocThreadArena()
+{
+    if (!active)
+        return;
+
+    je_mallctl("thread.arena", nullptr, nullptr, &previous_arena, sizeof(previous_arena));
 }
 
 }
