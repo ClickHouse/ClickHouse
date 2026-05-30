@@ -722,8 +722,17 @@ if not args.use_existing_tables:
         # may have missed in unusual whitespace/comment shapes.
         stripped = re.sub(r"\bSETTINGS\s*,\s*", "SETTINGS ", stripped, flags=re.IGNORECASE)
         # Drop an empty SETTINGS clause (the only setting was the dropped one),
-        # along with any whitespace that preceded the SETTINGS keyword.
-        stripped = re.sub(r"\s*\bSETTINGS\s*(;|$)", r"\1", stripped, flags=re.IGNORECASE)
+        # along with any whitespace that preceded the SETTINGS keyword. The
+        # clause is considered empty when only whitespace or comments remain
+        # between `SETTINGS` and the terminating `;`/end, so a comment that
+        # sat between `SETTINGS` and the removed first setting is dropped too
+        # instead of being left as a stray `SETTINGS /*...*/ ;`.
+        stripped = re.sub(
+            r"\s*\bSETTINGS\b(?:\s|/\*.*?\*/|--[^\n]*|#[^\n]*)*(;|$)",
+            r"\1",
+            stripped,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
         return stripped
 
     # Settings allowed to be silently stripped from a CREATE TABLE on an
