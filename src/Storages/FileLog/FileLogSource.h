@@ -11,7 +11,7 @@ namespace Poco
 }
 namespace DB
 {
-class FileLogSource : public ISource
+class FileLogSource final : public ISource
 {
 public:
     FileLogSource(
@@ -29,7 +29,7 @@ public:
 
     bool noRecords() { return !consumer || consumer->noRecords(); }
 
-    void onFinish();
+    void close();
 
     ~FileLogSource() override;
 

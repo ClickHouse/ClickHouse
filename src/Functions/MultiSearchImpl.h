@@ -3,6 +3,7 @@
 #include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -42,7 +43,7 @@ struct MultiSearchImpl
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
                 name, needles_arr.size(), std::to_string(std::numeric_limits<UInt8>::max()));
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
@@ -58,7 +59,7 @@ struct MultiSearchImpl
             for (size_t j = 0; j < input_rows_count; ++j)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset;
                 if (iteration == 0 || !res[j])
                     res[j] = searcher.searchOne(haystack, haystack_end);
                 prev_haystack_offset = haystack_offsets[j];
@@ -89,17 +90,17 @@ struct MultiSearchImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             needles.reserve(needles_offsets[i] - prev_needles_offset);
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
-                needles.emplace_back(needles_data_string.getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j));
 
             const auto * const haystack = &haystack_data[prev_haystack_offset];
-            const size_t haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             size_t iteration = 0;
             for (const auto & needle : needles)

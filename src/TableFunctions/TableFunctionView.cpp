@@ -8,7 +8,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionView.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -29,7 +29,7 @@ const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
     return *create.select;
 }
 
-std::vector<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
 }
@@ -50,18 +50,18 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /
 
 ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    assert(create.select);
-    assert(create.children.size() == 1);
-    assert(create.children[0]->as<ASTSelectWithUnionQuery>());
+    chassert(create.select);
+    chassert(create.children.size() == 1);
+    chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    Block sample_block;
+    SharedHeader sample_block;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.children[0], context);
     else
         sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
 
-    return ColumnsDescription(sample_block.getNamesAndTypesList());
+    return ColumnsDescription(sample_block->getNamesAndTypesList());
 }
 
 StoragePtr TableFunctionView::executeImpl(
@@ -75,7 +75,7 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionView>({}, {.allow_readonly = true});
 }
 
 }

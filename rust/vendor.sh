@@ -4,7 +4,7 @@ set -e
 
 # std is required for sanitizers builds
 # and we need to match toolchain version for std (to vendor proper dependencies)
-TOOLCHAIN=nightly-2024-12-01
+TOOLCHAIN=nightly-2026-03-22
 function cargo() { rustup run "$TOOLCHAIN" cargo "$@"; }
 function rustc() { rustup run "$TOOLCHAIN" rustc "$@"; }
 rustup component add --toolchain "$TOOLCHAIN" rust-src
@@ -22,6 +22,9 @@ cargo generate-lockfile
 # Clean the vendor repo
 rm -rf "${CH_TOP_DIR:?}"/contrib/rust_vendor/*
 
+cd "$CH_TOP_DIR"/rust/chcache || exit 1
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+
 cd "$CH_TOP_DIR"/rust/workspace || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
@@ -37,6 +40,10 @@ cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$
 cd "$CH_TOP_DIR"/contrib/chdig || exit 1
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 
+# wasmtime
+cd "$CH_TOP_DIR"/contrib/wasmtime/crates/c-api || exit 1
+cargo vendor --no-delete --locked --versioned-dirs --manifest-path Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+
 # Just in case
 cd "$CH_TOP_DIR"/rust/workspace
 
@@ -44,6 +51,18 @@ cd "$CH_TOP_DIR"/rust/workspace
 RUSTC_ROOT=$(rustc --print=sysroot)
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
 cargo vendor --no-delete --locked --versioned-dirs --manifest-path "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.toml "$CH_TOP_DIR"/contrib/rust_vendor
+
+# Now let's remove windows crates - we don't support windows.
+#
+# Note, there is also cargo vendor-filterer that supports --platform, but it cannot be used due to:
+# - it does not support --no-delete (and refuses to run on non-empty directory)
+# - missing --locked
+#
+# Refs: https://github.com/rust-lang/cargo/issues/7058
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/windows*/lib/*.a
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/winapi*/lib/*.a
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/winapi*/lib/*.lib
+rm -fr "$CH_TOP_DIR"/contrib/rust_vendor/windows*/lib/*.lib
 
 echo "*"
 echo "* Do not forget to check contrib/corrosion-cmake/config.toml.in"

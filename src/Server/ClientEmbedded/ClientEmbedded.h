@@ -1,11 +1,8 @@
 #pragma once
 
-#if defined(OS_LINUX)
-
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
-#include <Loggers/Loggers.h>
 #include <Common/Config/ConfigProcessor.h>
 
 
@@ -65,5 +62,3 @@ private:
 };
 
 }
-
-#endif

@@ -3,7 +3,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#include "base/defines.h"
+#include <Core/Block_fwd.h>
+
 #include <memory>
 
 namespace DB
@@ -27,7 +28,7 @@ public:
     Chain & operator=(const Chain &) = delete;
 
     explicit Chain(ProcessorPtr processor);
-    explicit Chain(std::list<ProcessorPtr> processors);
+    explicit Chain(Processors processors);
 
     bool empty() const { return processors.empty(); }
 
@@ -49,10 +50,12 @@ public:
     OutputPort & getOutputPort() const;
 
     const Block & getInputHeader() const;
+    const SharedHeader & getInputSharedHeader() const;
     const Block & getOutputHeader() const;
+    const SharedHeader & getOutputSharedHeader() const;
 
-    const std::list<ProcessorPtr> & getProcessors() const { return processors; }
-    static std::list<ProcessorPtr> getProcessors(Chain chain) { return std::move(chain.processors); }
+    const Processors & getProcessors() const { return processors; }
+    Processors & getProcessors() { return processors; }
 
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
@@ -78,7 +81,7 @@ private:
     /// -> source -> transform -> ... -> transform -> sink ->
     ///  ^        ->           ->     ->           ->       ^
     ///  input port                               output port
-    std::list<ProcessorPtr> processors;
+    Processors processors;
     size_t num_threads = 0;
     bool concurrency_control = false;
 };

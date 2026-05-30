@@ -2,17 +2,13 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -56,7 +52,7 @@ namespace ErrorCodes
 
 /// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
-class FunctionTokens : public IFunction
+class FunctionTokens final : public IFunction
 {
 private:
     using Pos = const char *;
@@ -126,19 +122,20 @@ public:
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 generator.set(pos, end);
                 size_t j = 0;
                 while (generator.get(token_begin, token_end))
                 {
+                    chassert(token_begin >= pos && token_end >= token_begin);
+                    chassert(token_end <= end);
                     size_t token_size = token_end - token_begin;
 
-                    res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
+                    res_strings_chars.resize(res_strings_chars.size() + token_size);
                     memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
-                    res_strings_chars[current_dst_strings_offset + token_size] = 0;
 
-                    current_dst_strings_offset += token_size + 1;
+                    current_dst_strings_offset += token_size;
                     res_strings_offsets.push_back(current_dst_strings_offset);
                     ++j;
                 }

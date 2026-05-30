@@ -2,13 +2,12 @@
 description: 'Constraints on settings can be defined in the `profiles` section of
   the `user.xml` configuration file and prohibit users from changing some of the settings
   with the `SET` query.'
-sidebar_label: 'Constraints on Settings'
+sidebar_label: 'Constraints on settings'
 sidebar_position: 62
 slug: /operations/settings/constraints-on-settings
-title: 'Constraints on Settings'
+title: 'Constraints on settings'
+doc_type: 'reference'
 ---
-
-# Constraints on Settings
 
 ## Overview {#overview}
 
@@ -115,7 +114,6 @@ with the `readonly` constraint type:
    unless `changeable_in_readonly` is set.
 - `readonly=2`: Only read queries are allowed, but settings can be changed, 
   except for `readonly` setting itself.
-
 
 ### Example {#example-read-only}
 

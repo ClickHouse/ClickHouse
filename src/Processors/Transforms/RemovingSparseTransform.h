@@ -4,10 +4,10 @@
 namespace DB
 {
 
-class RemovingSparseTransform : public ISimpleTransform
+class RemovingSparseTransform final : public ISimpleTransform
 {
 public:
-    explicit RemovingSparseTransform(const Block & header);
+    explicit RemovingSparseTransform(SharedHeader header);
 
     String getName() const override { return "RemovingSparseTransform"; }
 

@@ -1,4 +1,4 @@
-#include "arrayPush.h"
+#include <Functions/array/arrayPush.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -6,7 +6,7 @@ namespace DB
 {
 
 
-class FunctionArrayPushFront : public FunctionArrayPush
+class FunctionArrayPushFront final : public FunctionArrayPush
 {
 public:
     static constexpr auto name = "arrayPushFront";
@@ -33,11 +33,11 @@ For more information about the types of data in ClickHouse, see [Data types](/sq
 :::
     )"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array identical to `arr` but with an additional value `x` at the beginning of the array. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array identical to `arr` but with an additional value `x` at the beginning of the array", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPushFront(['b'], 'a') AS res;", "['a','b']"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayPushFront>(documentation);
 }

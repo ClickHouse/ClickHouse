@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -24,7 +22,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
 }
 
 
@@ -134,7 +132,7 @@ bool ClientEmbedded::isEmbeeddedClient() const
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
-    setThreadName("LocalServerPty");
+    DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
@@ -164,14 +162,14 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.count("version") || options.count("V"))
+    if (options.contains("version") || options.contains("V"))
     {
         showClientVersion();
         cleanup();
         return 0;
     }
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         printHelpMessage(options_description);
         cleanup();
@@ -182,7 +180,6 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -215,8 +212,8 @@ try
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
     initKeystrokeInterceptor();
 
-    client_context = session->sessionContext();
-    initClientContext();
+    initClientContext(session->sessionContext());
+    /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
     {
@@ -261,5 +258,3 @@ catch (...)
 }
 
 }
-
-#endif

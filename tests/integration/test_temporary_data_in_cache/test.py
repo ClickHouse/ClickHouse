@@ -15,7 +15,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/storage_configuration.xml"],
-    tmpfs=["/local_disk:size=50M", "/tiny_local_cache:size=12M"],
+    tmpfs=["/test_tmp_data_in_cache_local_disk:size=50M", "/test_tmp_data_in_cache_tiny_local_cache:size=12M"],
 )
 
 
@@ -52,7 +52,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         ]
     )
 
-    q("SYSTEM DROP FILESYSTEM CACHE")
+    q("SYSTEM CLEAR FILESYSTEM CACHE")
     q("DROP TABLE IF EXISTS t1 SYNC")
 
     assert get_cache_size() == 0, dump_debug_info()
@@ -81,6 +81,8 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             "settings": {
                 "max_bytes_before_external_group_by": "4M",
                 "max_bytes_ratio_before_external_group_by": 0,
+                # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
+                "enable_sharding_aggregator": 0,
             },
         },
         {
@@ -140,7 +142,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
 
     node.http_query(
         "SELECT randomPrintableASCII(1024) FROM numbers(8 * 1024) FORMAT TSV",
-        params={"buffer_size": 0, "wait_end_of_query": 1},
+        params={"buffer_size": 0, "http_wait_end_of_query": 1},
     )
 
     assert get_free_space() > free_space_with_t1 + 3 * MB, dump_debug_info()
@@ -149,7 +151,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
     with pytest.raises(Exception) as exc:
         node.http_query(
             "SELECT randomPrintableASCII(1024) FROM numbers(32 * 1024) FORMAT TSV",
-            params={"buffer_size": 0, "wait_end_of_query": 1},
+            params={"buffer_size": 0, "http_wait_end_of_query": 1},
         )
     assert fnmatch.fnmatch(
         str(exc.value), "*Failed to reserve * for temporary file*"

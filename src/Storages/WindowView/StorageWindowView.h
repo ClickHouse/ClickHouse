@@ -13,9 +13,7 @@
 
 namespace DB
 {
-class IAST;
 class WindowViewSource;
-using ASTPtr = std::shared_ptr<IAST>;
 
 /**
  * StorageWindowView.
@@ -177,7 +175,7 @@ public:
 
     Block getInputHeader() const;
 
-    const Block & getOutputHeader() const;
+    SharedHeader getOutputHeader() const;
 
 private:
     LoggerPtr log;

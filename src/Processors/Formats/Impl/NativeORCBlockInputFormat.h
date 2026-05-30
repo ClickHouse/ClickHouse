@@ -3,18 +3,21 @@
 #include "config.h"
 
 #if USE_ORC
-#    include <Formats/FormatSettings.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <Processors/Formats/IInputFormat.h>
-#    include <Processors/Formats/ISchemaReader.h>
-#    include <Storages/MergeTree/KeyCondition.h>
-#    include <boost/algorithm/string.hpp>
-#    include <orc/MemoryPool.hh>
-#    include <orc/OrcFile.hh>
-#    include <Common/threadPoolCallbackRunner.h>
+
+#include <Core/BlockMissingValues.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/FormatFilterInfo.h>
+#include <IO/ReadBufferFromString.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
+#include <boost/algorithm/string.hpp>
+#include <orc/OrcFile.hh>
+#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
+
+class KeyCondition;
 
 class ORCInputStream : public orc::InputStream
 {
@@ -30,7 +33,10 @@ public:
 protected:
     SeekableReadBuffer & in;
     size_t file_size;
-    bool supports_read_at;
+    /// Use offset-based reads (ReadBuffer::readBigAt) instead of seek+read; needed for ORC tail.
+    bool use_offset_based_read;
+    /// Async wrapper only when caller enabled prefetch and the buffer supports read-at.
+    bool use_async_prefetch;
     ThreadPoolCallbackRunnerUnsafe<void> async_runner;
 
     std::string name = "ORCInputStream";
@@ -56,11 +62,16 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
-class NativeORCBlockInputFormat : public IInputFormat
+class NativeORCBlockInputFormat final : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
-        ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, bool use_prefetch_, size_t min_bytes_for_seek_);
+        ReadBuffer & in_,
+        SharedHeader header_,
+        const FormatSettings & format_settings_,
+        bool use_prefetch_,
+        size_t min_bytes_for_seek_,
+        FormatFilterInfoPtr format_filter_info_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -80,10 +91,7 @@ private:
 
     void prepareFileReader();
     bool prepareStripeReader();
-
     void prefetchStripes();
-
-    std::unique_ptr<orc::MemoryPool> memory_pool;
 
     std::unique_ptr<orc::Reader> file_reader;
     std::unique_ptr<orc::RowReader> stripe_reader;
@@ -101,6 +109,7 @@ private:
     const std::unordered_set<int> & skip_stripes;
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
+    FormatFilterInfoPtr format_filter_info;
 
     std::vector<int> selected_stripes;
     size_t read_iterator;
@@ -111,7 +120,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class NativeORCSchemaReader : public ISchemaReader
+class NativeORCSchemaReader final : public ISchemaReader
 {
 public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

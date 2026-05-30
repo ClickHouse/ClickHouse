@@ -3,6 +3,7 @@
 #include <typeinfo>
 #include <vector>
 #include <Columns/ColumnsNumber.h>
+#include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
 #include <gtest/gtest.h>
@@ -13,7 +14,7 @@ static pcg64 rng(randomSeed());
 static constexpr int error_code = 12345;
 static constexpr size_t TEST_RUNS = 500;
 static constexpr size_t MAX_ROWS = 10000;
-static const std::vector<size_t> filter_ratios = {1, 2, 5, 11, 32, 64, 100, 1000};
+static const VectorWithMemoryTracking<size_t> filter_ratios = {1, 2, 5, 11, 32, 64, 100, 1000};
 static const size_t K = filter_ratios.size();
 
 template <typename, typename = void >
@@ -111,7 +112,7 @@ static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
 
     for (size_t i = 0; i < rows; ++i)
     {
-        T val = rng() % limit;
+        T val = static_cast<T>(rng() % limit);
         values.push_back(val);
     }
 
@@ -121,7 +122,7 @@ static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
 template <typename T, typename IndexType>
 static void testIndex()
 {
-    static const std::vector<size_t> column_sizes = {64, 128, 196, 256, 512};
+    static const VectorWithMemoryTracking<size_t> column_sizes = {64, 128, 196, 256, 512};
 
     auto test_case = [&](size_t rows, size_t index_rows, size_t limit)
     {
@@ -154,7 +155,7 @@ static void testIndex()
             size_t index_rows = rng() % MAX_ROWS + 1;
 
             test_case(rows, index_rows, 0);
-            test_case(rows, index_rows, static_cast<size_t>(0.5 * index_rows));
+            test_case(rows, index_rows, static_cast<size_t>(0.5 * static_cast<double>(index_rows)));
         }
     }
     catch (const Exception & e)

@@ -4,18 +4,12 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsRandom.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <pcg_random.hpp>
-#include <Common/randomSeed.h>
-#include <base/unaligned.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -37,20 +31,17 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least one argument: the size of resulting string", getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
 
-        if (arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
+        FunctionArgumentDescriptors optional_args{
+            {"x", nullptr, nullptr, "Any"}
+        };
 
-        const IDataType & length_type = *arguments[0];
-        if (!isNumber(length_type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
-
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -82,24 +73,18 @@ public:
             if (length > (1 << 30))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            offset += length + 1;
+            offset += length;
             offsets_to[row_num] = offset;
         }
 
         /// Fill random bytes.
         data_to.resize(offsets_to.back());
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
-
-        /// Put zero bytes in between.
-        auto * pos = data_to.data();
-        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-            pos[offsets_to[row_num] - 1] = 0;
-
         return col_to;
     }
 };
 
-class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
+class FunctionRandomString final : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
     explicit FunctionRandomString(ContextPtr context) : selector(context)
@@ -108,8 +93,8 @@ public:
             FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
     #endif
     }
 
@@ -131,7 +116,27 @@ private:
 
 REGISTER_FUNCTION(RandomString)
 {
-    factory.registerFunction<FunctionRandomString>();
+    FunctionDocumentation::Description description = R"(
+Generates a random string with the specified number of characters.
+The returned characters are not necessarily ASCII characters, i.e. they may not be printable.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomString(length[, x])";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Length of the string in bytes.", {"(U)Int*"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT randomString(5) AS str FROM numbers(2)", R"(
+���
+�v6B�
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomString>(documentation);
 }
 
 }

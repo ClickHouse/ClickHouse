@@ -9,6 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
+# Does additional index analysis round and affects profile events
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0 --enable_parallel_replicas 0 --use_statistics_for_part_pruning=0"
+
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;
 CREATE TABLE t
@@ -47,13 +50,27 @@ CREATE TABLE t2
 ENGINE = MergeTree
 ORDER BY a
 SETTINGS index_granularity = 64, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
-INSERT INTO t2 SELECT number, number FROM numbers(10000);"
+INSERT INTO t2 SELECT number, number FROM numbers(1);"
 
 $CLICKHOUSE_CLIENT -n -q "SELECT count() FROM t2 WHERE (a < toUInt256(200)) FORMAT Null;" --query-id="${query_prefix}_generic2"
+
+$CLICKHOUSE_CLIENT -n -q "
+DROP TABLE IF EXISTS t3;
+CREATE TABLE t3
+(
+  a Decimal(76, 63),
+  b UInt64
+)
+ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 64, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
+INSERT INTO t3 SELECT number, number FROM numbers(1);"
+
+$CLICKHOUSE_CLIENT -n -q "SELECT count() FROM t3 WHERE CAST(a, 'Int256') = '4' FORMAT Null;" --query-id="${query_prefix}_generic3"
 
 $CLICKHOUSE_CLIENT -n -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log
-    WHERE type > 1 AND event_date >= yesterday() AND query_id ILIKE '${query_prefix}_binary%' AND current_database = currentDatabase()"
+    WHERE type > 1 AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id ILIKE '${query_prefix}_binary%' AND current_database = currentDatabase()"
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log
     WHERE type > 1 AND event_date >= yesterday() AND query_id ILIKE '${query_prefix}_generic%' AND current_database = currentDatabase()"

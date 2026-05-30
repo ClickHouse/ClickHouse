@@ -30,7 +30,7 @@ struct DivideDecimalsImpl
         Int256 sign_a = a.value < 0 ? -1 : 1;
         Int256 sign_b = b.value < 0 ? -1 : 1;
 
-        std::vector<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
+        VectorWithMemoryTracking<UInt8> a_digits = DecimalOpHelpers::toDigits(a.value * sign_a);
 
         while (scale_a < scale_b + result_scale)
         {
@@ -47,7 +47,7 @@ struct DivideDecimalsImpl
         if (a_digits.empty())
             return Decimal256(0);
 
-        std::vector<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
+        VectorWithMemoryTracking<UInt8> divided = DecimalOpHelpers::divide(a_digits, b.value * sign_b);
 
         if (divided.size() > DecimalUtils::max_precision<Decimal256>)
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow: result bigger that Decimal256");
@@ -73,7 +73,7 @@ In case you don't really need controlled precision and/or need fast computation,
     FunctionDocumentation::Argument argument2 =   {"y", "Second value: [Decimal](/sql-reference/data-types/decimal)."};
     FunctionDocumentation::Argument argument3 = {"result_scale", "Scale of result. Type [Int/UInt](/sql-reference/data-types/int-uint)."};
     FunctionDocumentation::Arguments arguments = {argument1, argument2, argument3};
-    FunctionDocumentation::ReturnedValue returned_value = "The result of division with given scale. Type: [Decimal256](/sql-reference/data-types/decimal.md).";
+    FunctionDocumentation::ReturnedValue returned_value = {"The result of division with given scale.", {"Decimal256"}};
     FunctionDocumentation::Example example1 = {"Example 1", "divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)", R"(
 ┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
 │                                                -5.7142857142 │
@@ -94,8 +94,8 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
     )"};
     FunctionDocumentation::Examples examples = {example1, example2};
     FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionsDecimalArithmetics<DivideDecimalsImpl>>(documentation);
 }
 

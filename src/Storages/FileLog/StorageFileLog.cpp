@@ -40,7 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool use_concurrency_control;
 }
@@ -125,11 +125,11 @@ private:
         if (file_log.file_infos.file_names.empty())
         {
             LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
-            Header header;
+            Block header;
             auto column_names_and_types = storage_snapshot->getColumnsByNames(GetColumnsOptions::All, column_names);
             for (const auto & [name, type] : column_names_and_types)
                 header.insert(ColumnWithTypeAndName(type, name));
-            return Pipe(std::make_unique<NullSource>(header));
+            return Pipe(std::make_unique<NullSource>(std::make_shared<const Block>(header)));
         }
 
         auto modified_context = Context::createCopy(file_log.filelog_context);
@@ -187,8 +187,8 @@ StorageFileLog::StorageFileLog(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals((*filelog_settings)[FileLogSetting::handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals((*filelog_settings)[FileLogSetting::handle_error_mode]));
 
     if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
@@ -220,13 +220,13 @@ StorageFileLog::StorageFileLog(
         loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
 
-        assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-        assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+        chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+        chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
 
-        auto thread = getContext()->getSchedulePool().createTask(log->name(), [this] { threadFunc(); });
+        auto thread = getContext()->getSchedulePool().createTask(getStorageID(), log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)
@@ -246,13 +246,14 @@ VirtualColumnsDescription StorageFileLog::createVirtuals(StreamingHandleErrorMod
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_filename", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_raw_record", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
@@ -505,7 +506,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
+            reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -516,7 +517,7 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than file size ({} > {})",
+                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
                     file,
                     meta.last_writen_position,
                     std::streamoff{file_end});
@@ -533,8 +534,8 @@ void StorageFileLog::openFilesAndSetPos()
 
 void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 {
-    assert(start < end);
-    assert(end <= file_infos.file_names.size());
+    chassert(start < end);
+    chassert(end <= file_infos.file_names.size());
 
     for (size_t i = start; i < end; ++i)
     {
@@ -553,8 +554,8 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
 void StorageFileLog::storeMetas(size_t start, size_t end)
 {
-    assert(start < end);
-    assert(end <= file_infos.file_names.size());
+    chassert(start < end);
+    chassert(end <= file_infos.file_names.size());
 
     for (size_t i = start; i < end; ++i)
     {
@@ -589,7 +590,7 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     }
 
     auto read_settings = getReadSettings();
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
     UInt64 inode;
@@ -636,24 +637,7 @@ size_t StorageFileLog::getPollTimeoutMillisecond() const
 
 bool StorageFileLog::checkDependencies(const StorageID & table_id)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return false;
-
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
 size_t StorageFileLog::getTableDependentCount() const
@@ -759,7 +743,7 @@ bool StorageFileLog::streamToViews()
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
     auto max_streams_number = std::min<UInt64>((*filelog_settings)[FileLogSetting::max_threads].value, file_infos.file_names.size());
@@ -771,10 +755,14 @@ bool StorageFileLog::streamToViews()
     }
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
     auto new_context = Context::createCopy(filelog_context);
+
+    /// Create a fresh query context from filelog_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -888,6 +876,9 @@ void registerStorageFileLog(StorageFactory & factory)
             && !(*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
 
+        if ((*filelog_settings)[FileLogSetting::handle_error_mode].changed && (*filelog_settings)[FileLogSetting::handle_error_mode].value == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
+
         if (args_count != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of StorageFileLog should be 2, path and format name");
 
@@ -918,19 +909,40 @@ void registerStorageFileLog(StorageFactory & factory)
         });
 }
 
+void StorageFileLog::onFileAppeared(const String & file_name, UInt64 inode)
+{
+    auto it = file_infos.context_by_name.find(file_name);
+    if (it == file_infos.context_by_name.end())
+    {
+        file_infos.file_names.push_back(file_name);
+        file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+        return;
+    }
+    if (it->second.inode != inode)
+    {
+        if (auto meta = file_infos.meta_by_inode.find(it->second.inode);
+            meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
+        {
+            file_infos.meta_by_inode.erase(meta);
+            disk->removeFileIfExists(getFullMetaPath(file_name));
+        }
+    }
+    it->second = FileContext{.inode = inode};
+}
+
 bool StorageFileLog::updateFileInfos()
 {
-    if (file_infos.file_names.empty())
-        return false;
-
     if (!directory_watch)
     {
+        if (file_infos.file_names.empty())
+            return false;
+
         /// For table just watch one file, we can not use directory monitor to watch it
         if (!path_is_directory)
         {
-            assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-            assert(file_infos.file_names.size() == file_infos.context_by_name.size());
-            assert(file_infos.file_names.size() == 1);
+            chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+            chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
+            chassert(file_infos.file_names.size() == 1);
 
             if (auto it = file_infos.context_by_name.find(file_infos.file_names[0]); it != file_infos.context_by_name.end())
             {
@@ -940,6 +952,12 @@ bool StorageFileLog::updateFileInfos()
         }
         return false;
     }
+
+    /// We process directory watcher events even when `file_names` is empty. After
+    /// the only watched file is removed the cleanup loop empties `file_names`;
+    /// without consuming the watcher's queue here we would miss a subsequent
+    /// `DW_ITEM_ADDED`/`DW_ITEM_MOVED_TO` and never observe the recreated file.
+
     /// Do not need to hold file_status lock, since it will be holded
     /// by caller when call this function
     auto error = directory_watch->getErrorAndReset();
@@ -947,90 +965,83 @@ bool StorageFileLog::updateFileInfos()
         LOG_ERROR(log, "Error happened during watching directory {}: {}", directory_watch->getPath(), error.error_msg);
 
     /// These file infos should always have same size(one for one) before update and after update
-    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+    chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     auto events = directory_watch->getEventsAndReset();
 
-    for (const auto & [file_name, event_infos] : events)
+    /// Walk events in the order the kernel emitted them. Rename pairs
+    /// (`DW_ITEM_MOVED_FROM` on one name + `DW_ITEM_MOVED_TO` on another) must
+    /// be observed before any later `DW_ITEM_ADDED` for the source name, so
+    /// that `onFileAppeared`'s filename-ownership guard sees the post-rename
+    /// `file_name` in `meta_by_inode` rather than the stale pre-rename one.
+    for (const auto & [file_name, event_info] : events)
     {
         String file_path = getFullDataPath(file_name);
-        for (const auto & event_info : event_infos.file_events)
+        LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
+
+        switch (event_info.type)
         {
-            switch (event_info.type)
+            case DirectoryWatcherBase::DW_ITEM_ADDED:
             {
-                case DirectoryWatcherBase::DW_ITEM_ADDED:
+                /// Check if it is a regular file, and new file may be renamed or removed
+                if (std::filesystem::is_regular_file(file_path))
                 {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-                    /// Check if it is a regular file, and new file may be renamed or removed
-                    if (std::filesystem::is_regular_file(file_path))
+                    auto inode = getInode(file_path);
+
+                    onFileAppeared(file_name, inode);
+
+                    if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
+                        it->second = FileMeta{.file_name = file_name};
+                    else
+                        file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
+                }
+                break;
+            }
+
+            case DirectoryWatcherBase::DW_ITEM_MODIFIED:
+            {
+                /// When new file added and appended, it has two event: DW_ITEM_ADDED
+                /// and DW_ITEM_MODIFIED, since the order of these two events in the
+                /// sequence is uncentain, so we may can not find it in file_infos, just
+                /// skip it, the file info will be handled in DW_ITEM_ADDED case.
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                    it->second.status = FileStatus::UPDATED;
+                break;
+            }
+
+            case DirectoryWatcherBase::DW_ITEM_REMOVED:
+            /// The file **left** the directory
+            case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
+            {
+                if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                    it->second.status = FileStatus::REMOVED;
+                break;
+            }
+            /// The file **arrived** in this directory
+            case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
+            {
+                /// Similar to DW_ITEM_ADDED, but if it removed from an old file
+                /// should obtain old meta file and rename meta file
+                if (std::filesystem::is_regular_file(file_path))
+                {
+                    auto inode = getInode(file_path);
+
+                    onFileAppeared(file_name, inode);
+
+                    /// File has been renamed, we should also rename meta file
+                    if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                     {
-                        auto inode = getInode(file_path);
-
-                        file_infos.file_names.push_back(file_name);
-
-                        if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
-                            it->second = FileMeta{.file_name = file_name};
-                        else
-                            file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
-
-                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                            it->second = FileContext{.status = FileStatus::OPEN, .inode = inode};
-                        else
-                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+                        auto old_name = it->second.file_name;
+                        it->second.file_name = file_name;
+                        if (std::filesystem::exists(getFullMetaPath(old_name)))
+                            std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
                     }
-                    break;
+                    /// May move from other place, adding new meta info
+                    else
+                        file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                 }
-
-                case DirectoryWatcherBase::DW_ITEM_MODIFIED:
-                {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-                    /// When new file added and appended, it has two event: DW_ITEM_ADDED
-                    /// and DW_ITEM_MODIFIED, since the order of these two events in the
-                    /// sequence is uncentain, so we may can not find it in file_infos, just
-                    /// skip it, the file info will be handled in DW_ITEM_ADDED case.
-                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                        it->second.status = FileStatus::UPDATED;
-                    break;
-                }
-
-                case DirectoryWatcherBase::DW_ITEM_REMOVED:
-                case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
-                {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-                    if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                        it->second.status = FileStatus::REMOVED;
-                    break;
-                }
-                case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
-                {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-
-                    /// Similar to DW_ITEM_ADDED, but if it removed from an old file
-                    /// should obtain old meta file and rename meta file
-                    if (std::filesystem::is_regular_file(file_path))
-                    {
-                        file_infos.file_names.push_back(file_name);
-                        auto inode = getInode(file_path);
-
-                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                            it->second = FileContext{.inode = inode};
-                        else
-                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
-
-                        /// File has been renamed, we should also rename meta file
-                        if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
-                        {
-                            auto old_name = it->second.file_name;
-                            it->second.file_name = file_name;
-                            if (std::filesystem::exists(getFullMetaPath(old_name)))
-                                std::filesystem::rename(getFullMetaPath(old_name), getFullMetaPath(file_name));
-                        }
-                        /// May move from other place, adding new meta info
-                        else
-                            file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
-                    }
-                }
+                break;
             }
         }
     }
@@ -1052,8 +1063,7 @@ bool StorageFileLog::updateFileInfos()
                     meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
                     file_infos.meta_by_inode.erase(meta);
 
-                if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    (void)std::filesystem::remove(getFullMetaPath(file_name));
+                disk->removeFileIfExists(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else
@@ -1065,8 +1075,8 @@ bool StorageFileLog::updateFileInfos()
     file_infos.file_names.swap(valid_files);
 
     /// These file infos should always have same size(one for one)
-    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+    chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
 }

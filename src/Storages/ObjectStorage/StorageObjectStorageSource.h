@@ -1,87 +1,89 @@
 #pragma once
+
+#include <future>
+#include <optional>
 #include <Common/re2.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ClusterFunctionReadTask.h>
 #include <IO/Archives/IArchiveReader.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-
+#include <Formats/FormatFilterInfo.h>
 
 namespace DB
 {
 
 class SchemaCache;
 
-using ReadTaskCallback = std::function<String()>;
-
-class StorageObjectStorageSource : public SourceWithKeyCondition
+class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
-public:
-    using Configuration = StorageObjectStorage::Configuration;
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-    using ObjectInfos = StorageObjectStorage::ObjectInfos;
 
+public:
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
     class ArchiveIterator;
 
     StorageObjectStorageSource(
+        const StorageID & storage_id_,
         String name_,
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration,
+        StorageObjectStorageConfigurationPtr configuration,
+        StorageSnapshotPtr storage_snapshot_,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         UInt64 max_block_size_,
         std::shared_ptr<IObjectIterator> file_iterator_,
-        size_t max_parsing_threads_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_);
 
     ~StorageObjectStorageSource() override;
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override;
-
     Chunk generate() override;
 
+    void onFinish() override;
+
     static std::shared_ptr<IObjectIterator> createFileIterator(
-        ConfigurationPtr configuration,
-        const StorageObjectStorage::QuerySettings & query_settings,
+        StorageObjectStorageConfigurationPtr configuration,
+        const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
+        StorageMetadataPtr storage_metadata,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
-        const std::optional<ActionsDAG> & filter_actions_dag,
+        const ActionsDAG * filter_actions_dag,
         const NamesAndTypesList & virtual_columns,
+        const NamesAndTypesList & hive_columns,
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
-        bool skip_object_metadata = false);
+        bool skip_object_metadata = false,
+        bool with_tags = false);
 
     static std::string getUniqueStoragePathIdentifier(
-        const Configuration & configuration,
-        const ObjectInfo & object_info,
-        bool include_connection_info = true);
+        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
-    static std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
-        ObjectInfo & object_info,
-        const ObjectStoragePtr & object_storage,
-        const ContextPtr & context_,
-        const LoggerPtr & log);
 protected:
+    StorageID storage_id;
     const String name;
     ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
+    StorageSnapshotPtr storage_snapshot;
     const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
-    const size_t max_parsing_threads;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
+
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
@@ -89,6 +91,7 @@ protected:
     SchemaCache & schema_cache;
     bool initialized = false;
     size_t total_rows_in_file = 0;
+    size_t total_files_read = 0;
     LoggerPtr log = getLogger("StorageObjectStorageSource");
 
     struct ReaderHolder : private boost::noncopyable
@@ -127,17 +130,18 @@ protected:
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
+        const StorageID & storage_id,
         const std::shared_ptr<IObjectIterator> & file_iterator,
-        const ConfigurationPtr & configuration,
+        const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,
         const std::optional<FormatSettings> & format_settings,
-        const std::shared_ptr<const KeyCondition> & key_condition_,
         const ContextPtr & context_,
         SchemaCache * schema_cache,
         const LoggerPtr & log,
         size_t max_block_size,
-        size_t max_parsing_threads,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info,
         bool need_only_count);
 
     ReaderHolder createReader();
@@ -148,20 +152,32 @@ protected:
     void lazyInitialize();
 };
 
-class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator
+class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator, private WithContext
 {
 public:
-    ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
+    ReadTaskIterator(
+        const ClusterFunctionReadTaskCallback & callback_,
+        size_t max_threads_count,
+        bool is_archive_,
+        ObjectStoragePtr object_storage_,
+        ContextPtr context_);
 
     ObjectInfoPtr next(size_t) override;
 
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
+    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
 
-    ReadTaskCallback callback;
+    ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
+    bool is_archive;
+    ObjectStoragePtr object_storage;
+    /// path_to_archive -> archive reader.
+    std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
+    std::mutex archive_readers_mutex;
+    LoggerPtr log = getLogger("ReadTaskIterator");
 };
 
 class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext
@@ -169,13 +185,15 @@ class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithCon
 public:
     GlobIterator(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
+        const NamesAndTypesList & hive_columns_,
         ContextPtr context_,
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
+        bool with_tags,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
     ~GlobIterator() override = default;
@@ -190,8 +208,9 @@ private:
     void fillBufferForKey(const std::string & uri_key);
 
     const ObjectStoragePtr object_storage;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
+    const NamesAndTypesList hive_columns;
     const bool throw_on_zero_files_match;
     const LoggerPtr log;
 
@@ -213,6 +232,10 @@ private:
     const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
+
+    size_t total_listed = 0;
+    size_t total_glob_filtered = 0;
+    size_t total_predicate_filtered = 0;
 };
 
 class StorageObjectStorageSource::KeysIterator : public IObjectIterator
@@ -225,6 +248,7 @@ public:
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
         bool skip_object_metadata_,
+        bool with_tags_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
@@ -239,8 +263,9 @@ private:
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
-    bool ignore_non_existent_files;
-    bool skip_object_metadata;
+    const bool ignore_non_existent_files;
+    const bool skip_object_metadata;
+    const bool with_tags;
 };
 
 /*
@@ -259,7 +284,7 @@ class StorageObjectStorageSource::ArchiveIterator : public IObjectIterator, priv
 public:
     explicit ArchiveIterator(
         ObjectStoragePtr object_storage_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         std::unique_ptr<IObjectIterator> archives_iterator_,
         ContextPtr context_,
         ObjectInfos * read_keys_,
@@ -268,6 +293,12 @@ public:
     ObjectInfoPtr next(size_t processor) override;
 
     size_t estimatedKeysCount() override;
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        archives_iterator->setEmitProfileEvents(value);
+    }
 
     struct ObjectInfoInArchive : public ObjectInfo
     {

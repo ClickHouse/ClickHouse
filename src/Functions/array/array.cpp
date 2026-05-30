@@ -12,17 +12,18 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
 /// array(c1, c2, ...) - create an array.
-class FunctionArray : public IFunction
+class FunctionArray final : public IFunction
 {
 public:
     static constexpr auto name = "array";
@@ -31,7 +32,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -133,7 +134,7 @@ private:
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         using Container = ColumnVectorOrDecimal<T>::Container;
-        std::vector<const Container *> containers(columns.size(), nullptr);
+        VectorWithMemoryTracking<const Container *> containers(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnVectorOrDecimal<T> * concrete_column = checkAndGetColumn<ColumnVectorOrDecimal<T>>(columns[i]);
@@ -159,7 +160,7 @@ private:
     bool executeString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         size_t total_bytes = 0;
-        std::vector<const ColumnString *> concrete_columns(columns.size(), nullptr);
+        VectorWithMemoryTracking<const ColumnString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnString * concrete_column = checkAndGetColumn<ColumnString>(columns[i]);
@@ -182,11 +183,9 @@ private:
             const size_t base = row_i * columns.size();
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
-                out_chars[cur_out_offset + ref.size] = 0;
-
-                cur_out_offset += ref.size + 1;
+                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data(), ref.size());
+                cur_out_offset += ref.size();
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }
@@ -195,7 +194,7 @@ private:
 
     bool executeFixedString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        std::vector<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
+        VectorWithMemoryTracking<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnFixedString * concrete_column = checkAndGetColumn<ColumnFixedString>(columns[i]);
@@ -217,8 +216,8 @@ private:
         {
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data, n);
+                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data(), n);
                 curr_out_offset += n;
             }
         }
@@ -254,15 +253,23 @@ private:
             return false;
 
         const size_t tuple_size = concrete_out_data->tupleSize();
-        for (size_t i = 0; i < tuple_size; ++i)
+        if (tuple_size == 0)
         {
-            ColumnRawPtrs elem_columns(columns.size(), nullptr);
-            for (size_t j = 0; j < columns.size(); ++j)
+            /// Tuple() has no subcolumns to fill. Create `columns.size()` elements per row to match array offsets
+            out_data.insertManyDefaults(columns.size() * input_rows_count);
+        }
+        else
+        {
+            for (size_t i = 0; i < tuple_size; ++i)
             {
-                const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
-                elem_columns[j] = &concrete_column->getColumn(i);
+                ColumnRawPtrs elem_columns(columns.size(), nullptr);
+                for (size_t j = 0; j < columns.size(); ++j)
+                {
+                    const ColumnTuple * concrete_column = assert_cast<const ColumnTuple *>(columns[j]);
+                    elem_columns[j] = &concrete_column->getColumn(i);
+                }
+                execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
             }
-            execute(elem_columns, concrete_out_data->getColumn(i), input_rows_count);
         }
         return true;
     }
@@ -301,7 +308,7 @@ Use the `[ ]` operator for the same functionality.
         {"x1", "Constant value of any type T. If only this argument is provided, the array will be of type T."},
         {"[, x2, ..., xN]", "Additional N constant values sharing a common supertype with `x1`"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array, where 'T' is the smallest common type out of the passed arguments.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Valid usage", R"(
 SELECT array(toInt32(1), toUInt16(2), toInt8(3)) AS a, toTypeName(a)
     )",
@@ -320,7 +327,7 @@ There is no supertype for types Int32, DateTime, Int8 ...
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArray>(documentation);
 }

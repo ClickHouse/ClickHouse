@@ -2,12 +2,17 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledQuota.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
+#include <Common/MemoryTracker.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -18,8 +23,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTConstraintDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -42,7 +45,17 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
-#include <Common/ProfileEvents.h>
+#include <Common/quoteString.h>
+#include <Core/Field.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <Storages/IStorageCluster.h>
+#include <Storages/StorageSnapshot.h>
+#include <Storages/ColumnsDescription.h>
+#include <Interpreters/JoinedTables.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <memory>
 
@@ -55,14 +68,19 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
+    extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
+    extern const SettingsBool use_strict_insert_block_limits;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsString insert_deduplication_token;
-    extern const SettingsBool parallel_view_processing;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
@@ -70,6 +88,11 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
+    extern const SettingsBool async_query_sending_for_remote;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsUInt64 max_distributed_depth;
+    extern const SettingsBool enable_global_with_statement;
 }
 
 namespace MergeTreeSetting
@@ -80,6 +103,7 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ErrorCodes
@@ -89,11 +113,14 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
-    : WithContext(context_)
+    const ASTPtr & query_ptr_, ContextMutablePtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
+    : WithMutableContext(context_)
+    , logger(getLogger("InterpreterInsertQuery"))
     , query_ptr(query_ptr_)
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
@@ -105,10 +132,13 @@ InterpreterInsertQuery::InterpreterInsertQuery(
         quota->checkExceeded(QuotaType::WRITTEN_BYTES);
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = std::max<size_t>(1, settings[Setting::max_threads]);
-    max_insert_threads = std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads);
+    max_threads = getMaxThreadsForAvailableMemory(
+        std::max<size_t>(1, settings[Setting::max_threads]),
+        settings[Setting::max_threads_min_free_memory_per_thread]);
+    max_insert_threads = getMaxThreadsForAvailableMemory(
+        std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
+        settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 }
-
 
 StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
@@ -123,7 +153,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            Block header_block;
+            SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
             if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -140,12 +170,14 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, current_context, select_query_options};
                 auto tmp_pipeline = interpreter_select.buildQueryPipeline();
-                header_block = tmp_pipeline.getHeader();
+                header_block = tmp_pipeline.getSharedHeader();
             }
 
-            ColumnsDescription structure_hint{header_block.getNamesAndTypesList()};
+            ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
+
+        table_function_ptr->setPartitionBy(query.partition_by);
 
         return table_function_ptr->execute(query.table_function, current_context, table_function_ptr->getName(),
                                            /* cached_columns */ {}, /* use_global_context */ false, /* is_insert_query */true);
@@ -180,7 +212,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
             return window_view->getInputHeader();
         if (no_destination)
-            return metadata_snapshot->getSampleBlockWithVirtuals(table->getVirtualsList());
+            return metadata_snapshot->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         return metadata_snapshot->getSampleBlockNonMaterialized();
     }
 
@@ -195,25 +227,6 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
 
     return getSampleBlock(names, table, metadata_snapshot, no_destination, allow_materialized);
-}
-
-std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
-{
-    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
-    if (!insert_query || !insert_query->columns)
-        return std::nullopt;
-
-    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
-    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
-    Names names;
-    names.reserve(columns_ast->children.size());
-    for (const auto & identifier : columns_ast->children)
-    {
-        std::string current_name = identifier->getColumnName();
-        names.emplace_back(std::move(current_name));
-    }
-
-    return names;
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -251,7 +264,7 @@ Block InterpreterInsertQuery::getSampleBlock(
         Block table_sample_physical = metadata_snapshot->getSampleBlock();
         Block table_sample_virtuals;
         if (allow_virtuals)
-            table_sample_virtuals = table->getVirtualsHeader();
+            table_sample_virtuals = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All);
 
         /// Columns are not ordinary or ephemeral
         for (auto pos : missing_positions)
@@ -335,11 +348,6 @@ static bool isTrivialSelect(const ASTPtr & select)
     return false;
 }
 
-void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
-{
-    owned_buffers.push_back(std::move(buffer));
-}
-
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context_)
 {
     const Settings & settings = context_->getSettingsRef();
@@ -367,15 +375,25 @@ static std::pair<QueryPipelineBuilder, ParallelReplicasReadingCoordinatorPtr> ge
 
 QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline)
 {
-    const Settings & settings = getContext()->getSettingsRef();
+    auto context = getContext();
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
+    // disable parallel replicas for inserts if enabled
+    // the insert can trigger update for dependent materialized views
+    // using parallel replicas in this context is unnecessary
+    if (context->canUseParallelReplicasOnInitiator())
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        context = mutable_context;
+    }
+
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
 
     /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
-    if (getContext()->getSettingsRef()[Setting::insert_null_as_default])
+    if (context->getSettingsRef()[Setting::insert_null_as_default])
     {
         const auto & input_columns = pipeline.getHeader().getColumnsWithTypeAndName();
         const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
@@ -407,83 +425,104 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     auto actions_dag = ActionsDAG::makeConvertingActions(
             pipeline.getHeader().getColumnsWithTypeAndName(),
             query_sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
-    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
+            ActionsDAG::MatchColumnsMode::Position,
+            context);
+    auto actions = std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context, CompileExpressions::yes));
 
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         return std::make_shared<ExpressionTransform>(in_header, actions);
     });
 
-    pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
-        auto context_ptr = getContext();
-        auto counting = std::make_shared<CountingTransform>(in_header, context_ptr->getQuota());
-        counting->setProcessListElement(context_ptr->getProcessListElement());
-        counting->setProgressCallback(context_ptr->getProgressCallback());
+        auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota());
+        counting->setProcessListElement(context->getProcessListElement());
+        counting->setProgressCallback(context->getProgressCallback());
 
         return counting;
     });
 
-    pipeline.resize(1);
+    auto select_streams = pipeline.getNumStreams();
+    if (select_streams != 1)
+        pipeline.resize(1);
 
-    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
+    auto deduplicate_insert_select = isDeduplicationEnabledForInsertSelect(
+        select_query_sorted, context->getSettingsRef(),
+        context->getSettingsRef()[Setting::insert_deduplication_token].value, logger);
+
+    if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
     {
-        pipeline.addSimpleTransform(
-            [&](const Block & in_header) -> ProcessorPtr
-            {
-                return std::make_shared<PlanSquashingTransform>(
-                    in_header,
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
-            });
-    }
-
-    pipeline.addSimpleTransform([&](const Block &in_header) -> ProcessorPtr
-    {
-        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(in_header);
-    });
-
-    if (!settings[Setting::insert_deduplication_token].value.empty())
-    {
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings[Setting::insert_deduplication_token].value, in_header);
-        });
-
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
-        });
+        auto tmp_context = Context::createCopy(context);
+        overrideDeduplicationSetting(deduplicate_insert_select, tmp_context);
+        context = tmp_context;
     }
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
-        table, query_ptr, query_sample_block,
-        async_insert, /*skip_destination_table*/ no_destination,
-        getContext());
+        table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
+        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
+        context);
 
-    size_t sink_streams_size = table->supportsParallelInsert() ? max_insert_threads : 1;
+    const auto & settings = context->getSettingsRef();
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
 
-    if (!settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved())
+    if (!squash_with_strict_limits)
     {
-        sink_streams_size = 1;
+        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        {
+            return std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                context->getSettingsRef()[Setting::insert_deduplication_token].value,
+                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
+                in_header);
+        });
     }
 
-    std::vector<Chain> sink_chains;
-    for (size_t i = 0; i < sink_streams_size; ++i)
-    {
-        sink_chains.push_back(insert_dependencies->createChainWithDependencies());
-    }
-
-    pipeline.resize(sink_streams_size);
-
-    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
+    bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash;
+    if (should_squash)
     {
         pipeline.addSimpleTransform(
-            [&](const Block & in_header) -> ProcessorPtr
+            [&](const SharedHeader & in_header) -> ProcessorPtr
+            {
+                size_t min_block_size_bytes = table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL;
+                /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
+                return std::make_shared<PlanSquashingTransform>(
+                    in_header,
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+                    min_block_size_bytes,
+                    settings[Setting::max_insert_block_size],
+                    settings[Setting::max_insert_block_size_bytes],
+                    squash_with_strict_limits);
+            });
+    }
+
+    VectorWithMemoryTracking<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+
+    pipeline.resize(insert_dependencies->getSinkStreamSize());
+
+    if (should_squash)
+    {
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & in_header) -> ProcessorPtr
             {
                 return std::make_shared<ApplySquashingTransform>(in_header);
             });
+    }
+
+    if (squash_with_strict_limits)
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        {
+            return std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
+                in_header);
+        });
     }
 
     for (auto & chain : sink_chains)
@@ -494,7 +533,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     pipeline.setMaxThreads(max_threads);
 
-    pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+    pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
         return std::make_shared<EmptySink>(cur_header);
     });
@@ -532,14 +571,22 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         Settings new_settings = select_context->getSettingsCopy();
 
-        new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads]);
+        new_settings[Setting::max_threads] = getMaxThreadsForAvailableMemory(
+            std::max<UInt64>(1, settings[Setting::max_insert_threads]),
+            settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 
         if (prefer_large_blocks)
         {
             if (settings[Setting::min_insert_block_size_rows])
                 new_settings[Setting::max_block_size] = settings[Setting::min_insert_block_size_rows];
             if (settings[Setting::min_insert_block_size_bytes])
-                new_settings[Setting::preferred_block_size_bytes] = settings[Setting::min_insert_block_size_bytes];
+            {
+                size_t block_size_bytes = settings[Setting::min_insert_block_size_bytes];
+                /// On low-memory systems, cap the input format block size.
+                if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+                    block_size_bytes = std::min<size_t>(block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
+                new_settings[Setting::preferred_block_size_bytes] = block_size_bytes;
+            }
         }
 
         auto context_for_trivial_select = Context::createCopy(select_context);
@@ -550,14 +597,29 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
+bool queryHasOrderByAll(const ASTPtr & select)
+{
+    if (auto * select_query = select->as<ASTSelectQuery>())
+    {
+        return select_query->order_by_all;
+    }
+    else if (auto * union_query = select->as<ASTSelectWithUnionQuery>())
+    {
+        if (union_query->list_of_selects->children.size() != 1)
+            return false;
+
+        if (auto * first_select_query = union_query->list_of_selects->children.front()->as<ASTSelectQuery>())
+            return first_select_query->order_by_all;
+    }
+    return false;
+}
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
-    QueryPipelineBuilder pipeline;
-
+    QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
@@ -565,23 +627,30 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         if (settings[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-            pipeline = interpreter_select_analyzer.buildQueryPipeline();
+            return interpreter_select_analyzer.buildQueryPipeline();
         }
         else
         {
             InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
-            pipeline = interpreter_select.buildQueryPipeline();
+            return interpreter_select.buildQueryPipeline();
         }
-    }
+    }();
+
+    /// ORDER BY ALL should produce a single globally-sorted stream.
+    /// However, certain edge cases (e.g., BuzzHouse fuzzer findings on specific
+    /// table engines or optimizer paths) can result in multiple streams.
+    /// Treat multi-stream output as unsorted — deduplication won't be enabled,
+    /// but the query executes correctly since addInsertToSelectPipeline()
+    /// resizes to 1 stream regardless.
+    select_query_sorted = queryHasOrderByAll(query.select) && pipeline.getNumStreams() <= 1;
 
     return addInsertToSelectPipeline(query, table, pipeline);
 }
 
 
-std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
-InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table)
+std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr> InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(
+    ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context)
 {
-    ContextPtr select_context = getContext();
     applyTrivialInsertSelectOptimization(query, table->prefersLargeBlocks(), select_context);
 
     auto [pipeline_builder, coordinator]
@@ -591,107 +660,333 @@ InterpreterInsertQuery::buildLocalInsertSelectPipelineForParallelReplicas(ASTIns
 }
 
 
-std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
+static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQuery & query)
 {
-    auto context_ptr = getContext();
-    const Settings & settings = context_ptr->getSettingsRef();
-    if (!settings[Setting::allow_experimental_analyzer])
+    const auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+    const auto & selects = select.list_of_selects->children;
+    if (selects.size() != 1)
         return {};
 
-    if (!context_ptr->canUseParallelReplicasOnInitiator())
+    if (auto * select_query = selects.front()->as<ASTSelectQuery>())
+    {
+        const auto & tables = select_query->tables();
+
+        if (!tables)
+            return false;
+
+        const auto & tables_in_select_query = tables->as<ASTTablesInSelectQuery &>();
+
+        if (tables_in_select_query.children.size() != 1)
+            return false;
+
+        const auto & child = tables_in_select_query.children.front();
+        const auto & table_element = child->as<ASTTablesInSelectQueryElement &>();
+        const auto & table_expr = table_element.table_expression->as<ASTTableExpression &>();
+
+        if (table_expr.subquery)
+            return false;
+
+        /// TODO: replace with QueryTree analysis after switching to analyzer completely
+        return (!select_query->distinct
+            && !select_query->limit_with_ties
+            && !select_query->groupBy()
+            && !select_query->having()
+            && !select_query->orderBy()
+            && !select_query->limitBy()
+            && !select_query->limitLength()
+            && !hasAggregateFunctions(select_query));
+    }
+    return false;
+}
+
+
+std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
+{
+    const Settings & settings = getContext()->getSettingsRef();
+    if (!settings[Setting::allow_experimental_analyzer])
         return {};
 
     if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
-    const auto & select_query = query.select->as<ASTSelectWithUnionQuery &>();
-    const auto & selects = select_query.list_of_selects->children;
-    if (selects.size() > 1)
+    /// Create a context with automatic_parallel_replicas_mode disabled upfront.
+    /// INSERT SELECT should use parallel replicas regardless of automatic mode,
+    /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
+    auto context = Context::createCopy(getContext());
+    context->setSetting("automatic_parallel_replicas_mode", Field{0});
+
+    if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
-    if (!isTrivialSelect(selects.front()))
+    // NOTE: should we limit it more here?
+    if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
         return {};
 
-    if (!ClusterProxy::isSuitableForParallelReplicas(selects.front(), context_ptr))
+    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
-    LOG_TRACE(
-        getLogger("InterpreterInsertQuery"),
-        "Building distributed insert select pipeline with parallel replicas: table={}",
-        query.getTable());
+    auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
+    if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
+        return {};
 
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline])
+    LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
+
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
+        && settings[Setting::parallel_replicas_prefer_local_replica])
     {
-        auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table);
-        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr, std::move(local_pipeline), coordinator);
+        auto [local_pipeline, coordinator] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+        return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context, std::move(local_pipeline), coordinator);
     }
 
-    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context_ptr);
+    return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context);
 }
 
 
 QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query, StoragePtr table)
 {
-    const Settings & settings = getContext()->getSettingsRef();
+    auto context = getContext();
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
+    // disable parallel replicas for inserts if enabled
+    // the insert can trigger update for dependent materialized views
+    // using parallel replicas in this context is unnecessary
+    if (context->canUseParallelReplicasOnInitiator())
+    {
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        context = mutable_context;
+    }
+
+    const Settings & settings = context->getSettingsRef();
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto query_sample_block
+        = std::make_shared<const Block>(getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
+    if (query_sample_block->empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns to insert");
 
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
     auto insert_dependencies = InsertDependenciesBuilder::create(
-        table, query_ptr, query_sample_block,
-        async_insert, /*skip_destination_table*/ no_destination,
-        getContext());
+        table,
+        query_ptr,
+        query_sample_block,
+        async_insert,
+        /*skip_destination_table*/ no_destination,
+        /*max_insert_threads*/ 1,
+        context);
 
-    Chain chain = insert_dependencies->createChainWithDependencies();
+    auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    chassert(chains.size() == 1);
+    auto chain = std::move(chains.front());
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
 
-    if (!settings[Setting::insert_deduplication_token].value.empty())
+    if (squash_with_strict_limits)
     {
-        chain.addSource(std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(chain.getInputHeader()));
-        chain.addSource(std::make_shared<DeduplicationToken::SetUserTokenTransform>(
-            settings[Setting::insert_deduplication_token].value, chain.getInputHeader()));
+        chain.addSource(
+            std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
+                chain.getInputSharedHeader())
+        );
     }
 
-    chain.addSource(std::make_shared<DeduplicationToken::AddTokenInfoTransform>(chain.getInputHeader()));
+    if (shouldAddSquashingForStorage(table, context) && !no_squash)
+    {
+        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputSharedHeader());
+        chain.addSource(std::move(applying));
+    }
 
-    if (shouldAddSquashingForStorage(table, getContext()) && !no_squash && !async_insert)
+    if (shouldAddSquashingForStorage(table, context) && !no_squash)
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
-
-        auto applying = std::make_shared<ApplySquashingTransform>(chain.getInputHeader());
-        chain.addSource(std::move(applying));
-
+        size_t min_block_size_bytes = table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL;
+        /// On low-memory systems, cap squashing block size to avoid accumulating too much data.
+        if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
+            min_block_size_bytes = std::min<size_t>(min_block_size_bytes, static_cast<size_t>(static_cast<double>(memory_limit) * 0.9) / 8);
         auto planing = std::make_shared<PlanSquashingTransform>(
-            chain.getInputHeader(),
+            chain.getInputSharedHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
+            min_block_size_bytes,
+            settings[Setting::max_insert_block_size],
+            settings[Setting::max_insert_block_size_bytes],
+            squash_with_strict_limits);
         chain.addSource(std::move(planing));
     }
 
-    auto context_ptr = getContext();
-    auto counting = std::make_shared<CountingTransform>(chain.getInputHeader(), context_ptr->getQuota());
-    counting->setProcessListElement(context_ptr->getProcessListElement());
-    counting->setProgressCallback(context_ptr->getProgressCallback());
+    if (!squash_with_strict_limits)
+    {
+        chain.addSource(
+            std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
+                chain.getInputSharedHeader()));
+    }
+
+    auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
+    counting->setProcessListElement(context->getProcessListElement());
+    counting->setProgressCallback(context->getProgressCallback());
     chain.addSource(std::move(counting));
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    pipeline.setNumThreads(max_insert_threads);
+    /// When materialized views are attached, their inner SELECT queries benefit
+    /// from full parallelism, so we use max_threads. Without MVs the insert
+    /// pipeline is 1-wide and requesting max_threads would only waste
+    /// ConcurrencyControl slots and spawn unnecessary threads (see #102947).
+    pipeline.setNumThreads(insert_dependencies->isViewsInvolved() ? max_threads : max_insert_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)
     {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
-
-        for (auto & buffer : owned_buffers)
-            format->addBuffer(std::move(buffer));
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
 
-        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
+        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
         pipeline.complete(std::move(pipe));
+    }
+
+    return pipeline;
+}
+
+std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
+    const ASTInsertQuery & query, ContextPtr local_context)
+{
+    if (query.table_id.empty())
+        return {};
+
+    StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
+    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
+        return {};
+
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+    StoragePtr src_storage;
+    const ASTSelectQuery * select_query = nullptr;
+    if (select.list_of_selects->children.size() == 1)
+    {
+        if (auto * sq = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        {
+            select_query = sq;
+            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+
+            JoinedTables joined_tables(Context::createCopy(local_context), *sq);
+            if (joined_tables.tablesCount() == 1)
+                src_storage = joined_tables.getLeftTableStorage();
+        }
+    }
+    if (!src_storage)
+        return {};
+
+    auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage);
+    if (!src_storage_cluster)
+        return {};
+
+    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
+        return {};
+
+    /// Do not enable parallel distributed INSERT SELECT in case when query probably comes from another server
+    if (local_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        return {};
+
+    const Settings & settings = local_context->getSettingsRef();
+    if (settings[Setting::max_distributed_depth]
+        && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    /// query will be executed on all nodes of the cluster
+    auto src_cluster = src_storage_cluster->getCluster(local_context);
+
+    /// Actually the query doesn't change, we just serialize it to string
+    String query_str;
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(
+            /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        query.IAST::format(buf, ast_format_settings);
+        query_str = buf.str();
+    }
+
+    QueryPipeline pipeline;
+    ContextMutablePtr query_context = Context::createCopy(local_context);
+    query_context->increaseDistributedDepth();
+    query_context->setSetting("skip_unavailable_shards", true);
+
+    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
+
+    std::optional<ActionsDAG> filter_dag;
+    const ActionsDAG::Node * predicate = nullptr;
+    if (select_query)
+    {
+        ASTPtr condition_ast;
+        if (select_query->prewhere() && select_query->where())
+            condition_ast = makeASTOperator("and", select_query->prewhere()->clone(), select_query->where()->clone());
+        else if (select_query->prewhere())
+            condition_ast = select_query->prewhere()->clone();
+        else if (select_query->where())
+            condition_ast = select_query->where()->clone();
+
+        if (condition_ast)
+        {
+            try
+            {
+                const auto metadata = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+                const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
+                const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+                auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
+                filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
+                predicate = filter_dag->getOutputs().at(0);
+            }
+            catch (...)
+            {
+                /// Filter extraction is best-effort: if DAG construction fails for any reason
+                /// (e.g. the predicate references columns or functions not available in this
+                /// isolated analysis pass), silently fall back to no pruning so the query
+                /// still executes correctly.
+                tryLogCurrentException(logger, "Failed to build filter DAG for partition pruning in INSERT ... SELECT; continuing without pruning");
+                filter_dag.reset();
+                predicate = nullptr;
+            }
+        }
+    }
+     auto extension = src_storage_cluster->getTaskIteratorExtension(
+        predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_storage_cluster->getInMemoryMetadataPtr(local_context, false));
+
+    /// -Cluster storage treats each replicas as a shard in cluster definition
+    /// so, it's enough to consider only shards here
+    size_t replica_index = 0;
+    for (const auto & shard : src_cluster->getShardsInfo())
+    {
+        auto pools = shard.pool->getShuffledPools(settings);
+        chassert(pools.size() == 1);
+
+        IConnections::ReplicaInfo replica_info{.number_of_current_replica = replica_index++};
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            pools.at(0).pool,
+            query_str,
+            std::make_shared<const Block>(Block{}),
+            query_context,
+            /*throttler=*/nullptr,
+            Scalars{},
+            Tables{},
+            QueryProcessingStage::Complete,
+            RemoteQueryExecutor::Extension{.task_iterator = extension.task_iterator, .replica_info = std::move(replica_info)});
+        remote_query_executor->setLogger(logger);
+        /// check if destination table exists on nodes
+        remote_query_executor->setMainTable(dst_storage->getStorageID());
+
+        Pipe pipe{std::make_shared<RemoteSource>(
+            remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote])};
+        pipe.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<UnmarshallBlocksTransform>(header); });
+        QueryPipeline remote_pipeline{std::move(pipe)};
+        remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
+
+        pipeline.addCompletedPipeline(std::move(remote_pipeline));
     }
 
     return pipeline;
@@ -704,14 +999,30 @@ BlockIO InterpreterInsertQuery::execute()
     const Settings & settings = context->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
+    StoragePtr table = getTable(query);
+    setInsertContextValues(context, query, table);
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
+        /// Allow inserts into external table engines (object storage, message queues, external databases)
+        /// as they don't create merge tasks on the server replica
+        bool is_external_storage =
+            table->isObjectStorage() ||     /// S3, Azure, GCS, HDFS, etc.
+            table->isDataLake() ||           /// Iceberg, DeltaLake, Hudi
+            table->isMessageQueue() ||       /// Kafka, RabbitMQ, NATS
+            table->isExternalDatabase();     /// MySQL, PostgreSQL, MongoDB, Hive, YTsaurus
+
+        if (!is_external_storage)
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 
-    StoragePtr table = getTable(query);
+    if (context->getMessageQueueDisableInsertion()
+        && table->isMessageQueue()
+        && no_destination)
+    {
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Message queue insertion is disabled");
+    }
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
@@ -720,9 +1031,9 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    table->updateExternalDynamicMetadataIfExists(context);
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
-
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
     if (!query.table_function)
@@ -740,17 +1051,27 @@ BlockIO InterpreterInsertQuery::execute()
     {
         if (settings[Setting::parallel_distributed_insert_select])
         {
+            /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
+            auto saved_select = query.select->clone();
+
             auto distributed = table->distributedWrite(query, context);
             if (distributed)
             {
                 res.pipeline = std::move(*distributed);
             }
-            if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
+            if (!res.pipeline.initialized())
+            {
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
+                    res.pipeline = std::move(*pipeline);
+            }
+            if (!res.pipeline.initialized())
             {
                 auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
                 if (pipeline)
                     res.pipeline = std::move(*pipeline);
             }
+
+            query.select = std::move(saved_select);
         }
         if (!res.pipeline.initialized())
             res.pipeline = buildInsertSelectPipeline(query, table);
@@ -779,8 +1100,8 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, Cont
     const auto & insert_table = context_->getInsertionTable();
     if (!insert_table.empty())
     {
-        elem.query_databases.insert(insert_table.getDatabaseName());
-        elem.query_tables.insert(insert_table.getFullNameNotQuoted());
+        elem.query_databases.insert(backQuoteIfNeed(insert_table.getDatabaseName()));
+        elem.query_tables.insert(insert_table.getFullTableName());
     }
 }
 
@@ -790,6 +1111,25 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     extendQueryLogElemImpl(elem, context_);
 }
 
+void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table)
+{
+    std::optional<Names> insert_columns;
+    if (insert_query.columns)
+    {
+        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(context_, false), insert_query.columns);
+        Names names;
+        names.reserve(columns_ast->children.size());
+        for (const auto & identifier : columns_ast->children)
+        {
+            std::string current_name = identifier->getColumnName();
+            names.emplace_back(std::move(current_name));
+        }
+
+        insert_columns = std::move(names);
+    }
+
+    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(context_, false)->columns));
+}
 
 void registerInterpreterInsertQuery(InterpreterFactory & factory)
 {

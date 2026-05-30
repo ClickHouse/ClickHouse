@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/validateColumnType.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,13 +15,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <optional>
-#include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 #include <queue>
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Core/SettingsEnums.h>
 
 
 #if defined(MEMORY_SANITIZER)
@@ -75,7 +76,7 @@ ExpressionActionsPtr ExpressionActions::clone() const
 {
     auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
 
-    std::unordered_map<const Node *, Node *> copy_map;
+    std::unordered_map<const Node *, const Node *> copy_map;
     copy->actions_dag = actions_dag.clone(copy_map);
     copy->actions = actions;
     for (auto & action : copy->actions)
@@ -484,11 +485,26 @@ static WriteBuffer & operator << (WriteBuffer & out, const ExpressionActions::Ar
 std::string ExpressionActions::Action::toString() const
 {
     WriteBufferFromOwnString out;
+
+    auto display_preview = [&](auto && name)
+    {
+        static constexpr size_t max_length_to_display = 100;
+        if (name.size() <= max_length_to_display)
+            out << name;
+        else
+            out << std::string_view(name).substr(0, max_length_to_display) << "...";
+        /// Note: it will cut UTF-8 strings incorrectly, but it's acceptable here.
+    };
+
     switch (node->type)
     {
         case ActionsDAG::ActionType::COLUMN:
-            out << "COLUMN "
-                << (node->column ? node->column->getName() : "(no column)");
+            out << "COLUMN ";
+
+            if (!node->column)
+                out << "(no column)";
+            else
+                display_preview(node->column->getName());
             break;
 
         case ActionsDAG::ActionType::ALIAS:
@@ -496,19 +512,30 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::ActionType::FUNCTION:
-            out << "FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
-                << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
+            out << "FUNCTION ";
+            if (node->is_function_compiled)
+                out << "[compiled] ";
+
+            if (node->function_base)
+                out << node->function_base->getName();
+            else
+                out << "(no function)";
+
+            out << "(";
             for (size_t i = 0; i < node->children.size(); ++i)
             {
                 if (i)
                     out << ", ";
-                out << node->children[i]->result_name << " " << arguments[i];
+                display_preview(node->children[i]->result_name);
+                out << " " << arguments[i];
             }
             out << ")";
             break;
 
         case ActionsDAG::ActionType::ARRAY_JOIN:
-            out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
+            out << "ARRAY JOIN ";
+            display_preview(node->children.front()->result_name);
+            out << " " << arguments.front();
             break;
 
         case ActionsDAG::ActionType::INPUT:
@@ -516,13 +543,15 @@ std::string ExpressionActions::Action::toString() const
             break;
 
         case ActionsDAG::ActionType::PLACEHOLDER:
-            out << "PLACEHOLDER " << node->result_name;
+            out << "PLACEHOLDER ";
+            display_preview(node->result_name);
             break;
 
     }
 
-    out << " -> " << node->result_name
-        << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
+    out << " -> ";
+    display_preview(node->result_name);
+    out << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
     return out.str();
 }
 
@@ -592,7 +621,29 @@ namespace
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+static void replicateColumns(ColumnsWithTypeAndName & columns, const IColumn::Offsets & offsets)
+{
+    for (auto & column : columns)
+        if (column.column)
+            column.column = column.column->replicate(offsets);
+}
+
+static void replicateColumnsLazily(ColumnsWithTypeAndName & columns, const IColumn::Offsets & offsets, const ColumnPtr & indexes)
+{
+    for (auto & column : columns)
+    {
+        if (column.column)
+        {
+            if (isLazyReplicationUseful(column.column))
+                column.column = ColumnReplicated::create(column.column, indexes);
+            else
+                column.column = column.column->replicate(offsets);
+        }
+    }
+}
+
+
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input, bool enable_lazy_columns_replication)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -640,7 +691,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (res_column.column->getDataType() != res_column.type->getColumnType())
+                if (!columnMatchesType(*res_column.column, *res_column.type))
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -664,19 +715,23 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             if (!action.arguments.front().needed_later)
                 columns[array_join_key_pos] = {};
 
-            array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
+            array_join_key.column = array_join_key.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
 
             const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", action.node->result_name);
 
-            for (auto & column : columns)
-                if (column.column)
-                    column.column = column.column->replicate(array->getOffsets());
-
-            for (auto & column : inputs)
-                if (column.column)
-                    column.column = column.column->replicate(array->getOffsets());
+            if (enable_lazy_columns_replication)
+            {
+                ColumnPtr indexes = convertOffsetsToIndexes(array->getOffsets());
+                replicateColumnsLazily(columns, array->getOffsets(), indexes);
+                replicateColumnsLazily(inputs, array->getOffsets(), indexes);
+            }
+            else
+            {
+                replicateColumns(columns, array->getOffsets());
+                replicateColumns(inputs, array->getOffsets());
+            }
 
             auto & res_column = columns[action.result_position];
 
@@ -744,7 +799,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(
+    Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
 {
     ExecutionContext execution_context
     {
@@ -778,13 +834,21 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     {
         try
         {
-            executeAction(action, execution_context, dry_run, allow_duplicates_in_input);
+            executeAction(action, execution_context, dry_run, allow_duplicates_in_input, settings.enable_lazy_columns_replication);
             checkLimits(execution_context.columns);
         }
         catch (Exception & e)
         {
             e.addMessage(fmt::format("while executing '{}'", action.toString()));
             throw;
+        }
+
+        if (check_cancelled && check_cancelled())
+        {
+            /// Return an empty block with the names and types of result columns
+            block = sample_block.cloneWithColumns(sample_block.cloneEmptyColumns());
+            num_rows = 0;
+            return;
         }
     }
 
@@ -820,13 +884,13 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const
 {
     size_t num_rows = block.rows();
 
-    execute(block, num_rows, dry_run, allow_duplicates_in_input);
+    execute(block, num_rows, dry_run, allow_duplicates_in_input, std::move(check_cancelled));
 
-    if (!block)
+    if (block.empty())
         block.insert({DataTypeUInt8().createColumnConst(num_rows, 0), std::make_shared<DataTypeUInt8>(), "_dummy"});
 }
 
@@ -849,15 +913,17 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns)
 {
     std::optional<size_t> min_size;
     NameAndTypePair result;
 
     for (const auto & column : columns)
     {
-        /// Skip .sizeX and similar meta information
-        if (column.isSubcolumn())
+        /// Skip .sizeX and similar meta information for storage column lists.
+        /// For subquery projections, all entries are valid query-level outputs,
+        /// so skip_subcolumns should be false.
+        if (skip_subcolumns && column.isSubcolumn())
             continue;
 
         /// @todo resolve evil constant
@@ -961,44 +1027,6 @@ JSONBuilder::ItemPtr ExpressionActions::toTree() const
     return map;
 }
 
-bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const
-{
-    /// Check has column in (empty set).
-    String set_to_check;
-
-    for (auto it = actions.rbegin(); it != actions.rend(); ++it)
-    {
-        const auto & action = *it;
-        if (action.node->type == ActionsDAG::ActionType::FUNCTION && action.node->function_base)
-        {
-            if (action.node->result_name == column_name && action.node->children.size() > 1)
-            {
-                auto name = action.node->function_base->getName();
-                if ((name == "in" || name == "globalIn"))
-                {
-                    set_to_check = action.node->children[1]->result_name;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!set_to_check.empty())
-    {
-        for (const auto & action : actions)
-        {
-            if (action.node->type == ActionsDAG::ActionType::COLUMN && action.node->result_name == set_to_check)
-                // Constant ColumnSet cannot be empty, so we only need to check non-constant ones.
-                if (const auto * column_set = checkAndGetColumn<const ColumnSet>(action.node->column.get()))
-                    if (auto future_set = column_set->getData())
-                        if (auto set = future_set->get())
-                            if (set->getTotalRowCount() == 0)
-                                return true;
-        }
-    }
-
-    return false;
-}
 
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
 {

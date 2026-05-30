@@ -3,6 +3,7 @@
 
 #if USE_ARROW
 
+#include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -16,10 +17,10 @@ namespace DB
 class ReadBuffer;
 class ArrowColumnToCHColumn;
 
-class ArrowBlockInputFormat : public IInputFormat
+class ArrowBlockInputFormat final : public IInputFormat
 {
 public:
-    ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_);
+    ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
 
     void resetParser() override;
 
@@ -59,7 +60,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ArrowSchemaReader : public ISchemaReader
+class ArrowSchemaReader final : public ISchemaReader
 {
 public:
     ArrowSchemaReader(ReadBuffer & in_, bool stream_, const FormatSettings & format_settings_);

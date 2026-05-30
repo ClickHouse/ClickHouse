@@ -30,7 +30,7 @@ public:
     virtual void writeRowBetweenDelimiter() {}  /// delimiter between rows
 
 protected:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_);
+    IRowOutputFormat(SharedHeader header, WriteBuffer & out_);
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
@@ -63,6 +63,8 @@ protected:
     void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
     bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
+
+    void updateSerializationsIfNeeded(const Columns & columns);
 
     size_t num_columns;
     DataTypes types;

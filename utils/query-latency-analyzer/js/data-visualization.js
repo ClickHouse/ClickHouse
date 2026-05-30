@@ -57,7 +57,7 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         top: 2,
         right: axisLabelOffset + bandAreaWidth + bandMargin,
         bottom: 18,
-        left: 2
+        left: 20
     };
 
     // Split labels into underscore and non-underscore groups
@@ -98,6 +98,17 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
     }
     if (total === 0) total = 1;
 
+    // Compute share for each label
+    const labelShares = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+            if (!labels[i].startsWith("_") && !labels[j].startsWith("_")) {
+                labelShares[i] += cov[i][j];
+            }
+        }
+        labelShares[i] = labelShares[i] / total;
+    }
+
     const norm = cov.map(row => row.map(v => v / total));
     for (let i = 0; i < n; i++) {
         for (let j = 0; j < n; j++) {
@@ -127,6 +138,25 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
                 duration: [0, 0]
             });
         });
+
+    // Add share percentages as text elements
+    svg.selectAll(".share-text")
+        .data(labelShares.map((share, i) => ({
+            share,
+            label: labels[i],
+            y: labelToY.get(labels[i]),
+            x: i * cellSize // Use same x-coordinate as diagonal cells
+        })))
+        .enter()
+        .filter(d => !d.label.startsWith('_'))
+        .append("text")
+        .attr("class", "share-text")
+        .attr("x", d => d.x - 2)
+        .attr("y", d => d.y + cellSize - 2) // Align with the diagonal cells
+        .attr("text-anchor", "end")
+        .style("font-size", "8px")
+        .style("font-weight", "bold")
+        .text(d => (d.share * 100).toFixed(0) + '%');
 
     // Y-axis with gap
     const yScale = d3.scaleOrdinal()

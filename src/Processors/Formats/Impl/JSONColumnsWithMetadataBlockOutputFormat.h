@@ -36,10 +36,10 @@ namespace DB
  *     }
  * }
  */
-class JSONColumnsWithMetadataBlockOutputFormat : public JSONColumnsBlockOutputFormat
+class JSONColumnsWithMetadataBlockOutputFormat final : public JSONColumnsBlockOutputFormat
 {
 public:
-    JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONCompactColumnsBlockOutputFormat"; }
 

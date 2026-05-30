@@ -1,4 +1,4 @@
-#include "MySQLDictionarySource.h"
+#include <Dictionaries/MySQLDictionarySource.h>
 
 
 #if USE_MYSQL
@@ -6,9 +6,9 @@
 #endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Core/Settings.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
@@ -25,7 +25,7 @@
 #include <Common/LocalDateTime.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
-#include "readInvalidateQuery.h"
+#include <Dictionaries/readInvalidateQuery.h>
 
 
 namespace DB
@@ -156,6 +156,31 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
             });
 
+            if (created_from_ddl)
+            {
+                if (config.has(settings_config_prefix + ".replica"))
+                {
+                    Poco::Util::AbstractConfiguration::Keys replica_keys;
+                    config.keys(settings_config_prefix, replica_keys);
+                    for (const auto & replica_key : replica_keys)
+                    {
+                        if (replica_key.starts_with("replica"))
+                        {
+                            const auto replica_prefix = settings_config_prefix + "." + replica_key;
+                            global_context->getRemoteHostFilter().checkHostAndPort(
+                                config.getString(replica_prefix + ".host"),
+                                toString(config.getInt(replica_prefix + ".port", 3306)));
+                        }
+                    }
+                }
+                else
+                {
+                    global_context->getRemoteHostFilter().checkHostAndPort(
+                        config.getString(settings_config_prefix + ".host"),
+                        toString(config.getInt(settings_config_prefix + ".port", 3306)));
+                }
+            }
+
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
         }
@@ -235,31 +260,39 @@ QueryPipeline MySQLDictionarySource::loadFromQuery(const String & query)
             pool, query, sample_block, settings));
 }
 
-QueryPipeline MySQLDictionarySource::loadAll()
+BlockIO MySQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadFromQuery(load_all_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_all_query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadUpdatedAll()
+BlockIO MySQLDictionarySource::loadUpdatedAll()
 {
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    return loadFromQuery(load_update_query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(load_update_query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO MySQLDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
-QueryPipeline MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO MySQLDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadFromQuery(query);
+    BlockIO io;
+    io.pipeline = loadFromQuery(query);
+    return io;
 }
 
 bool MySQLDictionarySource::isModified() const
@@ -268,11 +301,7 @@ bool MySQLDictionarySource::isModified() const
     {
         LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response)
-            return false;
-
-        invalidate_query_response = response;
-        return true;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
 
     return true;
@@ -321,7 +350,9 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(QueryPipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
+
+    QueryPipeline pipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings));
+    return readInvalidateQuery(pipeline);
 }
 
 }

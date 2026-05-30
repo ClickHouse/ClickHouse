@@ -1,4 +1,4 @@
-#include "ProtobufReader.h"
+#include <Formats/ProtobufReader.h>
 
 #if USE_PROTOBUF
 #   include <IO/ReadHelpers.h>
@@ -31,8 +31,6 @@ namespace
     constexpr Int64 END_OF_VARINT = -1;
     constexpr Int64 END_OF_GROUP = -2;
     constexpr Int64 END_OF_FILE = -3;
-
-    Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
 }
 
 
@@ -41,10 +39,21 @@ ProtobufReader::ProtobufReader(ReadBuffer & in_)
 {
 }
 
+void ProtobufReader::resetState()
+{
+    root_message_has_length_delimiter = false;
+    current_message_level = 0;
+    current_message_end = 0;
+    parent_message_ends.clear();
+    field_number = 0;
+    next_field_number = 0;
+    field_end = 0;
+}
+
 void ProtobufReader::startMessage(bool with_length_delimiter_)
 {
     // Start reading a root message.
-    assert(!current_message_level);
+    chassert(!current_message_level);
 
     root_message_has_length_delimiter = with_length_delimiter_;
     if (root_message_has_length_delimiter)
@@ -85,7 +94,7 @@ void ProtobufReader::endMessage(bool ignore_errors)
 
 void ProtobufReader::startNestedMessage()
 {
-    assert(current_message_level >= 1);
+    chassert(current_message_level >= 1);
     if ((cursor > field_end) && (field_end != END_OF_GROUP))
         throwUnknownFormat();
 
@@ -100,7 +109,7 @@ void ProtobufReader::startNestedMessage()
 
 void ProtobufReader::endNestedMessage()
 {
-    assert(current_message_level >= 2);
+    chassert(current_message_level >= 2);
     if (cursor != current_message_end)
     {
         if (current_message_end == END_OF_GROUP)
@@ -123,7 +132,7 @@ void ProtobufReader::endNestedMessage()
 
 bool ProtobufReader::readFieldNumber(int & field_number_)
 {
-    assert(current_message_level);
+    chassert(current_message_level);
     if (next_field_number)
     {
         field_number_ = field_number = next_field_number;

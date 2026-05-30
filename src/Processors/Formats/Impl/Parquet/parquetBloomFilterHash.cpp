@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 
+#include <Columns/ColumnNullable.h>
+
 #if USE_PARQUET
 
 #include <parquet/metadata.h>
@@ -166,12 +168,16 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
 
 std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
+    const IColumn * column = data_column;
+    if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column))
+        column = nullable_column->getNestedColumnPtr().get();
+
     std::vector<uint64_t> hashes;
 
-    for (size_t i = 0u; i < data_column->size(); i++)
+    for (size_t i = 0u; i < column->size(); i++)
     {
         Field f;
-        data_column->get(i, f);
+        column->get(i, f);
 
         auto hashed_value = parquetTryHashField(f, parquet_column_descriptor);
 

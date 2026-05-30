@@ -44,7 +44,7 @@ template <bool with_defaults = false>
 class BinaryRowInputFormat final : public RowInputFormatWithNamesAndTypes<BinaryFormatReader<with_defaults>>
 {
 public:
-    BinaryRowInputFormat(ReadBuffer & in_, const Block & header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+    BinaryRowInputFormat(ReadBuffer & in_, SharedHeader header, IRowInputFormat::Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BinaryRowInputFormat"; }
 
@@ -56,7 +56,7 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 };
 
-class BinaryWithNamesAndTypesSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class BinaryWithNamesAndTypesSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

@@ -3,9 +3,8 @@ description: 'Documentation for ARRAY JOIN Clause'
 sidebar_label: 'ARRAY JOIN'
 slug: /sql-reference/statements/select/array-join
 title: 'ARRAY JOIN Clause'
+doc_type: 'reference'
 ---
-
-# ARRAY JOIN Clause
 
 It is a common operation for tables that contain an array column to produce a new table that has a row with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
@@ -244,7 +243,7 @@ Multiple arrays with different sizes can be joined by using: `SETTINGS enable_un
 
 ```sql
 SELECT s, arr, a, b
-FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b
+FROM arrays_test ARRAY JOIN arr AS a, [['a','b'],['c']] AS b
 SETTINGS enable_unaligned_array_join = 1;
 ```
 

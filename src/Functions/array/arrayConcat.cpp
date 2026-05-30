@@ -55,7 +55,7 @@ ColumnPtr FunctionArrayConcat::executeImpl(const ColumnsWithTypeAndName & argume
         preprocessed_columns[i] = std::move(preprocessed_column);
     }
 
-    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+    VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
     for (auto & argument_column : preprocessed_columns)
     {
@@ -83,13 +83,13 @@ REGISTER_FUNCTION(ArrayConcat)
     FunctionDocumentation::Description description = "Combines arrays passed as arguments.";
     FunctionDocumentation::Syntax syntax = "arrayConcat(arr1 [, arr2, ... , arrN])";
     FunctionDocumentation::Arguments arguments = {
-        {"arr1 [, arr2, ... , arrN]", "N number of arrays to concatenate. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"arr1 [, arr2, ... , arrN]", "N number of arrays to concatenate.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns a single combined array from the provided array arguments.";
-    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res", "[1,2,3,4,5,6]"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a single combined array from the provided array arguments.", {"Array(T)"}};
+    FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res", "[1, 2, 3, 4, 5, 6]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionArrayConcat>(documentation);
 }

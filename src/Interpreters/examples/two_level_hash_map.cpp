@@ -19,11 +19,15 @@
 #include <Common/HashTable/HashMap.h>
 
 
+namespace
+{
+
 using Key = UInt64;
 using Value = UInt64;
 
+} /// anonymous namespace
 
-int main(int argc, char ** argv)
+int mainEntryExampleTwoLevelHashMap(int argc, char ** argv)
 {
     if (argc < 2)
     {
@@ -48,7 +52,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -75,7 +79,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
 
         size_t sum_counts = 0;
@@ -111,7 +115,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
 
         size_t sum_counts = 0;

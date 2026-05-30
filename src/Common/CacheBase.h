@@ -64,7 +64,10 @@ public:
         size_t max_count,
         double size_ratio)
     {
-        auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
+        auto on_remove_entry_function = [this](size_t weight_loss, const MappedPtr & mapped_ptr)
+        {
+            onEntryRemoval(weight_loss, mapped_ptr);
+        };
 
         if (cache_policy_name.empty())
         {
@@ -75,12 +78,12 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_weight_loss_function);
+            cache_policy = std::make_unique<LRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, on_remove_entry_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_weight_loss_function);
+            cache_policy = std::make_unique<SLRUPolicy>(size_in_bytes_metric, count_metric, max_size_in_bytes, max_count, size_ratio, on_remove_entry_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
@@ -111,6 +114,27 @@ public:
         else
             ++misses;
         return res;
+    }
+
+    std::vector<MappedPtr> getMany(const std::vector<Key> & keys)
+    {
+        std::vector<MappedPtr> values;
+        values.resize(keys.size());
+
+        std::lock_guard lock(mutex);
+
+        for (size_t i = 0; i < keys.size(); ++i)
+        {
+            auto res = cache_policy->get(keys[i]);
+            if (res)
+                ++hits;
+            else
+                ++misses;
+
+            values[i] = std::move(res);
+        }
+
+        return values;
     }
 
     bool contains(const Key & key) const
@@ -239,6 +263,12 @@ public:
         return cache_policy->maxSizeInBytes();
     }
 
+    size_t maxCount() const
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->maxCount();
+    }
+
     void setMaxCount(size_t max_count)
     {
         std::lock_guard lock(mutex);
@@ -335,8 +365,9 @@ private:
 
     InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
 
-    /// Override this method if you want to track how much weight was lost in removeOverflow method.
-    virtual void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) {}
+    /// This is called when an entry is being evicted from the cache.
+    /// Override this method if you want to handle individual entry removals from cache
+    virtual void onEntryRemoval(size_t /*weight_loss*/, const MappedPtr &) { }
 };
 
 

@@ -23,7 +23,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnRemoveEntryFunction;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
       * max_protected_size shows how many of the most frequently used entries will not be evicted after a sequential scan.
@@ -36,7 +36,7 @@ public:
         size_t max_size_in_bytes_,
         size_t max_count_,
         double size_ratio_,
-        OnWeightLossFunction on_weight_loss_function_)
+        OnRemoveEntryFunction on_remove_entry_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
@@ -44,7 +44,7 @@ public:
         , size_ratio(size_ratio_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
-        , on_weight_loss_function(on_weight_loss_function_)
+        , on_remove_entry_function(on_remove_entry_function_)
     {
     }
 
@@ -66,6 +66,11 @@ public:
     size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
+    }
+
+    size_t maxCount() const override
+    {
+        return max_count;
     }
 
     void setMaxCount(size_t max_count_) override
@@ -270,11 +275,11 @@ private:
     CurrentMetrics::Metric count_metric;
 
     WeightFunction weight_function;
-    OnWeightLossFunction on_weight_loss_function;
+    OnRemoveEntryFunction on_remove_entry_function;
 
     static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
     {
-        return static_cast<size_t>(max_size_in_bytes * std::max(0.0, std::min(1.0, size_ratio)));
+        return static_cast<size_t>(static_cast<double>(max_size_in_bytes) * std::max(0.0, std::min(1.0, size_ratio)));
     }
 
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
@@ -326,15 +331,19 @@ private:
             else
             {
                 current_weight_lost += cell.size;
+
+                /// We cannot have protected cells in non-protected queue
+                chassert(!is_protected);
+                /// Update cache-specific metrics.
+                if (on_remove_entry_function)
+                    on_remove_entry_function(cell.size, cell.value);
+
                 cells.erase(it);
                 queue.pop_front();
             }
 
             --queue_size;
         }
-
-        if (!is_protected)
-            on_weight_loss_function(current_weight_lost);
 
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent

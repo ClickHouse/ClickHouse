@@ -16,9 +16,11 @@ namespace DB
 class XMLRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
-    XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    XMLRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "XMLRowOutputFormat"; }
+
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

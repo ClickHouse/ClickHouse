@@ -1,4 +1,4 @@
-#include "ReadBufferFromWebServer.h"
+#include <Disks/IO/ReadBufferFromWebServer.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -32,11 +32,11 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, file_size_)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
-    , buf_size(settings_.remote_fs_buffer_size)
+    , buf_size(settings_.remote_fs_settings.buffer_size)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)

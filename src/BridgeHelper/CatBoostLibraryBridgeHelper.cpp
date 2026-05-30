@@ -1,4 +1,4 @@
-#include "CatBoostLibraryBridgeHelper.h"
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/escapeForFileName.h>
@@ -119,7 +119,7 @@ void CatBoostLibraryBridgeHelper::removeModel()
 {
     startBridgeSync();
 
-    assert(model_path);
+    chassert(model_path);
 
     auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_REMOVEMODEL_METHOD))
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -134,7 +134,7 @@ void CatBoostLibraryBridgeHelper::removeModel()
 
     String result;
     readStringBinary(result, *buf);
-    assert(result == "1");
+    chassert(result == "1");
 }
 
 void CatBoostLibraryBridgeHelper::removeAllModels()
@@ -149,14 +149,14 @@ void CatBoostLibraryBridgeHelper::removeAllModels()
 
     String result;
     readStringBinary(result, *buf);
-    assert(result == "1");
+    chassert(result == "1");
 }
 
 size_t CatBoostLibraryBridgeHelper::getTreeCount()
 {
     startBridgeSync();
 
-    assert(model_path && library_path);
+    chassert(model_path && library_path);
 
     auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_GETTREECOUNT_METHOD))
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
@@ -180,11 +180,11 @@ ColumnPtr CatBoostLibraryBridgeHelper::evaluate(const ColumnsWithTypeAndName & c
     startBridgeSync();
 
     WriteBufferFromOwnString string_write_buf;
-    Block block(columns);
+    auto block = std::make_shared<const Block>(columns);
     NativeWriter serializer(string_write_buf, /*client_revision*/ 0, block);
-    serializer.write(block);
+    serializer.write(*block);
 
-    assert(model_path);
+    chassert(model_path);
 
     auto buf = BuilderRWBufferFromHTTP(createRequestURI(CATBOOST_LIB_EVALUATE_METHOD))
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)

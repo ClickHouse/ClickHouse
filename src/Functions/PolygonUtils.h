@@ -1,12 +1,15 @@
 #pragma once
 
+#include <base/demangle.h>
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Core/Defines.h>
 #include <base/TypeLists.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -200,7 +203,7 @@ public:
 
 private:
     MultiPolygon multi_polygon;
-    std::vector<PointInPolygonImpl> polygon_impls;
+    VectorWithMemoryTracking<PointInPolygonImpl> polygon_impls;
 
     /// Boost.Geometry split policy choices
     ///   linear     — quick to build, queries slowest
@@ -217,7 +220,7 @@ private:
     {
         polygon_impls.reserve(multi_polygon.size());
 
-        std::vector<PolyBox> boxes; // bulk-build container
+        VectorWithMemoryTracking<PolyBox> boxes; // bulk-build container
         boxes.reserve(multi_polygon.size());
 
         std::size_t idx = 0;
@@ -247,10 +250,11 @@ private:
 };
 
 /// Optimized algorithm with bounding box and grid.
-template <typename CoordinateType>
+template <typename TCoordinateType>
 class PointInPolygonWithGrid
 {
 public:
+    using CoordinateType = TCoordinateType;
     using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
     /// Counter-Clockwise ordering.
     using Polygon = boost::geometry::model::polygon<Point, false>;
@@ -316,8 +320,8 @@ private:
     const UInt16 grid_size;
 
     Polygon polygon;
-    std::vector<Cell> cells;
-    std::vector<MultiPolygon> polygons;
+    VectorWithMemoryTracking<Cell> cells;
+    VectorWithMemoryTracking<MultiPolygon> polygons;
 
     CoordinateType cell_width;
     CoordinateType cell_height;
@@ -350,7 +354,7 @@ private:
     inline void addCell(size_t index, const Box & box, const Polygon & first, const Polygon & second);
 
     /// Returns a list of half-planes were formed from intersection edges without box edges.
-    inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
+    inline VectorWithMemoryTracking<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
     /// Check that polygon.outer() is convex.
     inline bool isConvex(const Polygon & polygon);
@@ -418,13 +422,13 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 
     for (size_t row = 0; row < grid_size; ++row)
     {
-        CoordinateType y_min = min_corner.y() + row * cell_height;
-        CoordinateType y_max = min_corner.y() + (row + 1) * cell_height;
+        CoordinateType y_min = min_corner.y() + static_cast<CoordinateType>(row) * cell_height;
+        CoordinateType y_max = min_corner.y() + static_cast<CoordinateType>(row + 1) * cell_height;
 
         for (size_t col = 0; col < grid_size; ++col)
         {
-            CoordinateType x_min = min_corner.x() + col * cell_width;
-            CoordinateType x_max = min_corner.x() + (col + 1) * cell_width;
+            CoordinateType x_min = min_corner.x() + static_cast<CoordinateType>(col) * cell_width;
+            CoordinateType x_max = min_corner.x() + static_cast<CoordinateType>(col + 1) * cell_width;
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
             MultiPolygon intersection;
@@ -516,12 +520,12 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
 }
 
 template <typename CoordinateType>
-std::vector<typename PointInPolygonWithGrid<CoordinateType>::HalfPlane>
+VectorWithMemoryTracking<typename PointInPolygonWithGrid<CoordinateType>::HalfPlane>
 PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
         const PointInPolygonWithGrid<CoordinateType>::Box & box,
         const PointInPolygonWithGrid<CoordinateType>::Polygon & intersection)
 {
-    std::vector<HalfPlane> half_planes;
+    VectorWithMemoryTracking<HalfPlane> half_planes;
     const auto & outer = intersection.outer();
 
     for (auto i : collections::range(0, outer.size() - 1))
@@ -654,7 +658,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     auto size = x.size();
 
     if (impl.hasEmptyBound())
-        return ColumnVector<UInt8>::create(size, 0);
+        return ColumnVector<UInt8>::create(size, static_cast<UInt8>(0));
 
     auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();
@@ -662,8 +666,9 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     const auto & x_data = x.getData();
     const auto & y_data = y.getData();
 
+    using CoordinateType = typename std::decay_t<PointInPolygonImpl>::CoordinateType;
     for (auto i : collections::range(0, size))
-        data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
+        data[i] = static_cast<UInt8>(impl.contains(static_cast<CoordinateType>(x_data[i]), static_cast<CoordinateType>(y_data[i])));
 
     return result;
 }
@@ -678,8 +683,8 @@ struct CallPointInPolygon<Type, Types ...>
     static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl && impl)
     {
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&y))
-            return pointInPolygon(x, *column, impl);
-        return CallPointInPolygon<Types ...>::template call<T>(x, y, impl);
+            return pointInPolygon(x, *column, std::forward<PointInPolygonImpl>(impl));
+        return CallPointInPolygon<Types ...>::call(x, y, std::forward<PointInPolygonImpl>(impl));
     }
 
     template <typename PointInPolygonImpl>
@@ -687,8 +692,8 @@ struct CallPointInPolygon<Type, Types ...>
     {
         using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
-            return Impl::template call<Type>(*column, y, impl);
-        return CallPointInPolygon<Types ...>::call(x, y, impl);
+            return Impl::call(*column, y, std::forward<PointInPolygonImpl>(impl));
+        return CallPointInPolygon<Types ...>::call(x, y, std::forward<PointInPolygonImpl>(impl));
     }
 };
 

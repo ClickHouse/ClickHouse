@@ -1,10 +1,11 @@
 #pragma once
 
-#include <string>
-
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <DataTypes/Serializations/ISerialization.h>
+
+#include <map>
+#include <string>
 
 
 namespace DB
@@ -12,12 +13,12 @@ namespace DB
 
 class WriteBuffer;
 
-class PrometheusTextOutputFormat : public IRowOutputFormat
+class PrometheusTextOutputFormat final : public IRowOutputFormat
 {
 public:
     PrometheusTextOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
+        SharedHeader header_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "PrometheusTextOutputFormat"; }

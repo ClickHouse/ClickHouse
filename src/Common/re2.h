@@ -7,6 +7,7 @@
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
 #pragma clang diagnostic ignored "-Wdtor-name"
+#pragma clang diagnostic ignored "-Wnullability-extension"
 #if defined(__clang__) && __clang_major__ >= 21
 #pragma clang diagnostic ignored "-Wms-bitfield-padding"
 #endif

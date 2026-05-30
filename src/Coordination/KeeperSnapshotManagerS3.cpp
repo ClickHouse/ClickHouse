@@ -37,6 +37,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString session_token;
@@ -105,6 +107,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         static constexpr size_t s3_max_redirects = 10;
         static constexpr size_t s3_retry_attempts = 10;
         static constexpr bool s3_slow_all_threads_after_network_error = true;
+        static constexpr bool s3_slow_all_threads_after_retryable_error = false;
         static constexpr bool enable_s3_requests_logging = false;
 
         if (!new_uri.key.empty())
@@ -115,9 +118,15 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
             auth_settings[S3AuthSetting::region],
-            RemoteHostFilter(), s3_max_redirects, s3_retry_attempts, s3_slow_all_threads_after_network_error,
+            RemoteHostFilter(),
+            s3_max_redirects,
+            S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
+            s3_slow_all_threads_after_network_error,
+            s3_slow_all_threads_after_retryable_error,
             enable_s3_requests_logging,
-            /* for_disk_s3 = */ false, /* get_request_throttler = */ {}, /* put_request_throttler = */ {},
+            /* for_disk_s3 = */ false,
+            /* opt_disk_name = */ {},
+            /* request_throttler = */ {},
             new_uri.uri.getScheme());
 
         client_configuration.endpointOverride = new_uri.endpoint;
@@ -143,6 +152,9 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::use_insecure_imds_request],
                 auth_settings[S3AuthSetting::expiration_window_seconds],
                 auth_settings[S3AuthSetting::no_sign_request],
+                auth_settings[S3AuthSetting::role_arn],
+                auth_settings[S3AuthSetting::role_session_name],
+                /*sts_endpoint_override=*/""
             },
             credentials.GetSessionToken());
 
@@ -168,7 +180,8 @@ std::shared_ptr<KeeperSnapshotManagerS3::S3Configuration> KeeperSnapshotManagerS
 
 void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info)
 {
-    const auto & [snapshot_path, snapshot_disk, snapshot_size] = snapshot_file_info;
+    const auto & snapshot_path = snapshot_file_info.path;
+    const auto & snapshot_disk = snapshot_file_info.disk;
     try
     {
         auto s3_client = getSnapshotS3Client();
@@ -278,7 +291,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
 void KeeperSnapshotManagerS3::snapshotS3Thread()
 {
-    setThreadName("KeeperS3SnpT");
+    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT_S3);
 
     while (!shutdown_called)
     {
