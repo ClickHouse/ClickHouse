@@ -296,7 +296,9 @@ public:
     bool isVectorColumnReplaced() const;
 
     /// Returns true if the optimization is applicable (and applies it then).
-    bool requestOutputEachPartitionThroughSeparatePort();
+    bool requestOutputEachPartitionThroughSeparatePortForAggregation();
+    bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
+
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
@@ -357,7 +359,7 @@ public:
 #endif
 
     bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
@@ -462,6 +464,8 @@ private:
         AnalysisResult & result,
         const MergeTreeIndexBuildContextPtr & index_build_context,
         std::optional<ActionsDAG> & result_projection);
+
+    Pipe groupPartitionsByStreams(AnalysisResult & result);
 
     Pipe readByLayers(
         const RangesInDataParts & parts_with_ranges,

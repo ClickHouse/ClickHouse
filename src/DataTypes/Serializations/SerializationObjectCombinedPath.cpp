@@ -168,8 +168,9 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
     size_t rows = literal_column->size();
     auto & result = result_column->assumeMutableRef();
 
-    /// If sub-object is all defaults, append literal column directly.
-    if (sub_object_column->getNumberOfDefaultRows() == rows)
+    /// If sub-object contains only empty objects, append literal column directly.
+    const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
+    if (!sub_object_typed_column->hasNonEmptyRows())
     {
         result.insertRangeFrom(*literal_column, 0, rows);
         return;
@@ -184,7 +185,7 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
     {
         if (!literal_column->isDefaultAt(i))
             result.insertFrom(*literal_column, i);
-        else if (!sub_object_column->isDefaultAt(i))
+        else if (!sub_object_typed_column->isEmptyAt(i))
             result.insertFrom(*casted_sub_object, i);
         else
             result.insertDefault();

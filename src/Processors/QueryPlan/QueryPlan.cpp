@@ -1017,7 +1017,15 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .header_prefix = "", .detail_prefix = "", .write_header = options.header, .pretty_names = {}, .runtime_filter_names = {}};
+    IQueryPlanStep::FormatSettings settings{
+        .out = buffer,
+        .header_prefix = "",
+        .detail_prefix = "",
+        .write_header = options.header,
+        .compact_repeated_processor_chains = options.compact_repeated_processor_chains,
+        .pretty_names = {},
+        .runtime_filter_names = {}
+    };
 
     struct Frame
     {
