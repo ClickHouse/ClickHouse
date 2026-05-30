@@ -100,27 +100,28 @@ std::pair<Chunk, std::optional<Field>> calculateWatermark(
     const ColumnPtr & event_time_col,
     const ColumnPtr & watermark_col)
 {
-    auto columns = chunk.detachColumns();
+    auto source_columns = chunk.detachColumns();
     auto infos = std::move(chunk.getChunkInfos());
 
+    Columns output_columns;
     const WhichDataType which(watermark_type);
     if (which.isDate())
-        std::tie(columns, watermark) = executeWatermarkFilter<ColumnDate>(
-            std::move(columns), watermark, assert_cast<const ColumnDate &>(*event_time_col), assert_cast<const ColumnDate &>(*watermark_col));
+        std::tie(output_columns, watermark) = executeWatermarkFilter<ColumnDate>(
+            std::move(source_columns), watermark, assert_cast<const ColumnDate &>(*event_time_col), assert_cast<const ColumnDate &>(*watermark_col));
     else if (which.isDate32())
-        std::tie(columns, watermark) = executeWatermarkFilter<ColumnDate32>(
-            std::move(columns), watermark, assert_cast<const ColumnDate32 &>(*event_time_col), assert_cast<const ColumnDate32 &>(*watermark_col));
+        std::tie(output_columns, watermark) = executeWatermarkFilter<ColumnDate32>(
+            std::move(source_columns), watermark, assert_cast<const ColumnDate32 &>(*event_time_col), assert_cast<const ColumnDate32 &>(*watermark_col));
     else if (which.isDateTime())
-        std::tie(columns, watermark) = executeWatermarkFilter<ColumnDateTime>(
-            std::move(columns), watermark, assert_cast<const ColumnDateTime &>(*event_time_col), assert_cast<const ColumnDateTime &>(*watermark_col));
+        std::tie(output_columns, watermark) = executeWatermarkFilter<ColumnDateTime>(
+            std::move(source_columns), watermark, assert_cast<const ColumnDateTime &>(*event_time_col), assert_cast<const ColumnDateTime &>(*watermark_col));
     else if (which.isDateTime64())
-        std::tie(columns, watermark) = executeWatermarkFilter<ColumnDateTime64>(
-            std::move(columns), watermark, assert_cast<const ColumnDateTime64 &>(*event_time_col), assert_cast<const ColumnDateTime64 &>(*watermark_col));
+        std::tie(output_columns, watermark) = executeWatermarkFilter<ColumnDateTime64>(
+            std::move(source_columns), watermark, assert_cast<const ColumnDateTime64 &>(*event_time_col), assert_cast<const ColumnDateTime64 &>(*watermark_col));
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected watermark column type: {}", watermark_type->getName());
 
-    size_t num_rows = columns.front()->size();
-    Chunk processed_chunk(std::move(columns), num_rows);
+    size_t num_rows = output_columns.front()->size();
+    Chunk processed_chunk(std::move(output_columns), num_rows);
     processed_chunk.setChunkInfos(std::move(infos));
 
     return {std::move(processed_chunk), std::move(watermark)};
@@ -159,8 +160,9 @@ void WatermarkCalculatorTransform::consume(Chunk chunk)
     const auto watermark_type = event_time_column_with_type.type;
     const auto watermark_col = calculateWatermarkColumn(watermark_expression, std::move(block));
 
-    std::tie(chunk, emitted_watermark) = calculateWatermark(std::move(chunk), emitted_watermark, watermark_type, event_time_col, watermark_col);
-    pending_chunks.push(std::move(chunk));
+    Chunk processed_chunk;
+    std::tie(processed_chunk, emitted_watermark) = calculateWatermark(std::move(chunk), emitted_watermark, watermark_type, event_time_col, watermark_col);
+    pending_chunks.push(std::move(processed_chunk));
 
     if (emitted_watermark)
         pending_chunks.push(makeWatermarkMarkerChunk(output_header, emitted_watermark.value()));
