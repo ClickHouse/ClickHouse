@@ -86,6 +86,14 @@ CONV_FN(SQLIdentifier, ident)
     ret += "`";
 }
 
+void AggregateParamToString(String & ret, const AggregateParam & p)
+{
+    if (p.has_float_param())
+        ret += std::to_string(p.float_param());
+    else
+        ret += std::to_string(p.int_param());
+}
+
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
@@ -1001,7 +1009,18 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
 
             ret += af.simple() ? "Simple" : "";
             ret += "AggregateFunction(";
-            ret += SQLFunc_Name(af.aggr()).substr(4);
+            ret += af.aggr();
+            if (af.params_size() > 0)
+            {
+                ret += "(";
+                for (int i = 0; i < af.params_size(); i++)
+                {
+                    if (i != 0)
+                        ret += ", ";
+                    AggregateParamToString(ret, af.params(i));
+                }
+                ret += ")";
+            }
             for (int i = 0; i < af.types_size(); i++)
             {
                 ret += ", ";
@@ -1415,7 +1434,7 @@ CONV_FN(SQLFuncName, sfn)
 {
     if (sfn.has_catalog_func())
     {
-        ret += SQLFunc_Name(sfn.catalog_func()).substr(4);
+        ret += sfn.catalog_func();
     }
     else if (sfn.has_function())
     {
@@ -1463,6 +1482,10 @@ CONV_FN(SQLFuncCall, sfc)
         if (sfa.has_lambda())
         {
             LambdaExprToString(ret, sfa.lambda());
+        }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
         }
         else if (sfa.has_expr())
         {
@@ -2129,25 +2152,55 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
 CONV_FN(RemoteFunc, rfunc)
 {
     const TableOrFunction & tof = rfunc.tof();
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
 
     ret += RemoteFunc_RName_Name(rfunc.rname());
     ret += "(";
-    appendSQLStringLiteral(ret, rfunc.address());
-    ret += ", ";
-    TableOrFunctionToString(ret, true, tof);
+    if (rfunc.has_named_collection())
+    {
+        ret += sep();
+        ret += rfunc.named_collection();
+    }
+    if (rfunc.has_address())
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, rfunc.address());
+    }
+    ret += sep();
+    if (rfunc.has_named_collection() && tof.has_est())
+    {
+        const ExprSchemaTable & est = tof.est();
+        if (est.has_database())
+        {
+            ret += "database=";
+            appendSQLStringLiteral(ret, est.database().value());
+            ret += ", ";
+        }
+        ret += "table=";
+        appendSQLStringLiteral(ret, est.table().value());
+    }
+    else
+    {
+        TableOrFunctionToString(ret, true, tof);
+    }
     if (rfunc.has_user())
     {
-        ret += ", ";
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.user());
     }
     if (rfunc.has_password())
     {
-        ret += ", ";
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.password());
     }
     if (rfunc.has_sharding_key())
     {
-        ret += ", ";
+        ret += sep();
+        if (rfunc.has_named_collection())
+        {
+            ret += "sharding_key=";
+        }
         ExprToString(ret, rfunc.sharding_key());
     }
     ret += ")";
@@ -2155,34 +2208,106 @@ CONV_FN(RemoteFunc, rfunc)
 
 CONV_FN(MySQLFunc, mfunc)
 {
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = mfunc.has_named_collection();
+
     ret += "mysql(";
-    appendSQLStringLiteral(ret, mfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.rdatabase());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.rtable());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.password());
+    if (kv)
+    {
+        ret += mfunc.named_collection();
+        has_arg = true;
+    }
+    if (mfunc.has_address())
+    {
+        ret += sep();
+        if (kv)
+            ret += "host=";
+        appendSQLStringLiteral(ret, mfunc.address());
+    }
+    if (mfunc.has_rdatabase())
+    {
+        ret += sep();
+        if (kv)
+            ret += "database=";
+        appendSQLStringLiteral(ret, mfunc.rdatabase());
+    }
+    if (mfunc.has_rtable())
+    {
+        ret += sep();
+        if (kv)
+            ret += "table=";
+        appendSQLStringLiteral(ret, mfunc.rtable());
+    }
+    if (mfunc.has_user())
+    {
+        ret += sep();
+        if (kv)
+            ret += "user=";
+        appendSQLStringLiteral(ret, mfunc.user());
+    }
+    if (mfunc.has_password())
+    {
+        ret += sep();
+        if (kv)
+            ret += "password=";
+        appendSQLStringLiteral(ret, mfunc.password());
+    }
     ret += ")";
 }
 
 CONV_FN(PostgreSQLFunc, pfunc)
 {
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = pfunc.has_named_collection();
+
     ret += "postgresql(";
-    appendSQLStringLiteral(ret, pfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.rdatabase());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.rtable());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.password());
+    if (kv)
+    {
+        ret += pfunc.named_collection();
+        has_arg = true;
+    }
+    if (pfunc.has_address())
+    {
+        ret += sep();
+        if (kv)
+            ret += "host=";
+        appendSQLStringLiteral(ret, pfunc.address());
+    }
+    if (pfunc.has_rdatabase())
+    {
+        ret += sep();
+        if (kv)
+            ret += "database=";
+        appendSQLStringLiteral(ret, pfunc.rdatabase());
+    }
+    if (pfunc.has_rtable())
+    {
+        ret += sep();
+        if (kv)
+            ret += "table=";
+        appendSQLStringLiteral(ret, pfunc.rtable());
+    }
+    if (pfunc.has_user())
+    {
+        ret += sep();
+        if (kv)
+            ret += "user=";
+        appendSQLStringLiteral(ret, pfunc.user());
+    }
+    if (pfunc.has_password())
+    {
+        ret += sep();
+        if (kv)
+            ret += "password=";
+        appendSQLStringLiteral(ret, pfunc.password());
+    }
     if (pfunc.has_rschema())
     {
-        ret += ", ";
+        ret += sep();
+        if (kv)
+            ret += "schema=";
         appendSQLStringLiteral(ret, pfunc.rschema());
     }
     ret += ")";
@@ -2228,19 +2353,55 @@ CONV_FN(RedisFunc, rfunc)
 
 CONV_FN(MongoDBFunc, mfunc)
 {
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = mfunc.has_named_collection();
+
     ret += "mongodb(";
-    appendSQLStringLiteral(ret, mfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.database());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.collection());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.password());
+    if (kv)
+    {
+        ret += mfunc.named_collection();
+        has_arg = true;
+    }
+    if (mfunc.has_address())
+    {
+        ret += sep();
+        if (kv)
+            ret += "host=";
+        appendSQLStringLiteral(ret, mfunc.address());
+    }
+    if (mfunc.has_database())
+    {
+        ret += sep();
+        if (kv)
+            ret += "database=";
+        appendSQLStringLiteral(ret, mfunc.database());
+    }
+    if (mfunc.has_collection())
+    {
+        ret += sep();
+        if (kv)
+            ret += "collection=";
+        appendSQLStringLiteral(ret, mfunc.collection());
+    }
+    if (mfunc.has_user())
+    {
+        ret += sep();
+        if (kv)
+            ret += "user=";
+        appendSQLStringLiteral(ret, mfunc.user());
+    }
+    if (mfunc.has_password())
+    {
+        ret += sep();
+        if (kv)
+            ret += "password=";
+        appendSQLStringLiteral(ret, mfunc.password());
+    }
     if (mfunc.has_structure())
     {
-        ret += ", ";
+        ret += sep();
+        ret += "structure=";
         ExprToString(ret, mfunc.structure());
     }
     ret += ")";
@@ -2321,6 +2482,10 @@ CONV_FN(SQLTableFuncCall, sfc)
         if (sfa.has_lambda())
         {
             LambdaExprToString(ret, sfa.lambda());
+        }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
         }
         else if (sfa.has_expr())
         {
@@ -3559,6 +3724,11 @@ CONV_FN(TableEngine, te)
         ret += " PRIMARY KEY ";
         TableKeyToString(ret, te.primary_key());
     }
+    if (te.has_unique_key())
+    {
+        ret += " UNIQUE KEY ";
+        TableKeyToString(ret, te.unique_key());
+    }
     if (te.has_sample_by())
     {
         ret += " SAMPLE BY ";
@@ -3967,6 +4137,9 @@ CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
     using DescType = DescribeStatement::DescOneofCase;
+    /// `TEMPORARY TABLE` qualifier is only meaningful when the target is a bare table name.
+    if (ds.temporary() && ds.desc_oneof_case() == DescType::kTof)
+        ret += "TEMPORARY TABLE ";
     switch (ds.desc_oneof_case())
     {
         case DescType::kTof:
@@ -4156,7 +4329,6 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool replace = create_view.create_opt() != CreateReplaceOption::Create;
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
@@ -4166,19 +4338,11 @@ CONV_FN(CreateView, create_view)
     {
         ret += "TEMPORARY ";
     }
-    if (replace)
+    if (materialized)
     {
-        ret += "TABLE";
+        ret += "MATERIALIZED ";
     }
-    else
-    {
-        if (materialized)
-        {
-            ret += "MATERIALIZED ";
-        }
-        ret += "VIEW";
-    }
-    ret += " ";
+    ret += "VIEW ";
     if (create_view.if_not_exists())
     {
         ret += "IF NOT EXISTS ";
@@ -4196,12 +4360,12 @@ CONV_FN(CreateView, create_view)
     }
     if (materialized)
     {
-        if (!replace && refreshable)
+        if (refreshable)
         {
             ret += " ";
             RefreshableViewToString(ret, create_view.refresh());
         }
-        if (!replace && create_view.has_to())
+        if (create_view.has_to())
         {
             const CreateMatViewTo & cmvt = create_view.to();
 
@@ -4229,7 +4393,7 @@ CONV_FN(CreateView, create_view)
         {
             ret += " POPULATE";
         }
-        if (!replace && refreshable && create_view.empty())
+        if (refreshable && create_view.empty())
         {
             ret += " EMPTY";
         }
@@ -4273,10 +4437,20 @@ CONV_FN(DictionarySourceDetails, dsd)
 
     ret += DictionarySourceDetails_DictionarySourceType_Name(dsd.source());
     ret += "(";
+    if (dsd.has_named_collection())
+    {
+        ret += "NAME ";
+        appendSQLStringLiteral(ret, dsd.named_collection());
+        has_something = true;
+    }
     if (dsd.has_est())
     {
         const String & separator = dsd.source() == DictionarySourceDetails::MONGODB ? "' COLLECTION '" : "' TABLE '";
 
+        if (has_something)
+        {
+            ret += " ";
+        }
         ret += "DB ";
         FlatExprSchemaTableToString(ret, dsd.est(), separator);
         has_something = true;
@@ -5374,6 +5548,13 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kStartView:
             ret += "START VIEW ";
             ExprSchemaTableToString(ret, cmd.start_view());
+            break;
+        case CmdType::kPauseViews:
+            ret += "PAUSE VIEWS";
+            break;
+        case CmdType::kPauseView:
+            ret += "PAUSE VIEW ";
+            ExprSchemaTableToString(ret, cmd.pause_view());
             break;
         case CmdType::kCancelView:
             ret += "CANCEL VIEW ";
