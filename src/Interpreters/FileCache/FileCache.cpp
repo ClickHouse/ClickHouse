@@ -2130,7 +2130,7 @@ FileCache::~FileCache()
 
 void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const
 {
-    auto query_context = CurrentThread::getQueryContext();
+    auto query_context = CurrentThread::tryGetQueryContext();
     const auto & settings = query_context ? query_context->getSettingsRef() : Context::getGlobalContextInstance()->getSettingsRef();
     if (!settings[Setting::filesystem_cache_expose_prometheus_eviction_metrics])
         return;
