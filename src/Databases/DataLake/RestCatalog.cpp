@@ -636,7 +636,7 @@ bool RestCatalog::empty() const
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return found_table;
+    return !found_table;
 }
 
 DB::Names RestCatalog::getTables() const
