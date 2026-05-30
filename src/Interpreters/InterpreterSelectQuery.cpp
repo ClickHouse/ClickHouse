@@ -2996,7 +2996,10 @@ void InterpreterSelectQuery::executeAggregation(
     else
         group_by_info = nullptr;
 
-    if (!group_by_info && settings[Setting::force_aggregation_in_order])
+    /// Skip on grouping sets: `getSortDescriptionFromGroupBy` calls `getColumnName` on
+    /// `GROUPING SETS` children which are `ASTExpressionList` and raise `LOGICAL_ERROR`.
+    /// Mirrors the guard on the `optimize_aggregation_in_order` branch above.
+    if (!group_by_info && settings[Setting::force_aggregation_in_order] && !query_analyzer->useGroupingSetKey())
     {
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
         sort_description_for_merging = group_by_sort_description;

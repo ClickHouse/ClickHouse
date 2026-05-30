@@ -564,7 +564,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
             for (size_t pair = 0; pair < num_pairs; ++pair)
             {
-                auto & cond_node = multi_if_args[2 * pair];
+                /// Snapshot the condition; `resolveExpressionNode` rebinds a matcher (`*`)
+                /// argument to an empty `ListNode`, which would corrupt the slot. Mirrors
+                /// the `is_special_function_if` pattern above.
+                QueryTreeNodePtr cond_node = multi_if_args[2 * pair];
                 resolveExpressionNode(cond_node,
                     scope,
                     false /*allow_lambda_expression*/,
