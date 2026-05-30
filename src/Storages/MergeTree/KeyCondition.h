@@ -420,6 +420,7 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
+        bool & out_chain_is_positive,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
 

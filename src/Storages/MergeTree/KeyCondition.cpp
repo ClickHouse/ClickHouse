@@ -1642,6 +1642,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (out_value.isNull())
         return false;
 
+    /// Track whether the function chain preserves or reverses comparison order.
+    bool chain_is_positive = true;
     MonotonicFunctionsChain transform_functions;
     auto can_transform_constant = extractMonotonicFunctionsChainFromKey(
         node.getTreeContext().getQueryContext(),
@@ -1650,6 +1652,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_num,
         out_key_column_type,
         transform_functions,
+        chain_is_positive,
         [this](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
@@ -1682,23 +1685,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 
     if (!constant_transformed)
         return false;
-
-    /// Track whether the function chain preserves or reverses comparison order.
-    ///
-    /// If its cumulative monotonicity direction is negative, applying it to the constant
-    /// reverses range comparisons. For example, with `ORDER BY (intDiv(c0, 5) / -7)`,
-    /// `c0 < 0` becomes `divide(intDiv(c0, 5), -7) > divide(intDiv(0, 5), -7)`.
-    ///
-    /// Directions compose by parity: each non-increasing function reverses the current
-    /// direction, so two non-increasing functions preserve the original comparison.
-    bool chain_is_positive = true;
-    for (const auto & func : transform_functions)
-    {
-        auto arg_type = getArgumentTypeOfMonotonicFunction(*func);
-        auto monotonicity = func->getMonotonicityForRange(*arg_type, Field(), Field());
-        if (!monotonicity.is_positive)
-            chain_is_positive = !chain_is_positive;
-    }
 
     out_value = (*transformed_const_column)[0];
     out_type = transformed_const_type;
@@ -2868,8 +2854,11 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     MonotonicFunctionsChain & out_functions_chain,
+    bool & out_chain_is_positive,
     std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const
 {
+    out_chain_is_positive = true;
+
     const auto & sample_block = info.key_expr->getSampleBlock();
 
     for (const auto & node : info.key_expr->getNodes())
@@ -2918,6 +2907,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
             if (is_valid_chain)
             {
+                bool chain_is_positive = true;
                 while (!chain.empty())
                 {
                     const auto * func = chain.top();
@@ -2928,6 +2918,16 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                     auto func_name = func->function_base->getName();
                     auto func_base = func->function_base;
+
+                    /// If its cumulative monotonicity direction is negative, applying it to the constant
+                    /// reverses range comparisons. For example, with `ORDER BY (intDiv(c0, 5) / -7)`,
+                    /// `c0 < 0` becomes `divide(intDiv(c0, 5), -7) > divide(intDiv(0, 5), -7)`.
+                    ///
+                    /// Directions compose by parity: each non-increasing function reverses the current
+                    /// direction, so two non-increasing functions preserve the original comparison.
+                    auto monotonicity = func_base->getMonotonicityForRange(*func->result_type, Field(), Field());
+                    if (!monotonicity.is_positive)
+                        chain_is_positive = !chain_is_positive;
 
                     ColumnWithTypeAndName const_arg;
                     FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
@@ -2984,6 +2984,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
+                out_chain_is_positive = chain_is_positive;
                 return true;
             }
         }
