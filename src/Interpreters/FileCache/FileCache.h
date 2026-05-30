@@ -250,7 +250,7 @@ public:
     const String & getName() const { return name; }
 
 private:
-    void onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const;
+    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
 
     using KeyAndOffset = FileCacheKeyAndOffset;
 

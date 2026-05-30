@@ -332,20 +332,7 @@ void EvictionCandidates::evict()
                 {
                     try
                     {
-                        FileCacheQueueEntryType queue_type = FileCacheQueueEntryType::None;
-                        if (iterator)
-                        {
-                            queue_type = iterator->getNestedOrThis()->getType();
-                        }
-                        else
-                        {
-                            /// Dynamic-resize path: queue entries were already removed before evict().
-                            /// We saved the original type in removeQueueEntries.
-                            auto type_it = original_queue_types.find(candidate.get());
-                            if (type_it != original_queue_types.end())
-                                queue_type = type_it->second;
-                        }
-                        on_evict_callback(*segment, queue_type, key_candidates.key_metadata->origin.user_id);
+                        on_evict_callback(*segment, key_candidates.key_metadata->origin.user_id);
                     }
                     catch (...)
                     {

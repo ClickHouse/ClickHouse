@@ -126,56 +126,43 @@ namespace
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_total",
-        "Number of file segments evicted from a filesystem cache, labelled by cache name and source priority queue.",
-        {"cache_name", "queue"});
+        "Number of file segments evicted from a filesystem cache, labelled by cache name.",
+        {"cache_name"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_bytes_total",
-        "Total bytes of file segments evicted from a filesystem cache, labelled by cache name and source priority queue.",
-        {"cache_name", "queue"});
+        "Total bytes of file segments evicted from a filesystem cache, labelled by cache name.",
+        {"cache_name"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits",
-        "Distribution of cache-hit counts on file segments at the moment of their eviction, labelled by cache name and source priority queue.",
-        hits_buckets, {"cache_name", "queue"});
+        "Distribution of cache-hit counts on file segments at the moment of their eviction, labelled by cache name.",
+        hits_buckets, {"cache_name"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_size_bytes = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_size_bytes",
-        "Distribution of byte sizes of evicted file segments, labelled by cache name and source priority queue.",
-        size_buckets, {"cache_name", "queue"});
+        "Distribution of byte sizes of evicted file segments, labelled by cache name.",
+        size_buckets, {"cache_name"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_by_client_total",
         "Number of file segments evicted from a filesystem cache, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        {"cache_name", "queue", "client_id"});
+        {"cache_name", "client_id"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_bytes_by_client_total",
         "Total bytes of file segments evicted, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        {"cache_name", "queue", "client_id"});
+        {"cache_name", "client_id"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits_by_client = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits_by_client",
         "Distribution of cache-hit counts on evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        hits_buckets, {"cache_name", "queue", "client_id"});
+        hits_buckets, {"cache_name", "client_id"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_size_bytes_by_client = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_size_bytes_by_client",
         "Distribution of byte sizes of evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        size_buckets, {"cache_name", "queue", "client_id"});
-
-    const char * queueLabel(FileCacheQueueEntryType queue_type)
-    {
-        switch (queue_type)
-        {
-            case FileCacheQueueEntryType::SLRU_Protected:   return "protected";
-            case FileCacheQueueEntryType::SLRU_Probationary: return "probationary";
-            case FileCacheQueueEntryType::LRU:               return "lru";
-            case FileCacheQueueEntryType::SplitCache_Data:   return "split_data";
-            case FileCacheQueueEntryType::SplitCache_System: return "split_system";
-            default:                                         return "unknown";
-        }
-    }
+        size_buckets, {"cache_name", "client_id"});
 }
 
 void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state)
@@ -363,9 +350,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
-    main_priority->setOnEvictCallback([this](const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id)
+    main_priority->setOnEvictCallback([this](const FileSegment & segment, const String & user_id)
     {
-        this->onSegmentEvicted(segment, queue_type, user_id);
+        this->onSegmentEvicted(segment, user_id);
     });
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
@@ -2124,25 +2111,24 @@ FileCache::~FileCache()
     assertCacheCorrectness();
 }
 
-void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const
+void FileCache::onSegmentEvicted(const FileSegment & segment, const String & user_id) const
 {
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))
         return;
 
     const size_t bytes = segment.range().size();
     const size_t hits = segment.getHitsCount();
-    const char * queue = queueLabel(queue_type);
-    filesystem_cache_evictions_total.withLabels({name, queue}).increment();
-    filesystem_cache_evicted_bytes_total.withLabels({name, queue}).increment(static_cast<DimensionalMetrics::Value>(bytes));
-    filesystem_cache_evicted_segment_hits.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(hits));
-    filesystem_cache_evicted_segment_size_bytes.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(bytes));
+    filesystem_cache_evictions_total.withLabels({name}).increment();
+    filesystem_cache_evicted_bytes_total.withLabels({name}).increment(static_cast<DimensionalMetrics::Value>(bytes));
+    filesystem_cache_evicted_segment_hits.withLabels({name}).observe(static_cast<HistogramMetrics::Value>(hits));
+    filesystem_cache_evicted_segment_size_bytes.withLabels({name}).observe(static_cast<HistogramMetrics::Value>(bytes));
 
     if (!expose_eviction_metrics_per_client.load(std::memory_order_relaxed))
         return;
-    filesystem_cache_evictions_by_client_total.withLabels({name, queue, user_id}).increment();
-    filesystem_cache_evicted_bytes_by_client_total.withLabels({name, queue, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
-    filesystem_cache_evicted_segment_hits_by_client.withLabels({name, queue, user_id}).observe(static_cast<HistogramMetrics::Value>(hits));
-    filesystem_cache_evicted_segment_size_bytes_by_client.withLabels({name, queue, user_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
+    filesystem_cache_evictions_by_client_total.withLabels({name, user_id}).increment();
+    filesystem_cache_evicted_bytes_by_client_total.withLabels({name, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
+    filesystem_cache_evicted_segment_hits_by_client.withLabels({name, user_id}).observe(static_cast<HistogramMetrics::Value>(hits));
+    filesystem_cache_evicted_segment_size_bytes_by_client.withLabels({name, user_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
 }
 
 void FileCache::deactivateBackgroundOperations()

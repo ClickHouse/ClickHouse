@@ -397,7 +397,7 @@ public:
 
     /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
     /// segment.
-    using OnEvictCallback = std::function<void(const FileSegment & segment, QueueEntryType queue_type, const UserID & user_id)>;
+    using OnEvictCallback = std::function<void(const FileSegment & segment, const UserID & user_id)>;
     virtual void setOnEvictCallback(OnEvictCallback callback) { chassert(!on_evict_callback, "on_evict_callback cannot be set twice"); on_evict_callback = std::move(callback); }
     const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
 

@@ -78,12 +78,3 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     assert evictions > 0, f"Aggregate eviction counter did not advance:\n{debug}"
     assert sum_dim("filesystem_cache_evicted_bytes_total") > 0
     assert sum_dim("filesystem_cache_evictions_by_client_total") - by_client_before > 0
-
-    slru_queue_evictions = float(node.query(
-        "SELECT coalesce(sum(value), 0) FROM system.dimensional_metrics "
-        "WHERE metric = 'filesystem_cache_evictions_total' "
-        "AND labels['queue'] IN ('probationary', 'protected')"
-    ).strip())
-    assert slru_queue_evictions > 0, (
-        f"No evictions with probationary/protected queue label:\n{debug}"
-    )
