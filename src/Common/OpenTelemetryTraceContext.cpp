@@ -191,7 +191,7 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
         return;
 
     // First of all, restore old value of current span.
-    assert(current_trace_context->span_id == span_id);
+    chassert(current_trace_context->span_id == span_id);
     current_trace_context->span_id = parent_span_id;
 
     current_trace_context->trace_flags = old_trace_flags;

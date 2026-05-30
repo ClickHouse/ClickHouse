@@ -332,7 +332,7 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMapping(db_uuid);
     }
-    assert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
+    chassert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
         /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
         const auto & not_empty_mapping = [] (const auto & mapping)
@@ -363,7 +363,7 @@ bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
 
 DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 {
-    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     const UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
@@ -405,7 +405,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                         db_and_table.first->getDatabaseName()));
                 return {};
             }
-            assert(!db_and_table.first && !db_and_table.second);
+            chassert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
                 TableNameHints hints(this->tryGetDatabase(table_id.getDatabaseName()), context_);
@@ -616,7 +616,7 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 
 void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
 {
-    assert(!database_name.empty());
+    chassert(!database_name.empty());
     if (databases.contains(database_name))
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists", backQuoteIfNeed(database_name));
 }
@@ -642,7 +642,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::detachDatabase");
     if (database_name == TEMPORARY_DATABASE)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Cannot detach database with temporary tables.");
-    assert(!database_name.empty());
+    chassert(!database_name.empty());
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
@@ -720,9 +720,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
-    assert(!databases.contains(new_name));
+    chassert(!databases.contains(new_name));
     auto it = databases.find(old_name);
-    assert(it != databases.end());
+    chassert(it != databases.end());
     auto db = it->second;
     databases.erase(it);
     databases.emplace(new_name, db);
@@ -801,7 +801,7 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
 
 DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
 {
-    assert(!database_name.empty());
+    chassert(!database_name.empty());
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
@@ -829,7 +829,7 @@ DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
 
 DatabasePtr DatabaseCatalog::tryGetDatabase(std::string_view database_name) const
 {
-    assert(!database_name.empty());
+    chassert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
     auto it = databases.find(database_name);
     if (it == databases.end())
@@ -847,7 +847,7 @@ DatabasePtr DatabaseCatalog::getDatabase(const UUID & uuid) const
 
 DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
 {
-    assert(uuid != UUIDHelpers::Nil);
+    chassert(uuid != UUIDHelpers::Nil);
     auto db_and_table = tryGetByUUID(uuid);
     if (!db_and_table.first || db_and_table.second)
         return {};
@@ -856,7 +856,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(const UUID & uuid) const
 
 bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
 {
-    assert(!database_name.empty());
+    chassert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
     return databases.contains(database_name);
 }
@@ -908,8 +908,8 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table)
 {
-    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    assert(database || !table);
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(database || !table);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto [it, inserted] = map_part.map.try_emplace(uuid, database, table);
@@ -922,7 +922,7 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
 
     auto & prev_database = it->second.first;
     auto & prev_table = it->second.second;
-    assert(prev_database || !prev_table);
+    chassert(prev_database || !prev_table);
 
     if (!prev_database && database)
     {
@@ -943,7 +943,7 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
 
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
 {
-    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
@@ -954,7 +954,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
 
 void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
 {
-    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     if (!map_part.map.erase(uuid))
@@ -963,8 +963,8 @@ void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
 
 void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
 {
-    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    assert(database && table);
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(database && table);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     auto it = map_part.map.find(uuid);
@@ -972,14 +972,14 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
     auto & prev_database = it->second.first;
     auto & prev_table = it->second.second;
-    assert(prev_database && prev_table);
+    chassert(prev_database && prev_table);
     prev_database = std::move(database);
     prev_table = std::move(table);
 }
 
 bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
 {
-    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     return map_part.map.contains(uuid);
@@ -1198,7 +1198,7 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
-    assert(!cleanup_task);
+    chassert(!cleanup_task);
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
@@ -1305,9 +1305,9 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 void DatabaseCatalog::enqueueDroppedTableCleanup(
     StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay)
 {
-    assert(table_id.hasUUID());
-    assert(!table || table->getStorageID().uuid == table_id.uuid);
-    assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
+    chassert(table_id.hasUUID());
+    chassert(!table || table->getStorageID().uuid == table_id.uuid);
+    chassert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
@@ -1326,7 +1326,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(
             log, getContext(), db_disk, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/ false);
         auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
-        assert(!create || create->uuid == table_id.uuid);
+        chassert(!create || create->uuid == table_id.uuid);
 
         if (create)
         {
@@ -1432,7 +1432,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
             ++first_async_drop_in_queue;
         tables_marked_dropped.erase(it_dropped_table);
         [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
-        assert(removed);
+        chassert(removed);
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
@@ -1812,7 +1812,7 @@ void DatabaseCatalog::updateDependencies(
         view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
     if (!new_view_dependencies.empty())
     {
-        assert(new_view_dependencies.size() == 1);
+        chassert(new_view_dependencies.size() == 1);
         view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
     }
 }
