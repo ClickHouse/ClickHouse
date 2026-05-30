@@ -107,8 +107,10 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 
 ```sql
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])
 ```
+
+The `compression_method` / `compression` argument is not supported by data lake engines: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 **Arguments**
 

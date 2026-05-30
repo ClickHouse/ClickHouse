@@ -261,7 +261,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
 
     format = collection.getOrDefault<String>("format", format);
-    compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    if (collection.hasAny({"compression_method", "compression"}))
+    {
+        compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+        compression_method_user_provided = true;
+    }
     structure = collection.getOrDefault<String>("structure", "auto");
 
     s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */ true);
@@ -361,7 +365,10 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
+    {
         compression_method = *parsing_result.compression_method;
+        compression_method_user_provided = true;
+    }
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
     path_suffix = parsing_result.path_suffix;
@@ -657,6 +664,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         compression_method_value.has_value())
     {
         compression_method = compression_method_value.value();
+        compression_method_user_provided = true;
     }
 
     if (auto partition_strategy_value = getFromPositionOrKeyValue<String>("partition_strategy", args, engine_args_to_idx, key_value_args);

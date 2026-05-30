@@ -2,12 +2,13 @@
 # Tags: no-fasttest
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105644
-# DataLake engines (Iceberg, DeltaLake, Hudi, Paimon) must reject the
+# Data lake engines (`Iceberg`, `DeltaLake`, `Hudi`, `Paimon`) must reject the
 # `compression_method` argument at CREATE TIME because the data file format
-# (Parquet/ORC/Avro) already carries its own internal codec. The outer codec
-# is silently dropped on the Iceberg write path while still applied on read,
-# yielding files the engine cannot read back; for the other data lake formats
-# it produces non-standard files that external readers cannot decode.
+# (`Parquet`/`ORC`/`Avro`) already carries its own internal codec. Any
+# user-supplied wrapper is silently dropped on the Iceberg write path while
+# still applied on read, yielding files the engine cannot read back; for the
+# other data lake formats it produces non-standard files that external readers
+# cannot decode.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -43,76 +44,82 @@ ${CLICKHOUSE_CLIENT} --query "
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_gzip', 'Parquet', 'gzip')
 " 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# 3. Default (no compression argument) is accepted.
+# 3. Default (no compression argument) is accepted: the rejection only fires
+#    when the user explicitly supplied the argument, so the default path is
+#    unaffected.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PREFIX}_default (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_default')
 "
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_default"
 
-# 4. Explicit `compression_method = 'none'` is accepted.
+# 4. Explicit `compression_method = 'none'` is also rejected: any user-supplied
+#    value is meaningless because the file format codec is the authority.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PREFIX}_none (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_none', 'Parquet', 'none')
-"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_none"
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# 5. Explicit `compression_method = 'auto'` is accepted.
+# 5. Explicit `compression_method = 'auto'` is also rejected (same reason).
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PREFIX}_auto (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_auto', 'Parquet', 'auto')
-"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_auto"
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# 6. `AUTO` (upper case) is accepted: validation is case-insensitive and the stored
-#    value is canonicalized to lowercase so downstream chooseCompressionMethod calls
-#    do not later throw `Unknown compression method`.
+# 6. Case-insensitive: `AUTO` (upper case) is rejected because the
+#    rejection only checks whether the argument was supplied at all, not its
+#    value.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PREFIX}_auto_upper (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_auto_upper', 'Parquet', 'AUTO')
-"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_auto_upper"
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# 7. `None` (mixed case) is accepted with the same canonicalization.
+# 7. `None` (mixed case) is rejected for the same reason.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PREFIX}_none_mixed (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_none_mixed', 'Parquet', 'None')
-"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_none_mixed"
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# 8 / 9. `ATTACH` path: existing tables persisted before this validation landed can
-#        carry a non-default `compression_method` in their metadata. The rejection
-#        above must be gated on `LoadingStrictnessLevel < ATTACH` so server restart
-#        and explicit `ATTACH` can still load such tables. We simulate this by
-#        creating with allowed `'auto'`, detaching, rewriting the on-disk metadata
-#        to inject the forbidden value, and reattaching. ATTACH must succeed without
-#        the rejection error (grep returns 0) AND the table must actually exist
-#        afterwards (EXISTS returns 1). The positive existence check guards against
-#        ATTACH failing for any unrelated reason where grep alone would still print 0.
+# 8 / 9. `ATTACH` path: existing tables persisted before this validation landed
+#        can carry a non-default `compression_method` in their metadata. The
+#        rejection above is gated on `LoadingStrictnessLevel < ATTACH` so
+#        server restart and explicit `ATTACH` can still load such tables. We
+#        simulate this by creating without `compression_method`, detaching,
+#        injecting the forbidden value into the on-disk metadata, and
+#        reattaching. ATTACH must succeed without the rejection error
+#        (`grep -c` returns 0) AND the table must actually exist afterwards
+#        (`EXISTS` returns 1). The positive existence check guards against
+#        `ATTACH` failing for any unrelated reason where `grep` alone would
+#        still print 0.
 DEFAULT_DISK_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name = 'default'")
 for forbidden in lzma gzip; do
     ATTACH_TABLE="${TABLE_PREFIX}_attach_${forbidden}"
     ${CLICKHOUSE_CLIENT} --query "
         CREATE TABLE ${ATTACH_TABLE} (c0 Int)
-        ENGINE = IcebergLocal('${USER_FILES_PATH}/${ATTACH_TABLE}', 'Parquet', 'auto')
+        ENGINE = IcebergLocal('${USER_FILES_PATH}/${ATTACH_TABLE}', 'Parquet')
     "
     METADATA_REL=$(${CLICKHOUSE_CLIENT} --query "
         SELECT metadata_path FROM system.tables WHERE database = currentDatabase() AND name = '${ATTACH_TABLE}'
     ")
     METADATA_ABS="${DEFAULT_DISK_PATH}${METADATA_REL}"
     ${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${ATTACH_TABLE}"
-    sed -i "s|'auto'|'${forbidden}'|" "${METADATA_ABS}"
+    # Rewrite `ENGINE = IcebergLocal('...', 'Parquet')` to
+    # `ENGINE = IcebergLocal('...', 'Parquet', 'lzma'/'gzip')` to simulate
+    # pre-fix metadata carrying the forbidden value.
+    sed -i "s|, 'Parquet')|, 'Parquet', '${forbidden}')|" "${METADATA_ABS}"
     ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE ${ATTACH_TABLE}" 2>&1 \
         | grep -c "not supported by data lake engines" || true
     ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${ATTACH_TABLE}"
 done
 
-# 10. Table-function path: data lake table functions also call `initialize` with
-#     the default `CREATE` mode through `TableFunctionObjectStorage::parseArgumentsImpl`,
-#     so the rejection fires for them too. Arg order for the table function is
-#     `path, format, structure, compression_method`, so we pass an explicit structure
-#     before the forbidden codec. The rejection fires during argument parsing before
-#     any file access, so a non-existent path is fine.
+# 10. Table-function path: data lake table functions also call `initialize`
+#     with the default `CREATE` mode through
+#     `TableFunctionObjectStorage::parseArgumentsImpl`, so the rejection
+#     fires for them too. Arg order for the table function is
+#     `path, format, structure, compression_method`, so we pass an explicit
+#     structure before the forbidden codec. The rejection fires during
+#     argument parsing before any file access, so a non-existent path is
+#     fine.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM icebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_tf_lzma', 'Parquet', 'c0 Int32', 'lzma')
 " 2>&1 | grep -o -m1 "BAD_ARGUMENTS"

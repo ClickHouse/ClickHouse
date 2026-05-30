@@ -322,6 +322,12 @@ public:
 
     String format = "auto";
     String compression_method = "auto";
+    /// Set by the parsing paths when the user explicitly supplied a
+    /// `compression_method`/`compression` argument (positional, key-value,
+    /// or named-collection key). Used by `initialize` to reject the argument
+    /// on data lake engines at CREATE time while still letting ATTACH/RESTORE
+    /// of existing tables succeed.
+    bool compression_method_user_provided = false;
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
     /// Whether partition column values are contained in the actual data.

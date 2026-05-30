@@ -12,7 +12,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
 
-#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 
 namespace DB
@@ -132,38 +131,27 @@ void StorageObjectStorageConfiguration::initialize(
         }
 
         /// Data lake engines write data files in their own format (`Parquet`/`ORC`/`Avro`)
-        /// which already has an internal compression codec. Wrapping the data file with an
-        /// outer codec via `compression_method` is silently ignored on the Iceberg write
-        /// path, while still applied on read, yielding files the engine cannot read back.
-        /// For other data lake formats (`DeltaLake`, `Hudi`, `Paimon`) the outer wrapping
-        /// breaks compatibility with external readers. See issue #105644.
-        String compression_method_lower = configuration_to_initialize.compression_method;
-        boost::algorithm::to_lower(compression_method_lower);
+        /// which already has an internal compression codec. Any user-supplied
+        /// `compression_method` is therefore at best redundant and at worst silently
+        /// dropped on the Iceberg write path while still applied on read, yielding
+        /// files the engine cannot read back. See issue #105644.
+        ///
         /// Gate the rejection on `mode < ATTACH` so existing tables created before this
-        /// validation landed can still attach after upgrade. `RESTORE TABLE` arrives with
-        /// `mode == SECONDARY_CREATE` (same as a fresh secondary create), so we also skip
-        /// the rejection when `is_restore_from_backup` is set, otherwise a backup taken
-        /// before this PR with `compression_method='lzma'/'gzip'` in metadata would fail to
-        /// restore. The canonicalization below runs unconditionally so attached / restored
-        /// tables also benefit from the lowercase fix.
+        /// validation landed can still attach after upgrade, and skip on
+        /// `is_restore_from_backup` so a backup taken before this PR can still restore
+        /// (`RESTORE TABLE` arrives with `mode == SECONDARY_CREATE`, identical to a
+        /// fresh secondary create). The check fires only when the argument was actually
+        /// supplied by the user, so the default and synthesised placeholders pass through.
         if (mode < LoadingStrictnessLevel::ATTACH
             && !is_restore_from_backup
-            && !compression_method_lower.empty()
-            && compression_method_lower != "auto"
-            && compression_method_lower != "none")
+            && configuration_to_initialize.compression_method_user_provided)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "The `compression_method` argument (got '{}') is not supported by data lake engines. "
+                "The `compression_method` argument is not supported by data lake engines. "
                 "Data lake formats use their own internal compression codec; set it via the "
-                "format-specific setting (for example, `output_format_parquet_compression_method`) instead.",
-                configuration_to_initialize.compression_method);
+                "format-specific setting (for example, `output_format_parquet_compression_method`) instead.");
         }
-        /// Canonicalize: downstream `chooseCompressionMethod` callers compare `hint` to
-        /// the lowercase literals `auto`/`none` case-sensitively. Without this assignment,
-        /// inputs like `AUTO`/`None` would pass the CREATE check but later throw
-        /// `Unknown compression method` from read/write paths.
-        configuration_to_initialize.compression_method = compression_method_lower;
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
     {
@@ -369,6 +357,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
 {
     format = parsed_arguments.format;
     compression_method = parsed_arguments.compression_method;
+    compression_method_user_provided = parsed_arguments.compression_method_user_provided;
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;

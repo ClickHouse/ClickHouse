@@ -20,17 +20,19 @@ Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine`
 SET allow_experimental_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
-    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format])
 
 CREATE TABLE paimon_table_azure
-    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
 CREATE TABLE paimon_table_hdfs
-    ENGINE = PaimonHDFS(path_to_table, [,format] [,compression_method])
+    ENGINE = PaimonHDFS(path_to_table, [,format])
 
 CREATE TABLE paimon_table_local
-    ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = PaimonLocal(path_to_table, [,format])
 ```
+
+The `compression_method` / `compression` argument is not supported by data lake engines: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Engine arguments {#engine-arguments}
 
