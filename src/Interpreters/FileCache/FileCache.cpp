@@ -11,6 +11,7 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCacheUtils.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <Common/callOnce.h>
