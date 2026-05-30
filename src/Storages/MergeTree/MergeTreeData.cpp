@@ -11,7 +11,9 @@
 #include <Access/AccessControl.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/Utils.h>
+#include <Core/Streaming/PseudoColumns.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
@@ -10747,23 +10749,67 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     return data_settings;
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+namespace
 {
-    if (bypass_metadata_cache)
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-    if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+void addWatermarkVirtuals(
+    VirtualColumnsDescription & dest,
+    const StreamingSettings & settings,
+    const ColumnsDescription & base_columns)
+{
+    auto column = base_columns.tryGetColumn(GetColumnsOptions::AllPhysical, settings.watermark->column);
+    if (!column)
+        return;
 
-    if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    dest.addEphemeral(std::string(TIME_ATTRIBUTE_COLUMN_NAME), column->type, "Event-time value of the current row.", VirtualsMaterializationPlace::Streaming);
+    dest.addEphemeral(std::string(WATERMARK_COLUMN_NAME), column->type, "Running watermark in effect for the current row.", VirtualsMaterializationPlace::Streaming);
+}
 
-    auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
-    auto it = cache->find(this);
-    if (it != cache->end())
-        return it->second;
+StorageMetadataPtr extendMetadataWithModifierVirtuals(
+    const StorageMetadataPtr & base,
+    const TableExpressionModifiers * modifiers)
+{
+    if (!modifiers || !base)
+        return base;
 
-    return cache->emplace(this, IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache)).first->second;
+    auto extended = std::make_shared<StorageInMemoryMetadata>(*base);
+
+    if (modifiers->hasStream())
+    {
+        const auto & stream = modifiers->getStreamingSettings();
+
+        if (stream->watermark)
+            addWatermarkVirtuals(extended->virtuals, *stream, base->getColumns());
+    }
+
+    return extended;
+}
+
+}
+
+/// NOLINTNEXTLINE(google-default-arguments)
+StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers) const
+{
+    auto base = [&]() -> StorageMetadataPtr
+    {
+        if (bypass_metadata_cache)
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+
+        if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+
+        if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+
+        auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
+        auto it = cache->find(this);
+        if (it != cache->end())
+            return it->second;
+
+        return cache->emplace(this, IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache)).first->second;
+    }();
+
+    return extendMetadataWithModifierVirtuals(base, modifiers);
 }
 
 StorageSnapshotPtr

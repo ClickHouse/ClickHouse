@@ -345,9 +345,10 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
-StorageMetadataPtr StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+/// NOLINTNEXTLINE(google-default-arguments)
+StorageMetadataPtr StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers) const
 {
-    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers);
 
     auto target = tryGetTargetTable();
     if (!target)
@@ -356,7 +357,7 @@ StorageMetadataPtr StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr qu
     /// Override _table and _database to be materialized at the Plan level
     /// by StorageWithCommonVirtualColumns, not by the target storage's reader.
     VirtualColumnsDescription virtuals_desc;
-    for (auto desc : target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache)->virtuals)
+    for (auto desc : target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers)->virtuals)
     {
         if (desc.name == "_table" || desc.name == "_database")
             desc.place = VirtualsMaterializationPlace::Plan;
