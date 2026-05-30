@@ -135,13 +135,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
-    ParserCompoundColumnDeclaration parser_col_decl;
+    ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
     ParserIndexDeclaration parser_idx_decl;
     ParserStatisticsDeclaration parser_stat_decl;
     ParserStatisticsDeclarationWithoutTypes parser_stat_decl_without_types;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
-    ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
+    ParserCompoundColumnDeclaration parser_modify_col_decl(/* require_type = */ false, /* allow_null_modifiers = */ true, /* check_keywords_after_name = */ true);
     ParserPartition parser_partition;
     ParserExpressionWithOptionalAlias parser_exp_elem(false);
     ParserList parser_assignment_list(

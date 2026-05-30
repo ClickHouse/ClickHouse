@@ -1,0 +1,6 @@
+a	Int32
+b	Nullable(Int32)
+c	Int32
+d	Nullable(UInt8)
+e	Float64
+Nullable(Int32)
