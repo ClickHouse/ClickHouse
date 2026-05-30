@@ -1,6 +1,8 @@
 #pragma once
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 #include <Core/Types.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -48,6 +50,68 @@ inline void mergeNearestNeighbours(NearestNeighbours & accumulated, NearestNeigh
         accumulated.distances->insert(accumulated.distances->end(), granule.distances->begin(), granule.distances->end());
     else
         accumulated.distances.reset();
+}
+
+/// Remove duplicate rows. If distances are available, keep the smallest distance per row.
+inline void deduplicateNearestNeighbours(NearestNeighbours & neighbours)
+{
+    if (neighbours.rows.empty())
+        return;
+
+    if (!neighbours.distances.has_value())
+    {
+        std::unordered_set<UInt64> seen;
+        seen.reserve(neighbours.rows.size());
+
+        std::vector<UInt64> deduped;
+        deduped.reserve(neighbours.rows.size());
+
+        for (UInt64 row : neighbours.rows)
+        {
+            if (seen.emplace(row).second)
+                deduped.push_back(row);
+        }
+
+        neighbours.rows = std::move(deduped);
+        return;
+    }
+
+    std::unordered_map<UInt64, Float32> best_distance_by_row;
+    best_distance_by_row.reserve(neighbours.rows.size());
+    for (size_t i = 0; i < neighbours.rows.size(); ++i)
+    {
+        const UInt64 row = neighbours.rows[i];
+        const Float32 distance = neighbours.distances->at(i);
+        auto [it, inserted] = best_distance_by_row.emplace(row, distance);
+        if (!inserted && distance < it->second)
+            it->second = distance;
+    }
+
+    struct Entry
+    {
+        UInt64 row = 0;
+        Float32 distance = 0;
+    };
+
+    std::vector<Entry> entries;
+    entries.reserve(best_distance_by_row.size());
+    for (const auto & [row, distance] : best_distance_by_row)
+        entries.push_back({row, distance});
+
+    std::sort(entries.begin(), entries.end(), [](const Entry & lhs, const Entry & rhs)
+    {
+        if (lhs.distance != rhs.distance)
+            return lhs.distance < rhs.distance;
+        return lhs.row < rhs.row;
+    });
+
+    neighbours.rows.resize(entries.size());
+    neighbours.distances->resize(entries.size());
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        neighbours.rows[i] = entries[i].row;
+        neighbours.distances->at(i) = entries[i].distance;
+    }
 }
 
 /// Keep only the best `limit` neighbours (smallest distance). If distances are unavailable, keep first `limit`.

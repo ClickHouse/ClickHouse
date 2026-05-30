@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <unordered_map>
 #include <unordered_set>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
@@ -2134,6 +2135,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         size_t last_index_mark = 0;
         std::optional<NearestNeighbours> accumulated_vector_search_results;
         const auto vector_search_merge_limit = condition->getApproximateNearestNeighborsLimit();
+        std::unordered_set<size_t> processed_vector_index_marks;
+        std::unordered_map<size_t, std::vector<UInt64>> part_offset_rows_by_index_mark;
 
         for (size_t i = 0; i < ranges_size; ++i)
         {
@@ -2148,18 +2151,30 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    auto granule_results = condition->calculateApproximateNearestNeighbors(granule);
+                    const bool need_calculate_vector_results = processed_vector_index_marks.emplace(index_mark).second;
+
                     const UInt64 granule_begin_row = part->index_granularity->getMarkStartingRow(
                         index_mark * skip_index_granularity);
-                    convertNearestNeighboursToPartOffsets(granule_results, granule_begin_row);
-                    const auto part_offset_rows = granule_results.rows;
 
-                    if (!accumulated_vector_search_results)
+                    if (need_calculate_vector_results)
                     {
-                        accumulated_vector_search_results = std::move(granule_results);
+                        auto granule_results = condition->calculateApproximateNearestNeighbors(granule);
+                        convertNearestNeighboursToPartOffsets(granule_results, granule_begin_row);
+                        auto part_offset_rows = granule_results.rows;
+                        std::sort(part_offset_rows.begin(), part_offset_rows.end());
+                        part_offset_rows.erase(std::unique(part_offset_rows.begin(), part_offset_rows.end()), part_offset_rows.end());
+
+                        if (!accumulated_vector_search_results)
+                        {
+                            accumulated_vector_search_results = std::move(granule_results);
+                        }
+                        else
+                            mergeNearestNeighbours(*accumulated_vector_search_results, std::move(granule_results));
+
+                        part_offset_rows_by_index_mark[index_mark] = std::move(part_offset_rows);
                     }
-                    else
-                        mergeNearestNeighbours(*accumulated_vector_search_results, std::move(granule_results));
+
+                    const auto & part_offset_rows = part_offset_rows_by_index_mark.at(index_mark);
 
                     for (const auto row : part_offset_rows)
                     {
@@ -2202,6 +2217,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
         if (accumulated_vector_search_results)
         {
+            deduplicateNearestNeighbours(*accumulated_vector_search_results);
+
             if (vector_search_merge_limit.has_value())
                 truncateNearestNeighbours(*accumulated_vector_search_results, *vector_search_merge_limit);
 
