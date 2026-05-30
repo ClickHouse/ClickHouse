@@ -10,6 +10,15 @@ doc_type: 'reference'
 Computes the non-negative derivative of `metric_column` with respect to `timestamp_column`.
 This is a ClickHouse-specific window function, not part of standard SQL.
 
+For each row, the derivative is computed against the *previous row in the window's evaluation order*, which is determined by the window's `ORDER BY` clause - not by `timestamp_column`.
+The `timestamp_column` argument is read only to measure the elapsed time between the current row and that previous row; it does not order the rows itself.
+
+:::warning
+`nonNegativeDerivative` does not order rows by `timestamp_column`.
+You should normally order the window by the same column you pass as `timestamp_column` (for example `... OVER (ORDER BY ts)` together with `nonNegativeDerivative(metric, ts)`).
+If the window's `ORDER BY` differs, the function computes time deltas over a different row sequence than you might expect, which usually produces meaningless results.
+:::
+
 The result is the rate of change of the metric per `INTERVAL`, with any negative value clamped to `0`.
 This is useful for monotonically increasing metrics, such as counters, where a decrease usually indicates a reset rather than a real negative rate.
 
@@ -28,7 +37,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 **Arguments**
 
 - `metric_column` — The column whose derivative is computed. [(U)Int*](../data-types/int-uint.md) or [Float*](../data-types/float.md).
-- `timestamp_column` — The column used to order rows and to measure the time difference between them. [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
+- `timestamp_column` — The column used to measure the elapsed time between the current row and the previous row in the window order. It does not order the rows; the window's `ORDER BY` does, and should normally use this same column. [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md).
 - `INTERVAL X UNITS` — Optional. The time unit the result is scaled to. Defaults to `INTERVAL 1 SECOND`. Only fixed-length units are supported (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY`, `WEEK`); variable-length units (`MONTH`, `QUARTER`, `YEAR`) raise an exception.
 
 **Returned value**
