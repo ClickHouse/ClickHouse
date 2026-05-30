@@ -164,6 +164,18 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto argument = std::move(arguments[0]);
 
+    std::optional<NodeEvaluationRange> fixed_argument_range;
+    if (argument.store_method == StoreMethod::RAW_DATA && argument.node->node_type == NodeType::Offset)
+    {
+        const auto * offset_node = static_cast<const PQT::Offset *>(argument.node);
+        if (offset_node->at_timestamp)
+            fixed_argument_range = context.node_range_getter.get(offset_node->getExpression());
+    }
+
+    const auto aggregation_start_time = fixed_argument_range ? fixed_argument_range->start_time : start_time;
+    const auto aggregation_end_time = fixed_argument_range ? fixed_argument_range->end_time : end_time;
+    const auto aggregation_step = fixed_argument_range ? fixed_argument_range->step : step;
+
     SQLQueryPiece res = argument;
     res.node = node;
     res.type = ResultType::INSTANT_VECTOR;
@@ -279,9 +291,9 @@ SQLQueryPiece applyFunctionOverRange(
     /// <aggregate_function>(<timestamps>, <values>) AS values
     builder.select_list.push_back(addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
-        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(step, context.timestamp_data_type),
+        timeSeriesTimestampToAST(aggregation_start_time, context.timestamp_data_type),
+        timeSeriesTimestampToAST(aggregation_end_time, context.timestamp_data_type),
+        timeSeriesDurationToAST(aggregation_step, context.timestamp_data_type),
         timeSeriesDurationToAST(window, context.timestamp_data_type)));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
@@ -297,9 +309,35 @@ SQLQueryPiece applyFunctionOverRange(
     }
 
     res.select_query = builder.getSelectQuery();
-    res.start_time = start_time;
-    res.end_time = end_time;
-    res.step = step;
+    res.start_time = aggregation_start_time;
+    res.end_time = aggregation_end_time;
+    res.step = aggregation_step;
+
+    if (fixed_argument_range)
+    {
+        SelectQueryBuilder repeat_builder;
+
+        if (has_group)
+            repeat_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+        auto new_values = makeASTFunction(
+            "arrayResize",
+            make_intrusive<ASTLiteral>(Array{}),
+            make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(start_time, end_time, step)),
+            makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
+
+        new_values->setAlias(ColumnNames::Values);
+        repeat_builder.select_list.push_back(std::move(new_values));
+
+        auto & subqueries = context.subqueries;
+        subqueries.emplace_back(subqueries.size(), std::move(res.select_query), SQLSubqueryType::TABLE);
+        repeat_builder.from_table = subqueries.back().name;
+
+        res.select_query = repeat_builder.getSelectQuery();
+        res.start_time = start_time;
+        res.end_time = end_time;
+        res.step = step;
+    }
 
     if (has_group && impl_info->drop_metric_name)
         res = dropMetricName(std::move(res), context);

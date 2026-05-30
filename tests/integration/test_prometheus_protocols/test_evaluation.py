@@ -563,6 +563,35 @@ def test_instant_selectors():
     )
 
 
+def test_timestamp_modifier_fixed_evaluation_time():
+    do_query_test(
+        "test @ 130",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [250, "3"]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "1970-01-01 00:04:10.000",
+                "3",
+            ]
+        ],
+    )
+
+    do_range_query_test(
+        "last_over_time(test[45s] @ 130)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[130, "3"], [190, "3"], [250, "3"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:10.000',3),('1970-01-01 00:03:10.000',3),('1970-01-01 00:04:10.000',3)]",
+            ]
+        ],
+    )
+
+
 def test_function_over_time():
     do_query_test(
         "last_over_time(test[45s])[120s:15s]",
