@@ -105,8 +105,6 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
-    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics;
-    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics_per_client;
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
@@ -271,8 +269,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
-    , expose_eviction_metrics(settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics])
-    , expose_eviction_metrics_per_client(settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client])
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
@@ -363,13 +359,10 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
-    if (expose_eviction_metrics)
+    main_priority->setOnEvictCallback([this](const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id)
     {
-        main_priority->setOnEvictCallback([this](const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id)
-        {
-            this->onSegmentEvicted(segment, queue_type, user_id);
-        });
-    }
+        this->onSegmentEvicted(segment, queue_type, user_id);
+    });
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
@@ -2129,6 +2122,10 @@ FileCache::~FileCache()
 
 void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const
 {
+    const auto & settings = Context::getGlobalContextInstance()->getSettingsRef();
+    if (!settings.filesystem_cache_expose_prometheus_eviction_metrics)
+        return;
+
     const size_t bytes = segment.range().size();
     const size_t hits = segment.getHitsCount();
     const char * queue = queueLabel(queue_type);
@@ -2137,7 +2134,7 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntr
     filesystem_cache_evicted_segment_hits.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(hits));
     filesystem_cache_evicted_segment_size_bytes.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(bytes));
 
-    if (!expose_eviction_metrics_per_client)
+    if (!settings.filesystem_cache_expose_prometheus_eviction_metrics_per_client)
         return;
     filesystem_cache_evictions_by_client_total.withLabels({name, queue, user_id}).increment();
     filesystem_cache_evicted_bytes_by_client_total.withLabels({name, queue, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));

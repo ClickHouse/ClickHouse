@@ -6,7 +6,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage.xml"],
-    user_configs=["users.d/cache_on_write.xml"],
+    user_configs=["users.d/cache_on_write.xml", "configs/users.xml"],
     stay_alive=True,
 )
 

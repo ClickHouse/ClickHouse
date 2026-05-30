@@ -275,8 +275,6 @@ private:
     const bool use_split_cache;
     const double split_cache_ratio;
 
-    const bool expose_eviction_metrics;
-    const bool expose_eviction_metrics_per_client;
 
     const bool skip_cache_on_disk_failure;
 

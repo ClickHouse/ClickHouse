@@ -78,8 +78,6 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
-    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics;
-    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics_per_client;
 }
 
 void printRanges(const auto & segments)
@@ -2191,6 +2189,9 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
 
     auto run_workload = [&](const std::string & cache_name, bool expose, bool per_client)
     {
+        getMutableContext().context->setSetting("filesystem_cache_expose_prometheus_eviction_metrics", Field(expose));
+        getMutableContext().context->setSetting("filesystem_cache_expose_prometheus_eviction_metrics_per_client", Field(per_client));
+
         DB::FileCacheSettings settings;
         settings[FileCacheSetting::path] = cache_base_path;
         settings[FileCacheSetting::max_size] = 40;
@@ -2199,8 +2200,6 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
         settings[FileCacheSetting::load_metadata_asynchronously] = false;
         settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
         settings[FileCacheSetting::slru_size_ratio] = 0.5;
-        settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics] = expose;
-        settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client] = per_client;
 
         auto cache = DB::FileCache(cache_name, settings);
         cache.initialize();
