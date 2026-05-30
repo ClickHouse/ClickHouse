@@ -57,6 +57,16 @@ struct GroupConvexHullData
 
         points.clear();
         points.assign(hull.outer().begin(), hull.outer().end());
+
+        /// boost::geometry::convex_hull returns a closed ring (the first point is duplicated
+        /// at the end). The stored points are only an accumulator for recomputing the hull,
+        /// so the closing duplicate is redundant. Dropping it keeps the stored point count
+        /// from exceeding the state budget by one, which would otherwise let a self-produced
+        /// state at the limit serialize but fail to deserialize (INCORRECT_DATA).
+        if (points.size() >= 2
+            && points.front().get<0>() == points.back().get<0>()
+            && points.front().get<1>() == points.back().get<1>())
+            points.pop_back();
     }
 
     void maybeCompress()
