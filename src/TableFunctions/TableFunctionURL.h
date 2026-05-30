@@ -98,6 +98,9 @@ protected:
     /// It is null when the scheme is handled by StorageURL itself (http, https, ...).
     TableFunctionPtr delegate;
     const char * delegate_engine_name = "URL";
+    /// Source URI used for the access check of the delegated function (e.g. the file path or the
+    /// resolved object-storage URL). Empty for `file://`, matching `TableFunctionFile` behavior.
+    String delegate_function_uri;
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate
@@ -111,7 +114,7 @@ private:
         const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return delegate_engine_name; }
-    const String & getFunctionURI() const override { return filename; }
+    const String & getFunctionURI() const override { return delegate ? delegate_function_uri : filename; }
 
     std::optional<String> tryGetFormatFromFirstArgument() override;
 };

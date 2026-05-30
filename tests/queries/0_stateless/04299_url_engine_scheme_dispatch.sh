@@ -35,6 +35,19 @@ OUT="${CLICKHOUSE_TEST_UNIQUE_NAME}_out.csv"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO TABLE FUNCTION url('file://${OUT}', 'CSV', 'a UInt32, b String') VALUES (3, 'Three')"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('file://${OUT}', 'CSV', 'a UInt32, b String') ORDER BY a"
 
+echo "--- ENGINE = URL('file://...') keeps its original syntax (reload-safe across DETACH/ATTACH) ---"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2 (a UInt32, b String) ENGINE = URL('file://${ABS}', 'CSV')"
+${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_t2'"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2 ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2"
+
+echo "--- headers(...) are rejected when dispatching to a non-URL scheme ---"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('file://${REL}', 'CSV', 'a UInt32, b String', headers('X-Test'='1'))" 2>&1 \
+    | grep -qiE "does not support headers" && echo "headers-rejected" || echo "NOT REJECTED"
+
 echo "--- reading outside user_files via a relative file:// path is rejected ---"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('file://../../../../../../../etc/passwd', 'CSV', 'a String')" 2>&1 \
     | grep -qiE "ACCESS_DENIED|not inside|not allowed|Exception" && echo "rejected" || echo "NOT REJECTED"

@@ -33,6 +33,11 @@ namespace Setting
     extern const SettingsString url_base;
 }
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
@@ -98,6 +103,12 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     /// http(s) and unrecognized schemes keep the plain StorageURL behavior below.
     if (const auto target = classifyURLScheme(filename); target != URLSchemeTarget::URL)
     {
+        if (!configuration.headers.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The url table function does not support headers(...) when dispatching to the {} engine (URL '{}')",
+                storageEngineNameForURLScheme(target), filename);
+
         buildDelegate(target, context);
         return;
     }
@@ -121,6 +132,9 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 void TableFunctionURL::buildDelegate(URLSchemeTarget target, const ContextPtr & context)
 {
     delegate_engine_name = storageEngineNameForURLScheme(target);
+    /// `file` uses no URI for access filtering (its function URI is empty); the object-storage
+    /// functions filter on the raw URL.
+    delegate_function_uri = (target == URLSchemeTarget::File) ? String{} : filename;
 
     auto args_list = make_intrusive<ASTExpressionList>();
 

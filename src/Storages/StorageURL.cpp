@@ -1,4 +1,5 @@
 #include <Storages/StorageURL.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -7,6 +8,8 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Access/Common/AccessType.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -2125,93 +2128,180 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 }
 
 
+namespace
+{
+/// Thin wrapper returned when the `URL` engine dispatches to another backend. It forwards everything
+/// to the delegate storage but keeps `addInferredEngineArgsToCreateQuery` as the IStorage no-op, so
+/// the persisted `ENGINE = URL(...)` arguments are never rewritten into the delegate's argument
+/// layout (which would corrupt `SHOW CREATE`/reload, e.g. the Azure engine expects >= 3 arguments).
+class StorageURLSchemeDispatch final : public StorageProxy
+{
+public:
+    StorageURLSchemeDispatch(
+        StoragePtr nested_,
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        const String & comment_)
+        : StorageProxy(table_id_), nested(std::move(nested_))
+    {
+        StorageInMemoryMetadata metadata;
+        metadata.setColumns(columns_);
+        metadata.setConstraints(constraints_);
+        metadata.setComment(comment_);
+        setInMemoryMetadata(metadata);
+    }
+
+    StoragePtr getNested() const override { return nested; }
+    /// The table was created with `ENGINE = URL(...)`; report it as such for consistency with
+    /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
+    String getName() const override { return "URL"; }
+
+private:
+    StoragePtr nested;
+};
+}
+
+/// If the resolved URL scheme maps to another backend, create that storage and return it.
+/// Returns nullptr when the scheme is handled by StorageURL itself (http, https, ...) or when
+/// the arguments are not a shape we can classify (then the plain URL path reports any errors).
+///
+/// The persisted `ENGINE = URL(...)` AST (`args.engine_args`) is intentionally left untouched: the
+/// delegate arguments are built in a separate list, so `SHOW CREATE`, `DETACH`/`ATTACH` and restart
+/// keep the original `URL(...)` syntax and re-dispatch on reload.
+static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments & args)
+{
+    if (args.engine_args.empty())
+        return nullptr;
+
+    auto context = args.getLocalContext();
+
+    /// Resolve url/format/compression on a clone so the persisted arguments are not modified.
+    /// This also handles positional, key-value and named-collection argument forms uniformly.
+    ASTs probe_args;
+    probe_args.reserve(args.engine_args.size());
+    for (const auto & arg : args.engine_args)
+        probe_args.push_back(arg->clone());
+
+    StorageURL::Configuration configuration;
+    try
+    {
+        configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        return nullptr;
+    }
+
+    const auto target = classifyURLScheme(configuration.url);
+    if (target == URLSchemeTarget::URL)
+        return nullptr;
+
+    const char * engine_name = storageEngineNameForURLScheme(target);
+
+    if (!configuration.headers.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The URL engine does not support headers(...) when dispatching to the {} engine (URL '{}')",
+            engine_name, configuration.url);
+
+    const String & format = configuration.format;
+    const String & compression = configuration.compression_method;
+
+    /// Build the delegate engine arguments in a separate list.
+    ASTs delegate_args;
+    if (target == URLSchemeTarget::File)
+    {
+        /// The `File` engine takes (format, path, [compression]) — format comes first.
+        const String path = getLocalPathFromFileURL(configuration.url);
+        String format_for_file = format.empty() ? "auto" : format;
+        if (format_for_file == "auto")
+            format_for_file = FormatFactory::instance().tryGetFormatFromFileName(path).value_or("auto");
+        delegate_args.push_back(make_intrusive<ASTLiteral>(format_for_file));
+        delegate_args.push_back(make_intrusive<ASTLiteral>(path));
+        if (!compression.empty())
+            delegate_args.push_back(make_intrusive<ASTLiteral>(compression));
+    }
+    else if (target == URLSchemeTarget::Azure)
+    {
+        /// The `AzureBlobStorage` engine takes (account_url, container, blob_path, [format, compression]).
+        auto parts = parseAzureURL(configuration.url);
+        delegate_args.push_back(make_intrusive<ASTLiteral>(parts.account_url));
+        delegate_args.push_back(make_intrusive<ASTLiteral>(parts.container));
+        delegate_args.push_back(make_intrusive<ASTLiteral>(parts.blob_path));
+        if (!format.empty())
+            delegate_args.push_back(make_intrusive<ASTLiteral>(format));
+        if (!compression.empty())
+        {
+            if (format.empty())
+                delegate_args.push_back(make_intrusive<ASTLiteral>(String("auto")));
+            delegate_args.push_back(make_intrusive<ASTLiteral>(compression));
+        }
+    }
+    else
+    {
+        /// `S3` and `HDFS` engines take (url, [format, compression]) — same shape as `URL`.
+        delegate_args.push_back(make_intrusive<ASTLiteral>(configuration.url));
+        if (!format.empty())
+            delegate_args.push_back(make_intrusive<ASTLiteral>(format));
+        if (!compression.empty())
+        {
+            if (format.empty())
+                delegate_args.push_back(make_intrusive<ASTLiteral>(String("auto")));
+            delegate_args.push_back(make_intrusive<ASTLiteral>(compression));
+        }
+    }
+
+    /// Re-check the table engine privilege for the *target* engine on fresh creation. The outer
+    /// creation already verified `TABLE ENGINE ON URL`; without this a user granted only URL could
+    /// create File/S3/Azure/HDFS-backed tables they are not permitted to. We only check on CREATE
+    /// (not ATTACH/restore/startup loading), mirroring where the outer engine privilege is checked.
+    if (args.mode == LoadingStrictnessLevel::CREATE)
+        context->checkAccess(AccessType::TABLE_ENGINE, String(engine_name));
+
+    const auto & storages = StorageFactory::instance().getAllStorages();
+    auto it = storages.find(engine_name);
+    if (it == storages.end())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table engine {} (required to handle URL '{}' in the unified URL engine) is not available in this build",
+            engine_name, configuration.url);
+
+    const String engine_name_str = engine_name;
+    StorageFactory::Arguments delegate_factory_args
+    {
+        .engine_name = engine_name_str,
+        .engine_args = delegate_args,
+        .storage_def = args.storage_def,
+        .query = args.query,
+        .relative_data_path = args.relative_data_path,
+        .table_id = args.table_id,
+        .local_context = args.local_context,
+        .context = args.context,
+        .columns = args.columns,
+        .constraints = args.constraints,
+        .mode = args.mode,
+        .comment = args.comment,
+        .is_restore_from_backup = args.is_restore_from_backup,
+    };
+    auto delegate_storage = it->second.creator_fn(delegate_factory_args);
+    return std::make_shared<StorageURLSchemeDispatch>(
+        std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment);
+}
+
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
+            /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
+            if (auto dispatched = tryDispatchURLEngineByScheme(args))
+                return dispatched;
+
             ASTs & engine_args = args.engine_args;
             auto context = args.getLocalContext();
-
-            /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
-            /// We only attempt this when the first argument is a positional source string literal
-            /// (the common case); named-collection forms fall through to the plain URL engine.
-            if (!engine_args.empty())
-            {
-                String raw_url;
-                bool got_url = false;
-                try
-                {
-                    auto literal = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], context);
-                    raw_url = checkAndGetLiteralArgument<String>(literal, "url");
-                    got_url = true;
-                }
-                catch (...) // NOLINT(bugprone-empty-catch)
-                {
-                    /// Not a positional literal (e.g. a named collection) — keep plain URL behavior.
-                }
-
-                if (got_url)
-                {
-                    const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
-                    const String resolved = StorageURL::resolveURLBase(raw_url, url_base);
-                    const auto target = classifyURLScheme(resolved);
-                    if (target != URLSchemeTarget::URL)
-                    {
-                        /// Rewrite the leading source argument(s) into the form the target engine expects.
-                        /// The `URL` engine takes (url, [format, compression]).
-                        if (target == URLSchemeTarget::File)
-                        {
-                            /// The `File` engine takes (format, path, [compression]) — format comes first.
-                            const String path = getLocalPathFromFileURL(resolved);
-                            String format = "auto";
-                            if (engine_args.size() > 1)
-                                format = checkAndGetLiteralArgument<String>(
-                                    evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], context), "format");
-                            if (format == "auto")
-                                format = FormatFactory::instance().tryGetFormatFromFileName(path).value_or("auto");
-
-                            ASTPtr compression;
-                            if (engine_args.size() > 2)
-                                compression = engine_args[2];
-
-                            engine_args.clear();
-                            engine_args.push_back(make_intrusive<ASTLiteral>(format));
-                            engine_args.push_back(make_intrusive<ASTLiteral>(path));
-                            if (compression)
-                                engine_args.push_back(compression);
-                        }
-                        else if (target == URLSchemeTarget::Azure)
-                        {
-                            /// The `AzureBlobStorage` engine takes (account_url, container, blob_path, ...).
-                            auto parts = parseAzureURL(resolved);
-                            engine_args[0] = make_intrusive<ASTLiteral>(parts.account_url);
-                            engine_args.insert(engine_args.begin() + 1, make_intrusive<ASTLiteral>(parts.blob_path));
-                            engine_args.insert(engine_args.begin() + 1, make_intrusive<ASTLiteral>(parts.container));
-                        }
-                        else
-                        {
-                            /// `S3` and `HDFS` engines take (url, [format, compression]) — same shape as `URL`.
-                            engine_args[0] = make_intrusive<ASTLiteral>(resolved);
-                        }
-
-                        const char * engine_name = storageEngineNameForURLScheme(target);
-                        const auto & storages = StorageFactory::instance().getAllStorages();
-                        auto it = storages.find(engine_name);
-                        if (it == storages.end())
-                            throw Exception(
-                                ErrorCodes::BAD_ARGUMENTS,
-                                "Table engine {} (required to handle URL '{}' in the unified URL engine) "
-                                "is not available in this build",
-                                engine_name, resolved);
-
-                        return it->second.creator_fn(args);
-                    }
-                }
-            }
-
-            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
+            auto configuration = StorageURL::getConfiguration(engine_args, context, &args.table_id);
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 
             ASTPtr partition_by;

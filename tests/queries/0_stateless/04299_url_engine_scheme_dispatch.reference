@@ -14,5 +14,11 @@
 2	World
 --- INSERT INTO url('file://...') round-trips through the File engine ---
 3	Three
+--- ENGINE = URL('file://...') keeps its original syntax (reload-safe across DETACH/ATTACH) ---
+URL
+1	Hello
+2	World
+--- headers(...) are rejected when dispatching to a non-URL scheme ---
+headers-rejected
 --- reading outside user_files via a relative file:// path is rejected ---
 rejected
