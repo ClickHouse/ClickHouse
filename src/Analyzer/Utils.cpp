@@ -468,7 +468,19 @@ static ASTPtr convertIntoTableExpressionAST(
         {
             ASTStreamSettings ast_stream_settings;
             if (stream_settings->cursor)
+            {
                 ast_stream_settings.cursor = cursorTreeToMap(stream_settings->cursor);
+            }
+            if (stream_settings->watermark)
+            {
+                ASTStreamSettings::WatermarkSettings ast_watermark;
+                ast_watermark.column = stream_settings->watermark->column;
+                ast_watermark.idle_timeout_ms = static_cast<UInt64>(stream_settings->watermark->idle_timeout.count());
+                if (stream_settings->watermark->expression)
+                    ast_watermark.expression = stream_settings->watermark->expression->toAST(convert_to_ast_options);
+
+                ast_stream_settings.watermark = std::move(ast_watermark);
+            }
 
             result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
             result_table_expression->children.push_back(result_table_expression->stream_settings);
