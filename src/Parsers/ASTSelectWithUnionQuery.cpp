@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {
     auto res = make_intrusive<ASTSelectWithUnionQuery>(*this);

@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 String ASTUpdateQuery::getID(char delim) const
 {
     return "UpdateQuery" + (delim + getDatabase()) + delim + getTable();
