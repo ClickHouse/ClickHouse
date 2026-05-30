@@ -990,8 +990,8 @@ MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
     size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_)
     : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
 {
-    assert(bits_per_row != 0);
-    assert(hash_functions != 0);
+    chassert(bits_per_row != 0);
+    chassert(hash_functions != 0);
 }
 
 bool MergeTreeIndexAggregatorBloomFilter::empty() const
@@ -1039,8 +1039,8 @@ MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
-    assert(bits_per_row != 0);
-    assert(hash_functions != 0);
+    chassert(bits_per_row != 0);
+    chassert(hash_functions != 0);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
