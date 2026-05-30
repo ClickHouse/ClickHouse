@@ -70,9 +70,9 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
 
-std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const std::optional<TableExpressionModifiers> & table_expression_modifiers, const ContextPtr & context)
 {
-    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context);
+    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, table_expression_modifiers, context);
     if (!resolve_result)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
 
@@ -138,7 +138,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     if (reading_from_table)
     {
         Identifier identifier = parseTableIdentifier(reading_from_table->getTable(), context);
-        auto table_node = resolveTable(identifier, context);
+        auto table_node = resolveTable(identifier, reading_from_table->getTableExpressionModifiers(), context);
 
         storage = table_node->getStorage();
         snapshot = table_node->getStorageSnapshot();

@@ -13,7 +13,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Analyzer/Utils.h>
-#include <Core/Streaming/PseudoColumns.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
@@ -21,6 +20,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ServerSettings.h>
@@ -10761,8 +10761,8 @@ void addWatermarkVirtuals(
     if (!column)
         return;
 
-    dest.addEphemeral(std::string(TIME_ATTRIBUTE_COLUMN_NAME), column->type, "Event-time value of the current row.", VirtualsMaterializationPlace::Streaming);
-    dest.addEphemeral(std::string(WATERMARK_COLUMN_NAME), column->type, "Running watermark in effect for the current row.", VirtualsMaterializationPlace::Streaming);
+    dest.addEphemeral(std::string(TimeAttributeColumn::name), column->type, "Event-time value of the current row.", VirtualsMaterializationPlace::Streaming);
+    dest.addEphemeral(std::string(WatermarkColumn::name), column->type, "Running watermark in effect for the current row.", VirtualsMaterializationPlace::Streaming);
 }
 
 StorageMetadataPtr extendMetadataWithModifierVirtuals(

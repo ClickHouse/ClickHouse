@@ -37,7 +37,9 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+
 #include <Core/Settings.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -57,8 +59,6 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
-
-#include <Core/Streaming/PseudoColumns.h>
 
 #include <Access/EnabledRowPolicies.h>
 
@@ -810,7 +810,7 @@ static void validateWatermarkSettings(
     if (!isDateOrDate32OrDateTimeOrDateTime64(column->type))
         throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' must be of Date, Date32, DateTime or DateTime64 type, got {}", watermark.column, column->type->getName());
 
-    for (auto reserved : {TIME_ATTRIBUTE_COLUMN_NAME, WATERMARK_COLUMN_NAME})
+    for (auto reserved : {TimeAttributeColumn::name, WatermarkColumn::name})
         if (columns.tryGetColumn(GetColumnsOptions::All, std::string(reserved)))
             throw Exception(ErrorCodes::ILLEGAL_STREAM, "Column name '{}' is reserved for the streaming watermark pipeline and cannot be a user column in table {}", reserved, storage_snapshot->storage.getStorageID().getFullNameNotQuoted());
 
