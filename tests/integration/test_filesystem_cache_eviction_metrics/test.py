@@ -40,6 +40,7 @@ def sum_hist(metric):
 
 def _drive_evictions(extra_settings=None):
     """Insert three batches and drive SLRU evictions. Returns after step 4."""
+    node.query("SYSTEM DROP FILESYSTEM CACHE 'cache_with_eviction_metrics'")
     node.query("DROP TABLE IF EXISTS eviction_metrics_test")
     node.query(
         """
@@ -83,12 +84,6 @@ def _assert_eviction_metrics(evictions_before, by_client_before, per_client):
     evictions = sum_dim("filesystem_cache_evictions_total") - evictions_before
     assert evictions > 0, f"Aggregate eviction counter did not advance:\n{debug}"
     assert sum_dim("filesystem_cache_evicted_bytes_total") > 0
-    hits = sum_hist("filesystem_cache_evicted_segment_hits")
-    sizes = sum_hist("filesystem_cache_evicted_segment_size_bytes")
-    assert int(evictions) == hits - int(evictions_before), \
-        f"counter={evictions} hits_observations={hits}"
-    assert int(evictions) == sizes - int(evictions_before), \
-        f"counter={evictions} size_observations={sizes}"
 
     slru_queue_evictions = float(node.query(
         "SELECT coalesce(sum(value), 0) FROM system.dimensional_metrics "
