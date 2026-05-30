@@ -89,7 +89,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    assert(expr.ok());
+    chassert(expr.ok());
     return re2::RE2::FullMatch(query, expr);
 }
 
