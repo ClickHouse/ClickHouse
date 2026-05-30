@@ -375,7 +375,9 @@ AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const Str
     if (restore_settings.restore_access_entities_with_current_grants)
     {
         /// Limit restored grants to what the current user is allowed to grant (same as GRANT CURRENT GRANTS).
-        auto current_user_grantable_rights = context->getAccess()->getAccessRights()->getGrantableRights();
+        /// Use implicit rights as well, so that privileges available only through implicit expansion
+        /// (e.g. CREATE VIEW via CREATE TABLE) are not silently dropped, consistently with GRANT CURRENT GRANTS.
+        auto current_user_grantable_rights = context->getAccess()->getAccessRightsWithImplicit()->getGrantableRights();
 
         for (auto & [id, entity] : entities.new_entities)
         {

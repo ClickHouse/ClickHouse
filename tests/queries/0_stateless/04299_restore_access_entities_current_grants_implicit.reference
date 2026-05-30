@@ -1,0 +1,3 @@
+--- Restore with restore_access_entities_with_current_grants=true ---
+-- user_a grants (CREATE VIEW must be preserved via implicit CREATE TABLE grant option) --
+GRANT CREATE VIEW ON *.* TO user_a
