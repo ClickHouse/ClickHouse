@@ -178,6 +178,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_uniq_to_count;
@@ -545,6 +546,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         prepared_sets = std::make_shared<PreparedSets>();
 
     query_info.is_internal = options.is_internal;
+
+    if (auto tables = getSelectQuery().tables())
+    {
+        for (const auto & child : tables->children)
+        {
+            const auto * table_element = child->as<ASTTablesInSelectQueryElement>();
+            if (!table_element || !table_element->table_expression)
+                continue;
+
+            const auto & table_expression = table_element->table_expression->as<ASTTableExpression &>();
+            if (table_expression.stream_settings)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Streaming queries are not supported with the old analyzer.");
+        }
+    }
 
     initSettings();
 
@@ -1301,7 +1316,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (context->getSettingsRef()[Setting::group_by_use_nulls] && analysis_result.use_grouping_set_key)
         {
             for (const auto & key : query_analyzer->aggregationKeys())
-                res.insert({nullptr, makeNullableSafe(header.getByName(key.name).type), key.name});
+                res.insert({nullptr, makeNullableOrLowCardinalityNullableSafe(header.getByName(key.name).type), key.name});
         }
         else
         {
@@ -1480,8 +1495,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             for (const auto & column : result_block.getColumnsWithTypeAndName())
                 column_names[column.name] = column.type;
             for (const auto & elem : query.orderBy()->children)
-                if (elem->as<ASTOrderByElement>()->with_fill)
-                    column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+                column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
             for (const auto & [name, type] : column_names)
             {
                 source_columns.emplace_back(name, type);
@@ -1573,7 +1587,7 @@ static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node
         if (!converted_value.isNull())
         {
             Int64 int_value = converted_value.safeGet<Int64>();
-            assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+            chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
             const UInt64 magnitude = -static_cast<UInt64>(int_value);
             return {magnitude, 0, true};
@@ -2095,7 +2109,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     // We don't have window functions, so we can execute the
                     // expressions before ORDER BY and the preliminary DISTINCT
                     // now, on shards (first_stage).
-                    assert(!expressions.before_window);
+                    chassert(!expressions.before_window);
                     executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                     executeDistinct(query_plan, true, expressions.selected_columns, true);
                 }
@@ -3013,7 +3027,8 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        !group_by_info && settings[Setting::force_aggregation_in_order]);
+        !group_by_info && settings[Setting::force_aggregation_in_order],
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -3128,7 +3143,7 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
         if (left[i].nulls_direction > right[i].nulls_direction)
             return false;
 
-        assert(left[i] == right[i]);
+        chassert(left[i] == right[i]);
     }
 
     // Note that we check the length last, because we want to put together the
