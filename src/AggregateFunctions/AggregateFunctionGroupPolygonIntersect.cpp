@@ -282,13 +282,13 @@ public:
                     MAX_CHUNKS_PER_STATE);
 
             data.chunks.resize(chunk_count);
-            size_t total_points = 0;
+            PolygonalStateBudget budget;
             for (UInt64 i = 0; i < chunk_count; ++i)
             {
-                data.chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), total_points);
+                data.chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), budget);
                 validateDeserializedMultiPolygon(data.chunks[i], getName().c_str());
             }
-            data.total_points = total_points;
+            data.total_points = budget.points;
         }
     }
 

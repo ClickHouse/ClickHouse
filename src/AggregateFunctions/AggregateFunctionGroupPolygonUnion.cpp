@@ -192,13 +192,13 @@ public:
                 MAX_CHUNKS_PER_STATE);
 
         chunks.resize(chunk_count);
-        size_t total_points = 0;
+        PolygonalStateBudget budget;
         for (UInt64 i = 0; i < chunk_count; ++i)
         {
-            chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), total_points);
+            chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), budget);
             validateDeserializedMultiPolygon(chunks[i], getName().c_str());
         }
-        data.total_points = total_points;
+        data.total_points = budget.points;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
