@@ -22,7 +22,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         return std::nullopt;
 
     return PartProperties::GeneralTTLInfo{
-        .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
+        .has_any_non_finished_rows_affecting_ttls = part->ttl_infos.hasAnyNonFinishedRowsAffectingTTLs(),
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
     };

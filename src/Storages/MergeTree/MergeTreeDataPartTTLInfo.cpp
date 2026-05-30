@@ -282,6 +282,39 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
     return false;
 }
 
+bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowsAffectingTTLs() const
+{
+    auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
+    {
+        for (const auto & [name, info] : map)
+        {
+            if (!info.finished())
+                return true;
+        }
+        return false;
+    };
+
+    /// Mirrors the branches of `TTLUpdateInfoAlgorithm::finalize` that call
+    /// `updatePartMinMaxTTL`. `moves_ttl` and `recompression_ttl` are excluded
+    /// on purpose: they never set `ttl_finished = true` and do not feed
+    /// `part_max_ttl`, so including them would keep `TTLDrop` selecting the
+    /// same part forever for tables with mixed TTL definitions
+    /// (issue #105647).
+    if (table_ttl.max && !table_ttl.finished())
+        return true;
+
+    if (has_non_finished_ttl(columns_ttl))
+        return true;
+
+    if (has_non_finished_ttl(rows_where_ttl))
+        return true;
+
+    if (has_non_finished_ttl(group_by_ttl))
+        return true;
+
+    return false;
+}
+
 namespace
 {
     /// We had backward incompatibility in representation of serialized expressions, example:

@@ -63,6 +63,16 @@ struct MergeTreeDataPartTTLInfos
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;
 
+    /// Same as `hasAnyNonFinishedTTLs`, but restricted to the TTL kinds that
+    /// actually contribute to `part_max_ttl`: the table rows TTL, column TTLs,
+    /// rows-where TTLs, and `GROUP BY` TTLs. `moves_ttl` and `recompression_ttl`
+    /// entries are deliberately excluded because they never set
+    /// `ttl_finished = true` and do not call `updatePartMinMaxTTL`, so they
+    /// would otherwise keep the `TTLDrop` selector live forever for any table
+    /// that combines a finished rows/group-by/column TTL with a move or
+    /// recompression TTL (issue #105647).
+    bool hasAnyNonFinishedRowsAffectingTTLs() const;
+
     void updatePartMinMaxTTL(time_t time_min, time_t time_max)
     {
         if (time_min && (!part_min_ttl || time_min < part_min_ttl))

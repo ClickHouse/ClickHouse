@@ -233,13 +233,20 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
     if (!part.general_ttl_info.has_value())
         return false;
 
-    /// A part whose TTLs are all marked as finished has already been processed
-    /// by every applicable TTL rule. Re-picking it for `TTLDrop` would just
-    /// re-run the same TTL transform on the same data forever — see issue
-    /// #105647, where `TTL ... GROUP BY` re-aggregates the same single-row
-    /// part on every scheduler tick. This mirrors the gate that
-    /// `TTLRowDeleteMergeSelector::canConsiderPart` already applies below.
-    return part.general_ttl_info->has_any_non_finished_ttls;
+    /// Skip parts whose `part_max_ttl`-contributing TTLs are all marked as
+    /// finished. Without this gate `TTLDrop` would re-pick the same part on
+    /// every scheduler tick — there is no per-partition cooldown for
+    /// `TTLDrop` (`MergeTreeDataMergerMutator::updateTTLMergeTimes` is a
+    /// no-op for it). See issue #105647, where `TTL ... GROUP BY`
+    /// re-aggregates the same single-row part forever.
+    ///
+    /// We deliberately consult `has_any_non_finished_rows_affecting_ttls`
+    /// here rather than `has_any_non_finished_ttls`: `moves_ttl` and
+    /// `recompression_ttl` entries are never marked `finished` and do not
+    /// feed `part_max_ttl`, so a table that combines a finished rows /
+    /// group-by / column TTL with a move or recompression TTL would
+    /// otherwise keep this gate open and reproduce the same infinite loop.
+    return part.general_ttl_info->has_any_non_finished_rows_affecting_ttls;
 }
 
 TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
@@ -260,7 +267,14 @@ bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) con
     if (!part.general_ttl_info.has_value())
         return false;
 
-    return part.general_ttl_info->has_any_non_finished_ttls;
+    /// Same reasoning as `TTLPartDropMergeSelector::canConsiderPart`:
+    /// `getTTLForPart` here returns `part_min_ttl`, which is fed by the same
+    /// four TTL kinds (table/columns/rows_where/group_by). Gating on the
+    /// broader `has_any_non_finished_ttls` would let an unfinished move or
+    /// recompression TTL re-schedule a `TTLDelete` once per
+    /// `merge_with_ttl_timeout` window for an otherwise already-finished
+    /// part. The cooldown bounds the frequency but not the spuriousness.
+    return part.general_ttl_info->has_any_non_finished_rows_affecting_ttls;
 }
 
 TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
