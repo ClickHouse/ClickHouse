@@ -19,7 +19,6 @@
 #include <base/IPv4andIPv6.h>
 
 #include <Common/NaNUtils.h>
-#include <Common/Concepts.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
@@ -106,12 +105,12 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 }
 
 
-template <StdVector V>
-void writeVectorBinary(const V & v, WriteBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)
 {
     writeVarUInt(v.size(), buf);
 
-    for (auto it = v.begin(); it != v.end(); ++it)
+    for (typename std::vector<T>::const_iterator it = v.begin(); it != v.end(); ++it)
         writeBinary(*it, buf);
 }
 
@@ -1386,8 +1385,8 @@ inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, b
 inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
-template <StdVector V>
-void writeBinary(const V & x, WriteBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf)
 {
     size_t size = x.size();
     writeVarUInt(size, buf);
@@ -1395,8 +1394,8 @@ void writeBinary(const V & x, WriteBuffer & buf)
         writeBinary(x[i], buf);
 }
 
-template <StdVector V>
-void writeQuoted(const V & x, WriteBuffer & buf)
+template <typename T>
+void writeQuoted(const std::vector<T> & x, WriteBuffer & buf)
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1408,8 +1407,8 @@ void writeQuoted(const V & x, WriteBuffer & buf)
     writeChar(']', buf);
 }
 
-template <StdVector V>
-void writeDoubleQuoted(const V & x, WriteBuffer & buf)
+template <typename T>
+void writeDoubleQuoted(const std::vector<T> & x, WriteBuffer & buf)
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1421,8 +1420,8 @@ void writeDoubleQuoted(const V & x, WriteBuffer & buf)
     writeChar(']', buf);
 }
 
-template <StdVector V>
-void writeText(const V & x, WriteBuffer & buf)
+template <typename T>
+void writeText(const std::vector<T> & x, WriteBuffer & buf)
 {
     writeQuoted(x, buf);
 }
@@ -1458,8 +1457,8 @@ inline String toString(const CityHash_v1_0_2::uint128 & hash)
     return buf.str();
 }
 
-template <StdVector V>
-inline String toStringWithFinalSeparator(const V & x, const String & final_sep)
+template <typename T>
+inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep)
 {
     WriteBufferFromOwnString buf;
     for (auto it = x.begin(); it != x.end(); ++it)

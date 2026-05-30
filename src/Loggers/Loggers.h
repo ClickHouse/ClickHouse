@@ -13,7 +13,7 @@ namespace DB
 class OwnSplitChannelBase;
 
 using AsyncLogQueueSize = std::pair<std::string, size_t>;
-using AsyncLogQueueSizes = VectorWithMemoryTracking<AsyncLogQueueSize>;
+using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
 }
 
 namespace Poco::Util

@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/Exception.h>
-#include <Common/SetWithMemoryTracking.h>
 
 
 namespace DB
@@ -89,7 +88,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         std::optional<size_t> first_generic_compression_codec_pos;
         std::optional<size_t> first_delta_codec_pos;
         std::optional<size_t> last_floating_point_time_series_codec_pos;
-        SetWithMemoryTracking<size_t> encryption_codecs_pos;
+        std::set<size_t> encryption_codecs_pos;
 
         bool can_substitute_codec_arguments = true;
         for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)

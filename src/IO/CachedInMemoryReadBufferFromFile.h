@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <mutex>
 
 #include <IO/ReadBufferFromFileBase.h>
@@ -36,7 +35,7 @@ public:
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const override;
     bool supportsReadAt() override { return innerSupportsReadAt(); }
 
-    VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
+    std::vector<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
     bool supportsReadAtRetainCells() const override { return innerSupportsReadAt(); }
 
     PageCache::MappedPtr getPageCacheCell() const { return chunk; }
@@ -69,7 +68,7 @@ private:
     /// `block_callback` is called after reading each cell, in sequence.
     /// The callback may move the cell out; then the returned vector will have nullptr.
     /// If `block_callback` returns true, reading stops.
-    VectorWithMemoryTracking<PageCache::MappedPtr> populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback = nullptr) const;
+    std::vector<PageCache::MappedPtr> populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback = nullptr) const;
 
     bool nextImpl() override;
 };

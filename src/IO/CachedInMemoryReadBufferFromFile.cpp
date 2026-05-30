@@ -1,4 +1,3 @@
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/PODArray.h>
@@ -221,7 +220,7 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     return true;
 }
 
-VectorWithMemoryTracking<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback) const
+std::vector<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback) const
 {
     if (n == 0 || offset >= file_size.value())
         return {};
@@ -237,7 +236,7 @@ VectorWithMemoryTracking<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile:
     bool inject_eviction = settings.random_eviction_for_tests;
 
     /// Phase 1: probe cache for all blocks, record hits.
-    VectorWithMemoryTracking<PageCache::MappedPtr> cells(num_blocks);
+    std::vector<PageCache::MappedPtr> cells(num_blocks);
     PageCacheByteRange block_range;
     for (size_t i = 0; i < num_blocks; ++i)
     {
@@ -362,7 +361,7 @@ size_t CachedInMemoryReadBufferFromFile::readBigAt(char * to, size_t n, size_t o
     return bytes_copied;
 }
 
-VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> CachedInMemoryReadBufferFromFile::readBigAtRetainCells(size_t n, size_t offset) const
+std::vector<SeekableReadBuffer::CachedRegion> CachedInMemoryReadBufferFromFile::readBigAtRetainCells(size_t n, size_t offset) const
 {
     if (n == 0 || offset >= file_size.value())
         return {};
@@ -373,7 +372,7 @@ VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> CachedInMemoryReadBuf
 
     auto cells = populateBlockRange(offset, n);
 
-    VectorWithMemoryTracking<CachedRegion> regions;
+    std::vector<CachedRegion> regions;
     size_t current_offset = offset;
     for (size_t i = 0; i < cells.size() && current_offset < end_offset; ++i)
     {
