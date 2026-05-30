@@ -9,5 +9,13 @@
 SET send_logs_level = 'error';
 
 SET max_threads = 9223372036854775807;
--- After clamp, the effective `max_threads` value must be far below the requested 2^63-1.
-SELECT toUInt64(value) < toUInt64(1000000000) FROM system.settings WHERE name = 'max_threads';
+-- The clamp must reduce the requested 2^63-1 to EXACTLY 256 * getNumberOfCPUCoresToUse().
+-- The core count is derived at runtime from the still-visible `default` column (`auto(N)`),
+-- which is unaffected by the SET above, so the bound tracks the real clamp contract on any
+-- host instead of relying on a hardcoded threshold. The only literal is the documented 256
+-- multiplier from src/Core/SettingsQuirks.cpp:113.
+SELECT
+    toUInt64(value) = 256 * toUInt64(extract(default, 'auto\\(([0-9]+)\\)')) AS clamped_to_256x_cores,
+    toUInt64(value) < toUInt64(9223372036854775807) AS reduced_from_requested
+FROM system.settings
+WHERE name = 'max_threads';
