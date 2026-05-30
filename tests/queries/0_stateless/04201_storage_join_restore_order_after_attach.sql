@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Test: exercises `StorageSetOrJoinBase::restore` priority_queue file ordering for `StorageJoin`
 -- Covers: src/Storages/StorageSet.cpp:286,308-312 — restore loads .bin files in ascending file_num order
 -- so that ANY-strictness Join keeps the FIRST inserted row per key after table reload (DETACH+ATTACH).
