@@ -107,4 +107,14 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 3, 4;
 
+SELECT 'A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call';
+
+-- Without the validation in `MergeTreeIndexConditionText`, the text-index analyzer accepts a
+-- single non-ASCII byte and the direct-read optimization replaces the `like` call with a
+-- virtual-column reference. The execution-layer BAD_ARGUMENTS check never runs and the query
+-- silently returns rows. Mirroring the validation in the analyzer makes the error appear at
+-- planning time, before any optimization can drop the predicate.
+SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE tab;

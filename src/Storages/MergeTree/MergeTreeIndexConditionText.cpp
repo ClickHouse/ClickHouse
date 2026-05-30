@@ -31,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -501,14 +502,20 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                 && escape_field.getType() == Field::Types::String)
             {
                 const String & escape_str = escape_field.safeGet<String>();
-                if (escape_str.size() == 1)
-                {
-                    String rewritten = likePatternWithCustomEscapeToLikePattern(
-                        pattern_field.safeGet<String>(), escape_str[0]);
-                    Field rewritten_field(std::move(rewritten));
-                    if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
-                        return true;
-                }
+                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`.
+                /// Without this, direct read from the text index can strip the `like` call,
+                /// so a query that should raise `BAD_ARGUMENTS` returns rows from the index.
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        function_name, escape_str);
+
+                String rewritten = likePatternWithCustomEscapeToLikePattern(
+                    pattern_field.safeGet<String>(), escape_str[0]);
+                Field rewritten_field(std::move(rewritten));
+                if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
+                    return true;
             }
             return false;
         }

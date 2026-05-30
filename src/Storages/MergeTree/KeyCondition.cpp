@@ -65,6 +65,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -3301,15 +3302,21 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 && escape_field.getType() == Field::Types::String)
             {
                 const String & escape_str = escape_field.safeGet<String>();
-                if (escape_str.size() == 1)
-                {
-                    String rewritten = likePatternWithCustomEscapeToLikePattern(
-                        pattern_field.safeGet<String>(), escape_str[0]);
-                    rewritten_like_pattern = Field(std::move(rewritten));
-                    rewritten_like_pattern_type = pattern_type;
-                    rewritten_like = true;
-                    num_args = 2;
-                }
+                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`
+                /// so a query with an invalid ESCAPE byte fails at planning time even if a
+                /// downstream optimization would otherwise drop the original predicate.
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        func_name, escape_str);
+
+                String rewritten = likePatternWithCustomEscapeToLikePattern(
+                    pattern_field.safeGet<String>(), escape_str[0]);
+                rewritten_like_pattern = Field(std::move(rewritten));
+                rewritten_like_pattern_type = pattern_type;
+                rewritten_like = true;
+                num_args = 2;
             }
 
             if (!rewritten_like)

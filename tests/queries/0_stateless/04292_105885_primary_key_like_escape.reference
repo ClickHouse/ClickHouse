@@ -21,3 +21,4 @@ abc
 abc%
 abcd
 xyz
+A non-ASCII ESCAPE byte is rejected at planning time by the primary-key analyzer
