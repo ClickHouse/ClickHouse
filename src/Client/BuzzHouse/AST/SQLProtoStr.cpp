@@ -711,6 +711,84 @@ CONV_FN(SpecialVal, val)
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_STAR:
             ret += "*";
             break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_OVERLONG:
+            ret += "'\\xC0\\xAF'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_CONTINUATION:
+            ret += "'\\x80\\xBF\\xC3\\x28'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_TRUNCATED:
+            ret += "'\\xE2\\x82'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_SURROGATE:
+            ret += "'\\xED\\xA0\\x80'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_BEYOND_RANGE:
+            ret += "'\\xF4\\x90\\x80\\x80'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_INVALID_FE_FF:
+            ret += "'\\xFE\\xFF'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_UTF8_BOM:
+            ret += "'\\xEF\\xBB\\xBF'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_MIXED:
+            ret += "'hello\\xC0\\xAFworld\\xED\\xA0\\x80\\xF4\\x90\\x80\\x80'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_CONTROL_CHARS:
+            ret += "'\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08\\x0E\\x0F\\x10\\x11\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1A\\x1C\\x1D\\x"
+                   "1E\\x1F'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ANSI_ESCAPE:
+            ret += "'\\x1B[31mRED\\x1B[0m'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_SPACE:
+            ret += "'a\\xE2\\x80\\x8Bb'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_JOINER:
+            ret += "'a\\xE2\\x80\\x8Db'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BIDI_OVERRIDE:
+            ret += "'\\xE2\\x80\\xAEabc\\xE2\\x80\\xAC'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MAX_CODEPOINT:
+            ret += "'\\xF4\\x8F\\xBF\\xBF'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ARRAY_NULL:
+            ret += "[NULL]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TUPLE_NULL:
+            ret += "(NULL)";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NESTED_EMPTY_ARRAY:
+            ret += "[[]]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ARRAY_EMPTY_MAP:
+            ret += "[map()]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_LEAP_DAY:
+            ret += "'2024-02-29'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NON_LEAP_DAY:
+            ret += "'2023-02-29'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BEYOND_INT256:
+            ret += "115792089237316195423570985008687907853269984665640564039457584007913129639936";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FLOAT64_MAX_SCIENTIFIC:
+            ret += "1e308";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FLOAT64_OVERFLOW_SCIENTIFIC:
+            ret += "1e309";
+            break;
     }
     ret += val.paren() ? ")" : "";
 }
