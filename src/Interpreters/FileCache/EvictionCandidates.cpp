@@ -1,5 +1,4 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
-#include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/Metadata.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>

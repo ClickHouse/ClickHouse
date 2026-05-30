@@ -8,8 +8,6 @@
 namespace DB
 {
 
-class FileCache;
-
 /// Eviction info:
 /// - contains information about how much size/elements is needed to be evicted
 /// - holds "space holders", for space which was already available

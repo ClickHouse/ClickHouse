@@ -16,7 +16,6 @@ namespace DB
 {
 struct FileCacheReserveStat;
 class EvictionCandidates;
-class FileCache;
 class FileSegment;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
