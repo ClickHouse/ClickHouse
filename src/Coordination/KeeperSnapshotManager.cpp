@@ -1080,7 +1080,7 @@ SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataF
     else
         compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
 
-    uint8_t version;
+    uint8_t version = 0;
     readBinary(version, *compressed_reader);
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
     if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)

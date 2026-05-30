@@ -608,7 +608,7 @@ public:
 
         struct Transaction
         {
-            int64_t zxid;
+            int64_t zxid = 0;
             KeeperDigest nodes_digest;
             int64_t log_idx = 0;
         };
