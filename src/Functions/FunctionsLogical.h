@@ -184,7 +184,7 @@ struct NotImpl
 };
 
 template <typename Impl, typename Name>
-class FunctionAnyArityLogical : public IFunction
+class FunctionAnyArityLogical final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -232,7 +232,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr & result_type) const override
     {
-        assert(!values.empty());
+        chassert(!values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (Impl::specialImplementationForNulls())
@@ -272,7 +272,7 @@ public:
 
 
 template <template <typename> class Impl, typename Name>
-class FunctionUnaryLogical : public IFunction
+class FunctionUnaryLogical final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

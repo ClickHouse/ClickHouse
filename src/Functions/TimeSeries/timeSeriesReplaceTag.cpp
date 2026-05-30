@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// matches the regular expression `regex` against the value of the tag `src_tag`.
 /// If it matches, the value of the tag `dest_tag` in the returned group will be the expansion of `replacement`,
 /// together with the original tags in the input.
-class FunctionTimeSeriesReplaceTag : public IFunction
+class FunctionTimeSeriesReplaceTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesReplaceTag";
@@ -34,6 +34,12 @@ public:
     /// Function timeSeriesReplaceTag uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -63,6 +69,11 @@ public:
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
         auto replacement = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 2);
+        /// We need to allow empty src_tag here.
+        /// Empty src_tag is allowed in PromQL label_replace() — Prometheus validates only the
+        /// destination label name, but not the source label name, and reads a missing source label as "".
+        /// Also there is a known trick - label_replace(v, new_tag_name, new_tag_value, "", "")
+        /// adds a new tag with constant value.
         auto src_tag = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 3);
         auto regex = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 4);
 

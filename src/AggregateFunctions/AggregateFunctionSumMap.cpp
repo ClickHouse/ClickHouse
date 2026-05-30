@@ -13,6 +13,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorSum.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
@@ -583,6 +584,19 @@ private:
     bool compareImpl(FieldType & x) const
     {
         auto val = rhs.safeGet<FieldType>();
+        if constexpr (is_floating_point<FieldType>)
+        {
+            /// Match `max` semantics: NaN is treated as last (i.e. smaller than
+            /// any non-NaN value), so it is only kept when every observed value
+            /// is NaN. See #100448.
+            if (isNaN(val))
+                return false;
+            if (isNaN(x))
+            {
+                x = val;
+                return true;
+            }
+        }
         if (val > x)
         {
             x = val;
@@ -623,6 +637,19 @@ private:
     bool compareImpl(FieldType & x) const
     {
         auto val = rhs.safeGet<FieldType>();
+        if constexpr (is_floating_point<FieldType>)
+        {
+            /// Match `min` semantics: NaN is treated as last (i.e. larger than
+            /// any non-NaN value), so it is only kept when every observed value
+            /// is NaN. See #100448.
+            if (isNaN(val))
+                return false;
+            if (isNaN(x))
+            {
+                x = val;
+                return true;
+            }
+        }
         if (val < x)
         {
             x = val;
