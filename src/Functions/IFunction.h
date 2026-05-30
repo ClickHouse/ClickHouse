@@ -5,8 +5,6 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <DataTypes/IDataType_fwd.h>
 
 #include "config.h"
 
@@ -25,6 +23,10 @@ struct FunctionsStressTestThread;
 
 namespace DB
 {
+
+class IDataType;
+struct DataTypeWithConstInfo;
+using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class Field;
 struct FieldInterval;
@@ -283,7 +285,7 @@ public:
         /// Should we enable lazy execution for the nth argument of short-circuit function?
         /// Example 1st argument: if(cond, then, else), we don't need to execute cond lazily.
         /// Example other arguments: 1st, 2nd, 3rd argument of dictGetOrDefault should always be calculated.
-        UnorderedSetWithMemoryTracking<size_t> arguments_with_disabled_lazy_execution;
+        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
 
         /// Should we enable lazy execution for functions, that are common descendants of
         /// different short-circuit function arguments?
@@ -427,8 +429,6 @@ protected:
       *   - wrap getReturnType() result in Nullable type and pass to build
       *
       * Otherwise build returns build(arguments, getReturnType(arguments));
-      * Note that the function may be called with garbage input for the null rows (but the output will be masked out),
-      * so this is not suitable for heavy functions or functions with side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
