@@ -136,13 +136,6 @@ protected:
         IFileCachePriority::setOnEvictCallback(std::move(callback));
     }
 
-    void setOnPromoteCallback(OnPromoteCallback callback) override
-    {
-        /// Promotion events fire only from the SLRU wrapper, not its inner
-        /// LRU queues, so we just store the callback here without propagating.
-        on_promote_callback = std::move(callback);
-    }
-
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
@@ -152,8 +145,6 @@ private:
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
     LoggerPtr log;
-
-    OnPromoteCallback on_promote_callback;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 

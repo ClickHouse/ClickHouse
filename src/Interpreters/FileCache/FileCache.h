@@ -251,7 +251,6 @@ public:
 
 private:
     void onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const;
-    void onSegmentPromoted(const String & user_id) const;
 
     using KeyAndOffset = FileCacheKeyAndOffset;
 

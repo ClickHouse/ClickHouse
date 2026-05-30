@@ -404,11 +404,6 @@ public:
     virtual void setOnEvictCallback(OnEvictCallback callback) { on_evict_callback = std::move(callback); }
     const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
 
-    /// Invoked by SLRU's `tryIncreasePriority` on each successful probationary
-    /// -> protected promotion. Default no-op (LRU has no promotion concept).
-    using OnPromoteCallback = std::function<void(const UserID & user_id)>;
-    virtual void setOnPromoteCallback(OnPromoteCallback /*callback*/) {}
-
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 

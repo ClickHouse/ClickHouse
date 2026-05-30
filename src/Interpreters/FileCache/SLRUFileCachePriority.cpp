@@ -658,10 +658,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 #endif
     }
 
-    /// Pass the owning FileCache so `filesystem_cache_*` metrics count
-    /// promotion-induced downgrade evictions, not only the FileCache.cpp
-    /// reservation/resize call sites.
-    EvictionCandidates downgrade_candidates(on_evict_callback);
+    EvictionCandidates downgrade_candidates;
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 
@@ -728,21 +725,6 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         prev_iterator.invalidate();
         reset_evicting_flag_for_prev_entry = false;
         check(lock);
-    }
-
-    /// Probationary -> protected promotion succeeded. Notify the cache via
-    /// the (optional) promotion callback so it can emit
-    /// `filesystem_cache_slru_promotions_*`.
-    if (on_promote_callback)
-    {
-        try
-        {
-            on_promote_callback(prev_entry->key_metadata->origin.user_id);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Failed to record SLRU promotion metric; ignored");
-        }
     }
 
     return true;

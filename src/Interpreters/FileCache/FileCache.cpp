@@ -164,18 +164,6 @@ namespace
         "Distribution of byte sizes of evicted file segments, additionally labelled by user id. Disabled by default.",
         size_buckets, {"cache_name", "queue", "client_id"});
 
-    DimensionalMetrics::MetricFamily & filesystem_cache_slru_promotions_total = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_slru_promotions_total",
-        "Number of file segments promoted from the probationary to the protected queue in an SLRU filesystem cache. "
-        "Emitted only when `filesystem_cache_expose_prometheus_eviction_metrics` is enabled on the cache.",
-        {"cache_name"});
-
-    DimensionalMetrics::MetricFamily & filesystem_cache_slru_promotions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_slru_promotions_by_client_total",
-        "Number of file segments promoted from probationary to protected in an SLRU filesystem cache, labelled by user id. "
-        "Disabled by default; enable via `filesystem_cache_expose_prometheus_eviction_metrics_per_client`.",
-        {"cache_name", "client_id"});
-
     const char * queueLabel(FileCacheQueueEntryType queue_type)
     {
         switch (queue_type)
@@ -380,10 +368,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         main_priority->setOnEvictCallback([this](const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id)
         {
             this->onSegmentEvicted(segment, queue_type, user_id);
-        });
-        main_priority->setOnPromoteCallback([this](const String & user_id)
-        {
-            this->onSegmentPromoted(user_id);
         });
     }
 
@@ -2159,13 +2143,6 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntr
     filesystem_cache_evicted_bytes_by_client_total.withLabels({name, queue, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
     filesystem_cache_evicted_segment_hits_by_client.withLabels({name, queue, user_id}).observe(static_cast<HistogramMetrics::Value>(hits));
     filesystem_cache_evicted_segment_size_bytes_by_client.withLabels({name, queue, user_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
-}
-
-void FileCache::onSegmentPromoted(const String & user_id) const
-{
-    filesystem_cache_slru_promotions_total.withLabels({name}).increment();
-    if (expose_eviction_metrics_per_client)
-        filesystem_cache_slru_promotions_by_client_total.withLabels({name, user_id}).increment();
 }
 
 void FileCache::deactivateBackgroundOperations()

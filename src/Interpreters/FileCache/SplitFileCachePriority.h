@@ -125,13 +125,6 @@ public:
         IFileCachePriority::setOnEvictCallback(std::move(callback));
     }
 
-    void setOnPromoteCallback(OnPromoteCallback callback) override
-    {
-        for (auto & p : priorities_holder)
-            if (p)
-                p->setOnPromoteCallback(callback);
-    }
-
 protected:
     size_t getHoldSize() override;
 
