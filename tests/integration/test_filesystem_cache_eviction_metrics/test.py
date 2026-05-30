@@ -56,9 +56,14 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
         """
     )
 
+    # Snapshot taken before writes so INSERT-driven evictions are counted.
+    evictions_before = sum_dim("filesystem_cache_evictions_total")
+    by_client_before = sum_dim("filesystem_cache_evictions_by_client_total")
+
     # Three batches of 100 rows × 8 KiB = 2.4 MiB total.
-    # With cache_on_write_operations=1 on the disk, each INSERT fills
-    # the 100 KiB cache, evicting the previous batch's data.
+    # With cache_on_write_operations=1, each INSERT writes through the 100 KiB
+    # cache. After the first 100 KiB fills, subsequent writes evict earlier
+    # segments — those evictions fire the callback in the write thread.
     for batch in range(3):
         node.query(
             "INSERT INTO eviction_metrics_test "
@@ -66,14 +71,6 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
                 offset=batch * 100
             )
         )
-
-    evictions_before = sum_dim("filesystem_cache_evictions_total")
-    by_client_before = sum_dim("filesystem_cache_evictions_by_client_total")
-
-    # batch-0 was evicted by later INSERTs; reading it forces cache misses
-    # that evict the current occupants (batch-2 data).
-    node.query("SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id < 100",
-               settings={"enable_filesystem_cache": "1"})
 
     debug = node.query(
         "SELECT * FROM system.dimensional_metrics "
