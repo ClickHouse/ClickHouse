@@ -295,7 +295,7 @@ Merges multiple serialized HLL sketches into a single sketch.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
 
-    factory.registerFunction("mergeSerializedHLL", {createAggregateFunctionMergeSerializedHLL, properties, documentation});
+    factory.registerFunction("mergeSerializedHLL", {createAggregateFunctionMergeSerializedHLL, documentation, properties});
 }
 
 }

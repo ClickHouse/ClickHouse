@@ -163,7 +163,7 @@ Creates a serialized Quantiles sketch for approximate percentile/quantile estima
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
 
-    factory.registerFunction("serializedQuantiles", {createAggregateFunctionSerializedQuantiles, properties, documentation});
+    factory.registerFunction("serializedQuantiles", {createAggregateFunctionSerializedQuantiles, documentation, properties});
 }
 
 }

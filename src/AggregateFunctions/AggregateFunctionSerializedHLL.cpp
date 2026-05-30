@@ -226,7 +226,7 @@ Creates a serialized HyperLogLog (HLL) sketch for approximate cardinality estima
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
 
-    factory.registerFunction("serializedHLL", {createAggregateFunctionSerializedHLL, properties, documentation});
+    factory.registerFunction("serializedHLL", {createAggregateFunctionSerializedHLL, documentation, properties});
 }
 
 }

@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -103,10 +104,12 @@ PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
 
 void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
+    auto cloned = expression.clone();
+
     if (dag)
-        dag->mergeInplace(expression.clone());
+        dag->mergeInplace(std::move(cloned));
     else
-        dag = expression.clone();
+        dag = std::move(cloned);
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
@@ -245,6 +248,17 @@ bool QueryDAG::build(QueryPlan::Node & node)
         auto & outputs = dag->getOutputs();
         outputs.insert(outputs.begin(), filter_node);
     }
+
+    /// Remove materialize() and identity() wrappers from the combined DAG.
+    /// This must happen after all expressions are merged and filter nodes are added
+    /// back to outputs, because:
+    /// 1. Removing wrappers before merging would change output column names (e.g.,
+    ///    "materialize(name)" → "name"), causing subsequent merges to fail when they
+    ///    try to match input names to the modified output names.
+    /// 2. removeTrivialWrappers calls removeUnusedActions, which can invalidate raw
+    ///    pointers (like filter_nodes) to nodes that are no longer reachable from outputs.
+    if (dag)
+        dag->removeTrivialWrappers();
 
     return true;
 }

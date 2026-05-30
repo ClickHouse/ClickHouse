@@ -153,7 +153,7 @@ Merges multiple serialized TDigest sketches into a single sketch.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
 
-    factory.registerFunction("mergeSerializedTDigest", {createAggregateFunctionMergeSerializedTDigest, properties, documentation});
+    factory.registerFunction("mergeSerializedTDigest", {createAggregateFunctionMergeSerializedTDigest, documentation, properties});
 }
 
 }

@@ -194,7 +194,6 @@ public:
     {
         None,
         Procfs,
-        Netlink,
     };
 
     static const char * metricsProviderString(MetricsProvider provider);
@@ -207,7 +206,7 @@ public:
     void updateCounters(ProfileEvents::Counters & profile_events);
 
 private:
-    ::taskstats stats;
+    ::taskstats stats{};
     std::function<::taskstats()> stats_getter;
 
     explicit TasksStatsCounters(UInt64 tid, MetricsProvider provider);

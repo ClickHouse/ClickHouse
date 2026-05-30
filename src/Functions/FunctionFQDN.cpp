@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class FunctionFQDN : public IFunction
+class FunctionFQDN final : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
@@ -50,7 +50,7 @@ REGISTER_FUNCTION(FQDN)
     FunctionDocumentation::Description description = R"(
 Returns the fully qualified domain name of the ClickHouse server.
     )";
-    FunctionDocumentation::Syntax syntax = "fqdn()";
+    FunctionDocumentation::Syntax syntax = "FQDN()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the fully qualified domain name of the ClickHouse server.", {"String"}};
     FunctionDocumentation::Examples examples = {

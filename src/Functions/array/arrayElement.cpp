@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -51,7 +52,7 @@ class NullMapBuilder;
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
   */
 template <ArrayElementExceptionMode mode = ArrayElementExceptionMode::Zero>
-class FunctionArrayElement : public IFunction
+class FunctionArrayElement final : public IFunction
 {
 public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
@@ -679,7 +680,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -741,7 +742,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -1637,7 +1638,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
                 }
                 else if constexpr (std::is_signed_v<IndexType>)
                 {
-                    if (idx < 0 && static_cast<UInt64>(-idx) <= array_size)
+                    if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
                     {
                         /// Negative index from the end: arr[-1] is last element
                         zero_based = static_cast<UInt64>(array_size + idx);
@@ -1712,7 +1713,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
                     zero_based = static_cast<UInt64>(idx) - 1;
                     in_range = true;
                 }
-                else if (idx < 0 && static_cast<UInt64>(-idx) <= array_size)
+                else if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
                 {
                     zero_based = static_cast<UInt64>(array_size + idx); /// idx < 0
                     in_range = true;
@@ -2051,7 +2052,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
-    assert(col_map || col_const_map);
+    chassert(col_map || col_const_map);
 
     if (col_const_map)
         col_map = typeid_cast<const ColumnMap *>(&col_const_map->getDataColumn());

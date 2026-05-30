@@ -16,11 +16,14 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 namespace DB
 {
 
+class StorageObjectStorage;
 class NamedCollection;
 class SinkToStorage;
 class IDataLakeMetadata;
@@ -62,6 +65,8 @@ public:
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
 
+    static constexpr auto SCHEMA_HASH_WILDCARD = "{_schema_hash}";
+
     struct Path
     {
         Path() = default;
@@ -72,7 +77,8 @@ public:
         std::string path;
 
         bool hasPartitionWildcard() const;
-        bool hasGlobsIgnorePartitionWildcard() const;
+        bool hasSchemaHashWildcard() const;
+        bool hasGlobsIgnorePlaceholders() const;
         bool hasGlobs() const;
         std::string cutGlobs(bool supports_partial_prefix) const;
     };
@@ -84,7 +90,8 @@ public:
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
-        bool with_table_structure);
+        bool with_table_structure,
+        const StorageID * table_id = nullptr);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -96,8 +103,9 @@ public:
     virtual std::string getNamespaceType() const { return "namespace"; }
 
 
-    // Path provided by the user in the query
+    /// Base path for the object key. May be modified after construction by placeholder resolution.
     virtual Path getRawPath() const = 0;
+    virtual void setRawPath(const Path & path) = 0;
 
     /// Raw URI, specified by a user. Used in permission check.
     virtual const String & getRawURI() const = 0;
@@ -142,19 +150,14 @@ public:
 
     virtual bool isDataLakeConfiguration() const { return false; }
 
-    virtual bool supportsTotalRows() const { return false; }
+    virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
-    virtual bool supportsTotalBytes() const { return false; }
+    virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
     /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
     /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
-
-    // This function is used primarily for datalake storages to check if we need to update metadata
-    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
-    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
-    virtual bool needsUpdateForSchemaConsistency() const { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
@@ -180,9 +183,14 @@ public:
         ContextPtr local_context,
         const PrepareReadingFromFormatHiveParams & hive_parameters);
 
+    static String computeSchemaHash(const ColumnsDescription & columns);
+    void setSchemaHash(const String & hash);
+
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const;
+    virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot & state, ContextPtr local_context) const;
+    virtual bool shouldReloadSchemaForConsistency(ContextPtr local_context) const;
     virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
@@ -201,8 +209,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
-    /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+    virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -228,6 +236,7 @@ public:
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,
+        StoragePtr /*storage_ptr*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
@@ -235,12 +244,12 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
-    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/)
+    virtual void checkMutationIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const MutationCommands & /*commands*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
 
-    virtual void checkAlterIsPossible(const AlterCommands & commands)
+    virtual void checkAlterIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const AlterCommands & commands)
     {
         for (const auto & command : commands)
         {
@@ -250,7 +259,7 @@ public:
         }
     }
 
-    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
+    virtual void alter(ObjectStoragePtr /*object_storage*/, const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
@@ -262,9 +271,12 @@ public:
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 
 
-    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
+    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, const StorageID & /*table_id*/) const
+    {
+        return nullptr;
+    }
 
-    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
     }
@@ -276,6 +288,23 @@ public:
 
     virtual void drop(ContextPtr) {}
 
+    virtual bool isBackgroundExecutable() const
+    {
+        return false;
+    }
+
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/, StorageObjectStorage & /*storage_object_storage*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method scheduleDataProcessingJob() is not implemented for configuration type {}", getTypeName());
+    }
+
+    virtual void finishAllBackgroundJobs() {}
+
+    virtual Int32 getBiasBackoffSeconds() const
+    {
+        return 0;
+    }
+
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
@@ -283,6 +312,10 @@ public:
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
+    /// Tracks whether `partition_columns_in_data_file` was explicitly provided by the user.
+    /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
+    /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
+    bool partition_columns_in_data_file_was_set = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
@@ -297,6 +330,7 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
+    String schema_hash;
 
 private:
     // Path used for reading, by default it is the same as `getRawPath`

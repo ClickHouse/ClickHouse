@@ -34,7 +34,7 @@ public:
         CLEAR_INDEX_MARK_CACHE,
         CLEAR_INDEX_UNCOMPRESSED_CACHE,
         CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
-        CLEAR_TEXT_INDEX_DICTIONARY_CACHE,
+        CLEAR_TEXT_INDEX_TOKENS_CACHE,
         CLEAR_TEXT_INDEX_HEADER_CACHE,
         CLEAR_TEXT_INDEX_POSTINGS_CACHE,
         CLEAR_TEXT_INDEX_CACHES,
@@ -50,6 +50,7 @@ public:
         CLEAR_PAGE_CACHE,
         CLEAR_SCHEMA_CACHE,
         CLEAR_FORMAT_SCHEMA_CACHE,
+        CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
         STOP_LISTEN,
         START_LISTEN,
@@ -81,6 +82,7 @@ public:
         RELOAD_CONFIG,
         RELOAD_USERS,
         RELOAD_ASYNCHRONOUS_METRICS,
+        RELOAD_DELTA_KERNEL_TRACING,
         RESTART_DISK,
         STOP_MERGES,
         START_MERGES,
@@ -99,6 +101,7 @@ public:
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
+        FLUSH_OBJECT_STORAGE_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
@@ -106,6 +109,8 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        ALLOCATE_MEMORY,
+        FREE_MEMORY,
         WAIT_FAILPOINT,
         NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
@@ -113,7 +118,10 @@ public:
         START_PULLING_REPLICATION_LOG,
         STOP_CLEANUP,
         START_CLEANUP,
+        SCHEDULE_MERGE,
+        SYNC_MERGES,
         RESET_COVERAGE,
+        SET_COVERAGE_TEST,
         REFRESH_VIEW,
         WAIT_VIEW,
         START_VIEW,
@@ -122,6 +130,8 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
+        PAUSE_VIEW,
+        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -132,6 +142,7 @@ public:
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
         RECONNECT_ZOOKEEPER,
+        WAIT_BLOBS_CLEANUP,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
@@ -157,6 +168,8 @@ public:
     String target_function;
     String replica;
     String shard;
+    String zk_name;
+    String full_replica_zk_path;
     String replica_zk_path;
     bool is_drop_whole_replica{};
     bool with_tables{false};
@@ -164,6 +177,7 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+    UInt64 untracked_memory_size{};
 
     std::optional<String> query_result_cache_tag;
 
@@ -181,6 +195,8 @@ public:
 
     String schema_cache_format;
 
+    String queue_path;
+
     String fail_point_name;
 
     enum class FailPointAction
@@ -190,6 +206,10 @@ public:
         RESUME
     };
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
+
+    String delta_kernel_tracing_level;
+
+    String coverage_test_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
@@ -201,18 +221,20 @@ public:
 
 #if USE_XRAY
     /// For SYSTEM INSTRUMENT ADD/REMOVE
-    using InstrumentParameter = std::variant<String, Int64, Float64>;
+    using InstrumentArgument = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
     Instrumentation::EntryType instrumentation_entry_type;
     std::optional<std::variant<UInt64, Instrumentation::All, String>> instrumentation_point;
-    std::vector<InstrumentParameter> instrumentation_parameters;
+    std::vector<InstrumentArgument> instrumentation_arguments;
     String instrumentation_subquery;
 #endif
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
     /// Unix time.
     std::optional<Int64> fake_time_for_view;
+
+    ASTPtr scheduled_merge_parts;
 
     String getID(char) const override { return "SYSTEM query"; }
 
@@ -225,6 +247,7 @@ public:
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
         if (backup_source) { res->backup_source = backup_source->clone(); res->children.push_back(res->backup_source); }
+        if (scheduled_merge_parts) { res->scheduled_merge_parts = scheduled_merge_parts->clone(); res->children.push_back(res->scheduled_merge_parts); }
 
         return res;
     }

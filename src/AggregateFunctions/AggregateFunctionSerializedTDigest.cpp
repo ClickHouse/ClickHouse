@@ -119,7 +119,7 @@ Creates a serialized TDigest sketch for approximate percentile estimation.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
 
-    factory.registerFunction("serializedTDigest", {createAggregateFunctionSerializedTDigest, properties, documentation});
+    factory.registerFunction("serializedTDigest", {createAggregateFunctionSerializedTDigest, documentation, properties});
 }
 
 }
