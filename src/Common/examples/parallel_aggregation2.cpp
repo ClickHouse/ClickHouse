@@ -101,7 +101,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        assert(place != nullptr);
+                        chassert(place != nullptr);
                         updater(place->getMapped()); // NOLINT
                         continue;
                     }
@@ -109,7 +109,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
 
                     bool inserted;
                     map.emplace(*it, place, inserted);
-                    assert(place != nullptr);
+                    chassert(place != nullptr);
 
                     if (inserted)
                         creator(place->getMapped());
