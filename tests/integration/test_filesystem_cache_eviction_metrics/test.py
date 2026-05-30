@@ -6,7 +6,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage.xml"],
-    user_configs=["users.d/cache_on_write.xml", "configs/users.xml"],
+    user_configs=["users.d/cache_on_write.xml"],
     stay_alive=True,
 )
 
@@ -72,10 +72,8 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
 
     # batch-0 was evicted by later INSERTs; reading it forces cache misses
     # that evict the current occupants (batch-2 data).
-    node.query(
-        "SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id < 100",
-        settings={"enable_filesystem_cache": "1"},
-    )
+    node.query("SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id < 100",
+               settings={"enable_filesystem_cache": "1"})
 
     debug = node.query(
         "SELECT * FROM system.dimensional_metrics "

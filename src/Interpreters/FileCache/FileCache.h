@@ -277,6 +277,8 @@ private:
 
 
     const bool skip_cache_on_disk_failure;
+    std::atomic<bool> expose_eviction_metrics;
+    std::atomic<bool> expose_eviction_metrics_per_client;
 
     String name;
     LoggerPtr log;

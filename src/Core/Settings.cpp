@@ -6428,19 +6428,6 @@ Cloud default value: `1`.
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
 )", 0) \
-    DECLARE(Bool, filesystem_cache_expose_prometheus_eviction_metrics, false, R"(
-Expose Prometheus metrics describing filesystem cache eviction activity
-(filesystem_cache_evictions_total, filesystem_cache_evicted_bytes_total,
-filesystem_cache_evicted_segment_hits, filesystem_cache_evicted_segment_size_bytes).
-Off by default.
-)", 0) \
-    DECLARE(Bool, filesystem_cache_expose_prometheus_eviction_metrics_per_client, false, R"(
-Additionally expose per-user-id variants of the filesystem cache eviction metrics
-(filesystem_cache_evictions_by_client_total etc.).
-Requires filesystem_cache_expose_prometheus_eviction_metrics.
-Cardinality grows with the number of distinct evicting users.
-Off by default.
-)", 0) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
