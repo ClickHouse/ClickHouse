@@ -19,6 +19,8 @@
 #include <Storages/StorageDummy.h>
 
 #include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
 
 namespace DB
 {
@@ -72,6 +74,7 @@ WatermarkCalculatorStep::WatermarkCalculatorStep(SharedHeader input_header_, Wat
     , watermark(std::move(watermark_))
     , context(std::move(context_))
 {
+    updateInputHeader(input_header_);
 }
 
 void WatermarkCalculatorStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -82,13 +85,24 @@ void WatermarkCalculatorStep::transformPipeline(QueryPipelineBuilder & pipeline,
     pipeline.addSimpleTransform([&] (const SharedHeader & header)
     {
         auto watermark_expression = buildWatermarkActionsDAG(watermark->expression, *input_headers.front(), context);
-        return std::make_shared<WatermarkCalculatorTransform>(header, watermark->column, std::move(watermark_expression), context);
+        return std::make_shared<WatermarkCalculatorTransform>(header, getOutputHeader(), watermark->column, std::move(watermark_expression), context);
     });
 }
 
 void WatermarkCalculatorStep::updateOutputHeader()
 {
-    output_header = input_headers.front();
+    if (watermark)
+    {
+        Block extended = *input_headers.front();
+        auto type = extended.getByName(watermark->column).type;
+        extended.insert(ColumnWithTypeAndName(type->createColumn(), type, TimeAttributeColumn::name));
+        extended.insert(ColumnWithTypeAndName(type->createColumn(), type, WatermarkColumn::name));
+        output_header = std::make_shared<const Block>(std::move(extended));
+    }
+    else
+    {
+        output_header = input_headers.front();
+    }
 }
 
 QueryPlanStepPtr WatermarkCalculatorStep::clone() const

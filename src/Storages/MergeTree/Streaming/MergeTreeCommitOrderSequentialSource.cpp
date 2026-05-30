@@ -1,4 +1,3 @@
-#include <Core/Streaming/Settings.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/StreamingChunkCursor.h>
 #include <Storages/MergeTree/Streaming/SavePartitionWatermark.h>
@@ -41,9 +40,12 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
+#include <Core/Streaming/Settings.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <Common/logger_useful.h>
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 #include <variant>
@@ -376,6 +378,17 @@ PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info)
     return patched_info;
 }
 
+Names filterStreamingVirtualColumns(Names columns)
+{
+    if (auto it = std::find(columns.begin(), columns.end(), TimeAttributeColumn::name); it != columns.end())
+        columns.erase(it);
+
+    if (auto it = std::find(columns.begin(), columns.end(), WatermarkColumn::name); it != columns.end())
+        columns.erase(it);
+
+    return columns;
+}
+
 }
 
 MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
@@ -393,7 +406,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , query_info(makeStreamingSelectQueryInfo(query_info_))
     , initial_prewhere_info(makeStreamingPrewhereInfo(query_info_.prewhere_info))
     , context(makeStreamingContext(std::move(context_)))
-    , user_requested_columns(std::move(user_requested_columns_))
+    , user_requested_columns(filterStreamingVirtualColumns(user_requested_columns_))
     , requested_num_streams(requested_num_streams_)
     , max_block_size(max_block_size_)
     , subscription(std::move(subscription_))

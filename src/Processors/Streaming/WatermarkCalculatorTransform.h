@@ -19,7 +19,12 @@ namespace DB
 class WatermarkCalculatorTransform final : public IInflatingTransform
 {
 public:
-    WatermarkCalculatorTransform(SharedHeader header_, std::string event_time_column_, ActionsDAG watermark_expression_, ContextPtr context_);
+    WatermarkCalculatorTransform(
+        SharedHeader input_header_,
+        SharedHeader output_header_,
+        std::string event_time_column_,
+        ActionsDAG watermark_expression_,
+        ContextPtr context_);
 
     String getName() const override { return "WatermarkCalculator"; }
 

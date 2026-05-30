@@ -75,9 +75,12 @@ std::pair<Columns, std::optional<Field>> executeWatermarkFilter(
     }
 
     Columns output_columns;
-    output_columns.reserve(source_columns.size());
+    output_columns.reserve(source_columns.size() + 2);
     for (const auto & source : source_columns)
         output_columns.emplace_back(source->filter(mask, num_output_rows));
+
+    output_columns.emplace_back(event_time_col.filter(mask, num_output_rows));
+    output_columns.emplace_back(watermark_col.filter(mask, num_output_rows));
 
     if (active_watermark)
     {
@@ -86,10 +89,8 @@ std::pair<Columns, std::optional<Field>> executeWatermarkFilter(
         else
             return {std::move(output_columns), Field(active_watermark.value())};
     }
-    else
-    {
-        return {std::move(output_columns), std::nullopt};
-    }
+
+    return {std::move(output_columns), std::nullopt};
 }
 
 std::pair<Chunk, std::optional<Field>> calculateWatermark(
@@ -127,8 +128,13 @@ std::pair<Chunk, std::optional<Field>> calculateWatermark(
 
 }
 
-WatermarkCalculatorTransform::WatermarkCalculatorTransform(SharedHeader header_, std::string event_time_column_, ActionsDAG watermark_expression_, ContextPtr context_)
-    : IInflatingTransform(header_, header_)
+WatermarkCalculatorTransform::WatermarkCalculatorTransform(
+    SharedHeader input_header_,
+    SharedHeader output_header_,
+    std::string event_time_column_,
+    ActionsDAG watermark_expression_,
+    ContextPtr context_)
+    : IInflatingTransform(std::move(input_header_), std::move(output_header_))
     , event_time_column(std::move(event_time_column_))
     , watermark_expression(std::make_shared<ExpressionActions>(std::move(watermark_expression_), ExpressionActionsSettings(context_)))
 {
@@ -136,14 +142,16 @@ WatermarkCalculatorTransform::WatermarkCalculatorTransform(SharedHeader header_,
 
 void WatermarkCalculatorTransform::consume(Chunk chunk)
 {
-    /// Empty chunks - pass through.
+    const auto & output_header = getOutputPort().getHeader();
+    const auto & input_header = getInputPort().getHeader();
+
     if (chunk.getNumRows() == 0)
     {
-        pending_chunks.push(std::move(chunk));
+        Chunk reshaped(output_header.cloneEmptyColumns(), 0);
+        reshaped.setChunkInfos(std::move(chunk.getChunkInfos()));
+        pending_chunks.push(std::move(reshaped));
         return;
     }
-
-    const auto & input_header = getInputPort().getHeader();
 
     auto block = input_header.cloneWithColumns(chunk.getColumns());
     const auto & event_time_column_with_type = block.getByName(event_time_column);
@@ -155,7 +163,7 @@ void WatermarkCalculatorTransform::consume(Chunk chunk)
     pending_chunks.push(std::move(chunk));
 
     if (emitted_watermark)
-        pending_chunks.push(makeWatermarkMarkerChunk(input_header, emitted_watermark.value()));
+        pending_chunks.push(makeWatermarkMarkerChunk(output_header, emitted_watermark.value()));
 }
 
 bool WatermarkCalculatorTransform::canGenerate()
