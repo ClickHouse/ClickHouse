@@ -129,13 +129,6 @@ protected:
         protected_queue.setCacheUsageStatGuard(guard);
     }
 
-    void setOnEvictCallback(OnEvictCallback callback) override
-    {
-        probationary_queue.setOnEvictCallback(callback);
-        protected_queue.setOnEvictCallback(callback);
-        IFileCachePriority::setOnEvictCallback(std::move(callback));
-    }
-
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;

@@ -156,12 +156,12 @@ namespace
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits_by_client = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits_by_client",
-        "Distribution of cache-hit counts on evicted file segments, additionally labelled by user id. Disabled by default.",
+        "Distribution of cache-hit counts on evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
         hits_buckets, {"cache_name", "queue", "client_id"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_size_bytes_by_client = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_size_bytes_by_client",
-        "Distribution of byte sizes of evicted file segments, additionally labelled by user id. Disabled by default.",
+        "Distribution of byte sizes of evicted file segments, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
         size_buckets, {"cache_name", "queue", "client_id"});
 
     const char * queueLabel(FileCacheQueueEntryType queue_type)

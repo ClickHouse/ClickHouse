@@ -275,7 +275,6 @@ private:
     const bool use_split_cache;
     const double split_cache_ratio;
 
-
     const bool skip_cache_on_disk_failure;
     std::atomic<bool> expose_eviction_metrics;
     std::atomic<bool> expose_eviction_metrics_per_client;
