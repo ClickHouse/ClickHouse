@@ -79,7 +79,7 @@ static void populateTable(const X509Certificate & certificate, MutableColumns & 
 static void enumCertificates(const std::string & dir, bool def, MutableColumns & res_columns, const std::string & protocol)
 {
     static const RE2 cert_name("^[a-fA-F0-9]{8}\\.\\d$");
-    assert(cert_name.ok());
+    chassert(cert_name.ok());
 
     const std::filesystem::path p(dir);
 

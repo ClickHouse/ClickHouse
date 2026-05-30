@@ -551,7 +551,7 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
 template <typename HashTable>
 static IColumn::Selector hashToSelector(const HashTable & hash_table, const BlockHashes & hashes, size_t num_shards)
 {
-    assert(isPowerOf2(num_shards));
+    chassert(isPowerOf2(num_shards));
     const size_t num_rows = hashes.size();
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
