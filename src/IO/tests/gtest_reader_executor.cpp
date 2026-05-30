@@ -9,6 +9,7 @@
 #include <IO/Rope.h>
 #include <IO/PageCacheProvider.h>
 #include <Common/PageCache.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -916,6 +917,11 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesPushedToCacheAsync;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric ReaderExecutorActive;
+}
+
 namespace
 {
 
@@ -1153,6 +1159,80 @@ TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
     /// prefetch (sets the cancellation exception). ~ReaderExecutor's drain then
     /// get()s it (throws, caught) and returns cleanly.
     release_worker.set_value();
+}
+
+/// Same as above, but the synchronous fallback read THROWS after the cancel.
+/// The cancelled handle must be stashed BEFORE that read, otherwise it is
+/// dropped on the stack unwind and ~ReaderExecutor never waits for the worker
+/// (which attaches a ThreadGroupSwitcher to the now-freed group).
+TEST(ReaderExecutor, ConsumePathCancelledPrefetchStashedBeforeThrowingSyncRead)
+{
+    /// First open succeeds (window 1); the second (window 2's fallback read,
+    /// no live buffer is kept without a buffer_limit) throws.
+    auto source = std::make_shared<ThrowOnSecondOpenSourceReader>(String(2000, 'Z'));
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 2000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(1);
+    std::promise<void> worker_started;
+    std::promise<void> release_worker;
+    auto blocker = pool->submit([&]() -> Rope
+    {
+        worker_started.set_value();
+        release_worker.get_future().wait();
+        return Rope{};
+    });
+    ASSERT_TRUE(blocker != nullptr);
+    worker_started.get_future().wait();
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
+    executor.setPrefetchPool(pool);
+
+    auto w1 = executor.readNextWindow();
+    ASSERT_FALSE(w1.empty());
+    ASSERT_TRUE(executor.hasInflightPrefetch());
+
+    /// Window 2: tryCancel succeeds, then the fallback read throws.
+    EXPECT_THROW(executor.readNextWindow(), DB::Exception);
+    EXPECT_EQ(executor.abandonedPrefetchCount(), 1u)
+        << "cancelled prefetch must be stashed before the throwing fallback read";
+
+    release_worker.set_value();
+}
+
+/// `reader_executor_window_size` / `reader_executor_block_size` of 0 would make
+/// `effectiveWindowSize` / `allocateBlocks` produce a zero-size allocation;
+/// reject them at construction.
+TEST(ReaderExecutor, ConstructorRejectsZeroWindowOrBlockSize)
+{
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(10, 'x')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 10);
+
+    EXPECT_THROW(
+        ReaderExecutor(source, objects, {}, /*window_size=*/0),
+        DB::Exception);
+    EXPECT_THROW(
+        ReaderExecutor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0, /*block_size=*/0),
+        DB::Exception);
+}
+
+/// `OffsetMap::build` throws for an unknown-size object in a multi-object
+/// pipeline. The live-instance gauge must not be bumped before `build`, or a
+/// throwing constructor (which skips `~ReaderExecutor`) leaks the count.
+TEST(ReaderExecutor, ConstructorDoesNotLeakActiveMetricWhenBuildThrows)
+{
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"a", String(100, 'a')}});
+    StoredObjects objects;
+    objects.emplace_back("a", "", 100);
+    objects.emplace_back("b", "", StoredObject::UnknownSize);
+
+    const auto before = CurrentMetrics::get(CurrentMetrics::ReaderExecutorActive);
+    EXPECT_THROW(ReaderExecutor(source, objects, {}), DB::Exception);
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorActive), before)
+        << "a throwing constructor must not leak ReaderExecutorActive";
 }
 
 TEST(ReaderExecutor, LiveBufferReusesConnection)

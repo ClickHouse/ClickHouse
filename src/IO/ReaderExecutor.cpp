@@ -63,6 +63,7 @@ namespace HistogramMetrics
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
 }
@@ -173,8 +174,16 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(min_bytes_for_seek_)
     , block_size(block_size_)
 {
-    CurrentMetrics::add(CurrentMetrics::ReaderExecutorActive);
+    if (window_size == 0 || block_size == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "reader_executor_window_size and reader_executor_block_size must be > 0, "
+            "got window_size={}, block_size={}", window_size, block_size);
+
+    /// `build` can throw (e.g. an `UnknownSize` object in a multi-object
+    /// pipeline). Bump the live-instance gauge only after it succeeds: a ctor
+    /// that throws skips `~ReaderExecutor`, so an earlier bump would leak.
     offset_map.build(stored_objects);
+    CurrentMetrics::add(CurrentMetrics::ReaderExecutorActive);
     creator_query_id = String(CurrentThread::getQueryId());
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, block_size={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, block_size, caches.size());
@@ -728,6 +737,13 @@ Rope ReaderExecutor::readNextWindow()
             LOG_TRACE(log, "readNextWindow: prefetch was queued, cancelling and reading from position {}", position);
             ++stats.prefetch_cancelled;
 
+            /// Stash BEFORE the synchronous read: the worker attaches a
+            /// `ThreadGroupSwitcher` before checking cancellation, so
+            /// ~ReaderExecutor must join it before our state is freed. If the
+            /// read below throws, the handle would otherwise be dropped on the
+            /// unwind and the destructor would never wait (see `discardPrefetch`).
+            abandoned_prefetches.push_back(std::move(local_handle));
+
             ensurePreAcquiredSlot();
             size_t win_size = offset_map.hasUnknownSize()
                 ? effectiveWindowSize()
@@ -737,11 +753,6 @@ Rope ReaderExecutor::readNextWindow()
             rope = decryptRope(readPhysicalWindow(physical_window, /*from_prefetch=*/false), position);
             HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
-
-            /// Stash so ~ReaderExecutor joins the worker before our state is
-            /// freed — the worker attaches a `ThreadGroupSwitcher` before
-            /// checking cancellation (see `discardPrefetch`).
-            abandoned_prefetches.push_back(std::move(local_handle));
         }
         else
         {
