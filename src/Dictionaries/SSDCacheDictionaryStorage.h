@@ -162,7 +162,7 @@ public:
     /// Returns true if key was written and false if there was not enough place to write key
     bool writeKey(const SSDCacheSimpleKey & cache_key, size_t & offset_in_block)
     {
-        assert(cache_key.size > 0);
+        chassert(cache_key.size > 0);
 
         if (!enoughtPlaceToWriteKey(cache_key))
             return false;
@@ -191,7 +191,7 @@ public:
 
     bool writeKey(const SSDCacheComplexKey & cache_key, size_t & offset_in_block)
     {
-        assert(cache_key.size > 0);
+        chassert(cache_key.size > 0);
 
         if (!enoughtPlaceToWriteKey(cache_key))
             return false;
@@ -393,7 +393,7 @@ public:
         current_write_block.reset(buffer.m_data + (block_size * current_block_index));
 
         write_in_current_block = current_write_block.writeKey(key, block_offset);
-        assert(write_in_current_block);
+        chassert(write_in_current_block);
 
         index.block_index = current_block_index;
         index.offset_in_block = block_offset;
@@ -1344,7 +1344,7 @@ private:
                     memset(const_cast<char *>(current_memory_buffer_partition.getData()), 0, current_memory_buffer_partition.getSizeInBytes());
 
                     write_into_memory_buffer_result = current_memory_buffer_partition.writeKey(ssd_cache_key, cache_index);
-                    assert(write_into_memory_buffer_result);
+                    chassert(write_into_memory_buffer_result);
 
                     cell.state = Cell::in_memory;
                     cell.index = cache_index;

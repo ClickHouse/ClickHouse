@@ -91,6 +91,10 @@ BlockIO InterpreterDeleteQuery::execute()
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+    /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
+    /// metadata is not loaded until the first access.  Initialize it now so that
+    /// supportsDelete() and subsequent mutation checks see valid metadata.
+    table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
     if (table->supportsDelete())

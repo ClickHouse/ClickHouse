@@ -7,7 +7,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
-#include <cassert>
 #include <type_traits>
 #include <memory>
 
@@ -494,7 +493,7 @@ private:
 
         for (ssize_t i = 0; /* guarded by 'finish' */; ++i)
         {
-            assert(i < buckets_for_recursion);
+            chassert(i < buckets_for_recursion);
 
             /// We look at i-1th index, because bucket pointers are shifted right on every loop iteration,
             ///  and all buckets before i was completely shifted to the beginning of the next bucket.
@@ -511,7 +510,7 @@ private:
                 if (tag != KeyBits(i))
                 {
                     /// Invariant: tag > i, because the elements with less tags are already at the right places.
-                    assert(tag > KeyBits(i));
+                    chassert(tag > KeyBits(i));
 
                     /// While the tag (digit) of the element is not that we need,
                     /// swap the element with the next element in the bucket for that tag.

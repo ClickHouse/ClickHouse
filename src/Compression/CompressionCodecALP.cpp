@@ -407,7 +407,7 @@ private:
 
     EncodingParams selectBlockParams(const char * source, const UInt32 float_count)
     {
-        assert(param_candidates.size() > 0);
+        chassert(param_candidates.size() > 0);
         if (param_candidates.size() == 1)
             return param_candidates[0];
 

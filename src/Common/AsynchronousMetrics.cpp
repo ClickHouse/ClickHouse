@@ -13,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
+#include <Common/JemallocJITArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
@@ -26,6 +27,10 @@
 #include <string_view>
 
 #include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#endif
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -1177,17 +1182,48 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "jemalloc.cache_arena.pdirty");
     }
 
+    /// jemalloc reports per-arena `pactive`/`pdirty` as a count of jemalloc pages. The
+    /// `*_bytes` variants below multiply by jemalloc's compiled-in page size (read once from
+    /// `arenas.page`), not the OS page size: the two differ on platforms where jemalloc is
+    /// built with `LG_PAGE=16` (64 KiB pages — aarch64, ppc64le, riscv64) but the kernel uses
+    /// 4 KiB pages. Using `getPageSize()` would under-report by 16× there.
+    static const Jemalloc::MibCache<size_t> jemalloc_page_size_mib{"arenas.page"};
+
+    /// Per-arena metrics for the dedicated JIT arena (LLVM bookkeeping: TargetMachine, IR modules,
+    /// optimization passes, RuntimeDyld relocation tables, etc.).
+    if (JemallocJITArena::isEnabled())
+    {
+        unsigned jit_arena = JemallocJITArena::getArenaIndex();
+        auto jit_pactive = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pactive", jit_arena),
+            "jemalloc.jit_arena.pactive");
+        auto jit_pdirty = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pdirty", jit_arena),
+            "jemalloc.jit_arena.pdirty");
+
+        if (jit_pactive && jit_pdirty)
+        {
+            const size_t page_size = jemalloc_page_size_mib.getValue();
+            new_values["jemalloc.jit_arena.active_bytes"] = { *jit_pactive * page_size,
+                "Active bytes in the dedicated jemalloc JIT arena. Includes both (a) LLVM heap state "
+                "(TargetMachine and its target-specific Subtarget, IR modules, optimization-pass analyses, "
+                "RuntimeDyld relocation tables) and (b) the page-aligned reserved blocks that "
+                "`JITModuleMemoryManager` allocates via `posix_memalign` for executable/data sections "
+                "(intercepted into `je_posix_memalign`, so it goes through jemalloc). "
+                "`CompiledExpressionCacheBytes` (CurrentMetric) is a *subset* of this — it tracks only the "
+                "reserved page-block capacity for executable/data sections, not the actual code/data bytes "
+                "in use within those blocks."};
+            new_values["jemalloc.jit_arena.dirty_bytes"] = { *jit_pdirty * page_size,
+                "Dirty bytes in the JIT arena that are eligible for purging back to the OS."};
+        }
+    }
+
     /// Per-arena metrics for the dedicated MergeTree heap arena. Holds long-lived MergeTree state:
     ///   - per-part metadata (allocations from `IMergeTreeDataPart::setColumns` /
     ///     `setColumnsSubstreams` / `loadColumnsChecksumsIndexes` / `loadProjections` /
     ///     `loadChecksums` and from `MergeTreeDataPartBuilder::build`),
     ///   - per-table metadata (allocations from `MergeTreeData::setProperties`,
     ///     `resetSerializationHints`, `updateSerializationHints`).
-    /// jemalloc reports per-arena `pactive`/`pdirty` as a count of jemalloc pages. The
-    /// `*_bytes` variants below multiply by jemalloc's compiled-in page size (read once from
-    /// `arenas.page`), not the OS page size: the two differ on platforms where jemalloc is
-    /// built with `LG_PAGE=16` (64 KiB pages — aarch64, ppc64le, riscv64) but the kernel uses
-    /// 4 KiB pages. Using `getPageSize()` would under-report by 16× there.
     if (JemallocMergeTreeArena::isEnabled())
     {
         unsigned mergetree_arena = JemallocMergeTreeArena::getArenaIndex();
@@ -1200,7 +1236,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
         if (mt_pactive && mt_pdirty)
         {
-            static const Jemalloc::MibCache<size_t> jemalloc_page_size_mib{"arenas.page"};
             const size_t page_size = jemalloc_page_size_mib.getValue();
             new_values["jemalloc.mergetree_arena.active_bytes"] = { *mt_pactive * page_size,
                 "Active bytes in the dedicated jemalloc MergeTree arena. Holds long-lived MergeTree heap "
@@ -1220,6 +1255,25 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             new_values["jemalloc.mergetree_arena.dirty_bytes"] = { *mt_pdirty * page_size,
                 "Dirty bytes in the MergeTree arena that are eligible for purging back to the OS."};
         }
+    }
+#endif
+
+#if USE_EMBEDDED_COMPILER
+    /// Compiled-expression cache: configured limits (the current usage is exposed via the
+    /// `CompiledExpressionCacheBytes` and `CompiledExpressionCacheCount` CurrentMetrics).
+    /// Note: `CompiledExpressionCacheBytes` is the page-block capacity reserved by
+    /// `JITModuleMemoryManager` for cached compiled functions. Those blocks are allocated via
+    /// `posix_memalign` (intercepted into `je_posix_memalign` in `Common/malloc.cpp`), so they
+    /// go through jemalloc and are accounted within the dedicated JIT arena — i.e. this metric
+    /// is a *subset* of `jemalloc.jit_arena.active_bytes` above, not a separate quantity.
+    if (auto * compiled_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+    {
+        new_values["CompiledExpressionCacheBytesMax"] = { compiled_cache->maxSizeInBytes(),
+            "Configured maximum bytes of the compiled-expression cache. "
+            "Available headroom = this minus `CompiledExpressionCacheBytes` (CurrentMetric)." };
+        new_values["CompiledExpressionCacheCountMax"] = { compiled_cache->maxCount(),
+            "Configured maximum entries of the compiled-expression cache. "
+            "Available headroom = this minus `CompiledExpressionCacheCount` (CurrentMetric)." };
     }
 #endif
 

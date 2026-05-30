@@ -2052,7 +2052,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
-    assert(col_map || col_const_map);
+    chassert(col_map || col_const_map);
 
     if (col_const_map)
         col_map = typeid_cast<const ColumnMap *>(&col_const_map->getDataColumn());

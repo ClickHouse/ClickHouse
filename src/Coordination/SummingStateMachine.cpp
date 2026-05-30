@@ -101,7 +101,7 @@ void SummingStateMachine::save_logical_snp_obj(
 
         std::lock_guard ll(snapshots_lock);
         auto entry = snapshots.find(s.get_last_log_idx());
-        assert(entry != snapshots.end());
+        chassert(entry != snapshots.end());
         entry->second->value = local_value;
     }
     // Request next object.
