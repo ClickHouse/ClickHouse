@@ -37,6 +37,20 @@ static constexpr size_t MAX_POLYGONS_PER_MULTIPOLYGON = 10'000;
 static constexpr size_t MAX_CHUNKS_PER_STATE = 10'000;
 static constexpr size_t MAX_POINTS_IN_CONVEX_HULL_STATE = 100'000'000;
 static constexpr size_t MAX_POINTS_IN_POLYGONAL_STATE = 10'000'000;
+/// Cumulative cap on the number of polygons and rings allocated while deserializing a
+/// single polygonal state. The per-container limits (`MAX_POLYGONS_PER_MULTIPOLYGON`,
+/// `MAX_RINGS_PER_POLYGON`) bound each `resize` individually, but their product across
+/// chunks/polygons can still amplify a metadata-only payload (every ring of size `0`)
+/// into a huge allocation while the point budget stays at zero. This cap is checked
+/// before every metadata `resize` so such payloads are rejected early.
+static constexpr size_t MAX_RINGS_IN_POLYGONAL_STATE = 10'000'000;
+
+/// Cumulative allocation budget threaded through polygonal-state deserialization.
+struct PolygonalStateBudget
+{
+    size_t points = 0;
+    size_t rings = 0;
+};
 
 
 /// Maps global variant discriminator index -> GeometryColumnType.
@@ -201,7 +215,7 @@ inline void serializeGeoMultiPolygon(const CartesianMultiPolygon & mp, WriteBuff
 }
 
 
-inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_name, size_t & total_points)
+inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_name, PolygonalStateBudget & budget)
 {
     UInt64 size;
     readVarUInt(size, buf);
@@ -213,13 +227,13 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
             size,
             MAX_POINTS_PER_RING);
 
-    if (size > MAX_POINTS_IN_POLYGONAL_STATE - total_points)
+    if (size > MAX_POINTS_IN_POLYGONAL_STATE - budget.points)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Corrupted state of aggregate function {}: total points exceed polygonal state budget {}",
             function_name,
             MAX_POINTS_IN_POLYGONAL_STATE);
-    total_points += size;
+    budget.points += size;
 
     CartesianRing ring;
     ring.resize(size);
@@ -241,10 +255,21 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
     return ring;
 }
 
-inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * function_name, size_t & total_points)
+inline void chargeRingBudget(UInt64 count, const char * function_name, PolygonalStateBudget & budget)
+{
+    if (count > MAX_RINGS_IN_POLYGONAL_STATE - budget.rings)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted state of aggregate function {}: total rings exceed polygonal state budget {}",
+            function_name,
+            MAX_RINGS_IN_POLYGONAL_STATE);
+    budget.rings += count;
+}
+
+inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * function_name, PolygonalStateBudget & budget)
 {
     CartesianPolygon poly;
-    poly.outer() = deserializeGeoRing(buf, function_name, total_points);
+    poly.outer() = deserializeGeoRing(buf, function_name, budget);
 
     UInt64 inner_count;
     readVarUInt(inner_count, buf);
@@ -256,13 +281,15 @@ inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * fun
             inner_count,
             MAX_RINGS_PER_POLYGON);
 
+    /// Bound metadata allocation before reserving ring storage.
+    chargeRingBudget(inner_count, function_name, budget);
     poly.inners().resize(inner_count);
     for (UInt64 i = 0; i < inner_count; ++i)
-        poly.inners()[i] = deserializeGeoRing(buf, function_name, total_points);
+        poly.inners()[i] = deserializeGeoRing(buf, function_name, budget);
     return poly;
 }
 
-inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const char * function_name, size_t & total_points)
+inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const char * function_name, PolygonalStateBudget & budget)
 {
     UInt64 poly_count;
     readVarUInt(poly_count, buf);
@@ -274,10 +301,12 @@ inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const 
             poly_count,
             MAX_POLYGONS_PER_MULTIPOLYGON);
 
+    /// Bound metadata allocation before reserving polygon storage.
+    chargeRingBudget(poly_count, function_name, budget);
     CartesianMultiPolygon mp;
     mp.resize(poly_count);
     for (UInt64 i = 0; i < poly_count; ++i)
-        mp[i] = deserializeGeoPolygon(buf, function_name, total_points);
+        mp[i] = deserializeGeoPolygon(buf, function_name, budget);
     return mp;
 }
 
