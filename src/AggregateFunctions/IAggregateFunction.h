@@ -14,7 +14,6 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <IO/ReadBuffer.h>
-#include "config.h"
 
 #include <cstddef>
 #include <memory>
