@@ -933,8 +933,27 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// invalidate the sort order of existing data parts.
             Names sort_columns = metadata_snapshot->getSortingKeyColumns();
             Names sort_required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
-            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end()
-                || std::find(sort_required_columns.begin(), sort_required_columns.end(), command.column_name) != sort_required_columns.end())
+            bool used_in_sort_key
+                = std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end()
+                || std::find(sort_required_columns.begin(), sort_required_columns.end(), command.column_name) != sort_required_columns.end();
+
+            /// The sorting key can depend on a subcolumn (e.g. `ORDER BY t.k`), while
+            /// `MATERIALIZE COLUMN t` targets the parent column. Materializing the parent
+            /// recalculates the subcolumn too, so it must be refused as well.
+            if (!used_in_sort_key)
+            {
+                for (const auto & sort_required_column : sort_required_columns)
+                {
+                    auto resolved = columns_desc.getColumnOrSubcolumn(GetColumnsOptions::All, sort_required_column);
+                    if (resolved.isSubcolumn() && resolved.getNameInStorage() == command.column_name)
+                    {
+                        used_in_sort_key = true;
+                        break;
+                    }
+                }
+            }
+
+            if (used_in_sort_key)
             {
                 throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                     "Refused to materialize column {} because it is used in the sorting key expression. "
