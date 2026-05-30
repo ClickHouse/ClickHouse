@@ -1462,6 +1462,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"deduplicate_merge_projection_mode", "ignore", "throw", "Do not allow to create inconsistent projection"}
         });
     });
+
     return merge_tree_settings_changes_history;
 }
 

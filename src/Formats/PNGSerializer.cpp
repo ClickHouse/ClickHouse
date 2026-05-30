@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/PNGWriter.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <Common/NaNUtils.h>
 #include <Common/StringUtils.h>
 #include <base/arithmeticOverflow.h>
@@ -25,43 +26,35 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Convert a single value of an integer or float column to an 8-bit pixel component.
-    /// Integer values are clamped to [0, 255]. Floating-point values are clamped to [0, 1] and scaled to [0, 255].
-    UInt8 extractPixelByte(const IColumn & column, size_t row_num)
+    /// How to interpret a value column when converting it to an 8-bit pixel component.
+    /// Determined once from the column type, so the per-row path does not re-dispatch on the data type.
+    enum class ValueKind : uint8_t
+    {
+        UInt,   /// Integer clamped to [0, 255].
+        Int,    /// Integer clamped to [0, 255].
+        Float,  /// Clamped to [0, 1] and scaled to [0, 255].
+        Bool,   /// 0 or 255.
+    };
+
+    /// Convert a single value of a column to an 8-bit pixel component, using the kind precomputed from its type.
+    UInt8 extractByte(const IColumn & column, size_t row_num, ValueKind kind, bool nullable)
     {
         const IColumn * data_column = &column;
-
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(data_column))
+        if (nullable)
         {
-            if (nullable->isNullAt(row_num))
+            const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
+            if (nullable_column.isNullAt(row_num))
                 return 0;
-            data_column = &nullable->getNestedColumn();
+            data_column = &nullable_column.getNestedColumn();
         }
 
-        switch (data_column->getDataType())
+        switch (kind)
         {
-            case TypeIndex::UInt8:
-            case TypeIndex::UInt16:
-            case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
-            case TypeIndex::UInt128:
-            case TypeIndex::UInt256:
-            {
-                UInt64 value = data_column->getUInt(row_num);
-                return static_cast<UInt8>(std::min<UInt64>(value, 255));
-            }
-            case TypeIndex::Int8:
-            case TypeIndex::Int16:
-            case TypeIndex::Int32:
-            case TypeIndex::Int64:
-            case TypeIndex::Int128:
-            case TypeIndex::Int256:
-            {
-                Int64 value = data_column->getInt(row_num);
-                return static_cast<UInt8>(std::clamp<Int64>(value, 0, 255));
-            }
-            case TypeIndex::Float32:
-            case TypeIndex::Float64:
+            case ValueKind::UInt:
+                return static_cast<UInt8>(std::min<UInt64>(data_column->getUInt(row_num), 255));
+            case ValueKind::Int:
+                return static_cast<UInt8>(std::clamp<Int64>(data_column->getInt(row_num), 0, 255));
+            case ValueKind::Float:
             {
                 Float64 value = data_column->getFloat64(row_num);
                 if (!isFinite(value))
@@ -69,22 +62,10 @@ namespace
                 value = std::clamp(value, 0.0, 1.0);
                 return static_cast<UInt8>(std::lround(value * 255.0));
             }
-            default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Unexpected column type for PNG pixel component");
+            case ValueKind::Bool:
+                return data_column->getBool(row_num) ? 255 : 0;
         }
-    }
-
-    UInt8 extractBoolByte(const IColumn & column, size_t row_num)
-    {
-        const IColumn * data_column = &column;
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(data_column))
-        {
-            if (nullable->isNullAt(row_num))
-                return 0;
-            data_column = &nullable->getNestedColumn();
-        }
-        return data_column->getBool(row_num) ? 255 : 0;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value kind for PNG pixel component");
     }
 
     const IDataType * unwrapNullable(const IDataType * type)
@@ -108,6 +89,19 @@ namespace
     bool isAllowedCoordinateType(const IDataType & type)
     {
         return WhichDataType(*unwrapNullable(&type)).isNativeInteger();
+    }
+
+    /// Classify a value column type into a `ValueKind`. The type must have already been validated.
+    ValueKind classifyValueKind(const IDataType & type)
+    {
+        WhichDataType which(*unwrapNullable(&type));
+        if (which.isNativeUInt())
+            return ValueKind::UInt;
+        if (which.isNativeInt())
+            return ValueKind::Int;
+        if (which.isNativeFloat())
+            return ValueKind::Float;
+        return ValueKind::Bool;
     }
 
     /// Identify a column by its lower-cased name.
@@ -156,9 +150,22 @@ private:
     std::optional<size_t> v_idx;
 
     bool explicit_coords = false;
+    bool x_nullable = false;
+    bool y_nullable = false;
     /// Current pixel position in implicit (scanline) coordinate mode, advanced incrementally per row.
     size_t implicit_x = 0;
     size_t implicit_y = 0;
+
+    /// How to extract one pixel component, precomputed once from the column types so that
+    /// the per-row path does not re-dispatch on the data type. One entry per output channel,
+    /// in the order the channels are written (R, G, B[, A] or the single grayscale/binary value).
+    struct ChannelExtractor
+    {
+        size_t column_index = 0;
+        ValueKind kind = ValueKind::UInt;
+        bool nullable = false;
+    };
+    std::vector<ChannelExtractor> channel_extractors;
 
     std::vector<UInt8> pixels;
     std::vector<ColumnPtr> src_columns;
@@ -284,7 +291,30 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Columns 'x' and 'y' must have an integer type, got '{}' and '{}'",
                 x_type.getName(), y_type.getName());
+        x_nullable = x_type.isNullable();
+        y_nullable = y_type.isNullable();
     }
+
+    /// Precompute the per-channel extraction plan once, in the order the channels are written.
+    /// `Bool` is backed by `UInt8`, so the kind must be forced for binary mode rather than inferred from the type.
+    auto add_channel = [&](size_t idx, ValueKind kind)
+    {
+        const auto & type = *header.getByPosition(idx).type;
+        channel_extractors.push_back({idx, kind, type.isNullable()});
+    };
+
+    if (mode == Mode::RGB || mode == Mode::RGBA)
+    {
+        add_channel(*r_idx, classifyValueKind(*header.getByPosition(*r_idx).type));
+        add_channel(*g_idx, classifyValueKind(*header.getByPosition(*g_idx).type));
+        add_channel(*b_idx, classifyValueKind(*header.getByPosition(*b_idx).type));
+    }
+    if (mode == Mode::RGBA)
+        add_channel(*a_idx, classifyValueKind(*header.getByPosition(*a_idx).type));
+    if (mode == Mode::Grayscale)
+        add_channel(*v_idx, classifyValueKind(*header.getByPosition(*v_idx).type));
+    if (mode == Mode::Binary)
+        add_channel(*v_idx, ValueKind::Bool);
 
     /// Allocate the image buffer. For RGBA this leaves the image transparent;
     /// for RGB / grayscale / binary this leaves it black.
@@ -313,25 +343,10 @@ void PNGSerializer::Impl::writeRow(size_t row_num)
 {
     UInt8 components[4] = {0, 0, 0, 255};
 
-    switch (mode)
+    for (size_t channel = 0; channel < channel_extractors.size(); ++channel)
     {
-        case Mode::RGB:
-            components[0] = extractPixelByte(*src_columns[*r_idx], row_num);
-            components[1] = extractPixelByte(*src_columns[*g_idx], row_num);
-            components[2] = extractPixelByte(*src_columns[*b_idx], row_num);
-            break;
-        case Mode::RGBA:
-            components[0] = extractPixelByte(*src_columns[*r_idx], row_num);
-            components[1] = extractPixelByte(*src_columns[*g_idx], row_num);
-            components[2] = extractPixelByte(*src_columns[*b_idx], row_num);
-            components[3] = extractPixelByte(*src_columns[*a_idx], row_num);
-            break;
-        case Mode::Grayscale:
-            components[0] = extractPixelByte(*src_columns[*v_idx], row_num);
-            break;
-        case Mode::Binary:
-            components[0] = extractBoolByte(*src_columns[*v_idx], row_num);
-            break;
+        const auto & extractor = channel_extractors[channel];
+        components[channel] = extractByte(*src_columns[extractor.column_index], row_num, extractor.kind, extractor.nullable);
     }
 
     if (explicit_coords)
@@ -339,17 +354,19 @@ void PNGSerializer::Impl::writeRow(size_t row_num)
         const IColumn * x_col = src_columns[*x_idx].get();
         const IColumn * y_col = src_columns[*y_idx].get();
 
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(x_col))
+        if (x_nullable)
         {
-            if (nullable->isNullAt(row_num))
+            const auto & nullable = assert_cast<const ColumnNullable &>(*x_col);
+            if (nullable.isNullAt(row_num))
                 return;
-            x_col = &nullable->getNestedColumn();
+            x_col = &nullable.getNestedColumn();
         }
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(y_col))
+        if (y_nullable)
         {
-            if (nullable->isNullAt(row_num))
+            const auto & nullable = assert_cast<const ColumnNullable &>(*y_col);
+            if (nullable.isNullAt(row_num))
                 return;
-            y_col = &nullable->getNestedColumn();
+            y_col = &nullable.getNestedColumn();
         }
 
         const Int64 x_val = x_col->getInt(row_num);
