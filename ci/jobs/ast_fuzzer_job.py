@@ -233,6 +233,11 @@ def run_fuzz_job(check_name: str):
     if buzzhouse:
         paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
 
+    # Raw sanitizer reports written via *SAN_OPTIONS=log_path (see run-fuzzer.sh).
+    # Their contents are also merged into stderr.log/server.log, but upload the
+    # originals too for debugging truncated reports.
+    paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
+
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
