@@ -33,13 +33,13 @@ namespace Setting
     extern const SettingsString url_base;
 }
 
-std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    std::vector<size_t> result;
+    VectorWithMemoryTracking<size_t> result;
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {

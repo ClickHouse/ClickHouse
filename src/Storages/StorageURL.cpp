@@ -534,7 +534,9 @@ Chunk StorageURLSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -548,7 +550,8 @@ Chunk StorageURLSource::generate()
                         ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
                         : std::nullopt,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
@@ -604,7 +607,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
-        bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
+        bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
         for (const auto & [param, value] : params)
