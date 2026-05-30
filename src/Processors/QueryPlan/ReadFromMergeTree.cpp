@@ -64,6 +64,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -1951,9 +1952,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     }
                     else
                     {
-                        if (range.left < per_col[mm].min_value)
+                        /// Use accurateLess (the same comparison semantics as the minmax index
+                        /// and the sort key) instead of Field::operator<. Part minmax indexes use
+                        /// nullable sentinels (NULL stored as POSITIVE_INFINITY for NULLS LAST),
+                        /// and Field::operator< compares the Field variant type first, which would
+                        /// order an all-NULL partition incorrectly.
+                        if (accurateLess(range.left, per_col[mm].min_value))
                             per_col[mm].min_value = range.left;
-                        if (per_col[mm].max_value < range.right)
+                        if (accurateLess(per_col[mm].max_value, range.right))
                             per_col[mm].max_value = range.right;
                     }
                 }
@@ -2109,14 +2115,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             {
                 std::sort(perm.begin(), perm.end(), [&](size_t a, size_t b)
                 {
-                    return partition_minmax[b][mm_idx].min_value < partition_minmax[a][mm_idx].min_value;
+                    return accurateLess(partition_minmax[b][mm_idx].min_value, partition_minmax[a][mm_idx].min_value);
                 });
             }
             else
             {
                 std::sort(perm.begin(), perm.end(), [&](size_t a, size_t b)
                 {
-                    return partition_minmax[a][mm_idx].min_value < partition_minmax[b][mm_idx].min_value;
+                    return accurateLess(partition_minmax[a][mm_idx].min_value, partition_minmax[b][mm_idx].min_value);
                 });
             }
 
@@ -2131,7 +2137,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 if (partition_sort_key_reverse)
                 {
                     /// Descending order: current.min should be > next.max
-                    if (!(next.max_value < current.min_value))
+                    if (!accurateLess(next.max_value, current.min_value))
                     {
                         non_overlapping = false;
                         break;
@@ -2140,7 +2146,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 else
                 {
                     /// Ascending order: current.max should be < next.min
-                    if (!(current.max_value < next.min_value))
+                    if (!accurateLess(current.max_value, next.min_value))
                     {
                         non_overlapping = false;
                         break;
