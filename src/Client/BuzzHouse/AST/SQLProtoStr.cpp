@@ -86,6 +86,14 @@ CONV_FN(SQLIdentifier, ident)
     ret += "`";
 }
 
+void AggregateParamToString(String & ret, const AggregateParam & p)
+{
+    if (p.has_float_param())
+        ret += std::to_string(p.float_param());
+    else
+        ret += std::to_string(p.int_param());
+}
+
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
@@ -1001,7 +1009,18 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
 
             ret += af.simple() ? "Simple" : "";
             ret += "AggregateFunction(";
-            ret += SQLFunc_Name(af.aggr()).substr(4);
+            ret += af.aggr();
+            if (af.params_size() > 0)
+            {
+                ret += "(";
+                for (int i = 0; i < af.params_size(); i++)
+                {
+                    if (i != 0)
+                        ret += ", ";
+                    AggregateParamToString(ret, af.params(i));
+                }
+                ret += ")";
+            }
             for (int i = 0; i < af.types_size(); i++)
             {
                 ret += ", ";
@@ -1415,7 +1434,7 @@ CONV_FN(SQLFuncName, sfn)
 {
     if (sfn.has_catalog_func())
     {
-        ret += SQLFunc_Name(sfn.catalog_func()).substr(4);
+        ret += sfn.catalog_func();
     }
     else if (sfn.has_function())
     {
@@ -1463,6 +1482,10 @@ CONV_FN(SQLFuncCall, sfc)
         if (sfa.has_lambda())
         {
             LambdaExprToString(ret, sfa.lambda());
+        }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
         }
         else if (sfa.has_expr())
         {
@@ -2459,6 +2482,10 @@ CONV_FN(SQLTableFuncCall, sfc)
         if (sfa.has_lambda())
         {
             LambdaExprToString(ret, sfa.lambda());
+        }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
         }
         else if (sfa.has_expr())
         {
@@ -4302,7 +4329,6 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool replace = create_view.create_opt() != CreateReplaceOption::Create;
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
@@ -4312,19 +4338,11 @@ CONV_FN(CreateView, create_view)
     {
         ret += "TEMPORARY ";
     }
-    if (replace)
+    if (materialized)
     {
-        ret += "TABLE";
+        ret += "MATERIALIZED ";
     }
-    else
-    {
-        if (materialized)
-        {
-            ret += "MATERIALIZED ";
-        }
-        ret += "VIEW";
-    }
-    ret += " ";
+    ret += "VIEW ";
     if (create_view.if_not_exists())
     {
         ret += "IF NOT EXISTS ";
@@ -4342,12 +4360,12 @@ CONV_FN(CreateView, create_view)
     }
     if (materialized)
     {
-        if (!replace && refreshable)
+        if (refreshable)
         {
             ret += " ";
             RefreshableViewToString(ret, create_view.refresh());
         }
-        if (!replace && create_view.has_to())
+        if (create_view.has_to())
         {
             const CreateMatViewTo & cmvt = create_view.to();
 
@@ -4375,7 +4393,7 @@ CONV_FN(CreateView, create_view)
         {
             ret += " POPULATE";
         }
-        if (!replace && refreshable && create_view.empty())
+        if (refreshable && create_view.empty())
         {
             ret += " EMPTY";
         }

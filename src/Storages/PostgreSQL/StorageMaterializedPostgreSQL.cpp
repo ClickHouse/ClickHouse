@@ -1,5 +1,6 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include <Core/UUID.h>
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
