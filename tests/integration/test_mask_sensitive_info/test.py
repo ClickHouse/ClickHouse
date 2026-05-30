@@ -538,8 +538,8 @@ def test_table_functions():
         f"iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
         f"icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
-        f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
-        f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')" if has_delta_lake else (f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", "UNKNOWN_FUNCTION"),
+        f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')",
+        f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')" if has_delta_lake else (f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')", "UNKNOWN_FUNCTION"),
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
         f"arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
         f"arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
@@ -559,7 +559,7 @@ def test_table_functions():
         f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
         f"paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_paimon else (f"paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
         f"paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_paimon else (f"paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_FUNCTION"),
-        f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')" if has_paimon else (f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')", "UNKNOWN_FUNCTION"),
+        f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')" if has_paimon else (f"paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')", "UNKNOWN_FUNCTION"),
     ]
 
     def make_test_case(i):
@@ -645,8 +645,8 @@ def test_table_functions():
             "CREATE TABLE tablefunc39 (`x` int) AS iceberg('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc40 (`x` int) AS gcs('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc41 (`x` int) AS icebergS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
-            f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
+            f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
             "CREATE TABLE tablefunc44 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc45 (`x` int) AS arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
             "CREATE TABLE tablefunc46 (`x` int) AS arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
@@ -666,7 +666,7 @@ def test_table_functions():
             "CREATE TABLE tablefunc60 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc61 (`x` int) AS paimon('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
             "CREATE TABLE tablefunc62 (`x` int) AS paimonS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
-            f"CREATE TABLE tablefunc63 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
+            f"CREATE TABLE tablefunc63 (`x` int) AS paimonAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
         ],
         must_not_contain=[password],
     )

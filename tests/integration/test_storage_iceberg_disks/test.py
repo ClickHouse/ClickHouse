@@ -234,18 +234,14 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type, with
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    instance.query(
+    # `compression_method` is no longer accepted at CREATE time for data lake
+    # engines (see issue #105644 and PR #105667). Verify rejection for both the
+    # legacy `'auto'` placeholder and an explicit codec name.
+    assert "The `compression_method` argument is not supported by data lake engines" in instance.query_and_get_error(
         f"CREATE TABLE {table_name_4} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'"
     )
-    assert instance.query(f"SELECT * FROM {table_name_4}") == instance.query(
-        "SELECT number, toString(number + 1) FROM numbers(100)"
-    )
-
-    instance.query(
-        f"CREATE TABLE {table_name_5} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'"
-    )
-    assert instance.query(f"SELECT * FROM {table_name_5}") == instance.query(
-        "SELECT number, toString(number + 1) FROM numbers(100)"
+    assert "The `compression_method` argument is not supported by data lake engines" in instance.query_and_get_error(
+        f"CREATE TABLE {table_name_5} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'lzma') SETTINGS disk = '{disk_name}'"
     )
 
     assert instance.query(
@@ -288,11 +284,11 @@ def test_many_tables(started_cluster, format_version, storage_type, with_cache):
     )
 
     instance.query(
-        f"CREATE TABLE {table_name} (col INT) ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'",
+        f"CREATE TABLE {table_name} (col INT) ENGINE=Iceberg(path = '{storage_path}', format = Parquet) SETTINGS disk = '{disk_name}'",
         settings={"allow_insert_into_iceberg": 1},
     )
     instance.query(
-        f"CREATE TABLE {table_name_2} (col INT) ENGINE=Iceberg(path = '{storage_path_2}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'",
+        f"CREATE TABLE {table_name_2} (col INT) ENGINE=Iceberg(path = '{storage_path_2}', format = Parquet) SETTINGS disk = '{disk_name}'",
         settings={"allow_insert_into_iceberg": 1},
     )
 
