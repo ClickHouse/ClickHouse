@@ -472,6 +472,9 @@ public:
         /// Callback to seek specific stream to a current mark that we read from.
         /// Used only in MergeTree and Compact part for Object shared data deserialization.
         std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
+        /// Callback to seek specific stream to the start.
+        /// Used in MergeTree for prefix deserialization.
+        std::function<void(const SubstreamPath &)> seek_to_start_callback;
 
         /// Callback used to get avg_value_size_hint for each substream.
         std::function<double(const SubstreamPath &)> get_avg_value_size_hint_callback;
@@ -495,6 +498,12 @@ public:
         /// If true, call release_stream on all streams used in the prefixes deserialization
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
+
+        /// Returns true if all marks for the given substream have at most
+        /// `max_transitions` distinct consecutive positions.
+        /// Used by `SerializationLowCardinality` as a cheap prefilter before
+        /// it verifies a single-dictionary part from the `DictionaryKeys` stream.
+        std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.

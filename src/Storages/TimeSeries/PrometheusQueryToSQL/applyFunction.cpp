@@ -6,6 +6,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
@@ -44,6 +45,9 @@ SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQL
 
     if (isFunctionAbsent(function_name))
         return applyFunctionAbsent(function_node, std::move(arguments), context);
+
+    if (isLabelManipulationFunction(function_name))
+        return applyLabelManipulationFunction(function_node, std::move(arguments), context);
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
