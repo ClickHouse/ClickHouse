@@ -184,7 +184,7 @@ void StorageSystemReplicas::readImpl(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         /// Check if database can contain replicated tables
         if (db.second->isExternal())
@@ -230,7 +230,7 @@ void StorageSystemReplicas::readImpl(
     query_plan.addStep(std::move(reading));
 }
 
-class SystemReplicasSource : public ISource
+class SystemReplicasSource final : public ISource
 {
 public:
     SystemReplicasSource(

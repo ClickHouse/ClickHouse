@@ -9,7 +9,7 @@
 #include <boost/functional/hash.hpp>
 
 #include <Common/callOnce.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/StatusFile.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -34,6 +34,7 @@
 namespace DB
 {
 struct ReadSettings;
+struct FilesystemCacheSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -51,6 +52,9 @@ struct FileCacheReserveStat
         size_t moving_count = 0;
         size_t invalidated_count = 0;
 
+        size_t candidates_iteration_steps = 0;
+        size_t clients_iterated = 0;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
@@ -60,6 +64,8 @@ struct FileCacheReserveStat
             evicting_count += other.evicting_count;
             moving_count += other.moving_count;
             invalidated_count += other.invalidated_count;
+            candidates_iteration_steps += other.candidates_iteration_steps;
+            clients_iterated += other.clients_iterated;
             return *this;
         }
 
@@ -241,7 +247,7 @@ public:
     std::vector<FileSegment::Info> sync();
 
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -269,7 +275,7 @@ private:
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
-    ThreadFromGlobalPool load_metadata_main_thread;
+    std::unique_ptr<ThreadFromGlobalPool> load_metadata_main_thread;
     const bool write_cache_per_user_directory;
     const bool allow_dynamic_cache_resize;
     const size_t dynamic_resize_lock_wait_ms;
@@ -300,13 +306,16 @@ private:
 
     std::mutex apply_settings_mutex;
 
+    FileCachePriorityPtr main_priority;
+
+    /// Must be declared after main_priority: metadata holds iterators that reference
+    /// the priority's internal state, so metadata must be destroyed first
     CacheMetadata metadata;
 
 #if USE_ROCKSDB
     FileCacheRocksDBIndexPtr rocksdb_index;
 #endif
 
-    FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
     mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;

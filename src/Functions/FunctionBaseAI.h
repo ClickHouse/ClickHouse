@@ -47,9 +47,31 @@ public:
             return inner;
     }
 
+    /// Fields read from the named collection that every AI function needs. Function-specific knobs
+    /// (max_tokens, temperature, dimensions, …) are layered on top by individual callers.
+    struct AINamedCollectionConfig
+    {
+        String collection_name;
+        String provider;
+        String endpoint;
+        String model;
+        String api_key;
+        String api_version;
+    };
+
+    /// Resolve the named-collection argument: cast the first argument to a `ColumnConst`, run the
+    /// `NAMED_COLLECTION` access check, fetch from `NamedCollectionFactory`, and validate that the
+    /// required fields (`provider`, `endpoint`, `model`) are non-empty. `api_key` is optional.
+    static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg);
+
+    /// Exponential backoff delay capped at one minute, so adversarial values of
+    /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
+    /// sleep or overflow `std::chrono::milliseconds`.
+    static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
+
 protected:
-    ContextWeakPtr context_weak;
-    ContextPtr getContext() const { return context_weak.lock(); }
+    ContextPtr context;
+    ContextPtr getContext() const { return context; }
 
     virtual String functionName() const = 0;
 

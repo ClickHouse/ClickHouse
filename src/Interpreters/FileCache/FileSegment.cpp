@@ -264,8 +264,8 @@ String FileSegment::getOrSetDownloader()
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
 {
-    assert(isDownloaderUnlocked(lock));
-    assert(download_state == State::DOWNLOADING);
+    chassert(isDownloaderUnlocked(lock));
+    chassert(download_state == State::DOWNLOADING);
 
     size_t current_downloaded_size = getDownloadedSize();
     /// range().size() can equal 0 in case of write-though cache.
@@ -392,8 +392,8 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Attempt to write {} bytes to offset: {}, but current write offset is {}",
-                size, offset_in_file, first_non_downloaded_offset);
+                "Attempt to write {} bytes to offset: {}, but current write offset is {} ({})",
+                size, offset_in_file, first_non_downloaded_offset, getInfoForLog());
         }
 
         const size_t current_downloaded_size = getDownloadedSize();
