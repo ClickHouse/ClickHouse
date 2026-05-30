@@ -32,6 +32,14 @@ class DartsDict
 public:
     DartsDict();
 
+    /// `elems` and the internal `da` array point into `storage`, so copying or moving
+    /// the object would leave those borrowed pointers dangling at the old buffer.
+    /// The dictionary is only ever held as a single long-lived instance, so forbid both.
+    DartsDict(const DartsDict &) = delete;
+    DartsDict & operator=(const DartsDict &) = delete;
+    DartsDict(DartsDict &&) = delete;
+    DartsDict & operator=(DartsDict &&) = delete;
+
     double find(std::span<const Rune> key) const;
     DAG buildDAG(std::span<const Rune> runes) const;
 
