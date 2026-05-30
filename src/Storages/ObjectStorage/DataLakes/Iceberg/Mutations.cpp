@@ -363,7 +363,8 @@ static bool writeMetadataFiles(
     std::optional<ChunkPartitioner> & chunk_partitioner,
     Iceberg::FileContentType content_type,
     SharedHeader sample_block,
-    bool write_metadata_json_file)
+    bool write_metadata_json_file,
+    const Iceberg::IcebergPathFromMetadata & previous_metadata_path)
 {
     auto metadata_info = filename_generator.generateMetadataPathWithInfo();
     auto storage_metadata_name = path_resolver.resolve(metadata_info.path);
@@ -387,7 +388,7 @@ static bool writeMetadataFiles(
     {
         auto result = MetadataGenerator(metadata).generateNextMetadata(
             filename_generator,
-            metadata_info.path,
+            previous_metadata_path,
             parent_snapshot,
             /* added_files */ 0,
             /* added_records */ 0,
@@ -402,7 +403,7 @@ static bool writeMetadataFiles(
     {
         auto result = MetadataGenerator(metadata).generateNextMetadata(
             filename_generator,
-            metadata_info.path,
+            previous_metadata_path,
             parent_snapshot,
             /* added_files */ total_files,
             /* added_records */ total_rows,
@@ -672,7 +673,8 @@ void mutate(
                 chunk_partitioner,
                 Iceberg::FileContentType::POSITION_DELETE,
                 std::make_shared<const Block>(getPositionDeleteFileSampleBlock()),
-                !mutation_files->data_file);
+                !mutation_files->data_file,
+                Iceberg::IcebergPathFromMetadata::deserialize(metadata_path));
             if (!result_delete_files_metadata)
                 continue;
 
@@ -694,7 +696,8 @@ void mutate(
                     chunk_partitioner,
                     Iceberg::FileContentType::DATA,
                     sample_block,
-                    true);
+                    true,
+                    Iceberg::IcebergPathFromMetadata::deserialize(metadata_path));
                 if (!result_data_files_metadata)
                 {
                     continue;

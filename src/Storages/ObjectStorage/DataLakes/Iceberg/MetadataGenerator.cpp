@@ -112,7 +112,7 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
 
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
-    const Iceberg::IcebergPathFromMetadata & metadata_file_path,
+    const Iceberg::IcebergPathFromMetadata & previous_metadata_file_path,
     Int64 parent_snapshot_id,
     Int64 added_files,
     Int64 added_records,
@@ -135,11 +135,16 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
-    new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
+    /// Per Iceberg spec, parent-snapshot-id should only be set when there is a valid parent snapshot.
+    /// The first snapshot has no parent, so we omit the field entirely.
+    if (parent_snapshot_id != -1)
+        new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     Int64 timestamp = user_defined_timestamp.value_or(ms.count());
+    /// Save the previous last-updated-ms before overwriting, for use in metadata-log.
+    Int64 previous_last_updated_ms = metadata_object->getValue<Int64>(Iceberg::f_last_updated_ms);
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
@@ -208,10 +213,15 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         metadata_object->getObject(Iceberg::f_refs)->getObject(Iceberg::f_main)->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
 
     {
-        Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
-        new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
-        new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
-        metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
+        /// metadata-log records the previous metadata file that this version supersedes.
+        /// Only add an entry if there is a valid previous metadata file path.
+        if (!previous_metadata_file_path.empty())
+        {
+            Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
+            new_metadata_item->set(Iceberg::f_metadata_file, previous_metadata_file_path.serialize());
+            new_metadata_item->set(Iceberg::f_timestamp_ms, previous_last_updated_ms);
+            metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
+        }
     }
     {
         Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;

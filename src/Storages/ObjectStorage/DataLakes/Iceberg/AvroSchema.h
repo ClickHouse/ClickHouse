@@ -139,9 +139,9 @@ static constexpr const char * manifest_list_v2_schema = R"(
             "field-id": 516
         },
         {"name": "added_snapshot_id", "type": "long", "doc": "Snapshot ID that added the manifest", "field-id": 503},
-        {"name": "added_files_count", "type": "int", "doc": "Added entry count", "field-id": 504},
-        {"name": "existing_files_count", "type": "int", "doc": "Existing entry count", "field-id": 505},
-        {"name": "deleted_files_count", "type": "int", "doc": "Deleted entry count", "field-id": 506},
+        {"name": "added_data_files_count", "type": "int", "doc": "Added entry count", "field-id": 504},
+        {"name": "existing_data_files_count", "type": "int", "doc": "Existing entry count", "field-id": 505},
+        {"name": "deleted_data_files_count", "type": "int", "doc": "Deleted entry count", "field-id": 506},
         {"name": "added_rows_count", "type": "long", "doc": "Added rows count", "field-id": 512},
         {"name": "existing_rows_count", "type": "long", "doc": "Existing rows count", "field-id": 513},
         {"name": "deleted_rows_count", "type": "long", "doc": "Deleted rows count", "field-id": 514},
