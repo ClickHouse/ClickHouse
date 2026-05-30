@@ -25,7 +25,7 @@ ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
     : full_name(short_name), name_parts{short_name}, semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     if (!name_param)
-        assert(!full_name.empty());
+        chassert(!full_name.empty());
     else
         children.push_back(std::move(name_param));
 }
@@ -33,7 +33,7 @@ ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
 ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, ASTs && name_params)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
-    assert(!name_parts.empty());
+    chassert(!name_parts.empty());
     semantic->special = special;
     semantic->legacy_compound = true;
     if (!name_params.empty())
@@ -44,13 +44,13 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, A
             if (part.empty())
                 ++params;
         }
-        assert(params == name_params.size());
+        chassert(params == name_params.size());
         children = std::move(name_params);
     }
     else
     {
         for (const auto & part [[maybe_unused]] : name_parts)
-            assert(!part.empty());
+            chassert(!part.empty());
 
         if (!special && name_parts.size() >= 2)
             semantic->table = name_parts.end()[-2];
@@ -66,7 +66,7 @@ bool ASTIdentifier::isParam() const
 
 ASTPtr ASTIdentifier::getParam() const
 {
-    assert(full_name.empty() && children.size() == 1);
+    chassert(full_name.empty() && children.size() == 1);
     return children.front()->clone();
 }
 
@@ -158,7 +158,7 @@ bool ASTIdentifier::supposedToBeCompound() const
 
 void ASTIdentifier::setShortName(const String & new_name)
 {
-    assert(!new_name.empty());
+    chassert(!new_name.empty());
 
     full_name = new_name;
     name_parts = {new_name};
@@ -180,8 +180,8 @@ const String & ASTIdentifier::name() const
 {
     if (children.empty())
     {
-        assert(!name_parts.empty());
-        assert(!full_name.empty());
+        chassert(!name_parts.empty());
+        chassert(!full_name.empty());
     }
 
     return full_name;
