@@ -43,6 +43,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheReserveAttempts;
+    extern const Event FilesystemCacheFailedReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
@@ -74,6 +75,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_cache_stall_free_space_ratio_keeping_thread[];
+    extern const char file_cache_pause_before_do_eviction[];
 }
 
 namespace FileCacheSetting
@@ -170,7 +172,9 @@ std::string FileCacheReserveStat::Stat::toString() const
     wb << "non-releasable count: " << non_releasable_count << ", ";
     wb << "evicting count: " << evicting_count << ", ";
     wb << "moving count: " << moving_count << ", ";
-    wb << "invalidated count: " << invalidated_count;
+    wb << "invalidated count: " << invalidated_count << ", ";
+    wb << "candidates iteration steps: " << candidates_iteration_steps << ", ";
+    wb << "clients iterated: " << clients_iterated;
     return wb.str();
 }
 
@@ -641,7 +645,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     ///
     /// For each such hole create a file_segment_metadata with file segment state EMPTY.
 
-    assert(!file_segments.empty());
+    chassert(!file_segments.empty());
 
     auto it = file_segments.begin();
     size_t processed_count = 0;
@@ -679,7 +683,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             continue;
         }
 
-        assert(current_pos < segment_range.left);
+        chassert(current_pos < segment_range.left);
 
         auto hole_size = segment_range.left - current_pos;
 
@@ -1097,9 +1101,12 @@ bool FileCache::tryReserve(
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
-    return doTryReserve(
+    const bool success = doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
         failure_reason);
+    if (!success)
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
+    return success;
 }
 
 bool FileCache::doTryReserve(
@@ -1192,6 +1199,8 @@ bool FileCache::doTryReserve(
 
     EvictionCandidates eviction_candidates;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+
+    FailPointInjection::pauseFailPoint(FailPoints::file_cache_pause_before_do_eviction);
 
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
@@ -2558,13 +2567,13 @@ bool FileCache::doDynamicResizeImpl(
 }
 
 FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
-    const String & query_id, const ReadSettings & read_settings)
+    const String & query_id, const FilesystemCacheSettings & cache_settings)
 {
-    if (!query_limit || read_settings.filesystem_cache_max_download_size == 0)
+    if (!query_limit || cache_settings.max_download_size_per_query == 0)
         return {};
 
     auto lock = cache_guard.writeLock();
-    auto context = query_limit->getOrSetQueryContext(query_id, read_settings, lock);
+    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings, lock);
     return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
 }
 

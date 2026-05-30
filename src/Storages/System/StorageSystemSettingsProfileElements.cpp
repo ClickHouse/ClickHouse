@@ -171,7 +171,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
                     break;
                 }
                 default:
-                    assert(false);
+                    chassert(false);
             }
 
             column_index.push_back(current_index);
