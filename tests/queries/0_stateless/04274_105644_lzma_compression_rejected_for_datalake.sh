@@ -26,6 +26,9 @@ TABLES=(
     "${TABLE_PREFIX}_none_mixed"
     "${TABLE_PREFIX}_attach_lzma"
     "${TABLE_PREFIX}_attach_gzip"
+    "${TABLE_PREFIX}_kv_compression"
+    "${TABLE_PREFIX}_kv_compression_method"
+    "${TABLE_PREFIX}_kv_compression_named"
 )
 
 for table in "${TABLES[@]}"; do
@@ -127,6 +130,42 @@ ${CLICKHOUSE_CLIENT} --query "
 # 11. Same for `'gzip'` via the table-function path.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM icebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_tf_gzip', 'Parquet', 'c0 Int32', 'gzip')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 12 / 13 / 14. Key-value form via the `S3` data lake parser:
+#         `IcebergS3('<url>', compression = 'lzma')` is the bot-reported gap
+#         (PR #105667 inline review on `S3/Configuration.cpp`). Without the
+#         alias coverage, the historical `compression` alias slipped past the
+#         data lake rejection because the key-value reader only looked up the
+#         canonical `compression_method` key, leaving
+#         `compression_method_user_provided = false` and the rejection
+#         bypassed.
+#
+#         The rejection fires during argument parsing in
+#         `StorageObjectStorageConfiguration::initialize`, before any S3
+#         client is constructed, so the URL only needs to be syntactically
+#         well-formed (no network access happens).
+#
+# 12: alias form `compression = ...`.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_kv_compression (c0 Int)
+    ENGINE = IcebergS3('http://localhost:11111/test/${TABLE_PREFIX}_kv_compression', compression = 'lzma')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 13: canonical form `compression_method = ...` (regression coverage so the
+#     alias addition cannot silently shadow the canonical key).
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_kv_compression_method (c0 Int)
+    ENGINE = IcebergS3('http://localhost:11111/test/${TABLE_PREFIX}_kv_compression_method', compression_method = 'lzma')
+" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 14: alias inside a positional + key-value mix (positional `format` first,
+#     then key-value `compression = ...`). The S3 parser must still find the
+#     alias even when the canonical lookup also has a positional fallback
+#     available.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_kv_compression_named (c0 Int)
+    ENGINE = IcebergS3('http://localhost:11111/test/${TABLE_PREFIX}_kv_compression_named', 'Parquet', compression = 'lzma')
 " 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
 # Cleanup.
