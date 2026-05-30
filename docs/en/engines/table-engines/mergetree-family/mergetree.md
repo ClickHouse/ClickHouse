@@ -1224,8 +1224,9 @@ Requirements and constraints:
 
 Behavior on the leader vs. on followers:
 
-- Leader: inserts, `INSERT`-driven merges, mutations, `DROP`/`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE` all run normally. Background merges, mutations, moves, and cleanup are active. When leadership is acquired, the leader refreshes its in-memory view of parts from shared storage (loading any parts the previous leader committed) and advances the local block-number counter past anything the previous leader wrote.
-- Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped, and any in-flight merges or moves on a node that just lost leadership are actively cancelled to bound the dual-writer window. `DROP TABLE` is allowed and removes only local metadata, leaving the shared data intact for the leader.
+- Leader: inserts, `INSERT`-driven merges, mutations, `DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE` all run normally. Background merges, mutations, moves, and cleanup are active. When leadership is acquired, the leader refreshes its in-memory view of parts from shared storage (loading any parts the previous leader committed) and advances the local block-number counter past anything the previous leader wrote.
+- Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped, and any in-flight merges or moves on a node that just lost leadership are actively cancelled to bound the dual-writer window.
+- `DROP TABLE` (on the leader or a follower): always removes only local metadata and intentionally leaves the shared object-storage data intact. A node cannot prove it still holds the lease at the moment it executes `DROP`, so it never deletes the shared data to avoid destroying data owned by another leader. Removing the shared data is an explicit out-of-band operation (for example, deleting the bucket prefix once no instance uses the table).
 
 Unsupported operations under `leader_election`:
 
@@ -1235,8 +1236,10 @@ Unsupported operations under `leader_election`:
 
 Example: enabling leader election on an S3-backed table.
 
+All participating instances must point at the same storage prefix. Under the `Atomic` database the prefix is derived from the table `UUID`, so every instance must use the **same** `UUID`. Create the table once with an explicit `UUID` on the first instance:
+
 ```sql
-CREATE TABLE t
+CREATE TABLE t UUID '00000000-0000-0000-0000-000000000001'
 (
     id UInt64,
     value String
@@ -1250,7 +1253,24 @@ SETTINGS
     leader_election_session_timeout = 30;
 ```
 
-The same `CREATE TABLE` statement is issued on every participating instance (with the matching `UUID`/`storage_policy` so they point to the same bucket prefix). After startup, exactly one instance becomes the leader and accepts writes; the others become read-only and watch the lease.
+On every other instance, `ATTACH` the table with the same `UUID` (and the same `storage_policy`) so they share the bucket prefix and lease file:
+
+```sql
+ATTACH TABLE t UUID '00000000-0000-0000-0000-000000000001'
+(
+    id UInt64,
+    value String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    storage_policy = 's3_policy',
+    leader_election = 1,
+    leader_election_heartbeat_interval = 10,
+    leader_election_session_timeout = 30;
+```
+
+If each instance instead runs a plain `CREATE TABLE` without a shared `UUID`, every instance gets a different prefix and they will neither share data nor contend for the same lease. After startup, exactly one instance becomes the leader and accepts writes; the others become read-only and watch the lease.
 
 Related settings:
 
