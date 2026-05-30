@@ -251,7 +251,14 @@ def run_fuzz_job(check_name: str):
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
         error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        # Runner may have aborted before writing status.tsv (e.g. early server
+        # abort); attach available artifacts (incl. sanitizer.log.*) so the report
+        # is not lost.
+        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                early_result.set_files(file)
+        early_result.complete_job()
 
     # parse runner script exit status
     status = Result.Status.FAIL
