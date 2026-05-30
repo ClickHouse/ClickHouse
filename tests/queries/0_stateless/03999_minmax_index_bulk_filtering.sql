@@ -142,6 +142,38 @@ SELECT 'Enum8',
     (SELECT count() FROM t_bulk_enum WHERE e = 'b'
          SETTINGS use_minmax_index_bulk_filtering = 1) AS eq;
 
+-- Float NaN granules. A granule that mixes finite values with NaN is stored as
+-- [finite_min, NaN] because NaN sorts last. A lower-bounded predicate (>=, BETWEEN)
+-- must keep such a granule: the finite values may still match. The bulk DAG path
+-- computes `intersects_lower` as `greaterOrEquals(max, left)`, and `greaterOrEquals(NaN, left)`
+-- is false, so without mirroring KeyCondition's NaN semantics it would wrongly prune the
+-- granule and undercount. Each granule below gets a NaN in its first row, so every
+-- granule's stored max is NaN.
+CREATE TABLE t_bulk_nan
+(
+    f Float64,
+    INDEX idx_f f TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 128;
+
+INSERT INTO t_bulk_nan
+SELECT if(number % 128 = 0, nan, toFloat64(number))
+FROM numbers(2048);
+
+SELECT 'f64 NaN granule, lower bound',
+    (SELECT count() FROM t_bulk_nan WHERE f >= 1000.0
+         SETTINGS use_minmax_index_bulk_filtering = 0) =
+    (SELECT count() FROM t_bulk_nan WHERE f >= 1000.0
+         SETTINGS use_minmax_index_bulk_filtering = 1) AS eq;
+
+SELECT 'f64 NaN granule, BETWEEN',
+    (SELECT count() FROM t_bulk_nan WHERE f BETWEEN 1000.0 AND 1500.0
+         SETTINGS use_minmax_index_bulk_filtering = 0) =
+    (SELECT count() FROM t_bulk_nan WHERE f BETWEEN 1000.0 AND 1500.0
+         SETTINGS use_minmax_index_bulk_filtering = 1) AS eq;
+
 -- Disjunction interaction. With `use_skip_indexes_for_disjunctions = 1` active and
 -- more than one useful index, the runtime disjunction-merge path runs. The bulk path
 -- doesn't populate the partial-disjunction bitset, so it is only used when the
@@ -215,4 +247,5 @@ FROM
 DROP TABLE t_bulk_num;
 DROP TABLE t_bulk_nullable;
 DROP TABLE t_bulk_enum;
+DROP TABLE t_bulk_nan;
 DROP TABLE t_bulk_disjunction;

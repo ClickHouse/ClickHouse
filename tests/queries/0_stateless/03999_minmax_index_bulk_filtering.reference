@@ -7,5 +7,7 @@ Date range	1
 DateTime range	1
 Nullable, fallback path	1
 Enum8	1
+f64 NaN granule, lower bound	1
+f64 NaN granule, BETWEEN	1
 bulk observability parity	1	100
 bulk own-disjunction parity	1	1999

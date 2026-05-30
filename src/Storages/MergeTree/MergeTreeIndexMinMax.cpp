@@ -330,6 +330,20 @@ buildIntersectsAndContains(
             return {nullptr, nullptr};
         intersects_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&max_node, left_lit}, context);
         contains_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&min_node, left_lit}, context);
+
+        /// Mirror the `NaN` semantics of `KeyCondition::checkInHyperrectangle`. A Float granule that
+        /// mixes finite values with `NaN` is stored as `[finite_min, NaN]`, because `NaN` sorts last.
+        /// The scalar path keeps such a granule for a lower-bounded predicate: it forces `contains`
+        /// to false but leaves `intersects` true, because the finite values may still match. Here
+        /// `greaterOrEquals(NaN, left)` is false, which would wrongly prune the granule, so treat a
+        /// `NaN` granule max as reaching any finite lower bound. `contains_lower` uses the granule min
+        /// (finite in this case) and `contains_upper` (granule max) already evaluates to false against
+        /// `NaN`, so `contains` stays false as the scalar path requires.
+        if (WhichDataType(column_type).isFloat())
+        {
+            const auto & max_is_nan = addNamedFunction(dag, "isNaN", {&max_node}, context);
+            intersects_lower = &addNamedFunction(dag, "or", {intersects_lower, &max_is_nan}, context);
+        }
     }
 
     const auto & intersects = addNamedFunction(dag, "and", {intersects_upper, intersects_lower}, context);
