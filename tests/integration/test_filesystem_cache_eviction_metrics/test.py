@@ -81,8 +81,17 @@ def _assert_eviction_metrics(evictions_before, by_client_before, per_client):
         "SELECT * FROM system.dimensional_metrics "
         "WHERE metric LIKE 'filesystem_cache_%' FORMAT Vertical"
     )
+    profile_evictions = node.query(
+        "SELECT value FROM system.events WHERE event = 'FilesystemCacheEvictedFileSegments'"
+    ).strip()
+    cache_size = node.query(
+        "SELECT sum(size) FROM system.filesystem_cache WHERE cache_name = 'cache_with_eviction_metrics'"
+    ).strip()
     evictions = sum_dim("filesystem_cache_evictions_total") - evictions_before
-    assert evictions > 0, f"Aggregate eviction counter did not advance:\n{debug}"
+    assert evictions > 0, (
+        f"Aggregate eviction counter did not advance:\n{debug}\n"
+        f"ProfileEvent evictions={profile_evictions}, cache_size={cache_size}"
+    )
     assert sum_dim("filesystem_cache_evicted_bytes_total") > 0
 
     slru_queue_evictions = float(node.query(
