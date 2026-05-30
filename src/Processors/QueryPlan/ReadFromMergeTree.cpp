@@ -2904,8 +2904,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// used: a full-scan `ORDER BY pk` has `selected_marks_pk == total_marks_pk` because
     /// nothing was filtered, not because the index failed — switching that case to parallel
     /// reading with global sort would replace a low-memory streaming plan with one that can
-    /// hit `MEMORY_LIMIT_EXCEEDED`.
-    const bool has_filter_for_pk = query_info.prewhere_info || query_info.filter_actions_dag;
+    /// hit `MEMORY_LIMIT_EXCEEDED`. A deferred PREWHERE (FINAL with `apply_prewhere_after_final`)
+    /// is excluded from index analysis, so it never reduces `selected_marks_pk`; treating it as
+    /// a PK filter would misfire the guard on what is effectively a full scan, so we require the
+    /// PREWHERE to be non-deferred.
+    const bool has_filter_for_pk = (query_info.prewhere_info && !deferred_prewhere_info) || query_info.filter_actions_dag;
     if (apply_pk_selectivity_check && has_filter_for_pk && read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
     {
         const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
