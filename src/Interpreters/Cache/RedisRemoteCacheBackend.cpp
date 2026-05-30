@@ -261,7 +261,7 @@ catch (...)
 }
 
 std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
-RedisRemoteCacheBackend::getWithKey(const QueryResultCache::Key & /*key*/, const String & redis_key)
+RedisRemoteCacheBackend::getWithKey(const QueryResultCache::Key & key, const String & redis_key)
 try
 {
     auto result = execute([&](Poco::Redis::Client & client)
@@ -276,7 +276,19 @@ try
     if (result.isNull())
         return std::nullopt;
 
-    return deserializeValue(result.value(), max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows);
+    auto deserialized = deserializeValue(result.value(), max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows);
+
+    /// The Redis value is external and untrusted (corruption, manual writes, namespace collisions). Verify
+    /// that the key embedded in the stored value actually matches the requested query before returning a hit,
+    /// otherwise a value planted for a different AST could be served as the result of this query. On mismatch
+    /// degrade to a cache miss rather than returning a wrong result.
+    if (!(deserialized.first == key))
+    {
+        LOG_WARNING(logger, "Discarding Redis query cache value at key {} because the stored key does not match the requested query", redis_key);
+        return std::nullopt;
+    }
+
+    return deserialized;
 }
 catch (...)
 {
