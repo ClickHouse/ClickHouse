@@ -4659,7 +4659,7 @@ Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not b
 Replace 'multiIf' with only one condition to 'if'.
 )", 0) \
     DECLARE(Bool, optimize_if_transform_const_strings_to_lowcardinality, false, R"(
-If enabled, for If and Transform functions with constant branches will return LowCardinality.
+If enabled, the `if`, `multiIf`, and `transform` functions with constant string result branches (and defaults) will return `LowCardinality(String)` instead of `String`.
 )", 0) \
     DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
 Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
