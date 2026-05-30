@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
+
+/// `ExpressionActionsPtr` (used below only as a member pointer) is forward-declared via
+/// `KeyCondition.h`; the heavy `Interpreters/ExpressionActions.h` is included in the `.cpp`
+/// to keep this relatively high-fanout header light.
 
 
 namespace DB
