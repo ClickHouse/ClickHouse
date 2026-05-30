@@ -25,6 +25,7 @@
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/ASTNonDeterministicFunctions.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -313,6 +314,11 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsTimezone session_timezone;
+}
 
 size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
@@ -4189,8 +4195,6 @@ bool isSettingIgnoredInPartialAggregateCacheSemanticKey(const String & setting_n
 
 void hashSemanticsAffectingSettingsForPartialAggregateCache(const Settings & settings, SipHash & hash)
 {
-    namespace Setting = DB::Setting;
-
     /// Always hash session timezone: it affects DateTime parsing in GROUP BY keys but may be absent from `changes()`.
     hash.update(settings[Setting::session_timezone].value);
 
