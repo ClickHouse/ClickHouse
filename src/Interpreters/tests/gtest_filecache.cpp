@@ -2189,8 +2189,8 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
 
     auto run_workload = [&](const std::string & cache_name, bool expose, bool per_client)
     {
-        getMutableContext().context->setSetting("filesystem_cache_expose_prometheus_eviction_metrics", Field(expose));
-        getMutableContext().context->setSetting("filesystem_cache_expose_prometheus_eviction_metrics_per_client", Field(per_client));
+        query_context->setSetting("filesystem_cache_expose_prometheus_eviction_metrics", Field(expose));
+        query_context->setSetting("filesystem_cache_expose_prometheus_eviction_metrics_per_client", Field(per_client));
 
         DB::FileCacheSettings settings;
         settings[FileCacheSetting::path] = cache_base_path;
