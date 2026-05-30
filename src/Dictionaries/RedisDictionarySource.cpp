@@ -162,19 +162,31 @@ namespace DB
         RedisArray keys;
         for (auto row : requested_rows)
         {
-            RedisArray key;
-            for (size_t i = 0; i < key_columns.size(); ++i)
+            if (configuration.storage_type == RedisStorageType::SIMPLE)
             {
-                const auto & type = dict_struct.key->at(i).type;
+                const auto & type = dict_struct.key->at(0).type;
                 if (isInteger(type))
-                    key << DB::toString(key_columns[i]->get64(row));
+                    keys << DB::toString(key_columns[0]->get64(row));
                 else if (isString(type))
-                    key << (*key_columns[i])[row].safeGet<String>();
+                    keys << (*key_columns[0])[row].safeGet<String>();
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
             }
-
-            keys.add(key);
+            else
+            {
+                RedisArray key;
+                for (size_t i = 0; i < key_columns.size(); ++i)
+                {
+                    const auto & type = dict_struct.key->at(i).type;
+                    if (isInteger(type))
+                        key << DB::toString(key_columns[i]->get64(row));
+                    else if (isString(type))
+                        key << (*key_columns[i])[row].safeGet<String>();
+                    else
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
+                }
+                keys.add(key);
+            }
         }
 
         BlockIO io;
