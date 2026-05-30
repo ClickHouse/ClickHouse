@@ -13,6 +13,7 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <base/hex.h>
 #include <Common/callOnce.h>
 #include <Common/Exception.h>
@@ -2129,7 +2130,8 @@ FileCache::~FileCache()
 
 void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const
 {
-    const auto & settings = Context::getGlobalContextInstance()->getSettingsRef();
+    auto query_context = CurrentThread::getQueryContext();
+    const auto & settings = query_context ? query_context->getSettingsRef() : Context::getGlobalContextInstance()->getSettingsRef();
     if (!settings[Setting::filesystem_cache_expose_prometheus_eviction_metrics])
         return;
 
