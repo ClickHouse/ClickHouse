@@ -1060,6 +1060,7 @@ public:
     void rebuild(const NameSet & servers)
     {
         virtual_nodes.clear();
+        nodes_num = 0;
         if (servers.empty())
             return;
 
@@ -1098,7 +1099,7 @@ private:
     const size_t total_nodes;
     LoggerPtr log;
     std::map<UInt128, std::string> virtual_nodes;
-    size_t nodes_num;
+    size_t nodes_num = 0;
 };
 
 std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage_id)
