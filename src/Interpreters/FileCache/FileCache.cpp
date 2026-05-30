@@ -124,7 +124,7 @@ namespace
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_total",
-        "Number of file segments evicted from a filesystem cache, labelled by cache name and source priority queue. Emitted only when the cache has `filesystem_cache_expose_prometheus_eviction_metrics` enabled.",
+        "Number of file segments evicted from a filesystem cache, labelled by cache name and source priority queue.",
         {"cache_name", "queue"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_total = DimensionalMetrics::Factory::instance().registerMetric(
@@ -134,12 +134,12 @@ namespace
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits",
-        "Distribution of cache-hit counts on file segments at the moment of their eviction, labelled by source priority queue.",
+        "Distribution of cache-hit counts on file segments at the moment of their eviction, labelled by cache name and source priority queue.",
         hits_buckets, {"cache_name", "queue"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_size_bytes = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_size_bytes",
-        "Distribution of byte sizes of evicted file segments, labelled by source priority queue.",
+        "Distribution of byte sizes of evicted file segments, labelled by cache name and source priority queue.",
         size_buckets, {"cache_name", "queue"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
