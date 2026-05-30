@@ -440,6 +440,10 @@ std::pair<std::vector<SpannCentroidOffset>, std::vector<std::vector<SpannPosting
 
     for (size_t i = 0; i < accumulated_vectors.size(); ++i)
     {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto query_status = query_context->getProcessListElementSafe())
+                query_status->throwIfKilled();
+
         const auto & vec = accumulated_vectors[i];
         auto search_result = centroid_index->search(
             vec.data(), vector_spann_centroid_assignment_top_k, unum::usearch::index_dense_t::any_thread(), false, default_expansion_search);
@@ -701,6 +705,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
             continue;
         for (const auto & entry : granule->postings_by_centroid[centroid_idx])
         {
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                if (auto query_status = query_context->getProcessListElementSafe())
+                    query_status->throwIfKilled();
+
             Candidate c;
             c.row_id = entry.row_id;
             c.distance = distanceToQuery(metric_kind, query_float.data(), entry.vector.data(), params.dimensions);
