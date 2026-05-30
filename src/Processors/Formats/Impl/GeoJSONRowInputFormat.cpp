@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
 
 namespace
@@ -230,10 +231,27 @@ void GeoJSONRowInputFormat::readPrefix()
 void GeoJSONRowInputFormat::readSuffix()
 {
     auto & buf = getReadBuffer();
-    JSONUtils::skipTheRestOfObject(buf, format_settings.json);
-    /// Reject trailing data after the top-level FeatureCollection object instead of ignoring it.
+    /// We are positioned right after the `features` array. Strictly skip any remaining members
+    /// of the top-level FeatureCollection object (validating commas between members and rejecting
+    /// malformed JSON even under ignored fields, e.g. a trailing `bbox` `{"a":1 "b":2}`) up to and
+    /// including the closing `}`.
+    while (!JSONUtils::checkAndSkipObjectEnd(buf))
+    {
+        JSONUtils::skipComma(buf);
+        JSONUtils::readFieldName(buf, format_settings.json);
+        skipJSONValueStrict(buf, format_settings.json);
+    }
+
+    /// Reject trailing data after the top-level FeatureCollection object instead of ignoring it,
+    /// but tolerate a statement terminator: when the document is supplied as inline `INSERT` data
+    /// in a multi-query script, the read buffer legitimately contains the `;` that separates it
+    /// from the following statement (and possibly that statement itself), which the query parser
+    /// consumes afterwards. We must not assert plain EOF here, as that would reject such inserts.
     skipWhitespaceIfAny(buf);
-    assertEOF(buf);
+    if (!buf.eof() && *buf.position() != ';')
+        throw Exception(
+            ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
+            "GeoJSON: unexpected trailing data after the top-level FeatureCollection object");
 }
 
 bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)

@@ -23,7 +23,7 @@ Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produce
 |--------------|----------|---------------------------------------------------------------------------------------------|
 | `id`         | `String` | The feature's top-level `id` field, or an empty string if absent.                          |
 | `geometry`   | `Geometry`        | The feature's geometry, stored as a `Geometry` variant type.                                |
-| `properties` | `JSON`            | The feature's `properties` object, stored as a semi-structured `JSON` column.              |
+| `properties` | `Nullable(JSON)`  | The feature's `properties` object, stored as a semi-structured `JSON` column. An explicit `"properties": null` is preserved as `NULL`. |
 
 The `Geometry` type is a `Variant` that can hold `Point`, `LineString`, `Polygon`, `MultiPolygon`, `MultiLineString`, or `Ring`. The `geometry` column is `NULL` only when the feature's geometry is an explicit JSON `null`. A valid GeoJSON geometry type that cannot be mapped to a supported variant (e.g. `GeometryCollection` or `MultiPoint`) throws by default; this can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below.
 
@@ -193,11 +193,11 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 ```
 
 ```response title="Response"
-┌─name───────┬─type─────┐
-│ id         │ String   │
-│ geometry   │ Geometry │
-│ properties │ JSON     │
-└────────────┴──────────┘
+┌─name───────┬─type───────────┐
+│ id         │ String         │
+│ geometry   │ Geometry       │
+│ properties │ Nullable(JSON) │
+└────────────┴────────────────┘
 ```
 
 ## Handling unsupported geometry types {#unsupported-geometry}
