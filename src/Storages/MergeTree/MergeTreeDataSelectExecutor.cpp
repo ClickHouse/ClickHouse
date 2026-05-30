@@ -6,6 +6,7 @@
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -115,6 +116,7 @@ namespace ErrorCodes
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
     extern const int SAMPLING_NOT_SUPPORTED;
+    extern const int ILLEGAL_STREAM;
 }
 
 
@@ -177,6 +179,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read,
     bool enable_parallel_reading) const
 {
+    if (query_info.isStream() && enable_parallel_reading)
+        throw Exception(ErrorCodes::ILLEGAL_STREAM,
+            "STREAM is not supported with parallel replicas");
+
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
     auto step = readFromParts(
@@ -1511,13 +1517,18 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
     /// If merge_tree_select_result_ptr != nullptr, we use analyzed result so parts will always be empty.
     if (merge_tree_select_result_ptr)
     {
-        if (merge_tree_select_result_ptr->parts_with_ranges.empty())
+        if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
     /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
-        return {};
-    else if (parts->empty())
+    {
+        if (!query_info.isStream())
+            return {};
+
+        parts = std::make_shared<const RangesInDataParts>();
+    }
+    else if (parts->empty() && !query_info.isStream())
         return {};
 
     return std::make_unique<ReadFromMergeTree>(
@@ -2207,11 +2218,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     for (const auto & prev_part : parts)
     {
         const auto & part_or_projection = prev_part.data_part;
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+        const auto num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
 
         if (query_status)
             query_status->checkTimeLimit();
 
-        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (part_values && !part_values->contains(part->name))
             continue;
 
@@ -2225,13 +2237,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
                 continue;
         }
 
-        size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
-
         counters.num_initial_selected_parts += 1;
         counters.num_initial_selected_granules += num_granules;
 
-        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        /// hyperrectangle must come from the part whose metadata built the condition.
+        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -2274,6 +2284,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+            size_t num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
+
             if (part_values && !part_values->contains(part->name))
                 continue;
 
@@ -2291,14 +2303,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
                 continue;
 
-            size_t num_granules = part->index_granularity->getMarksCountWithoutFinal();
-
             counters.num_initial_selected_parts += 1;
             counters.num_initial_selected_granules += num_granules;
 
-            if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types)
-                        .can_be_true)
+            /// hyperrectangle must come from the part whose metadata built the condition.
+            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
                 continue;
 
             counters.num_parts_after_minmax += 1;
