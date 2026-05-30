@@ -64,9 +64,17 @@ fi
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP"
 wait "$SELECT_PID"
 
-# The pin is released now, so the cache is fully releasable again.
-$CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
-AFTER=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache")
+# The pin is released now, so the cache is fully releasable again. The scan's
+# server-side teardown (executor destruction, prefetch-worker drain, pin
+# release) can lag the client's exit that `wait` observed, so a single drop may
+# race segments that are momentarily still held. Retry the drop until the cache
+# empties; a genuine leak never empties and still fails this bounded loop.
+AFTER=1
+for _ in $(seq 1 100); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
+    AFTER=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache")
+    [ "$AFTER" -eq 0 ] && break
+done
 if [ "$AFTER" -eq 0 ]; then
     echo "cache empty after release: OK"
 else
