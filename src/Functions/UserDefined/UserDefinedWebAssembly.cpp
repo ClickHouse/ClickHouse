@@ -340,7 +340,7 @@ public:
 
         ProfileEventTimeIncrement<Microseconds> timer_deserialize(ProfileEvents::WasmDeserializationMicroseconds);
 
-        Block result_header({ColumnWithTypeAndName(nullptr, result_type, "result")});
+        Block result_header({ColumnWithTypeAndName(result_type->createColumn(), result_type, "result")});
 
         auto pipeline = QueryPipeline(
             Pipe(context->getInputFormat(format_name, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
@@ -446,9 +446,9 @@ private:
 };
 
 
-WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
+WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context, WebAssembly::FuelMode fuel_mode)
 {
-    WebAssembly::WasmModule::Config cfg;
+    WebAssembly::WasmModule::Config cfg(fuel_mode);
 
     UInt64 max_fuel = context->getSettingsRef()[Setting::webassembly_udf_max_fuel];
     if (common::mulOverflow(max_fuel, 1024, cfg.fuel_limit))
@@ -472,7 +472,7 @@ public:
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
               wasm_module,
-              getWasmModuleConfig(context),
+              getWasmModuleConfig(context, user_defined_function->getSettings().getFuelMode()),
               interrupt_source.get_token())
     {
     }
@@ -629,7 +629,8 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
             create_function_query ? create_function_query->formatForErrorMessage() : "nullptr");
 
     auto function_def = create_query->validateAndGetDefinition();
-    auto [wasm_module, module_hash] = module_manager.getModule(function_def.module_name);
+    auto fuel_mode = function_def.settings.getFuelMode();
+    auto [wasm_module, module_hash] = module_manager.getModule(function_def.module_name, fuel_mode);
     transformEndianness<std::endian::big>(module_hash);
     String module_hash_str = getHexUIntLowercase(module_hash);
     if (function_def.module_hash.empty())
@@ -731,14 +732,14 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 {
     struct SettingDefinition
     {
-        explicit SettingDefinition(std::function<void(std::string_view, const Field &)> check_, Field default_value_)
-            : default_value(std::move(default_value_)), check(std::move(check_))
+        explicit SettingDefinition(std::function<void(std::string_view, Field &)> normalize_and_check_, Field default_value_)
+            : default_value(std::move(default_value_)), normalize_and_check(std::move(normalize_and_check_))
         {
-            chassert(check);
+            chassert(normalize_and_check);
         }
 
         Field default_value;
-        std::function<void(std::string_view, const Field &)> check;
+        std::function<void(std::string_view, Field &)> normalize_and_check;
     };
 
     struct SettingStringFromSet
@@ -746,7 +747,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         SettingDefinition withDefault(String default_value) const
         {
             return SettingDefinition(
-                [values_ = this->values](std::string_view name, const Field & value) // NOLINT
+                [values_ = this->values](std::string_view name, Field & value) // NOLINT
                 {
                     if (value.getType() != Field::Types::String)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected String, got '{}'", value.getTypeName());
@@ -763,9 +764,43 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         UnorderedSetWithMemoryTracking<String> values;
     };
 
+    struct SettingBool
+    {
+        SettingDefinition withDefault(bool default_value) const
+        {
+            return SettingDefinition(
+                [](std::string_view name, Field & value)
+                {
+                    if (value.getType() == Field::Types::Bool)
+                        return;
+
+                    if (value.getType() == Field::Types::UInt64)
+                    {
+                        UInt64 u = value.safeGet<UInt64>();
+                        if (u != 0 && u != 1)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Setting '{}' must be 0/1 or false/true, got {}",
+                                name,
+                                u);
+                        value = Field(static_cast<bool>(u));
+                        return;
+                    }
+
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Setting '{}' must be a boolean, got {}",
+                        name,
+                        value.getTypeName());
+                },
+                Field(default_value));
+        }
+    };
+
     const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {
         /// Serialization format for input/output data for ABI what uses serialization
-        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
+        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
+        {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
     };
 
     Strings getAllRegisteredNames() const override
@@ -777,12 +812,12 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         return result;
     }
 
-    void check(const String & name, const Field & value) const
+    void normalizeAndCheck(const String & name, Field & value) const
     {
         auto it = settings_def.find(name);
         if (it == settings_def.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting name: '{}'{}", name, getHintsMessage(name));
-        it->second.check(name, value);
+        it->second.normalize_and_check(name, value);
     }
 
     Field getDefault(const String & name) const
@@ -802,7 +837,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
 void WebAssemblyFunctionSettings::trySet(const String & name, Field value)
 {
-    WebAssemblyFunctionSettingsConstraits::instance().check(name, value);
+    WebAssemblyFunctionSettingsConstraits::instance().normalizeAndCheck(name, value);
     settings.emplace(name, std::move(value));
 }
 
@@ -812,6 +847,16 @@ Field WebAssemblyFunctionSettings::getValue(const String & name) const
     if (it == settings.end())
         return WebAssemblyFunctionSettingsConstraits::instance().getDefault(name);
     return it->second;
+}
+
+bool WebAssemblyFunctionSettings::isFuelEnabled() const
+{
+    return getValue("webassembly_udf_enable_fuel").safeGet<bool>();
+}
+
+WebAssembly::FuelMode WebAssemblyFunctionSettings::getFuelMode() const
+{
+    return isFuelEnabled() ? WebAssembly::FuelMode::Enabled : WebAssembly::FuelMode::Disabled;
 }
 
 }

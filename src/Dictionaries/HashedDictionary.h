@@ -388,7 +388,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -1402,7 +1402,7 @@ template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 template <typename GetContainersFunc>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func)
 {
-    assert(attribute_index < attributes.size());
+    chassert(attribute_index < attributes.size());
 
     auto & attribute = attributes[attribute_index];
 
