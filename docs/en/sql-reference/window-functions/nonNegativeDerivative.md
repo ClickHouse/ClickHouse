@@ -14,9 +14,9 @@ For each row, the derivative is computed against the *previous row in the window
 The `timestamp_column` argument is read only to measure the elapsed time between the current row and that previous row; it does not order the rows itself.
 
 :::warning
-`nonNegativeDerivative` does not order rows by `timestamp_column`.
-You should normally order the window by the same column you pass as `timestamp_column` (for example `... OVER (ORDER BY ts)` together with `nonNegativeDerivative(metric, ts)`).
-If the window's `ORDER BY` differs, the function computes time deltas over a different row sequence than you might expect, which usually produces meaningless results.
+`nonNegativeDerivative` does not order rows by `timestamp_column`; the window's `ORDER BY` does.
+For the formula below to apply, `timestamp_column` must be strictly increasing in the window's evaluation order, so you should normally order the window by `timestamp_column` ascending (for example `... OVER (ORDER BY ts ASC)` together with `nonNegativeDerivative(metric, ts)`).
+Whenever the elapsed time between the current row and the previous row is non-positive - which happens with `ORDER BY timestamp_column DESC` or with duplicate (equal) timestamps - the function returns `0` for that row instead of following the formula.
 :::
 
 The result is the rate of change of the metric per `INTERVAL`, with any negative value clamped to `0`.
@@ -29,7 +29,7 @@ nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS or RANGE expression_to_bound_rows_within_the_group])
 ```
 
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
@@ -44,8 +44,9 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 For each row, the value is computed as:
 
-- `0` for the first row, and
-- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}} * \text{interval}$ for the $i$-th row.
+- `0` for the first row;
+- `0` for any row whose elapsed time since the previous row is non-positive (that is, $\text{timestamp}_i - \text{timestamp}_{i-1} \le 0$, as happens with descending order or duplicate timestamps); and
+- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}} * \text{interval}$ otherwise.
 
 If the computed value would be negative, it is clamped to `0`. The return type is [Float64](../data-types/float.md).
 
