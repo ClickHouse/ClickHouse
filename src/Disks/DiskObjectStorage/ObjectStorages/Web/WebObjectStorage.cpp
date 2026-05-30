@@ -186,16 +186,16 @@ size_t WebObjectStorage::getMaxDirectoriesToRead() const
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>) const
+    std::optional<size_t>,
+    bool use_external_buffer,
+    bool /* restrict_seek */) const
 {
     auto urls = object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path);
     /// The async reader (`AsynchronousBoundedReadBuffer` -> `ThreadPoolRemoteFSReader`) reads into an
     /// external buffer regardless of the number of failover URLs, and asserts that the wrapped reader
-    /// honors it. So `use_external_buffer` must follow `remote_read_buffer_use_external_buffer` even
-    /// when `urls.size() > 1`; `ReadBufferFromWebServer` selects a working failover URL with a separate
+    /// honors it. The caller (`ReadPipeline`) passes `use_external_buffer` accordingly even when
+    /// `urls.size() > 1`; `ReadBufferFromWebServer` selects a working failover URL with a separate
     /// connectivity probe in that case.
-    const bool use_external_buffer = read_settings.remote_read_buffer_use_external_buffer;
-
     return std::make_unique<ReadBufferFromWebServer>(
         std::move(urls),
         getContext(),

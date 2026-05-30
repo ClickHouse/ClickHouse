@@ -53,12 +53,12 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     bool use_external_buffer_,
     size_t read_until_position_,
     HTTPHeaderEntries headers_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, file_size_)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , urls(std::move(urls_))
     , current_url(urls.empty() ? "" : urls.front())
-    , buf_size(settings_.remote_fs_buffer_size)
+    , buf_size(settings_.remote_fs_settings.buffer_size)
     , read_settings(settings_)
     , headers(std::move(headers_))
     , use_external_buffer(use_external_buffer_)

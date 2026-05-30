@@ -2,7 +2,6 @@
 
 #include <string>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -18,9 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
@@ -92,6 +89,8 @@ class Client;
 
 namespace DB
 {
+
+class ReadPipeline;
 
 namespace ErrorCodes
 {
@@ -230,7 +229,26 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const = 0;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const = 0;
+
+    /// Populate a `ReadPipeline` with the source and any stages this storage needs.
+    ///
+    /// The "source" is the bottom layer of the read-buffer chain — a descriptor
+    /// (not an actual buffer) that tells `ReadPipeline::build()` how to construct
+    /// the base `ReadBufferFromFileBase`. For object storages the descriptor is
+    /// `ObjectStorageSource { storage, read_hint }`; later stages (disk cache,
+    /// gather, async-prefetch, decryption) wrap around the buffer it produces.
+    ///
+    /// Default: sets the source to this storage. `CachedObjectStorage` overrides
+    /// to delegate to the inner storage and adds the disk cache stage.
+    virtual void prepareRead(
+        ObjectStoragePtr storage,
+        const StoredObjects & objects,
+        const ReadSettings & read_settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const;
 
     /// Read small object into memory and return it as string
     /// Also contain consistent object metadata if available in this object storage.

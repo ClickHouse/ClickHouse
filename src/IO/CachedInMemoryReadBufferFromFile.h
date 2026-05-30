@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <mutex>
 
 #include <IO/ReadBufferFromFileBase.h>
@@ -18,7 +19,7 @@ public:
     /// `in_` should be seekable and should be able to read the whole file from 0 to in_->getFileSize();
     /// in particular, don't call setReadUntilPosition() on `in_` directly, call
     /// CachedInMemoryReadBufferFromFile::setReadUntilPosition().
-    CachedInMemoryReadBufferFromFile(PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_);
+    CachedInMemoryReadBufferFromFile(PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const PageCacheSettings & settings_);
 
     String getFileName() const override;
     String getInfoForLog() override;
@@ -37,7 +38,7 @@ public:
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const override;
     bool supportsReadAt() override { return innerSupportsReadAt(); }
 
-    std::vector<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
+    VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
     bool supportsReadAtRetainCells() const override { return innerSupportsReadAt(); }
 
     PageCache::MappedPtr getPageCacheCell() const { return chunk; }
@@ -48,7 +49,7 @@ private:
     PageCacheByteRange cache_range; // offset is offset of `chunk` start
     SipHash cache_key_base_hash;
     PageCachePtr cache;
-    ReadSettings settings;
+    PageCacheSettings settings;
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     size_t file_offset_of_buffer_end = 0;
@@ -70,7 +71,7 @@ private:
     /// `block_callback` is called after reading each cell, in sequence.
     /// The callback may move the cell out; then the returned vector will have nullptr.
     /// If `block_callback` returns true, reading stops.
-    std::vector<PageCache::MappedPtr> populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback = nullptr) const;
+    VectorWithMemoryTracking<PageCache::MappedPtr> populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback = nullptr) const;
 
     bool nextImpl() override;
 };
