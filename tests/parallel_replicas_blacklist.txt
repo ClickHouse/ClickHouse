@@ -9,11 +9,6 @@
 03045_unknown_identifier_alias_substitution
 02561_temporary_table_sessions
 
-    https://github.com/ClickHouse/ClickHouse/issues/74324
-    MULTIPLE_EXPRESSIONS_FOR_ALIAS
-00597_push_down_predicate_long
-02559_multiple_read_steps_in_prewhere
-
     https://github.com/ClickHouse/ClickHouse/issues/74367
     Cannot find column in source stream
 01358_mutation_delete_null_rows
