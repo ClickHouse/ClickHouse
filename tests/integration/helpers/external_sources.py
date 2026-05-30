@@ -707,7 +707,7 @@ class SourceRedis(ExternalSource):
 
     def compatible_with_layout(self, layout):
         return (
-            layout.is_simple
+            (layout.is_simple or "cache" in layout.name)
             and self.storage_type == "simple"
             or layout.is_complex
             and self.storage_type == "hash_map"
