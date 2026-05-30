@@ -22,11 +22,8 @@ namespace ProfileEvents
     extern const Event TextIndexLazyBruteForceIntersections;
     extern const Event TextIndexLazyLeapfrogIntersections;
     extern const Event TextIndexLazySegmentsSkippedDense;
-    extern const Event TextIndexLazySegmentsSkippedCovered;
-    extern const Event TextIndexLazyBlocksSkippedCovered;
-    extern const Event TextIndexLazyAndSegmentsSkippedZero;
-    extern const Event TextIndexLazyAndBlocksSkippedZero;
-    extern const Event TextIndexLazyAndSegmentsSkippedDense;
+    extern const Event TextIndexLazySegmentsSkippedResolved;
+    extern const Event TextIndexLazyBlocksSkippedResolved;
 }
 
 namespace DB
@@ -98,12 +95,8 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
     decoded_count = embedded_values.size();
     decoded_values_ptr = embedded_values.data();
 
-    if (!info->ranges.empty())
-    {
-        embedded_range_begin = info->ranges.front().begin;
-        embedded_range_end = info->ranges.back().end;
-        embedded_has_range = true;
-    }
+    embedded_range_begin = decoded_values_ptr[0];
+    embedded_range_end = decoded_values_ptr[decoded_count - 1];
 }
 
 PostingListCursor::PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_)
@@ -125,7 +118,6 @@ PostingListCursor::PostingListCursor(std::shared_ptr<const std::vector<UInt32>> 
     /// and last elements — no `TokenPostingsInfo` needed.
     embedded_range_begin = shared_values->front();
     embedded_range_end = shared_values->back();
-    embedded_has_range = true;
 
     double span = static_cast<double>(embedded_range_end) - static_cast<double>(embedded_range_begin) + 1.0;
     density_val = span > 0.0 ? static_cast<double>(decoded_count) / span : 0.0;
@@ -149,16 +141,10 @@ PostingListCursor::~PostingListCursor()
         ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsPrepared, counters.segments_prepared);
     if (counters.segments_skipped_dense)
         ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
-    if (counters.segments_skipped_covered)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedCovered, counters.segments_skipped_covered);
-    if (counters.blocks_skipped_covered)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedCovered, counters.blocks_skipped_covered);
-    if (counters.and_segments_skipped_dense)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense, counters.and_segments_skipped_dense);
-    if (counters.and_segments_skipped_zero)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedZero, counters.and_segments_skipped_zero);
-    if (counters.and_blocks_skipped_zero)
-        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndBlocksSkippedZero, counters.and_blocks_skipped_zero);
+    if (counters.segments_skipped_resolved)
+        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedResolved, counters.segments_skipped_resolved);
+    if (counters.blocks_skipped_resolved)
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedResolved, counters.blocks_skipped_resolved);
 }
 
 void PostingListCursor::prepareSegment(size_t segment_idx)
@@ -551,8 +537,6 @@ inline void requireRowOffsetRepresentable(size_t row_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting-list cursor doesn't support row_offset larger than UINT32_MAX, got {}", row_offset);
 }
 
-enum class PadOp { Or, And };
-
 template <PadOp op>
 inline void padColumn(UInt8 * __restrict out, const uint32_t * values, size_t row_begin, size_t begin, size_t end)
 {
@@ -564,6 +548,19 @@ inline void padColumn(UInt8 * __restrict out, const uint32_t * values, size_t ro
         else
             ++out[relative];
     }
+}
+
+/// Apply the padding op to a contiguous, fully-dense output region (every row in it is a match):
+///   PadOp::Or  — set every byte to 1;
+///   PadOp::And — increment every counter.
+template <PadOp op>
+inline void padDenseRange(UInt8 * __restrict out, size_t count)
+{
+    if constexpr (op == PadOp::Or)
+        memset(out, 1, count);
+    else
+        for (size_t i = 0; i < count; ++i)
+            ++out[i];
 }
 
 #if USE_MULTITARGET_CODE
@@ -615,6 +612,19 @@ bool hasNoZeros(const UInt8 * data, size_t count)
     return memchr(data, 0, count) == nullptr;
 }
 
+/// Whether the output region [data, data + count) needs no contribution from this posting list
+/// and the whole segment/block can be skipped:
+///   PadOp::Or  — already all-ones (every row set, nothing left to set);
+///   PadOp::And — already all-zeros (no row can ever reach count == n, so incrementing is pointless).
+template <PadOp op>
+inline bool canSkipRegion(const UInt8 * data, size_t count)
+{
+    if constexpr (op == PadOp::Or)
+        return hasNoZeros(data, count);
+    else
+        return memoryIsZero(data, 0, count);
+}
+
 } // anonymous namespace
 
 void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
@@ -622,37 +632,24 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
     requireRowOffsetRepresentable(row_offset);
 
     if (is_embedded)
-    {
-        if (decoded_count == 0)
-            return;
+        linearEmbedded<PadOp::Or>(data, row_offset, num_rows);
+    else
+        linearSegments<PadOp::Or>(data, row_offset, num_rows);
+}
 
-        /// Level 1 (dense memset): if every row in the range is in the posting list, just memset.
-        if (embedded_has_range)
-        {
-            size_t range_span = embedded_range_end - embedded_range_begin + 1;
+void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
+{
+    requireRowOffsetRepresentable(row_offset);
 
-            if (decoded_count == range_span)
-            {
-                size_t clip_begin = std::max(embedded_range_begin, row_offset);
-                size_t clip_end = std::min(embedded_range_end + 1, row_offset + num_rows);
-                if (clip_begin < clip_end)
-                {
-                    ++counters.segments_skipped_dense;
-                    memset(data + (clip_begin - row_offset), 1, clip_end - clip_begin);
-                    return;
-                }
-            }
-        }
+    if (is_embedded)
+        linearEmbedded<PadOp::And>(data, row_offset, num_rows);
+    else
+        linearSegments<PadOp::And>(data, row_offset, num_rows);
+}
 
-        /// Find range within decoded_values.
-        const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
-        const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
-        size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
-        size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
-        padColumn<PadOp::Or>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
-        return;
-    }
-
+template <PadOp op>
+void PostingListCursor::linearSegments(UInt8 * data, size_t row_offset, size_t num_rows)
+{
     if (info->ranges.empty() || total_segments == 0)
         return;
 
@@ -667,9 +664,8 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         if (row_offset + num_rows <= seg_begin)
             break;
 
-        /// Level 2a: segment-level "already-covered" skip.
-        /// If the output region for this segment is already all-ones, skip entirely
-        /// (saves the I/O cost of prepareSegment).
+        /// Level 2a: segment-level skip. If the output region for this segment is already resolved
+        /// (all-ones for OR, all-zeros for AND), skip entirely — saving the I/O cost of prepareSegment.
         {
             size_t clip_begin = std::max(seg_begin, row_offset);
             size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
@@ -679,9 +675,9 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
                 size_t clip_off = clip_begin - row_offset;
                 size_t clip_count = clip_end - clip_begin;
 
-                if (hasNoZeros(data + clip_off, clip_count))
+                if (canSkipRegion<op>(data + clip_off, clip_count))
                 {
-                    ++counters.segments_skipped_covered;
+                    ++counters.segments_skipped_resolved;
                     continue;
                 }
             }
@@ -691,8 +687,9 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         if (i != current_segment_idx || !has_prepared_first_segment)
             prepareSegment(i);
 
-        /// Level 1: dense segment memset.
-        /// If every row in the segment range has a posting, we can memset instead of decoding blocks.
+        /// Level 1: dense segment shortcut.
+        /// If every row in the segment range has a posting, pad the whole clipped range at once
+        /// instead of decoding blocks.
         {
             size_t range_span = seg_end - seg_begin + 1;
             if (segment_doc_count == range_span)
@@ -703,7 +700,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
                 if (clip_begin < clip_end)
                 {
                     ++counters.segments_skipped_dense;
-                    memset(data + (clip_begin - row_offset), 1, clip_end - clip_begin);
+                    padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
                     continue;
                 }
             }
@@ -731,7 +728,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             if (block_first >= row_offset + num_rows)
                 break;
 
-            /// Level 2b: block-level "already-covered" skip.
+            /// Level 2b: block-level skip (same resolved-region test as Level 2a, per block).
             {
                 size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
                 size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
@@ -741,9 +738,9 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
                     size_t blk_off = blk_clip_begin - row_offset;
                     size_t blk_cnt = blk_clip_end - blk_clip_begin;
 
-                    if (hasNoZeros(data + blk_off, blk_cnt))
+                    if (canSkipRegion<op>(data + blk_off, blk_cnt))
                     {
-                        ++counters.blocks_skipped_covered;
+                        ++counters.blocks_skipped_resolved;
                         continue;
                     }
                 }
@@ -755,152 +752,39 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
             size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
             size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
-            padColumn<PadOp::Or>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
+            padColumn<op>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
         }
     }
 }
 
-void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
+template <PadOp op>
+void PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows)
 {
-    requireRowOffsetRepresentable(row_offset);
-
-    if (is_embedded)
-    {
-        /// Dense shortcut: if every row in the range is in the posting list,
-        /// just increment the entire clipped region without binary search.
-        if (embedded_has_range)
-        {
-            size_t range_span = embedded_range_end - embedded_range_begin + 1;
-
-            if (decoded_count == range_span)
-            {
-                size_t clip_begin = std::max(embedded_range_begin, row_offset);
-                size_t clip_end = std::min(embedded_range_end + 1, row_offset + num_rows);
-
-                if (clip_begin < clip_end)
-                {
-                    ++counters.and_segments_skipped_dense;
-                    UInt8 * out = data + (clip_begin - row_offset);
-                    size_t count = clip_end - clip_begin;
-                    for (size_t i = 0; i < count; ++i)
-                        ++out[i];
-                    return;
-                }
-            }
-        }
-
-        const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
-        const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
-        size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
-        size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
-        padColumn<PadOp::And>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
+    if (decoded_count == 0)
         return;
-    }
 
-    for (size_t i = current_segment_idx; i < total_segments; ++i)
+    /// Dense shortcut: if every row in the range is in the posting list,
+    /// pad the entire clipped region at once without binary search.
+    size_t range_span = embedded_range_end - embedded_range_begin + 1;
+
+    if (decoded_count == range_span)
     {
-        size_t seg_begin = info->ranges[i].begin;
-        size_t seg_end = info->ranges[i].end;
+        size_t clip_begin = std::max(embedded_range_begin, row_offset);
+        size_t clip_end = std::min(embedded_range_end + 1, row_offset + num_rows);
 
-        if (row_offset > seg_end)
-            continue;
-
-        if (row_offset + num_rows <= seg_begin)
-            break;
-
-        /// Level 2a: segment-level "all-zeros" skip.
-        /// If the output region for this segment is already all-zeros, incrementing
-        /// will not help — the final pass requires count == n, so skip entirely.
+        if (clip_begin < clip_end)
         {
-            size_t clip_begin = std::max(seg_begin, row_offset);
-            size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
-
-            if (clip_begin < clip_end)
-            {
-                size_t clip_off = clip_begin - row_offset;
-                size_t clip_count = clip_end - clip_begin;
-
-                if (memoryIsZero(data + clip_off, 0, clip_count))
-                {
-                    ++counters.and_segments_skipped_zero;
-                    continue;
-                }
-            }
-        }
-
-        /// Skip re-preparing the segment if it is already loaded.
-        if (i != current_segment_idx || !has_prepared_first_segment)
-            prepareSegment(i);
-
-        /// Level 1: dense segment shortcut.
-        /// If every row in the segment range has a posting, increment the entire clipped range.
-        {
-            size_t range_span = seg_end - seg_begin + 1;
-            if (segment_doc_count == range_span)
-            {
-                size_t clip_begin = std::max(seg_begin, row_offset);
-                size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
-
-                if (clip_begin < clip_end)
-                {
-                    ++counters.and_segments_skipped_dense;
-                    UInt8 * out = data + (clip_begin - row_offset);
-                    size_t count = clip_end - clip_begin;
-                    for (size_t j = 0; j < count; ++j)
-                        ++out[j];
-                    continue;
-                }
-            }
-        }
-
-        for (size_t b = 0; b < block_count; ++b)
-        {
-            uint32_t block_last = block_last_row_ids[b];
-
-            if (b > 0 && block_last_row_ids[b - 1] == std::numeric_limits<uint32_t>::max())
-            {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted data in lazy posting list cursor: previous block_last_row_id is UInt32::max "
-                    "at block {}, computing block_first would overflow", b);
-            }
-
-            uint32_t block_first = (b == 0)
-                ? static_cast<uint32_t>(seg_begin)
-                : (block_last_row_ids[b - 1] + 1);
-
-            if (block_last < row_offset)
-                continue;
-
-            if (block_first >= row_offset + num_rows)
-                break;
-
-            /// Level 2b: block-level "all-zeros" skip.
-            {
-                size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
-                size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
-
-                if (blk_clip_begin < blk_clip_end)
-                {
-                    size_t blk_off = blk_clip_begin - row_offset;
-                    size_t blk_cnt = blk_clip_end - blk_clip_begin;
-
-                    if (memoryIsZero(data + blk_off, 0, blk_cnt))
-                    {
-                        ++counters.and_blocks_skipped_zero;
-                        continue;
-                    }
-                }
-            }
-
-            decodeBlock(b);
-
-            const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
-            const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
-            size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
-            size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
-            padColumn<PadOp::And>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
+            ++counters.segments_skipped_dense;
+            padDenseRange<op>(data + (clip_begin - row_offset), clip_end - clip_begin);
+            return;
         }
     }
+
+    const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
+    const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
+    size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
+    size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
+    padColumn<op>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
 }
 
 namespace

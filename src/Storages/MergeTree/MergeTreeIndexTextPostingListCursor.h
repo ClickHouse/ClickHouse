@@ -24,6 +24,9 @@ class MergeTreeReaderStream;
 /// Inline capacity for the embedded posting list buffer.
 constexpr size_t MAX_EMBEDDED_POSTING_LIST_ROWS = 6;
 
+/// Operation type for padding the column with the posting list.
+enum class PadOp { Or, And };
+
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///
 /// Storage layout (two-level hierarchy):
@@ -116,6 +119,15 @@ private:
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
 
+    /// Linear scan over an embedded (fully materialized) posting list.
+    template <PadOp op>
+    void linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
+
+    /// Linear scan over a compressed posting list: iterates segments and packed blocks, with
+    /// segment- and block-level skips for regions already resolved by `op` (see `canSkipRegion`).
+    template <PadOp op>
+    void linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
+
     /// On-disk description of the posting list. For compressed postings this is a
     /// non-owning pointer into the granule's token map (which outlives the cursor);
     /// for embedded/rare postings the info is owned via `owned_info` to keep the
@@ -148,9 +160,7 @@ private:
 
     /// Row-id range [begin, end] covered by an embedded posting list, used for the dense-range
     /// shortcut in `linearOr` / `linearAnd`. Populated by both embedded constructors (from
-    /// `info_.ranges`, or from the sorted array's first/last element). `embedded_has_range` is
-    /// false when the range is unknown (empty `info_.ranges`), disabling the shortcut.
-    bool embedded_has_range = false;
+    /// `info_.ranges`, or from the sorted array's first/last element).
     size_t embedded_range_begin = 0;
     size_t embedded_range_end = 0;
 
@@ -196,12 +206,12 @@ private:
         size_t blocks_decoded = 0;
         size_t advance_count = 0;
         size_t segments_prepared = 0;
+        /// "Skipped" counters are shared between the OR and AND paths: a region is skipped either
+        /// because the segment is fully dense (`segments_skipped_dense`) or because its output is
+        /// already resolved — all-ones for OR, all-zeros for AND (`*_skipped_resolved`).
         size_t segments_skipped_dense = 0;
-        size_t segments_skipped_covered = 0;
-        size_t blocks_skipped_covered = 0;
-        size_t and_segments_skipped_dense = 0;
-        size_t and_segments_skipped_zero = 0;
-        size_t and_blocks_skipped_zero = 0;
+        size_t segments_skipped_resolved = 0;
+        size_t blocks_skipped_resolved = 0;
     };
 
     EventsCounters counters;
