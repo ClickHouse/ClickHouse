@@ -1,3 +1,4 @@
+#include <Columns/ColumnReplicated.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/ISink.h>
@@ -147,7 +148,7 @@ MergeSortingTransform::MergeSortingTransform(
 {
 }
 
-Processors MergeSortingTransform::expandPipeline()
+IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
 {
     if (processors.size() > 2)
     {
@@ -156,14 +157,14 @@ Processors MergeSortingTransform::expandPipeline()
         connect(external_merging_sorted->getOutputs().front(), inputs.back());
     }
 
-    auto & source = processors.at(0);
+    auto & source = processors.front();
 
     static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     if (processors.size() > 1)
     {
-        auto & sink = processors.at(1);
+        auto & sink = *std::next(processors.begin());
         /// Serialize
         outputs.emplace_back(header_without_constants, this);
         connect(sink->getOutputs().front(), source->getInputs().front());
@@ -173,7 +174,7 @@ Processors MergeSortingTransform::expandPipeline()
         /// Generate
         static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
 
-    return std::move(processors);
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
 void MergeSortingTransform::consume(Chunk chunk)
@@ -194,6 +195,7 @@ void MergeSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
+    compactReplicatedColumns(chunk);
 
     sum_rows_in_blocks += chunk.getNumRows();
     sum_bytes_in_blocks += chunk.allocatedBytes();

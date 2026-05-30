@@ -60,6 +60,11 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
         if (name.empty())
             return Exception(ErrorCodes::BAD_ARGUMENTS, "Names of tuple elements cannot be empty");
 
+        if (name == "null")
+            return Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Tuple element name 'null' is reserved because it would conflict with the subcolumn name "
+                "used for Nullable null maps if such a tuple is wrapped in Nullable. Please use a different name");
+
         if (!names_set.insert(name).second)
             return Exception(ErrorCodes::DUPLICATE_COLUMN, "Names of tuple elements must be unique. Duplicate name: {}", name);
     }
@@ -232,7 +237,7 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     const auto & element_serializations = serialization_tuple->getElementsSerializations();
 
     size_t size = elems.size();
-    assert(element_serializations.size() == size);
+    chassert(element_serializations.size() == size);
     MutableColumns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
         tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]->getNested());
@@ -422,7 +427,7 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
     infos.reserve(elems.size());
 
     const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
-    assert(elems.size() == column_tuple.getColumns().size());
+    chassert(elems.size() == column_tuple.getColumns().size());
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
