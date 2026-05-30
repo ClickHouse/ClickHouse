@@ -4,6 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Fail fast: every command below is an assertion, so a single unexpected
+# non-zero exit (e.g. a rejection check that stops throwing) must fail the test.
+set -e
+
 # `clickhouse-local` only manages TCP and HTTP listeners. Grouped types
 # (`QUERIES ALL` / `QUERIES DEFAULT`) are accepted when they cover at least
 # one of TCP or HTTP, but must be rejected when their `EXCEPT` list strips
