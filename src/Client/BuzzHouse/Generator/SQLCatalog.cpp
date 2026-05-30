@@ -5,7 +5,7 @@ namespace BuzzHouse
 
 const std::vector<std::vector<OutFormat>> outFormats
     = {{OutFormat::OUT_Arrow, OutFormat::OUT_ArrowStream},
-       {OutFormat::OUT_Avro},
+       {OutFormat::OUT_Avro, OutFormat::OUT_AvroConfluent},
        {OutFormat::OUT_BSONEachRow},
        {OutFormat::OUT_Buffers},
        {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
@@ -47,6 +47,7 @@ const std::unordered_map<OutFormat, InFormat> outIn
     = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
        {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
        {OutFormat::OUT_Avro, InFormat::IN_Avro},
+       {OutFormat::OUT_AvroConfluent, InFormat::IN_AvroConfluent},
        {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
        {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
        {OutFormat::OUT_CSV, InFormat::IN_CSV},
@@ -94,7 +95,7 @@ const std::unordered_map<OutFormat, InFormat> outIn
 
 const std::vector<std::vector<InOutFormat>> inOutFormats = {
     {InOutFormat::INOUT_Arrow, InOutFormat::INOUT_ArrowStream},
-    {InOutFormat::INOUT_Avro},
+    {InOutFormat::INOUT_Avro, InOutFormat::INOUT_AvroConfluent},
     {InOutFormat::INOUT_BSONEachRow},
     {InOutFormat::INOUT_Buffers},
     {InOutFormat::INOUT_CSV, InOutFormat::INOUT_CSVWithNames, InOutFormat::INOUT_CSVWithNamesAndTypes},
@@ -683,7 +684,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                     isOnLocal() ? fc.lakes_path.generic_string() : "",
                     isOnLocal() ? "/" : "",
                     (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                    (integration == IntegrationCall::Dolor) ? (isAnyPaimonEngine() ? "/test.db/" : "/test/") : "",
+                    (integration == IntegrationCall::Dolor) ? (!isAnyIcebergEngine() ? "/test.db/" : "/test/") : "",
                     bname,
                     rg.nextBool() ? "/" : "");
             }
