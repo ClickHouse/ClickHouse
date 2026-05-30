@@ -25,6 +25,10 @@ SETTINGS
     storage_policy = 's3_cache_encrypted',
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
+    -- Pin full (non-packed) part storage: a randomized min_bytes_for_full_part_storage
+    -- pushes these tiny parts into packed storage, which merges horizontally and
+    -- defeats the vertical-merge repro below.
+    min_bytes_for_full_part_storage = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     enable_vertical_merge_algorithm = 1,
