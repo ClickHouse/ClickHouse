@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -170,7 +171,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         keys_ptr = &aggregating_step->getParams().keys;
         agg_descs_ptr = &aggregating_step->getParams().aggregates;
     }
-    else if (merging_agg_step && !merging_agg_step->isGroupingSets())
+    else if (merging_agg_step && !merging_agg_step->isGroupingSets() && !merging_agg_step->getParams().overflow_row)
     {
         keys_ptr = &merging_agg_step->getParams().keys;
         agg_descs_ptr = &merging_agg_step->getParams().aggregates;
@@ -406,7 +407,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         {
             const auto & mt_header = *read_from_mt->getOutputHeader();
             bool arg_is_nullable = mt_header.has(order_arg_name)
-                && mt_header.getByName(order_arg_name).type->isNullable();
+                && isNullableOrLowCardinalityNullable(mt_header.getByName(order_arg_name).type);
 
             if (!arg_is_nullable && read_from_mt->requestReadingInOrder(1, required_direction, limit_value))
             {
@@ -447,7 +448,7 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         if (mt_header.has(order_arg_name))
         {
             const auto & arg_col = mt_header.getByName(order_arg_name);
-            if (arg_col.type->isValueRepresentedByNumber() && !arg_col.type->isNullable())
+            if (arg_col.type->isValueRepresentedByNumber() && !isNullableOrLowCardinalityNullable(arg_col.type))
             {
                 mode2_eligible = true;
                 enable_threshold_pruning = true;

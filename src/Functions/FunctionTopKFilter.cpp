@@ -1,5 +1,6 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -84,7 +85,12 @@ public:
             /// Float types must use the general path because the vectorized
             /// greaterOrEquals/lessOrEquals return false for NaN comparisons,
             /// while compareColumn with nulls_direction correctly orders NaN.
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || isFloat(data_type))
+            /// LowCardinality wrappers hide both nullability and float-ness
+            /// (`isNullable`/`isFloat` are false for `LowCardinality(Nullable(T))` and
+            /// `LowCardinality(Float*)`), so unwrap before deciding the path to keep the
+            /// NULLS FIRST/LAST and NaN ordering semantics for low-cardinality columns.
+            auto inner_type = removeLowCardinality(data_type);
+            if (collator || inner_type->isNullable() || isDynamic(inner_type) || isVariant(inner_type) || isFloat(inner_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
