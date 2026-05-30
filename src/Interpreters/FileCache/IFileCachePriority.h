@@ -396,11 +396,9 @@ public:
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
     /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
-    /// segment. `user_id` is passed explicitly because `segment` has already
-    /// been detached from its key metadata by the time the callback fires
-    /// (see `FileSegment::setDetachedState`).
+    /// segment.
     using OnEvictCallback = std::function<void(const FileSegment & segment, QueueEntryType queue_type, const UserID & user_id)>;
-    virtual void setOnEvictCallback(OnEvictCallback callback) { on_evict_callback = std::move(callback); }
+    virtual void setOnEvictCallback(OnEvictCallback callback) { chassert(on_evict_callback == {}, "on_evict_callback cannot be set twice"); on_evict_callback = std::move(callback); }
     const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
 
 protected:
