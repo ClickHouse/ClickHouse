@@ -74,26 +74,23 @@ public:
     /// Map a pressure ratio to a level using the current thresholds, WITHOUT
     /// the cooldown state machine — for transient (per-query / per-user)
     /// pressure that must react immediately and leave no sticky state.
+    /// Lock-free: read on the executor's per-window hot path.
     MemoryPressureLevel levelForPressure(double pressure) const;
 
     void setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct);
     MemoryPressureThresholds getThresholds() const;
 
 private:
-    /// Raw level for `pressure` against the threshold ladder. Caller holds `mutex`.
-    uint8_t rawLevelLocked(double pressure) const;
+    /// Raw level for `pressure` against the (atomic) threshold ladder. Lock-free.
+    uint8_t rawLevel(double pressure) const;
 
-    /// `sample` is a read-modify-write across `(level, last_at_or_above_ns)`
-    /// and `setThresholds` publishes three values that must be visible as a
-    /// triple. Guard both with one mutex so a concurrent `sample` cannot
-    /// observe a mixed level/timestamp pair (collapsing multiple cooldown
-    /// steps into one) or a half-applied threshold ladder.
+    /// Thresholds packed as bytes `(l1 << 16) | (l2 << 8) | l3`, published as one
+    /// atomic so `levelForPressure` / `rawLevel` need no lock. The mutex below
+    /// guards only the cooldown state (`level`, `last_at_or_above_ns`).
+    std::atomic<uint32_t> thresholds_packed{(75u << 16) | (90u << 8) | 95u};
     mutable std::mutex mutex;
     uint8_t level{0};
     uint64_t last_at_or_above_ns{0};
-    uint8_t threshold_l1{75};
-    uint8_t threshold_l2{90};
-    uint8_t threshold_l3{95};
 };
 
 /// Production implementation — reads `total_memory_tracker` (used / hard

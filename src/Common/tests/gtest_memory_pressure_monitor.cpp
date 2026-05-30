@@ -201,3 +201,36 @@ TEST(MemoryPressureMonitor, LocalPressureSkipsGlobalLevel)
     EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(&thread), 0.0);
     thread.adjustWithUntrackedMemory(-990);
 }
+
+/// `MemoryTracker::getPressure` is `amount / hard_limit`, lock-free, and 0 when
+/// there is no limit or no usage.
+TEST(MemoryPressureMonitor, MemoryTrackerGetPressure)
+{
+    MemoryTracker t(nullptr, VariableContext::Process, false);
+    EXPECT_DOUBLE_EQ(t.getPressure(), 0.0);   /// no limit
+
+    t.setHardLimit(1000);
+    EXPECT_DOUBLE_EQ(t.getPressure(), 0.0);   /// limit but no usage
+
+    t.adjustWithUntrackedMemory(960);
+    EXPECT_NEAR(t.getPressure(), 0.96, 1e-9);
+    t.adjustWithUntrackedMemory(-960);
+}
+
+/// `setThresholds` publishes atomically and `levelForPressure` (lock-free) reads
+/// the new ladder; `getThresholds` round-trips the same values.
+TEST(MemoryPressureMonitor, SetThresholdsReflectedInLevelForPressure)
+{
+    PressureLevelMachine m;
+    m.setThresholds(50, 70, 90);
+
+    const auto th = m.getThresholds();
+    EXPECT_EQ(th.l1_pct, 50u);
+    EXPECT_EQ(th.l2_pct, 70u);
+    EXPECT_EQ(th.l3_pct, 90u);
+
+    EXPECT_EQ(m.levelForPressure(0.40), MemoryPressureLevel::Normal);
+    EXPECT_EQ(m.levelForPressure(0.55), MemoryPressureLevel::Elevated);
+    EXPECT_EQ(m.levelForPressure(0.75), MemoryPressureLevel::High);
+    EXPECT_EQ(m.levelForPressure(0.95), MemoryPressureLevel::Critical);
+}

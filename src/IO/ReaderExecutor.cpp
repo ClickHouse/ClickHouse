@@ -1169,6 +1169,12 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
         LOG_TRACE(log, "readPhysicalWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
             remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
 
+    /// Sample the pressure-scaled block size ONCE per window, not per fetch
+    /// range — `effectiveBlockSize` queries the memory-pressure monitor, and on
+    /// a wide-table read thousands of concurrent executors would otherwise hit
+    /// it per block. The value is stable across this call.
+    const size_t window_block_size = effectiveBlockSize();
+
     for (const auto & fr : fetch_ranges)
     {
         auto physical_ranges = offset_map.map(fr);
@@ -1191,7 +1197,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
                 splits.push_back(physical_window.end() - pr_lo);
             std::sort(splits.begin(), splits.end());
 
-            auto blocks = allocateBlocks(pr.size, effectiveBlockSize(), splits);
+            auto blocks = allocateBlocks(pr.size, window_block_size, splits);
             StopwatchAccumulator src_scope(stats.source_read_us);
             Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);
             HistogramMetrics::ReaderExecutorSourceReadLatency.observe(

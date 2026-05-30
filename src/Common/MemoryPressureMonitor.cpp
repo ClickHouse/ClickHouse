@@ -16,11 +16,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-uint8_t PressureLevelMachine::rawLevelLocked(double pressure) const
+uint8_t PressureLevelMachine::rawLevel(double pressure) const
 {
-    const double t1 = threshold_l1 / 100.0;
-    const double t2 = threshold_l2 / 100.0;
-    const double t3 = threshold_l3 / 100.0;
+    const uint32_t packed = thresholds_packed.load(std::memory_order_relaxed);
+    const double t1 = ((packed >> 16) & 0xFFu) / 100.0;
+    const double t2 = ((packed >> 8) & 0xFFu) / 100.0;
+    const double t3 = (packed & 0xFFu) / 100.0;
 
     if (pressure >= t3)
         return 3;
@@ -33,16 +34,15 @@ uint8_t PressureLevelMachine::rawLevelLocked(double pressure) const
 
 MemoryPressureLevel PressureLevelMachine::levelForPressure(double pressure) const
 {
-    std::lock_guard lk(mutex);
     /// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-    return static_cast<MemoryPressureLevel>(rawLevelLocked(pressure));
+    return static_cast<MemoryPressureLevel>(rawLevel(pressure));
 }
 
 MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_ns)
 {
-    std::lock_guard lk(mutex);
+    const uint8_t raw_level = rawLevel(pressure);
 
-    const uint8_t raw_level = rawLevelLocked(pressure);
+    std::lock_guard lk(mutex);
 
     if (raw_level >= level)
     {
@@ -80,16 +80,18 @@ void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3
             "level_1={}, level_2={}, level_3={}",
             l1_pct, l2_pct, l3_pct);
 
-    std::lock_guard lk(mutex);
-    threshold_l1 = static_cast<uint8_t>(l1_pct);
-    threshold_l2 = static_cast<uint8_t>(l2_pct);
-    threshold_l3 = static_cast<uint8_t>(l3_pct);
+    /// Publish all three as one atomic so `rawLevel` never sees a half-applied
+    /// ladder. No mutex needed — the packed value is self-consistent.
+    const uint32_t packed = (static_cast<uint32_t>(l1_pct) << 16)
+                          | (static_cast<uint32_t>(l2_pct) << 8)
+                          | static_cast<uint32_t>(l3_pct);
+    thresholds_packed.store(packed, std::memory_order_relaxed);
 }
 
 MemoryPressureThresholds PressureLevelMachine::getThresholds() const
 {
-    std::lock_guard lk(mutex);
-    return {threshold_l1, threshold_l2, threshold_l3};
+    const uint32_t packed = thresholds_packed.load(std::memory_order_relaxed);
+    return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu};
 }
 
 namespace
@@ -125,13 +127,7 @@ double localMemoryPressureFromChain(MemoryTracker * start)
         /// (`Process`) and per-user (`User`) limits.
         if (t->level == VariableContext::Global)
             continue;
-        const Int64 limit = t->getHardLimit();
-        if (limit <= 0)
-            continue;
-        const Int64 used = t->get();
-        if (used <= 0)
-            continue;
-        worst = std::max(worst, static_cast<double>(used) / static_cast<double>(limit));
+        worst = std::max(worst, t->getPressure());
     }
     return worst;
 }
