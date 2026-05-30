@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
+#include <Core/UUID.h>
 
 
 namespace
@@ -232,7 +233,7 @@ bool ZooKeeperReplicator::insertZooKeeper(
             }
         }
 
-        assert(replace_if_exists);
+        chassert(replace_if_exists);
         Coordination::Requests replace_ops;
         if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
         {
