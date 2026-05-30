@@ -304,7 +304,7 @@ ASTPtr ASTCreateQuery::clone() const
 
     if (dictionary)
     {
-        assert(is_dictionary);
+        chassert(is_dictionary);
         res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
         res->set(res->dictionary, dictionary->clone());
     }
