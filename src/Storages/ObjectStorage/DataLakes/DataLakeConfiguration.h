@@ -21,7 +21,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <optional>
 #include <memory>
 #include <string>
@@ -71,6 +70,9 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsBool storage_oauth_server_use_request_body;
 }
 
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
 template <typename T>
 concept StorageConfiguration = std::derived_from<T, StorageObjectStorageConfiguration>;
 
@@ -89,6 +91,9 @@ public:
     StorageObjectStorageConfiguration::Path getRawPath() const override
     {
         auto result = BaseStorageConfiguration::getRawPath().path;
+        if (result.empty())
+            return StorageObjectStorageConfiguration::Path("");
+
         return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
 
@@ -144,13 +149,14 @@ public:
 
     void mutate(const MutationCommands & commands,
         ContextPtr context,
+        StoragePtr storage_ptr,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const std::optional<FormatSettings> & format_settings) override
     {
         assertInitialized();
-        current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
+        current_metadata->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
     void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
