@@ -111,6 +111,12 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
 }
 
+namespace Setting
+{
+    extern const SettingsBool filesystem_cache_expose_prometheus_eviction_metrics;
+    extern const SettingsBool filesystem_cache_expose_prometheus_eviction_metrics_per_client;
+}
+
 namespace
 {
     std::string getCommonUserID()
@@ -2124,7 +2130,7 @@ FileCache::~FileCache()
 void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const
 {
     const auto & settings = Context::getGlobalContextInstance()->getSettingsRef();
-    if (!settings.filesystem_cache_expose_prometheus_eviction_metrics)
+    if (!settings[Setting::filesystem_cache_expose_prometheus_eviction_metrics])
         return;
 
     const size_t bytes = segment.range().size();
@@ -2135,7 +2141,7 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntr
     filesystem_cache_evicted_segment_hits.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(hits));
     filesystem_cache_evicted_segment_size_bytes.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(bytes));
 
-    if (!settings.filesystem_cache_expose_prometheus_eviction_metrics_per_client)
+    if (!settings[Setting::filesystem_cache_expose_prometheus_eviction_metrics_per_client])
         return;
     filesystem_cache_evictions_by_client_total.withLabels({name, queue, user_id}).increment();
     filesystem_cache_evicted_bytes_by_client_total.withLabels({name, queue, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
