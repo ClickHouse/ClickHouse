@@ -1002,10 +1002,13 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
     if (!audit_log)
         return;
 
-    /// Get audit type from query_kind
+    /// Map the query kind to an audit type. Every `QueryKind` is classified deliberately so
+    /// that sensitive operations (such as `Backup`, `Restore`, or moving access entities) are
+    /// not silently hidden under `MISC` and excluded by common audit filters.
     Context::AuditLogTypes audit_type;
     switch (elem.query_kind)
     {
+        /// Statements that query or modify data (and read-only schema/data inspection).
         case IAST::QueryKind::Select:
         case IAST::QueryKind::Insert:
         case IAST::QueryKind::Delete:
@@ -1013,24 +1016,44 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
         case IAST::QueryKind::Optimize:
         case IAST::QueryKind::Show:
         case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Check:
+        case IAST::QueryKind::Copy:
+        case IAST::QueryKind::AsyncInsertFlush:
             audit_type = Context::AuditLogTypes::DML;
             break;
+        /// Statements that create, modify, or remove database objects (including backup/restore).
         case IAST::QueryKind::Create:
         case IAST::QueryKind::Drop:
         case IAST::QueryKind::Undrop:
         case IAST::QueryKind::Rename:
         case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Backup:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::ExternalDDL:
             audit_type = Context::AuditLogTypes::DDL;
             break;
+        /// Statements related to privilege and access control.
         case IAST::QueryKind::Grant:
         case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::Move:
             audit_type = Context::AuditLogTypes::DCL;
             break;
+        /// Session-, transaction-, and system-level statements that do not query or alter data,
+        /// schema, or access control. All query kinds are listed explicitly (no `default`) so that
+        /// any new kind added later forces a deliberate audit classification at compile time.
+        case IAST::QueryKind::None:
         case IAST::QueryKind::System:
         case IAST::QueryKind::Set:
         case IAST::QueryKind::Use:
         case IAST::QueryKind::KillQuery:
-        default:
+        case IAST::QueryKind::Begin:
+        case IAST::QueryKind::Commit:
+        case IAST::QueryKind::Rollback:
+        case IAST::QueryKind::SetTransactionSnapshot:
+        case IAST::QueryKind::ParallelWithQuery:
+        case IAST::QueryKind::Snapshot:
             audit_type = Context::AuditLogTypes::MISC;
             break;
     }
