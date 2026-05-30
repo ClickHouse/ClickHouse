@@ -129,8 +129,8 @@ template <>
     {
         [[maybe_unused]] __m64 shuffled = _mm_shuffle_pi8(__m64{}, __m64{});
 
-        std::vector<int> vec;
-        std::unordered_set<int> set(vec.begin(), vec.end());
+        std::vector<int> vec;                              // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::unordered_set<int> set(vec.begin(), vec.end()); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         std::cerr << set.size() << "\n";
         return 0;

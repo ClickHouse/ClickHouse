@@ -928,7 +928,7 @@ private:
     void tryOptimizeAndEqualsNotEqualsChain(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
-        assert(function_node.getFunctionName() == "and");
+        chassert(function_node.getFunctionName() == "and");
 
         if (function_node.getResultType()->isNullable())
             return;
@@ -1053,7 +1053,7 @@ private:
             for (const auto & not_equals : not_equals_functions)
             {
                 const auto * not_equals_function = not_equals->as<FunctionNode>();
-                assert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
+                chassert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
 
                 const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
                 if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
@@ -1063,7 +1063,7 @@ private:
                 else
                 {
                     const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
-                    assert(lhs_literal);
+                    chassert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
                 }
             }
@@ -1356,7 +1356,7 @@ private:
                 is_any_nullable |= removeLowCardinality(equals->getResultType())->isNullable();
 
                 const auto * equals_function = equals->as<FunctionNode>();
-                assert(equals_function && equals_function->getFunctionName() == "equals");
+                chassert(equals_function && equals_function->getFunctionName() == "equals");
 
                 const auto & equals_arguments = equals_function->getArguments().getNodes();
                 if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
@@ -1367,7 +1367,7 @@ private:
                 else
                 {
                     const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
-                    assert(lhs_literal);
+                    chassert(lhs_literal);
                     args.push_back(lhs_literal->getValue());
                     tuple_element_types.push_back(lhs_literal->getResultType());
                 }
@@ -1437,7 +1437,7 @@ private:
     void tryOptimizeOutRedundantEquals(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
-        assert(function_node.getFunctionName() == "equals");
+        chassert(function_node.getFunctionName() == "equals");
 
         const auto function_arguments = function_node.getArguments().getNodes();
         if (function_arguments.size() != 2)

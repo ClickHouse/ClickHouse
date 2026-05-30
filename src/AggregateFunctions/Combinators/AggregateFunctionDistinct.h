@@ -193,7 +193,7 @@ private:
         for (size_t i = 0; i < argument_columns.size(); ++i)
             arguments_raw[i] = argument_columns[i].get();
 
-        assert(!argument_columns.empty());
+        chassert(!argument_columns.empty());
         addToNested(0, argument_columns[0]->size(), place, arguments_raw.data(), arena);
     }
 

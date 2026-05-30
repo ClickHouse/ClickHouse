@@ -64,7 +64,6 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
-#include <cassert>
 #include <ranges>
 
 namespace DB
@@ -3166,7 +3165,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        assert(2 == arguments.size());
+        chassert(2 == arguments.size());
 
         auto denull_left_type = removeNullable(arguments[0].type);
         auto denull_right_type = removeNullable(arguments[1].type);
