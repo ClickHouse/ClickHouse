@@ -120,8 +120,8 @@ void WindowFrame::checkValid() const
     // Check relative positioning of offsets.
     // UNBOUNDED PRECEDING end and UNBOUNDED FOLLOWING start should have been
     // forbidden at the parsing level.
-    chassert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
-    chassert(!(end_type == BoundaryType::Unbounded && end_preceding));
+    assert(!(begin_type == BoundaryType::Unbounded && !begin_preceding));
+    assert(!(end_type == BoundaryType::Unbounded && end_preceding));
 
     if (begin_type == BoundaryType::Unbounded
         || end_type == BoundaryType::Unbounded)
