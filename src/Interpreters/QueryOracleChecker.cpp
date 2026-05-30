@@ -81,12 +81,26 @@ const std::unordered_set<String> non_deterministic_functions = {
     "topK", "topKWeighted",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
     /// Approximate quantile/median functions: State/Merge gives different results
-    /// than direct computation due to approximate merging algorithms.
+    /// than direct computation due to approximate merging algorithms. Block both
+    /// the singular and plural-result variants (the fuzzer dictionary contains
+    /// `quantiles*` as well, and they share the same approximate merge logic).
     "median", "quantile", "quantiles",
     "quantileTDigest", "quantileTDigestWeighted",
-    "quantileGK", "quantileBFloat16", "quantileDD",
+    "quantilesTDigest", "quantilesTDigestWeighted",
+    "quantileGK", "quantilesGK",
+    "quantileBFloat16", "quantileBFloat16Weighted",
+    "quantilesBFloat16", "quantilesBFloat16Weighted",
+    "quantileDD", "quantilesDD",
     "quantileTiming", "quantileTimingWeighted",
-    "quantileDeterministic",
+    "quantilesTiming", "quantilesTimingWeighted",
+    "quantileDeterministic", "quantilesDeterministic",
+    "quantileExact", "quantileExactWeighted",
+    "quantilesExact", "quantilesExactWeighted",
+    "quantileExactLow", "quantileExactHigh",
+    "quantilesExactLow", "quantilesExactHigh",
+    "quantileExactExclusive", "quantileExactInclusive",
+    "quantilesExactExclusive", "quantilesExactInclusive",
+    "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
     /// Order-dependent or floating-point aggregates whose State/Merge path
     /// can differ from direct computation. `sum` / `sumWithOverflow` are
     /// blocked because floating-point addition is non-associative — the
@@ -1589,6 +1603,12 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     /// equivalent predicates can legitimately pick different rows among ties.
     if (select.limitBy())
         return false;
+    /// `OFFSET` (without `LIMIT`) skips a prefix of the result. For non-unique
+    /// `ORDER BY` keys, the rewritten WHERE may legitimately reorder tied rows,
+    /// so the same `OFFSET` skips a different prefix and the comparison fails
+    /// with a spurious mismatch. Same order-tie family as `LIMIT` / `LIMIT BY`.
+    if (select.limitOffset())
+        return false;
 
     ASTPtr predicate = select.where()->clone();
 
@@ -1748,70 +1768,6 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
 }
 
 
-void QueryOracleChecker::tryPopulateTable(const ASTSelectQuery & select, const ContextMutablePtr & context)
-{
-    /// With 80% probability, try to insert random data into all tables referenced by the query.
-    /// This ensures the oracle checks non-empty results even when the fuzzer creates empty tables.
-    if (thread_local_rng() % 5 == 0)
-        return;
-
-    ASTPtr tables = select.tables();
-    if (!tables || tables->children.empty())
-        return;
-
-    /// Iterate over all table expressions (main table + joined tables).
-    for (const auto & table_child : tables->children)
-    {
-        const auto * tables_element = table_child->as<ASTTablesInSelectQueryElement>();
-        if (!tables_element || !tables_element->table_expression)
-            continue;
-
-        const auto * table_expr = tables_element->table_expression->as<ASTTableExpression>();
-        if (!table_expr || !table_expr->database_and_table_name)
-            continue;
-
-        auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
-        if (!table_id)
-            continue;
-
-        String database = table_id->getDatabaseName();
-        String table = table_id->shortName();
-        if (table.empty())
-            continue;
-
-        /// Skip system tables.
-        if (database == "system" || database == "INFORMATION_SCHEMA" || database == "information_schema")
-            continue;
-
-        String qualified = database.empty() ? backQuoteIfNeed(table) : (backQuoteIfNeed(database) + "." + backQuoteIfNeed(table));
-
-        /// Build an INSERT ... SELECT * FROM generateRandom(...) LIMIT 100 query.
-        String db_for_query = database.empty() ? "currentDatabase()" : ("'" + database + "'");
-        String insert_query = fmt::format(
-            "INSERT INTO {} SELECT * FROM generateRandom("
-            "(SELECT arrayStringConcat(groupArray(concat(name, ' ', type)), ', ') "
-            "FROM system.columns WHERE database = {} AND table = '{}'), 1, 10) LIMIT 100",
-            qualified, db_for_query, table);
-
-        try
-        {
-            auto oracle_context = makeOracleContext(context);
-            oracle_context->setDefaultFormat("Null");
-
-            ReadBufferFromString istr(insert_query);
-            WriteBufferFromOwnString ostr;
-            executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
-
-            LOG_TRACE(logger, "Populated table {} with random data for oracle check", qualified);
-        }
-        catch (...)
-        {
-            LOG_TRACE(logger, "Failed to populate table {} (skipping): {}", qualified, getCurrentExceptionMessage(false));
-        }
-    }
-}
-
-
 bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr & context)
 {
     const ASTSelectQuery * select = extractSimpleSelect(query_ast);
@@ -1850,12 +1806,6 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         select->prewhere() != nullptr,
         select->limitLength() != nullptr,
         select->tables() != nullptr);
-
-    /// NOTE: tryPopulateTable is disabled — it inserts random data that can cause
-    /// false positive mismatches when reference and partitioned queries observe
-    /// different row counts due to concurrent inserts within the same check.
-    /// The fuzzer corpus should provide tables with sufficient data instead.
-    /// tryPopulateTable(*select, context);
 
     bool any_check_performed = false;
 

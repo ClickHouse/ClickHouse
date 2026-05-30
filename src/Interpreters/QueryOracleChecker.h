@@ -52,7 +52,6 @@ private:
     bool checkSubqueryWrap(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
     /// Try to insert random data into the table referenced by the SELECT query.
-    void tryPopulateTable(const ASTSelectQuery & select, const ContextMutablePtr & context);
 
     /// Check if the SELECT list contains aggregate functions.
     static bool hasAggregates(const ASTSelectQuery & select);
