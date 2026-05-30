@@ -49,6 +49,7 @@
 
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -457,6 +458,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
+    bool has_uuid_clause = false;
 
     if (table_name_with_optional_uuid)
     {
@@ -470,11 +472,13 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            has_uuid_clause = true;
         }
 
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
+        node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
     else
         node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
@@ -507,7 +511,7 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 
 bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
@@ -551,7 +555,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     // Variant 1:
@@ -1371,7 +1375,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         std::string_view here_doc(pos->begin, pos->size());
         size_t heredoc_size = here_doc.find('$', 1) + 1;
-        assert(heredoc_size != std::string_view::npos);
+        chassert(heredoc_size != std::string_view::npos);
         s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
@@ -1683,6 +1687,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "STREAM",
     "UNION",
     "USING",
     "WHERE",

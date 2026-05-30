@@ -10,6 +10,7 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -49,16 +50,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr(getContext(), false);
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
-    evaluation_settings.timestamp_data_type = timestamp_data_type;
-    evaluation_settings.scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
-
-    auto query_tree = std::make_shared<PrometheusQueryTree>();
-    query_tree->parse(params.promql_query, timestamp_scale);
-    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
+        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
     if (params.type == Type::Instant)
     {
@@ -81,6 +77,10 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, timestamp_scale);
         evaluation_settings.step = parseTimeSeriesDuration(params.step_param, timestamp_scale);
     }
+
+    auto query_tree = std::make_shared<PrometheusQueryTree>();
+    query_tree->parse(params.promql_query, timestamp_scale);
+    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
     auto sql_query = converter.getSQL();
