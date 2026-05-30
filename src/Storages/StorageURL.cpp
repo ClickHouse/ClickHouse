@@ -2188,7 +2188,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     {
         configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.
     {
         return nullptr;
     }
