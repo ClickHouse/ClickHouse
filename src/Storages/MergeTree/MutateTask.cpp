@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
@@ -98,6 +99,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char merge_task_projection_stage_pause[];
 }
 
 namespace ErrorCodes
@@ -323,7 +325,7 @@ static void splitAndModifyMutationCommands(
                     if (has_nested_column)
                     {
                         const auto & nested = part_columns.getNested(command.column_name);
-                        assert(!nested.empty());
+                        chassert(!nested.empty());
                         for (const auto & nested_column : nested)
                             mutated_columns.emplace(nested_column.name);
                     }
@@ -370,6 +372,69 @@ static void splitAndModifyMutationCommands(
                 });
 
                 part_columns.rename(rename_from, rename_to);
+            }
+        }
+
+        /// When the source part is non-wide-or-non-full (Compact or packed), `MutateFromLogEntryTask::prepare`
+        /// force-recalculates ALL pre-existing skip indices on the part (see `need_recalculate` in `prepare`).
+        /// The mutation pipeline must read every column required by those indices, even when the current
+        /// mutation does not explicitly materialize them. Otherwise force-recalculation produces a block
+        /// that is missing the column and we throw `NOT_FOUND_COLUMN_IN_BLOCK`. This is the regression
+        /// reported in issue #104872 for tables that contain a skip index over a column that is in the
+        /// table metadata but absent from the part on disk (for example, a part created in 25.8 where
+        /// `MATERIALIZE INDEX` did not yet write the index's columns to the part).
+        ///
+        /// The original `MATERIALIZE INDEX` branch above only adds columns for the explicitly-materialized
+        /// index, so a pre-existing index over a different absent column is missed. Walk all indices that
+        /// the source part has (and that are not being dropped) and add their absent columns here.
+        NameSet indices_being_dropped;
+        for (const auto & command : commands)
+            if (command.type == MutationCommand::Type::DROP_INDEX)
+                indices_being_dropped.insert(command.column_name);
+
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+        {
+            if (indices_being_dropped.contains(index.name))
+                continue;
+            if (!part->hasSecondaryIndex(index.name, metadata_snapshot))
+                continue;
+
+            for (const auto & column : index.expression->getRequiredColumns())
+            {
+                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                if (column_in_storage && !part_columns.has(*column_in_storage))
+                    extra_columns_for_indices_and_projections.emplace(*column_in_storage);
+            }
+        }
+
+        /// Same logic for projections: a non-full-storage (packed) source part also force-recalculates
+        /// every pre-existing projection in `prepare`. Their required columns must be in the read set.
+        NameSet projections_being_dropped;
+        for (const auto & command : commands)
+            if (command.type == MutationCommand::Type::DROP_PROJECTION)
+                projections_being_dropped.insert(command.column_name);
+
+        for (const auto & projection : metadata_snapshot->getProjections())
+        {
+            if (projections_being_dropped.contains(projection.name))
+                continue;
+            if (!part->hasProjection(projection.name))
+                continue;
+            if (part->hasBrokenProjection(projection.name))
+                continue;
+
+            for (const auto & column : projection.required_columns)
+            {
+                if (projection.with_parent_part_offset && column == "_part_offset")
+                    continue;
+                if (projection.with_block_number && column == BlockNumberColumn::name)
+                    continue;
+                if (projection.with_block_offset && column == BlockOffsetColumn::name)
+                    continue;
+
+                auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
+                if (column_in_storage && !part_columns.has(*column_in_storage))
+                    extra_columns_for_indices_and_projections.emplace(*column_in_storage);
             }
         }
 
@@ -1553,6 +1618,13 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(std::make_shared<const Block>(ctx->updated_header), settings[Setting::min_insert_block_size_rows], settings[Setting::min_insert_block_size_bytes]);
     }
 
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        for (const auto * projection : ctx->projections_to_build)
+            elem->projections_pending.push_back(projection->name);
+    }
+
     if (!ctx->text_indices_to_recalc.empty())
     {
         createBuildTextIndexesTask();
@@ -1692,10 +1764,24 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->mutate_entry,
             ctx->time_of_mutation,
             ctx->new_data_part,
-            ctx->space_reservation
+            ctx->space_reservation,
+            (*ctx->mutate_entry)->ptr()
         );
 
         merge_subtasks.push_back(std::move(merge_task));
+    }
+
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        for (const auto * proj : ctx->projections_to_build)
+        {
+            if (!projection_parts.contains(proj->name))
+            {
+                std::erase(elem->projections_pending, proj->name);
+                elem->projections_done.push_back(proj->name);
+            }
+        }
     }
 
     if (build_text_index_transform)
@@ -1728,11 +1814,42 @@ bool PartMergerWriter::iterateThroughAllMergeSubtasks()
         return false;
 
     auto & task = merge_subtasks.back();
+    auto projection_name = task->getProjectionName();
+
+    if (!projection_name.empty())
+    {
+        bool new_projection = false;
+        {
+            auto * elem = (*ctx->mutate_entry)->ptr();
+            std::lock_guard lock(elem->projection_introspection_mutex);
+            if (elem->current_projection != projection_name)
+            {
+                elem->current_projection = projection_name;
+                new_projection = true;
+            }
+        }
+        if (new_projection)
+            FailPointInjection::pauseFailPoint(FailPoints::merge_task_projection_stage_pause);
+    }
+
     if (task->executeStep())
         return true;
 
     task->addToChecksums(ctx->new_data_part->checksums);
     merge_subtasks.pop_back();
+
+    if (!projection_name.empty())
+    {
+        auto * elem = (*ctx->mutate_entry)->ptr();
+        std::lock_guard lock(elem->projection_introspection_mutex);
+        std::erase(elem->projections_pending, projection_name);
+        elem->projections_done.push_back(projection_name);
+        elem->current_projection.clear();
+        elem->current_projection_progress.store(0, std::memory_order_relaxed);
+        elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+        elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
+    }
+
     return !merge_subtasks.empty();
 }
 

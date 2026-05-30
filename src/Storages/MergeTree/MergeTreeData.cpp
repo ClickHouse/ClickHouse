@@ -23,6 +23,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -79,6 +80,8 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
+#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -698,6 +701,7 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Moving, getContext())
+    , background_streaming_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Streaming, getContext())
 {
     metadata_.setVirtuals(createVirtuals(metadata_.hasPartitionKey() ? &metadata_.partition_key : nullptr));
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
@@ -787,11 +791,11 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * p
     desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of partition", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral(PartitionIdColumn::name, PartitionIdColumn::type, "Name of partition", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral(PartDataVersionColumn::name, std::make_shared<DataTypeUInt64>(), "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral(PartDataVersionColumn::name, PartDataVersionColumn::type, "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries", VirtualsMaterializationPlace::Reader);
     desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
@@ -3967,6 +3971,7 @@ void MergeTreeData::renameInMemory(const StorageID & new_table_id)
     /// after a rename (e.g., when system log tables are renamed during upgrade).
     background_operations_assignee.updateStorageID(new_table_id);
     background_moves_assignee.updateStorageID(new_table_id);
+    background_streaming_assignee.updateStorageID(new_table_id);
 }
 
 void MergeTreeData::dropAllData()
@@ -4250,6 +4255,25 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
+    /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
+    if (subscription_manager.hasSome())
+    {
+        const auto forbidden_commands = {
+            AlterCommand::ADD_COLUMN,
+            AlterCommand::DROP_COLUMN,
+            AlterCommand::MODIFY_COLUMN,
+            AlterCommand::RENAME_COLUMN,
+            AlterCommand::ADD_PROJECTION,
+            AlterCommand::DROP_PROJECTION,
+            AlterCommand::MODIFY_ORDER_BY,
+            AlterCommand::MODIFY_SAMPLE_BY,
+        };
+
+        for (const auto & cmd : commands)
+            if (std::ranges::contains(forbidden_commands, cmd.type))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
+    }
+
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
@@ -4741,7 +4765,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 {
                     auto it = old_types.find(command.column_name);
 
-                    assert(it != old_types.end());
+                    chassert(it != old_types.end());
                     if (!isSafeForKeyConversion(it->second, command.data_type.get()))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                                         "ALTER of partition key column {} from type {} "
@@ -4753,7 +4777,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 if (columns_alter_type_metadata_only.contains(command.column_name))
                 {
                     auto it = old_types.find(command.column_name);
-                    assert(it != old_types.end());
+                    chassert(it != old_types.end());
                     if (!isSafeForKeyConversion(it->second, command.data_type.get()))
                         throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                                         "ALTER of key column {} from type {} "
@@ -5318,13 +5342,13 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
 
-    assert([&]()
+    chassert([&]()
            {
                String dir_name = fs::path(part->getDataPartStorage().getRelativePath()).filename();
                bool may_be_cleaned_up = dir_name.starts_with("tmp_") || dir_name.starts_with("tmp-fetch_");
                return !may_be_cleaned_up || temporary_parts.contains(dir_name);
            }());
-    assert(!(!need_rename && rename_in_transaction));
+    chassert(!(!need_rename && rename_in_transaction));
 
     if (need_rename && !rename_in_transaction)
         part->renameTo(part->name, true);
@@ -5519,7 +5543,7 @@ void MergeTreeData::removePartsFromWorkingSetImmediatelyAndSetTemporaryState(con
         if (it_part == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} not found in data_parts", part->getNameWithState());
 
-        assert(part->getState() == MergeTreeDataPartState::PreActive);
+        chassert(part->getState() == MergeTreeDataPartState::PreActive);
 
         modifyPartState(part, MergeTreeDataPartState::Temporary, lock);
         /// Erase immediately
@@ -5630,7 +5654,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     {
         /// All parts (including outdated) must be loaded at this moment.
         std::lock_guard outdated_parts_lock(outdated_data_parts_mutex);
-        assert(outdated_unloaded_data_parts.empty());
+        chassert(outdated_unloaded_data_parts.empty());
     }
 #endif
 
@@ -5663,7 +5687,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// Maybe we could do it by incrementing mutation version to get a name for the empty covering part,
     /// but it's okay to simply avoid creating it for DROP PART (for a part in the middle).
     /// NOTE: Block numbers in ReplicatedMergeTree start from 0. For MergeTree, is_new_syntax is always false.
-    assert(!create_empty_part || supportsReplication());
+    chassert(!create_empty_part || supportsReplication());
     bool range_in_the_middle = drop_range.min_block;
     bool is_new_syntax = format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     if (create_empty_part && !parts_to_remove.empty() && is_new_syntax && !range_in_the_middle)
@@ -7472,10 +7496,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     if (fields_count == 0)
     {
         /// Function tuple(...) requires at least one argument, so empty key is a special case
-        assert(!partition_ast_fields_count);
-        assert(typeid_cast<ASTFunction *>(partition_value_ast.get()));
-        assert(partition_value_ast->as<ASTFunction>()->name == "tuple");
-        assert(partition_value_ast->as<ASTFunction>()->arguments);
+        chassert(!partition_ast_fields_count);
+        chassert(typeid_cast<ASTFunction *>(partition_value_ast.get()));
+        chassert(partition_value_ast->as<ASTFunction>()->name == "tuple");
+        chassert(partition_value_ast->as<ASTFunction>()->arguments);
         auto args = partition_value_ast->as<ASTFunction>()->arguments;
         if (!args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected at least one argument in partition AST");
@@ -7489,14 +7513,14 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         {
             if (tuple->name == "tuple")
             {
-                assert(tuple->arguments);
-                assert(tuple->arguments->children.size() == 1);
+                chassert(tuple->arguments);
+                chassert(tuple->arguments->children.size() == 1);
                 partition_value_ast = tuple->arguments->children[0];
             }
             else if (isFunctionCast(tuple))
             {
-                assert(tuple->arguments);
-                assert(tuple->arguments->children.size() == 2);
+                chassert(tuple->arguments);
+                chassert(tuple->arguments->children.size() == 2);
             }
             else
             {
@@ -8801,6 +8825,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
     clear();
 
     data.preactive_parts_cv.notify_all();
+    data.triggerStreamingSubscriptionEnrichment();
 
     return total_covered_parts;
 }
@@ -10945,6 +10970,34 @@ bool MergeTreeData::allowRemoveStaleMovingParts() const
     return ConfigHelper::getBool(getContext()->getConfigRef(), "allow_remove_stale_moving_parts", /* default_ = */ true);
 }
 
+void MergeTreeData::triggerStreamingSubscriptionEnrichment() const
+{
+    background_streaming_assignee.trigger();
+}
+
+bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
+{
+    if (subscription_manager.isEmpty())
+        return false;
+
+    auto promoters = buildPromoters();
+
+    LocalPartsByPartition local_parts;
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+        local_parts[part->info.getPartitionId()].push_back(part->info);
+
+    bool any_enriched = false;
+    subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
+    {
+        any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
+    });
+
+    if (any_enriched)
+        assignee.trigger();
+
+    return any_enriched;
+}
+
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
 {
     std::lock_guard lock(storage.currently_submerging_emerging_mutex);
@@ -10954,7 +11007,7 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
         if (!storage.currently_submerging_big_parts.contains(part))
         {
             LOG_ERROR(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
-            assert(false);
+            chassert(false);
         }
         else
             storage.currently_submerging_big_parts.erase(part);
