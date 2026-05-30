@@ -878,15 +878,30 @@ private:
 
             ++connect_attempts;
 
-            auto connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-            connection->setKeepAlive(true);
-
-            if (!proxy_configuration.isEmpty())
+            ConnectionPtr connection;
+            try
             {
-                connection->setProxyConfig(poco_proxy_config);
-            }
+                /// `PooledConnection::create` runs `ConnectionGroup::atConnectionCreate`, which
+                /// throws when the group hard limit is reached. This happens before any connect
+                /// attempt against the resolved address, so the failure does not belong to that
+                /// address. Suppress the `Entry` destructor's `setSuccess` via `setUnused` so we
+                /// do not record a spurious success (which would reset `consecutive_fail_count`
+                /// and undo resolver pessimization) for an address we never connected to.
+                connection = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+                connection->setKeepAlive(true);
 
-            connection->setResolvedHost(*address);
+                if (!proxy_configuration.isEmpty())
+                {
+                    connection->setProxyConfig(poco_proxy_config);
+                }
+
+                connection->setResolvedHost(*address);
+            }
+            catch (...)
+            {
+                address.setUnused();
+                throw;
+            }
 
             try
             {
@@ -894,20 +909,6 @@ private:
 
                 auto timer = CurrentThread::getProfileEvents().timer(getMetrics().elapsed_microseconds);
                 connection->doConnect(connect_time);
-
-                applySocketBufferSizes(*connection, group->getSocketBufferSizes());
-
-                ProfileEvents::increment(getMetrics().created);
-                /// In non-bypassed proxy mode `Poco::Net::HTTPClientSession::reconnect`
-                /// connects to the proxy and ignores `_resolved_host`, so the target
-                /// address we got from the resolver was never actually exercised by
-                /// this connect. Suppress the `Entry` destructor's `setSuccess` so we
-                /// do not record a spurious success for the target address - that would
-                /// reset `consecutive_fail_count` and let the resolver keep handing out
-                /// a known-bad target IP based on proxy-path success.
-                if (!retry_resolved_addresses)
-                    address.setUnused();
-                return connection;
             }
 #if USE_SSL
             catch (const Poco::Net::SSLException &)
@@ -952,6 +953,7 @@ private:
                 {
                     tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
                 }
+                continue;
             }
             catch (const Poco::TimeoutException &)
             {
@@ -979,6 +981,7 @@ private:
                 {
                     tryLogCurrentException("HTTPConnectionPool", "Ignored exception from setFail during retry");
                 }
+                continue;
             }
             catch (...)
             {
@@ -1004,6 +1007,26 @@ private:
                 }
                 throw;
             }
+
+            /// `doConnect` succeeded, so the resolved address is reachable.
+            ProfileEvents::increment(getMetrics().created);
+            /// In non-bypassed proxy mode `Poco::Net::HTTPClientSession::reconnect`
+            /// connects to the proxy and ignores `_resolved_host`, so the target
+            /// address we got from the resolver was never actually exercised by
+            /// this connect. Suppress the `Entry` destructor's `setSuccess` so we
+            /// do not record a spurious success for the target address - that would
+            /// reset `consecutive_fail_count` and let the resolver keep handing out
+            /// a known-bad target IP based on proxy-path success.
+            if (!retry_resolved_addresses)
+                address.setUnused();
+
+            /// Apply socket buffer sizes only after a successful connect. This is a local
+            /// socket-option operation; a failure here (e.g. from `setsockopt`) is not a
+            /// per-address routing problem, so it must propagate directly rather than be
+            /// mis-attributed to the resolved address by the retry handlers above (which
+            /// would `setFail` an address we just connected to successfully).
+            applySocketBufferSizes(*connection, group->getSocketBufferSizes());
+            return connection;
         }
 
         chassert(last_net_error);
