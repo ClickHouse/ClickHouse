@@ -6,6 +6,7 @@
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeCustomGeo.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -75,6 +76,47 @@ Array readGeoJSONPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(
 /// Reads [[[[lon,lat],...],...]] into Array of Array of Array of Tuple (MultiPolygon coordinates).
 Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(buf, readGeoJSONPolygonCoordinates); }
 
+/// Strictly skip a JSON value, requiring commas between object members and array elements.
+/// Unlike `skipJSONField`, which tolerates missing separators, this rejects malformed JSON
+/// even inside ignored fields (e.g. a skipped `bbox` object `{"a":1 "b":2}`).
+void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_settings)
+{
+    skipWhitespaceIfAny(buf);
+    if (buf.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unexpected end of input while reading a value");
+
+    if (*buf.position() == '{')
+    {
+        JSONUtils::skipObjectStart(buf);
+        bool first = true;
+        while (!JSONUtils::checkAndSkipObjectEnd(buf))
+        {
+            if (!first)
+                JSONUtils::skipComma(buf);
+            first = false;
+            JSONUtils::readFieldName(buf, json_settings);
+            skipJSONValueStrict(buf, json_settings);
+        }
+    }
+    else if (*buf.position() == '[')
+    {
+        JSONUtils::skipArrayStart(buf);
+        bool first = true;
+        while (!JSONUtils::checkAndSkipArrayEnd(buf))
+        {
+            if (!first)
+                JSONUtils::skipComma(buf);
+            first = false;
+            skipJSONValueStrict(buf, json_settings);
+        }
+    }
+    else
+    {
+        /// A scalar (string, number, boolean, or null) has no internal separators to validate.
+        skipJSONField(buf, "<ignored>", json_settings);
+    }
+}
+
 /// Iterate over every field of a JSON object (opening `{` must already be consumed).
 /// Calls handle_field(key) for each field. If handle_field returns true the value was
 /// consumed by the callback; otherwise the value is skipped automatically.
@@ -89,7 +131,7 @@ void forEachFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & jso
         first = false;
         String key = JSONUtils::readFieldName(buf, json_settings);
         if (!handle_field(key))
-            skipJSONField(buf, key, json_settings);
+            skipJSONValueStrict(buf, json_settings);
     }
 }
 
@@ -107,7 +149,7 @@ bool findFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & json_s
         String key = JSONUtils::readFieldName(buf, json_settings);
         if (key == desired_key)
             return true;
-        skipJSONField(buf, key, json_settings);
+        skipJSONValueStrict(buf, json_settings);
     }
     return false;
 }
@@ -189,6 +231,9 @@ void GeoJSONRowInputFormat::readSuffix()
 {
     auto & buf = getReadBuffer();
     JSONUtils::skipTheRestOfObject(buf, format_settings.json);
+    /// Reject trailing data after the top-level FeatureCollection object instead of ignoring it.
+    skipWhitespaceIfAny(buf);
+    assertEOF(buf);
 }
 
 bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
@@ -347,7 +392,9 @@ NamesAndTypesList GeoJSONExternalSchemaReader::readSchema()
     return {
         {"id", std::make_shared<DataTypeString>()},
         {"geometry", DataTypeFactory::instance().get("Geometry")},
-        {"properties", DataTypeFactory::instance().get("JSON")},
+        /// `properties` is `Nullable` so that an explicit GeoJSON `"properties": null` is preserved
+        /// as NULL rather than being indistinguishable from a default (empty) JSON object.
+        {"properties", makeNullable(DataTypeFactory::instance().get("JSON"))},
     };
 }
 

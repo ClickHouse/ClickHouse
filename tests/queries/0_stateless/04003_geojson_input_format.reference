@@ -1,11 +1,14 @@
 1	(13.405,52.52)	Berlin
 2	(2.3522,48.8566)	Paris
 	Polygon
+LineString	[(0,0),(1,2),(3,4)]
+MultiLineString	[[(0,0),(1,1)],[(2,2),(3,3)]]
 1	None
 0
 Point
 id	String					
 geometry	Geometry					
-properties	JSON					
+properties	Nullable(JSON)					
+1
 1
 1

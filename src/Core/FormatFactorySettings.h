@@ -1265,6 +1265,13 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
     DECLARE(String, input_format_record_errors_file_path, "", R"(
 Path of the file used to record errors while reading text formats (CSV, TSV).
 )", 0) \
+    DECLARE(String, input_format_geojson_unsupported_geometry_handling, "throw", R"(
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type is encountered while reading `GeoJSON` input. This includes `GeometryCollection` and `MultiPoint`.
+
+Possible values:
+- `'throw'` (default) — throw an exception.
+- `'null'` — insert a `NULL` value for the `geometry` column and continue parsing.
+)", 0) \
     DECLARE(String, errors_output_format, "CSV", R"(
 Method to write Errors to text output.
 )", 0) \

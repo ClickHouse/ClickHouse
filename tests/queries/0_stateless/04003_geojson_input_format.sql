@@ -36,6 +36,24 @@ FROM format('GeoJSON', '{
     ]
 }');
 
+-- LineString geometry.
+SELECT variantType(geometry) AS geo_type, geometry.LineString
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[0,0],[1,2],[3,4]]}, "properties": {}}
+    ]
+}');
+
+-- MultiLineString geometry.
+SELECT variantType(geometry) AS geo_type, geometry.MultiLineString
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "MultiLineString", "coordinates": [[[0,0],[1,1]],[[2,2],[3,3]]]}, "properties": {}}
+    ]
+}');
+
 -- Missing id should produce empty string; null geometry should produce None variant.
 SELECT id = '', variantType(geometry)
 FROM format('GeoJSON', '{
@@ -198,4 +216,21 @@ FROM format('GeoJSON', '{
         {"type": "Feature", "id": "1", "geometry": null}
     ]
 }'); -- { serverError INCORRECT_DATA }
+
+-- Trailing data after the top-level FeatureCollection object is rejected.
+SELECT count()
+FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]} garbage'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+
+-- Malformed JSON inside an ignored field is rejected (missing comma between members of a skipped object).
+SELECT count()
+FROM format('GeoJSON', '{"type":"FeatureCollection","bbox":{"a":1 "b":2},"features":[]}'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+
+-- An explicit "properties": null is preserved as NULL (not silently defaulted).
+SELECT isNull(properties)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": null, "properties": null}
+    ]
+}');
 
