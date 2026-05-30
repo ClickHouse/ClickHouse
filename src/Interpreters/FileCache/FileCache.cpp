@@ -108,8 +108,8 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
-    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics;
-    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics_per_client;
+    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
+    extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_client;
 }
 
 namespace
@@ -146,12 +146,12 @@ namespace
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_by_client_total",
-        "Number of file segments evicted from a filesystem cache, additionally labelled by user id. Disabled by default; enable via `filesystem_cache_expose_prometheus_eviction_metrics_per_client`.",
+        "Number of file segments evicted from a filesystem cache, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
         {"cache_name", "queue", "client_id"});
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_bytes_by_client_total",
-        "Total bytes of file segments evicted, additionally labelled by user id. Disabled by default; enable via `filesystem_cache_expose_prometheus_eviction_metrics_per_client`.",
+        "Total bytes of file segments evicted, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
         {"cache_name", "queue", "client_id"});
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits_by_client = HistogramMetrics::Factory::instance().registerMetric(
@@ -272,8 +272,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
-    , expose_eviction_metrics(settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics])
-    , expose_eviction_metrics_per_client(settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client])
+    , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
+    , expose_eviction_metrics_per_client(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client])
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings[FileCacheSetting::path],
@@ -2370,16 +2370,16 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         max_file_segment_size = actual_settings[FileCacheSetting::max_file_segment_size] = new_settings[FileCacheSetting::max_file_segment_size];
     }
 
-    if (new_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics] != actual_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics])
+    if (new_settings[FileCacheSetting::expose_prometheus_eviction_metrics] != actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     {
-        expose_eviction_metrics.store(new_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics], std::memory_order_relaxed);
-        actual_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics] = new_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics];
+        expose_eviction_metrics.store(new_settings[FileCacheSetting::expose_prometheus_eviction_metrics], std::memory_order_relaxed);
+        actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics];
     }
 
-    if (new_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client] != actual_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client])
+    if (new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client] != actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client])
     {
-        expose_eviction_metrics_per_client.store(new_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client], std::memory_order_relaxed);
-        actual_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client] = new_settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client];
+        expose_eviction_metrics_per_client.store(new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client], std::memory_order_relaxed);
+        actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_client];
     }
 }
 

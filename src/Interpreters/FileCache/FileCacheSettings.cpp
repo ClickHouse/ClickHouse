@@ -62,8 +62,8 @@ namespace ErrorCodes
     DECLARE(Double, split_cache_ratio, 0.1, "Ratio of system segment to total size of cache for split_cache.", 0) \
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
-    DECLARE(Bool, filesystem_cache_expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (filesystem_cache_evictions_total etc.). Off by default. Can be toggled at runtime via SYSTEM RELOAD CONFIG.", 0) \
-    DECLARE(Bool, filesystem_cache_expose_prometheus_eviction_metrics_per_client, false, "Additionally expose per-user-id eviction metrics. Requires filesystem_cache_expose_prometheus_eviction_metrics. Cardinality grows with distinct evicting users.", 0) \
+    DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (filesystem_cache_evictions_total etc.). Off by default. Can be toggled at runtime via SYSTEM RELOAD CONFIG.", 0) \
+    DECLARE(Bool, expose_prometheus_eviction_metrics_per_client, false, "Additionally expose per-user-id eviction metrics. Requires expose_prometheus_eviction_metrics. Cardinality grows with distinct evicting users.", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
