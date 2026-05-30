@@ -100,8 +100,6 @@ FunctionBaseAI::AINamedCollectionConfig FunctionBaseAI::resolveAINamedCollection
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", config.collection_name);
     if (config.model.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'model'", config.collection_name);
-    if (config.api_key.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'api_key'", config.collection_name);
 
     context->getRemoteHostFilter().checkURL(Poco::URI(config.endpoint));
 

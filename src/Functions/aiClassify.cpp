@@ -192,7 +192,7 @@ The function sends the text together with a fixed classification prompt and a JS
 constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
 object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and API key.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
         .syntax = "aiClassify(collection, text, categories[, temperature])",
         .arguments = {

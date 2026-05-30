@@ -1495,8 +1495,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             for (const auto & column : result_block.getColumnsWithTypeAndName())
                 column_names[column.name] = column.type;
             for (const auto & elem : query.orderBy()->children)
-                if (elem->as<ASTOrderByElement>()->with_fill)
-                    column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+                column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
             for (const auto & [name, type] : column_names)
             {
                 source_columns.emplace_back(name, type);
