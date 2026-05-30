@@ -28,6 +28,10 @@ protected:
     const ObjectStorageRouterPtr object_storages;
     const BlobKillerThreadPtr blob_killer;
     const bool wait_blob_removal;
+    /// Snapshot of the per-disk `wait_for_blob_removal_timeout_ms` taken at
+    /// transaction construction. A value of `0` means "wait indefinitely" and
+    /// restores the strict pre-fix semantics. See `waitBlobRemoval`.
+    const UInt64 wait_blob_removal_timeout_ms;
     const std::string read_resource_name;
     const std::string write_resource_name;
 
@@ -42,6 +46,7 @@ public:
         ObjectStorageRouterPtr object_storages_,
         BlobKillerThreadPtr blob_killer_,
         bool wait_blob_removal_,
+        UInt64 wait_blob_removal_timeout_ms_,
         std::string read_resource_name_,
         std::string write_resource_name_);
 

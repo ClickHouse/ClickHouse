@@ -1,0 +1,3 @@
+Test 1 (timeout > 0): DROP returned before parked round
+Test 2 (timeout = 0): DROP still blocked while round is parked
+Test 2 (timeout = 0): DROP finished after release

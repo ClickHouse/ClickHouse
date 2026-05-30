@@ -40,6 +40,7 @@ namespace DB
 namespace ServerSetting
 {
     extern const ServerSettingsBool disk_transaction_wait_for_blob_removal;
+    extern const ServerSettingsUInt64 disk_object_storage_blob_removal_wait_timeout_ms;
 }
 
 namespace ErrorCodes
@@ -62,7 +63,15 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, wait_blob_removal, getReadResourceName(), getWriteResourceName());
+    return std::make_shared<DiskObjectStorageTransaction>(
+        cluster,
+        metadata_storage,
+        object_storages,
+        blob_killer,
+        wait_blob_removal,
+        wait_blob_removal_timeout_ms.load(),
+        getReadResourceName(),
+        getWriteResourceName());
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
@@ -92,6 +101,7 @@ DiskObjectStorage::DiskObjectStorage(
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
     , use_fake_transaction(use_fake_transaction_)
     , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
+    , wait_blob_removal_timeout_ms(config.getUInt64(config_prefix + ".wait_for_blob_removal_timeout_ms", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_object_storage_blob_removal_wait_timeout_ms]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     /// TODO: change description to cover multiple object storages
@@ -914,6 +924,7 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
     wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
+    wait_blob_removal_timeout_ms = config.getUInt64(config_prefix + ".wait_for_blob_removal_timeout_ms", context->getServerSettings()[ServerSetting::disk_object_storage_blob_removal_wait_timeout_ms]);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
 }

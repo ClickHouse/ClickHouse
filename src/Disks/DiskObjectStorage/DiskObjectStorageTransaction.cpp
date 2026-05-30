@@ -9,7 +9,6 @@
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/Utils.h>
 #endif
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
@@ -40,11 +39,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 disk_object_storage_blob_removal_wait_timeout_ms;
-}
-
 namespace FailPoints
 {
     extern const char smt_insert_fake_hardware_error[];
@@ -63,20 +57,15 @@ void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) 
 {
     try
     {
-        /// Server-configurable bound for how long we wait for synchronous blob
-        /// removal. Under normal conditions blob removal completes in milliseconds,
-        /// but under sanitizer builds (TSan / MSan) and heavy I/O each round can
-        /// take many seconds; without a bound, the loop below (up to 100 iterations
-        /// times slow rounds) can block `MergeTreeCleanupThread` long enough that
-        /// `DatabaseCatalog::shutdown` trips the "Possible deadlock on shutdown"
-        /// watchdog. A value of `0` means "wait indefinitely" and restores the
-        /// strict pre-fix semantics for operators who prefer it. Blobs not cleaned
-        /// up here are removed by the next scheduled `BlobKillerThread` round.
-        const UInt64 timeout_ms = Context::getGlobalContextInstance()
-                                      ->getServerSettings()[ServerSetting::disk_object_storage_blob_removal_wait_timeout_ms];
-        const auto deadline = timeout_ms == 0
+        /// `wait_blob_removal_timeout_ms` is a snapshot of either the per-disk
+        /// `wait_for_blob_removal_timeout_ms` config option or, when absent, the
+        /// server setting `disk_object_storage_blob_removal_wait_timeout_ms`.
+        /// A value of `0` means "wait indefinitely" and restores the strict
+        /// pre-fix semantics for operators who prefer it. Blobs not cleaned up
+        /// here are removed by the next scheduled `BlobKillerThread` round.
+        const auto deadline = wait_blob_removal_timeout_ms == 0
             ? std::chrono::steady_clock::time_point::max()
-            : std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+            : std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_blob_removal_timeout_ms);
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
         for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
@@ -92,7 +81,7 @@ void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) 
                     "Remaining blobs will be cleaned up asynchronously by the blob killer.",
                     watch.elapsed() / 1000,
                     i + 1,
-                    timeout_ms);
+                    wait_blob_removal_timeout_ms);
                 break;
             }
         }
@@ -112,6 +101,7 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     ObjectStorageRouterPtr object_storages_,
     BlobKillerThreadPtr blob_killer_,
     bool wait_blob_removal_,
+    UInt64 wait_blob_removal_timeout_ms_,
     String read_resource_name_,
     String write_resource_name_)
     : cluster(std::move(cluster_))
@@ -119,6 +109,7 @@ DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     , object_storages(std::move(object_storages_))
     , blob_killer(std::move(blob_killer_))
     , wait_blob_removal(wait_blob_removal_)
+    , wait_blob_removal_timeout_ms(wait_blob_removal_timeout_ms_)
     , read_resource_name(std::move(read_resource_name_))
     , write_resource_name(std::move(write_resource_name_))
     , metadata_transaction(metadata_storage->createTransaction())
@@ -134,7 +125,15 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     ObjectStorageRouterPtr destination_object_storages_,
     std::string read_resource_name_,
     std::string write_resource_name_)
-    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, /*wait_blob_removal=*/false, std::move(read_resource_name_), std::move(write_resource_name_))
+    : DiskObjectStorageTransaction(
+          destination_cluster_,
+          destination_metadata_storage_,
+          destination_object_storages_,
+          /*blob_killer=*/nullptr,
+          /*wait_blob_removal=*/false,
+          /*wait_blob_removal_timeout_ms=*/0,
+          std::move(read_resource_name_),
+          std::move(write_resource_name_))
     , source_cluster(std::move(source_cluster_))
     , source_metadata_storage(std::move(source_metadata_storage_))
     , source_object_storages(std::move(source_object_storages_))

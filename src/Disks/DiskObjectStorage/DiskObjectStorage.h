@@ -279,6 +279,13 @@ private:
 
     const bool use_fake_transaction;
     std::atomic<bool> wait_blob_removal;
+    /// Per-disk override of the server setting
+    /// `disk_object_storage_blob_removal_wait_timeout_ms`. Read from the disk's
+    /// `wait_for_blob_removal_timeout_ms` config option; falls back to the server
+    /// setting when absent. A value of `0` means "wait indefinitely" and restores
+    /// the strict pre-fix semantics for operators who prefer it. Reloadable via
+    /// `applyNewSettings`.
+    std::atomic<UInt64> wait_blob_removal_timeout_ms;
     UInt64 remove_shared_recursive_file_limit;
 };
 

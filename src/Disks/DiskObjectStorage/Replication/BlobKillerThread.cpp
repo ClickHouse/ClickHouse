@@ -10,6 +10,7 @@
 
 #include <Common/DelayWithJitter.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
@@ -39,6 +40,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char blob_killer_thread_pause_in_run[];
+}
 
 namespace ErrorCodes
 {
@@ -240,6 +246,13 @@ void BlobKillerThread::run()
 {
     auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::run");
     LOG_TEST(log, "Starting cleanup");
+
+    /// Test-only hook: pauses the round before it touches metadata or object storage.
+    /// While paused, `finished_rounds` does not advance, so a concurrent
+    /// `triggerAndWait` blocks in `waitRound` until the deadline expires or the
+    /// failpoint is notified. Drives the regression test for the bounded-wait
+    /// contract in `tests/queries/0_stateless/04301_blob_removal_wait_timeout.sh`.
+    FailPointInjection::pauseFailPoint(FailPoints::blob_killer_thread_pause_in_run);
 
     executeBlobsCleanup(metadata_request_batch.load(), max_blobs_in_task.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
     {
