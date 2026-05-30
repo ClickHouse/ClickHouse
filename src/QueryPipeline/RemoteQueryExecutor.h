@@ -4,6 +4,7 @@
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/UniqueLock.h>
+#include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
@@ -303,6 +304,21 @@ private:
       * requesting to cancel query execution
       */
     bool got_exception_from_replica = false;
+
+    /** Whether the shard has already returned any data block with rows.
+      * Used by `skip_unavailable_shards_mode = unavailable_or_exception_before_processing`
+      * to decide whether an exception arrived before the shard started returning results.
+      */
+    bool got_data_from_replica = false;
+
+    /// Cached `skip_unavailable_shards` settings, read once at construction time.
+    const bool skip_unavailable_shards;
+    const SkipUnavailableShardsMode skip_unavailable_shards_mode;
+
+    /** Returns true if an exception packet received from the shard should be silently
+      * ignored according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
+      */
+    bool shouldIgnoreShardException(int exception_code) const;
 
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution

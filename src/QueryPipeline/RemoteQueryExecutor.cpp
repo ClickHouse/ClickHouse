@@ -63,6 +63,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -83,6 +85,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , external_tables(external_tables_)
     , stage(stage_)
     , extension(extension_)
+    , skip_unavailable_shards(context->getSettingsRef()[Setting::skip_unavailable_shards])
+    , skip_unavailable_shards_mode(context->getSettingsRef()[Setting::skip_unavailable_shards_mode])
     , priority_func(priority_func_)
     , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
@@ -695,13 +699,16 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
             if (!packet.block.empty() && (packet.block.rows() > 0))
+            {
+                got_data_from_replica = true;
                 return ReadResult(adaptBlockStructure(packet.block, *header));
+            }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
 
-            if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
+            if (shouldIgnoreShardException(packet.exception->code()))
             {
                 LOG_ERROR(log,
                     "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
@@ -870,7 +877,7 @@ void RemoteQueryExecutor::finish()
             case Protocol::Server::Exception:
                 got_exception_from_replica = true;
 
-                if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
+                if (shouldIgnoreShardException(packet.exception->code()))
                 {
                     LOG_ERROR(log,
                         "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
@@ -1043,6 +1050,26 @@ bool RemoteQueryExecutor::isQueryPending() const
 bool RemoteQueryExecutor::hasThrownException() const
 {
     return got_exception_from_replica || got_unknown_packet_from_replica;
+}
+
+bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
+{
+    /// Connection-related failures are handled where connections are established, not here as
+    /// server `Exception` packets, so the legacy `unavailable` mode ignores nothing at this point.
+    if (!skip_unavailable_shards)
+        return false;
+
+    switch (skip_unavailable_shards_mode)
+    {
+        case SkipUnavailableShardsMode::UNAVAILABLE:
+            return false;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
+            return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
+            /// Ignore the exception only if the shard has not returned any data yet.
+            /// Once some data has been returned, an exception means partial results, which must not be silently accepted.
+            return !got_data_from_replica;
+    }
 }
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)

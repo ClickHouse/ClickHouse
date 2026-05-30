@@ -75,6 +75,8 @@ namespace Setting
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsBool use_compact_format_in_distributed_parts_names;
 }
 
@@ -91,6 +93,34 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ABORTED;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
+}
+
+namespace
+{
+
+/// Decides whether an exception from a shard should be silently ignored on INSERT
+/// according to `skip_unavailable_shards` and `skip_unavailable_shards_mode`.
+/// This is checked while establishing the connection and sending the query to the shard,
+/// i.e. before any data has been pushed, so `unavailable_or_exception_before_processing` applies here.
+bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
+{
+    if (!settings[Setting::skip_unavailable_shards])
+        return false;
+
+    const SkipUnavailableShardsMode mode = settings[Setting::skip_unavailable_shards_mode];
+    switch (mode)
+    {
+        case SkipUnavailableShardsMode::UNAVAILABLE:
+            return false;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
+            return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
+            return true;
+    }
+}
+
 }
 
 static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log)
@@ -387,44 +417,68 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (rows == 0)
             return;
 
+        /// The shard reported an ignorable error on a previous block; keep discarding its data.
+        if (job.skip)
+            return;
+
         if (!job.is_local_job || !settings[Setting::prefer_localhost_replica])
         {
             if (!job.executor)
             {
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-                if (shard_info.hasInternalReplication())
+                try
                 {
-                    /// Skip replica_index in case of internal replication
-                    if (shard_job.replicas_jobs.size() != 1)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
+                    if (shard_info.hasInternalReplication())
+                    {
+                        /// Skip replica_index in case of internal replication
+                        if (shard_job.replicas_jobs.size() != 1)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "There are several writing job for an automatically replicated shard");
 
-                    /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
-                    /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
-                    auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    auto result = shard_info.pool->getValidTryResult(results, settings[Setting::distributed_insert_skip_read_only_replicas]);
-                    job.connection_entry = std::move(result.entry);
+                        /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
+                        /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
+                        /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
+                        auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
+                        auto result = shard_info.pool->getValidTryResult(results, settings[Setting::distributed_insert_skip_read_only_replicas]);
+                        job.connection_entry = std::move(result.entry);
+                    }
+                    else
+                    {
+                        const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
+
+                        const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
+                        if (!connection_pool)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
+
+                        job.connection_entry = connection_pool->get(timeouts, settings);
+                        if (job.connection_entry.isNull())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
+                    }
+
+                    if (throttler)
+                        job.connection_entry->setThrottler(throttler);
+
+                    /// The RemoteSink constructor sends the query to the shard and reads its header,
+                    /// so a missing table or any other "before processing" exception surfaces here.
+                    job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
+                        *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                    job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                    job.executor->start();
                 }
-                else
+                catch (const Exception & e)
                 {
-                    const auto & replica = addresses.at(job.shard_index).at(job.replica_index);
+                    if (!shouldSkipShardOnInsert(settings, e.code()))
+                        throw;
 
-                    const ConnectionPoolPtr & connection_pool = shard_info.per_replica_pools.at(job.replica_index);
-                    if (!connection_pool)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection pool for replica {} does not exist", replica.readableString());
+                    LOG_WARNING(log,
+                        "Skipping shard {} on INSERT due to `skip_unavailable_shards_mode` setting: {}",
+                        shard_info.shard_num, e.displayText());
 
-                    job.connection_entry = connection_pool->get(timeouts, settings);
-                    if (job.connection_entry.isNull())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty connection for replica{}", replica.readableString());
+                    job.skip = true;
+                    job.executor.reset();
+                    job.pipeline = QueryPipeline();
+                    job.connection_entry = {};
+                    return;
                 }
-
-                if (throttler)
-                    job.connection_entry->setThrottler(throttler);
-
-                job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
-                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
-                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
-                job.executor->start();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
