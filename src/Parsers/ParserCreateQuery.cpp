@@ -26,6 +26,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -882,7 +883,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Data, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics}).parse(pos, targets, expected);
         }
 
         return true;
