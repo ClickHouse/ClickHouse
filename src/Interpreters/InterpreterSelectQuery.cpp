@@ -1500,8 +1500,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             for (const auto & column : result_block.getColumnsWithTypeAndName())
                 column_names[column.name] = column.type;
             for (const auto & elem : query.orderBy()->children)
-                if (elem->as<ASTOrderByElement>()->with_fill)
-                    column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+                column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
             for (const auto & [name, type] : column_names)
             {
                 source_columns.emplace_back(name, type);
@@ -1593,7 +1592,7 @@ static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node
         if (!converted_value.isNull())
         {
             Int64 int_value = converted_value.safeGet<Int64>();
-            assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+            chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
             const UInt64 magnitude = -static_cast<UInt64>(int_value);
             return {magnitude, 0, true};
@@ -2115,7 +2114,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     // We don't have window functions, so we can execute the
                     // expressions before ORDER BY and the preliminary DISTINCT
                     // now, on shards (first_stage).
-                    assert(!expressions.before_window);
+                    chassert(!expressions.before_window);
                     executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                     executeDistinct(query_plan, true, expressions.selected_columns, true);
                 }
@@ -3176,7 +3175,7 @@ static bool windowDescriptionComparator(const WindowDescription * _left, const W
         if (left[i].nulls_direction > right[i].nulls_direction)
             return false;
 
-        assert(left[i] == right[i]);
+        chassert(left[i] == right[i]);
     }
 
     // Note that we check the length last, because we want to put together the

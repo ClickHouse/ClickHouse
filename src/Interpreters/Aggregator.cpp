@@ -1337,7 +1337,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             else
                 aggregate_data = emplace_result.getMapped();
 
-            assert(aggregate_data != nullptr);
+            chassert(aggregate_data != nullptr);
             places[i] = aggregate_data;
         }
     }
