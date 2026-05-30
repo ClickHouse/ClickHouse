@@ -31,6 +31,15 @@ class PrefetchHandle;
 class FilesystemReadPrefetchesLog;
 enum class FilesystemPrefetchState : uint8_t;
 
+/// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
+/// through a fastest-first cache chain, falling back to the source. Tuned for
+/// sequential scans: keeps one source connection alive across windows
+/// (`live_buffer`), reads one window ahead on a `PrefetchThreadPool`, and
+/// shrinks its window/block sizes under memory pressure. Owns its cache and
+/// decryption layers internally, so it is NOT wrapped by the legacy
+/// async/decrypt/cache read buffers. One instance per column-stream; not
+/// thread-safe beyond the documented prefetch-worker handoff (the prefetch
+/// future's `get()` happens-before edge).
 class ReaderExecutor
 {
 public:
@@ -56,16 +65,12 @@ public:
     /// Seek to a new position. Discards any prefetched data.
     void seek(size_t new_position);
 
-    /// Build a transient ReaderExecutor configured to start at `start_position`,
-    /// sharing immutable state (caches, source, objects, cache_key, decryption)
-    /// but owning its own mutable state (position, live_buffer, prefetch).
-    /// Used by `PipelineReadBuffer::readBigAt` to drive a one-shot read via the
-    /// regular pipeline without disturbing this executor or duplicating the
-    /// cache-walk / source-read logic.
-    ///
-    /// The transient deliberately uses neither `prefetch_pool` nor
-    /// `buffer_limit` — those exist to coordinate state across calls on the
-    /// same stream and would compete with the main executor for resources.
+    /// A fresh executor starting at `start_position` that shares immutable state
+    /// (caches, source, objects, decryption) but owns its own position / live
+    /// buffer. Drives `PipelineReadBuffer::readBigAt` as a one-shot read. Shares
+    /// `buffer_limit` (its connection counts against the server budget) but gets
+    /// no `prefetch_pool`/log: a one-shot read can't amortise prefetch and would
+    /// steal slots from a sequential reader.
     std::unique_ptr<ReaderExecutor> makeTransientForReadAt(size_t start_position) const;
 
     /// Whether `makeTransientForReadAt` / `readBigAt` is allowed. All current
@@ -270,22 +275,16 @@ private:
     /// per-buffer id). Empty until the prefetches-log sink is attached.
     String prefetch_reader_id;
 
-    /// Slot pre-acquired at the top of readNextWindow. When present, the
-    /// next source read is guaranteed to be promoted to live (no re-attempt
-    /// in readFromSource), and we use a one-block read window because the live
-    /// buffer streams a block at a time anyway. The slot is consumed (moved
-    /// into live_buffer) on the first source read of this window; if the
-    /// open fails it's released here. The reserved-for-path lives in
+    /// Slot reserved at the top of `readNextWindow` so the next source read is
+    /// promoted to live without re-checking; consumed into `live_buffer` on
+    /// that read (released here if the open fails). Reserved-for-path is
     /// `pre_acquired_slot->objectPath()`.
     std::optional<SourceBufferSlot> pre_acquired_slot;
 
-    /// Drop `pre_acquired_slot` if it was reserved for a different object
-    /// than `target_path`. No-op when no slot is held or the path already
-    /// matches. Call before `readFromSource` for a known object or before
-    /// `seek` lands in a different object — otherwise the stale slot stays
-    /// held until executor destruction while `readFromSource`'s fallback
-    /// quietly acquires a SECOND slot, halving effective
-    /// `max_remote_read_connections` capacity.
+    /// Drop `pre_acquired_slot` when it was reserved for an object other than
+    /// `target_path`. Must run before a `readFromSource` / `seek` into a
+    /// different object, else the stale slot leaks while `readFromSource`'s
+    /// fallback acquires a second one — halving `max_remote_read_connections`.
     void releaseStalePreAcquiredSlot(const String & target_path);
 
 #if USE_SSL
@@ -343,12 +342,9 @@ private:
         /// bytes persist in cache for a later read.
         size_t prefetch_wasted_bytes = 0;
     };
-    /// `mutable` so the `const` `decryptRope` can accumulate `decrypt_us`.
-    /// `decryptRope`'s `const` documents thread-safety for parallel calls
-    /// from prefetch workers (decryption_layers/decryption_headers stay
-    /// immutable post-init); stats are observability, not state, and
-    /// writes from worker + foreground are serialized via the prefetch
-    /// future's `get()` happens-before edge (same model as `source_read_us`).
+    /// `mutable` so the `const` `decryptRope` can accumulate timings. Stats are
+    /// observability, not state; worker/foreground writes are serialized by the
+    /// prefetch future's `get()` happens-before edge.
     mutable Stats stats;
 
     LoggerPtr log = getLogger("ReaderExecutor");

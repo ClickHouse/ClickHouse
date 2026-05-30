@@ -97,16 +97,10 @@ DiskCacheHandle::DiskCacheHandle(
     /// every merge that reads a not-yet-cached object pollutes the cache,
     /// which `02241_filesystem_cache_on_write_operations` detects.
     ///
-    /// `file_segments_limit = 0` (unlimited) — `DiskCacheProvider` is a
-    /// one-shot lookup: `status()` / `get()` / `put()` must see every segment
-    /// that overlaps `requested`, otherwise miss ranges past the limit are
-    /// silently dropped and `ReaderExecutor` returns short data. The
-    /// `filesystem_cache_segments_batch_size` setting is designed for the
-    /// legacy streaming reader (`CachedOnDiskReadBufferFromFile`) which
-    /// fetches segments in pages via `nextFileSegmentsBatch`; we don't have
-    /// that loop and the request size is already bounded by the executor's
-    /// window (≤ a few segments per call), so disabling the limit here is
-    /// both correct and bounded.
+    /// `file_segments_limit = 0` (unlimited): this is a one-shot lookup, so
+    /// `status`/`get`/`put` must see every segment overlapping `requested` or
+    /// miss ranges past the limit are silently dropped. The batch-size setting
+    /// is for the legacy paging reader; the request is already window-bounded.
     if (cache_settings.read_if_exists_otherwise_bypass)
     {
         holder = cache->get(
@@ -269,15 +263,13 @@ Rope DiskCacheHandle::get(ByteRange range)
     if (!holder)
         return result;
 
-    /// Record the file-level range for the destructor's deferred LRU bump.
-    /// Records BEFORE we read so a partial pread failure (which throws) still
-    /// leaves a coherent record — though the dtor will simply re-fetch and no-op
-    /// for any range whose cached segments are gone by then.
+    /// Record for the dtor's deferred LRU bump before reading, so a throwing
+    /// pread still leaves a coherent record (the dtor re-fetches and no-ops for
+    /// ranges whose segments are gone).
     hits_to_touch.push_back(range);
 
-    /// `range` is file-level; segments are object-local. Translate the
-    /// caller's range into object-local for the overlap math, then attach
-    /// file-level `logical_offset` to the returned nodes.
+    /// File-level `range` → object-local for the overlap math; returned nodes
+    /// carry file-level `logical_offset`.
     chassert(range.offset >= object_file_offset);
     ByteRange range_in_object{range.offset - object_file_offset, range.size};
 
@@ -315,20 +307,12 @@ Rope DiskCacheHandle::get(ByteRange range)
             continue;
         size_t overlap_size = overlap_end - overlap_start;
 
-        /// Read via `createReadBufferFromFileBase` so cache-hit reads pick up
-        /// `max_local_read_bandwidth` (via `local_throttler`), `OpenedFileCache*` /
-        /// `ReadBufferFromFileDescriptorRead*` ProfileEvents, and any future
-        /// file-read instrumentation that hangs off that factory.
-        ///
-        /// Zero-copy: `buffer_size = 0` makes the reader skip its internal
-        /// buffer; `set(buf->data(), n)` below rewires `working_buffer` to
-        /// `OwnedRopeBuffer` memory so `pread` writes directly into it.
-        ///
-        /// The segment is pinned by the holder, so the file is guaranteed to
-        /// exist for the lifetime of this handle; any failure here is a hard
-        /// I/O error (or external tampering), not a race with eviction —
-        /// throw rather than silently drop a hit that `status()` already
-        /// promised.
+        /// Read via the factory so cache-hit reads pick up `local_throttler`
+        /// and the file-read ProfileEvents. Zero-copy: `buffer_size = 0` +
+        /// `set(buf->data(), n)` below point `working_buffer` at the
+        /// `OwnedRopeBuffer` so `pread` lands directly in it. The holder pins
+        /// the segment, so any read failure is a hard I/O error, not an
+        /// eviction race — throw rather than drop a promised hit.
         String path = segment->getPath();
         size_t offset_in_file = overlap_start - seg_range.left;
 
@@ -373,12 +357,6 @@ Rope DiskCacheHandle::get(ByteRange range)
         result.append(RopeNode{
             std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
-        /// LRU bump intentionally deferred to `touch()`. `ReaderExecutor`
-        /// calls `touch` for every hit AFTER all `put`s complete, so a hit
-        /// that sits adjacent to fresh inserts does not become "older" than
-        /// the segments just inserted around it (matches the LRU-update
-        /// order of a streaming reader; see `02944` for a regression).
-
         /// Only emit a cache_log entry for fully `DOWNLOADED` segments. For
         /// `PARTIALLY_DOWNLOADED*`, the subsequent `put` that fills the tail
         /// emits a `READ_FROM_FS_AND_DOWNLOADED_TO_CACHE` entry — emitting a
@@ -397,13 +375,10 @@ Rope DiskCacheHandle::get(ByteRange range)
 
 DiskCacheHandle::~DiskCacheHandle()
 {
-    /// Deferred LRU bump. For each range that was successfully `get`-ed via
-    /// this handle, re-fetch the matching segments and call
-    /// `increasePriority`. This happens here — at destruction — rather than
-    /// inside `get` so the bump lands AFTER any `put` the executor issued
-    /// on this handle (or on another handle for the same file). A hit that
-    /// sits next to fresh inserts therefore does not become "older" than
-    /// the segments just inserted around it.
+    /// Deferred LRU bump (the contract in `ICacheHandle::put`): re-fetch and
+    /// `increasePriority` each `get`-ed range here, at destruction, so the bump
+    /// lands after any `put` and a hit next to fresh inserts isn't aged below
+    /// them.
     if (hits_to_touch.empty())
         return;
 

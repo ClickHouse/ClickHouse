@@ -84,7 +84,6 @@ Rope PageCacheHandle::get(ByteRange range)
 
         ByteRange block_range{block.byte_range.offset, block.byte_range.size};
 
-        /// Check overlap with requested range.
         if (block_range.end() <= range.offset || block_range.offset >= range.end())
             continue;
 
@@ -109,7 +108,6 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
 
         ByteRange block_range{block.byte_range.offset, block.byte_range.size};
 
-        /// Check if the provided data covers this miss block.
         if (block_range.end() <= range.offset || block_range.offset >= range.end())
             continue;
 
@@ -132,20 +130,10 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
             inject_eviction,
             [&](const PageCache::MappedPtr & new_cell)
             {
-                /// `Rope::copyTo(dst, req)` writes bytes at `dst[lo - req.offset]`
-                /// for each byte at logical offset `lo`. The cell expects
-                /// block-relative layout `cell[lo - block_range.offset]`, so
-                /// `req.offset` must equal `block_range.offset` — otherwise the
-                /// bytes land at the wrong cell offset and a later `get` would
-                /// serve corrupted data.
-                ///
-                /// The executor contracts that `data` starts at the block
-                /// boundary and is internally contiguous: each `put` is fed by
-                /// a single source read covering exactly one miss range, which
-                /// `status()` reports as a full block. Partial-at-end
-                /// (`covered.size < block_range.size`, e.g. EOF) is allowed;
-                /// leading or internal gaps are not. Throw rather than silently
-                /// poison the cache when the contract is violated.
+                /// `data` must start at the block boundary and be contiguous:
+                /// the cell expects block-relative layout, so a wrong start
+                /// offset or an internal gap would poison it. Partial-at-end
+                /// (EOF) is fine; leading/internal gaps throw.
                 Rope slice = data.slice(block_range);
                 ByteRange covered = slice.range();
                 size_t pos = covered.size;
@@ -185,7 +173,6 @@ size_t PageCacheHandle::put(ByteRange range, Rope data)
             bytes_written += loaded_bytes;
         }
 
-        /// Update the block state so subsequent get() calls work.
         block.cell = std::move(cell);
         block.is_hit = true;
     }

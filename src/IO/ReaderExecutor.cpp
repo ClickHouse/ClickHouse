@@ -381,12 +381,10 @@ struct WindowAndBlock
     size_t block_bytes;
 };
 
-/// Per-memory-pressure-level reduction factors applied to the configured base
-/// window/block sizes (indexed by `MemoryPressureLevel`: Normal, Elevated,
-/// High, Critical). Level 0 (Normal) divides by 1, i.e. uses the configured
-/// base. Explicit per-level arrays so the ladder is readable and each level is
-/// tunable independently; with the default 8 MiB / 1 MiB base these reproduce
-/// the previous hard-coded table exactly (incl. the 512 KiB block at High).
+/// Divisors applied to the configured base window/block sizes, indexed by
+/// `MemoryPressureLevel` (Normal, Elevated, High, Critical). Normal divides by
+/// 1 (the configured base); higher pressure shrinks more. Per-level arrays so
+/// each step is tunable independently.
 constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
 constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()]  = {1, 2, 2,  8};
 
@@ -478,19 +476,14 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
 
     if (local_handle->tryCancel())
     {
-        /// `tryCancel` succeeded: the worker hadn't started yet. Stash the
-        /// handle for the destructor to wait on — the worker, when it picks
-        /// the task up, takes the cancellation-exception path and never
-        /// touches this executor's mutable state. `execution_watch` stays
-        /// unset, so the prefetch-log row below records no execution timing.
+        /// Still queued: the worker will take the cancellation path and never
+        /// touch our state. Stash it for the destructor to join.
         abandoned_prefetches.push_back(std::move(local_handle));
     }
     else
     {
-        /// `tryCancel` lost the race — the worker is mid-`readPhysicalWindow`,
-        /// mutating `live_buffer`, `reached_eof`, `stats` via the captured
-        /// `this`. Block so the caller can safely overwrite that state on
-        /// return. Everything the worker produced is wasted.
+        /// Already running and mutating our state via the captured `this`; block
+        /// until it finishes so the caller can safely overwrite it. Work wasted.
         ++stats.prefetch_discarded_running;
         StopwatchAccumulator wait_scope(stats.prefetch_discard_wait_us);
         try
@@ -500,9 +493,6 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
         }
         catch (...)
         {
-            /// Cancellation throws `PrefetchHandle: task was cancelled` here —
-            /// expected when we cancel the in-flight prefetch. Log at debug
-            /// to avoid flooding the error log on every `discardPrefetch`.
             tryLogCurrentException(log, "Discarded prefetch task threw", LogsLevel::debug);
         }
     }
@@ -718,6 +708,12 @@ Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offs
 #endif
 }
 
+/// One window of bytes, or empty at EOF. An in-flight prefetch is consumed
+/// FIRST, before the EOF gate: an unknown-size worker can latch `reached_eof`
+/// while still returning the file's final bytes, so gating first would drop
+/// them. With no prefetch, read synchronously (or return empty at EOF).
+/// Releases the live connection + slot once EOF is latched, then reads one
+/// window ahead.
 Rope ReaderExecutor::readNextWindow()
 {
     size_t logical_size = totalSize();
@@ -725,12 +721,6 @@ Rope ReaderExecutor::readNextWindow()
 
     if (prefetch_handle)
     {
-        /// Consume the prefetched rope BEFORE applying the EOF gate: an
-        /// unknown-size prefetch worker may latch `reached_eof` while
-        /// still returning the file's final bytes — gating on `atEnd()`
-        /// first would `discardPrefetch` and drop those bytes.
-        /// Move-before-touch: same future-consumption contract as
-        /// `discardPrefetch`.
         auto local_handle = std::move(prefetch_handle);
 
         if (local_handle->tryCancel())
@@ -748,13 +738,9 @@ Rope ReaderExecutor::readNextWindow()
             HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
 
-            /// Stash the cancelled handle so ~ReaderExecutor waits for the pool
-            /// worker to take the cancellation path before this executor's
-            /// state is freed. The worker attaches a `ThreadGroupSwitcher` to
-            /// the submitter's group *before* checking cancellation, so simply
-            /// dropping the handle here risked the worker walking a freed
-            /// memory-tracker chain after the query was gone. Mirrors the
-            /// cancel branch of `discardPrefetch`.
+            /// Stash so ~ReaderExecutor joins the worker before our state is
+            /// freed — the worker attaches a `ThreadGroupSwitcher` before
+            /// checking cancellation (see `discardPrefetch`).
             abandoned_prefetches.push_back(std::move(local_handle));
         }
         else
@@ -807,12 +793,9 @@ Rope ReaderExecutor::readNextWindow()
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         rope.range().size, rope.getNodes().size(), position);
 
-    /// Unknown-size sources latch EOF via a short/zero-byte read inside the
-    /// window above, not the pre-read `atEnd` gate. When the terminal read
-    /// returns no bytes, the caller stops on this empty rope and never makes
-    /// the follow-up call that would hit that gate — so release the live
-    /// connection and its slot here as soon as EOF is latched, instead of
-    /// leaking a `max_remote_read_connections` slot until executor destruction.
+    /// Unknown-size EOF is latched by a short read here, not the pre-read gate,
+    /// and the caller stops on the empty rope without a follow-up call — so
+    /// release the live connection + slot now rather than leaking it.
     if (reached_eof)
     {
         live_buffer.reset();
@@ -850,11 +833,9 @@ void ReaderExecutor::seek(size_t new_position)
     /// path-mismatch reset in `readFromSource`.
     releaseStalePreAcquiredSlot(new_obj ? new_obj->remote_path : String{});
 
-    /// Reset `live_buffer` when the seek target no longer continues from it.
-    /// `readFromSource` does the same check, but a cache-hit path skips that
-    /// branch entirely — without resetting here the stale connection (and
-    /// its `SourceBufferSlot`) would stay open until EOF or destruction,
-    /// burning `max_remote_read_connections` capacity.
+    /// Reset `live_buffer` when the target no longer continues from it. A
+    /// cache-hit path skips `readFromSource`'s equivalent check, so without
+    /// this the stale connection + slot would leak until EOF/destruction.
     if (live_buffer)
     {
         const bool live_continues = new_obj
@@ -1064,6 +1045,16 @@ Rope ReaderExecutor::readFromSource(
     return rope;
 }
 
+/// Assemble the bytes for `physical_window` from the cache chain, then the
+/// source. Walks caches fastest-first, appending each tier's hits (clamped to
+/// the request, deduped via `covered` so `result` stays disjoint even across
+/// overlapping tiers) and propagating misses down; merges leftover misses into
+/// fewer source reads; writes fetched bytes back into the missed segments.
+/// While a live connection streams sequentially, pins the segment it will
+/// continue into so a mid-read eviction can't reset it (Strategy A).
+/// `from_prefetch` routes cache-populate bytes to the sync vs. async counter.
+/// Returns one contiguous run from the window start (a hole would shift the
+/// caller's offset interpretation).
 Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_prefetch)
 {
     LOG_TRACE(log, "readPhysicalWindow [{}, {}) from_prefetch={}",
@@ -1071,16 +1062,11 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
 
     Rope result;
     IntervalSet covered;   /// disjoint logical bytes already materialised in `result`
-    /// Both vectors live to scope exit so `~ICacheHandle` (which does the
-    /// deferred LRU bump) runs AFTER every `put` below — see `~DiskCacheHandle`.
+    /// Both vectors live to scope exit so `~ICacheHandle` (the deferred LRU
+    /// bump) runs AFTER every `put` below — see `~DiskCacheHandle`.
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> miss_handles;
     VectorWithMemoryTracking<std::unique_ptr<ICacheHandle>> hit_only_handles;
 
-    /// Walk the cache chain. Each cache reports hits/misses at its own
-    /// granularity (which may extend past the requested range). Hits are
-    /// appended only for not-yet-covered subranges so `result` stays disjoint
-    /// even when a lower cache hit overlaps a higher cache hit. Misses
-    /// propagate to the next cache.
     VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(physical_window);
     for (auto & cache : caches)
     {
@@ -1249,12 +1235,9 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
         }
     }
 
-    /// Cache-only window: no source read ran (`fetch_ranges` was empty), so the
-    /// live buffer was not advanced. If it can no longer continue the next
-    /// sequential window (its parked offset is behind where the next read
-    /// starts — same continuity check as `seek`/`readFromSource`), close it now
-    /// so its `SourceBufferLimit` slot isn't held idle until the next miss/EOF.
-    /// The pin block below then clears `inflight_segment_pin` via its `else`.
+    /// Cache-only window (no source read): if the un-advanced live buffer can't
+    /// continue the next sequential window, close it now so its slot isn't held
+    /// idle until the next miss/EOF.
     if (live_buffer && !reached_eof && fetch_ranges.empty())
     {
         const size_t next_physical = physical_window.end();
@@ -1267,10 +1250,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
             live_buffer.reset();
     }
 
-    /// Keep the partially-downloaded segment the live connection will continue
-    /// into pinned, so a mid-read eviction can't reset the connection (Strategy
-    /// A — see design doc). Re-point to the segment under the new frontier and
-    /// drop any previous pin; clear it when there's nothing partial to hold.
+    /// Strategy A pin: re-point to the partial segment under the new frontier
+    /// (dropping any previous pin); clear it when there's nothing partial.
     if (live_buffer && !reached_eof)
     {
         ICacheHandle::CacheSegmentPin pin;
@@ -1293,20 +1274,16 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
         inflight_segment_pin.reset();
     }
 
-    /// Release the slot if this window didn't open a connection — a fully
-    /// warm-cache window would otherwise accumulate a phantom slot per
-    /// executor, consuming `max_remote_read_connections` quota and showing
-    /// up in `system.remote_read_connections`. (If the read promoted to live,
-    /// `pre_acquired_slot` is already empty — moved into `live_buffer.slot`.)
+    /// Release a slot that never opened a connection (warm-cache window), else
+    /// it lingers as a phantom `max_remote_read_connections` holder. (A promoted
+    /// read already emptied `pre_acquired_slot` into `live_buffer.slot`.)
     if (pre_acquired_slot && !live_buffer)
         pre_acquired_slot.reset();
 
     auto sliced = result.slice(physical_window);
 
-    /// The returned bytes must form a single contiguous run from
-    /// `physical_window.offset` — a hole would shift the caller's offset
-    /// interpretation. Under EOF the run may end early but stays
-    /// contiguous from the front.
+    /// Enforce the single-contiguous-run-from-the-window-start guarantee (may
+    /// end early at EOF). A hole would misalign the caller's offsets.
     const auto & ivs = sliced.getIntervals();
     if (ivs.size() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,

@@ -213,24 +213,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (source->objects.empty())
         return std::make_unique<ReadBufferFromEmptyFile>();
 
-    /// `setAlreadyCompleteSource` registers a creator whose returned buffer
-    /// is itself a complete reader — typically a packed-archive file view that
-    /// internally wraps its own `disk->readFile` (with caches, decryption,
-    /// prefetch already applied to the underlying I/O). Wrapping again with the
-    /// executor or any stage would be both pointless overhead and incorrect
-    /// (e.g. trips `ReadBufferFromFileView`'s swap-state pattern when the
-    /// executor uses external-buffer mode). Stages must NOT be configured on
-    /// such a pipeline; the assertion below catches accidental misuse.
+    /// An already-complete source is itself a full reader (e.g. a packed-archive
+    /// view with its own caches/decryption); wrapping it again would be wrong
+    /// (e.g. trips `ReadBufferFromFileView`'s swap-state under external-buffer
+    /// mode), so no stage may be configured on it.
     if (source->already_complete)
     {
-        /// Throw in release builds too, not only `chassert` in debug: callers
-        /// can stack stages on top of an already-complete source via
-        /// `prepareRead` wrappers (e.g. `DiskEncrypted::prepareRead` recurses
-        /// into the delegate first and then appends `needDecryption` on the
-        /// way back up). If the delegate registered an already-complete source,
-        /// the chassert was a no-op in release and we silently returned the
-        /// raw delegate buffer, dropping the wrapping stage — for encryption
-        /// that means handing encrypted bytes to the caller.
+        /// Throw in release too, not just `chassert`: a `prepareRead` wrapper
+        /// (e.g. `DiskEncrypted`) can append a stage on top of an
+        /// already-complete delegate, and silently dropping it would hand
+        /// encrypted bytes to the caller.
         if (gather || memory_cache || !filesystem_caches.empty()
             || async_prefetch || !decryption_stages.empty() || distributed_cache
             || prefetch_pool || buffer_limit)
@@ -258,14 +250,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// context, so calling `CurrentThread::getQueryId()` there would return "".
     const std::string query_id(CurrentThread::getQueryId());
 
-    /// Experimental ReaderExecutor path owns prefetch / memory-cache / decryption
-    /// internally, so it must NOT be wrapped by `wrapAsyncPrefetch` /
-    /// `wrapMemoryCache` / `wrapDecryption`. In particular, when an
-    /// `AsynchronousBoundedReadBuffer` wraps us, `ThreadPoolRemoteFSReader::execute`
-    /// asserts `reader.buffer().begin() == request.buf` after `set()+next()` — but
-    /// `PipelineReadBuffer::nextImpl` exposes refcounted rope-node memory, not the
-    /// caller's external buffer, so that invariant cannot hold. Returning early
-    /// here bypasses the legacy wraps entirely.
+    /// The ReaderExecutor owns prefetch / memory-cache / decryption internally,
+    /// so it must bypass the legacy wraps below — e.g. an
+    /// `AsynchronousBoundedReadBuffer` wrap asserts `buffer().begin() ==
+    /// request.buf`, which `PipelineReadBuffer` (refcounted rope memory) can't
+    /// satisfy. Returning early avoids them.
     if (auto pipeline_buf = tryBuildReaderExecutor(query_id))
         return pipeline_buf;
 
@@ -337,16 +326,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
 
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
 
-    /// PageCache (memory) — goes first in chain (fastest). It's a
-    /// file-level cache: derive a single `PageCacheFile` from the front
-    /// object (or custom path/version) and let the provider use it for
-    /// every lookup, regardless of which `StoredObject` is being accessed.
-    ///
-    /// Skipped when any object has unknown size. PageCache cells are sized
-    /// to the file's actual byte length so the tail block has no past-EOF
-    /// region; that calibration needs the total size up front. Master's
-    /// `CachedInMemoryReadBufferFromFile` makes the same call by requiring
-    /// `file_size.value()` everywhere.
+    /// PageCache (memory) goes first in the chain (fastest). It's file-level:
+    /// one `PageCacheFile` derived from the front object serves every lookup.
+    /// Skipped when any object has unknown size — cells are sized to the file's
+    /// real byte length (so the tail block has no past-EOF region), which needs
+    /// the total size up front.
     bool any_unknown_size = false;
     size_t total_file_size = 0;
     for (const auto & obj : source->objects)
@@ -375,26 +359,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
             total_file_size));
     }
 
-    /// FileCache (disk) — goes second in chain. Pass the stage's
-    /// `custom_cache_key` / `custom_origin` through so the provider can
-    /// honour caller-specified cache identity (etag-keyed flow,
-    /// `Data` / `System` origin classification) per-object.
-    ///
-    /// Iterate `filesystem_caches` in reverse: `CachedObjectStorage::prepareRead`
-    /// pushes the wrapped storage's caches first and its own cache last, so
-    /// the vector is stored inner-to-outer. The legacy builder
-    /// (`buildSingleObjectStage`) wraps the source from inside out, which
-    /// makes the outermost cache the FIRST one a read traverses — outer
-    /// hit serves directly, miss falls through to inner, then source. The
-    /// executor queries `caches[0]` first, so reversing here matches that
-    /// outer-first query order. Single-cache pipelines (the common case)
-    /// are unaffected — reversing a one-element range is a no-op.
-    ///
-    /// Forward `local_throttler` so `DiskCacheHandle::get` honours
-    /// `max_local_read_bandwidth` on cache-hit reads; the rest of the
-    /// cache-file `ReadSettings` is fixed (synchronous pread, external
-    /// buffer) and constructed inside the handle. Pre-fix the raw `pread`
-    /// path in `get` skipped the throttler entirely.
+    /// FileCache (disk) goes second. `custom_cache_key`/`custom_origin` carry
+    /// caller-specified cache identity per object. Iterate in reverse:
+    /// `filesystem_caches` is stored inner-to-outer, and the executor queries
+    /// `caches[0]` first, so reversing gives the legacy outer-first order
+    /// (a no-op for the single-cache common case). `local_throttler` is
+    /// forwarded so cache-hit reads honour `max_local_read_bandwidth`.
     for (auto it = filesystem_caches.rbegin(); it != filesystem_caches.rend(); ++it)
     {
         const auto & dc = *it;
