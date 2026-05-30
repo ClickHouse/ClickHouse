@@ -110,11 +110,11 @@ def test_handle_normal_scrape():
     evaluation_time = time.time()
     result = execute_query_in_prometheus(query, evaluation_time)
     print(f"result={result}")
-    pattern = '\{"resultType":\ "vector",\ "result":\ \[\{"metric":\ \{"__name__":\ "up",\ "instance":\ "localhost:9090",\ "job":\ "prometheus"},\ "value":\ \[[0-9]+(\.[0-9]*)?,\ "1"]}]}'
+    pattern = '\\{"resultType": "vector", "result": \\[\\{"metric": \\{"__name__": "up", "instance": "localhost:9090", "job": "prometheus"}, "value": \\[[0-9]+(\\.[0-9]*)?, "1"]}]}'
     assert re.match(pattern, result)
     chresult = execute_query_in_clickhouse(query, evaluation_time)
     print(f"chresult={chresult}")
-    chpattern = "\[\('__name__','up'\),\('instance','localhost:9090'\),\('job','prometheus'\)]\t[^\t]*\t1\n"
+    chpattern = "\\[\\('__name__','up'\\),\\('instance','localhost:9090'\\),\\('job','prometheus'\\)]\t[^\t]*\t1\n"
     assert re.match(chpattern, chresult)
 
 

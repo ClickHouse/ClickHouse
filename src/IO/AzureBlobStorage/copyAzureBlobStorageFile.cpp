@@ -2,6 +2,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -93,14 +94,14 @@ namespace
         {
             size_t part_offset;
             size_t part_size;
-            std::vector<std::string> block_ids;
+            Strings block_ids;
             bool is_finished = false;
         };
 
         size_t normal_part_size;
-        std::vector<std::string> block_ids;
+        Strings block_ids;
 
-        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
+        ListWithMemoryTracking<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
         int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);

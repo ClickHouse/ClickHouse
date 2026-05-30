@@ -1,6 +1,7 @@
 import glob
 import json as json_module
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -198,16 +199,17 @@ class ClickHouseProc:
             )
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "rpk topic list --brokers 127.0.0.1:9092",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
-        print("Failed to start Kafka")
-        return False
+        # setup_kafka.sh exits 0 only after broker AND schema registry are ready,
+        # so wait on the script itself. Its own timeout is 60s; pad here.
+        try:
+            returncode = self.kafka_proc.wait(timeout=90)
+        except subprocess.TimeoutExpired:
+            print("Failed to start Kafka: setup_kafka.sh did not finish in time")
+            return False
+        if returncode != 0:
+            print(f"setup_kafka.sh exited with code {returncode}")
+            return False
+        return True
 
     @staticmethod
     def log_cluster_config():
@@ -872,6 +874,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -900,6 +903,22 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
             result.extend(ClickHouseService.collect_cores(run_dir))
         return result
+
+    @staticmethod
+    def _collect_diagnostic_reports() -> List[str]:
+        # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
+        # root. Grant read access so the runner can list and read the files
+        # in place; the darwin fast-test pre-hook wipes the directory under
+        # sudo before the run, so anything we see here belongs to the current
+        # run even if the previous runner was terminated unexpectedly.
+        if platform.system() != "Darwin":
+            return []
+        reports_dir = Path("/Library/Logs/DiagnosticReports")
+        Shell.check(
+            f"sudo chmod -R a+rX {reports_dir}",
+            verbose=True,
+        )
+        return [str(p) for p in reports_dir.glob("*.ips")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):

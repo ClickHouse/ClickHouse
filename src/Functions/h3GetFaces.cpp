@@ -9,6 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 
 
@@ -77,7 +78,7 @@ public:
         result_offsets.resize(input_rows_count);
 
         auto current_offset = 0;
-        std::vector<int> faces;
+        VectorWithMemoryTracking<int> faces;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
