@@ -12,7 +12,7 @@ QueryPlan materializePlan(std::string_view serialized_bytes, const ContextPtr & 
     /// Leaf nodes are `ReadFromTableStep` (storage-agnostic
     /// placeholders).
     ReadBufferFromMemory in(serialized_bytes.data(), serialized_bytes.size());
-    auto plan_and_sets = QueryPlan::deserialize(in, context);
+    auto plan_and_sets = QueryPlan::deserializeForQueryPlanCache(in, context);
 
     /// Build `PreparedSet` objects for IN (...) subquery
     /// expressions embedded in the plan.

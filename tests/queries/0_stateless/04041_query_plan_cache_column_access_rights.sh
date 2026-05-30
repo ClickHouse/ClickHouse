@@ -18,14 +18,14 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY PLAN CACHE"
 
 # First query as the test user: populates the cache (miss)
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT a FROM t_plan_cache_column_acl FORMAT Null" \
-    --allow_experimental_query_plan_cache=1 --allow_experimental_analyzer=1
+    --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --allow_experimental_analyzer=1
 
 # Revoke access only to the queried column. Access to another column remains.
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_plan_cache_column_acl FROM ${user}"
 
 # Second query as the test user: cache hit path must revalidate column-level access and fail
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT a FROM t_plan_cache_column_acl FORMAT Null" \
-    --allow_experimental_query_plan_cache=1 --allow_experimental_analyzer=1 2>&1 | grep -m1 -o 'ACCESS_DENIED'
+    --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --allow_experimental_analyzer=1 2>&1 | grep -m1 -o 'ACCESS_DENIED'
 
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_plan_cache_column_acl"

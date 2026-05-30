@@ -74,6 +74,14 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     serialize(out, flags);
 }
 
+void QueryPlan::serializeForQueryPlanCache(WriteBuffer & out) const
+{
+    writeVarUInt(QUERY_PLAN_CACHE_SERIALIZATION_VERSION, out);
+
+    SerializationFlags flags{.version = QUERY_PLAN_CACHE_SERIALIZATION_VERSION};
+    serialize(out, flags);
+}
+
 void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
 {
     checkInitialized();
@@ -167,6 +175,20 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    SerializationFlags flags{.version = version};
+    return deserialize(in, context, flags);
+}
+
+QueryPlanAndSets QueryPlan::deserializeForQueryPlanCache(ReadBuffer & in, const ContextPtr & context)
+{
+    UInt64 version;
+    readVarUInt(version, in);
+
+    if (version > QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan cache serialization version {} is not supported. The last supported version is {}",
+            version, QUERY_PLAN_CACHE_SERIALIZATION_VERSION);
 
     SerializationFlags flags{.version = version};
     return deserialize(in, context, flags);

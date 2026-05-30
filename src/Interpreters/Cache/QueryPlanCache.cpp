@@ -26,6 +26,7 @@ namespace DB
 bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
 {
     return setting_name == "allow_experimental_query_plan_cache"
+        || setting_name == "enable_query_plan_cache"
         || setting_name == "query_plan_cache_size_in_bytes_quota"
         || setting_name == "log_comment"
         || setting_name == "http_response_headers"
@@ -53,7 +54,6 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
         || setting_name.starts_with("log_queries")
         || setting_name == "log_profile_events";
 }
-
 bool QueryPlanCacheKey::operator==(const QueryPlanCacheKey & other) const
 {
     return ast_hash == other.ast_hash

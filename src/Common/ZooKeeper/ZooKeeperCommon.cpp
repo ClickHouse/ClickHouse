@@ -72,7 +72,7 @@ void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64, bool supports_t
 
     if (supports_tracing)
     {
-        const uint8_t has_tracing_context = tracing_context.has_value();
+        const uint8_t has_tracing_context = tracing_context != nullptr;
         Coordination::write(has_tracing_context, out);
         if (has_tracing_context)
         {
@@ -1481,7 +1481,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
     for (const auto & request : requests)
     {
         auto & req = dynamic_cast<ZooKeeperRequest &>(*request);
-        assert(!req.xid || req.xid == xid);
+        chassert(!req.xid || req.xid == xid);
         req.createLogElements(elems);
     }
 }
@@ -1490,7 +1490,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
 void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     auto & elem =  elems[idx];
-    assert(!elem.xid || elem.xid == xid);
+    chassert(!elem.xid || elem.xid == xid);
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
 
@@ -1498,7 +1498,7 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
         && response_op == static_cast<int32_t>(Coordination::OpNum::List))
         || (elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData)
         && response_op == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData));
-    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
+    chassert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
     elem.op_num = response_op;
 
     elem.zxid = zxid;
@@ -1525,7 +1525,7 @@ void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) 
 {
     Coordination::ZooKeeperCreateResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
-    elem.path_created = path_created;
+    elem.stat = zstat;
 }
 
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
@@ -1606,14 +1606,14 @@ ZooKeeperResponsePtr ZooKeeperListRecursiveRequest::makeResponse() const
 
 void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
-    assert(idx == 0);
-    assert(elems.size() == responses.size() + 1);
+    chassert(idx == 0);
+    chassert(elems.size() == responses.size() + 1);
     ZooKeeperResponse::fillLogElements(elems, idx);
     for (const auto & response : responses)
     {
         auto & resp = dynamic_cast<ZooKeeperResponse &>(*response);
-        assert(!resp.xid || resp.xid == xid);
-        assert(!resp.zxid || resp.zxid == zxid);
+        chassert(!resp.xid || resp.xid == xid);
+        chassert(!resp.zxid || resp.zxid == zxid);
         resp.xid = xid;
         resp.zxid = zxid;
         resp.fillLogElements(elems, ++idx);
@@ -1649,7 +1649,8 @@ ZooKeeperRequestPtr ZooKeeperRequestFactory::get(OpNum op_num) const
     if (it == op_num_to_request.end())
         throw Exception(Error::ZBADARGUMENTS, "Unknown operation type {}", op_num);
 
-    return it->second();
+    auto request = it->second();
+    return request;
 }
 
 ZooKeeperRequestFactory & ZooKeeperRequestFactory::instance()

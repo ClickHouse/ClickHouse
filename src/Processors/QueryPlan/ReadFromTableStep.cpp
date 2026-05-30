@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -65,7 +66,7 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= FLAG_HAS_SAMPLE_OFFSET;
     if (use_parallel_replicas)
         flags |= FLAG_PARALLEL_REPLICAS;
-    if (prewhere_info)
+    if (prewhere_info && ctx.version >= QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
         flags |= FLAG_HAS_PREWHERE;
 
     writeIntBinary(flags, ctx.out);
@@ -78,7 +79,7 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
     if (ctx.version == 0 && use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
 
-    if (prewhere_info)
+    if (prewhere_info && ctx.version >= QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
         prewhere_info->serialize(ctx);
 }
 
@@ -111,7 +112,12 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
 
     PrewhereInfoPtr prewhere_info;
     if (flags & FLAG_HAS_PREWHERE)
+    {
+        if (ctx.version < QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected PREWHERE payload flag in ReadFromTableStep serialization version {}", ctx.version);
         prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
+    }
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
     return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas, prewhere_info);

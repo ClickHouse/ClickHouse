@@ -6,6 +6,11 @@
 namespace DB
 {
 
+/// Cache-private query plan serialization version.
+/// This is intentionally independent from `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`,
+/// which is part of the distributed query plan protocol.
+static constexpr UInt64 QUERY_PLAN_CACHE_SERIALIZATION_VERSION = 1;
+
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
