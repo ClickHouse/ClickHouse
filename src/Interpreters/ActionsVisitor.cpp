@@ -47,6 +47,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -931,6 +932,13 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
     }
 
+    bool is_user_defined_wasm_function = false;
+    if (!function_builder)
+    {
+        function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
+        is_user_defined_wasm_function = function_builder != nullptr;
+    }
+
     if (!function_builder)
     {
         try
@@ -949,6 +957,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         if (node.parameters)
             throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
     }
+    else if (is_user_defined_wasm_function && node.parameters)
+        throw Exception(ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS, "Function {} is not parametric", node.name);
 
     checkFunctionHasEmptyNullsAction(node);
 
