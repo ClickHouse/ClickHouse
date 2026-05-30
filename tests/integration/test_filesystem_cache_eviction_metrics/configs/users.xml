@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <filesystem_cache_expose_prometheus_eviction_metrics>1</filesystem_cache_expose_prometheus_eviction_metrics>
-            <filesystem_cache_expose_prometheus_eviction_metrics_per_client>1</filesystem_cache_expose_prometheus_eviction_metrics_per_client>
-        </default>
-    </profiles>
-</clickhouse>

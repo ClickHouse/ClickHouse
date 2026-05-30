@@ -6,7 +6,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage.xml"],
-    user_configs=["users.d/cache_on_write.xml", "configs/users.xml"],
+    user_configs=["users.d/cache_on_write.xml"],
     stay_alive=True,
 )
 
@@ -62,7 +62,11 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
             )
         )
 
-    read_settings = "SETTINGS enable_filesystem_cache = 1"
+    read_settings = (
+        "SETTINGS enable_filesystem_cache = 1, "
+        "filesystem_cache_expose_prometheus_eviction_metrics = 1, "
+        "filesystem_cache_expose_prometheus_eviction_metrics_per_client = 1"
+    )
 
     # Step 2: fill probationary with batch-0 segments.
     node.query(
