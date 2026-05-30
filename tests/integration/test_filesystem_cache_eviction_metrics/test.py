@@ -40,11 +40,8 @@ def sum_hist(metric):
 
 def test_filesystem_cache_eviction_metrics(start_cluster):
     """
-    Verify that filesystem_cache_* eviction metrics are populated when the
-    setting is configured globally via the default user profile (configs/users.xml).
-
-    Evictions are driven by background read threads that cannot carry a per-query
-    context, so they rely on the global context which reflects the default profile.
+    Verify that filesystem_cache_* eviction metrics are populated when
+    filesystem_cache_expose_prometheus_eviction_metrics is set in the disk config.
     """
     node.query("SYSTEM DROP FILESYSTEM CACHE 'cache_with_eviction_metrics'")
     node.query("DROP TABLE IF EXISTS eviction_metrics_test")
