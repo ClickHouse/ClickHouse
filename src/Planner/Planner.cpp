@@ -423,7 +423,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
     {
         Int64 int_value = converted_value_int.safeGet<Int64>();
 
-        assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
         const UInt64 magnitude = -static_cast<UInt64>(int_value);
         return {magnitude, 0, true};
@@ -972,19 +972,19 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     UsefulSets & useful_sets)
 {
-    NameSet column_names_with_fill;
+    NameSet order_by_column_names;
     SortDescription fill_description;
 
     const auto & header = query_plan.getCurrentHeader();
 
     for (const auto & description : query_analysis_result.sort_description)
     {
+        order_by_column_names.insert(description.column_name);
         if (description.with_fill)
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
             fill_description.push_back(description);
-            column_names_with_fill.insert(description.column_name);
         }
     }
 
@@ -1014,7 +1014,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             for (const auto * input_node : interpolate_actions_dag.getInputs())
             {
-                if (column_names_with_fill.contains(input_node->result_name))
+                if (order_by_column_names.contains(input_node->result_name))
                     continue;
 
                 interpolate_actions_dag.getOutputs().push_back(input_node);
@@ -2684,4 +2684,3 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
-
