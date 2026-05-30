@@ -21,8 +21,6 @@
 
 #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
 
-namespace
-{
 
 struct CompactStringRef
 {
@@ -45,13 +43,13 @@ struct CompactStringRef
         size = static_cast<UInt16>(size_);
     }
 
-    [[maybe_unused]] CompactStringRef(const unsigned char * data_, size_t size_) : CompactStringRef(reinterpret_cast<const char *>(data_), size_) {}
-    [[maybe_unused]] explicit CompactStringRef(const std::string & s) : CompactStringRef(s.data(), s.size()) {}
+    CompactStringRef(const unsigned char * data_, size_t size_) : CompactStringRef(reinterpret_cast<const char *>(data_), size_) {}
+    explicit CompactStringRef(const std::string & s) : CompactStringRef(s.data(), s.size()) {}
     CompactStringRef() = default;
 
     const char * data() const { return reinterpret_cast<const char *>(reinterpret_cast<intptr_t>(data_mixed) & 0x0000FFFFFFFFFFFFULL); }
 
-    [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
+    std::string toString() const { return std::string(data(), size); }
 };
 
 inline bool operator==(CompactStringRef lhs, CompactStringRef rhs)
@@ -67,8 +65,6 @@ inline bool operator==(CompactStringRef lhs, CompactStringRef rhs)
 
     return true;
 }
-
-} /// close anonymous namespace for ZeroTraits/DefaultHash specializations
 
 namespace ZeroTraits
 {
@@ -88,10 +84,8 @@ struct DefaultHash<CompactStringRef>
     }
 };
 
-namespace
-{
 
-inline UInt64 mix(UInt64 h)
+static inline UInt64 mix(UInt64 h)
 {
     h ^= h >> 23;
     h *= 0x2127599bf4325c37ULL;
@@ -294,9 +288,8 @@ struct Grower : public HashTableGrower<>
     }
 };
 
-}
 
-int mainEntryExampleHashMapString(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {

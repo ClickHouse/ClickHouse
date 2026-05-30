@@ -1,6 +1,5 @@
 #include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
 
-#include <Common/CurrentThread.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
@@ -80,18 +79,17 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
 MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
-    , table_description(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock())
+    , table_description(storage_info.storage->getInMemoryMetadataPtr()->getSampleBlock())
     , columns_attributes(storage_info.attributes)
-    , column_names(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getNamesOfPhysical())
-    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getAllPhysical(), table_description))
+    , column_names(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical())
+    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr()->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
     /// +2 because of _sign and _version columns
     if (columns_attributes.size() + 2 != columns_num)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Columns number mismatch for table {}. Attributes: {}, buffer: {}",
-                        storage_info.storage->getStorageID().getNameForLogs(),
+                        "Columns number mismatch. Attributes: {}, buffer: {}",
                         columns_attributes.size(), columns_num);
     }
 
@@ -237,7 +235,7 @@ void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData & storage_da
 
 void MaterializedPostgreSQLConsumer::readString(const char * message, size_t & pos, size_t size, String & result)
 {
-    chassert(size > pos + 2);
+    assert(size > pos + 2);
     char current = unhex2(message + pos);
     pos += 2;
     while (pos < size && current != '\0')
@@ -262,7 +260,7 @@ T MaterializedPostgreSQLConsumer::unhexN(const char * message, size_t pos, size_
 
 Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 16);
+    assert(size >= pos + 16);
     Int64 result = unhexN<Int64>(message, pos, 8);
     pos += 16;
     return result;
@@ -270,7 +268,7 @@ Int64 MaterializedPostgreSQLConsumer::readInt64(const char * message, size_t & p
 
 Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 8);
+    assert(size >= pos + 8);
     Int32 result = unhexN<Int32>(message, pos, 4);
     pos += 8;
     return result;
@@ -278,7 +276,7 @@ Int32 MaterializedPostgreSQLConsumer::readInt32(const char * message, size_t & p
 
 Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 4);
+    assert(size >= pos + 4);
     Int16 result = unhexN<Int16>(message, pos, 2);
     pos += 4;
     return result;
@@ -286,7 +284,7 @@ Int16 MaterializedPostgreSQLConsumer::readInt16(const char * message, size_t & p
 
 Int8 MaterializedPostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    chassert(size >= pos + 2);
+    assert(size >= pos + 2);
     Int8 result = unhex2(message + pos);
     pos += 2;
     return result;
@@ -780,7 +778,7 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
     if (new_table_with_lsn != waiting_list.end())
     {
         auto table_start_lsn = new_table_with_lsn->second;
-        chassert(!table_start_lsn.empty());
+        assert(!table_start_lsn.empty());
 
         if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
         {
@@ -834,7 +832,7 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 void MaterializedPostgreSQLConsumer::addNested(
     const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn)
 {
-    chassert(!storages.contains(postgres_table_name));
+    assert(!storages.contains(postgres_table_name));
     storages.emplace(postgres_table_name, StorageData(nested_storage_info, log));
 
     auto it = deleted_tables.find(postgres_table_name);
@@ -848,7 +846,7 @@ void MaterializedPostgreSQLConsumer::addNested(
 
 void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
 {
-    chassert(!storages.contains(table_name));
+    assert(!storages.contains(table_name));
     storages.emplace(table_name, StorageData(nested_storage_info, log));
 
     /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.

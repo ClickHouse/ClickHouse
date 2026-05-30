@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
@@ -449,23 +451,11 @@ public:
      */
     UInt8 rb_contains(UInt64 x) const /// NOLINT
     {
+        if (!std::is_same_v<T, UInt64> && x > rb_max())
+            return 0;
+
         if (isSmall())
-        {
-            if constexpr (!std::is_same_v<T, UInt64>)
-            {
-                if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
-                    return 0;
-            }
-
             return small.find(static_cast<T>(x)) != small.end();
-        }
-
-        if constexpr (!std::is_same_v<Value, UInt64>)
-        {
-            if (x > static_cast<UInt64>(std::numeric_limits<Value>::max()))
-                return 0;
-        }
-
         return roaring_bitmap->contains(static_cast<Value>(x));
     }
 

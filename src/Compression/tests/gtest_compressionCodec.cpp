@@ -69,7 +69,7 @@ template <typename T>
 std::string bin(const T & value, size_t bits = sizeof(T)*8)
 {
     static const uint8_t MAX_BITS = sizeof(T)*8;
-    chassert(bits <= MAX_BITS);
+    assert(bits <= MAX_BITS);
 
     return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
             .to_string().substr(MAX_BITS - bits, bits);
@@ -116,7 +116,7 @@ DataTypePtr makeDataType()
 
 #undef MAKE_DATA_TYPE
 
-    chassert(false && "unknown datatype");
+    assert(false && "unknown datatype");
     return nullptr;
 }
 
@@ -263,7 +263,7 @@ template <typename ContainerLeft, typename ContainerRight>
             return EqualByteContainersAs<UInt64>(left, right);
             break;
         default:
-            chassert(false && "Invalid element_size");
+            assert(false && "Invalid element_size");
             return ::testing::AssertionFailure() << "Invalid element_size: " << element_size;
     }
 }
@@ -294,7 +294,7 @@ struct CodecTestSequence
 
     CodecTestSequence & append(const CodecTestSequence & other)
     {
-        chassert(data_type->equals(*other.data_type));
+        assert(data_type->equals(*other.data_type));
 
         serialized_data.insert(serialized_data.end(), other.serialized_data.begin(), other.serialized_data.end());
         if (!name.empty())
@@ -467,7 +467,7 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     timer.start();
 
-    chassert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
+    assert(source_data.data() != nullptr); // Codec assumes that source buffer is not null.
     const UInt32 encoded_size = codec.compress(
         source_data.data(), static_cast<UInt32>(source_data.size()), encoded.data());
     timer.report("encoding");

@@ -26,8 +26,12 @@
 #include <bit>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -80,8 +84,8 @@ namespace impl
 
         size_t size() const
         {
-            chassert(key0 && key1);
-            chassert(key0->size() == key1->size());
+            assert(key0 && key1);
+            assert(key0->size() == key1->size());
             return key0->size();
         }
 
@@ -91,7 +95,7 @@ namespace impl
                 i = 0;
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
-            chassert(key0->size() > i);
+            assert(key0->size() > i);
             return {key0data[i], key1data[i]};
         }
 
@@ -126,8 +130,8 @@ namespace impl
 
         SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        chassert(result.key0);
-        chassert(result.key1);
+        assert(result.key0);
+        assert(result.key1);
 
         if (!checkColumn<ColumnUInt64>(*result.key0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
@@ -936,8 +940,10 @@ private:
 
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
-                    static_assert(std::is_same_v<ToType, UInt64>, "");
-                    hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                    if constexpr (std::is_same_v<ToType, UInt64>)
+                        hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                    else
+                        hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
                 }
                 else
                 {
@@ -967,18 +973,15 @@ private:
                     return executeIntType<FromType, first>(key_cols, full_column.get(), vec_to);
                 }
             }
-            FromType value;
-            if constexpr (std::is_same_v<FromType, float>)
-                /// Float32 doesn't reliably roundtrip through Field (which only has Float64) in practice.
-                value = assert_cast<const ColumnFloat32 &>(col_from_const->getDataColumn()).getData()[0];
-            else
-                value = col_from_const->template getValue<FromType>();
+            auto value = col_from_const->template getValue<FromType>();
 
             ToType hash;
             if constexpr (Impl::use_int_hash_for_pods)
             {
-                static_assert(std::is_same_v<ToType, UInt64>, "");
-                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+                if constexpr (std::is_same_v<ToType, UInt64>)
+                    hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+                else
+                    hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
             }
             else
             {
@@ -1658,7 +1661,7 @@ struct URLHierarchyHashImpl
 };
 
 
-class FunctionURLHash final : public IFunction
+class FunctionURLHash : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";
