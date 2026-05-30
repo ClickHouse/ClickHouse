@@ -29,7 +29,7 @@ namespace Setting
 namespace DatabaseReplicatedSetting
 {
     extern const DatabaseReplicatedSettingsBool check_consistency;
-    extern const DatabaseReplicatedSettingsUInt64 max_replication_lag_to_enqueue;
+    extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
     extern const DatabaseReplicatedSettingsUInt64 max_retries_before_automatic_recovery;
     extern const DatabaseReplicatedSettingsUInt64 wait_entry_commited_timeout_sec;
     extern const DatabaseReplicatedSettingsBool allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views;
@@ -259,12 +259,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         /// distributed_ddl_output_mode = '*_only_active', although it may be still busy with previous queries.
         /// Provide a way to identify such replicas to avoid waiting for them until they catch up.
         UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-        /// Strict `<` is intentional: with `<=`, `max_replication_lag_to_enqueue = 0`
-        /// degenerates to `max_log_ptr <= new_max_log_ptr` which is always true (the ZooKeeper
-        /// counter is monotonically non-decreasing), so even a fully caught-up replica was
-        /// mis-marked unsynced and the next DDL tripped `chassert(our_log_ptr < max_log_ptr)`
-        /// below. See issue #98823.
-        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < new_max_log_ptr;
+        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] <= new_max_log_ptr;
         LOG_INFO(log, "Finishing replica initialization, our_log_ptr={}, max_log_ptr={}, unsynced_after_recovery={}", max_log_ptr, new_max_log_ptr, unsynced_after_recovery.load());
         if (unsynced_after_recovery)
             active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;

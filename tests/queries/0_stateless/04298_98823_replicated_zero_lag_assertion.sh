@@ -13,13 +13,13 @@
 #
 # `0` has no sensible semantics for this setting (it asks for zero lag
 # tolerance, which is impossible to satisfy under concurrent commits), so
-# `CREATE DATABASE ... SETTINGS max_replication_lag_to_enqueue = 0`
-# is rejected at CREATE time. Existing databases or server configs that
-# already persist 0 are tolerated for upgrade compatibility: the
-# post-recovery comparison was switched to a strict `<`, so 0 no longer
-# mis-marks caught-up replicas. `1` is the smallest meaningful value:
-# it means "consider the replica unsynced as soon as there is at least
-# one new entry to apply".
+# the fix forbids it at parse time. Switching the setting type to
+# `NonZeroUInt64` makes the parser reject `0` everywhere the value can be
+# supplied (`CREATE DATABASE ... SETTINGS`, `ALTER DATABASE`, and the
+# `<database_replicated>` server-config block), in `ATTACH` replay, and on
+# upgrade from older versions whose metadata persists `0`. `1` is the
+# smallest meaningful value: it means "consider the replica unsynced as
+# soon as there is at least one new entry to apply".
 
 # Keep server logs forwarded to client stderr quiet so the rejection error
 # is the only content in the captured stream. Must be set before sourcing
@@ -43,7 +43,7 @@ if ${CLICKHOUSE_CLIENT} -q "
     CREATE DATABASE ${db_zero}
     ENGINE = Replicated('/test/${CLICKHOUSE_DATABASE}/rdb_zero_lag_zero', 's1', 'r1')
     SETTINGS max_replication_lag_to_enqueue = 0
-" 2>&1 | grep -q -F "max_replication_lag_to_enqueue\` must be greater than 0"
+" 2>&1 | grep -q -F "A setting's value has to be greater than 0"
 then
     echo "rejected"
 else
