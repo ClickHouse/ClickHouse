@@ -448,8 +448,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
               fmt::join(unfiltered_hosts, ", "), fmt::join(hosts, ", "), fmt::join(host_ids, ", "));
 
-    assert(!hosts.empty());
-    assert(hosts.size() == host_ids.size());
+    chassert(!hosts.empty());
+    chassert(hosts.size() == host_ids.size());
     String current_shard;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -1465,6 +1465,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
                                             int64_t expected_max_log_ptr_czxid)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
     waitDatabaseStarted();
 
     is_recovering = true;
@@ -1643,7 +1644,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Table probably stores some data. Let's move it to another database.
             String to_name = fmt::format("{}_{}_{}", broken_table_name, max_log_ptr, thread_local_rng() % 1000);
             LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(broken_table_name), backQuoteIfNeed(to_database_name), backQuoteIfNeed(to_name));
-            assert(db_name < to_database_name);
+            chassert(db_name < to_database_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name, nullptr);
             auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
 
@@ -1775,6 +1776,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Same for table_name_to_metadata and make_query_context
             auto task = [this, &table_id, &table_name_to_metadata, &make_query_context]()
             {
+                /// The task might run on a different thread, so we need to set current component for it
+                auto inner_component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
                 auto table_name = table_id.getTableName();
 
                 auto metadata_it = table_name_to_metadata.find(table_name);
@@ -1789,7 +1792,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 const auto & create_query_string = metadata_it->second;
                 if (isTableExist(table_name, getContext()))
                 {
-                    assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+                    chassert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
                     return;
                 }
 
@@ -2378,7 +2381,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
+    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -2410,7 +2413,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(txn);
+    chassert(txn);
 
     if (this != &to_database)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
@@ -2487,7 +2490,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
                        ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker->isCurrentlyActive() || txn);
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
 
@@ -2524,7 +2527,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -2564,7 +2567,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for DETACH TABLE PERMANENTLY is disabled");
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         /// We have to remove metadata from zookeeper, because we do not distinguish permanently detached tables
@@ -2589,7 +2592,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery() && attach)
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
