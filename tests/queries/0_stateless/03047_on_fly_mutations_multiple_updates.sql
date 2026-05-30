@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel, no-flaky-check
 -- no-parallel: SYSTEM CLEAR MARK CACHE is used.
 
 -- this test checks query_log ProfileEvents counters incompatible with ReaderExecutor

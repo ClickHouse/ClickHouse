@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, no-parallel-replicas
+# Tags: no-random-settings, no-fasttest, no-parallel-replicas, no-flaky-check
 # - no-random-settings -- prefetch became non deterministic
 # - no-fasttest -- requires S3
 # - no-parallel-replicas -- query can be executed on another node

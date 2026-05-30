@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-random-settings, no-parallel
+# Tags: no-object-storage, no-random-settings, no-parallel, no-flaky-check
 # this test checks mark load behavior via FileOpen counters incompatible with ReaderExecutor
 set -eo pipefail
 

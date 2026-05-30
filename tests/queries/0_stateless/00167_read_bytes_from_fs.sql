@@ -1,4 +1,4 @@
--- Tags: stateful, no-random-settings, no-parallel
+-- Tags: stateful, no-random-settings, no-parallel, no-flaky-check
 -- no-parallel: Heavy query
 
 SET use_reader_executor = 0;

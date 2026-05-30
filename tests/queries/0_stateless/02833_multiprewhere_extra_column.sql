@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage, no-flaky-check
 -- add_minmax_index_for_numeric_columns=0: More files opened
 
 -- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor

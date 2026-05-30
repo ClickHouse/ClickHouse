@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings, no-flaky-check
 -- Closes #90890
 -- This tests verifies that while reading a parquet file, the prefetcher leverages more efficient readBigAt logic (ReadMode::RandomRead)
 

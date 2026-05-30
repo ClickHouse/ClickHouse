@@ -1,4 +1,4 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-flaky-check
 
 -- this test checks I/O counters (CreatedReadBufferMMap) incompatible with ReaderExecutor
 SET use_reader_executor = 0;

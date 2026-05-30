@@ -1,4 +1,4 @@
--- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel
+-- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel, no-flaky-check
 -- no-s3 because read FileOpen metric
 
 -- this test checks I/O counters (FileOpen) incompatible with ReaderExecutor

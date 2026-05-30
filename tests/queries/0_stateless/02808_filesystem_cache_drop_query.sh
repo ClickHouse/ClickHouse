@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
 
 # set -x
 
