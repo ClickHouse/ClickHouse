@@ -10,6 +10,7 @@
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
@@ -39,6 +40,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
+#include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
@@ -665,18 +667,18 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         /// The case of DateTime
         if (hyperrectangle.left.getType() == Field::Types::UInt64)
         {
-            assert(hyperrectangle.right.getType() == Field::Types::UInt64);
+            chassert(hyperrectangle.right.getType() == Field::Types::UInt64);
             return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
         }
         /// The case of DateTime64
         if (hyperrectangle.left.getType() == Field::Types::Decimal64)
         {
-            assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
+            chassert(hyperrectangle.right.getType() == Field::Types::Decimal64);
 
             auto left = hyperrectangle.left.safeGet<DecimalField<Decimal64>>();
             auto right = hyperrectangle.right.safeGet<DecimalField<Decimal64>>();
 
-            assert(left.getScale() == right.getScale());
+            chassert(left.getScale() == right.getScale());
 
             return {left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier()};
         }
@@ -727,7 +729,9 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
     columns_description = columns_descriptions.original;
-    columns_description_with_collected_nested = columns_descriptions.with_collected_nested;
+    columns_description_with_collected_nested = columns_descriptions.with_collected_nested
+        ? columns_descriptions.with_collected_nested
+        : columns_descriptions.original;
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -1113,14 +1117,8 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
-    /// `<col>.null` subcolumn may appear in required_columns when
-    /// optimize_functions_to_subcolumns=1, keep stats for the parent column in that case.
-    if (!required_columns.empty()
-        && !required_columns.contains(column_name)
-        && !required_columns.contains(column_name + ".null"))
-    {
+    if (!required_columns.empty() && !required_columns.contains(column_name))
         return nullptr;
-    }
 
     return all_columns.tryGet(column_name);
 }
@@ -2129,6 +2127,37 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
     if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
     {
         columns_substreams.readText(*in);
+
+        /// Validate that all substream names have valid prefixes matching their column names.
+        /// This detects a specific corruption caused by a bug in getFileNameForRenamedColumnStream
+        /// (fixed in https://github.com/ClickHouse/ClickHouse/pull/102689) where renaming a column
+        /// produced wrong substream names in columns_substreams.txt.
+        /// For Wide parts this file is not mandatory, so we can safely discard it and proceed
+        /// as if it didn't exist.
+        if (part_type == MergeTreeDataPartType::Wide)
+        {
+            auto [invalid_substream, invalid_column] = columns_substreams.findInvalidSubstreamName();
+            if (!invalid_substream.empty())
+            {
+                LOG_WARNING(
+                    storage.log,
+                    "Ignoring corrupted {} in part {}: substream '{}' has invalid prefix for column '{}' "
+                    "(expected prefix '{}' or '{}' followed by '.' or '%2E'). "
+                    "The file was likely corrupted by a bug in column rename. "
+                    "The part will work correctly without this file.",
+                    COLUMNS_SUBSTREAMS_FILE_NAME,
+                    name,
+                    invalid_substream,
+                    invalid_column,
+                    escapeForFileName(invalid_column),
+                    escapeForFileName(Nested::extractTableName(invalid_column)));
+
+                columns_substreams = {};
+                return;
+            }
+        }
+
+        columns_substreams.validateColumns(getColumns().getNames());
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
@@ -2171,7 +2200,7 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
 bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 {
     auto current_version_info = version->getInfo();
-    assert(
+    chassert(
         !storage.data_parts_loading_finished || !current_version_info.creation_tid.isEmpty()
         || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
     return current_version_info.wasInvolvedInTransaction();
@@ -2295,7 +2324,7 @@ void IMergeTreeDataPart::remove()
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
 {
-    assert(!broken || detached);
+    chassert(!broken || detached);
 
     /** If you need to detach a part, and directory into which we want to rename it already exists,
         *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
@@ -2312,8 +2341,8 @@ std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String 
 std::optional<String> IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix, bool broken) const
 {
     /// Do not allow underscores in the prefix because they are used as separators.
-    assert(prefix.find_first_of('_') == String::npos);
-    assert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
+    chassert(prefix.find_first_of('_') == String::npos);
+    chassert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
                                        DetachedPartInfo::DETACH_REASONS.end(),
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
     if (auto path = getRelativePathForPrefix(prefix, /* detached */ true, broken))
@@ -2329,7 +2358,7 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
 void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)
 {
     auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
-    assert(path_to_detach);
+    chassert(path_to_detach);
     try
     {
         renameTo(path_to_detach.value(), true);
@@ -3050,7 +3079,7 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
     constexpr size_t size_hint = 4096; /// These files are small.
     auto read_settings = getReadSettings().adjustBufferSize(size_hint);
     /// Default read method is pread_threadpool, but there is not much point in it here.
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     auto res = getDataPartStorage().readFile(file_name, read_settings, size_hint);
 
     if (isCompressedFromFileName(file_name))

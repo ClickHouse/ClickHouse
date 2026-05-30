@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -52,9 +53,11 @@ struct AggregateFunctionFlameGraphTree
 
     static ListNode * createChild(TreeNode * parent, UInt64 ptr, Arena * arena)
     {
-
-        ListNode * list_node = reinterpret_cast<ListNode *>(arena->alloc(sizeof(ListNode)));
-        TreeNode * tree_node = reinterpret_cast<TreeNode *>(arena->alloc(sizeof(TreeNode)));
+        /// Aligned allocation is required: the arena is also used to intern
+        /// arbitrary-sized strings for Array(String) traces, which can leave
+        /// the bump pointer at an offset that is not aligned for these structs.
+        ListNode * list_node = arena->alloc<ListNode>();
+        TreeNode * tree_node = arena->alloc<TreeNode>();
 
         list_node->child = tree_node;
         list_node->next = nullptr;
@@ -217,6 +220,7 @@ static void fillColumn(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & o
 
 static void dumpFlameGraphImpl(
     const AggregateFunctionFlameGraphTree::Traces & traces,
+    const VectorWithMemoryTracking<std::string_view> * id_to_string,
     PaddedPODArray<UInt8> & chars,
     PaddedPODArray<UInt64> & offsets)
 {
@@ -237,6 +241,13 @@ static void dumpFlameGraphImpl(
         {
             if (i)
                 out << ";";
+
+            if (id_to_string)
+            {
+                /// trace.frames[i] is a 1-based id into id_to_string (0 is reserved as a stack terminator).
+                writeString((*id_to_string)[trace.frames[i] - 1], out);
+                continue;
+            }
 
             const void * ptr = reinterpret_cast<const void *>(trace.frames[i]);
 
@@ -277,6 +288,31 @@ struct AggregateFunctionFlameGraphData
     Entry * free_list = nullptr;
     AggregateFunctionFlameGraphTree tree;
 
+    /// String interning support for Array(String) traces.
+    /// When a trace is provided as Array(String), each unique symbol is interned to a 1-based id and
+    /// the id (rather than a pointer) is stored in TreeNode::ptr. The id 0 stays reserved as a stack
+    /// terminator inside `tree.find`, and `dumpFlameGraphImpl` looks up the original string from
+    /// `id_to_string` instead of running symbol resolution.
+    bool is_string_mode = false;
+    UnorderedMapWithMemoryTracking<std::string_view, UInt64> string_pool;
+    VectorWithMemoryTracking<std::string_view> id_to_string;
+
+    UInt64 internString(std::string_view s, Arena * arena)
+    {
+        if (auto it = string_pool.find(s); it != string_pool.end())
+            return it->second;
+
+        char * dest = arena->alloc(s.size());
+        if (!s.empty())
+            memcpy(dest, s.data(), s.size());
+        std::string_view stable{dest, s.size()};
+
+        UInt64 id = id_to_string.size() + 1;
+        id_to_string.push_back(stable);
+        string_pool.emplace(stable, id);
+        return id;
+    }
+
     Entry * alloc(Arena * arena)
     {
         if (free_list)
@@ -286,7 +322,7 @@ struct AggregateFunctionFlameGraphData
             return res;
         }
 
-        return reinterpret_cast<Entry *>(arena->alloc(sizeof(Entry)));
+        return arena->alloc<Entry>();
     }
 
     void release(Entry * entry)
@@ -379,7 +415,7 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = -size;
+            UInt64 abs_size = -static_cast<UInt64>(size);
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);
@@ -396,7 +432,8 @@ struct AggregateFunctionFlameGraphData
         }
     }
 
-    void merge(const AggregateFunctionFlameGraphTree & other_tree, Arena * arena)
+    void merge(const AggregateFunctionFlameGraphTree & other_tree,
+               const VectorWithMemoryTracking<std::string_view> * other_id_to_string, Arena * arena)
     {
         AggregateFunctionFlameGraphTree::Trace::Frames frames;
         VectorWithMemoryTracking<AggregateFunctionFlameGraphTree::ListNode *> nodes;
@@ -419,7 +456,10 @@ struct AggregateFunctionFlameGraphData
             AggregateFunctionFlameGraphTree::TreeNode * current = nodes.back()->child;
             nodes.back() = nodes.back()->next;
 
-            frames.push_back(current->ptr);
+            UInt64 ptr_value = current->ptr;
+            if (other_id_to_string)
+                ptr_value = internString((*other_id_to_string)[ptr_value - 1], arena);
+            frames.push_back(ptr_value);
 
             if (current->children)
                 nodes.push_back(current->children);
@@ -435,6 +475,9 @@ struct AggregateFunctionFlameGraphData
 
     void merge(const AggregateFunctionFlameGraphData & other, Arena * arena)
     {
+        is_string_mode = is_string_mode || other.is_string_mode;
+        const auto * other_id_to_string = other.is_string_mode ? &other.id_to_string : nullptr;
+
         AggregateFunctionFlameGraphTree::Trace::Frames frames;
         for (const auto & entry : other.entries)
         {
@@ -444,7 +487,10 @@ struct AggregateFunctionFlameGraphData
                 const auto * node = allocation->trace;
                 while (node->ptr)
                 {
-                    frames.push_back(node->ptr);
+                    UInt64 ptr_value = node->ptr;
+                    if (other_id_to_string)
+                        ptr_value = internString((*other_id_to_string)[ptr_value - 1], arena);
+                    frames.push_back(ptr_value);
                     node = node->parent;
                 }
 
@@ -455,11 +501,11 @@ struct AggregateFunctionFlameGraphData
 
             for (auto * deallocation = entry.value.second.deallocation; deallocation; deallocation = deallocation->next)
             {
-                add(entry.value.first, -Int64(deallocation->size), nullptr, 0, arena);
+                add(entry.value.first, static_cast<Int64>(-deallocation->size), nullptr, 0, arena);
             }
         }
 
-        merge(other.tree, arena);
+        merge(other.tree, other_id_to_string, arena);
     }
 
     void dumpFlameGraph(
@@ -467,7 +513,7 @@ struct AggregateFunctionFlameGraphData
         PaddedPODArray<UInt64> & offsets,
         size_t max_depth, size_t min_bytes) const
     {
-        dumpFlameGraphImpl(tree.dump(max_depth, min_bytes), chars, offsets);
+        dumpFlameGraphImpl(tree.dump(max_depth, min_bytes), is_string_mode ? &id_to_string : nullptr, chars, offsets);
     }
 };
 
@@ -476,7 +522,9 @@ struct AggregateFunctionFlameGraphData
 /// See https://github.com/brendangregg/FlameGraph
 ///
 /// Syntax: flameGraph(traces, [size = 1], [ptr = 0])
-/// - trace : Array(UInt64), a stacktrace
+/// - trace : Array(UInt64) or Array(String), a stacktrace. For Array(UInt64) the function
+///           resolves symbols itself; for Array(String) the strings are written verbatim
+///           (useful when symbolization is already done, e.g. arrayMap(addressToSymbol, trace)).
 /// - size  : Int64, an allocation size (for memory profiling)
 /// - ptr   : UInt64, an allocation address
 /// In case if ptr != 0, a flameGraph will map allocations (size > 0) and deallocations (size < 0) with the same size and ptr.
@@ -541,7 +589,6 @@ public:
         const auto & trace = assert_cast<const ColumnArray &>(*columns[0]);
 
         const auto & trace_offsets = trace.getOffsets();
-        const auto & trace_values = assert_cast<const ColumnUInt64 &>(trace.getData()).getData();
         UInt64 prev_offset = 0;
         if (row_num)
             prev_offset = trace_offsets[row_num - 1];
@@ -561,6 +608,19 @@ public:
             ptr = ptrs[row_num];
         }
 
+        if (const auto * trace_strings = typeid_cast<const ColumnString *>(&trace.getData()))
+        {
+            auto & d = data(place);
+            d.is_string_mode = true;
+            AggregateFunctionFlameGraphTree::Trace::Frames ids;
+            ids.reserve(trace_size);
+            for (UInt64 i = 0; i < trace_size; ++i)
+                ids.push_back(d.internString(trace_strings->getDataAt(prev_offset + i), arena));
+            d.add(ptr, allocated, ids.data(), ids.size(), arena);
+            return;
+        }
+
+        const auto & trace_values = assert_cast<const ColumnUInt64 &>(trace.getData()).getData();
         data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
     }
 
@@ -609,12 +669,13 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             name);
 
     auto ptr_type = std::make_shared<DataTypeUInt64>();
-    auto trace_type = std::make_shared<DataTypeArray>(ptr_type);
+    auto trace_uint_type = std::make_shared<DataTypeArray>(ptr_type);
+    auto trace_string_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     auto size_type = std::make_shared<DataTypeInt64>();
 
-    if (!argument_types[0]->equals(*trace_type))
+    if (!argument_types[0]->equals(*trace_uint_type) && !argument_types[0]->equals(*trace_string_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument (trace) for function {} must be Array(UInt64), but it has type {}",
+            "First argument (trace) for function {} must be Array(UInt64) or Array(String), but it has type {}",
             name, argument_types[0]->getName());
 
     if (argument_types.size() >= 2 && !argument_types[1]->equals(*size_type))
@@ -652,7 +713,7 @@ Non mapped deallocations are ignored.
     )";
     FunctionDocumentation::Syntax syntax = "flameGraph(traces[, size[, ptr]])";
     FunctionDocumentation::Arguments arguments = {
-        {"traces", "A stacktrace.", {"Array(UInt64)"}},
+        {"traces", "A stacktrace, either as raw addresses or as already-symbolized strings (e.g. `arrayMap(addressToSymbol, trace)`).", {"Array(UInt64)", "Array(String)"}},
         {"size", "Optional. An allocation size for memory profiling (default 1).", {"UInt64"}},
         {"ptr", "Optional. An allocation address (default 0).", {"UInt64"}}
     };

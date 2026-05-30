@@ -445,6 +445,7 @@ SQLQueryPiece applyFunctionOverRange(
         aggregate_step = 0;
     }
 
+
     SQLQueryPiece res = argument;
     res.node = node;
     res.type = ResultType::INSTANT_VECTOR;

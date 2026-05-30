@@ -73,7 +73,7 @@ namespace
                         makeASTFunction(
                             "plus",
                             make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
-                            makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(static_cast<Int64>(scaled_offset_value)))),
+                            makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(scaled_offset_value.value))),
                         context.timestamp_data_type);
                 }
                 else
@@ -186,8 +186,9 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// Keep raw sample timestamps at the fixed `@` evaluation time. Range functions that
-                /// consume this piece decide how to project the fixed result onto the outer query grid.
+                /// `NodeEvaluationRangeGetter` has already planned the child range selector at the fixed evaluation time.
+                /// Keep raw sample timestamps unchanged here so range-vector functions can aggregate that fixed window first
+                /// and then project the fixed result onto the outer query grid.
                 return std::move(expression);
             }
         }

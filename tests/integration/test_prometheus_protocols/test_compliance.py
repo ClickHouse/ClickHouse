@@ -276,6 +276,10 @@ RISK_CLASSIC_HISTOGRAM_QUANTILE = "classic histogram quantile"
 RISK_VALUE_LABEL_AGGREGATION = "value-to-label aggregation"
 RISK_EMPTY_VECTOR_ABSENCE = "empty vector and absence semantics"
 RISK_SUBQUERY_ALIGNMENT = "subquery alignment and offset"
+RISK_LITERAL_PARSER_EDGES = "literal parser and unary/binary edges"
+RISK_TIMESTAMP_MODIFIERS = "timestamp modifiers and offsets"
+RISK_LABEL_MATCHER_EDGES = "label matcher validation and unicode labels"
+RISK_INTERMITTENT_RANGE_EDGES = "lookback and sparse range semantics"
 
 
 def _with_risk(semantic_risk, cases):
@@ -335,6 +339,29 @@ CLICKHOUSE_PROMQL_REGRESSION_CASES = [
         ("vector(1.23)", [], False),
         ("vector(time())", [], False),
         ("predict_linear(demo_disk_usage_bytes[5m], time() - 1700000000)", [], False),
+    ]),
+
+    *_with_risk(RISK_LITERAL_PARSER_EDGES, [
+        ("vector(1e+3)", [], False),
+        ("vector(1e-3)", [], False),
+        ("demo_memory_usage_bytes - -1", [], False),
+        ("demo_memory_usage_bytes + +1", [], False),
+        ("demo_memory_usage_bytes % 0", [], False),
+    ]),
+
+    *_with_risk(RISK_TIMESTAMP_MODIFIERS, [
+        ("last_over_time(demo_memory_usage_bytes[5m] offset 1m)", [], False),
+    ]),
+
+    *_with_risk(RISK_LABEL_MATCHER_EDGES, [
+        ('demo_utf8_metric{city=~"Zürich|東京"}', [], False),
+        ('demo_utf8_metric{empty=""}', [], False),
+        ('demo_regex_edge{value=~"a.*"}', [], False),
+        ('demo_memory_usage_bytes{instance=~"(.*"}', [], True),
+    ]),
+
+    *_with_risk(RISK_INTERMITTENT_RANGE_EDGES, [
+        ("last_over_time(demo_intermittent_metric[1m])", [], False),
     ]),
 
     *_with_risk(RISK_CLASSIC_HISTOGRAM_QUANTILE, [

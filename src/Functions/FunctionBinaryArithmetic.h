@@ -64,7 +64,6 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
-#include <cassert>
 #include <ranges>
 
 namespace DB
@@ -3121,7 +3120,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        assert(2 == arguments.size());
+        chassert(2 == arguments.size());
 
         auto denull_left_type = removeNullable(arguments[0].type);
         auto denull_right_type = removeNullable(arguments[1].type);
@@ -3163,7 +3162,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
+class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
@@ -3475,7 +3474,7 @@ private:
 };
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
+class BinaryArithmeticOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
