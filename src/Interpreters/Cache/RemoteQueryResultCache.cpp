@@ -355,9 +355,15 @@ void RemoteQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> en
     if (!lock_info.has_value())
         return;
 
+    /// Keep the heartbeat renewing the lock until `setIfValid` returns. Serializing the entry and the
+    /// Redis round trip can take longer than the remaining lock TTL; if we stopped the heartbeat first,
+    /// the lock could expire mid-write, a waiter could start duplicate work, and `setIfValid` would then
+    /// reject this writer because its token is gone. The Lua write deletes the lock on success, so a
+    /// later heartbeat renewal simply fails and stops once ownership is lost.
+    const bool stored = backend.setIfValid(key, *entry, redis_key, ttl, write_context, lock_info->token);
+
     stopHeartbeat(*lock_info);
 
-    const bool stored = backend.setIfValid(key, *entry, redis_key, ttl, write_context, lock_info->token);
     if (!stored)
         backend.releaseLock(lockKey(redis_key), lock_info->token);
 }
