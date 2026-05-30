@@ -33,15 +33,6 @@ std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr &
     return merge_tree_cursor;
 }
 
-Names extendWithAuxiliaryColumns(Names columns)
-{
-    for (const auto & aux_name : {String("_partition_id"), String(BlockNumberColumn::name), String(BlockOffsetColumn::name)})
-        if (!std::ranges::contains(columns, aux_name))
-            columns.push_back(aux_name);
-
-    return columns;
-}
-
 FilterDAGInfo buildPartitionFilter(
     const String & partition_id,
     const PartitionCursor & last_emitted_position,

@@ -9,6 +9,8 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <Analyzer/Utils.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
@@ -224,6 +226,25 @@ QueryPlanPtr buildPlaceholderPipe(
     return plan;
 }
 
+Names extendWithAuxiliaryColumns(Names columns, const StreamingSettings & stream_settings)
+{
+    for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
+        if (!std::ranges::contains(columns, aux_name))
+            columns.push_back(aux_name);
+
+    if (stream_settings.watermark)
+    {
+        if (!std::ranges::contains(columns, stream_settings.watermark->column))
+            columns.push_back(stream_settings.watermark->column);
+
+        for (const auto & identifier : collectIdentifiersFullNames(stream_settings.watermark->expression))
+            if (!std::ranges::contains(columns, identifier))
+                columns.push_back(identifier);
+    }
+
+    return columns;
+}
+
 std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     const std::map<String, Int64> & safe_block_numbers,
     const std::map<String, PartitionCursor> & last_emitted_positions,
@@ -248,7 +269,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto storage_snapshot = storage.getStorageSnapshot(metadata, context);
-    const auto columns_to_read = extendWithAuxiliaryColumns(user_requested_columns);
+    const auto columns_to_read = extendWithAuxiliaryColumns(user_requested_columns, stream_settings);
     const auto now = std::chrono::steady_clock::now();
 
     std::vector<QueryPlanPtr> per_partition_plans;
@@ -363,17 +384,25 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     return info;
 }
 
-PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info)
+PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info, const StreamingSettings & stream_settings)
 {
     if (!info)
         return nullptr;
 
     auto patched_info = std::make_shared<PrewhereInfo>(info->clone());
 
-    /// This columns are needed for cursor calculation. Do not loose them during prewhere.
+    /// This columns are needed for cursor calculation.
     patched_info->prewhere_actions.tryRestoreColumn(PartitionIdColumn::name);
     patched_info->prewhere_actions.tryRestoreColumn(BlockNumberColumn::name);
     patched_info->prewhere_actions.tryRestoreColumn(BlockOffsetColumn::name);
+
+    /// This columns are needed for watermark calculation.
+    if (stream_settings.watermark)
+    {
+        patched_info->prewhere_actions.tryRestoreColumn(stream_settings.watermark->column);
+        for (const auto & identifier : collectIdentifiersFullNames(stream_settings.watermark->expression))
+            patched_info->prewhere_actions.tryRestoreColumn(identifier);
+    }
 
     return patched_info;
 }
@@ -404,7 +433,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , header(std::move(header_))
     , storage(storage_)
     , query_info(makeStreamingSelectQueryInfo(query_info_))
-    , initial_prewhere_info(makeStreamingPrewhereInfo(query_info_.prewhere_info))
+    , initial_prewhere_info(makeStreamingPrewhereInfo(query_info_.prewhere_info, query_info_.table_expression_modifiers->getStreamingSettings().value()))
     , context(makeStreamingContext(std::move(context_)))
     , user_requested_columns(filterStreamingVirtualColumns(user_requested_columns_))
     , requested_num_streams(requested_num_streams_)
