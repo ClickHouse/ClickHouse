@@ -84,7 +84,8 @@ public:
         bool is_shared;
 
         /// When was the entry created?
-        const std::chrono::time_point<std::chrono::system_clock> created_at;
+        /// Not const: it is restored from disk metadata in `deserialize` when the cache is loaded on startup.
+        std::chrono::time_point<std::chrono::system_clock> created_at;
 
         /// When does the entry expire?
         std::chrono::time_point<std::chrono::system_clock> expires_at;
@@ -107,7 +108,9 @@ public:
         String tag;
 
         /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
-        const bool is_subquery;
+        /// Not const: it is part of the key identity (see `KeyHasher`/`operator==`) and is restored from disk
+        /// metadata in `deserialize` when the cache is loaded on startup.
+        bool is_subquery;
 
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,

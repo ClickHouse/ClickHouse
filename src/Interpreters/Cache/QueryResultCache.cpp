@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -592,8 +593,10 @@ QueryResultCache::Key::Key(
 static constexpr auto * token_user_id = "user_id: ";
 static constexpr auto * token_current_user_roles = "current_user_roles: ";
 static constexpr auto * token_is_shared = "is_shared: ";
+static constexpr auto * token_created_at = "created_at: ";
 static constexpr auto * token_expires_at = "expires_at: ";
 static constexpr auto * token_is_compressed = "is_compressed: ";
+static constexpr auto * token_is_subquery = "is_subquery: ";
 static constexpr auto * token_query_string = "query_string: ";
 static constexpr auto * token_query_id = "query_id: ";
 static constexpr auto * token_tag = "query_tag: ";
@@ -618,12 +621,20 @@ void QueryResultCache::Key::serialize(WriteBuffer & buf) const
     writeBoolText(is_shared, buf);
     writeText("\n", buf);
 
+    writeText(token_created_at, buf);
+    writeVarUInt(std::chrono::system_clock::to_time_t(created_at), buf);
+    writeText("\n", buf);
+
     writeText(token_expires_at, buf);
     writeVarUInt(std::chrono::system_clock::to_time_t(expires_at), buf);
     writeText("\n", buf);
 
     writeText(token_is_compressed, buf);
     writeBoolText(is_compressed, buf);
+    writeText("\n", buf);
+
+    writeText(token_is_subquery, buf);
+    writeBoolText(is_subquery, buf);
     writeText("\n", buf);
 
     writeText(token_query_id, buf);
@@ -665,6 +676,12 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
     readBoolText(is_shared, buf);
 
     assertChar('\n', buf);
+    assertString(token_created_at, buf);
+    std::time_t created_timestamp;
+    readVarUInt(created_timestamp, buf);
+    created_at = std::chrono::system_clock::from_time_t(created_timestamp);
+
+    assertChar('\n', buf);
     assertString(token_expires_at, buf);
     std::time_t timestamp;
     readVarUInt(timestamp, buf);
@@ -673,6 +690,10 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
     assertChar('\n', buf);
     assertString(token_is_compressed, buf);
     readBoolText(is_compressed, buf);
+
+    assertChar('\n', buf);
+    assertString(token_is_subquery, buf);
+    readBoolText(is_subquery, buf);
 
     assertChar('\n', buf);
     assertString(token_query_id, buf);
@@ -1286,8 +1307,15 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         auto compress_out = std::make_unique<CompressedWriteBuffer>(*out, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
         NativeWriter writer(*compress_out, 0, key.header);
 
-        for (const auto & chunk : entry->chunks)
-            write_chunk(chunk, writer);
+        /// A cached query that produced zero result rows has no chunks (empty chunks are rejected in
+        /// `QueryResultCacheWriter::buffer`). Persist a single header-only (zero-row) block so the result
+        /// schema can be restored on read; otherwise `results.bin` would contain no blocks and the header
+        /// could not be reconstructed.
+        if (entry->chunks.empty())
+            writer.write(key.header->cloneEmpty());
+        else
+            for (const auto & chunk : entry->chunks)
+                write_chunk(chunk, writer);
 
         compress_out->finalize();
         out->finalize();
@@ -1332,14 +1360,21 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
         while (!compress_in->eof())
         {
             Block res = reader.read();
-            entry->chunks.emplace_back(res.getColumns(), res.rows());
 
             if (!header)
                 header = res.cloneEmpty();
+
+            /// Skip the header-only (zero-row) block written for empty results: such an entry must be
+            /// restored with no chunks to match how it was stored in memory.
+            if (res.rows() != 0)
+                entry->chunks.emplace_back(res.getColumns(), res.rows());
         }
 
         disk_entry->bytes_on_disk += disk->getFileSize(result_path);
     }
+
+    if (!header)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Query result cache entry contains no blocks, cannot restore the result schema");
 
     auto totals_path = key_path / "totals.bin";
     if (auto in = disk->readFileIfExists(totals_path, {}))
@@ -1393,60 +1428,86 @@ void QueryResultCache::loadEntrysFromDisk()
         return;
 
     std::vector<String> expired_entrys;
+    std::vector<String> broken_entrys;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
         for (auto entry_it = disk->iterateDirectory(it->path()); entry_it->isValid(); entry_it->next())
         {
             auto entry_path = fs::path(entry_it->path());
-            /// The entry directory is named like "<low64>_<high64>". Use `entry_it->name()`
-            /// directly, as path-based filename extraction is not stable across disk iterator
-            /// implementations (some return paths with a trailing slash, some without).
-            String ast_hash_str = entry_it->name();
-            size_t separator_pos = ast_hash_str.find('_');
-            chassert(separator_pos != String::npos);
-            String low64_str = ast_hash_str.substr(0, separator_pos);
-            String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
-            IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
 
-            Key key(ast_hash);
+            /// A single malformed or partially-written entry must not abort loading of the whole cache (and
+            /// therefore server startup). Parse and deserialize each entry defensively: on any error, log it
+            /// and remove only the broken entry.
+            try
             {
-                auto entry_file = disk->readFile(entry_path / "key_metadata.txt", {});
-                key.deserialize(*entry_file);
+                /// The entry directory is named like "<low64>_<high64>". Use `entry_it->name()`
+                /// directly, as path-based filename extraction is not stable across disk iterator
+                /// implementations (some return paths with a trailing slash, some without).
+                String ast_hash_str = entry_it->name();
+                size_t separator_pos = ast_hash_str.find('_');
+                if (separator_pos == String::npos)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected query result cache entry directory name: {}", ast_hash_str);
+                String low64_str = ast_hash_str.substr(0, separator_pos);
+                String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
+                IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
 
-                if (key.expires_at < std::chrono::system_clock::now())
+                Key key(ast_hash);
                 {
-                    expired_entrys.push_back(entry_path);
-                    continue;
+                    auto entry_file = disk->readFile(entry_path / "key_metadata.txt", {});
+                    key.deserialize(*entry_file);
+
+                    if (key.expires_at < std::chrono::system_clock::now())
+                    {
+                        expired_entrys.push_back(entry_path);
+                        continue;
+                    }
                 }
+
+                /// When the EntryOnDisk is released, the disk file is also deleted.
+                auto disk_entry = std::shared_ptr<DiskEntry>(
+                    new DiskEntry,
+                    [this, entry_path](DiskEntry * e)
+                    {
+                        try
+                        {
+                            if (!shutdown)
+                                disk->removeRecursive(entry_path);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(logger, "Failed to remove query result cache entry from disk");
+                        }
+                        delete e;
+                    });
+
+                auto [header, entry, disk_entry_] = deserializeEntry(key);
+                key.header = std::make_shared<const Block>(header);
+
+                if (key.is_compressed)
+                    compressEntry(entry);
+
+                memory_cache.set(key, entry);
+
+                disk_entry->bytes_on_disk = disk_entry_->bytes_on_disk;
+                disk_cache.set(key, disk_entry);
             }
+            catch (...)
+            {
+                tryLogCurrentException(logger, fmt::format("Failed to load query result cache entry from disk, removing it: {}", entry_path.string()));
+                broken_entrys.push_back(entry_path);
+            }
+        }
+    }
 
-            /// When the EntryOnDisk is released, the disk file is also deleted.
-            auto disk_entry = std::shared_ptr<DiskEntry>(
-                new DiskEntry,
-                [this, entry_path](DiskEntry * e)
-                {
-                    try
-                    {
-                        if (!shutdown)
-                            disk->removeRecursive(entry_path);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(logger, "Failed to remove query result cache entry from disk");
-                    }
-                    delete e;
-                });
-
-            auto [header, entry, disk_entry_] = deserializeEntry(key);
-            key.header = std::make_shared<const Block>(header);
-
-            if (key.is_compressed)
-                compressEntry(entry);
-
-            memory_cache.set(key, entry);
-
-            disk_entry->bytes_on_disk = disk_entry_->bytes_on_disk;
-            disk_cache.set(key, disk_entry);
+    for (const auto & entry_path : broken_entrys)
+    {
+        try
+        {
+            disk->removeRecursive(entry_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger, "Failed to remove broken query result cache entry from disk");
         }
     }
 
@@ -1461,7 +1522,7 @@ void QueryResultCache::loadEntrysFromDisk()
             tryLogCurrentException(logger, "Failed to remove expired query result cache entry from disk");
         }
     }
-    LOG_INFO(logger, "Loading entries from disk, {} succeeded and {} failed.", disk_cache.count(), expired_entrys.size());
+    LOG_INFO(logger, "Loaded query result cache entries from disk: {} loaded, {} expired, {} broken (removed).", disk_cache.count(), expired_entrys.size(), broken_entrys.size());
 }
 
 bool QueryResultCache::checkAccess(const Key & entry_key, const Key & key) const
