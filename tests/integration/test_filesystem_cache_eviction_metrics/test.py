@@ -68,7 +68,13 @@ def _drive_evictions(extra_settings=None):
             )
         )
 
-    base = {"enable_filesystem_cache": "1"}
+    # Force synchronous reads so evictions happen in the query thread,
+    # where tryGetQueryContext() returns the context with our settings.
+    base = {
+        "enable_filesystem_cache": "1",
+        "local_filesystem_read_method": "pread",
+        "remote_filesystem_read_prefetch": "0",
+    }
     if extra_settings:
         base.update(extra_settings)
 
