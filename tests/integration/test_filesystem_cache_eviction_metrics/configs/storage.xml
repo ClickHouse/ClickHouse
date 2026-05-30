@@ -10,6 +10,7 @@
                 <disk>local_blob</disk>
                 <path>cache_eviction_metrics/</path>
                 <!-- Very small cache so the test workload immediately forces evictions. -->
+                <cache_on_write_operations>1</cache_on_write_operations>
                 <max_size>100Ki</max_size>
                 <max_elements>16</max_elements>
                 <max_file_segment_size>10Ki</max_file_segment_size>

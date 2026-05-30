@@ -39,7 +39,16 @@ def sum_hist(metric):
 
 
 def _drive_evictions(extra_settings=None):
-    """Insert three batches and drive SLRU evictions. Returns after step 4."""
+    """
+    Fill the cache via write-through INSERTs, then trigger evictions by
+    reading data that was pushed out of the cache by later batches.
+
+    With `cache_on_write_operations=1` on the disk, each INSERT batch
+    fills the 100 KiB cache. After 3 batches (each 800 KiB of blob data),
+    the cache holds only the most recent data (batch-2). Reading batch-0
+    is then a cache miss that requires evicting batch-2 segments — those
+    evictions fire the callback with the caller-supplied settings active.
+    """
     node.query("SYSTEM DROP FILESYSTEM CACHE 'cache_with_eviction_metrics'")
     node.query("DROP TABLE IF EXISTS eviction_metrics_test")
     node.query(
@@ -49,6 +58,8 @@ def _drive_evictions(extra_settings=None):
         SETTINGS storage_policy = 'cache_metrics_policy', min_bytes_for_wide_part = 0
         """
     )
+    # Three batches of 100 rows × 8 KiB = 2.4 MiB total.  Each INSERT fills
+    # the 100 KiB cache, evicting the previous batch's entries.
     for batch in range(3):
         node.query(
             "INSERT INTO eviction_metrics_test "
@@ -61,17 +72,10 @@ def _drive_evictions(extra_settings=None):
     if extra_settings:
         base.update(extra_settings)
 
-    # Fill probationary, promote to protected, then evict.
+    # batch-0 was evicted by the later INSERTs; reading it forces cache misses
+    # that must evict the current cache occupants (batch-2 data).
     node.query(
         "SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id < 100",
-        settings=base,
-    )
-    node.query(
-        "SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id < 100",
-        settings=base,
-    )
-    node.query(
-        "SELECT sum(length(blob)) FROM eviction_metrics_test WHERE id >= 100",
         settings=base,
     )
 
@@ -81,16 +85,8 @@ def _assert_eviction_metrics(evictions_before, by_client_before, per_client):
         "SELECT * FROM system.dimensional_metrics "
         "WHERE metric LIKE 'filesystem_cache_%' FORMAT Vertical"
     )
-    cache_detail = node.query(
-        "SELECT local_path, size, state "
-        "FROM system.filesystem_cache WHERE cache_name = 'cache_with_eviction_metrics' "
-        "LIMIT 5 FORMAT Vertical"
-    )
     evictions = sum_dim("filesystem_cache_evictions_total") - evictions_before
-    assert evictions > 0, (
-        f"Aggregate eviction counter did not advance:\n{debug}\n"
-        f"cache_detail:\n{cache_detail}"
-    )
+    assert evictions > 0, f"Aggregate eviction counter did not advance:\n{debug}"
     assert sum_dim("filesystem_cache_evicted_bytes_total") > 0
 
     slru_queue_evictions = float(node.query(
