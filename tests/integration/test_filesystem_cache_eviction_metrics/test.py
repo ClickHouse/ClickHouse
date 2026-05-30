@@ -82,7 +82,7 @@ def _assert_eviction_metrics(evictions_before, by_client_before, per_client):
         "WHERE metric LIKE 'filesystem_cache_%' FORMAT Vertical"
     )
     cache_detail = node.query(
-        "SELECT file_segment_range_left, file_segment_range_right, size, state "
+        "SELECT local_path, size, state "
         "FROM system.filesystem_cache WHERE cache_name = 'cache_with_eviction_metrics' "
         "LIMIT 5 FORMAT Vertical"
     )
