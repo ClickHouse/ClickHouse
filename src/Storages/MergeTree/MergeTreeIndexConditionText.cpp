@@ -484,8 +484,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
 
         /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
         /// function call `like(col, pattern, escape_char)`. Fold the escape character into the
-        /// pattern (rewrite to standard backslash escapes) and dispatch as a 2-argument call,
-        /// so the text index can still be used.
+        /// pattern and dispatch through the existing 2-argument handler.
         if (function_arguments_size == 3 && (function_name == "like" || function_name == "ilike"))
         {
             auto lhs_argument = function.getArgumentAt(0);
@@ -504,20 +503,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                 const String & escape_str = escape_field.safeGet<String>();
                 if (escape_str.size() == 1)
                 {
-                    try
-                    {
-                        String rewritten = likePatternWithCustomEscapeToLikePattern(
-                            pattern_field.safeGet<String>(), escape_str[0]);
-                        Field rewritten_field(std::move(rewritten));
-                        if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
-                            return true;
-                    }
-                    catch (const Exception &)
-                    {
-                        /// Invalid escape sequence in the pattern: bail out so the index is not used,
-                        /// and let row-level evaluation throw the same error.
-                        return false;
-                    }
+                    String rewritten = likePatternWithCustomEscapeToLikePattern(
+                        pattern_field.safeGet<String>(), escape_str[0]);
+                    Field rewritten_field(std::move(rewritten));
+                    if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
+                        return true;
                 }
             }
             return false;

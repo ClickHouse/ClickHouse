@@ -3283,13 +3283,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return false;
 
         /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a
-        /// 3-argument function call `like(col, pattern, escape_char)` (or the `notLike`
-        /// variant). Fold the escape character into the pattern (rewrite to standard
-        /// backslash escapes) so the existing 2-argument handler can build a key range;
-        /// otherwise the call falls through to the else branch and returns false, and the
-        /// primary key cannot be used to prune the scan. `ilike`/`notILike` are not handled
-        /// here because they are not in `atom_map` (the check above already bailed out for
-        /// them), so case-insensitive matching always falls back to row-level evaluation.
+        /// 3-argument function call `like(col, pattern, escape_char)`. Fold the escape
+        /// character into the pattern and dispatch through the existing 2-argument handler.
+        /// `ilike`/`notILike` are not in `atom_map` and were already rejected above.
         Field rewritten_like_pattern;
         DataTypePtr rewritten_like_pattern_type;
         bool rewritten_like = false;
@@ -3307,21 +3303,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 const String & escape_str = escape_field.safeGet<String>();
                 if (escape_str.size() == 1)
                 {
-                    try
-                    {
-                        String rewritten = likePatternWithCustomEscapeToLikePattern(
-                            pattern_field.safeGet<String>(), escape_str[0]);
-                        rewritten_like_pattern = Field(std::move(rewritten));
-                        rewritten_like_pattern_type = pattern_type;
-                        rewritten_like = true;
-                        num_args = 2;
-                    }
-                    catch (const Exception &)
-                    {
-                        /// Invalid escape sequence in the pattern: bail out so the key
-                        /// is not used and let row-level evaluation throw the same error.
-                        return false;
-                    }
+                    String rewritten = likePatternWithCustomEscapeToLikePattern(
+                        pattern_field.safeGet<String>(), escape_str[0]);
+                    rewritten_like_pattern = Field(std::move(rewritten));
+                    rewritten_like_pattern_type = pattern_type;
+                    rewritten_like = true;
+                    num_args = 2;
                 }
             }
 
