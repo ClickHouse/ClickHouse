@@ -169,6 +169,12 @@ void OwnSplitChannel::logSplit(
                 channel->logExtended(msg_ext);
         }
 
+        /// Audit messages must only be written to the dedicated audit file.
+        /// Never expose them to the client TCP log queue or persist them in `system.text_log`,
+        /// otherwise the audit trail would leak outside of its dedicated, access-controlled file.
+        if (is_audit_msg)
+            return;
+
         /// Log to "TCP queue" if message is not too noisy
         if (logs_queue && logs_queue->isNeeded(msg.getPriority(), msg.getSource()))
             pushExtendedMessageToInternalTCPTextLogQueue(msg_ext, logs_queue);
@@ -430,8 +436,14 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         /// so we can create the AsyncLogMessage as it won't penalize performance by being unused
         auto msg_priority = msg.getPriority();
         auto notification = std::make_shared<AsyncLogMessage>(std::move(msg));
+
+        /// Audit messages must only be written to the dedicated audit file.
+        /// Never expose them to the client TCP log queue or persist them in `system.text_log`,
+        /// otherwise the audit trail would leak outside of its dedicated, access-controlled file.
+        const bool is_audit_msg = (notification->msg.getSource() == "AUDIT");
+
         if (const auto & logs_queue = CurrentThread::getInternalTextLogsQueue();
-            logs_queue && logs_queue->isNeeded(msg_priority, notification->msg.getSource()))
+            !is_audit_msg && logs_queue && logs_queue->isNeeded(msg_priority, notification->msg.getSource()))
         {
             /// If we need to push to the TCP queue, do it now since it expects to receive all messages synchronously
             pushExtendedMessageToInternalTCPTextLogQueue(notification->msg_ext, logs_queue);
@@ -440,8 +452,6 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
-
-        const bool is_audit_msg = (notification->msg.getSource() == "AUDIT");
 
         OwnFormattingChannel * audit_channel = nullptr;
         if (auto it = name_to_channels.find("AuditFileLog"); it != name_to_channels.end())
@@ -458,7 +468,7 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
                 queues[i]->enqueueMessage(notification);
         }
 
-        if (text_log_max_priority_loaded >= msg_priority)
+        if (!is_audit_msg && text_log_max_priority_loaded >= msg_priority)
             text_log_queue.enqueueMessage(std::move(notification));
     }
     catch (...)
