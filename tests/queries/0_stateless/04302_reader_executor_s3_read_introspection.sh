@@ -2,10 +2,10 @@
 # Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings
 
 # Companion to 03164_s3_settings_for_queries_and_merges, but for the
-# ReaderExecutor. The legacy test asserts S3 read efficiency through
-# system.query_log ProfileEvents; the executor reads remote data through a
-# different path, so here the same compact-part-on-S3 scan is asserted via the
-# executor's own introspection in system.reader_executor_log.
+# ReaderExecutor. The legacy test asserts S3 read efficiency through per-query
+# ProfileEvents; the executor reads remote data through a different path, so
+# here the same compact-part-on-S3 scan is asserted via the executor's own
+# introspection in system.reader_executor_log.
 #
 # A cold scan after dropping the filesystem cache must read from the source and
 # populate the cache. A warm re-scan of the same columns must then be served
