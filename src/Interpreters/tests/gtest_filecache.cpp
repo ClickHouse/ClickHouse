@@ -32,6 +32,7 @@
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
