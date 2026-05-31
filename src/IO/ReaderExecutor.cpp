@@ -74,6 +74,10 @@ namespace DB::FailPoints
     /// FileCache segment, so a test can drop/evict the cache and verify the
     /// pinned segment survives. No-op unless enabled via `SYSTEM ENABLE FAILPOINT`.
     extern const char reader_executor_pause_after_window[];
+    /// Pauses after a cache handle reported a hit but before `get` reads it, so a
+    /// test can drop the cache in that window and verify the hit is still honored
+    /// (the handle's holder keeps the segment non-releasable). No-op unless enabled.
+    extern const char reader_executor_pause_after_cache_status[];
 }
 
 #if USE_SSL
@@ -1105,6 +1109,12 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
                 auto status = handle->status();
                 bool any_hit_done = false;
 
+                /// Test hook: pause after a hit is classified but before `get`
+                /// reads it, so a test can drop the cache in that window and
+                /// verify the hit is still honored. No-op in production.
+                if (!status.hit_ranges.empty())
+                    FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
+
                 for (const auto & hit : status.hit_ranges)
                 {
                     LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})",
@@ -1131,6 +1141,16 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
                         static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
                     for (const auto & sub : useful)
                     {
+                        /// `status` promised this sub-range as a hit; `get` must
+                        /// have returned it. If not, a held FileSegment was lost
+                        /// between the two calls (the holder is supposed to keep
+                        /// it non-releasable against eviction and DROP) — fail
+                        /// loudly rather than silently mark uncovered bytes done.
+                        if (!hit_rope.covers(sub))
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "ReaderExecutor: cache {} status() reported a hit at [{}, {}) but get() did not "
+                                "return it - a held FileSegment was not honored across status()/get()",
+                                cache->name(), sub.offset, sub.end());
                         result.append(hit_rope.extract(sub));
                         covered.add(sub);
                         hit_bytes += sub.size;

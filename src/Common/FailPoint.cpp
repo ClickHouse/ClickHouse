@@ -87,6 +87,7 @@ static struct InitFiu
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
     PAUSEABLE_ONCE(reader_executor_pause_after_window) \
+    PAUSEABLE_ONCE(reader_executor_pause_after_cache_status) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
