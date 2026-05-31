@@ -575,7 +575,11 @@ def main():
             res = res and CH.wait_ready()
             if res:
                 if not CH.start_kafka():
-                    print("WARNING: Failed to start Kafka")
+                    info.add_workflow_warning("Failed to start Kafka")
+                    print("Failed to start Kafka")
+                    # Fail fast on infra setup errors so we don't burn time
+                    # triaging Kafka/Avro test failures caused by a broken setup.
+                    return False
 
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):
