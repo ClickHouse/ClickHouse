@@ -200,8 +200,8 @@ off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
             && offset_ < offset)
         {
             pos = working_buffer.end() - (offset - offset_);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }
