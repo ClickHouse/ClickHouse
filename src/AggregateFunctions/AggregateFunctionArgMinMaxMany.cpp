@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -31,12 +32,35 @@ struct Entry
     Field val;
 };
 
+/// NaN-aware orderings, consistent with `argMax`/`argMin`/`max`/`min`: a `NaN` `val` always
+/// ranks as the worst candidate, so it is evicted in favor of any real value and is kept only
+/// when there are not enough real values to fill the result. `NaN` compares equal to `NaN`.
+/// `Field`'s default ordering instead treats `NaN` as greater than every real value, which
+/// would otherwise let a `NaN` linger in the heap forever (and sort first in the output).
+inline bool valGreater(const Field & a, const Field & b)
+{
+    if (isNaNField(a))
+        return false; /// `NaN` is treated as the smallest value, never greater than anything.
+    if (isNaNField(b))
+        return true; /// Any real value is greater than `NaN`.
+    return a > b;
+}
+
+inline bool valLess(const Field & a, const Field & b)
+{
+    if (isNaNField(a))
+        return false; /// `NaN` is treated as the largest value, never less than anything.
+    if (isNaNField(b))
+        return true; /// Any real value is less than `NaN`.
+    return a < b;
+}
+
 /// Comparator for min-heap on val: used by argMaxMany to keep the N largest val values.
 /// A min-heap puts the smallest val at the root, so we can easily evict it when a larger
 /// val arrives.
 struct MinHeapComparator
 {
-    bool operator()(const Entry & a, const Entry & b) const { return a.val > b.val; }
+    bool operator()(const Entry & a, const Entry & b) const { return valGreater(a.val, b.val); }
 };
 
 /// Comparator for max-heap on val: used by argMinMany to keep the N smallest val values.
@@ -44,7 +68,7 @@ struct MinHeapComparator
 /// val arrives.
 struct MaxHeapComparator
 {
-    bool operator()(const Entry & a, const Entry & b) const { return a.val < b.val; }
+    bool operator()(const Entry & a, const Entry & b) const { return valLess(a.val, b.val); }
 };
 
 template <bool isMin>
@@ -110,8 +134,8 @@ class AggregateFunctionArgMinMaxMany final
     }
 
 public:
-    explicit AggregateFunctionArgMinMaxMany(const DataTypes & argument_types_, UInt64 max_elems_)
-        : Base(argument_types_, {}, std::make_shared<DataTypeArray>(argument_types_[0]))
+    AggregateFunctionArgMinMaxMany(const DataTypes & argument_types_, const Array & parameters_, UInt64 max_elems_)
+        : Base(argument_types_, parameters_, std::make_shared<DataTypeArray>(argument_types_[0]))
         , max_elems(max_elems_)
         , data_type_arg(argument_types_[0])
         , data_type_val(argument_types_[1])
@@ -238,17 +262,21 @@ public:
         auto & offsets = col_array.getOffsets();
         auto & col_data = col_array.getData();
 
-        auto & entries = this->data(place).entries;
+        const auto & entries = this->data(place).entries;
 
+        /// Sort a copy: `insertResultInto` must not mutate the aggregate state, because window
+        /// aggregation over a growing frame reuses the same state (and its heap invariant) across
+        /// the rows of the frame after each result is written.
+        std::vector<Entry> sorted(entries.begin(), entries.end());
         if constexpr (isMin)
-            std::sort(entries.begin(), entries.end(), [](const Entry & a, const Entry & b) { return a.val < b.val; });
+            std::sort(sorted.begin(), sorted.end(), [](const Entry & a, const Entry & b) { return valLess(a.val, b.val); });
         else
-            std::sort(entries.begin(), entries.end(), [](const Entry & a, const Entry & b) { return a.val > b.val; });
+            std::sort(sorted.begin(), sorted.end(), [](const Entry & a, const Entry & b) { return valGreater(a.val, b.val); });
 
-        for (const auto & entry : entries)
+        for (const auto & entry : sorted)
             col_data.insert(entry.arg);
 
-        offsets.push_back(offsets.back() + entries.size());
+        offsets.push_back(offsets.back() + sorted.size());
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -292,9 +320,9 @@ AggregateFunctionPtr createAggregateFunctionArgMinMaxMany(
             aggregate_function_arg_min_max_many_max_element_size);
 
     if (isMin)
-        return std::make_shared<AggregateFunctionArgMinMaxMany<true>>(argument_types, max_elems);
+        return std::make_shared<AggregateFunctionArgMinMaxMany<true>>(argument_types, parameters, max_elems);
     else
-        return std::make_shared<AggregateFunctionArgMinMaxMany<false>>(argument_types, max_elems);
+        return std::make_shared<AggregateFunctionArgMinMaxMany<false>>(argument_types, parameters, max_elems);
 }
 
 }

@@ -44,3 +44,20 @@ SELECT argMinMany(2)(number, number::Dynamic) FROM numbers(5); -- { serverError 
 SET allow_experimental_variant_type = 1;
 SELECT argMaxMany(2)(number, number::Variant(UInt64)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT argMinMany(2)(number, number::Variant(UInt64)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- NaN val ranks as the worst candidate (consistent with argMax/argMin), so it is evicted in
+-- favor of real values and never lingers in the heap.
+SELECT argMaxMany(1)(arg, val) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMinMany(1)(arg, val) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+-- NaN sorts last in the output when there are fewer than N real values.
+SELECT argMaxMany(3)(arg, val) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+SELECT argMinMany(3)(arg, val) FROM (SELECT * FROM VALUES('arg String, val Float64', ('a',nan),('b',1),('c',3)));
+
+-- The N parameter is part of the state type: states built with a different N are not interchangeable.
+SELECT toTypeName(argMaxManyState(2)(number, number)) FROM numbers(3);
+SELECT toTypeName(argMaxManyState(3)(number, number)) FROM numbers(3);
+
+-- Window aggregation reuses the same state across a growing frame: insertResultInto must not
+-- corrupt the heap. This must match the equivalent ORDER BY ... LIMIT computed per prefix.
+SELECT argMaxMany(2)(number, number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(5);
+SELECT argMinMany(2)(number, number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(5);
