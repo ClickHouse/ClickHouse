@@ -49,6 +49,17 @@ Additional join types available in ClickHouse are:
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
 
 :::note
+With the new analyzer, [`semi_join_compatibility`](../../../operations/settings/settings.md#semi_join_compatibility) and [`anti_join_compatibility`](../../../operations/settings/settings.md#anti_join_compatibility) make `SEMI` and `ANTI` joins expose only their preserved side to expressions resolved after the join result is formed.
+
+- `LEFT SEMI JOIN` and `LEFT ANTI JOIN` expose only left-side columns.
+- `RIGHT SEMI JOIN` and `RIGHT ANTI JOIN` expose only right-side columns.
+- This affects clauses such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY`, including qualified wildcards like `t1.*`.
+- The `ON` expression of the same `JOIN` can still reference both sides.
+
+When these settings are disabled, ClickHouse keeps the legacy behavior, where both sides remain accessible and `SELECT *` expands columns from both tables.
+:::
+
+:::note
 When [join_algorithm](../../../operations/settings/settings.md#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 :::
 

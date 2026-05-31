@@ -27,6 +27,7 @@
 #include <Analyzer/WindowNode.h>
 
 #include <Analyzer/Resolve/CorrelatedColumnsCollector.h>
+#include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
@@ -38,6 +39,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+
+#include <base/scope_guard.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1871,6 +1874,78 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     }
 }
 
+/** Check if a table expression is from the non-preserved side of a SEMI or ANTI JOIN.
+  * Throws an exception if access is not allowed.
+  *
+  * We must check ALL SEMI/ANTI JOIN nodes on the path from the root to the table expression,
+  * not just the first one found. Consider: (t1 LEFT SEMI JOIN t2) LEFT SEMI JOIN t3
+  * For t2.*, the outer join sees t2 on its left side (preserved) and would allow access,
+  * but the inner join sees t2 on its right side (non-preserved) and must deny access.
+  * Stopping at the first match would incorrectly allow t2.*.
+  */
+void checkSemiAntiJoinTableAccess(
+    const QueryTreeNodePtr & table_expression_node,
+    const IdentifierResolveScope & scope,
+    const QueryTreeNodePtr & node_for_error_message)
+{
+    const auto * nearest_query_scope = scope.getNearestQueryScope();
+    if (!nearest_query_scope)
+        return;
+    auto * query_node = nearest_query_scope->scope_node->as<QueryNode>();
+    if (!query_node || !query_node->getJoinTree())
+        return;
+
+    /// Follow the path from the root join down to the table expression, checking every
+    /// SEMI/ANTI JOIN node along the way. Access is denied if any containing join denies it.
+    std::stack<const IQueryTreeNode *> stack;
+    stack.push(query_node->getJoinTree().get());
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (const auto * cross_join_node = const_cast<IQueryTreeNode *>(current)->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+            {
+                if (isFromJoinTree(table_expression_node.get(), table_expression.get()))
+                    stack.push(table_expression.get());
+            }
+            continue;
+        }
+
+        const auto * join_node = const_cast<IQueryTreeNode *>(current)->as<JoinNode>();
+        if (!join_node)
+            continue;
+
+        bool is_from_left = isFromJoinTree(table_expression_node.get(), join_node->getLeftTableExpression().get());
+        bool is_from_right = !is_from_left && isFromJoinTree(table_expression_node.get(), join_node->getRightTableExpression().get());
+
+        if (!is_from_left && !is_from_right)
+            continue;
+
+        /// This join contains the table expression; check access if it is a SEMI/ANTI JOIN.
+        if (join_node->getStrictness() == JoinStrictness::Semi || join_node->getStrictness() == JoinStrictness::Anti)
+        {
+            SemiAntiJoinSideChecker checker(
+                *join_node,
+                join_node->getStrictness(),
+                join_node->getKind(),
+                scope.context,
+                scope.resolving_join_on_expression);
+            JoinTableSide side = is_from_left ? JoinTableSide::Left : JoinTableSide::Right;
+            checker.throwIfTableAccessDenied(side, *node_for_error_message, *scope.scope_node);
+        }
+
+        /// Descend only into the branch that actually contains the table expression.
+        if (is_from_left)
+            stack.push(join_node->getLeftTableExpression().get());
+        else
+            stack.push(join_node->getRightTableExpression().get());
+    }
+}
+
 /** Resolve qualified tree matcher.
   *
   * First try to match qualified identifier to expression. If qualified identifier matched expression node then
@@ -1956,6 +2031,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             matcher_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
     }
+
+    /// Check if the table is from the non-preserved side of a SEMI or ANTI JOIN
+    checkSemiAntiJoinTableAccess(table_expression_node, scope, matcher_node);
 
     NamesAndTypes matched_columns;
 
@@ -2184,20 +2262,38 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                 }
             }
 
-            for (auto && left_table_column_with_name : left_table_expression_columns)
-            {
-                if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
-                    continue;
+            /** For SEMI/ANTI JOIN, SELECT * should only return columns from one side per SQL standard:
+              * - LEFT SEMI/ANTI JOIN: only left table columns
+              * - RIGHT SEMI/ANTI JOIN: only right table columns
+              * Controlled by `semi_join_compatibility` and `anti_join_compatibility` (see `SemiAntiJoinSideChecker`).
+              */
+            SemiAntiJoinSideChecker semi_anti_star_checker(
+                *join_node,
+                join_node->getStrictness(),
+                join_node->getKind(),
+                scope.context,
+                scope.resolving_join_on_expression);
 
-                matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
+            if (!semi_anti_star_checker.shouldSkipSide(JoinTableSide::Left))
+            {
+                for (auto && left_table_column_with_name : left_table_expression_columns)
+                {
+                    if (table_expression_column_names_to_skip.contains(left_table_column_with_name.second))
+                        continue;
+
+                    matched_expression_nodes_with_column_names.push_back(std::move(left_table_column_with_name));
+                }
             }
 
-            for (auto && right_table_column_with_name : right_table_expression_columns)
+            if (!semi_anti_star_checker.shouldSkipSide(JoinTableSide::Right))
             {
-                if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
-                    continue;
+                for (auto && right_table_column_with_name : right_table_expression_columns)
+                {
+                    if (table_expression_column_names_to_skip.contains(right_table_column_with_name.second))
+                        continue;
 
-                matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));
+                    matched_expression_nodes_with_column_names.push_back(std::move(right_table_column_with_name));
+                }
             }
 
             table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
@@ -4909,7 +5005,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         expressions_visitor.visit(join_node_typed.getJoinExpression());
         auto join_expression = join_node_typed.getJoinExpression();
+
+        /// Set pointer to current JOIN node to allow access to both sides in its ON expression
+        const auto * previous_resolving_join_on_expression = scope.resolving_join_on_expression;
+        scope.resolving_join_on_expression = join_node.get();
+        SCOPE_EXIT(scope.resolving_join_on_expression = previous_resolving_join_on_expression);
         resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
         join_node_typed.getJoinExpression() = std::move(join_expression);
     }
     else if (join_node_typed.isUsingJoinExpression())
