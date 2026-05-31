@@ -627,11 +627,6 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
         amount.fetch_sub(accounted_size, std::memory_order_relaxed);
         rss.fetch_sub(accounted_size, std::memory_order_relaxed);
     }
-    else if (level == VariableContext::Thread)
-    {
-        /// Could become negative if memory allocated in this thread is freed in another one
-        amount.fetch_sub(accounted_size, std::memory_order_relaxed);
-    }
     else
     {
         Int64 new_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed) - accounted_size;
@@ -767,11 +762,6 @@ bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
 
 void MemoryTracker::setParent(MemoryTracker * elem)
 {
-    /// Untracked memory shouldn't be accounted to a query or a user if it was allocated before the thread was attached
-    /// to a query thread group or a user group, because this memory will be (🤞) freed outside of these scopes.
-    if (level == VariableContext::Thread && DB::current_thread)
-        DB::current_thread->flushUntrackedMemory();
-
     parent.store(elem, std::memory_order_relaxed);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD

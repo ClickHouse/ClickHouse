@@ -11,7 +11,7 @@ struct MemoryTrackerSwitcher
     ~MemoryTrackerSwitcher();
 
 private:
-    MemoryTracker * prev_memory_tracker_parent = nullptr;
+    MemoryTracker * prev_memory_tracker = nullptr;
     Int64 prev_untracked_memory = 0;
     VariableContext prev_untracked_memory_blocker_level = VariableContext::Max;
 };

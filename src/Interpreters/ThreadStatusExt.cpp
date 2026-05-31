@@ -325,7 +325,7 @@ void ThreadStatus::applyQuerySettings()
     /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)
     if (thread_group->master_thread_id == thread_id)
         configureMemoryTrackerFromSettings(query_context_ptr->hasTraceCollector(), thread_group->memory_tracker, settings);
-    auto sample_config = memory_tracker.getResolvedSampleConfig();
+    auto sample_config = memory_tracker->getResolvedSampleConfig();
     sample_probability = sample_config.probability;
     sample_min_allocation_size = sample_config.min_allocation_size;
     sample_max_allocation_size = sample_config.max_allocation_size;
@@ -351,7 +351,12 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     thread_group->linkThread(thread_id);
 
     performance_counters.setParent(&thread_group->performance_counters);
-    memory_tracker.setParent(&thread_group->memory_tracker);
+
+    /// Untracked memory shouldn't be accounted to a query or a user if it was allocated before the
+    /// thread was attached to the group, because it will be (🤞) freed outside of these scopes.
+    /// Flush it to the previous tracker before repointing.
+    flushUntrackedMemory();
+    memory_tracker = &thread_group->memory_tracker;
 
     query_context = thread_group->query_context;
     global_context = thread_group->global_context;
@@ -377,7 +382,7 @@ void ThreadStatus::detachFromGroup()
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// flush untracked memory before resetting memory_tracker parent
+    /// flush untracked memory before repointing memory_tracker to the total tracker
     flushUntrackedMemory();
 
     finalizeQueryProfiler();
@@ -385,9 +390,9 @@ void ThreadStatus::detachFromGroup()
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
-    memory_tracker.reset();
-    /// Extract MemoryTracker out from query and user context
-    memory_tracker.setParent(&total_memory_tracker);
+    resetThreadMemoryTracker();
+    /// Detach from the query/user context: account this thread's allocations to the total again.
+    memory_tracker = &total_memory_tracker;
 
     thread_group->unlinkThread();
 
@@ -491,8 +496,7 @@ void ThreadStatus::initPerformanceCounters()
     /// Clear stats from previous query if a new query is started
     /// TODO: make separate query_thread_performance_counters and thread_performance_counters
     performance_counters.resetCounters();
-    memory_tracker.resetCounters();
-    memory_tracker.setDescription("Thread");
+    resetThreadMemoryTracker();
 
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
@@ -699,8 +703,8 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
     elem.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
     elem.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
-    elem.memory_usage = memory_tracker.get();
-    elem.peak_memory_usage = memory_tracker.getPeak();
+    elem.memory_usage = getThreadMemoryUsage();
+    elem.peak_memory_usage = getThreadPeakMemoryUsage();
 
     elem.thread_name = getThreadName();
     elem.thread_id = thread_id;

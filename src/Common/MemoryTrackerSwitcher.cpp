@@ -11,14 +11,13 @@ MemoryTrackerSwitcher::MemoryTrackerSwitcher(MemoryTracker * new_tracker)
     if (!current_thread)
         return;
 
-    auto * thread_tracker = CurrentThread::getMemoryTracker();
-
     prev_untracked_memory = current_thread->untracked_memory;
     prev_untracked_memory_blocker_level = current_thread->untracked_memory_blocker_level;
-    prev_memory_tracker_parent = thread_tracker->getParent();
+    prev_memory_tracker = current_thread->memory_tracker;
 
     current_thread->untracked_memory = 0;
-    thread_tracker->setParent(new_tracker);
+    chassert(new_tracker);
+    current_thread->memory_tracker = new_tracker;
 }
 
 MemoryTrackerSwitcher::~MemoryTrackerSwitcher()
@@ -28,11 +27,10 @@ MemoryTrackerSwitcher::~MemoryTrackerSwitcher()
         return;
 
     CurrentThread::flushUntrackedMemory();
-    auto * thread_tracker = CurrentThread::getMemoryTracker();
 
-    /// It is important to set untracked memory after the call of
-    /// 'setParent' because it may flush untracked memory to the wrong parent.
-    thread_tracker->setParent(prev_memory_tracker_parent);
+    /// It is important to restore untracked memory after repointing the tracker,
+    /// otherwise flushUntrackedMemory() above would account it to the wrong tracker.
+    current_thread->memory_tracker = prev_memory_tracker;
     current_thread->untracked_memory = prev_untracked_memory;
     current_thread->untracked_memory_blocker_level = prev_untracked_memory_blocker_level;
 }

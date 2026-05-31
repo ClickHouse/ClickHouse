@@ -42,8 +42,8 @@ try
 {
     total_memory_tracker.resetCounters();
     total_memory_tracker.setHardLimit(1_GiB);
-    CurrentThread::get().memory_tracker.resetCounters();
-    CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
+    CurrentThread::get().memory_tracker->resetCounters();
+    CurrentThread::get().memory_tracker->setHardLimit(1_GiB);
 
     if (size < sizeof(AuxiliaryRandomData))
         return 0;

@@ -113,7 +113,6 @@ ThreadStatus::ThreadStatus()
 
     last_rusage = std::make_unique<RUsageCounters>();
 
-    memory_tracker.setDescription("Thread");
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -239,7 +238,8 @@ void ThreadStatus::flushUntrackedMemory()
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
     Int64 current_untracked_memory = untracked_memory;
     untracked_memory = 0;
-    memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
+    memory_tracker->adjustWithUntrackedMemory(current_untracked_memory);
+    adjustThreadMemoryUsage(current_untracked_memory);
 }
 
 bool ThreadStatus::isQueryCanceled() const

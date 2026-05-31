@@ -174,7 +174,18 @@ public:
     /// Could be changed to point to another object to calculate performance counters for some narrow scope.
     ProfileEvents::Counters * current_performance_counters{&performance_counters};
 
-    MemoryTracker memory_tracker{VariableContext::Thread};
+    /// Tracker into which this thread's allocations are flushed: the Process-level group
+    /// tracker while attached to a thread group, total_memory_tracker otherwise.
+    /// There is no per-thread MemoryTracker anymore; MemoryTrackerSwitcher just repoints this.
+    MemoryTracker * memory_tracker = &total_memory_tracker;
+
+    /// Per-thread memory accounting (the "delta" of memory consumed by this thread).
+    /// Accumulated on every untracked_memory flush; used for query_thread_log and as a
+    /// thread-local memory-growth signal (e.g. AggregatingInOrderTransform). Allocations
+    /// passed to other threads may drive memory_tracker_amount negative.
+    Int64 memory_tracker_amount = 0;
+    Int64 memory_tracker_peak = 0;
+
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
     /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
@@ -296,6 +307,25 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+
+    /// Current/peak memory consumed by this thread (delta of allocations minus deallocations).
+    Int64 getThreadMemoryUsage() const { return memory_tracker_amount + untracked_memory; }
+    Int64 getThreadPeakMemoryUsage() const { return memory_tracker_peak; }
+    void resetThreadMemoryTracker()
+    {
+        memory_tracker_amount = 0;
+        memory_tracker_peak = 0;
+    }
+    /// Move `delta` from the untracked buffer into the per-thread accumulator (called on every flush).
+    /// Skip bytes accumulated under a MemoryTrackerBlockerInThread: the removed Thread-level tracker
+    /// was blocked alongside user/query, so such allocations never showed up in the per-thread delta.
+    void adjustThreadMemoryUsage(Int64 delta)
+    {
+        if (untracked_memory_blocker_level != VariableContext::Max)
+            return;
+        memory_tracker_amount += delta;
+        memory_tracker_peak = std::max(memory_tracker_amount, memory_tracker_peak);
+    }
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 

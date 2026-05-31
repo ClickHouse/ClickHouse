@@ -1302,8 +1302,10 @@ struct FunctionsStressTestThread
                 operation.step = Operation::Step::GeneratingArguments;
             }
 
-            thread_status->memory_tracker.resetCounters(); // reset the peak
-            thread_status->memory_tracker.setHardLimit(MEMORY_LIMIT_BYTES_PER_THREAD);
+            /// One thread group per worker thread, so the Process tracker doubles as the per-thread one.
+            thread_status->memory_tracker->resetCounters(); // reset the peak
+            thread_status->memory_tracker->setHardLimit(MEMORY_LIMIT_BYTES_PER_THREAD);
+            thread_status->resetThreadMemoryTracker();
             thread_status->untracked_memory = 0;
 
             randomizeSettings();
@@ -1433,8 +1435,8 @@ struct FunctionsStressTestThread
             }
             stats.max(S_TIME_MAX_NS, ns);
 
-            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory;
-            Int64 memory_peak = thread_status->memory_tracker.getPeak();
+            Int64 memory_balance = thread_status->getThreadMemoryUsage();
+            Int64 memory_peak = thread_status->getThreadPeakMemoryUsage();
 
             stats.add(S_MEMORY_BALANCE, memory_balance);
             stats.max(S_MEMORY_PEAK, memory_peak);

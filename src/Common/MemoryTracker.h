@@ -150,8 +150,8 @@ public:
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
     static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
-    explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
-    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    explicit MemoryTracker(VariableContext level_ = VariableContext::Process);
+    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Process);
     MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_);
 
     ~MemoryTracker();
