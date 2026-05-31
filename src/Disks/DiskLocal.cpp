@@ -1,5 +1,6 @@
 #include <Disks/DiskLocal.h>
 #include <Common/IThrottler.h>
+#include <Core/Defines.h>
 #include <Common/createHardLink.h>
 #include <Disks/DiskFactory.h>
 
@@ -10,6 +11,7 @@
 #include <Common/atomicRename.h>
 #include <Common/formatReadable.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/ReadPipeline.h>
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
@@ -27,6 +29,7 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
+#include <Common/ErrnoException.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
@@ -366,9 +369,60 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
     return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
+void DiskLocal::prepareRead(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, /*file_size*/ std::nullopt, /*flags*/ -1, /*existing_memory*/ nullptr, settings.use_page_cache_for_local_disks);
+    auto full_path = fs::path(disk_path) / path;
+
+    /// Do not fail eagerly if the file doesn't exist or can't be stat'd.
+    /// The error should come at read time with the proper error code
+    /// (e.g. FILE_DOESNT_EXIST for broken projections).
+    std::error_code ec;
+    auto file_size = fs::file_size(full_path, ec);
+    if (ec)
+        file_size = 0;
+
+    StoredObject obj(full_path.string(), full_path.string(), file_size);
+
+    /// No gather for local disk — the source buffer is returned directly.
+    pipeline.setLocalFileSource(
+        full_path.string(),
+        StoredObjects{obj},
+        settings,
+        read_hint);
+
+    /// Page cache is incompatible with several local read methods:
+    ///   - async methods (io_uring, pread_fake_async, pread_threadpool): the
+    ///     async wrapper drives the inner reader incompatibly with page-cache
+    ///     `set`/`seek` semantics;
+    ///   - mmap: `MMapReadBufferFromFileWithCache::seek` bounds-checks against
+    ///     `working_buffer.size()` after `CachedInMemoryReadBufferFromFile` has
+    ///     shrunk it to the page-cache piece, so any seek past the first piece
+    ///     throws `CANNOT_SEEK_THROUGH_FILE`;
+    ///   - O_DIRECT when `page_cache_block_size` is not aligned to the direct
+    ///     IO sector size (additional check below).
+    bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache_settings.cache
+        && settings.local_fs_settings.method != LocalFSReadMethod::io_uring
+        && settings.local_fs_settings.method != LocalFSReadMethod::pread_fake_async
+        && settings.local_fs_settings.method != LocalFSReadMethod::pread_threadpool
+        && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
+
+    {
+        /// Use the same estimated size basis as createReadBufferFromFileBase:
+        /// read_hint first, then file_size. A large file with a small read_hint
+        /// won't trigger O_DIRECT, so page cache remains safe.
+        size_t estimated_size = read_hint.value_or(file_size);
+        if (use_page_cache && settings.local_fs_settings.direct_io_threshold
+            && estimated_size >= settings.local_fs_settings.direct_io_threshold
+            && settings.page_cache_settings.block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
+            use_page_cache = false;
+    }
+
+    if (use_page_cache)
+        pipeline.needMemoryCache("local:", settings.page_cache_settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -618,7 +672,7 @@ try
 {
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
-    read_settings.direct_io_threshold = 1;
+    read_settings.local_fs_settings.direct_io_threshold = 1;
     auto buf = readFile(disk_checker_path, read_settings, {});
     UInt32 magic_number;
     readIntBinary(magic_number, *buf);
@@ -707,6 +761,7 @@ void DiskLocal::checkAccessImpl(const String & path)
 
 void DiskLocal::setup()
 {
+    fs::create_directories(disk_path);
     try
     {
         if (!FS::canRead(disk_path))

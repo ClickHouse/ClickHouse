@@ -186,15 +186,6 @@ public:
     /// Same, but for the list of names.
     NodeRawConstPtrs findInOutputs(const Names & names) const;
 
-    struct SplitPossibleOutputNamesResult
-    {
-        NameMultiSet output_names;
-        Names not_output_names;
-    };
-
-    /// Returns the names from possible_output_names that are among the outputs.
-    SplitPossibleOutputNamesResult splitPossibleOutputNames(NameMultiSet possible_output_names) const;
-
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
     void addOrReplaceInOutputs(const Node & node);
@@ -241,40 +232,13 @@ public:
     /// The order of outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
-    void removeAliasesForFilter(const std::string & filter_name);
+    /// Remove the given nodes, bypassing `removeUnusedActions`'s row-changing
+    /// carve-out for ARRAY_JOIN. Nodes still required by any output are kept.
+    /// Caller MUST ensure removed ARRAY_JOIN is recomputed elsewhere in the plan.
+    /// Returns count of removed nodes.
+    size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
 
-    /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
-    /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
-    /// (expressions). Consider the following example:
-    /// CREATE TABLE tbl (dt DateTime, val UInt64,
-    ///                   PROJECTION p_hour (SELECT sum(val) GROUP BY toStartOfHour(dt)));
-    ///
-    /// Query: SELECT toStartOfHour(dt), sum(val) FROM tbl GROUP BY toStartOfHour(dt);
-    ///
-    /// We will have an ActionsDAG like this:
-    /// FUNCTION: toStartOfHour(dt)       sum(val)
-    ///                 ^                   ^
-    ///                 |                   |
-    /// INPUT:          dt                  val
-    ///
-    /// Now we traverse the DAG and see if any FUNCTION node can be replaced by projection's INPUT node.
-    /// The result DAG will be:
-    /// INPUT:  toStartOfHour(dt)       sum(val)
-    ///
-    /// We don't need aggregate columns from projection because they are matched after DAG.
-    /// Currently we use canonical names of each node to find matches. It can be improved after we
-    /// have a full-featured name binding system.
-    ///
-    /// @param required_columns should contain columns which this DAG is required to produce after folding. It used for result actions.
-    /// @param projection_block_for_keys contains all key columns of given projection.
-    /// @param predicate_column_name means we need to produce the predicate column after folding.
-    /// @param add_missing_keys means whether to add additional missing columns to input nodes from projection key columns directly.
-    /// @return required columns for this folded DAG. It's expected to be fewer than the original ones if some projection is used.
-    NameSet foldActionsByProjection(
-        const NameSet & required_columns,
-        const Block & projection_block_for_keys,
-        const String & predicate_column_name = {},
-        bool add_missing_keys = true);
+    void removeAliasesForFilter(const std::string & filter_name);
 
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs
@@ -331,6 +295,33 @@ public:
     /// In case if function return constant, but arguments are not constant, materialize it.
     Block updateHeader(const Block & header) const;
 
+    /// Match DAG inputs to header columns by name (left-to-right, handling duplicates),
+    /// replicating the matching logic from updateHeader.
+    /// Returns a pair:
+    ///  - matched: sorted header positions consumed by a DAG input
+    ///  - passthrough: header positions not consumed by any DAG input (in order)
+    struct MatchedInputPositions
+    {
+        std::vector<size_t> matched;
+        std::vector<size_t> passthrough;
+    };
+    MatchedInputPositions matchInputPositionsToHeader(const Block & header) const;
+
+    /// Same as above, but with an explicit list of input nodes instead of using the DAG's inputs.
+    static MatchedInputPositions matchInputNodesToHeader(const NodeRawConstPtrs & input_nodes, const Block & header);
+
+    /// Split output positions into DAG output indices and pass-through indices.
+    /// The output header is structured as [DAG outputs..., pass-through inputs...].
+    /// Positions below getOutputs().size() are DAG output indices;
+    /// positions at or above are pass-through indices (with the DAG output count subtracted),
+    /// can be used to index into the list of pass-through inputs from matchInputPositionsToHeader.
+    struct SplitOutputPositions
+    {
+        std::vector<size_t> dag_indices;
+        std::vector<size_t> passthrough_indices;
+    };
+    SplitOutputPositions splitOutputPositions(const std::vector<size_t> & output_positions) const;
+
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
         IntermediateExecutionResult & node_to_column,
@@ -350,6 +341,10 @@ public:
     const Node & materializeNodeWithoutRename(const Node & node, bool materialize_sparse = true);
     /// Apply materialize() function to node. Unlike for materializeNodeWithoutRename, result node has the same name.
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
+
+    /// Remove materialize() and identity() wrapper functions from the DAG.
+    /// These are transparent wrappers that don't change values. Removing them helps projection matching for queries through views.
+    void removeTrivialWrappers();
 
     enum class MatchColumnsMode : uint8_t
     {
@@ -375,6 +370,7 @@ public:
         NameSet * columns_contain_compiled_function = nullptr);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
+    static ActionsDAG makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value);
 
     /// Create ActionsDAG which represents expression equivalent to applying first and second actions consequently.
     /// Is used to replace `(first -> second)` expression chain to single `merge(first, second)` expression.
@@ -478,9 +474,6 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
-    bool
-    isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
-
     /** Build filter dag from multiple filter dags.
       *
       * If filter nodes are empty, result is nullptr.
@@ -505,12 +498,6 @@ public:
     /// Check if `predicate` is a combination of AND functions.
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
-
-    /// Get a list of nodes. For every node, check if it can be computed using allowed subset of inputs.
-    /// Returns only those nodes from the list which can be computed.
-    static NodeRawConstPtrs filterNodesByAllowedInputs(
-        NodeRawConstPtrs nodes,
-        const std::unordered_set<const Node *> & allowed_inputs);
 
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
@@ -606,13 +593,5 @@ struct ActionsAndProjectInputsFlag
 };
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
-
-/// required_outputs must contain only output names from actions_dag
-/// Returns the output names in their order in the output of the actions dag.
-Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag);
-
-bool hasDuplicatedNames(const ActionsDAG::NodeRawConstPtrs & nodes);
-
-bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions_dag);
 
 }

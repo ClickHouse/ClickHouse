@@ -62,6 +62,12 @@ public:
 
     void add(const Self & to, Arena * arena)
     {
+        if (to.is_null)
+        {
+            is_null = true;
+            return;
+        }
+
         if (!to.data().has())
             return;
 
@@ -92,7 +98,7 @@ public:
         {
             ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
             col.getNullMapColumn().insertDefault();
-            data().insertResultInto(col.getNestedColumn(), result_type);
+            data().insertResultInto(col.getNestedColumn(), removeNullable(result_type));
         }
     }
 };
@@ -169,7 +175,7 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, result_type, arena);
+        data(place).read(buf, *serialization, value_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type->getTypeId()); }
@@ -237,6 +243,6 @@ SELECT singleValueOrNull(x) FROM test;
     FunctionDocumentation::Category category_singleValueOrNull = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_singleValueOrNull = {description_singleValueOrNull, syntax_singleValueOrNull, arguments_singleValueOrNull, parameters_singleValueOrNull, returned_value_singleValueOrNull, examples_singleValueOrNull, introduced_in_singleValueOrNull, category_singleValueOrNull};
 
-    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, {}, documentation_singleValueOrNull});
+    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, documentation_singleValueOrNull});
 }
 }

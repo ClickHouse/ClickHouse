@@ -118,9 +118,9 @@ public:
         data(place).add(*columns[0], row_num, arena);
     }
 
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
-        data(place).addManyDefaults(*columns[0], 0, arena);
+        data(place).addManyDefaults(*columns[0], length, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -192,7 +192,7 @@ FROM ontime;
     FunctionDocumentation documentation_anyHeavy = {description_anyHeavy, syntax_anyHeavy, arguments_anyHeavy, {}, returned_value_anyHeavy, examples_anyHeavy, introduced_in_anyHeavy, category_anyHeavy};
 
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties, documentation_anyHeavy});
+    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, documentation_anyHeavy, default_properties});
 }
 
 }

@@ -1,5 +1,6 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -9,15 +10,6 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    const Names & columns = header_->getNames();
-    size_t num_columns = columns.empty() ? header_->columns() : columns.size();
-
-    key_columns_pos.reserve(columns.size());
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto pos = columns.empty() ? i : header_->getPositionByName(columns[i]);
-        key_columns_pos.emplace_back(pos);
-    }
 }
 
 
@@ -46,29 +38,80 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
         output.push(std::move(current_output_chunk));
     }
 
-    if (finished_second_input)
-    {
-        if (inputs.front().isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-    }
-    else if (inputs.back().isFinished())
-    {
-        finished_second_input = true;
-    }
-
     if (!has_input)
     {
-        InputPort & input = finished_second_input ? inputs.front() : inputs.back();
+        while (true)
+        {
+            if (stage == Stage::ReadLeftInput)
+            {
+                auto & input = inputs.front();
 
-        input.setNeeded();
-        if (!input.hasData())
-            return Status::NeedData;
+                if (input.isFinished())
+                {
+                    inputs.back().close();
+                    output.finish();
+                    return Status::Finished;
+                }
 
-        current_input_chunk = input.pull();
-        has_input = true;
+                input.setNeeded();
+                if (!input.hasData())
+                    return Status::NeedData;
+
+                current_input_chunk = input.pull();
+                has_input = true;
+                break;
+            }
+
+            if (stage == Stage::ReadRightInput)
+            {
+                auto & input = inputs.back();
+
+                if (input.isFinished())
+                {
+                    if (isIntersectOperator() && !has_right_input_rows)
+                    {
+                        inputs.front().close();
+                        output.finish();
+                        return Status::Finished;
+                    }
+
+                    stage = Stage::ReadRemainingLeftInput;
+                    continue;
+                }
+
+                input.setNeeded();
+                if (!input.hasData())
+                    return Status::NeedData;
+
+                current_input_chunk = input.pull();
+                has_input = true;
+                break;
+            }
+
+            if (has_left_input_chunk)
+            {
+                current_input_chunk = std::move(left_input_chunk);
+                has_left_input_chunk = false;
+                has_input = true;
+                break;
+            }
+
+            auto & input = inputs.front();
+
+            if (input.isFinished())
+            {
+                output.finish();
+                return Status::Finished;
+            }
+
+            input.setNeeded();
+            if (!input.hasData())
+                return Status::NeedData;
+
+            current_input_chunk = input.pull();
+            has_input = true;
+            break;
+        }
     }
 
     return Status::Ready;
@@ -77,8 +120,18 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
-    if (!finished_second_input)
+    if (stage == Stage::ReadLeftInput)
     {
+        if (current_input_chunk.hasRows())
+        {
+            left_input_chunk = std::move(current_input_chunk);
+            has_left_input_chunk = true;
+            stage = Stage::ReadRightInput;
+        }
+    }
+    else if (stage == Stage::ReadRightInput)
+    {
+        has_right_input_rows |= current_input_chunk.hasRows();
         accumulate(std::move(current_input_chunk));
     }
     else
@@ -139,13 +192,13 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
     }
 
     if (isAllOperator())
@@ -188,13 +241,13 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
+    column_ptrs.reserve(columns.size());
 
-    for (auto pos : key_columns_pos)
+    for (auto & column : columns)
     {
-        /// Hash methods expect non-const column
-        columns[pos] = columns[pos]->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(columns[pos].get());
+        /// Hash methods expect non-const columns.
+        column = column->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(column.get());
     }
 
     size_t new_rows_num = 0;
@@ -210,19 +263,13 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             auto key = hashRow(column_ptrs, i);
             auto * it = counts.find(key);
 
-            if (it != nullptr && it->getMapped() > 0)
-            {
+            /// Check if this row has remaining occurrences in the right side.
+            bool matched = (it != nullptr && it->getMapped() > 0);
+            if (matched)
                 --it->getMapped();
-                /// EXCEPT ALL: found in right side, exclude this row.
-                /// INTERSECT ALL: found in right side, include this row.
-                row_filter[i] = is_except ? 0 : 1;
-            }
-            else
-            {
-                /// EXCEPT ALL: not in right side, include this row.
-                /// INTERSECT ALL: not in right side, exclude this row.
-                row_filter[i] = is_except ? 1 : 0;
-            }
+
+            /// EXCEPT ALL keeps unmatched rows; INTERSECT ALL keeps matched rows.
+            row_filter[i] = matched != is_except;
 
             if (row_filter[i])
                 ++new_rows_num;

@@ -19,6 +19,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstring>
 #include <algorithm>
@@ -157,7 +158,7 @@ namespace
 using namespace FunctionsLogicalDetail;
 
 using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
+using UInt8ColumnPtrs = VectorWithMemoryTracking<const ColumnUInt8 *>;
 
 
 MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
@@ -415,7 +416,7 @@ struct OperationApplier
     static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
             if (!use_result_data_as_input)
                 doBatchedApplyAVX512BW<false>(in, result_data.data(), result_data.size());
@@ -424,7 +425,7 @@ struct OperationApplier
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX2))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
             if (!use_result_data_as_input)
                 doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
@@ -475,13 +476,13 @@ struct OperationApplier
 
 #if USE_MULTITARGET_CODE
     template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE
+    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
     {
         BATCH_BODY(doBatchedApplyAVX512BW)
     }
 
     template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) AVX2_FUNCTION_SPECIFIC_ATTRIBUTE
+    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE
     {
         BATCH_BODY(doBatchedApplyAVX2)
     }
@@ -551,7 +552,7 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
-    MULTITARGET_FUNCTION_AVX512BW_AVX2(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <typename T, typename Result>
     static void
@@ -570,14 +571,14 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
         {
 #if USE_MULTITARGET_CODE
-            if (isArchSupported(TargetArch::AVX512BW))
+            if (isArchSupported(TargetArch::x86_64_v4))
             {
-                applyImplAVX512BW<T, Result>(x, *column, result);
+                applyImpl_x86_64_v4<T, Result>(x, *column, result);
                 return;
             }
-            if (isArchSupported(TargetArch::AVX2))
+            if (isArchSupported(TargetArch::x86_64_v3))
             {
-                applyImplAVX2<T, Result>(x, *column, result);
+                applyImpl_x86_64_v3<T, Result>(x, *column, result);
                 return;
             }
 #endif
@@ -859,7 +860,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
-        std::vector<size_t> short_circuit_args_index;
+        VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)

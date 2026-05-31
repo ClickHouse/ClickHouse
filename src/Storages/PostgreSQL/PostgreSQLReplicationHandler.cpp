@@ -505,7 +505,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
+    StorageInMemoryMetadata storage_metadata = *nested_storage->getInMemoryMetadataPtr(insert_context, false);
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
@@ -597,7 +597,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx.exec(query_str)};
-    assert(!result.empty());
+    chassert(!result.empty());
     return result[0][0].as<std::string>() == "t";
 }
 
@@ -683,7 +683,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary)
 {
-    assert(temporary || !user_managed_slot);
+    chassert(temporary || !user_managed_slot);
 
     String query_str;
     String slot_name;
@@ -711,7 +711,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 
 void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx, bool temporary)
 {
-    assert(temporary || !user_managed_slot);
+    chassert(temporary || !user_managed_slot);
 
     std::string slot_name;
     if (temporary)
@@ -811,11 +811,14 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     {
         shutdown();
 
+        /// Do not use fault injection during cleanup: leaked replication slots
+        /// can exhaust PostgreSQL's max_replication_slots and break subsequent
+        /// MaterializedPostgreSQL databases.
         postgres::Connection connection(connection_info);
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -824,7 +827,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);

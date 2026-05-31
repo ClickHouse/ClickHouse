@@ -30,7 +30,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           flatten_google_wrappers_,
-          false,    // oneof_presence
+          /* oneof_presence = */ false,
           *reader))
 {
 }
@@ -39,6 +39,18 @@ void ProtobufListInputFormat::setReadBuffer(ReadBuffer & in_)
 {
     reader->setReadBuffer(in_);
     IRowInputFormat::setReadBuffer(in_);
+}
+
+void ProtobufListInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    /// ProtobufSerializerEnvelope carries across-rows state (the
+    /// "have we opened the envelope yet" flag), and the reader keeps the
+    /// envelope's message-bounds stack — rewind both so the next readRow
+    /// opens a fresh envelope. This also recovers from a partially-read
+    /// envelope after an exception.
+    reader->resetState();
+    serializer->resetState();
 }
 
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)

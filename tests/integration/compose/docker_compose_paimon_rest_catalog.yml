@@ -1,0 +1,43 @@
+services:
+  node:
+    volumes:
+      - paimon-warehouse:/var/lib/clickhouse/user_files/warehouse
+  paimon-rest-bearer:
+    image: clickhouse/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
+    restart: "no"
+    user: "0:0"
+    expose:
+      - 8001
+    volumes:
+      - paimon-warehouse:/var/lib/clickhouse/user_files/warehouse
+    entrypoint: ["java", "-jar", "/opt/paimon/paimon-server.jar"]
+    command: ["server", "file:///var/lib/clickhouse/user_files/warehouse/", "bearer", "0.0.0.0", "8001"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8001"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    stop_grace_period: 5s
+    cpus: 2
+  paimon-rest-dlf:
+    image: clickhouse/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
+    restart: "no"
+    user: "0:0"
+    expose:
+      - 8002
+    volumes:
+      - paimon-warehouse:/var/lib/clickhouse/user_files/warehouse
+    entrypoint: ["java", "-jar", "/opt/paimon/paimon-server.jar"]
+    command: ["server", "file:///var/lib/clickhouse/user_files/warehouse/", "dlf", "0.0.0.0", "8002"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8002"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    stop_grace_period: 5s
+    cpus: 2
+
+volumes:
+  paimon-warehouse:

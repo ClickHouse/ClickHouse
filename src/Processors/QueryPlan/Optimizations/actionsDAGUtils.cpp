@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Field.h>
@@ -220,6 +221,15 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                 monotonicity.strict = info.is_strict;
                                 monotonicity.child_match = &child_match;
                                 monotonicity.child_node = monotonic_child;
+
+                                /// `materialize` does not change values, so it is effectively
+                                /// strictly monotonic. Without this override the `ORDER BY`
+                                /// prefix that can be served from the sorting key gets truncated
+                                /// when filter push-down injects a `materialize(...)` wrapper
+                                /// (e.g. for queries through `ReadFromMerge` after
+                                /// `convertAndFilterSourceStream`).
+                                if (frame.node->function_base->getName() == "materialize")
+                                    monotonicity.strict = true;
 
                                 if (child_match.monotonicity)
                                 {
@@ -534,7 +544,7 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
     switch (node->type)
     {
         case ActionsDAG::ActionType::ALIAS:
-            assert(node->children.size() == 1);
+            chassert(node->children.size() == 1);
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -582,7 +592,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
         switch (node->type)
         {
             case ActionsDAG::ActionType::ALIAS:
-                assert(node->children.size() == 1);
+                chassert(node->children.size() == 1);
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -608,15 +618,14 @@ bool allOutputsDependsOnlyOnAllowedNodes(
 
 /// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
 /// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
-/// So it is left only to check that each output node depends only on the allowed set of nodes (`irreducible_nodes`).
+/// So it is left only to check that each key node depends only on the allowed set of nodes (`irreducible_nodes`).
 bool allOutputsDependsOnlyOnAllowedNodes(
-    const ActionsDAG & partition_actions, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
+    const ActionsDAG::NodeRawConstPtrs & key_nodes, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches)
 {
     NodeMap visited;
     bool res = true;
-    for (const auto & node : partition_actions.getOutputs())
-        if (node->type != ActionsDAG::ActionType::INPUT)
-            res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
+    for (const auto * node : key_nodes)
+        res &= allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node, visited);
     return res;
 }
 

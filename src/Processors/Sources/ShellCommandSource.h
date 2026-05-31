@@ -4,11 +4,11 @@
 
 #include <base/BorrowedObjectPool.h>
 
-#include <Common/ShellCommandSettings.h>
 #include <Common/ShellCommand.h>
+#include <Common/ShellCommandSettings.h>
 #include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 
-#include <IO/ReadHelpers.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -90,7 +90,7 @@ public:
 
     Pipe createPipe(
         const std::string & command,
-        const std::vector<std::string> & arguments,
+        const VectorWithMemoryTracking<std::string> & arguments,
         std::vector<Pipe> && input_pipes,
         Block sample_block,
         ContextPtr context,
@@ -106,11 +106,8 @@ public:
         return createPipe(command, {}, std::move(input_pipes), std::move(sample_block), std::move(context), source_configuration);
     }
 
-    Pipe createPipe(
-        const std::string & command,
-        const std::vector<std::string> & arguments,
-        Block sample_block,
-        ContextPtr context)
+    Pipe
+    createPipe(const std::string & command, const VectorWithMemoryTracking<std::string> & arguments, Block sample_block, ContextPtr context)
     {
         return createPipe(command, arguments, {}, std::move(sample_block), std::move(context), {});
     }

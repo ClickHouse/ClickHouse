@@ -62,6 +62,7 @@ struct PrewhereExprInfo
 struct ReadStepPerformanceCounters
 {
     std::atomic<UInt64> rows_read = 0;
+    std::atomic<UInt64> rows_passed_filter = 0;
 };
 
 using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
@@ -169,7 +170,8 @@ public:
         Block prev_reader_header_,
         const PrewhereExprStep * prewhere_info_,
         ReadStepPerformanceCountersPtr performance_counters_,
-        bool main_reader_);
+        bool main_reader_,
+        bool can_read_incomplete_granules_);
 
     MergeTreeRangeReader() = default;
 
@@ -289,6 +291,14 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
 
+        /// Compute mark ranges for granules where all rows were filtered out by PREWHERE.
+        /// Provides fine-grained QueryConditionCache updates: captures individual filtered-out
+        /// granules even when other granules in the same batch pass the filter.
+        /// Safe to call only when use_query_condition_cache is enabled, because that flag
+        /// forces complete-granule reads (via ceilRowsToCompleteGranules), ensuring that
+        /// rows_per_granule[i] == 0 reliably means the full granule was read and filtered.
+        MarkRanges computeUnmatchedMarkRanges() const;
+
     private:
         friend class MergeTreeRangeReader;
         friend class MergeTreeReadersChain;
@@ -330,7 +340,7 @@ public:
         /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
         /// Remove them and update filter.
         /// Apply the filter to the columns and update num_rows if required
-        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules, bool must_apply_filter);
+        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules_, bool must_apply_filter);
 
         /// Remove all rows from granules.
         void clear();
@@ -365,6 +375,13 @@ public:
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
 
+        /// When startReadingChain begins with an unfinished stream (a continued read), this holds
+        /// the stream's current mark at that point. The first
+        /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule come
+        /// from that in-progress range; their marks are in_progress_start_mark + i. Set only
+        /// when the stream was unfinished at entry; absent when the stream was already done.
+        std::optional<size_t> in_progress_start_mark;
+
         /// Number of rows intended to be read per granule during the reading chain.
         ///
         /// Filled in `startReadingChain` based on initial granule layout and expected row counts.
@@ -386,6 +403,17 @@ public:
         size_t total_rows_per_granule = 0;
         /// The number of rows was read at first step. May be zero if no read columns present in part.
         size_t num_read_rows = 0;
+
+        /// Diagnostic counters for debugging adjustLastGranule assertions.
+        /// These track where addRows() increments came from in startReadingChain().
+        size_t debug_rows_from_read_in_loop = 0;       /// rows from stream.read() inside the loop
+        size_t debug_rows_from_finalize_in_loop = 0;    /// rows from stream.finalize() at range boundaries
+        size_t debug_rows_from_finalize_post_loop = 0;  /// rows from stream.finalize() after the loop
+        size_t debug_max_rows = 0;                      /// max_rows parameter passed to startReadingChain
+        size_t debug_num_ranges_processed = 0;          /// number of ranges processed
+        size_t debug_skipped_marks = 0;                 /// marks skipped via canSkipMark
+        bool debug_use_query_condition_cache = false;
+        bool debug_can_read_incomplete_granules = false;
         /// The number of rows was removed from last granule after clear or optimize.
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
@@ -410,7 +438,7 @@ public:
 
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
-        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
+        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
@@ -453,6 +481,7 @@ private:
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
+    bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };

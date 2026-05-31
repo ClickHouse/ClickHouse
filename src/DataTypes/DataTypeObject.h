@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class DataTypeObject : public IDataType
+class DataTypeObject final : public IDataType
 {
 public:
     enum class SchemaFormat
@@ -21,6 +21,11 @@ public:
     /// Don't change this constant, it can break backward compatibility.
     static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
     static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
+
+    /// Prefix character for sub-object subcolumns, e.g. "^`some`.path.path".
+    static constexpr char SUB_OBJECT_SUBCOLUMN_PREFIX = '^';
+    /// Prefix character for combined literal+sub-object subcolumns, e.g. "@`some`.path.path".
+    static constexpr char COMBINED_SUBCOLUMN_PREFIX = '@';
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
@@ -40,6 +45,8 @@ public:
 
     Field getDefault() const override { return Object(); }
 
+    void insertDefaultInto(IColumn & column) const override;
+
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
@@ -55,9 +62,10 @@ public:
     void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
+    bool hasDynamicStructure() const override { return true; }
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
     String getSchemaFormatString() const;

@@ -3,6 +3,7 @@
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
@@ -10,7 +11,6 @@
 #include <base/defines.h>
 #include <Common/logger_useful.h>
 
-#include <cassert>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -69,7 +69,7 @@ ssize_t readFromFD(const int fd, const char * filename, char * buf, size_t buf_s
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, filename, "Cannot read from file {}", filename);
         }
 
-        assert(res >= 0);
+        chassert(res >= 0);
         break;
     } while (true);
 
