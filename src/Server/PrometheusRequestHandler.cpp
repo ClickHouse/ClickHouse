@@ -334,7 +334,7 @@ public:
         if (is_dynamic_routing)
         {
             const auto & time_series_settings = time_series_storage->getStorageSettings();
-            if (!time_series_settings[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])
+            if (!(*time_series_settings)[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
