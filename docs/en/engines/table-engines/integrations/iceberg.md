@@ -125,6 +125,14 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
+## Truncate {#truncate}
+
+ClickHouse supports `TRUNCATE TABLE` for Iceberg tables. The table schema is preserved, but all data is removed: every data and metadata file of the table is deleted from the underlying object storage, and a new metadata file describing an empty table is written in their place. When the table is managed by a catalog, the catalog is updated to point to this new metadata file.
+
+:::warning
+Because `TRUNCATE` erases the existing files rather than recording a new empty snapshot, all previous snapshots are removed as well. As a consequence, [time travel](#time-travel) to any snapshot created before the `TRUNCATE` is no longer possible.
+:::
+
 ## Processing of tables with deleted rows {#deleted-rows}
 
 ClickHouse supports reading Iceberg tables that use the following deletion methods:
