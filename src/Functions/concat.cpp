@@ -107,7 +107,7 @@ private:
     ColumnPtr executeFormatImpl(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const size_t num_arguments = arguments.size();
-        assert(num_arguments >= 2);
+        chassert(num_arguments >= 2);
 
         auto col_res = ColumnString::create();
         VectorWithMemoryTracking<const ColumnString::Chars *> data(num_arguments);

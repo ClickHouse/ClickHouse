@@ -247,7 +247,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr & result_type) const override
     {
-        assert(!values.empty());
+        chassert(!values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (Impl::specialImplementationForNulls())

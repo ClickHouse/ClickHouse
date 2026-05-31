@@ -4,6 +4,7 @@
 #include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <base/types.h>

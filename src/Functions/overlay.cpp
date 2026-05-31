@@ -244,7 +244,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            assert(const_length >= 0);
+            chassert(const_length >= 0);
             valid_length = const_length;
         }
         else if constexpr (!has_four_args)
@@ -351,7 +351,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            assert(const_length >= 0);
+            chassert(const_length >= 0);
             valid_length = const_length;
         }
         else if constexpr (!has_four_args)
@@ -470,7 +470,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            assert(const_length >= 0);
+            chassert(const_length >= 0);
             valid_length = const_length;
         }
 
@@ -588,7 +588,7 @@ private:
         size_t valid_length = 0; // not negative
         if constexpr (has_four_args && length_is_const)
         {
-            assert(const_length >= 0);
+            chassert(const_length >= 0);
             valid_length = const_length;
         }
 

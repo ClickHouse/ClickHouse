@@ -79,7 +79,7 @@ public:
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*haystack_ptr);
         const ColumnConst * col_haystack_const = checkAndGetColumnConst<ColumnString>(&*haystack_ptr);
-        assert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
+        chassert(static_cast<bool>(col_haystack_vector) ^ static_cast<bool>(col_haystack_const));
 
         UInt32 edit_distance = 0;
         if (const auto * col_const_uint8 = checkAndGetColumnConst<ColumnUInt8>(edit_distance_ptr.get()))
@@ -95,7 +95,7 @@ public:
 
         const ColumnArray * col_needles_vector = checkAndGetColumn<ColumnArray>(needles_ptr.get());
         const ColumnConst * col_needles_const = checkAndGetColumnConst<ColumnArray>(needles_ptr.get());
-        assert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
+        chassert(static_cast<bool>(col_needles_vector) ^ static_cast<bool>(col_needles_const));
 
         if (col_haystack_const && col_needles_vector)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support search with non-constant needles in constant haystack", name);

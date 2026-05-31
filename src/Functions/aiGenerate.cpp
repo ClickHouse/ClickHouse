@@ -20,9 +20,9 @@ class FunctionAiGenerate final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiGenerate";
 
-    explicit FunctionAiGenerate(ContextPtr context) : FunctionBaseAI(context) {}
+    explicit FunctionAiGenerate(ContextPtr context_) : FunctionBaseAI(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiGenerate>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAiGenerate>(context_); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -78,7 +78,7 @@ The function sends the prompt to the configured AI provider and returns the gene
 An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
 If no system prompt is given, the default system prompt is: `)" + String(default_system_prompt) + R"(`
 
-The first argument is a named collection that specifies the provider, model, endpoint, and API key.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
         .syntax = "aiGenerate(collection, prompt[, system_prompt[, temperature]])",
         .arguments

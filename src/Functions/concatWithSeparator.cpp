@@ -52,7 +52,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        assert(!arguments.empty());
+        chassert(!arguments.empty());
         if (arguments.size() == 1)
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 

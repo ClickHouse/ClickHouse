@@ -72,7 +72,16 @@ public:
 
         WhichDataType which(type);
 
-        if (isBool(type) || which.isInteger() || which.isDate32() || which.isDate())
+        if ((which.isInteger() && !which.isNativeInteger()) || which.isDecimal256())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type `{}` is not supported by icebergHash: the Iceberg specification only defines hashing "
+                "for `int` (32-bit), `long` (64-bit), and `decimal(P,S)` with P <= 38 "
+                "(see https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements). "
+                "Cast the value to a supported type (e.g. Int64 or Decimal128) if it fits.",
+                type->getName());
+
+        if (isBool(type) || which.isNativeInteger() || which.isDate32() || which.isDate())
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -131,7 +140,7 @@ public:
             }
             const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*wrapper_column);
             const ColumnDateTime64 * decimal_column = &source_col;
-            assert(decimal_column != nullptr);
+            chassert(decimal_column != nullptr);
             UInt32 scale = decimal_column->getScale();
             if ((scale != 6) && (scale != 9))
             {
@@ -175,11 +184,6 @@ public:
                 else if (which.isDecimal128())
                 {
                     const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(wrapper_column);
-                    value = decimal_column->getElement(i & idx_mask).value;
-                }
-                else if (which.isDecimal256())
-                {
-                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(wrapper_column);
                     value = decimal_column->getElement(i & idx_mask).value;
                 }
                 else

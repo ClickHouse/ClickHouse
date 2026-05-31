@@ -15,7 +15,6 @@
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <cassert>
 
 namespace DB
 {
@@ -212,7 +211,7 @@ private:
         }
         else
         {
-            assert(res_type->getTypeId() == TypeIndex::Map);
+            chassert(res_type->getTypeId() == TypeIndex::Map);
 
             auto * to_map = assert_cast<ColumnMap *>(res_column.get());
             auto & to_wrapper_arr = to_map->getNestedColumn();
