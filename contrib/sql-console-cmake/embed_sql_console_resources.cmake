@@ -143,7 +143,9 @@ foreach(file ${all_files})
     endif()
 endforeach()
 
-# Sort files for consistent output
+# Sort files so that the generated `embedded_resources` array is ordered by path.
+# `findEmbeddedResource` (src/Server/WebUIRequestHandler.cpp) relies on this ordering
+# to look up resources with `std::lower_bound`; do not remove this sort.
 list(SORT resource_files)
 
 # Generate #embed directives for each file
