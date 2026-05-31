@@ -99,21 +99,48 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         return disk;
     };
 
-    factory.registerDiskType("object_storage", creator);
+    factory.registerDiskType("object_storage", creator, Documentation{
+        .description = "A disk backed by object storage. The concrete backend (S3, Azure Blob Storage, HDFS, local, or web) is selected by the `object_storage_type` parameter.",
+        .syntax = "disk(type = object_storage, object_storage_type = s3, metadata_type = local, endpoint = '...')",
+        .related = {"s3", "azure_blob_storage", "hdfs", "web", "cache"}});
 #if USE_AWS_S3
-    factory.registerDiskType("s3", creator); /// For compatibility
-    factory.registerDiskType("s3_plain", creator); /// For compatibility
-    factory.registerDiskType("s3_with_keeper", creator); /// For compatibility
-    factory.registerDiskType("s3_plain_rewritable", creator); // For compatibility
+    factory.registerDiskType("s3", creator, Documentation{
+        .description = "A disk backed by Amazon S3 (or S3-compatible) object storage. Retained for compatibility; equivalent to `object_storage` with `object_storage_type = s3`.",
+        .syntax = "disk(type = s3, endpoint = '...', access_key_id = '...', secret_access_key = '...')",
+        .related = {"object_storage", "s3_plain"}}); /// For compatibility
+    factory.registerDiskType("s3_plain", creator, Documentation{
+        .description = "An S3-backed disk that stores objects under their plain paths without separate ClickHouse metadata. Mostly read-only, used for backups. Retained for compatibility.",
+        .syntax = "disk(type = s3_plain, endpoint = '...')",
+        .related = {"s3", "s3_plain_rewritable"}}); /// For compatibility
+    factory.registerDiskType("s3_with_keeper", creator, Documentation{
+        .description = "An S3-backed disk that keeps its metadata in ClickHouse Keeper instead of on a local metadata disk. Retained for compatibility.",
+        .syntax = "disk(type = s3_with_keeper, endpoint = '...')",
+        .related = {"s3"}}); /// For compatibility
+    factory.registerDiskType("s3_plain_rewritable", creator, Documentation{
+        .description = "A variant of `s3_plain` that supports rewrites, storing object metadata in the object storage itself. Retained for compatibility.",
+        .syntax = "disk(type = s3_plain_rewritable, endpoint = '...')",
+        .related = {"s3_plain"}}); // For compatibility
 #endif
 #if USE_HDFS
-    factory.registerDiskType("hdfs", creator); /// For compatibility
+    factory.registerDiskType("hdfs", creator, Documentation{
+        .description = "A disk backed by the Apache Hadoop Distributed File System (HDFS). Retained for compatibility; equivalent to `object_storage` with `object_storage_type = hdfs`.",
+        .syntax = "disk(type = hdfs, endpoint = 'hdfs://...')",
+        .related = {"object_storage"}}); /// For compatibility
 #endif
 #if USE_AZURE_BLOB_STORAGE
-    factory.registerDiskType("azure_blob_storage", creator); /// For compatibility
+    factory.registerDiskType("azure_blob_storage", creator, Documentation{
+        .description = "A disk backed by Microsoft Azure Blob Storage. Retained for compatibility; equivalent to `object_storage` with `object_storage_type = azure_blob_storage`.",
+        .syntax = "disk(type = azure_blob_storage, storage_account_url = '...', container_name = '...')",
+        .related = {"object_storage"}}); /// For compatibility
 #endif
-    factory.registerDiskType("local_blob_storage", creator); /// For compatibility
-    factory.registerDiskType("web", creator); /// For compatibility
+    factory.registerDiskType("local_blob_storage", creator, Documentation{
+        .description = "A disk backed by a local directory treated as object storage. Retained for compatibility; equivalent to `object_storage` with `object_storage_type = local`.",
+        .syntax = "disk(type = local_blob_storage, path = '/var/lib/clickhouse/disk_local_blob/')",
+        .related = {"object_storage", "local"}}); /// For compatibility
+    factory.registerDiskType("web", creator, Documentation{
+        .description = "A read-only disk backed by a static website: a directory of exported table parts served over HTTP. Retained for compatibility; equivalent to `object_storage` with `object_storage_type = web`.",
+        .syntax = "disk(type = web, endpoint = 'https://.../')",
+        .related = {"object_storage"}}); /// For compatibility
 }
 
 }

@@ -896,7 +896,10 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         disk->startup(skip_access_check);
         return disk;
     };
-    factory.registerDiskType("local", creator);
+    factory.registerDiskType("local", creator, Documentation{
+        .description = "Stores data on the local filesystem at a configured path. This is the default disk used when no disks are configured.",
+        .syntax = "disk(type = local, path = '/var/lib/clickhouse/disk_local/')",
+        .related = {"object_storage", "cache", "encrypted"}});
 }
 
 }

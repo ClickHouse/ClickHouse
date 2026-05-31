@@ -528,7 +528,10 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         disk->startup(skip_access_check);
         return disk;
     };
-    factory.registerDiskType("encrypted", creator);
+    factory.registerDiskType("encrypted", creator, Documentation{
+        .description = "Wraps another disk and transparently encrypts and decrypts data using AES, so that data at rest is encrypted on the underlying disk.",
+        .syntax = "disk(type = encrypted, disk = underlying_disk, key = '...')",
+        .related = {"local"}});
 }
 
 }
