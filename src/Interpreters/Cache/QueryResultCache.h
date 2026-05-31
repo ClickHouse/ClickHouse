@@ -249,6 +249,10 @@ private:
     void serializeEntry(const Key & key, const QueryResultCache::Cache::MappedPtr & entry, QueryResultCache::DiskCache::MappedPtr & disk_entry) const;
     std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCache::MappedPtr> deserializeEntry(const Key & key);
 
+    /// Reads only the result schema (header) and the total on-disk size of a persisted entry, without
+    /// materializing its chunks. Used at startup to populate `disk_cache` lazily (see `loadEntrysFromDisk`).
+    std::pair<Block, size_t> loadDiskEntryHeaderAndSize(const Key & key);
+
     void compressEntry(const QueryResultCache::Cache::MappedPtr & entry);
 
     void loadEntrysFromDisk();

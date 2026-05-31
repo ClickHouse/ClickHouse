@@ -711,6 +711,13 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
 String QueryResultCache::Key::getKeyPath() const
 {
     String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
+    /// `is_subquery` is part of the cache key identity (see `operator==` and `KeyHasher`): a top-level entry
+    /// and a subquery entry can share the same AST hash but are distinct keys. It must therefore be part of
+    /// the on-disk path as well, otherwise both entries would map to the same directory and clobber or evict
+    /// each other's files. Append it as a suffix so the leading hash text (and the first-level bucket) is
+    /// unchanged and remains parseable on load.
+    if (is_subquery)
+        ast_hash_str += "_subquery";
     return fs::path(ast_hash_str.substr(0, 3)) / ast_hash_str;
 }
 
@@ -952,9 +959,26 @@ void QueryResultCacheWriter::finalizeWrite()
     if (enable_writes_to_query_cache_disk)
     {
         if (key.is_compressed)
-            query_result->chunks = std::move(uncompressed_chunks);
+        {
+            /// `query_result` (holding the compressed chunks) was just shared into `memory_cache`, and its
+            /// weight was accounted for the compressed chunks. Mutating it back to uncompressed chunks here
+            /// would leave the memory cache holding uncompressed data while it is accounted as compressed,
+            /// breaking `QueryCacheBytes`, eviction and per-user quotas. Serialize the uncompressed chunks to
+            /// disk through a separate transient entry instead. `totals`/`extremes` are never compressed, so
+            /// they are cloned as-is.
+            auto disk_result = std::make_shared<QueryResultCache::Entry>();
+            disk_result->chunks = std::move(uncompressed_chunks);
+            if (query_result->totals.has_value())
+                disk_result->totals.emplace(query_result->totals->clone());
+            if (query_result->extremes.has_value())
+                disk_result->extremes.emplace(query_result->extremes->clone());
 
-        cache->writeDisk(key, query_result);
+            cache->writeDisk(key, disk_result);
+        }
+        else
+        {
+            cache->writeDisk(key, query_result);
+        }
     }
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
@@ -1278,9 +1302,29 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
             return std::nullopt;
 
         if (disk_entry_key.is_compressed)
-            compressEntry(entry_);
+        {
+            /// Promote a compressed copy into `memory_cache` (so the in-memory representation matches the
+            /// `is_compressed` flag), but return a decompressed entry to the reader. Unlike `readFromMemory`,
+            /// this path must not hand `ColumnCompressed` chunks to the pipeline: the source processors do
+            /// not decompress, and using such a column throws "ColumnCompressed must be decompressed before
+            /// use". The deserialized `entry_` already holds uncompressed chunks, so compress a separate copy
+            /// for the cache and keep `entry_` for the reader.
+            auto memory_entry = std::make_shared<Entry>();
+            for (const auto & chunk : entry_->chunks)
+                memory_entry->chunks.push_back(chunk.clone());
+            if (entry_->totals.has_value())
+                memory_entry->totals.emplace(entry_->totals->clone());
+            if (entry_->extremes.has_value())
+                memory_entry->extremes.emplace(entry_->extremes->clone());
 
-        memory_cache.set(disk_entry_key, entry_);
+            compressEntry(memory_entry);
+            memory_cache.set(disk_entry_key, memory_entry);
+        }
+        else
+        {
+            memory_cache.set(disk_entry_key, entry_);
+        }
+
         return {{disk_entry_key, entry_}};
     }
     catch (...)
@@ -1401,6 +1445,44 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
     return std::make_tuple(*header, entry, disk_entry);
 }
 
+std::pair<Block, size_t> QueryResultCache::loadDiskEntryHeaderAndSize(const Key & key)
+{
+    auto key_path = path / key.getKeyPath();
+    std::optional<Block> header;
+    size_t bytes_on_disk = 0;
+
+    {
+        auto result_path = key_path / "results.bin";
+        auto in = disk->readFile(result_path, {});
+        auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
+        NativeReader reader(*compress_in, 0);
+
+        /// Reading the first block is enough to recover the result schema (every persisted entry, including a
+        /// zero-row one, has at least one block). The remaining blocks are not materialized: the full result
+        /// is read lazily by `readFromDisk` only when a query is actually allowed to read from disk.
+        if (!compress_in->eof())
+        {
+            Block res = reader.read();
+            header = res.cloneEmpty();
+        }
+
+        if (!header)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Query result cache entry contains no blocks, cannot restore the result schema");
+
+        bytes_on_disk += disk->getFileSize(result_path);
+    }
+
+    auto totals_path = key_path / "totals.bin";
+    if (disk->existsFile(totals_path))
+        bytes_on_disk += disk->getFileSize(totals_path);
+
+    auto extremes_path = key_path / "extremes.bin";
+    if (disk->existsFile(extremes_path))
+        bytes_on_disk += disk->getFileSize(extremes_path);
+
+    return {*header, bytes_on_disk};
+}
+
 void QueryResultCache::compressEntry(const QueryResultCache::Cache::MappedPtr & entry)
 {
     /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
@@ -1440,9 +1522,12 @@ void QueryResultCache::loadEntrysFromDisk()
             /// and remove only the broken entry.
             try
             {
-                /// The entry directory is named like "<low64>_<high64>". Use `entry_it->name()`
-                /// directly, as path-based filename extraction is not stable across disk iterator
-                /// implementations (some return paths with a trailing slash, some without).
+                /// The entry directory is named like "<low64>_<high64>", optionally followed by a
+                /// "_subquery" suffix (see `getKeyPath`). Use `entry_it->name()` directly, as path-based
+                /// filename extraction is not stable across disk iterator implementations (some return paths
+                /// with a trailing slash, some without). Only the two leading numbers are parsed here for the
+                /// AST hash; `std::stoull` stops at the first non-digit, so the optional suffix is ignored,
+                /// and `is_subquery` itself is restored from `key_metadata.txt` below.
                 String ast_hash_str = entry_it->name();
                 size_t separator_pos = ast_hash_str.find('_');
                 if (separator_pos == String::npos)
@@ -1480,15 +1565,15 @@ void QueryResultCache::loadEntrysFromDisk()
                         delete e;
                     });
 
-                auto [header, entry, disk_entry_] = deserializeEntry(key);
+                /// Populate only `disk_cache` with the schema and on-disk size. The result is intentionally
+                /// NOT promoted into `memory_cache`: doing so would let a query read a disk-originated result
+                /// after a restart even with `enable_reads_from_query_cache_disk = 0` (it would become a memory
+                /// hit and bypass the per-query setting), and would force startup to deserialize and compress
+                /// every cached result. The full result is materialized lazily by `readFromDisk`.
+                auto [header, bytes_on_disk] = loadDiskEntryHeaderAndSize(key);
                 key.header = std::make_shared<const Block>(header);
 
-                if (key.is_compressed)
-                    compressEntry(entry);
-
-                memory_cache.set(key, entry);
-
-                disk_entry->bytes_on_disk = disk_entry_->bytes_on_disk;
+                disk_entry->bytes_on_disk = bytes_on_disk;
                 disk_cache.set(key, disk_entry);
             }
             catch (...)

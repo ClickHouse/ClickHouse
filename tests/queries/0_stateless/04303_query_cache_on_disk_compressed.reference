@@ -1,0 +1,4 @@
+-- entry type after dropping memory cache:
+Disk
+-- disk-read result matches ground truth:
+yes
