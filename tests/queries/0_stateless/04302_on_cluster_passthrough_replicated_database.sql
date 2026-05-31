@@ -17,19 +17,27 @@ ALTER TABLE rdb_106087.t1 ON CLUSTER rdb_106087 ADD COLUMN c Int FORMAT NULL;
 SELECT name FROM system.columns WHERE database = 'rdb_106087' AND table = 't1' ORDER BY name;
 
 -- OPTIMIZE TABLE with ON CLUSTER == database name (added by this fix).
+-- Two inserts produce two parts. OPTIMIZE FINAL must merge them down to one,
+-- which confirms the OPTIMIZE was actually executed (and not silently dropped
+-- after `maybeRemoveOnCluster` stripped the cluster clause).
 INSERT INTO rdb_106087.t1 (a, b, c) VALUES (1, 1, 1);
+INSERT INTO rdb_106087.t1 (a, b, c) VALUES (1, 2, 2);
 OPTIMIZE TABLE rdb_106087.t1 ON CLUSTER rdb_106087 FINAL FORMAT NULL;
+SELECT 'optimize merged parts', count() FROM system.parts WHERE database = 'rdb_106087' AND table = 't1' AND active;
 
 -- RENAME TABLE with ON CLUSTER == database name (added by this fix).
 RENAME TABLE rdb_106087.t1 TO rdb_106087.t1_renamed ON CLUSTER rdb_106087 FORMAT NULL;
 SELECT 'after rename', count() FROM rdb_106087.t1_renamed;
+SELECT 'rename preserved merged parts', count() FROM system.parts WHERE database = 'rdb_106087' AND table = 't1_renamed' AND active;
 
 -- EXCHANGE TABLES with ON CLUSTER == database name (added by this fix).
 CREATE TABLE rdb_106087.s (a Int, b Int, c Int) ENGINE = ReplicatedMergeTree ORDER BY a FORMAT NULL;
 INSERT INTO rdb_106087.s (a, b, c) VALUES (2, 2, 2);
 EXCHANGE TABLES rdb_106087.t1_renamed AND rdb_106087.s ON CLUSTER rdb_106087 FORMAT NULL;
-SELECT 't1_renamed after exchange', * FROM rdb_106087.t1_renamed ORDER BY a;
-SELECT 's after exchange', * FROM rdb_106087.s ORDER BY a;
+SELECT 't1_renamed after exchange', * FROM rdb_106087.t1_renamed ORDER BY a, b, c;
+SELECT 's after exchange', * FROM rdb_106087.s ORDER BY a, b, c;
+SELECT 'rows after exchange in t1_renamed', count() FROM rdb_106087.t1_renamed;
+SELECT 'rows after exchange in s', count() FROM rdb_106087.s;
 
 -- DROP TABLE with ON CLUSTER == database name (already worked before the fix).
 DROP TABLE rdb_106087.s ON CLUSTER rdb_106087 FORMAT NULL;
