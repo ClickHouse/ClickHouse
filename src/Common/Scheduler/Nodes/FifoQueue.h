@@ -154,7 +154,7 @@ public:
 
     void activateChild(ISchedulerNode *) override
     {
-        assert(false); // queue cannot have children
+        chassert(false); // queue cannot have children
     }
 
     void attachChild(const SchedulerNodePtr &) override
