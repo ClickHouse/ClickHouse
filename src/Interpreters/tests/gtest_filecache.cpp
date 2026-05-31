@@ -2129,7 +2129,7 @@ TEST_F(FileCacheTest, RocksDBIndex)
         /// Verify the RocksDB index has 3 entries.
         auto index = cache.getRocksDBIndex();
         ASSERT_NE(index, nullptr);
-        auto entries = index->initializeAndLoadAll();
+        auto entries = index->loadAll();
         ASSERT_EQ(entries.size(), 3);
     }
 
@@ -2194,7 +2194,7 @@ TEST_F(FileCacheTest, RocksDBIndex)
 
         /// RocksDB index should now have 2 entries.
         auto index = cache.getRocksDBIndex();
-        auto entries = index->initializeAndLoadAll();
+        auto entries = index->loadAll();
         ASSERT_EQ(entries.size(), 2);
     }
 

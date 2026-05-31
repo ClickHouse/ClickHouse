@@ -189,12 +189,8 @@ bool FileCacheRocksDBIndex::exists(const FileCacheKey & key, size_t offset) cons
     return status.ok();
 }
 
-std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLoadAll()
+std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::loadAll() const
 {
-    if (initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB metadata index is already initialized");
-    initialized = true;
-
     std::vector<Entry> entries;
 
     rocksdb::ReadOptions read_options;
@@ -231,6 +227,17 @@ std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLo
 
     if (!it->status().ok())
         LOG_ERROR(log, "RocksDB iteration error: {}", it->status().ToString());
+
+    return entries;
+}
+
+std::vector<FileCacheRocksDBIndex::Entry> FileCacheRocksDBIndex::initializeAndLoadAll()
+{
+    if (initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB metadata index is already initialized");
+    initialized = true;
+
+    auto entries = loadAll();
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheRocksDBIndexElements, entries.size());
 

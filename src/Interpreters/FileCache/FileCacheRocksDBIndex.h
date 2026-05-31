@@ -55,7 +55,10 @@ public:
         FileCacheOriginInfo origin;
     };
 
-    /// Iterate the entire index, initialize the CurrentMetric, and return all entries.
+    /// Iterate the entire index and return all entries. Pure read, no side effects.
+    std::vector<Entry> loadAll() const;
+
+    /// Iterate the entire index via loadAll, initialize the CurrentMetric, and return all entries.
     /// Must be called once at startup before loading metadata; repeated calls throw.
     std::vector<Entry> initializeAndLoadAll();
 
