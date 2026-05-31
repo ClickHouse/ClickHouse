@@ -360,17 +360,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        if (which_type.isTime() && src.getType() == Field::Types::UInt64)
+        if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
             /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
-            /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input.
+            /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input
+            /// so out-of-range integers are not silently truncated by the `Time` serializer downstream.
             return convertNumericType<Int32>(src, type);
-        }
-
-        if (which_type.isTime() && src.getType() == Field::Types::Int64)
-        {
-            /// `Time` stores `Int32` under the hood, so `Int64` is the canonical `Field` type and no conversion is needed.
-            return src;
         }
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
