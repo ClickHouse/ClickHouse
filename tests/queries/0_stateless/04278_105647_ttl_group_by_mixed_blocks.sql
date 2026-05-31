@@ -33,49 +33,29 @@ TTL ts + INTERVAL 5 SECOND GROUP BY key SET value = sum(value)
 SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0;
 
 -- One part with both already-expired and not-yet-expired rows.
--- 20000 expired keys (year 2000) + 20000 future keys (now + 10s).
+-- 20000 expired keys (year 2000) + 20000 future keys (now + 1 HOUR).
 -- With `merge_max_block_size = 8192` the merge runs across multiple blocks.
 INSERT INTO t_ttl_group_by_mixed_blocks
 SELECT
     number AS key,
     if(number < 20000,
        toDateTime('2000-01-01 00:00:00') + INTERVAL number SECOND,
-       now() + INTERVAL 10 SECOND) AS ts,
+       now() + INTERVAL 1 HOUR) AS ts,
     1 AS value
 FROM numbers(40000);
 
--- First TTL merge: aggregates the expired keys; leaves the future keys alone.
--- Before the fix the resulting part is left with
--- `group_by_ttl[k].finished = true` even though 20000 rows are still in the
--- future.
+-- TTL merge aggregates the expired keys and leaves the future ones alone.
 OPTIMIZE TABLE t_ttl_group_by_mixed_blocks FINAL;
 
--- Wait for the future rows' TTL boundary to pass (10s out from INSERT,
--- plus 5s TTL → ~15s total from INSERT; the OPTIMIZE above ran promptly,
--- so 15s of sleep here is enough).
-SELECT sleep(3) FORMAT Null;
-SELECT sleep(3) FORMAT Null;
-SELECT sleep(3) FORMAT Null;
-SELECT sleep(3) FORMAT Null;
-SELECT sleep(3) FORMAT Null;
-
--- Trigger another merge. With the fix, the previously-future rows are now
--- expired and the `TTLDelete` / `TTLDrop` selector picks the part, running
--- TTL aggregation a second time. Without the fix the part is marked
--- `finished` and the selector skips it; only a `RegularMerge` (or no merge
--- at all) runs.
-OPTIMIZE TABLE t_ttl_group_by_mixed_blocks FINAL;
-
-SYSTEM FLUSH LOGS part_log;
-
--- Count TTL-driven merges after the sleep. Before the fix this is 0 (the
--- selector gate excludes the part). With the fix it is at least 1.
-SELECT count() > 0 AS second_ttl_merge_fired
-FROM system.part_log
+-- The post-merge `group_by_ttl[k].max` must reflect the surviving future
+-- rows (`now() + 1 HOUR + 5 SECOND`), not just the aggregated past rows.
+-- Before the fix this is a year-2000 timestamp; with the fix it is in the
+-- future. Equivalently, the `finished` flag (not exposed in system.parts)
+-- must be false — a future `max` forces it false in the new `finalize`.
+SELECT toDateTime(arrayElement(group_by_ttl_info.max, 1)) > now() AS group_by_max_is_future
+FROM system.parts
 WHERE database = currentDatabase()
   AND table = 't_ttl_group_by_mixed_blocks'
-  AND event_type = 'MergeParts'
-  AND merge_reason IN ('TTLDeleteMerge', 'TTLDropMerge')
-  AND event_time >= now() - INTERVAL 30 SECOND;
+  AND active;
 
 DROP TABLE t_ttl_group_by_mixed_blocks;

@@ -81,8 +81,6 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
 
 void TTLAggregationAlgorithm::execute(Block & block)
 {
-
-    bool some_rows_were_aggregated = false;
     MutableColumns result_columns = header.cloneEmptyColumns();
 
     if (block.empty()) /// Empty block -- no more data, but we may still have some accumulated rows
@@ -90,7 +88,6 @@ void TTLAggregationAlgorithm::execute(Block & block)
         if (!aggregation_result.empty()) /// Still have some aggregated data, let's update TTL
         {
             finalizeAggregates(result_columns);
-            some_rows_were_aggregated = true;
         }
         else /// No block, all aggregated, just finish
         {
@@ -140,10 +137,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
             if (need_to_flush_aggregation_state)
             {
                 if (rows_with_current_key)
-                {
-                    some_rows_were_aggregated = true;
                     calculateAggregates(aggregate_columns, current_key_start, rows_with_current_key);
-                }
                 finalizeAggregates(result_columns);
 
                 current_key_start = rows_aggregated;
@@ -173,25 +167,25 @@ void TTLAggregationAlgorithm::execute(Block & block)
         }
 
         if (rows_with_current_key)
-        {
-            some_rows_were_aggregated = true;
             calculateAggregates(aggregate_columns, current_key_start, rows_with_current_key);
-        }
     }
 
     block = header.cloneWithColumns(std::move(result_columns));
 
-    /// If some rows were aggregated we have to recalculate ttl info's
-    if (some_rows_were_aggregated)
+    /// Recalculate TTL info from every surviving row of the resulting block.
+    /// This must run for every block — including blocks that contain only
+    /// pass-through (not-yet-expired) rows — because such rows still need to
+    /// contribute to `new_ttl_info.max`. Gating on a "did anything aggregate
+    /// this block" flag would leave `new_ttl_info.max` stuck at an earlier
+    /// block's expired value and let `finalize` persist `ttl_finished = true`
+    /// while future rows still live in the part (issue #105647).
+    auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+    for (size_t i = 0; i < block.rows(); ++i)
     {
-        auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
-        for (size_t i = 0; i < block.rows(); ++i)
-        {
-            bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
-            if (where_filter_passed)
-                new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
-        }
+        bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
+        if (where_filter_passed)
+            new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
     }
 }
 
