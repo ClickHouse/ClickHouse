@@ -838,12 +838,16 @@ void DiskObjectStorage::prepareRead(
 
     if (read_settings.use_reader_executor)
     {
-        /// Honor `remote_filesystem_read_prefetch`: attach the prefetch pool
-        /// only when prefetch is enabled, so `remote_filesystem_read_prefetch=0`
-        /// suppresses the executor's background reads just like the legacy path
+        /// Match the legacy async/prefetch stage above, which is installed only
+        /// for `RemoteFSReadMethod::threadpool`: attach the prefetch pool only when
+        /// the read method is threadpool AND prefetch is enabled. Otherwise
+        /// `remote_filesystem_read_method='read'` (or `remote_filesystem_read_prefetch=0`)
+        /// keeps reads synchronous instead of the executor scheduling background
+        /// object-storage reads, preserving the user's requested I/O scheduling
         /// (`ReaderExecutor::maybeTriggerPrefetch` no-ops without a pool). The
         /// buffer limit (connection reuse) is independent of prefetch.
-        if (read_settings.remote_fs_settings.prefetch)
+        if (read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
+            && read_settings.remote_fs_settings.prefetch)
             pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
         pipeline.needBufferLimit(global_context->getSourceBufferLimit());
     }

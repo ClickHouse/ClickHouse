@@ -116,6 +116,11 @@ public:
 
     size_t getPosition() const { return position; }
 
+    /// Logical object path for diagnostics (format/decompression errors via
+    /// `getFileNameFromReadBuffer`). The single-object `remote_path`; empty when
+    /// no objects are configured.
+    String getFileName() const { return log_file_path; }
+
     size_t getSourceRequestsCount() const { return stats.source_requests; }
     /// Test-only: is there a prefetch currently scheduled for the next window?
     bool hasInflightPrefetch() const { return prefetch_handle != nullptr; }

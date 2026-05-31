@@ -2931,19 +2931,16 @@ public:
 
 }
 
-TEST(ReaderExecutor, PreAcquiredSlotReleasedOnCrossObjectSeek)
+TEST(ReaderExecutor, PreAcquiredSlotReleasedWhenPrefetchNotSubmitted)
 {
-    /// Pre-fix: `seek` cleared `prefetch_handle` but left `pre_acquired_slot`
-    /// alone. After seeking across objects, the
-    /// next `readFromSource` saw a path mismatch, fell through to acquire
-    /// a fresh slot for the new object, and silently held the stale slot
-    /// until executor destruction — a slow leak of
-    /// `max_remote_read_connections` capacity under cross-object random
-    /// reads.
+    /// `maybeTriggerPrefetch` pre-acquires a slot before it submits the prefetch.
+    /// When no prefetch task ends up running - the pool's `submit` returns nullptr
+    /// (queue full) - the slot must be released immediately, not held idle, or a
+    /// full prefetch queue pins `max_remote_read_connections` slots across readers
+    /// (and a later cross-object seek would compound it with a second stale slot).
     ///
-    /// The fake prefetch pool returns nullptr from `submit`, which leaves
-    /// `prefetch_handle` null but lets `ensurePreAcquiredSlot` fire first
-    /// — exactly the state needed to reproduce the leak.
+    /// The fake prefetch pool returns nullptr from `submit`, so `ensurePreAcquiredSlot`
+    /// fires but no prefetch handle is produced - exactly that path.
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{
             {"obj_A", String(500, 'A')},
@@ -2961,30 +2958,21 @@ TEST(ReaderExecutor, PreAcquiredSlotReleasedOnCrossObjectSeek)
     executor.setBufferLimit(limit);
     executor.setPrefetchPool(pool);
 
-    /// Trigger `maybeTriggerPrefetch` at the tail of `seek(0)` — pre-acquires
-    /// a slot for obj_A (cursor lies in A), submit returns nullptr from the
-    /// fake. State: `pre_acquired_slot` holds an obj_A slot, no prefetch.
+    /// `seek(0)`'s tail `maybeTriggerPrefetch` pre-acquires an obj_A slot, then
+    /// `submit` returns nullptr -> the slot is released right away.
     executor.seek(0);
-    {
-        const auto active = limit->getActive();
-        ASSERT_EQ(active.size(), 1u);
-        EXPECT_EQ(active.front().object_path, "obj_A")
-            << "post-seek prefetch path must pre-acquire for the cursor's object";
-    }
+    EXPECT_EQ(limit->getActive().size(), 0u)
+        << "a prefetch that was never submitted must not leave its slot reserved";
 
-    /// Seek into obj_B. The fix's reset drops the obj_A slot before the
-    /// tail `maybeTriggerPrefetch` re-acquires for obj_B.
+    /// Same on a cross-object seek into obj_B: no stale obj_A slot accumulates.
     executor.seek(700);
+    EXPECT_EQ(limit->getActive().size(), 0u);
 
-    /// Drive the read, which consumes the (now obj_B) pre-acquired slot.
+    /// The read itself acquires exactly one slot, for obj_B.
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().offset, 700u);
-
-    /// Without the fix: 2 active slots (stale obj_A + live obj_B).
-    /// With the fix: exactly 1, for obj_B.
     const auto active = limit->getActive();
-    ASSERT_EQ(active.size(), 1u)
-        << "cross-object seek must release the stale pre-acquired slot";
+    ASSERT_EQ(active.size(), 1u) << "the read holds exactly one slot";
     EXPECT_EQ(active.front().object_path, "obj_B");
 }
 

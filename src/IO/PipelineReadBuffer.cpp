@@ -132,7 +132,11 @@ std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
 
 String PipelineReadBuffer::getFileName() const
 {
-    return "PipelineReadBuffer";
+    /// Surface the object path so format/decompression diagnostics
+    /// (`getFileNameFromReadBuffer`) name the failing object instead of this
+    /// wrapper. Falls back to the wrapper name only when no path is known.
+    String name = executor->getFileName();
+    return name.empty() ? "PipelineReadBuffer" : name;
 }
 
 bool PipelineReadBuffer::supportsReadAt()

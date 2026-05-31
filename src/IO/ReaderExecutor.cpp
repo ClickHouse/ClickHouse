@@ -470,7 +470,14 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     const size_t prefetch_window = effectivePrefetchWindowSize();
     if (prefetch_window == 0)
-        return;   // read-ahead suppressed under High/Critical memory pressure
+    {
+        /// Read-ahead suppressed under High/Critical memory pressure. Release the
+        /// slot reserved above (same reason as the submit-failure path below) so a
+        /// suppressed prefetch doesn't pin an idle `max_remote_read_connections`
+        /// slot; the next readNextWindow re-acquires for its synchronous read.
+        pre_acquired_slot.reset();
+        return;
+    }
 
     size_t next_size = offset_map.hasUnknownSize()
         ? prefetch_window
@@ -499,6 +506,11 @@ void ReaderExecutor::maybeTriggerPrefetch()
     {
         LOG_TRACE(log, "Prefetch: pool queue full, will fetch synchronously on next read");
         ++stats.prefetch_pool_full;
+        /// No prefetch task will consume the slot `ensurePreAcquiredSlot` reserved
+        /// above; release it so a full prefetch queue doesn't pin idle
+        /// `max_remote_read_connections` slots across many readers. The next
+        /// readNextWindow re-acquires before its synchronous read.
+        pre_acquired_slot.reset();
         return;
     }
 
@@ -520,6 +532,12 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
 
     if (local_handle->tryCancel())
     {
+        /// Cancelled before the worker ran - count it like the readNextWindow
+        /// cancel path (but not destructor `UNNEEDED` cleanup) so
+        /// `ReaderExecutorPrefetchCancelled` / `reader_executor_log.prefetch_cancelled`
+        /// includes seek-cancelled prefetches.
+        if (reason != FilesystemPrefetchState::UNNEEDED)
+            ++stats.prefetch_cancelled;
         /// Still queued: the worker will take the cancellation path and never
         /// touch our state. Stash it for the destructor to join.
         abandoned_prefetches.push_back(std::move(local_handle));
