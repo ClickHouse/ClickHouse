@@ -157,7 +157,7 @@ def _expand_query(template, variant_args):
 # ── Test case definitions from prometheus/compliance promql-test-queries.yml ─
 # (query_template, variant_args, should_fail)
 
-COMPLIANCE_TEST_CASES = [
+UPSTREAM_COMPLIANCE_TEST_CASES = [
     # Scalar literals
     ("42", [], False),
     ("1.234", [], False),
@@ -263,70 +263,183 @@ COMPLIANCE_TEST_CASES = [
     # Functions: misc
     ("time()", [], False),
 
-    # label_replace
-    ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "demo.promlabs.com:(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "host:(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "$1-$2", "instance", "local(.*):(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "source-value-(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "(.*)")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "instance", "non-matching-regex")', [], False),
-    ('label_replace(demo_num_cpus, "job", "", "dst", ".*")', [], False),
-    ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
-    ('label_replace(demo_num_cpus, "~invalid", "", "src", "(.*)")', [], True),
-    ('label_replace(demo_num_cpus, "instance", "", "", "")', [], True),
 
-    # label_join
-    ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
-    ('label_join(demo_num_cpus, "job", "-", "instance", "job")', [], False),
-    ('label_join(demo_num_cpus, "job", "-", "instance")', [], False),
-    ('label_join(demo_num_cpus, "~invalid", "-", "instance")', [], True),
-
-    # Date functions
-    ("{{.dateFunc}}()", ["dateFunc"], False),
-    ("{{.dateFunc}}(demo_batch_last_success_timestamp_seconds offset {{.offset}})", ["dateFunc", "offset"], False),
-
-    # Instant rate functions
-    ("{{.instantRateFunc}}(demo_cpu_usage_seconds_total[{{.range}}])", ["instantRateFunc", "range"], False),
-
-    # Clamp
-    ("{{.clampFunc}}(demo_memory_usage_bytes, 2)", ["clampFunc"], False),
-    ("clamp(demo_memory_usage_bytes, 0, 1)", [], False),
-    ("clamp(demo_memory_usage_bytes, 0, 1000000000000)", [], False),
-    ("clamp(demo_memory_usage_bytes, 1000000000000, 0)", [], False),
-    ("clamp(demo_memory_usage_bytes, 1000000000000, 1000000000000)", [], False),
-
-    # Resets / changes
-    ("resets(demo_cpu_usage_seconds_total[{{.range}}])", ["range"], False),
-    ("changes(demo_batch_last_success_timestamp_seconds[{{.range}}])", ["range"], False),
-
-    # Vector
-    ("vector(1.23)", [], False),
-    ("vector(time())", [], False),
-
-    # Histogram quantile
-    ("histogram_quantile({{.quantile}}, rate(demo_api_request_duration_seconds_bucket[1m]))", ["quantile"], False),
-    ("histogram_quantile(0.9, nonexistent_metric)", [], False),
-    ("histogram_quantile(0.9, demo_memory_usage_bytes)", [], False),
-    ('histogram_quantile(0.9, {__name__=~"demo_api_request_duration_seconds_.+"})', [], False),
-
-    # count_values
-    ('count_values("value", demo_api_request_duration_seconds_bucket)', [], False),
-
-    # absent
-    ("absent(demo_memory_usage_bytes)", [], False),
-    ("absent(nonexistent_metric_name)", [], False),
-
-    # Subqueries
-    ("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)", [], False),
-    ("avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])", [], False),
 ]
+
+RISK_LABEL_TRANSFORMATIONS = "label transformation functions"
+RISK_DATE_FUNCTIONS = "date function defaults and offsets"
+RISK_INSTANT_RATES = "instant rate range functions"
+RISK_CLAMP_BOUNDS = "clamp scalar bounds"
+RISK_COUNTER_STATE = "counter reset/change functions"
+RISK_SCALAR_GRID = "scalar-grid parameters and vector conversion"
+RISK_CLASSIC_HISTOGRAM_QUANTILE = "classic histogram quantile"
+RISK_VALUE_LABEL_AGGREGATION = "value-to-label aggregation"
+RISK_EMPTY_VECTOR_ABSENCE = "empty vector and absence semantics"
+RISK_SUBQUERY_ALIGNMENT = "subquery alignment and offset"
+RISK_LITERAL_PARSER_EDGES = "literal parser and unary/binary edges"
+RISK_TIMESTAMP_MODIFIERS = "timestamp modifiers and offsets"
+RISK_LABEL_MATCHER_EDGES = "label matcher validation and unicode labels"
+RISK_INTERMITTENT_RANGE_EDGES = "lookback and sparse range semantics"
+
+
+def _with_risk(semantic_risk, cases):
+    return [(template, variant_args, should_fail, semantic_risk) for template, variant_args, should_fail in cases]
+
+
+# ClickHouse PromQL regression cases beyond the upstream Prometheus compliance corpus. Each group
+# names the semantic risk it protects so future additions have an obvious home.
+CLICKHOUSE_PROMQL_REGRESSION_CASES = [
+    *_with_risk(RISK_LABEL_TRANSFORMATIONS, [
+        # label_replace
+        ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "demo.promlabs.com:(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "host:(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "$1-$2", "instance", "local(.*):(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "source-value-(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "nonexistent-src", "(.*)")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "instance", "non-matching-regex")', [], False),
+        ('label_replace(demo_num_cpus, "job", "", "dst", ".*")', [], False),
+        ('label_replace(demo_num_cpus, "job", "value-$1", "src", "(.*")', [], True),
+        ('label_replace(demo_num_cpus, "~invalid", "", "src", "(.*)")', [], True),
+        ('label_replace(demo_num_cpus, "", "", "src", "(.*)")', [], True),
+        # Replacing instance with an empty value collapses multiple input series to the same label set.
+        ('label_replace(demo_num_cpus, "instance", "", "", "")', [], True),
+
+        # label_join
+        ('label_join(demo_num_cpus, "new_label", "-", "instance", "job")', [], False),
+        ('label_join(demo_num_cpus, "job", "-", "instance", "job")', [], False),
+        ('label_join(demo_num_cpus, "job", "-", "instance")', [], False),
+        ('label_join(demo_num_cpus, "~invalid", "-", "instance")', [], True),
+        ('label_join(demo_num_cpus, "", "-", "instance")', [], True),
+        ('label_join(demo_num_cpus, "new_label", "-", "")', [], True),
+    ]),
+
+    *_with_risk(RISK_DATE_FUNCTIONS, [
+        ("{{.dateFunc}}()", ["dateFunc"], False),
+        ("{{.dateFunc}}(demo_batch_last_success_timestamp_seconds offset {{.offset}})", ["dateFunc", "offset"], False),
+    ]),
+
+    *_with_risk(RISK_INSTANT_RATES, [
+        ("{{.instantRateFunc}}(demo_cpu_usage_seconds_total[{{.range}}])", ["instantRateFunc", "range"], False),
+    ]),
+
+    *_with_risk(RISK_CLAMP_BOUNDS, [
+        ("{{.clampFunc}}(demo_memory_usage_bytes, 2)", ["clampFunc"], False),
+        ("clamp(demo_memory_usage_bytes, 0, 1)", [], False),
+        ("clamp(demo_memory_usage_bytes, 0, 1000000000000)", [], False),
+        ("clamp(demo_memory_usage_bytes, 1000000000000, 0)", [], False),
+        ("clamp(demo_memory_usage_bytes, 1000000000000, 1000000000000)", [], False),
+    ]),
+
+    *_with_risk(RISK_COUNTER_STATE, [
+        ("resets(demo_cpu_usage_seconds_total[{{.range}}])", ["range"], False),
+        ("changes(demo_batch_last_success_timestamp_seconds[{{.range}}])", ["range"], False),
+    ]),
+
+    *_with_risk(RISK_SCALAR_GRID, [
+        ("vector(1.23)", [], False),
+        ("vector(time())", [], False),
+    ]),
+
+    *_with_risk(RISK_LITERAL_PARSER_EDGES, [
+        ("vector(1e+3)", [], False),
+        ("vector(1e-3)", [], False),
+        ("demo_memory_usage_bytes - -1", [], False),
+        ("demo_memory_usage_bytes + +1", [], False),
+        ("demo_memory_usage_bytes % 0", [], False),
+    ]),
+
+    *_with_risk(RISK_TIMESTAMP_MODIFIERS, [
+        ("demo_memory_usage_bytes @ start()", [], False),
+        ("demo_memory_usage_bytes @ end()", [], False),
+        ("demo_memory_usage_bytes @ start() offset 1m", [], False),
+        ("last_over_time(demo_memory_usage_bytes[5m] @ start())", [], False),
+        ("last_over_time(demo_memory_usage_bytes[5m] offset 1m)", [], False),
+    ]),
+
+    *_with_risk(RISK_LABEL_MATCHER_EDGES, [
+        ('demo_utf8_metric{city=~"Zürich|東京"}', [], False),
+        ('demo_utf8_metric{empty=""}', [], False),
+        ('demo_regex_edge{value=~"a.*"}', [], False),
+        ('demo_memory_usage_bytes{instance=~"(.*"}', [], True),
+    ]),
+
+    *_with_risk(RISK_INTERMITTENT_RANGE_EDGES, [
+        ("last_over_time(demo_intermittent_metric[1m])", [], False),
+    ]),
+
+    *_with_risk(RISK_CLASSIC_HISTOGRAM_QUANTILE, [
+        ("histogram_quantile({{.quantile}}, rate(demo_api_request_duration_seconds_bucket[1m]))", ["quantile"], False),
+        ("histogram_quantile(0.9, nonexistent_metric)", [], False),
+        ("histogram_quantile(0.9, demo_memory_usage_bytes)", [], False),
+        ('histogram_quantile(0.9, {__name__=~"demo_api_request_duration_seconds_.+"})', [], False),
+    ]),
+
+    *_with_risk(RISK_VALUE_LABEL_AGGREGATION, [
+        ('count_values("value", demo_api_request_duration_seconds_bucket)', [], False),
+        ('count_values("value", demo_api_request_duration_seconds_bucket) without (instance)', [], False),
+        ('count_values("job", demo_api_request_duration_seconds_bucket) by (job)', [], False),
+        ('count_values("", demo_api_request_duration_seconds_bucket)', [], True),
+    ]),
+
+    *_with_risk(RISK_EMPTY_VECTOR_ABSENCE, [
+        ("absent(demo_memory_usage_bytes)", [], False),
+        ("absent(nonexistent_metric_name)", [], False),
+        ('absent(demo_memory_usage_bytes{type="missing"})', [], False),
+        ('absent(demo_memory_usage_bytes{type=~"missing"})', [], False),
+        ('absent(nonexistent_metric_name{type!="free"})', [], False),
+        ('absent_over_time(demo_memory_usage_bytes{type="missing"}[5m])', [], False),
+        ('absent_over_time(demo_memory_usage_bytes{type=~"missing"}[5m])', [], False),
+    ]),
+
+    *_with_risk(RISK_SUBQUERY_ALIGNMENT, [
+        ("max_over_time((time() - max(demo_batch_last_success_timestamp_seconds) < 1000)[5m:10s] offset 5m)", [], False),
+        ("avg_over_time(rate(demo_cpu_usage_seconds_total[1m])[2m:10s])", [], False),
+    ]),
+]
+
+
+def _iter_case_definitions():
+    for template, variant_args, should_fail in UPSTREAM_COMPLIANCE_TEST_CASES:
+        yield template, variant_args, should_fail, "upstream compliance"
+    yield from CLICKHOUSE_PROMQL_REGRESSION_CASES
 
 
 def _expand_all_test_cases():
     result = []
-    for template, variant_args, should_fail in COMPLIANCE_TEST_CASES:
+    seen = {}
+    duplicate_queries = []
+    conflicting_expectations = []
+
+    for template, variant_args, should_fail, semantic_risk in _iter_case_definitions():
         for query in _expand_query(template, variant_args):
+            if query in seen:
+                first_should_fail, first_risk = seen[query]
+                if first_should_fail != should_fail:
+                    conflicting_expectations.append(
+                        (query, first_risk, first_should_fail, semantic_risk, should_fail)
+                    )
+                else:
+                    duplicate_queries.append((query, first_risk, semantic_risk))
+            else:
+                seen[query] = (should_fail, semantic_risk)
             result.append((query, should_fail))
+
+    if conflicting_expectations:
+        examples = "; ".join(
+            f"{query!r} in {first_risk!r} expects should_fail={first_should_fail}, "
+            f"but {second_risk!r} expects should_fail={second_should_fail}"
+            for query, first_risk, first_should_fail, second_risk, second_should_fail
+            in conflicting_expectations[:5]
+        )
+        raise AssertionError(f"conflicting PromQL compliance expectations: {examples}")
+
+    if duplicate_queries:
+        examples = "; ".join(
+            f"{query!r} in {first_risk!r} and {second_risk!r}"
+            for query, first_risk, second_risk in duplicate_queries[:5]
+        )
+        raise AssertionError(f"duplicate PromQL compliance cases: {examples}")
+
     return result
 
 
@@ -469,12 +582,168 @@ def _run_range_query(host, port, path, query):
 
 # ── Compliance result tracking ───────────────────────────────────────────────
 
+IMPLEMENTED_WRONG_RESULTS = "implemented wrong results"
+IMPLEMENTED_UNEXPECTED_ERRORS = "implemented unexpected errors"
+UNSUPPORTED_DEFERRED = "unsupported/deferred categories"
+EXPECTATION_MISMATCHES = "reference or should-fail mismatches"
+
+
+def _query_without_strings_or_label_matchers(query):
+    result = []
+    in_string = False
+    escaped = False
+    label_matcher_depth = 0
+
+    for ch in query:
+        if in_string:
+            result.append(" ")
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            result.append(" ")
+            continue
+
+        if ch == "{":
+            label_matcher_depth += 1
+            result.append(" ")
+            continue
+
+        if ch == "}" and label_matcher_depth:
+            label_matcher_depth -= 1
+            result.append(" ")
+            continue
+
+        if label_matcher_depth:
+            result.append(" ")
+            continue
+
+        result.append(ch)
+
+    return "".join(result)
+
+
+def _previous_non_space(text, index):
+    for i in range(index - 1, -1, -1):
+        if not text[i].isspace():
+            return i
+    return None
+
+
+def _next_non_space(text, index):
+    for i in range(index + 1, len(text)):
+        if not text[i].isspace():
+            return i
+    return None
+
+
+def _is_binary_minus(text, index):
+    previous_index = _previous_non_space(text, index)
+    next_index = _next_non_space(text, index)
+    if previous_index is None or next_index is None:
+        return False
+
+    previous = text[previous_index]
+    next_ch = text[next_index]
+    if previous in "+-*/%^=<>!,([{" or next_ch in "+-*/%^=<>!,)]}":
+        return False
+
+    previous_previous_index = _previous_non_space(text, previous_index)
+    if (
+        previous in "eE"
+        and previous_previous_index is not None
+        and text[previous_previous_index].isdigit()
+        and next_ch.isdigit()
+    ):
+        return False
+
+    return True
+
+
+def _has_binary_operator(query):
+    query = _query_without_strings_or_label_matchers(query)
+    i = 0
+    while i < len(query):
+        if query.startswith(("==", "!=", "<=", ">="), i):
+            return True
+
+        ch = query[i]
+        if ch in "+*/%^<>":
+            return True
+        if ch == "-" and _is_binary_minus(query, i):
+            return True
+        i += 1
+
+    return False
+
+
+def _feature_category(query):
+    query_lower = query.lower()
+    if "histogram_quantile" in query_lower or "_bucket" in query_lower:
+        return "histogram"
+    if "label_replace" in query_lower or "label_join" in query_lower:
+        return "label functions"
+    if "count_values" in query_lower:
+        return "count_values"
+    if "absent" in query_lower:
+        return "absent functions"
+    if "offset" in query_lower or " @ " in query_lower or "[" in query_lower and ":" in query_lower:
+        return "time/range/subquery"
+    if "topk" in query_lower or "bottomk" in query_lower or "quantile" in query_lower:
+        return "ordered/quantile aggregations"
+    if "over_time" in query_lower or "rate(" in query_lower or "delta(" in query_lower or "increase(" in query_lower:
+        return "range functions"
+    if " on(" in query_lower or " group_left" in query_lower or " group_right" in query_lower:
+        return "vector matching"
+    if _has_binary_operator(query):
+        return "scalar/vector binary operators"
+    return "scalar/vector general"
+
+
+def _unsupported_category(query):
+    feature = _feature_category(query)
+    if feature == "histogram":
+        return "unsupported: histogram"
+    return f"unsupported: {feature}"
+
+
+def test_feature_category_uses_promql_operator_tokens():
+    assert _feature_category('demo_metric{instance="a-b"}') == "scalar/vector general"
+    assert _feature_category("1.23e-3") == "scalar/vector general"
+    assert _feature_category('demo_metric{instance!="a"}') == "scalar/vector general"
+    assert _feature_category("demo_metric < 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric > 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric <= 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric >= 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric - 1") == "scalar/vector binary operators"
+
+
 class ComplianceResult:
     def __init__(self):
         self.passed = 0
-        self.failed = 0
-        self.unsupported = 0
+        self.implemented_wrong_results = 0
+        self.implemented_unexpected_errors = 0
+        self.unsupported_deferred = 0
+        self.expectation_mismatches = 0
         self.failures = []
+
+    @property
+    def failed(self):
+        return (
+            self.implemented_wrong_results
+            + self.implemented_unexpected_errors
+            + self.expectation_mismatches
+        )
+
+    @property
+    def unsupported(self):
+        return self.unsupported_deferred
 
     @property
     def total(self):
@@ -484,16 +753,114 @@ class ComplianceResult:
     def score(self):
         return (self.passed / self.total * 100) if self.total > 0 else 0
 
+    @property
+    def implemented_blockers(self):
+        return self.implemented_wrong_results + self.implemented_unexpected_errors + self.expectation_mismatches
+
     def record_pass(self):
         self.passed += 1
 
-    def record_fail(self, query, reason):
-        self.failed += 1
-        self.failures.append((query, reason))
+    def _record_failure(self, query, kind, category, reason):
+        self.failures.append({
+            "query": query,
+            "kind": kind,
+            "category": category,
+            "reason": reason,
+        })
+
+    def record_wrong_result(self, query, reason):
+        self.implemented_wrong_results += 1
+        self._record_failure(query, IMPLEMENTED_WRONG_RESULTS, _feature_category(query), reason)
+
+    def record_unexpected_error(self, query, reason):
+        self.implemented_unexpected_errors += 1
+        self._record_failure(query, IMPLEMENTED_UNEXPECTED_ERRORS, _feature_category(query), reason)
 
     def record_unsupported(self, query, reason):
-        self.unsupported += 1
-        self.failures.append((query, f"UNSUPPORTED: {reason}"))
+        self.unsupported_deferred += 1
+        self._record_failure(query, UNSUPPORTED_DEFERRED, _unsupported_category(query), reason)
+
+    def record_expectation_mismatch(self, query, reason):
+        self.expectation_mismatches += 1
+        self._record_failure(query, EXPECTATION_MISMATCHES, _feature_category(query), reason)
+
+
+_UNSUPPORTED_FEATURE_RE = re.compile(
+    r"(Function \S+ is not implemented|"
+    r"Aggregation operator '\S+' is not implemented|"
+    r"Prometheus query node type \S+ is not implemented|"
+    r"\S+ is not implemented)"
+)
+
+_DATE_FUNC_RE = re.compile(
+    r"^(day_of_month|day_of_week|days_in_month|hour|minute|month|year)\(\)"
+)
+
+_HISTOGRAM_QUERY_RE = re.compile(
+    r"\bhistogram_(quantile|fraction|sum|count|avg)\b"
+)
+
+
+# Keep this categorization non-gating: it is a navigation aid for staged PromQL
+# coverage, not a full-compliance assertion.
+def _categorize_failure(query, reason):
+    if "UNSUPPORTED:" in reason:
+        feature = _extract_unsupported_feature(reason)
+        if _HISTOGRAM_QUERY_RE.search(query):
+            return "histogram support"
+        return feature or "other unsupported"
+
+    if "expected failure but ClickHouse succeeded" in reason:
+        return "should-fail mismatch (ClickHouse should reject but accepts)"
+
+    if "reference unexpectedly" in reason:
+        return "reference/corpus mismatch (Prometheus behavior differs from test expectation)"
+
+    if "Number of values (0)" in reason:
+        return "aggregation on nonexistent metric errors instead of returning empty"
+
+    if "Quantile level is out of range" in reason:
+        return "quantile out-of-range phi rejected (Prometheus accepts)"
+
+    if _DATE_FUNC_RE.match(query) and "expects 1 arguments" in reason:
+        return "date function default-argument mismatch"
+
+    if _is_result_mismatch(reason):
+        return "result mismatch for implemented feature"
+
+    if reason.startswith("ClickHouse error:"):
+        return "unexpected ClickHouse error for implemented feature"
+
+    return "other"
+
+
+def _extract_unsupported_feature(reason):
+    match = _UNSUPPORTED_FEATURE_RE.search(reason)
+    return match.group(1) if match else None
+
+
+def _is_result_mismatch(reason):
+    return any(
+        marker in reason
+        for marker in (
+            "resultType mismatch",
+            "series count mismatch",
+            "metric mismatch",
+            "values count mismatch",
+            "timestamp mismatch",
+            "value mismatch",
+            "scalar mismatch",
+        )
+    )
+
+
+def _category_needs_details(category):
+    return (
+        "mismatch" in category
+        or category == "other"
+        or category.startswith("unexpected ClickHouse error")
+        or category.startswith("date function")
+    )
 
 
 # ── Fixtures and test ────────────────────────────────────────────────────────
@@ -540,30 +907,30 @@ def test_promql_compliance():
         # Reference behaviour doesn't match expectation — skip.
         if ref_failed != should_fail:
             if ref_failed:
-                result.record_fail(query, f"reference unexpectedly failed: {ref_err}")
+                result.record_expectation_mismatch(query, f"reference unexpectedly failed: {ref_err}")
             else:
-                result.record_fail(query, "reference unexpectedly succeeded (expected failure)")
+                result.record_expectation_mismatch(query, "reference unexpectedly succeeded (expected failure)")
             continue
 
         if should_fail:
             if test_failed:
                 result.record_pass()
             else:
-                result.record_fail(query, "expected failure but ClickHouse succeeded")
+                result.record_expectation_mismatch(query, "expected failure but ClickHouse succeeded")
             continue
 
         if test_failed:
             if "not implemented" in (test_err or "").lower() or "501" in (test_err or ""):
                 result.record_unsupported(query, test_err)
             else:
-                result.record_fail(query, f"ClickHouse error: {test_err}")
+                result.record_unexpected_error(query, f"ClickHouse error: {test_err}")
             continue
 
         match, diff = compare_results(ref_data, test_data)
         if match:
             result.record_pass()
         else:
-            result.record_fail(query, diff)
+            result.record_wrong_result(query, diff)
 
     # ── Print compliance report ──────────────────────────────────────────
     print("\n" + "=" * 80)
@@ -577,51 +944,49 @@ def test_promql_compliance():
     print(f"             {result.passed} / {result.total} passed")
     print("=" * 80)
 
-    categories = {}  # key -> [(query, reason)]
+    print("\nSELF-ASSURANCE STATUS")
+    print("-" * 80)
+    print(f"Implemented wrong results:        {result.implemented_wrong_results}")
+    print(f"Implemented unexpected errors:    {result.implemented_unexpected_errors}")
+    print(f"Unsupported/deferred categories:  {result.unsupported_deferred}")
+    print(f"Reference/should-fail mismatches: {result.expectation_mismatches}")
+    if result.implemented_blockers == 0:
+        print("Scalar/vector implemented status: no wrong-result/error/expectation blockers")
+    else:
+        print("Scalar/vector implemented status: needs attention before review")
+    if result.unsupported_deferred:
+        print("Unsupported/deferred categories remain visible in the breakdown below")
+
+    categories = {}  # (kind, category) -> [failure]
     if result.failures:
-        import re as _re
-        for query, reason in result.failures:
-            if "UNSUPPORTED:" in reason:
-                m = _re.search(r"(Function \S+ is not implemented|"
-                               r"Aggregation operator '\S+' is not implemented|"
-                               r"Prometheus query node type \S+ is not implemented|"
-                               r"\S+ is not implemented)", reason)
-                key = m.group(1) if m else "other unsupported"
-            elif "expected failure but ClickHouse succeeded" in reason:
-                key = "should_fail mismatch (ClickHouse should reject but accepts)"
-            elif "reference unexpectedly" in reason:
-                key = "reference mismatch (Prometheus behaves differently than expected)"
-            elif "Number of values (0)" in reason:
-                key = "aggregation on nonexistent metric errors instead of returning empty"
-            elif "Quantile level is out of range" in reason:
-                key = "quantile out-of-range phi rejected (Prometheus accepts)"
-            elif "value mismatch" in reason or "series count mismatch" in reason:
-                key = "result value/count mismatch"
-            else:
-                key = "other"
-            categories.setdefault(key, []).append((query, reason))
+        for failure in result.failures:
+            categories.setdefault((failure["kind"], failure["category"]), []).append(failure)
 
         print(f"\n{'─' * 80}")
-        print("FAILURE BREAKDOWN BY CATEGORY")
+        print("SELF-ASSURANCE BREAKDOWN BY CLASS AND CATEGORY")
         print(f"{'─' * 80}")
-        for cat in sorted(categories, key=lambda c: -len(categories[c])):
-            entries = categories[cat]
-            print(f"\n  [{len(entries):3d}]  {cat}")
-            for q, r in entries[:3]:
-                q_short = q if len(q) <= 72 else q[:69] + "..."
-                print(f"           e.g. {q_short}")
+        for key in sorted(categories, key=lambda c: (-len(categories[c]), c[0], c[1])):
+            kind, category = key
+            entries = categories[key]
+            print(f"\n  [{len(entries):3d}]  {kind}: {category}")
+            for failure in entries[:3]:
+                query = failure["query"]
+                query_short = query if len(query) <= 72 else query[:69] + "..."
+                print(f"           e.g. {query_short}")
             if len(entries) > 3:
                 print(f"           ... and {len(entries) - 3} more")
 
-            if "other" in cat or "reference" in cat or "mismatch" in cat.split("(")[0].strip():
-                print(f"           Details:")
-                for q, r in entries:
-                    q_short = q if len(q) <= 60 else q[:57] + "..."
-                    r_short = r if len(r) <= 100 else r[:97] + "..."
-                    print(f"             {q_short}")
-                    print(f"               → {r_short}")
+            if kind != UNSUPPORTED_DEFERRED:
+                print("           Details:")
+                for failure in entries:
+                    query = failure["query"]
+                    reason = failure["reason"]
+                    query_short = query if len(query) <= 60 else query[:57] + "..."
+                    reason_short = reason if len(reason) <= 100 else reason[:97] + "..."
+                    print(f"             {query_short}")
+                    print(f"               → {reason_short}")
 
-    breakdown = {cat: len(entries) for cat, entries in categories.items()}
+    breakdown = {f"{kind}: {category}": len(entries) for (kind, category), entries in categories.items()}
     out_path = os.environ.get("COMPLIANCE_RESULT_FILE")
     if out_path:
         record = {
