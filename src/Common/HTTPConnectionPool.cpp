@@ -1009,7 +1009,6 @@ private:
             }
 
             /// `doConnect` succeeded, so the resolved address is reachable.
-            ProfileEvents::increment(getMetrics().created);
             /// In non-bypassed proxy mode `Poco::Net::HTTPClientSession::reconnect`
             /// connects to the proxy and ignores `_resolved_host`, so the target
             /// address we got from the resolver was never actually exercised by
@@ -1024,8 +1023,23 @@ private:
             /// socket-option operation; a failure here (e.g. from `setsockopt`) is not a
             /// per-address routing problem, so it must propagate directly rather than be
             /// mis-attributed to the resolved address by the retry handlers above (which
-            /// would `setFail` an address we just connected to successfully).
-            applySocketBufferSizes(*connection, group->getSocketBufferSizes());
+            /// would `setFail` an address we just connected to successfully). The address
+            /// is left as a success (it was reachable), but the connection itself must be
+            /// reset and the error accounted for, so a half-configured socket is not
+            /// preserved by `atConnectionDestroy` and the request still fails cleanly.
+            try
+            {
+                applySocketBufferSizes(*connection, group->getSocketBufferSizes());
+            }
+            catch (...)
+            {
+                ProfileEvents::increment(getMetrics().errors);
+                (*connection).reset();
+                throw;
+            }
+
+            /// The connection is fully established and configured.
+            ProfileEvents::increment(getMetrics().created);
             return connection;
         }
 
