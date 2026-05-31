@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -679,7 +680,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -741,7 +742,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -2051,7 +2052,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
-    assert(col_map || col_const_map);
+    chassert(col_map || col_const_map);
 
     if (col_const_map)
         col_map = typeid_cast<const ColumnMap *>(&col_const_map->getDataColumn());

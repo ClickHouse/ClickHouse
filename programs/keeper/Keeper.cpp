@@ -20,6 +20,7 @@
 #include <Server/waitServersToFinish.h>
 #include <Server/CloudPlacementInfo.h>
 #include <base/getMemoryAmount.h>
+#include <base/defines.h>
 #include <base/scope_guard.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
@@ -208,7 +209,7 @@ void Keeper::handleCustomArguments(const std::string & arg, [[maybe_unused]] con
 {
     if (arg == "force-recovery")
     {
-        assert(value.empty());
+        chassert(value.empty());
         config().setBool("keeper_server.force_recovery", true);
         return;
     }
@@ -673,7 +674,7 @@ try
         else
             LOG_INFO(log, "Closed connections to Keeper.");
 
-        global_context->shutdownKeeperDispatcher();
+        global_context->shutdownKeeperDispatcher(current_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
