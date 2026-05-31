@@ -14,3 +14,19 @@
 [0,1,2]
 2
 2
+['c']
+['b']
+['c','b','a']
+['b','c','a']
+AggregateFunction(argMaxMany(2), UInt64, UInt64)
+AggregateFunction(argMaxMany(3), UInt64, UInt64)
+[0]
+[1,0]
+[2,1]
+[3,2]
+[4,3]
+[0]
+[0,1]
+[0,1]
+[0,1]
+[0,1]
