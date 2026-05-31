@@ -290,7 +290,7 @@ public:
 
     uint64_t getStartIndex() const override
     {
-        assert(current_file_description);
+        chassert(current_file_description);
         return current_file_description->from_log_index;
     }
 
