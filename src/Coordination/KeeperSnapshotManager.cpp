@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <base/sort.h>
+#include <base/scope_guard.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -82,6 +83,52 @@ namespace
         if (compress_zstd)
             base += ".zstd";
         return base;
+    }
+
+    void cancelAndResetWriteBuffer(std::unique_ptr<WriteBuffer> & buffer)
+    {
+        if (buffer && !buffer->isFinalized() && !buffer->isCanceled())
+            buffer->cancel();
+
+        buffer.reset();
+    }
+
+    void removeFailedSnapshotArtifacts(
+        const DiskPtr & disk,
+        const std::string & snapshot_file_name,
+        const std::string & tmp_snapshot_file_name,
+        const LoggerPtr & log)
+    {
+        try
+        {
+            disk->removeFileIfExists(snapshot_file_name);
+            LOG_DEBUG(log, "Ensured partial snapshot artifact {} is absent from disk {}", snapshot_file_name, disk->getName());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                log,
+                fmt::format("Failed to remove partial snapshot artifact {} from disk {}", snapshot_file_name, disk->getName()));
+            LOG_WARNING(
+                log,
+                "Keeping partial snapshot marker {} on disk {} because data file {} could not be removed",
+                tmp_snapshot_file_name,
+                disk->getName(),
+                snapshot_file_name);
+            return;
+        }
+
+        try
+        {
+            disk->removeFileIfExists(tmp_snapshot_file_name);
+            LOG_DEBUG(log, "Ensured partial snapshot marker {} is absent from disk {}", tmp_snapshot_file_name, disk->getName());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                log,
+                fmt::format("Failed to remove partial snapshot marker {} from disk {}", tmp_snapshot_file_name, disk->getName()));
+        }
     }
 
     template<typename Node>
@@ -365,8 +412,12 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
     }
 }
 
-template<typename Storage>
-void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
+template <typename Storage>
+void KeeperStorageSnapshot<Storage>::deserialize(
+    SnapshotDeserializationResult<Storage> & deserialization_result,
+    ReadBuffer & in,
+    KeeperContextPtr keeper_context,
+    bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     uint8_t version;
     readBinary(version, in);
@@ -807,31 +858,49 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
     auto disk = getLatestSnapshotDisk();
     LOG_DEBUG(log, "Receiving snapshot {} to {} disk", up_to_log_idx, isLocalDisk(*disk) ? "local" : "remote");
 
-    /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
-    /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
+    std::unique_ptr<WriteBuffer> plain_buf;
+    try
     {
-        auto buf = disk->writeFile(tmp_snapshot_file_name);
-        buf->finalize();
+        /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
+        /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
+        {
+            auto buf = disk->writeFile(tmp_snapshot_file_name);
+            buf->finalize();
+        }
+
+        plain_buf = disk->writeFile(snapshot_file_name);
+        copyData(reader, *plain_buf);
+
+        const size_t bytes_written = plain_buf->count();
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+
+        plain_buf->finalize();
+
+        Stopwatch watch;
+        plain_buf->sync();
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
+        plain_buf.reset();
+        disk->removeFile(tmp_snapshot_file_name);
     }
-
-    auto plain_buf = disk->writeFile(snapshot_file_name);
-    copyData(reader, *plain_buf);
-
-    const size_t bytes_written = plain_buf->count();
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
-
-    plain_buf->finalize();
-
-    Stopwatch watch;
-    plain_buf->sync();
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
-
-    disk->removeFile(tmp_snapshot_file_name);
+    catch (...)
+    {
+        cancelAndResetWriteBuffer(plain_buf);
+        removeFailedSnapshotArtifacts(disk, snapshot_file_name, tmp_snapshot_file_name, log);
+        throw;
+    }
 
     auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
-    removeOutdatedSnapshotsIfNeeded();
-    moveSnapshotsIfNeeded();
+    try
+    {
+        removeOutdatedSnapshotsIfNeeded();
+        moveSnapshotsIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
+    }
 
     return snapshot_file_info;
 }
@@ -845,30 +914,49 @@ std::unique_ptr<SnapshotReceiveCtx> KeeperSnapshotManager<Storage>::beginSnapsho
 
     const auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
-    /// Create an empty tmp_ marker file. On restart, if both tmp_<name> and <name> exist,
-    /// the snapshot is treated as incomplete and both are removed (see constructor).
+    try
     {
-        auto buf = disk->writeFile(tmp_snapshot_file_name);
-        buf->finalize();
-    }
+        /// Create an empty tmp_ marker file. On restart, if both tmp_<name> and <name> exist,
+        /// the snapshot is treated as incomplete and both are removed (see constructor).
+        {
+            auto buf = disk->writeFile(tmp_snapshot_file_name);
+            buf->finalize();
+        }
 
-    auto write_buf = disk->writeFile(snapshot_file_name);
-    return std::make_unique<SnapshotReceiveCtx>(std::move(write_buf), disk, std::move(snapshot_file_name), up_to_log_idx);
+        auto write_buf = disk->writeFile(snapshot_file_name);
+        return std::make_unique<SnapshotReceiveCtx>(std::move(write_buf), disk, std::move(snapshot_file_name), up_to_log_idx);
+    }
+    catch (...)
+    {
+        removeFailedSnapshotArtifacts(disk, snapshot_file_name, tmp_snapshot_file_name, log);
+        throw;
+    }
 }
 
 template<typename Storage>
 SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDisk(SnapshotReceiveCtx & ctx)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, ctx.write_buf->count());
+    const auto tmp_snapshot_file_name = "tmp_" + ctx.snapshot_file_name;
 
-    ctx.write_buf->finalize();
+    try
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, ctx.write_buf->count());
 
-    Stopwatch watch;
-    ctx.write_buf->sync();
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+        ctx.write_buf->finalize();
 
-    ctx.write_buf.reset();
-    ctx.disk->removeFile("tmp_" + ctx.snapshot_file_name);
+        Stopwatch watch;
+        ctx.write_buf->sync();
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
+        ctx.write_buf.reset();
+        ctx.disk->removeFile(tmp_snapshot_file_name);
+    }
+    catch (...)
+    {
+        cancelAndResetWriteBuffer(ctx.write_buf);
+        removeFailedSnapshotArtifacts(ctx.disk, ctx.snapshot_file_name, tmp_snapshot_file_name, log);
+        throw;
+    }
 
     auto snapshot_file_info = makeManagedSnapshotFileInfo(ctx.snapshot_file_name, ctx.disk, ctx.log_idx);
     existing_snapshots.emplace(ctx.log_idx, snapshot_file_info);
@@ -879,8 +967,7 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDis
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        chassert(false);
+        tryLogCurrentException(log, "Failed to cleanup and/or move older snapshots");
     }
 
     return snapshot_file_info;
@@ -915,6 +1002,12 @@ template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
     const auto & snapshot_info = *existing_snapshots.at(up_to_log_idx);
+    return deserializeSnapshotBufferFromDisk(snapshot_info);
+}
+
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const
+{
     WriteBufferFromNuraftBuffer writer;
     auto reader = snapshot_info.disk->readFile(snapshot_info.path, getReadSettings());
     copyData(*reader, writer);
@@ -968,6 +1061,32 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     if (load_full_storage)
         result.storage->initializeSystemNodes();
     return result;
+}
+
+template<typename Storage>
+SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
+{
+    /// `nuraft::buffer::pos(0)` resets the cursor. This method must leave the
+    /// buffer at offset `0` on success and on throw.
+    SCOPE_EXIT({ buffer->pos(0); });
+
+    bool is_zstd_compressed = isZstdCompressed(buffer);
+
+    std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
+    std::unique_ptr<ReadBuffer> compressed_reader;
+
+    if (is_zstd_compressed)
+        compressed_reader = wrapReadBufferWithCompressionMethod(std::move(reader), CompressionMethod::Zstd);
+    else
+        compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
+
+    uint8_t version;
+    readBinary(version, *compressed_reader);
+    SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
+    if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
+
+    return deserializeSnapshotMetadata(*compressed_reader);
 }
 
 template<typename Storage>
@@ -1052,32 +1171,45 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
     auto disk = getLatestSnapshotDisk();
-    /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
-    /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
-    {
-        auto buf = disk->writeFile(tmp_snapshot_file_name);
-        buf->finalize();
-    }
-
-    auto writer = disk->writeFile(snapshot_file_name);
+    std::unique_ptr<WriteBuffer> writer;
     std::unique_ptr<WriteBuffer> compressed_writer;
-    if (compress_snapshots_zstd)
-        compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
-    else
-        compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
+    try
+    {
+        /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
+        /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
+        {
+            auto buf = disk->writeFile(tmp_snapshot_file_name);
+            buf->finalize();
+        }
 
-    const size_t bytes_before = compressed_writer->count();
-    KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
-    const size_t bytes_written = compressed_writer->count() - bytes_before;
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+        writer = disk->writeFile(snapshot_file_name);
+        if (compress_snapshots_zstd)
+            compressed_writer = wrapWriteBufferWithCompressionMethod(std::move(writer), CompressionMethod::Zstd, 3);
+        else
+            compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
-    compressed_writer->finalize();
+        const size_t bytes_before = compressed_writer->count();
+        KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
+        const size_t bytes_written = compressed_writer->count() - bytes_before;
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
 
-    Stopwatch watch;
-    compressed_writer->sync();
-    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+        compressed_writer->finalize();
 
-    disk->removeFile(tmp_snapshot_file_name);
+        Stopwatch watch;
+        compressed_writer->sync();
+        ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
+        compressed_writer.reset();
+        writer.reset();
+        disk->removeFile(tmp_snapshot_file_name);
+    }
+    catch (...)
+    {
+        cancelAndResetWriteBuffer(compressed_writer);
+        cancelAndResetWriteBuffer(writer);
+        removeFailedSnapshotArtifacts(disk, snapshot_file_name, tmp_snapshot_file_name, log);
+        throw;
+    }
 
     auto snapshot_file_info = makeManagedSnapshotFileInfo(snapshot_file_name, disk, up_to_log_idx);
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
