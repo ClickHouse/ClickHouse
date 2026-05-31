@@ -1,1 +1,2 @@
 bulk lowcardinality-nullable parity	1	196
+bulk lowcardinality-float nan parity	1	1

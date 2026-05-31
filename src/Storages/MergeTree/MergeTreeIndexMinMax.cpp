@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -339,7 +340,10 @@ buildIntersectsAndContains(
         /// `NaN` granule max as reaching any finite lower bound. `contains_lower` uses the granule min
         /// (finite in this case) and `contains_upper` (granule max) already evaluates to false against
         /// `NaN`, so `contains` stays false as the scalar path requires.
-        if (WhichDataType(column_type).isFloat())
+        /// Unwrap `LowCardinality` first: a non-nullable `LowCardinality(Float)` minmax index still
+        /// reaches this path, but `WhichDataType(LowCardinality(Float64)).isFloat()` is false, which
+        /// would leave the `NaN` fix inactive and wrongly prune `[finite_min, NaN]` granules.
+        if (WhichDataType(removeLowCardinality(column_type)).isFloat())
         {
             const auto & max_is_nan = addNamedFunction(dag, "isNaN", {&max_node}, context);
             intersects_lower = &addNamedFunction(dag, "or", {intersects_lower, &max_is_nan}, context);

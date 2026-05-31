@@ -53,3 +53,35 @@ FROM
 );
 
 DROP TABLE t_bulk_lcn;
+
+-- A non-nullable `LowCardinality(Float)` minmax index does use the bulk fast path. The `NaN`
+-- handling keyed on `WhichDataType(column_type).isFloat()` used to be skipped for it (the type is
+-- `LowCardinality`, not directly `Float`), so a `[finite_min, NaN]` granule was wrongly pruned for
+-- a lower-bounded predicate. Check parity: the granule containing `3.0` must be kept under bulk.
+DROP TABLE IF EXISTS t_bulk_lc_nan;
+
+CREATE TABLE t_bulk_lc_nan
+(
+    f LowCardinality(Float64),
+    INDEX idx_f f TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 4;
+
+INSERT INTO t_bulk_lc_nan VALUES (1.0), (2.0), (3.0), (nan);
+INSERT INTO t_bulk_lc_nan VALUES (-10.0), (-9.0), (-8.0), (-7.0);
+
+SELECT 'bulk lowcardinality-float nan parity',
+    length(groupUniqArray(c)) = 1 AS all_equal,
+    any(c) AS count
+FROM
+(
+    SELECT count() AS c FROM t_bulk_lc_nan WHERE f >= 2.5
+    SETTINGS use_minmax_index_bulk_filtering = 0
+    UNION ALL
+    SELECT count() AS c FROM t_bulk_lc_nan WHERE f >= 2.5
+    SETTINGS use_minmax_index_bulk_filtering = 1
+);
+
+DROP TABLE t_bulk_lc_nan;
