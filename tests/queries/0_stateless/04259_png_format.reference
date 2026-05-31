@@ -5,6 +5,17 @@ width=2 height=2 color_type=0
 width=2 height=2 color_type=0
 width=4 height=4 color_type=2
 width=1024 height=1024 color_type=2
+0,0=10,20,30
+1,0=40,50,60
+0,0=9,8,7
+1,0=0,0,0
+0,0=0
+1,0=128
+2,0=255
+0,0=255
+1,0=0
+CANNOT_APPEND_TO_FILE
+BAD_ARGUMENTS
 BAD_ARGUMENTS
 BAD_ARGUMENTS
 BAD_ARGUMENTS

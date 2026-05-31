@@ -89,6 +89,90 @@ $CLICKHOUSE_CLIENT --query "
 " > "${OUT}/default.png"
 check_png_header "${OUT}/default.png" 1024 1024 2
 
+# --- Pixel value validation ---
+# Decode the PNG (8-bit, no interlace) and print requested pixels as "x,y=c0,c1,...".
+# This guards the pixel mapping itself: a regression that zeroes pixels, ignores explicit
+# coordinates, or breaks clamping/float scaling would still pass the IHDR-only checks above.
+DECODER="${OUT}/decode_png.py"
+cat > "${DECODER}" <<'PYEOF'
+import sys, zlib, struct
+
+def decode(path):
+    data = open(path, "rb").read()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", "bad signature"
+    pos, width, height, color_type, idat = 8, 0, 0, 0, b""
+    while pos < len(data):
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        ctype = data[pos + 4:pos + 8]
+        chunk = data[pos + 8:pos + 8 + length]
+        if ctype == b"IHDR":
+            width, height, _bit_depth, color_type = struct.unpack(">IIBB", chunk[:10])
+        elif ctype == b"IDAT":
+            idat += chunk
+        elif ctype == b"IEND":
+            break
+        pos += 12 + length
+    raw = zlib.decompress(idat)
+    channels = {0: 1, 2: 3, 6: 4}[color_type]
+    stride, prev, out, p = width * channels, bytearray(width * channels), bytearray(), 0
+    for _ in range(height):
+        f = raw[p]; p += 1
+        line = bytearray(raw[p:p + stride]); p += stride
+        for i in range(stride):
+            a = line[i - channels] if i >= channels else 0
+            b = prev[i]
+            c = prev[i - channels] if i >= channels else 0
+            if f == 1: line[i] = (line[i] + a) & 0xff
+            elif f == 2: line[i] = (line[i] + b) & 0xff
+            elif f == 3: line[i] = (line[i] + ((a + b) >> 1)) & 0xff
+            elif f == 4:
+                pp = a + b - c
+                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else (b if pb <= pc else c))) & 0xff
+        out += line
+        prev = line
+    return width, channels, out
+
+w, ch, px = decode(sys.argv[1])
+for arg in sys.argv[2:]:
+    x, y = map(int, arg.split(","))
+    off = (y * w + x) * ch
+    print(arg + "=" + ",".join(str(v) for v in px[off:off + ch]))
+PYEOF
+
+# Implicit RGB, filled in scanline (row-major) order.
+$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=1 --query "
+    SELECT * FROM VALUES('r UInt8, g UInt8, b UInt8', (10, 20, 30), (40, 50, 60)) FORMAT PNG
+" > "${OUT}/px_rgb.png"
+python3 "${DECODER}" "${OUT}/px_rgb.png" 0,0 1,0
+
+# Explicit coordinates: the later write to the same pixel wins; untouched pixels stay black.
+$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=1 --query "
+    SELECT * FROM VALUES('x Int32, y Int32, r UInt8, g UInt8, b UInt8', (0, 0, 1, 2, 3), (0, 0, 9, 8, 7)) FORMAT PNG
+" > "${OUT}/px_explicit.png"
+python3 "${DECODER}" "${OUT}/px_explicit.png" 0,0 1,0
+
+# Float grayscale clamping: <0 -> 0, in [0,1] -> scaled to [0,255], >1 -> 255.
+$CLICKHOUSE_CLIENT --output_format_image_width=3 --output_format_image_height=1 --query "
+    SELECT * FROM VALUES('v Float64', (-0.5), (0.5), (2.0)) FORMAT PNG
+" > "${OUT}/px_float.png"
+python3 "${DECODER}" "${OUT}/px_float.png" 0,0 1,0 2,0
+
+# Binary (Bool) grayscale: true -> 255, false -> 0.
+$CLICKHOUSE_CLIENT --output_format_image_width=2 --output_format_image_height=1 --query "
+    SELECT * FROM VALUES('v Bool', (true), (false)) FORMAT PNG
+" > "${OUT}/px_binary.png"
+python3 "${DECODER}" "${OUT}/px_binary.png" 0,0 1,0
+
+# PNG is a complete datastream, so appending another image to an existing PNG file is rejected.
+$CLICKHOUSE_LOCAL --query "INSERT INTO FUNCTION file('${OUT}/append.png', 'PNG') SELECT toUInt8(0) AS v FROM numbers(1)" 2>&1 1>/dev/null
+$CLICKHOUSE_LOCAL --query "INSERT INTO FUNCTION file('${OUT}/append.png', 'PNG') SELECT toUInt8(0) AS v FROM numbers(1)" 2>&1 1>/dev/null | grep -oE "CANNOT_APPEND_TO_FILE" | head -1
+
+# Dimension above the PNG 31-bit limit -> exception (not silently truncated)
+${CLICKHOUSE_CLIENT} --output_format_image_width=4294967297 --query "
+    SELECT toUInt8(0) AS v FROM numbers(1) FORMAT PNG
+" 2>&1 1>/dev/null | grep -oE "BAD_ARGUMENTS" | head -1
+
 # Unknown column -> exception
 ${CLICKHOUSE_CLIENT} --query "
     SELECT number AS foo FROM numbers(1) FORMAT PNG
