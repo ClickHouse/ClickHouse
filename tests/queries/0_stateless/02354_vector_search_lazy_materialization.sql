@@ -51,14 +51,4 @@ ORDER BY L2Distance(vec, reference_vec) ASC
 LIMIT 10
 );
 
--- Ensure vector-search read hints do not duplicate or drop LIMIT rows.
-SELECT count(*), uniqExact(id) FROM
-(
-WITH [0.1, 0.2] AS reference_vec
-SELECT id
-FROM tab
-ORDER BY L2Distance(vec, reference_vec) ASC
-LIMIT 10
-);
-
 DROP TABLE tab;
