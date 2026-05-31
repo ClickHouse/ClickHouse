@@ -817,7 +817,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     {
         auto new_target_table_name = generateInnerTableName(new_table_id);
 
-        assert(inner_table_id.database_name == old_table_id.database_name);
+        chassert(inner_table_id.database_name == old_table_id.database_name);
 
         auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
@@ -829,7 +829,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     IStorage::renameInMemory(new_table_id);
     if (from_atomic_to_atomic_database && has_inner_table)
     {
-        assert(inner_table_id.database_name == old_table_id.database_name);
+        chassert(inner_table_id.database_name == old_table_id.database_name);
         updateTargetTableId(new_table_id.database_name, std::nullopt);
     }
 

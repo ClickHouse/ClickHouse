@@ -187,6 +187,8 @@ public:
     bool hasInnerUUIDs() const;
     ASTStorage * getTargetInnerEngine(ViewTarget::Kind target_kind) const;
     void setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def);
+    ASTColumns * getTargetInnerColumns(ViewTarget::Kind target_kind) const;
+    void setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr columns_ast);
 
     bool is_materialized_view_with_external_target() const { return is_materialized_view && hasTargetTableID(ViewTarget::To); }
     bool is_materialized_view_with_inner_table() const { return is_materialized_view && !hasTargetTableID(ViewTarget::To); }

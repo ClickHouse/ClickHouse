@@ -233,13 +233,13 @@ StoragePtr StorageFactory::get(
         .comment = comment,
         .is_restore_from_backup = is_restore_from_backup};
 
-    assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
+    chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query
-        assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
+        chassert(storage_def && storage_def->engine && !storage_def->engine->arguments);
         storage_def->engine->arguments = make_intrusive<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
