@@ -562,6 +562,7 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
         return false;
 
     std::optional<LDAPClient::Params> params;
+    UInt128 params_hash = 0;
 
     {
         std::lock_guard lock(mutex);
@@ -581,10 +582,35 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
         /// The user's own password is not used in service-bind mode; clear it so it cannot
         /// accidentally bleed into the LDAP exchange via cached state.
         params->password.clear();
+
+        params_hash = computeParamsHash(*params, role_search_params);
     }
 
     LDAPSimpleAuthClient client(params.value());
-    return client.find(role_search_params, role_search_results);
+    const auto result = client.find(role_search_params, role_search_results);
+
+    if (result)
+    {
+        /// `SYSTEM RELOAD CONFIG` can mutate `ldap_client_params_blueprint` between
+        /// the snapshot above and the bind/search round-trip. If the server is gone
+        /// or its lookup parameters have changed, discard the result so the caller
+        /// does not materialize a user against stale lookup semantics. Mirrors the
+        /// post-check in `checkLDAPCredentials`.
+        std::lock_guard lock(mutex);
+
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit == ldap_client_params_blueprint.end())
+            return false;
+
+        auto new_params = pit->second;
+        new_params.user = user_name;
+        new_params.password.clear();
+
+        if (params_hash != computeParamsHash(new_params, role_search_params))
+            return false;
+    }
+
+    return result;
 }
 
 bool ExternalAuthenticators::checkKerberosCredentials(const String & realm, const GSSAcceptorContext & credentials) const

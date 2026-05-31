@@ -22,17 +22,28 @@ namespace ErrorCodes
 namespace
 {
     /// Resolves the target user name to a UUID.
-    /// `force_external_lookup=true` lets `LDAPAccessStorage` resolve names that are not yet
-    /// in its in-memory cache by querying the upstream directory with the configured
-    /// service-bind credentials. This covers users provisioned in LDAP who have not yet
-    /// authenticated against this server since the last restart.
+    ///
+    /// Two-pass lookup so that the existing storage precedence is preserved:
+    ///
+    ///   1. A normal `find<User>(name)` first. This walks all configured storages in
+    ///      `user_directories` order and returns the first one that matches in its
+    ///      in-memory state. A target that already exists locally wins over an LDAP
+    ///      entry of the same name, regardless of the order of the storages.
+    ///   2. Only on a global miss, retry with `force_external_lookup=true`. That lets
+    ///      `LDAPAccessStorage` resolve names that are not yet in its in-memory cache
+    ///      by querying the upstream directory with the configured service-bind
+    ///      credentials. This covers users provisioned in LDAP who have not yet
+    ///      authenticated against this server since the last restart.
+    ///
+    /// If both passes miss, fall through to `getID` so the caller sees the canonical
+    /// `UNKNOWN_USER` error message.
     UUID resolveImpersonationTargetUser(const ContextPtr & context, const String & target_user_name)
     {
         const auto & access_control = context->getAccessControl();
+        if (auto id = access_control.find<User>(target_user_name))
+            return *id;
         if (auto id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
             return *id;
-        /// No storage can resolve the name. Use the standard `getID` path so the caller
-        /// sees the canonical `UNKNOWN_USER` error message.
         return access_control.getID<User>(target_user_name);
     }
 
