@@ -159,6 +159,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -424,7 +425,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
     {
         Int64 int_value = converted_value_int.safeGet<Int64>();
 
-        assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
         const UInt64 magnitude = -static_cast<UInt64>(int_value);
         return {magnitude, 0, true};
@@ -727,7 +728,8 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        settings[Setting::force_aggregation_in_order]);
+        settings[Setting::force_aggregation_in_order],
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -972,19 +974,19 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     UsefulSets & useful_sets)
 {
-    NameSet column_names_with_fill;
+    NameSet order_by_column_names;
     SortDescription fill_description;
 
     const auto & header = query_plan.getCurrentHeader();
 
     for (const auto & description : query_analysis_result.sort_description)
     {
+        order_by_column_names.insert(description.column_name);
         if (description.with_fill)
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
             fill_description.push_back(description);
-            column_names_with_fill.insert(description.column_name);
         }
     }
 
@@ -1014,7 +1016,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             for (const auto * input_node : interpolate_actions_dag.getInputs())
             {
-                if (column_names_with_fill.contains(input_node->result_name))
+                if (order_by_column_names.contains(input_node->result_name))
                     continue;
 
                 interpolate_actions_dag.getOutputs().push_back(input_node);
@@ -2685,4 +2687,3 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
-

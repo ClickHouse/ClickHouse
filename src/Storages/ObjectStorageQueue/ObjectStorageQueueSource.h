@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
