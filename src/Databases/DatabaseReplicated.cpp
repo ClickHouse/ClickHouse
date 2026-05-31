@@ -2652,8 +2652,20 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// between this read and `getConsistentMetadataSnapshotImpl`'s own initial read can
     /// advance both the value and the `czxid` to the new database, after which all
     /// in-function checks compare new-to-new and silently substitute the wrong instance.
+    /// Use `tryGet` (not `get`): a concurrent `DROP DATABASE` can remove the Keeper subtree after
+    /// the backup captured this (now stale) `DatabaseReplicated` object but before this read. Map
+    /// the missing node to the same `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` that
+    /// `getConsistentMetadataSnapshotImpl` surfaces for the drop/recreate race, instead of leaking
+    /// a generic Keeper `ZNONODE` to the caller.
     Coordination::Stat snapshot_version_stat;
-    String snapshot_version_str = zookeeper->get(zookeeper_path + "/max_log_ptr", &snapshot_version_stat);
+    String snapshot_version_str;
+    if (!zookeeper->tryGet(zookeeper_path + "/max_log_ptr", snapshot_version_str, &snapshot_version_stat))
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(max_log_ptr node missing before backup snapshot start)");
+    }
     UInt32 snapshot_version = parse<UInt32>(snapshot_version_str);
 
     /// Test-only: deterministically reproduce the DROP+RECREATE race that originally
