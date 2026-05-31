@@ -4,7 +4,6 @@
 LineString	[(0,0),(1,2),(3,4)]
 MultiLineString	[[(0,0),(1,1)],[(2,2),(3,3)]]
 1	None
-0
 Point
 id	String					
 geometry	Geometry					

@@ -14,6 +14,7 @@
 #include <Formats/JSONUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -23,6 +24,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -80,8 +82,16 @@ Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONA
 /// Strictly skip a JSON value, requiring commas between object members and array elements.
 /// Unlike `skipJSONField`, which tolerates missing separators, this rejects malformed JSON
 /// even inside ignored fields (e.g. a skipped `bbox` object `{"a":1 "b":2}`).
-void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_settings)
+/// The recursion is bounded the same way as `skipJSONField`: deeply nested ignored values
+/// (e.g. under a `bbox` key) raise `TOO_DEEP_RECURSION` rather than exhausting the parser stack.
+void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_settings, size_t current_depth = 0)
 {
+    if (unlikely(current_depth > json_settings.max_depth))
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "GeoJSON is too deep");
+
+    if (unlikely(current_depth > 0 && current_depth % 1024 == 0))
+        checkStackSize();
+
     skipWhitespaceIfAny(buf);
     if (buf.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: unexpected end of input while reading a value");
@@ -96,7 +106,7 @@ void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_set
                 JSONUtils::skipComma(buf);
             first = false;
             JSONUtils::readFieldName(buf, json_settings);
-            skipJSONValueStrict(buf, json_settings);
+            skipJSONValueStrict(buf, json_settings, current_depth + 1);
         }
     }
     else if (*buf.position() == '[')
@@ -108,7 +118,7 @@ void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_set
             if (!first)
                 JSONUtils::skipComma(buf);
             first = false;
-            skipJSONValueStrict(buf, json_settings);
+            skipJSONValueStrict(buf, json_settings, current_depth + 1);
         }
     }
     else
@@ -242,13 +252,20 @@ void GeoJSONRowInputFormat::readSuffix()
         skipJSONValueStrict(buf, format_settings.json);
     }
 
-    /// Reject trailing data after the top-level FeatureCollection object instead of ignoring it,
-    /// but tolerate a statement terminator: when the document is supplied as inline `INSERT` data
-    /// in a multi-query script, the read buffer legitimately contains the `;` that separates it
-    /// from the following statement (and possibly that statement itself), which the query parser
-    /// consumes afterwards. We must not assert plain EOF here, as that would reject such inserts.
+    /// Reject trailing data after the top-level FeatureCollection object instead of ignoring it.
+    /// We tolerate a single statement terminator so that the document can be supplied as inline
+    /// `INSERT ... FORMAT GeoJSON {...};` data, where the read buffer legitimately ends with the
+    /// trailing `;`. This mirrors `JSONEachRowRowInputFormat::readSuffix`: consume at most one `;`,
+    /// then require EOF so that genuine trailing garbage (e.g. `...}; garbage`) is still rejected
+    /// rather than silently ignored. As with `JSONEachRow`, a further statement left in the same
+    /// multi-query buffer (`...};\nSELECT ...`) is therefore rejected too.
     skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() != ';')
+    if (!buf.eof() && *buf.position() == ';')
+    {
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+    }
+    if (!buf.eof())
         throw Exception(
             ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
             "GeoJSON: unexpected trailing data after the top-level FeatureCollection object");

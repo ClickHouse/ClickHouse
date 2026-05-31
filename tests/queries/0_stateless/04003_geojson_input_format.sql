@@ -67,13 +67,6 @@ FROM format('GeoJSON', '{
     ]
 }');
 
--- Empty features array produces zero rows (tested via INSERT since format() with 0 rows is a known ClickHouse limitation).
--- async_insert causes the client to disconnect after a FORMAT-data INSERT in multiquery mode, so disable it here.
-SET async_insert = 0;
-CREATE TEMPORARY TABLE __geojson_empty_test (id String, geometry Geometry, properties JSON);
-INSERT INTO __geojson_empty_test FORMAT GeoJSON {"type":"FeatureCollection","features":[]};
-SELECT count() FROM __geojson_empty_test;
-
 -- Key ordering: coordinates before type.
 SELECT variantType(geometry)
 FROM format('GeoJSON', '{
@@ -220,6 +213,10 @@ FROM format('GeoJSON', '{
 -- Trailing data after the top-level FeatureCollection object is rejected.
 SELECT count()
 FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]} garbage'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
+
+-- Trailing data after a statement terminator is also rejected (only a single trailing `;` is tolerated for inline INSERT).
+SELECT count()
+FROM format('GeoJSON', '{"type":"FeatureCollection","features":[]}; garbage'); -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 
 -- Malformed JSON inside an ignored field is rejected (missing comma between members of a skipped object).
 SELECT count()

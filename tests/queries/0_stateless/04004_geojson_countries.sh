@@ -32,3 +32,12 @@ ${CLICKHOUSE_CLIENT} -q "
     ORDER BY 1"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE countries"
+
+# An empty `features` array produces zero rows. This is tested via a standalone INSERT rather than
+# `format()` with zero rows (a known ClickHouse limitation) or an inline INSERT inside a multi-query
+# script: in the latter the following statements remain in the format's read buffer and are rejected
+# by the strict trailing-data check, the same way `JSONEachRow` rejects them.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE empty_features (id String, geometry Geometry, properties JSON) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} -q 'INSERT INTO empty_features FORMAT GeoJSON {"type":"FeatureCollection","features":[]}'
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM empty_features"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE empty_features"
