@@ -6,6 +6,7 @@
 
 #include <cstring>
 #include <map>
+#include <optional>
 
 
 using namespace DB;
@@ -78,6 +79,31 @@ ReadPipeline::BufferCreator perObjectCreator(std::map<String, String> object_dat
         if (it == data.end())
             throw std::runtime_error("No data for object " + object.remote_path);
         return std::make_unique<TestReadBuffer>(it->second);
+    };
+}
+
+/// Reports right-bounded reads and records the requested upper bound, so a test
+/// can assert a non-live source read is issued as a bounded range.
+class BoundRecordingReadBuffer : public TestReadBuffer
+{
+public:
+    BoundRecordingReadBuffer(String data_, std::shared_ptr<std::optional<size_t>> recorded_)
+        : TestReadBuffer(std::move(data_)), recorded(std::move(recorded_)) {}
+
+    bool supportsRightBoundedReads() const override { return true; }
+    void setReadUntilPosition(size_t position) override { *recorded = position; }
+
+private:
+    std::shared_ptr<std::optional<size_t>> recorded;
+};
+
+ReadPipeline::BufferCreator boundRecordingCreator(const std::string & data, std::shared_ptr<std::optional<size_t>> recorded)
+{
+    return [data, recorded](const StoredObject & /* object */, const ReadSettings & /* settings */,
+        bool /* use_external_buffer */, bool /* restrict_seek */)
+        -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<BoundRecordingReadBuffer>(data, recorded);
     };
 }
 
@@ -357,6 +383,43 @@ try
     EXPECT_TRUE(buf->checkIfActuallySeekable());
     ASSERT_TRUE(buf->tryGetFileSize().has_value());
     EXPECT_EQ(*buf->tryGetFileSize(), data.size());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, NonLiveSourceReadIsRightBounded)
+try
+{
+    /// With no buffer_limit there is no live-connection slot, so readFromSource
+    /// takes the one-shot (non-live) path. For a right-bounded source it must
+    /// issue a bounded range [offset, offset+want) - setReadUntilPosition called
+    /// with the window end - so the underlying connection is fully consumed and
+    /// can be pooled/reused, rather than an open-ended GET abandoned mid-stream.
+    auto recorded = std::make_shared<std::optional<size_t>>();
+    std::string data(4096, 'x');
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        boundRecordingCreator(data, recorded),
+        StoredObjects{testObject(data.size())},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+
+    ASSERT_TRUE(recorded->has_value()) << "non-live source read was left open-ended, not right-bounded";
+    EXPECT_GT(*recorded, 0u);
+    EXPECT_LE(*recorded, data.size());
 }
 catch (...)
 {

@@ -1035,6 +1035,18 @@ Rope ReaderExecutor::readFromSource(
     auto opened = source->open(object);
     if (offset > 0)
         opened->seek(offset, SEEK_SET);
+
+    /// No slot kept: bound the one-shot read so its connection is fully consumed
+    /// and reusable by the pool, rather than abandoning an open-ended GET.
+    if (!hasUnknownSize() && opened->supportsRightBoundedReads())
+    {
+        size_t want = 0;
+        for (const auto & block : blocks)
+            want += block->size();
+        if (want > 0)
+            opened->setReadUntilPosition(offset + want);
+    }
+
     auto & buf = *opened;
     ++stats.source_requests;
 
