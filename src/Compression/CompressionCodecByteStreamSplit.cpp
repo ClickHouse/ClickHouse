@@ -32,56 +32,7 @@
 //  rows), so grouping them together creates long runs of similar bytes
 //  that compress dramatically better with a subsequent codec like LZ4
 //  or ZSTD.
-//
-// Can be Deleted later
-// =============================================================================
-//  Throughput reference (GB/s)
-//  Hardware: Intel i7-12500H (12th gen Alder Lake)
-//  Data: 500 MiB, 40 rounds × 8 inner iterations, averaged over 2 runs
-//
-// =============================================================================
-//  ByteStreamSplit Benchmark — 256 MiB, 10 rounds × 4 inner, Clang -O2
-// =============================================================================
-//
-//   W   path                    ENCODE (GB/s)    DECODE (GB/s)
-//                                min    med       min    med
-//  ---  ----------------------  ------  ------   ------  ------
-//
-//
-//   1   memcopy                 19.2   19.8      19.4   19.9
-//
-//  Ours — Vectorized (-O2)
-//   2   encodeW/decodeW         10.2   10.6      10.5   10.8
-//   4   encodeW/decodeW         10.1   10.2      10.4   10.8
-//   8   encodeW/decodeW          9.8   10.2       9.1   10.3
-//  16   encodeW<16>/SIMD         6.9    7.1      10.2   10.4
-//  20   runtime                  4.8    5.0       5.1    5.5
-//  32   runtime                  4.4    4.8       4.9    5.4
-//  64   runtime                  4.5    4.7       4.5    5.2
-// 128   runtime                  4.6    4.6       4.5    4.6
-//
-//  Ours — Non-Vectorized (-O2 -fno-vectorize -fno-slp-vectorize)
-//   2   scalar                   3.4    3.4       5.5    6.4
-//   4   scalar                   3.4    3.6       6.2    6.4
-//   8   scalar                   3.4    3.5       4.7    5.4
-//  16   Fallback                 4.0    4.6       3.7    3.9
-//  20   runtime                  5.0    5.1       3.9    3.9
-//  32   runtime                  4.8    4.9       3.7    3.7
-//  64   runtime                  4.7    4.8       3.0    3.0
-// 128   runtime                  4.6    4.6       2.9    2.9
-//
-// https://github.com/apache/arrow/blob/main/cpp/src/arrow/util/byte_stream_split_internal.h
-//
-//  Arrow (xsimd, -O2)
-//   2   xsimd AVX2               9.7   10.2      10.0   10.7
-//   4   xsimd AVX2              10.0   10.7       9.7   10.9
-//   8   xsimd AVX2              10.5   11.0      10.6   10.9
-//  16   scalar<16>               4.7    5.7       4.6    4.7
-//  20   scalar dynamic           4.6    4.7       4.5    4.6
-//  32   scalar dynamic           4.4    4.6       3.7    4.1
-//  64   scalar dynamic           4.3    4.5       2.5    2.6
-// 128   scalar dynamic           3.9    3.9       2.4    2.4
-// =============================================================================
+//// =============================================================================
 namespace DB
 {
 
@@ -138,13 +89,9 @@ namespace
 static constexpr int MAX_ELEMENT_WIDTH = 255;
 
 // =============================================================================
-//  W=16 SSE2 butterfly transpose
-//
-//  16×16 byte matrix transpose using 3 stages of unpack operations:
-//    stage 1: unpacklo/hi epi8  → interleave byte pairs
-//    stage 2: unpacklo/hi epi16 → interleave 16-bit groups
-//    stage 3: unpacklo/hi epi32 → interleave 32-bit groups
-//  Final epi64 unpack is deferred to storeRows/storeBands.
+//  W=16 SSE2 butterfly: 16×16 byte transpose using three unpack stages
+//  (epi8 → epi16 → epi32). The final epi64 stage is deferred to
+//  storeRows / storeBands.
 // =============================================================================
 
 #ifdef __x86_64__
@@ -321,41 +268,19 @@ static void encode16_SSE2(
 }
 
 // =============================================================================
-//  AVX2 decode for W=16: fully native 256-bit inverse of encode16_AVX2
-//
-//  encode16_AVX2 applies 4 stages of splitEvenOddBytes (deinterleave even/odd
-//  bytes at increasing strides), then scatters the 16 output YMM registers to
-//  streams via band_of[].  This function inverts every step:
-//
-//    1. Gather the 16 streams in band_of_inv[] order so that in[k] corresponds
-//       exactly to encode's out[k] before the scatter.
-//    2–5. Four inverse stages of mergeEvenOddBytes (re-interleave pairs),
-//       applied in reverse stage order (4→3→2→1).
-//    6. Store the 16 recovered YMM registers directly as 32 consecutive
-//       16-byte elements — no 128-bit extraction needed.
-//
-//  mergeEvenOddBytes(even, odd) → (lo, hi)  is the inverse of splitEvenOddBytes:
-//    split: packus+permute4x64(0xD8) deinterleaves bytes into separate even/odd regs
-//    merge: permute4x64(0xD8) again (self-inverse) undoes the lane reorder,
-//           then unpacklo/hi_epi8 re-interleaves the bytes back.
-//
-//  Processes 32 elements × 16 bytes = 512 bytes per loop iteration,
-//  all arithmetic staying in 256-bit YMM registers throughout.
+//  AVX2 decode for W=16: native 256-bit inverse of encode16_AVX2.
 // =============================================================================
 
+/// Inverse of splitEvenOddBytes. permute4x64(0xD8) is self-inverse, so
+/// reapplying it undoes the lane reorder; unpacklo/hi_epi8 then re-interleaves
+/// the even/odd byte streams.
 __attribute__((target("avx2")))
 static inline void mergeEvenOddBytes(
     __m256i even, __m256i odd,
     __m256i & lo_out, __m256i & hi_out)
 {
-    // permute4x64(x, 0xD8) maps lanes [0,1,2,3] → [0,2,1,3].
-    // Applied twice it is the identity, so this undoes the permutation
-    // that splitEvenOddBytes applied after packus.
     even = _mm256_permute4x64_epi64(even, 0xD8);
     odd  = _mm256_permute4x64_epi64(odd,  0xD8);
-
-    // Re-interleave: lo gets the lower half of each 32-byte lane pair,
-    // hi gets the upper half.
     lo_out = _mm256_unpacklo_epi8(even, odd);
     hi_out = _mm256_unpackhi_epi8(even, odd);
 }
@@ -366,9 +291,7 @@ static void decode16_AVX2(
     uint8_t       * __restrict__ dst,
     int64_t N)
 {
-    // band_of[] = {0,4,2,6,1,5,3,7,8,12,10,14,9,13,11,15} is self-inverse:
-    // band_of_inv[p] = k where band_of[k]==p, which yields the same sequence.
-    // Loading stream band_of_inv[k] as in[k] means in[k] == encode's out[k].
+    // band_of[] from encode16_AVX2 is self-inverse, so band_of_inv == band_of.
     static const int band_of_inv[16] = {0, 4, 2, 6, 1, 5, 3, 7, 8, 12, 10, 14, 9, 13, 11, 15};
 
     const uint8_t * r[16];
@@ -378,24 +301,15 @@ static void decode16_AVX2(
     int64_t i = 0;
     for (; i + 32 <= N; i += 32)
     {
-        // Step 1: load 32 bytes from each stream in inverse-scatter order
         __m256i in[16];
         for (int k = 0; k < 16; ++k)
             in[k] = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(r[band_of_inv[k]] + i));
 
-        // Step 2: inverse stage 4
-        // encode: splitEvenOddBytes(s3[2g], s3[2g+1]) → out[g], out[g+8]  for g in 0..7
-        // decode: mergeEvenOddBytes(in[g],  in[g+8])  → s3[2g], s3[2g+1]
+        // Four inverse merge stages, applied in reverse order of encode (4 → 3 → 2 → 1).
         __m256i s3[16];
         for (int g = 0; g < 8; ++g)
             mergeEvenOddBytes(in[g], in[g + 8], s3[2 * g], s3[2 * g + 1]);
 
-        // Step 3: inverse stage 3
-        // encode: for k in 0,1: split(s2[2k],    s2[2k+1])    → s3[k],    s3[k+2]
-        //         for k in 0,1: split(s2[4+2k],  s2[4+2k+1])  → s3[4+k],  s3[4+k+2]
-        //         for k in 0,1: split(s2[8+2k],  s2[8+2k+1])  → s3[8+k],  s3[8+k+2]
-        //         for k in 0,1: split(s2[12+2k], s2[12+2k+1]) → s3[12+k], s3[12+k+2]
-        // decode: merge(s3[k], s3[k+2]) → s2[2k], s2[2k+1]  etc.
         __m256i s2[16];
         for (int k = 0; k < 2; ++k)
             mergeEvenOddBytes(s3[k], s3[k + 2], s2[2 * k], s2[2 * k + 1]);
@@ -406,24 +320,16 @@ static void decode16_AVX2(
         for (int k = 0; k < 2; ++k)
             mergeEvenOddBytes(s3[12 + k], s3[12 + k + 2], s2[12 + 2 * k], s2[12 + 2 * k + 1]);
 
-        // Step 4: inverse stage 2
-        // encode: for k in 0..3: split(s1[2k],   s1[2k+1])   → s2[k],   s2[k+4]
-        //         for k in 0..3: split(s1[8+2k], s1[8+2k+1]) → s2[8+k], s2[8+k+4]
-        // decode: merge(s2[k], s2[k+4]) → s1[2k], s1[2k+1]  etc.
         __m256i s1[16];
         for (int k = 0; k < 4; ++k)
             mergeEvenOddBytes(s2[k],     s2[k + 4],     s1[2 * k],     s1[2 * k + 1]);
         for (int k = 0; k < 4; ++k)
             mergeEvenOddBytes(s2[8 + k], s2[8 + k + 4], s1[8 + 2 * k], s1[8 + 2 * k + 1]);
 
-        // Step 5: inverse stage 1
-        // encode: for k in 0..7: split(r[2k], r[2k+1]) → s1[k], s1[k+8]
-        // decode: merge(s1[k], s1[k+8]) → rec[2k], rec[2k+1]
         __m256i rec[16];
         for (int k = 0; k < 8; ++k)
             mergeEvenOddBytes(s1[k], s1[k + 8], rec[2 * k], rec[2 * k + 1]);
 
-        // Step 6: store — rec[k] holds elements[i+2k] ++ elements[i+2k+1] (32 bytes each)
         for (int k = 0; k < 16; ++k)
             _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst + (i + 2 * k) * 16), rec[k]);
     }
@@ -867,11 +773,15 @@ UInt32 CompressionCodecByteStreamSplit::doCompressData(
 UInt32 CompressionCodecByteStreamSplit::doDecompressData(
     const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    if (source_size < HEADER_SIZE)
+    /// ByteStreamSplit is a pure byte permutation, so the encoded payload is
+    /// always exactly HEADER_SIZE + uncompressed_size bytes. Reject anything
+    /// else up front.
+    if (source_size != static_cast<UInt32>(HEADER_SIZE) + uncompressed_size)
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ByteStreamSplit-encoded data: source too small ({})",
-            source_size);
+            "Cannot decompress ByteStreamSplit-encoded data: source size ({}) "
+            "does not match expected size ({} = HEADER_SIZE + uncompressed_size)",
+            source_size, static_cast<UInt32>(HEADER_SIZE) + uncompressed_size);
 
     if (uncompressed_size == 0)
         return 0;
@@ -898,14 +808,9 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
     if (saved_bytes_to_skip != bytes_to_skip)
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ByteStreamSplit-encoded data: bytes_to_skip in header ({}) "
-            "does not match computed value ({}) — someone is writing bad data",
+            "Cannot decompress ByteStreamSplit-encoded data: header bytes_to_skip ({}) "
+            "does not match value computed from uncompressed_size ({}); data is corrupted",
             static_cast<UInt32>(saved_bytes_to_skip), bytes_to_skip);
-
-    if (source_size < static_cast<UInt32>(HEADER_SIZE + bytes_to_skip))
-        throw Exception(
-            ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ByteStreamSplit-encoded data: source too small for header + tail");
 
     if (bytes_to_skip)
         memcpy(dest, source + HEADER_SIZE, bytes_to_skip);
@@ -914,21 +819,6 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
 
     if (aligned_uncompressed == 0)
         return bytes_to_skip;
-
-    UInt32 body_size = source_size - HEADER_SIZE - bytes_to_skip;
-    if (body_size < aligned_uncompressed)
-        throw Exception(
-            ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ByteStreamSplit-encoded data: source body size ({}) "
-            "is smaller than expected aligned uncompressed size ({})",
-            body_size, aligned_uncompressed);
-
-    if (aligned_uncompressed % saved_element_bytes != 0)
-        throw Exception(
-            ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ByteStreamSplit-encoded data: aligned uncompressed size ({}) "
-            "is not a multiple of element size ({})",
-            aligned_uncompressed, static_cast<UInt32>(saved_element_bytes));
 
     int64_t      num_elements = static_cast<int64_t>(aligned_uncompressed / saved_element_bytes);
     const char * body_src     = source + HEADER_SIZE + bytes_to_skip;

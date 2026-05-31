@@ -166,6 +166,28 @@ CREATE TABLE tab (v LowCardinality(String) CODEC(ByteStreamSplit)) ENGINE = Merg
 CREATE TABLE tab (v Float32 CODEC(ByteStreamSplit(4, 4))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 
 
+-- ── UUID / IPv6 inferred-width round trip ─────────────────────────────────────
+-- Proves the codec correctly infers W=16 from native UUID/IPv6 types via
+-- getElementBytesSize, and that the read path actually decompresses the
+-- column (countIf forces a read of every row).
+
+CREATE TABLE tab (id UInt64, v UUID CODEC(ByteStreamSplit, LZ4)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab SELECT number, reinterpret(toUInt128(number), 'UUID') FROM numbers(1000);
+SELECT 'UUID inferred-width round trip:', count(),
+       countIf(v = reinterpret(toUInt128(id), 'UUID')) FROM tab;
+SELECT 'UUID compression_codec:', compression_codec
+FROM system.columns WHERE table = 'tab' AND database = currentDatabase() AND name = 'v';
+DROP TABLE tab;
+
+CREATE TABLE tab (id UInt64, v IPv6 CODEC(ByteStreamSplit, LZ4)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab SELECT number, toIPv6(concat('2001:db8::', lower(hex(toUInt16(number))))) FROM numbers(1000);
+SELECT 'IPv6 inferred-width round trip:', count(),
+       countIf(v = toIPv6(concat('2001:db8::', lower(hex(toUInt16(id)))))) FROM tab;
+SELECT 'IPv6 compression_codec:', compression_codec
+FROM system.columns WHERE table = 'tab' AND database = currentDatabase() AND name = 'v';
+DROP TABLE tab;
+
+
 -- ── Array(fixed-size) round-trip ──────────────────────────────────────────────
 -- ByteStreamSplit is applied per substream: the inner Float32 element stream
 -- is transposed (W=4) and the offsets substream goes through the chained

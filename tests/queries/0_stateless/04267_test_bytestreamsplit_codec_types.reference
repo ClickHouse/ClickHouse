@@ -21,6 +21,10 @@ F32 spot-check diffs:
 F32 NaN identity:
 1
 F64 spot-check diffs:
+UUID inferred-width round trip:	1000	1000
+UUID compression_codec:	CODEC(ByteStreamSplit(16), LZ4)
+IPv6 inferred-width round trip:	1000	1000
+IPv6 compression_codec:	CODEC(ByteStreamSplit(16), LZ4)
 Array(Float32) round-trip:
 []
 [6]

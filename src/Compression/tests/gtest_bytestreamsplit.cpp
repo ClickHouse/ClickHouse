@@ -346,6 +346,72 @@ TEST(ByteStreamSplitTest, TranscodeRawInput)
 }
 
 
+// ─── Malformed-input rejection ────────────────────────────────────────────────
+//
+// ByteStreamSplit is a pure byte permutation, so a valid encoded block always
+// has codec-body size == HEADER_SIZE + uncompressed_size. doDecompressData
+// must reject any source size that violates this invariant, otherwise extra
+// trailing bytes are silently discarded and a truncated source produces
+// out-of-bounds behaviour or partial output.
+
+namespace
+{
+
+// Layout written by ICompressionCodec::compress:
+//   [0]    method byte
+//   [1..4] compressed_block_size_with_header  (LE UInt32)
+//   [5..8] decompressed_size                  (LE UInt32)
+//   [9..]  codec body
+constexpr UInt32 kBlockHeaderSize = 9;
+
+void overwriteLE(char * p, UInt32 v) { memcpy(p, &v, sizeof(v)); }
+
+} // namespace
+
+TEST(ByteStreamSplitTest, MalformedExtraTrailingBody)
+{
+    auto codec = makeCodec("ByteStreamSplit(4)", std::make_shared<DataTypeFloat32>());
+
+    auto src = generateBuffer<float>(64, [](size_t i) { return static_cast<float>(i); });
+    const UInt32 src_sz = static_cast<UInt32>(src.size());
+
+    PODArray<char> compressed(codec->getCompressedReserveSize(src_sz));
+    const UInt32 comp_sz = codec->compress(src.data(), src_sz, compressed.data());
+
+    constexpr UInt32 kJunk = 17;
+    PODArray<char> tampered(comp_sz + kJunk);
+    memcpy(tampered.data(), compressed.data(), comp_sz);
+    memset(tampered.data() + comp_sz, 0xAA, kJunk);
+    overwriteLE(tampered.data() + 1, comp_sz + kJunk);
+
+    PODArray<char> decoded(src_sz);
+    EXPECT_THROW(
+        codec->decompress(tampered.data(), comp_sz + kJunk, decoded.data()),
+        DB::Exception);
+}
+
+TEST(ByteStreamSplitTest, MalformedTruncatedBody)
+{
+    auto codec = makeCodec("ByteStreamSplit(8)", std::make_shared<DataTypeFloat64>());
+
+    auto src = generateBuffer<double>(32, [](size_t i) { return static_cast<double>(i); });
+    const UInt32 src_sz = static_cast<UInt32>(src.size());
+
+    PODArray<char> compressed(codec->getCompressedReserveSize(src_sz));
+    const UInt32 comp_sz = codec->compress(src.data(), src_sz, compressed.data());
+
+    constexpr UInt32 kMissing = 9;
+    ASSERT_GT(comp_sz, kBlockHeaderSize + kMissing);
+    const UInt32 truncated_sz = comp_sz - kMissing;
+    overwriteLE(compressed.data() + 1, truncated_sz);
+
+    PODArray<char> decoded(src_sz);
+    EXPECT_THROW(
+        codec->decompress(compressed.data(), truncated_sz, decoded.data()),
+        DB::Exception);
+}
+
+
 // ─── Verify codec description is stored correctly ─────────────────────────────
 
 TEST(ByteStreamSplitTest, CodecDescription)
