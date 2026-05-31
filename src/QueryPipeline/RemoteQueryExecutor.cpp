@@ -715,6 +715,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                     connections->dumpAddresses(),
                     packet.exception->displayText());
 
+                /// Count this skip against `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`
+                /// (throws if the limits are exceeded), so the safety bounds also apply to exception-based skips.
+                reportShardSkipped();
+
                 /// The shard is skipped: the server has already terminated the query with this
                 /// exception and will not send `EndOfStream`, so mark the executor finished to
                 /// signal end of data and avoid waiting for more packets.
@@ -887,6 +891,10 @@ void RemoteQueryExecutor::finish()
                         "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
                         connections->dumpAddresses(),
                         packet.exception->displayText());
+
+                    /// Count this skip against `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`
+                    /// (throws if the limits are exceeded), so the safety bounds also apply to exception-based skips.
+                    reportShardSkipped();
 
                     /// Stop draining: the server terminated the query with this exception.
                     finished = true;
@@ -1097,14 +1105,22 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard()
 {
     if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
     {
-        if (!shard_skip_reported && unavailable_shard_tracker)
-        {
-            shard_skip_reported = true;
-            unavailable_shard_tracker->onShardSkipped();
-        }
+        reportShardSkipped();
         return true;
     }
     return false;
+}
+
+void RemoteQueryExecutor::reportShardSkipped()
+{
+    if (!shard_skip_reported && unavailable_shard_tracker)
+    {
+        shard_skip_reported = true;
+        /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` if the configured `max_skip_unavailable_shards_num` /
+        /// `max_skip_unavailable_shards_ratio` limits are exceeded, so the safety bounds apply to every
+        /// silently skipped shard regardless of why it was skipped (no connections or an ignored exception).
+        unavailable_shard_tracker->onShardSkipped();
+    }
 }
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()

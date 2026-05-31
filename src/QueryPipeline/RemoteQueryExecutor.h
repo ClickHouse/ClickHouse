@@ -229,6 +229,11 @@ public:
 
     bool needToSkipUnavailableShard();
 
+    /// Reports a skipped shard to `unavailable_shard_tracker` (if any), enforcing the
+    /// `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio` limits.
+    /// Throws `TOO_MANY_UNAVAILABLE_SHARDS` once the limits are exceeded.
+    void reportShardSkipped();
+
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
     /// return true if parallel replica packet was processed
