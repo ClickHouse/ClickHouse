@@ -344,12 +344,9 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     /// without retraining on the next server restart.
     auto opts_or = searcher->inner->ExtractSingleMachineFactoryOptions();
     if (!opts_or.ok())
-    {
-        LOG_WARNING(log, "ScaNN ExtractSingleMachineFactoryOptions failed: {}. "
-            "Index will be retrained on next restart.",
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index build failed: could not extract trained artifacts: {}",
             opts_or.status().ToString());
-        return;
-    }
 
     const auto & opts = opts_or.value();
 
@@ -387,31 +384,22 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
         return;
 
     if (serialized_partitioner_proto.empty() || serialized_codebook_proto.empty())
-    {
-        LOG_WARNING(log,
-            "ScaNN serialized artifacts missing for {} vectors; falling back to retraining.",
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index restore failed: serialized artifacts are missing for {} vectors. "
+            "The index may have been built with an older version; drop and recreate it.",
             num_vectors);
-        buildIndex();
-        return;
-    }
 
     research_scann::SingleMachineFactoryOptions opts;
 
     opts.serialized_partitioner = std::make_shared<research_scann::SerializedPartitioner>();
     if (!opts.serialized_partitioner->ParseFromString(serialized_partitioner_proto))
-    {
-        LOG_WARNING(log, "Failed to parse SerializedPartitioner; falling back to retraining.");
-        buildIndex();
-        return;
-    }
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index restore failed: could not parse SerializedPartitioner");
 
     opts.ah_codebook = std::make_shared<research_scann::CentersForAllSubspaces>();
     if (!opts.ah_codebook->ParseFromString(serialized_codebook_proto))
-    {
-        LOG_WARNING(log, "Failed to parse AH codebook; falling back to retraining.");
-        buildIndex();
-        return;
-    }
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index restore failed: could not parse AH codebook");
 
     if (hashed_dim > 0 && !hashed_data.empty())
     {
@@ -455,11 +443,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
 
     research_scann::ScannConfig config;
     if (!google::protobuf::TextFormat::ParseFromString(config_str, &config))
-    {
-        LOG_ERROR(log, "Failed to parse ScaNN config during restore; falling back to retraining.");
-        buildIndex();
-        return;
-    }
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN index restore failed: could not parse ScaNN config string");
 
     /// The float dataset is required for the exact-reordering step.
     /// vectors[] already contains (potentially normalized) floats from deserialization.
@@ -472,30 +457,23 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
             config, std::move(dataset), std::move(opts));
 
         if (!status_or.ok())
-        {
-            LOG_WARNING(log,
-                "ScaNN restore from serialized state failed: {}; falling back to retraining.",
-                status_or.status().ToString());
-            buildIndex();
-            return;
-        }
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ScaNN index restore failed: {}", status_or.status().ToString());
 
         searcher = std::make_unique<ScannSearcherWrapper>();
         searcher->inner = std::move(status_or).value();
     }
+    catch (const DB::Exception &)
+    {
+        throw;
+    }
     catch (const std::exception & e)
     {
-        LOG_WARNING(log,
-            "ScaNN restore from serialized state threw exception: {}; falling back to retraining.",
-            e.what());
-        buildIndex();
-        return;
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index restore failed: {}", e.what());
     }
     catch (...)
     {
-        LOG_WARNING(log, "ScaNN restore from serialized state: unknown exception; falling back to retraining.");
-        buildIndex();
-        return;
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index restore failed: unknown exception");
     }
 
     LOG_DEBUG(log, "ScaNN index restored from serialized state for {} vectors", num_vectors);
