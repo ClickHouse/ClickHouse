@@ -119,7 +119,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
     };
     #endif
 
-    factory.registerSource("mongodb", create_dictionary_source);
+    factory.registerSource("mongodb", create_dictionary_source, Documentation{
+        .description = "Reads dictionary data from a collection in a MongoDB server.",
+        .syntax = "SOURCE(MONGODB(host 'host' port 27017 user '' password '' db 'db' collection 'collection'))",
+        .related = {}});
 }
 
 #if USE_MONGODB

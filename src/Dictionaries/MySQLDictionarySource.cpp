@@ -195,7 +195,10 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("mysql", create_table_source);
+    factory.registerSource("mysql", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table in a MySQL server.",
+        .syntax = "SOURCE(MYSQL(host 'host' port 3306 user 'user' password '' db 'db' table 'table'))",
+        .related = {"clickhouse", "postgresql"}});
 }
 
 }

@@ -206,7 +206,10 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
         return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, global_context, created_from_ddl);
     };
 
-    factory.registerSource("library", create_table_source);
+    factory.registerSource("library", create_table_source, Documentation{
+        .description = "Obtains dictionary data from an external shared library that implements the dictionary library bridge interface.",
+        .syntax = "SOURCE(LIBRARY(path '/path/to/lib.so'))",
+        .related = {}});
 }
 
 

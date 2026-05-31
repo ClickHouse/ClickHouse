@@ -350,7 +350,10 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source);
+    factory.registerSource("postgresql", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table in a PostgreSQL server.",
+        .syntax = "SOURCE(POSTGRESQL(host 'host' port 5432 user 'user' password '' db 'db' table 'table'))",
+        .related = {"mysql", "clickhouse"}});
 }
 
 }

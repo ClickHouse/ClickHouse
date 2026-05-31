@@ -309,7 +309,10 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };
-    factory.registerSource("http", create_table_source);
+    factory.registerSource("http", create_table_source, Documentation{
+        .description = "Obtains dictionary data from an HTTP(S) endpoint in one of the supported formats.",
+        .syntax = "SOURCE(HTTP(url 'https://host/path' format 'CSV'))",
+        .related = {"file"}});
 }
 
 }

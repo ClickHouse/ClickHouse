@@ -105,7 +105,10 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, created_from_ddl);
     };
 
-    factory.registerSource("file", create_table_source);
+    factory.registerSource("file", create_table_source, Documentation{
+        .description = "Reads dictionary data from a file on the local filesystem in one of the supported formats.",
+        .syntax = "SOURCE(FILE(path '/path/to/file' format 'CSV'))",
+        .related = {"executable", "http"}});
 }
 
 }

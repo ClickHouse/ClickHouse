@@ -334,7 +334,10 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
     };
 
-    factory.registerSource("clickhouse", create_table_source);
+    factory.registerSource("clickhouse", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table on a local or remote ClickHouse server.",
+        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'default' password '' db 'db' table 'table'))",
+        .related = {"mysql", "postgresql"}});
 }
 
 }
