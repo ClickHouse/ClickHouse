@@ -605,7 +605,7 @@ bool explainQueryTree(
 
         ConvertToASTOptions ast_options;
         /// `EXPLAIN SYNTAX` shows the query in a canonical, close-to-syntax form, so constants are
-        /// rendered as their source expressions and operators are preferred over function calls.
+        /// rendered as their source expressions and function calls are preferred over operator syntax.
         /// `EXPLAIN QUERY TREE` (dump_ast) must show the query as it actually is after the query tree passes,
         /// so neither source-expression rendering nor operator-to-function conversion is applied there.
         ast_options.use_source_expression_for_constants = format_ast_as_syntax;
