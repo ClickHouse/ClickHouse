@@ -77,20 +77,10 @@ JWKSType JWKSClient::getJWKS()
 
     Poco::Net::HTTPRequest request{Poco::Net::HTTPRequest::HTTP_GET, jwks_uri.getPathAndQuery()};
 
-    /// Bound every JWKS fetch to a known limit. Without this, Poco's default
-    /// `HTTPSession` timeout of 60 seconds applies, and because the JWKS fetch
-    /// runs while `ExternalAuthenticators::mutex` is held by the outer
-    /// `checkTokenCredentials` call, a single slow or hung JWKS endpoint would
-    /// stall the whole auth subsystem (LDAP, Kerberos, HTTP basic, all other
-    /// token auth paths) for up to a full minute per request. 10 seconds is a
-    /// conservative cap: well above any healthy provider latency, well below
-    /// the default.
-    const Poco::Timespan jwks_http_timeout(/*seconds=*/10, 0);
-
     if (jwks_uri.getScheme() == "https")
     {
         Poco::Net::HTTPSClientSession session = Poco::Net::HTTPSClientSession(jwks_uri.getHost(), jwks_uri.getPort());
-        session.setTimeout(jwks_http_timeout, jwks_http_timeout, jwks_http_timeout);
+        setTimeouts(session, timeouts);
         session.sendRequest(request);
         std::istream & response_stream = session.receiveResponse(response);
         if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK || !response_stream)
@@ -101,7 +91,7 @@ JWKSType JWKSClient::getJWKS()
     else
     {
         Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(jwks_uri.getHost(), jwks_uri.getPort());
-        session.setTimeout(jwks_http_timeout, jwks_http_timeout, jwks_http_timeout);
+        setTimeouts(session, timeouts);
         session.sendRequest(request);
         std::istream & response_stream = session.receiveResponse(response);
         if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK || !response_stream)

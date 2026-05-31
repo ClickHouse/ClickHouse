@@ -1,6 +1,7 @@
 #include <config.h>
 
 #if USE_JWT_CPP
+#include <IO/ConnectionTimeouts.h>
 #include <base/types.h>
 #include <jwt-cpp/jwt.h>
 #include <jwt-cpp/traits/kazuho-picojson/traits.h>
@@ -29,7 +30,8 @@ public:
 class JWKSClient : public IJWKSProvider
 {
 public:
-    explicit JWKSClient(const String & uri, const size_t refresh_ms_): refresh_timeout(refresh_ms_), jwks_uri(uri) {}
+    explicit JWKSClient(const String & uri, const size_t refresh_ms_, const ConnectionTimeouts & timeouts_)
+        : refresh_timeout(refresh_ms_), jwks_uri(uri), timeouts(timeouts_) {}
 
     ~JWKSClient() override = default;
     JWKSClient(const JWKSClient &) = delete;
@@ -42,6 +44,7 @@ public:
 private:
     size_t refresh_timeout;
     Poco::URI jwks_uri;
+    ConnectionTimeouts timeouts;
 
     std::shared_mutex mutex;
     std::optional<JWKSType> cached_jwks;

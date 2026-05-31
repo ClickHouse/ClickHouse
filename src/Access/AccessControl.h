@@ -50,6 +50,7 @@ class SettingsProfileElements;
 class ClientInfo;
 class ExternalAuthenticators;
 class AccessChangesNotifier;
+struct ConnectionTimeouts;
 struct Settings;
 
 
@@ -140,7 +141,7 @@ public:
     /// Makes a backup of access entities.
     void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
 
-    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+    void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config, const ConnectionTimeouts & token_http_timeouts);
 
     /// Sets the default profile's name.
     /// The default profile's settings are always applied before any other profile's.

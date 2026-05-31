@@ -39,16 +39,9 @@ class ExternalAuthenticators
 {
 public:
     void reset();
-    void setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log, bool token_auth_enabled = true);
+    void setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log, const ConnectionTimeouts & token_http_timeouts, bool token_auth_enabled = true);
 
     bool isTokenAuthEnabled() const;
-
-    /// Returns true if a token processor with the given name is currently
-    /// configured. Used by `Session::checkIfUserIsStillValid` to terminate
-    /// active sessions whose authenticating processor was removed by config
-    /// reload (M-28). Empty `name` is treated as "no specific pin" and
-    /// returns true (token auth must still be enabled, of course).
-    bool hasTokenProcessor(const String & name) const;
 
     // The name and readiness of the credentials must be verified before calling these.
     bool checkLDAPCredentials(const String & server, const BasicCredentials & credentials,

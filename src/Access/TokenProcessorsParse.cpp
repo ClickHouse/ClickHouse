@@ -17,7 +17,8 @@ namespace ErrorCodes
 std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
         const Poco::Util::AbstractConfiguration & config,
         const String & prefix,
-        const String & processor_name)
+        const String & processor_name,
+        const ConnectionTimeouts & timeouts)
 {
     if (!config.hasProperty(prefix + ".type"))
         throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "'type' parameter shall be specified in token_processor configuration.'");
@@ -84,7 +85,7 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
 
     if (provider_type == "google")
     {
-        return std::make_unique<GoogleTokenProcessor>(processor_name, token_cache_lifetime, username_claim, groups_claim, expected_audience);
+        return std::make_unique<GoogleTokenProcessor>(processor_name, token_cache_lifetime, username_claim, groups_claim, expected_audience, timeouts);
     }
     else if (provider_type == "openid")
     {
@@ -131,7 +132,8 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
                                                           introspection_client_id,
                                                           introspection_client_secret,
                                                           remote_host_filter,
-                                                          allow_http_discovery_urls);
+                                                          allow_http_discovery_urls,
+                                                          timeouts);
         }
 
         if (locally_configured)
@@ -171,7 +173,8 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
                                                           userinfo_endpoint,
                                                           token_introspection_endpoint,
                                                           introspection_client_id,
-                                                          introspection_client_secret);
+                                                          introspection_client_secret,
+                                                          timeouts);
         }
 
         throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
@@ -236,7 +239,8 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
                                                   config.getString(prefix + ".claims", ""),
                                                   config.getUInt64(prefix + ".verifier_leeway", 60),
                                                   jwks_uri,
-                                                  config.getUInt64(prefix + ".jwks_cache_lifetime", 3600));
+                                                  config.getUInt64(prefix + ".jwks_cache_lifetime", 3600),
+                                                  timeouts);
     }
     else if (provider_type == "jwt_static_key")
     {
@@ -293,7 +297,8 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
                                                   config.getString(prefix + ".claims", ""),
                                                   config.getUInt64(prefix + ".verifier_leeway", 60),
                                                   jwks_uri,
-                                                  config.getUInt(prefix + ".jwks_cache_lifetime", 3600));
+                                                  config.getUInt(prefix + ".jwks_cache_lifetime", 3600),
+                                                  timeouts);
     }
     else
         throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Invalid type: {}", provider_type);
@@ -303,7 +308,8 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
 std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
     const Poco::Util::AbstractConfiguration &,
     const String &,
-    const String &)
+    const String &,
+    const ConnectionTimeouts &)
 {
     throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Failed to parse token_processor, ClickHouse was built without JWT support.");
 }

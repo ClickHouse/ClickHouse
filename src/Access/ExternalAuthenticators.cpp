@@ -307,6 +307,7 @@ void ExternalAuthenticators::reset()
 void parseTokenProcessors(std::map<String, std::shared_ptr<ITokenProcessor>> & token_processors,
                         const Poco::Util::AbstractConfiguration & config,
                         const String & token_processors_config,
+                        const ConnectionTimeouts & timeouts,
                         LoggerPtr log)
 {
     Poco::Util::AbstractConfiguration::Keys token_processors_keys;
@@ -321,7 +322,7 @@ void parseTokenProcessors(std::map<String, std::shared_ptr<ITokenProcessor>> & t
         String prefix = fmt::format("{}.{}", token_processors_config, processor);
         try
         {
-            parsed[processor] = ITokenProcessor::parseTokenProcessor(config, prefix, processor);
+            parsed[processor] = ITokenProcessor::parseTokenProcessor(config, prefix, processor, timeouts);
         }
         catch (...)
         {
@@ -340,17 +341,7 @@ bool ExternalAuthenticators::isTokenAuthEnabled() const
     return token_auth_enabled;
 }
 
-bool ExternalAuthenticators::hasTokenProcessor(const String & name) const
-{
-    std::lock_guard lock(mutex);
-    if (!token_auth_enabled)
-        return false;
-    if (name.empty())
-        return true;
-    return token_processors.contains(name);
-}
-
-void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log, bool token_auth_enabled_)
+void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, LoggerPtr log, const ConnectionTimeouts & token_http_timeouts, bool token_auth_enabled_)
 {
     std::lock_guard lock(mutex);
     resetImpl();
@@ -458,7 +449,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     {
         try
         {
-            parseTokenProcessors(token_processors, config, token_processors_config, log);
+            parseTokenProcessors(token_processors, config, token_processors_config, token_http_timeouts, log);
         }
         catch (...)
         {

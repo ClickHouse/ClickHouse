@@ -1,0 +1,25 @@
+Test 1: --jwt and --jwt-command together should give BAD_ARGUMENTS
+OK
+Test 2: --jwt-command with non-default --user should give BAD_ARGUMENTS
+OK
+Test 3: --jwt-command with --login should give BAD_ARGUMENTS
+OK
+Test 4: --jwt-command with empty stdout should fail with AUTHENTICATION_FAILED
+OK
+Test 5: --jwt-command exiting with non-zero status should fail with AUTHENTICATION_FAILED
+OK
+Test 6: --jwt-command stderr should be forwarded to client stderr
+OK
+Test 7: --jwt-command-timeout kills a hanging script
+OK
+Test 8: --jwt-command-timeout=0 should be rejected
+OK
+Test 9: --jwt-command is actually executed
+OK
+Test 10: --jwt-command-timeout from XML config file takes effect
+OK
+Test 11: stdin-reading script completes promptly (stdin is closed)
+OK
+Test 12: CLI --jwt-command-timeout overrides XML config
+OK
+All tests completed

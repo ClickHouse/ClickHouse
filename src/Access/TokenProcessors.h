@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Credentials.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #if USE_JWT_CPP
@@ -45,7 +46,8 @@ public:
     static std::unique_ptr<DB::ITokenProcessor> parseTokenProcessor(
             const Poco::Util::AbstractConfiguration & config,
             const String & prefix,
-            const String & processor_name);
+            const String & processor_name,
+            const ConnectionTimeouts & timeouts);
 
 protected:
     const String processor_name;
@@ -145,7 +147,8 @@ public:
                               const String & claims_,
                               size_t verifier_leeway_,
                               const String & jwks_uri_,
-                              size_t jwks_cache_lifetime_)
+                              size_t jwks_cache_lifetime_,
+                              const ConnectionTimeouts & timeouts_)
                               : JwksJwtProcessor(processor_name_,
                                                  token_cache_lifetime_,
                                                  username_claim_,
@@ -156,7 +159,7 @@ public:
                                                  allow_no_expiration_,
                                                  claims_,
                                                  verifier_leeway_,
-                                                 std::make_shared<JWKSClient>(jwks_uri_, jwks_cache_lifetime_)) {}
+                                                 std::make_shared<JWKSClient>(jwks_uri_, jwks_cache_lifetime_, timeouts_)) {}
 
     bool resolveAndValidate(TokenCredentials & credentials) const override;
     bool checkClaims(const TokenCredentials & credentials, const String & claims_to_check) const override;
@@ -186,12 +189,14 @@ public:
                          UInt64 token_cache_lifetime_,
                          const String & username_claim_,
                          const String & groups_claim_,
-                         const String & expected_audience_);
+                         const String & expected_audience_,
+                         const ConnectionTimeouts & timeouts_);
 
     bool resolveAndValidate(TokenCredentials & credentials) const override;
 
 private:
     const String expected_audience;
+    const ConnectionTimeouts timeouts;
 };
 
 class OpenIdTokenProcessor : public ITokenProcessor
@@ -208,7 +213,8 @@ public:
                          const String & userinfo_endpoint_,
                          const String & token_introspection_endpoint_,
                          const String & introspection_client_id_,
-                         const String & introspection_client_secret_);
+                         const String & introspection_client_secret_,
+                         const ConnectionTimeouts & timeouts_);
 
     /// Obtain endpoints from openid-configuration URL
     OpenIdTokenProcessor(const String & processor_name_,
@@ -224,7 +230,8 @@ public:
                          const String & introspection_client_id_,
                          const String & introspection_client_secret_,
                          const RemoteHostFilter & remote_host_filter_,
-                         bool allow_http_discovery_urls_);
+                         bool allow_http_discovery_urls_,
+                         const ConnectionTimeouts & timeouts_);
 
     bool resolveAndValidate(TokenCredentials & credentials) const override;
 private:
@@ -237,6 +244,7 @@ private:
     String expected_audience;
     String introspection_client_id;
     String introspection_client_secret;
+    ConnectionTimeouts timeouts;
 
     /// Populated only by the discovery constructor when the doc advertises a `jwks_uri`.
     std::optional<JwksJwtProcessor> jwt_validator = std::nullopt;
