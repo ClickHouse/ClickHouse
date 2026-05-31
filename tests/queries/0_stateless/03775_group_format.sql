@@ -36,6 +36,14 @@ set optimize_rewrite_aggregate_function_with_if = 0;
 -- Multi-arg nullable: both nullable and non-nullable columns mixed.
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number), toString(number)) from numbers(3);
 
+-- `OrNull` / `OrDefault` wrappers must also preserve nullable payload (e.g. `{"c1":null}`),
+-- not strip it via the `Null` combinator fallback.
+select groupFormatOrNull('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
+select groupFormatOrDefault('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
+-- `OrNull` returns NULL and `OrDefault` returns the default value for an empty group.
+select groupFormatOrNull('JSONEachRow')(number) from numbers(0);
+select groupFormatOrDefault('JSONEachRow')(number) from numbers(0);
+
 -- State round-trip: serialize then deserialize via finalizeAggregation.
 select finalizeAggregation(groupFormatState('JSONEachRow')(number, toString(number))) from numbers(3);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
@@ -365,8 +366,25 @@ public:
         const AggregateFunctionPtr & nested_function_,
         const DataTypes & arguments,
         const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
+        const AggregateFunctionProperties & properties) const override
     {
+        /// If the inner aggregate function provides its own null adapter and preserves
+        /// nullable payload (e.g. `groupFormat`), forward through `OrFill` so that combinator
+        /// stacks like `groupFormatOrNull` / `groupFormatOrDefault` reach the payload-preserving
+        /// adapter instead of falling back to `AggregateFunctionNull*`, which would strip the
+        /// nullable payload to nested columns plus a merged `null_map` and drop payload `NULL` rows.
+        /// The inner adapter is rebuilt with the original nullable argument types, and we re-wrap
+        /// it through the `OrFill` combinator so the result-fill logic matches those types.
+        if (nested_function->preservesNullablePayloadForIf())
+        {
+            if (auto inner_adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
+            {
+                if (auto combinator
+                    = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(UseNull ? "OrNull" : "OrDefault"))
+                    return combinator->transformAggregateFunction(inner_adapter, properties, arguments, params);
+            }
+        }
+
         if constexpr (!UseNull) /// OrDefault only
         {
             if (nested_function->getName() == "sumCount")
