@@ -35,7 +35,7 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
         "Find the leftmost offset in UTF-8 string 'Здравствуй, мир' ('Hello, world') which matches any of the given needles",
         "SELECT multiSearchFirstPositionCaseInsensitiveUTF8('Здравствуй, мир', ['МИР', 'вст', 'Здра'])",
         R"(
-┌─multiSearchFirstPositionCaseInsensitiveUTF8('Здравствуй, мир', ['мир', 'вст', 'Здра'])─┐
+┌─multiSearchFirstPositionCaseInsensitiveUTF8('Здравствуй, мир', ['МИР', 'вст', 'Здра'])─┐
 │                                                                                      3 │
 └────────────────────────────────────────────────────────────────────────────────────────┘
         )"
