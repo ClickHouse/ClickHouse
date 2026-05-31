@@ -349,7 +349,7 @@ SELECT wkt(groupConvexHull(pt)) FROM (
             R"(
 POLYGON((0 0,0 1,1 1,1 0,0 0))
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
