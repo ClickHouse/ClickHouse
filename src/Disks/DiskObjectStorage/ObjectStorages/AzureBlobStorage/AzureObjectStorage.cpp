@@ -230,7 +230,7 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
     auto settings_ptr = settings.get();
 
     BlobStorageLogWriterPtr blob_storage_log;
-    if (read_settings.enable_blob_storage_log_for_read_operations)
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
     {
         blob_storage_log = BlobStorageLogWriter::create(name);
         if (blob_storage_log)
