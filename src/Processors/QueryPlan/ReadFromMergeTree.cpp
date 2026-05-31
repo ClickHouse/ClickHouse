@@ -1842,7 +1842,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     const auto & settings = context->getSettingsRef();
     PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
 
-    assert(num_streams == requested_num_streams);
+    chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
 
     /// If do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
