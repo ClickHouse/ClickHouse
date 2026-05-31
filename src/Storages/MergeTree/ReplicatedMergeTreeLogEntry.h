@@ -3,7 +3,6 @@
 #include <Common/CopyableAtomic.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
@@ -11,6 +10,7 @@
 #include <Poco/Timestamp.h>
 
 #include <condition_variable>
+#include <Core/UUID.h>
 
 
 namespace DB

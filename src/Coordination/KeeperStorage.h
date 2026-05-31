@@ -7,11 +7,13 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperReadThreadPool.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
 #include <base/defines.h>
+#include <memory>
 
 #include <Coordination/CompactChildrenSet.h>
 
@@ -277,6 +279,10 @@ static_assert(sizeof(KeeperMemNode) <= 160);
 
 struct KeeperStorageStats
 {
+    KeeperStorageStats() = default;
+    KeeperStorageStats(const KeeperStorageStats & other);
+    KeeperStorageStats & operator=(const KeeperStorageStats & other);
+
     std::atomic<uint64_t> nodes_count = 0;
     std::atomic<uint64_t> approximate_data_size = 0;
     std::atomic<uint64_t> total_watches_count = 0;
@@ -409,6 +415,8 @@ public:
     /// Mapping session_id -> set of watched nodes paths
     SessionAndWatcher sessions_and_watchers;
 
+    KeeperReadThreadPool read_thread_pool;
+
     static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
     void finalize();
@@ -524,7 +532,7 @@ public:
 
         std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
 
-        Coordination::ACLs getACLs(std::string_view path) const;
+        Coordination::ACLs getACLs(std::string_view path, bool should_lock_storage = true) const;
 
         void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
         void applyDelta(const Delta & delta, uint64_t * digest);
@@ -589,10 +597,50 @@ public:
 
     UncommittedState uncommitted_state{*this};
 
-    // Apply uncommitted state to another storage using only transactions
-    // with zxid > last_zxid
+    struct UncommittedStateForSnapshot
+    {
+        UncommittedStateForSnapshot();
+        ~UncommittedStateForSnapshot();
+        UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot & operator=(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot(const UncommittedStateForSnapshot &) = delete;
+        UncommittedStateForSnapshot & operator=(const UncommittedStateForSnapshot &) = delete;
+
+        struct Transaction
+        {
+            int64_t zxid;
+            KeeperDigest nodes_digest;
+            int64_t log_idx = 0;
+        };
+
+        std::vector<Transaction> transactions;
+        std::list<Delta> deltas;
+
+        bool empty() const { return transactions.empty(); }
+    };
+
+    /// Collect uncommitted transactions and deltas with `log_idx > last_log_idx`.
+    UncommittedStateForSnapshot copyUncommittedStateAfter(int64_t last_log_idx) const;
+
+    /// Like `copyUncommittedStateAfter`, but removes the returned transactions
+    /// and deltas from this storage instead of copying them.
+    UncommittedStateForSnapshot detachUncommittedStateAfter(int64_t last_log_idx);
+    void applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot);
+
+    // Compatibility wrapper for the non-low-memory snapshot apply path.
     void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
 
+private:
+    void collectUncommittedTransactionsAfter(
+        int64_t last_log_idx,
+        UncommittedStateForSnapshot & result,
+        std::unordered_set<int64_t> & zxids_to_apply) const;
+    static void detachMatchingDeltasNoexcept(
+        std::list<Delta> & source,
+        std::list<Delta> & destination,
+        const std::unordered_set<int64_t> & zxids_to_apply) noexcept;
+
+public:
     Coordination::Error commit(DeltaRange deltas);
 
     // Create node in the storage
@@ -606,9 +654,10 @@ public:
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local);
+    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+    ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
@@ -619,9 +668,12 @@ public:
     KeeperResponsesForSessions processRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
-        std::optional<int64_t> new_last_zxid,
-        bool check_acl = true,
-        bool is_local = false);
+        std::optional<int64_t> new_last_zxid);
+
+    /// Process a batch of local read requests (no deltas, no commit).
+    KeeperResponsesForSessions processLocalRequests(
+        const KeeperRequestsForSessions & requests,
+        bool check_acl = true);
     KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
@@ -663,7 +715,14 @@ public:
 
     void updateStats();
 
+    /// Register watches from a request/response pair.
+    void updateWatches(
+        const Coordination::ZooKeeperRequestPtr & zk_request,
+        const Coordination::Response * response,
+        int64_t session_id);
+
     void recalculateStats();
+
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);

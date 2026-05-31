@@ -1,4 +1,5 @@
 #include <memory>
+#include <thread>
 #include <Interpreters/TraceCollector.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -8,11 +9,12 @@
 #include <Interpreters/TraceLog.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
 #include <Common/setThreadName.h>
+#include <base/errnoToString.h>
 #include <Common/logger_useful.h>
 #include <Common/SymbolIndex.h>
 
@@ -35,7 +37,13 @@ TraceCollector::TraceCollector()
     TraceSender::pipe.setNonBlockingWrite();
     TraceSender::pipe.tryIncreaseSize(1 << 20);
 
-    thread = ThreadFromGlobalPool(&TraceCollector::run, this);
+    /// Re-arm the shutdown gate in case a previous TraceCollector ran in this
+    /// process. The previous destructor left it set to true to drain senders
+    /// before closing the pipe; on a fresh start, senders should be allowed
+    /// through again.
+    TraceSender::shutdown.store(false);
+
+    thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
 }
 
 void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)
@@ -91,18 +99,37 @@ TraceCollector::~TraceCollector()
         }
     }
 
-    tryClosePipe();
+    /// Close the gate first so no new sender writes to the pipe, then wait for
+    /// any sender already past the gate to finish its `write()`. After this
+    /// the write fd has no concurrent users and we can safely close it.
+    TraceSender::shutdown.store(true);
+    while (TraceSender::in_flight.load() > 0)
+        std::this_thread::yield();
+
+    /// Guaranteed fallback to unblock the worker even if the in-band stop byte
+    /// above failed to deliver (e.g. EAGAIN on the non-blocking write end):
+    /// closing the write end makes the worker's `read()` return EOF, so
+    /// `thread.join()` below cannot wait indefinitely on a missed stop byte.
+    if (TraceSender::pipe.fds_rw[1] >= 0)
+    {
+        if (0 != ::close(TraceSender::pipe.fds_rw[1]))
+            LOG_ERROR(getLogger("TraceCollector"), "Cannot close write end of trace pipe: {}", errnoToString());
+        TraceSender::pipe.fds_rw[1] = -1;
+    }
 
     if (thread.joinable())
         thread.join();
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+
+    /// Worker has exited; close the read end (the write end is already closed).
+    tryClosePipe();
 }
 
 
 void TraceCollector::run()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::TRACE_COLLECTOR);
 
@@ -219,7 +246,6 @@ void TraceCollector::run()
     catch (...)
     {
         tryLogCurrentException("TraceCollector");
-        tryClosePipe();
         throw;
     }
 }

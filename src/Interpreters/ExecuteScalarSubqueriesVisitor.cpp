@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
@@ -213,6 +214,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
+            if (auto cancel_cb = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext()->getInteractiveCancelCallback() : nullptr)
+                executor.setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
+
             while (block.rows() == 0 && executor.pull(block))
             {
             }
@@ -260,6 +264,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
+
+            /// Finalize write in query cache to save scalar subquery result (no-op if no cache writers exist in the pipeline)
+            io.pipeline.finalizeWriteInQueryResultCache();
         }
 
         block = materializeBlock(block);
