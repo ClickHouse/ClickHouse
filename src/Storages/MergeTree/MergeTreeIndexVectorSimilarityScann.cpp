@@ -306,10 +306,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     research_scann::ScannConfig config;
     if (!google::protobuf::TextFormat::ParseFromString(config_str, &config))
-    {
-        LOG_ERROR(log, "Failed to parse ScaNN config string");
-        return;
-    }
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index build failed: could not parse ScaNN config string");
 
     auto dataset = std::make_shared<research_scann::DenseDataset<float>>(
         std::vector<float>(vectors), /// copy — ScaNN takes ownership
@@ -322,23 +319,23 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             config, std::move(dataset), std::move(build_opts));
 
         if (!status_or.ok())
-        {
-            LOG_ERROR(log, "ScaNN index build failed: {}", status_or.status().ToString());
-            return;
-        }
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ScaNN index build failed: {}", status_or.status().ToString());
 
         searcher = std::make_unique<ScannSearcherWrapper>();
         searcher->inner = std::move(status_or).value();
     }
+    catch (const DB::Exception &)
+    {
+        throw;
+    }
     catch (const std::exception & e)
     {
-        LOG_ERROR(log, "ScaNN index build exception: {}", e.what());
-        return;
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index build failed: {}", e.what());
     }
     catch (...)
     {
-        LOG_ERROR(log, "ScaNN index build: unknown exception");
-        return;
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index build failed: unknown exception");
     }
 
     LOG_DEBUG(log, "ScaNN index built successfully for {} vectors", num_vectors);
