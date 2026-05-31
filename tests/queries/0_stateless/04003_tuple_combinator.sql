@@ -124,6 +124,16 @@ SELECT sumTuple(tuple(NULL, toInt64(1))) AS res, toTypeName(res);
 SELECT sumTuple(tuple(toInt64(2), NULL)) AS res, toTypeName(res);
 SELECT sumTuple(tuple(NULL, toInt64(1), toFloat64(2.5))) AS res, toTypeName(res);
 
+-- All tuple elements are only-null (`Tuple(Nullable(Nothing))`): the representative nested function
+-- collapses to `AggregateFunctionNothing`, so per-element construction must not re-resolve by the
+-- placeholder `nothing*` name (which would reject the parameters of parametric aggregates).
+SELECT 'all only-null elements';
+SELECT groupArrayMovingAvgTuple(2)(tuple(NULL)) AS res, toTypeName(res);
+SELECT sumTuple(tuple(NULL)) AS res, toTypeName(res);
+SELECT quantileTuple(0.5)(tuple(NULL)) AS res, toTypeName(res);
+SELECT sumTuple(tuple(NULL, NULL)) AS res, toTypeName(res);
+SELECT avgTuple(tuple(NULL, NULL, NULL)) AS res, toTypeName(res);
+
 -- Parametric aggregate function with `-TupleMerge`: states with different parameter values must be considered same-state.
 SELECT 'quantilesTDigestTupleMerge';
 SELECT quantilesTDigestTupleMerge(0.9)(s)

@@ -42,7 +42,7 @@ private:
     /// Build one nested aggregate function per tuple element and derive the result type.
     /// Returns both so the constructor can reuse the functions without recreating them.
     static std::pair<VectorWithMemoryTracking<AggregateFunctionPtr>, DataTypePtr> initNested(
-        const String & base_name,
+        const AggregateFunctionPtr & representative_nested_func,
         const DataTypes & arguments,
         const Array & params);
 

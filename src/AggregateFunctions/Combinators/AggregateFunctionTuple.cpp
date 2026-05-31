@@ -22,10 +22,12 @@ namespace ErrorCodes
 }
 
 std::pair<VectorWithMemoryTracking<AggregateFunctionPtr>, DataTypePtr> AggregateFunctionTuple::initNested(
-    const String & base_name,
+    const AggregateFunctionPtr & representative_nested_func,
     const DataTypes & arguments,
     const Array & params)
 {
+    const String & base_name = representative_nested_func->getName();
+
     if (arguments.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Aggregate function {}Tuple requires exactly one Tuple argument", base_name);
@@ -46,12 +48,37 @@ std::pair<VectorWithMemoryTracking<AggregateFunctionPtr>, DataTypePtr> Aggregate
     DataTypes result_types;
     result_types.reserve(elem_types.size());
 
+    /// When every tuple element is only-null (e.g. `Tuple(Nullable(Nothing))`), the factory has
+    /// collapsed the representative function to `AggregateFunctionNothing`, whose name is a
+    /// placeholder such as `nothingNull` rather than the original aggregate name. Re-resolving
+    /// each element by that placeholder name would feed the original parameters to the `nothing*`
+    /// creators, which reject parameters, turning otherwise valid parametric aggregates over
+    /// `NULL` into an exception (e.g. `groupArrayMovingAvgTuple(2)(tuple(NULL))`). Since all
+    /// elements are only-null and therefore resolve identically, reuse the already-created
+    /// representative function for every element instead of re-resolving by name.
+    bool all_only_null = true;
+    for (const auto & type : elem_types)
+    {
+        if (!type->onlyNull())
+        {
+            all_only_null = false;
+            break;
+        }
+    }
+
     for (size_t i = 0; i < elem_types.size(); ++i)
     {
-        AggregateFunctionProperties props;
-        DataTypes nested_arg_types = {elem_types[i]};
-        auto action = NullsAction::EMPTY;
-        functions[i] = factory.get(base_name, action, nested_arg_types, params, props);
+        if (all_only_null)
+        {
+            functions[i] = representative_nested_func;
+        }
+        else
+        {
+            AggregateFunctionProperties props;
+            DataTypes nested_arg_types = {elem_types[i]};
+            auto action = NullsAction::EMPTY;
+            functions[i] = factory.get(base_name, action, nested_arg_types, params, props);
+        }
         result_types.push_back(functions[i]->getResultType());
     }
 
@@ -69,7 +96,7 @@ AggregateFunctionTuple::AggregateFunctionTuple(
     const DataTypes & arguments,
     const Array & params)
     : AggregateFunctionTuple(representative_nested_func->getName(), arguments, params,
-        initNested(representative_nested_func->getName(), arguments, params))
+        initNested(representative_nested_func, arguments, params))
 {
 }
 

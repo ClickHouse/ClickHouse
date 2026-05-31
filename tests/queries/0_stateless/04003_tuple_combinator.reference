@@ -61,6 +61,12 @@ null element with int
 (NULL,1)	Tuple(Nullable(Nothing), Int64)
 (2,NULL)	Tuple(Int64, Nullable(Nothing))
 (NULL,1,2.5)	Tuple(Nullable(Nothing), Int64, Float64)
+all only-null elements
+(NULL)	Tuple(Nullable(Nothing))
+(NULL)	Tuple(Nullable(Nothing))
+(NULL)	Tuple(Nullable(Nothing))
+(NULL,NULL)	Tuple(Nullable(Nothing), Nullable(Nothing))
+(NULL,NULL,NULL)	Tuple(Nullable(Nothing), Nullable(Nothing), Nullable(Nothing))
 quantilesTDigestTupleMerge
 ([8])
 ([49,89])
