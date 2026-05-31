@@ -2169,10 +2169,10 @@ try
         LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
     }
 
-    size_t query_result_cache_on_disk_max_size_in_bytes = config().getUInt64("query_cache.on_disk.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
-    size_t query_result_cache_on_disk_max_entries = config().getUInt64("query_cache.on_disk.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
-    size_t query_result_cache_on_disk_max_entry_size_in_bytes = config().getUInt64("query_cache.on_disk.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t query_result_cache_on_disk_max_entry_size_in_rows = config().getUInt64("query_cache.on_disk.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    size_t query_result_cache_on_disk_max_size_in_bytes = config().getUInt64("query_cache.on_disk.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_SIZE);
+    size_t query_result_cache_on_disk_max_entries = config().getUInt64("query_cache.on_disk.max_entries", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_ENTRIES);
+    size_t query_result_cache_on_disk_max_entry_size_in_bytes = config().getUInt64("query_cache.on_disk.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t query_result_cache_on_disk_max_entry_size_in_rows = config().getUInt64("query_cache.on_disk.max_entry_size_in_rows", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_ENTRY_SIZE_IN_ROWS);
     if (query_result_cache_on_disk_max_size_in_bytes > max_cache_size)
     {
         query_result_cache_on_disk_max_size_in_bytes = max_cache_size;

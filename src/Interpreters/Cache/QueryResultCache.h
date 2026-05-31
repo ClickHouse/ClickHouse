@@ -10,11 +10,12 @@
 
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
-#include "base/defines.h"
+#include <base/defines.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
 #include <Parsers/IASTHash.h>
+#include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
@@ -26,8 +27,6 @@
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 struct Settings;
 
 /// Checks that query cache can be used for query.
@@ -70,7 +69,7 @@ public:
         /// Additional stuff data stored in the key, not hashed:
 
         /// Result metadata for constructing the pipe.
-        const Block header;
+        SharedHeader header;
 
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
@@ -86,6 +85,9 @@ public:
         /// users pose the same queries. Second, sharing potentially breaches security. E.g. User A should not be able to bypass row
         /// policies on some table by running the same queries as user B for whom no row policies exist.
         const bool is_shared;
+
+        /// When was the entry created?
+        const std::chrono::time_point<std::chrono::system_clock> created_at;
 
         /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
@@ -114,10 +116,11 @@ public:
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            Block header_,
+            SharedHeader header_,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed,
             bool is_subquery_);
@@ -127,13 +130,15 @@ public:
             const String & current_database,
             const Settings & settings,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
-        
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_subquery_);
+
         /// Ctor to construct a Key from entry stored on disk.
         Key(IASTHash ast_hash_,
-            const Block & header_,
+            SharedHeader header_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
-            bool is_shared_, 
+            bool is_shared_,
+            const std::chrono::time_point<std::chrono::system_clock> & created_at_,
             const std::chrono::time_point<std::chrono::system_clock> & expires_at_,
             bool is_compressed_,
             const String & query_string_,
@@ -156,7 +161,7 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    struct QueryResultCacheEntryWeight
+    struct EntryWeight
     {
         size_t operator()(const Entry & entry) const;
     };
@@ -168,7 +173,7 @@ private:
 
 public:
     /// query --> query result
-    using Cache = CacheBase<Key, Entry, KeyHasher, QueryResultCacheEntryWeight>;
+    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
     class OnDiskCache {
         using Key = QueryResultCache::Key;
@@ -197,6 +202,9 @@ public:
         std::optional<KeyMapped> getWithKey(const Key & key);
 
         void set(const Key & key, const MappedPtr & mapped);
+
+        /// Remove persisted entries (all of them, or only those matching the given tag) together with their files on disk.
+        void clear(const std::optional<String> & tag);
 
         void setMaxSizeInBytes(size_t max_size_in_bytes);
 
@@ -241,6 +249,7 @@ public:
 
     void clear(const std::optional<String> & tag);
 
+    size_t maxSizeInBytes() const;
     size_t sizeInBytes() const;
     size_t count() const;
 
@@ -336,7 +345,12 @@ private:
 class QueryResultCacheReader
 {
 public:
-    bool hasCacheEntryForKey() const;
+    bool hasCacheEntryForKey(bool update_profile_events = true) const;
+
+    /// Must only be called if hasCacheEntryForKey is true
+    std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
+    std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
+
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();
     std::unique_ptr<SourceFromChunks> getSourceTotals();
@@ -346,10 +360,14 @@ private:
     using OnDiskCache = QueryResultCache::OnDiskCache;
 
     QueryResultCacheReader(Cache & cache_, std::optional<OnDiskCache> & disk_cache_, const Cache::Key & key, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+    void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+
+    std::chrono::time_point<std::chrono::system_clock> created_at;
+    std::chrono::time_point<std::chrono::system_clock> expires_at;
+
     LoggerPtr logger = getLogger("QueryResultCache");
     friend class QueryResultCache; /// for createReader()
 };
