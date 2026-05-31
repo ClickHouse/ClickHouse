@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -41,6 +42,26 @@ static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & node
     }
 
     return true;
+}
+
+static const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    return node;
+}
+
+static bool hasVolumeReducingFunctionRoot(const ActionsDAG & actions)
+{
+    for (const auto * output : actions.getOutputs())
+    {
+        const auto * node = unwrapAlias(output);
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->isVolumeReducing())
+            return true;
+    }
+
+    return false;
 }
 
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -85,6 +106,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 
     // No calculations can be postponed.
     if (unneeded_for_sorting.trivial())
+        return 0;
+
+    if (hasVolumeReducingFunctionRoot(unneeded_for_sorting))
         return 0;
 
     if (!areNodesConvertableToBlock(needed_for_sorting.getOutputs()) || !areNodesConvertableToBlock(unneeded_for_sorting.getInputs()))

@@ -47,6 +47,13 @@ public:
         return is_suitable_for_short_circuit_arguments_execution;
     }
 
+    bool isVolumeReducing() const override
+    {
+        if constexpr (requires { Impl::is_volume_reducing; })
+            return Impl::is_volume_reducing;
+        return false;
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])

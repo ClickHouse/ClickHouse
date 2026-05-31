@@ -16,6 +16,7 @@ namespace ErrorCodes
 struct LengthImpl
 {
     static constexpr auto is_fixed_to_constant = true;
+    static constexpr auto is_volume_reducing = true;
 
     static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res, size_t input_rows_count)
     {

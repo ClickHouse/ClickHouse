@@ -1,0 +1,22 @@
+plan: filter — pushdown applied
+1
+plan: filter — no pushdown when disabled
+0
+plan: sort+limit — pushdown applied
+1
+plan: distinct — barrier respected
+0
+plan: group by — barrier respected
+0
+plan: nested expression (length(s)+1) — not pushed
+0
+eq: filter
+eq: sort+limit
+eq: group by
+0	1
+5	1
+12	1
+eq: join
+0	1
+5	2
+12	3

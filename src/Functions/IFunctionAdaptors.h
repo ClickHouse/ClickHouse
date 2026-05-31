@@ -79,6 +79,8 @@ public:
 
     bool isStateful() const override { return function->isStateful(); }
 
+    bool isVolumeReducing() const override { return function->isVolumeReducing(); }
+
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
     bool isDeterministic() const override { return function->isDeterministic(); }
@@ -126,6 +128,7 @@ public:
     bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     bool isServerConstant() const override { return function->isServerConstant(); }
+    bool isVolumeReducing() const override { return function->isVolumeReducing(); }
     bool isShortCircuit(IFunctionBase::ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
     bool allowsOmittingParentheses() const override { return function->allowsOmittingParentheses(); }
 
