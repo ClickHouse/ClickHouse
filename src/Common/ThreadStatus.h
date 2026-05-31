@@ -317,8 +317,12 @@ public:
         memory_tracker_peak = 0;
     }
     /// Move `delta` from the untracked buffer into the per-thread accumulator (called on every flush).
+    /// Skip bytes accumulated under a MemoryTrackerBlockerInThread: the removed Thread-level tracker
+    /// was blocked alongside user/query, so such allocations never showed up in the per-thread delta.
     void adjustThreadMemoryUsage(Int64 delta)
     {
+        if (untracked_memory_blocker_level != VariableContext::Max)
+            return;
         memory_tracker_amount += delta;
         memory_tracker_peak = std::max(memory_tracker_amount, memory_tracker_peak);
     }
