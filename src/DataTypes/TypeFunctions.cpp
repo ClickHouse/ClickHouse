@@ -238,6 +238,29 @@ public:
     std::string name() const override { return "scaleOf"; }
 };
 
+/// Extracts the explicit time zone name of a DateTime / DateTime64 argument, or the empty
+/// string when the argument carries no explicit time zone (Date, Date32, or a DateTime
+/// whose time zone was not specified). Mirrors `extractTimeZoneNameFromFunctionArguments`
+/// so that `(T : DateOrDateTime) -> DateTime(timezoneOf(T))` propagates the source time
+/// zone exactly as the legacy `getReturnTypeImpl` did.
+class TypeFunctionTimezoneOf : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function timezoneOf");
+        const DataTypePtr & type = args.front().type();
+        if (const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get()))
+            return Value(Field(dt->hasExplicitTimeZone() ? dt->getTimeZone().getTimeZone() : std::string()));
+        if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+            return Value(Field(dt64->hasExplicitTimeZone() ? dt64->getTimeZone().getTimeZone() : std::string()));
+        return Value(Field(std::string()));
+    }
+
+    std::string name() const override { return "timezoneOf"; }
+};
+
 /// max(a, b) over UInt64 constants.
 class TypeFunctionMax : public ITypeFunction
 {
@@ -1116,6 +1139,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionDateTime64>();
     factory.registerElement<TypeFunctionTime64>();
     factory.registerElement<TypeFunctionScaleOf>();
+    factory.registerElement<TypeFunctionTimezoneOf>();
     factory.registerElement<TypeFunctionMax>();
     factory.registerElement<TypeFunctionDifference>();
     factory.registerElement<TypeFunctionTypeFromString>();

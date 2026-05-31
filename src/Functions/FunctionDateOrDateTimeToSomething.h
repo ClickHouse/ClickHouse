@@ -21,9 +21,11 @@ public:
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
         {
-            /// Timezone is optional and, when present, attached to the return type.
-            return "(DateOrDateTime) -> DateTime"
-                   " OR (DateOrDateTime, const tz String) -> DateTime(tz)";
+            /// Timezone is optional. When the 2nd argument is present it is attached to the
+            /// return type; otherwise the source argument's own time zone is propagated
+            /// (e.g. `toStartOfHour(x::DateTime('UTC'))` stays `DateTime('UTC')`).
+            return "(T : DateOrDateTime) -> DateTime(timezoneOf(T))"
+                   " OR (T : DateOrDateTime, const tz String) -> DateTime(tz)";
         }
         else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
@@ -41,7 +43,7 @@ public:
                 ? "scaleOf(T)"
                 : "max(scaleOf(T), " + min_scale + ")";
 
-            return "(T : DateOrDateTime) -> DateTime64(" + scale_expr + ")"
+            return "(T : DateOrDateTime) -> DateTime64(" + scale_expr + ", timezoneOf(T))"
                    " OR (T : DateOrDateTime, const tz String) -> DateTime64(" + scale_expr + ", tz)";
         }
         else if constexpr (std::is_same_v<ToDataType, DataTypeTime64>)
