@@ -3613,6 +3613,19 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         ParserKeyword(Keyword::AT).ignore(at_local_pos, expected);
         if (ParserKeyword(Keyword::LOCAL).ignore(at_local_pos, expected))
         {
+            /// Fold pending operators with priority >= 10 (same as AT TIME ZONE) so that
+            /// e.g. 'ts + interval AT LOCAL' folds '+' first and gives toTimeZone(ts+interval, ...).
+            constexpr int at_local_priority = 10;
+            while (layers.back()->previousPriority() >= at_local_priority)
+            {
+                Operator prev_op;
+                layers.back()->popOperator(prev_op);
+                ASTPtr function = makeASTFunction(prev_op);
+                if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
+                    return Action::NONE;
+                layers.back()->pushOperand(std::move(function));
+            }
+
             ASTPtr operand;
             if (layers.back()->popOperand(operand))
             {
