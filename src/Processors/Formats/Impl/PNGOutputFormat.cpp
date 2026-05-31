@@ -79,6 +79,8 @@ void registerOutputFormatPNG(FormatFactory & factory)
         });
     factory.markOutputFormatNotTTYFriendly(FORMAT_NAME);
     factory.setContentType(FORMAT_NAME, "image/png");
+    /// Each output is a complete, self-contained PNG datastream, so appending another image to the same file is invalid.
+    factory.markFormatHasNoAppendSupport(FORMAT_NAME);
 }
 
 }
