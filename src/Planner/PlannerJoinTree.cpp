@@ -1668,9 +1668,6 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (query_context->canUseParallelReplicasOnInitiator())
-        return;
-
     /// In chooseJoinAlgorithm, direct has the highest priority (automatically used with dictionary or storage join).
     /// Use direct join with MergeTree only if 'direct' is explicitly specified as the single option.
     if (settings[Setting::join_algorithm].value != std::vector{JoinAlgorithm::DIRECT})
