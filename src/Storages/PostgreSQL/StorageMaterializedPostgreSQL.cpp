@@ -1,5 +1,6 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include <Core/UUID.h>
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
@@ -542,9 +543,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL needs order by key or primary key");
 
         if (args.storage_def->primary_key)
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
         else
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, {}, args.getContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(

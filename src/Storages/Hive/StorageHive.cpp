@@ -88,7 +88,7 @@ static std::string getBaseName(const String & path)
     return path.substr(basename_start + 1);
 }
 
-class StorageHiveSource : public ISource, WithContext
+class StorageHiveSource final : public ISource, WithContext
 {
 public:
     using FileFormat = StorageHive::FileFormat;
@@ -157,8 +157,8 @@ public:
         }
 
         /// Apply read buffer prefetch for HiveText format, because it is read sequentially
-        if (read_settings.remote_fs_prefetch)
-            read_settings.remote_fs_prefetch = format == "HiveText";
+        if (read_settings.remote_fs_settings.prefetch)
+            read_settings.remote_fs_settings.prefetch = format == "HiveText";
 
         /// Decide if we could generate blocks from partition values
         /// Only for ORC or Parquet format file, we could get number of rows from metadata without scanning the whole file
@@ -230,7 +230,7 @@ public:
                 {
                     auto get_raw_read_buf = [&]() -> std::unique_ptr<ReadBuffer>
                     {
-                        bool thread_pool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+                        bool thread_pool_read = read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool;
                         if (thread_pool_read)
                         {
                             auto buf = std::make_unique<ReadBufferFromHDFS>(
@@ -254,7 +254,7 @@ public:
                     };
 
                     raw_read_buf = get_raw_read_buf();
-                    if (read_settings.remote_fs_prefetch)
+                    if (read_settings.remote_fs_settings.prefetch)
                         raw_read_buf->prefetch(DEFAULT_PREFETCH_PRIORITY);
                 }
                 catch (const Exception & e)
@@ -429,7 +429,7 @@ StorageHive::StorageHive(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
-    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
+    storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, {}, getContext());
 
     VirtualColumnsDescription virtuals_desc;
     virtuals_desc.addEphemeral("_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);

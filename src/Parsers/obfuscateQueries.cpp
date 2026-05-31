@@ -12,7 +12,6 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
-#include <cassert>
 #include <iterator>
 
 #include <boost/algorithm/string.hpp>
@@ -758,10 +757,9 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
             result.write('_');
             ++word_begin;
         }
-        else if (word_has_alphanumerics && isUpperAlphaASCII(src_pos[0]))
+        else if (word_has_alphanumerics && src_pos > src.data() && isUpperAlphaASCII(src_pos[0]) && isLowerAlphaASCII(src_pos[-1])) /// xX
         {
-            if (src_pos > src.data() && isLowerAlphaASCII(src_pos[-1])) /// xX
-                append_word();
+            append_word();
         }
 
         ++src_pos;
@@ -1051,10 +1049,18 @@ void obfuscateLiteral(
                     /// Obfuscate number but keep it within same power of two range.
 
                     uint64_t obfuscated = hash_func_num.get64();
-                    uint64_t log2 = bitScanReverse(num);
 
-                    obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
-                    writeIntText(obfuscated, result);
+                    if (num == 0)
+                    {
+                        /// readIntText may overflow to zero for very large numbers.
+                        writeIntText(obfuscated, result);
+                    }
+                    else
+                    {
+                        uint64_t log2 = bitScanReverse(num);
+                        obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
+                        writeIntText(obfuscated, result);
+                    }
                 }
             }
         }
@@ -1249,14 +1255,14 @@ void obfuscateQueries(
             }
             else if (token.type == TokenType::StringLiteral)
             {
-                assert(token.size() >= 2);
+                chassert(token.size() >= 2);
                 result.write(*token.begin);
                 obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, always_false_func);
                 result.write(token.end[-1]);
             }
             else if (token.type == TokenType::QuotedIdentifier)
             {
-                assert(token.size() >= 2);
+                chassert(token.size() >= 2);
                 result.write(*token.begin);
                 if (token.size() > 32)
                     writeIntText(sipHash64(token.begin + 1, token.size() - 2), result);
@@ -1512,7 +1518,7 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::QuotedIdentifier)
         {
-            assert(token.size() >= 2);
+            chassert(token.size() >= 2);
 
             /// Write quotes and the obfuscated content inside.
             result.write(*token.begin);
@@ -1531,7 +1537,7 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::StringLiteral)
         {
-            assert(token.size() >= 2);
+            chassert(token.size() >= 2);
 
             /// Hex string literals like x'ABCD' or binary string literals like b'1010'.
             if (token.size() >= 3

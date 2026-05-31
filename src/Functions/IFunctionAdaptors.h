@@ -115,7 +115,7 @@ private:
 
 /// Following class implement IFunctionOverloadResolver via IFunction.
 
-class FunctionToOverloadResolverAdaptor : public IFunctionOverloadResolver
+class FunctionToOverloadResolverAdaptor final : public IFunctionOverloadResolver
 {
 public:
     explicit FunctionToOverloadResolverAdaptor(std::shared_ptr<IFunction> function_) : function(std::move(function_)) {}
@@ -130,6 +130,7 @@ public:
     bool isServerConstant() const override { return function->isServerConstant(); }
     bool isVolumeReducing() const override { return function->isVolumeReducing(); }
     bool isShortCircuit(IFunctionBase::ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
+    bool isHigherOrderFunction() const override { return function->isHigherOrderFunction(); }
     bool allowsOmittingParentheses() const override { return function->allowsOmittingParentheses(); }
 
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }

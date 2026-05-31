@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name, typename ResultType, bool is_suitable_for_short_circuit_arguments_execution = true>
-class FunctionStringOrArrayToT : public IFunction
+class FunctionStringOrArrayToT final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
