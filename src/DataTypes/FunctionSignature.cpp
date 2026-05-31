@@ -1,6 +1,7 @@
 #include <DataTypes/FunctionSignature.h>
 
 #include <map>
+#include <set>
 #include <cstring>
 
 #include <Common/FieldVisitorToString.h>
@@ -25,6 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_FUNCTION_SIGNATURE;
     extern const int SYNTAX_ERROR;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace FunctionSignatures
@@ -130,6 +132,12 @@ struct Variables
     using Container = std::map<Key, Value>;
     Container container;
 
+    /// Keys of `const`-named arguments whose value could not be captured because the
+    /// caller provided no column (the types-only `getReturnTypeImpl(DataTypes)` path).
+    /// If the result type later needs one of these values we cannot compute it, and we
+    /// must surface a clean user-facing error rather than an internal `BAD_FUNCTION_SIGNATURE`.
+    std::set<Key> const_value_unavailable;
+
     bool has(const Key & key) const
     {
         return container.contains(key);
@@ -183,13 +191,22 @@ struct Variables
     {
         if (auto it = container.find(key); it != container.end())
             return it->second;
-        else
-            throw Exception(ErrorCodes::BAD_FUNCTION_SIGNATURE, "Variable {} was not captured", key.toString());
+
+        /// The result type depends on a `const`-named argument whose value was not
+        /// available (types-only path). This is a user-facing condition — the function
+        /// needs a constant argument to determine its result type — not a signature bug.
+        if (const_value_unavailable.contains(key))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Argument {} must be a constant expression: its value is required to determine the result type",
+                key.toString());
+
+        throw Exception(ErrorCodes::BAD_FUNCTION_SIGNATURE, "Variable {} was not captured", key.toString());
     }
 
     void reset()
     {
         container.clear();
+        const_value_unavailable.clear();
     }
 
     std::string toString() const
@@ -341,6 +358,12 @@ struct ArgumentDescription
             {
                 return false;
             }
+
+            /// On the types-only path we have no column, so the const value cannot be
+            /// captured. Remember this: if the result type turns out to depend on it,
+            /// `Variables::get` will raise a clean `ILLEGAL_COLUMN` instead of an internal error.
+            if (is_const && !column)
+                vars.const_value_unavailable.insert(key);
         }
 
         if (!type_matcher->match(type, vars, iteration, arg_num, out_reason))
