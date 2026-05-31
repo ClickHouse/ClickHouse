@@ -348,13 +348,13 @@ TEST(ByteStreamSplitTest, TranscodeRawInput)
 }
 
 
-// ─── Malformed-input rejection ────────────────────────────────────────────────
+// ─── Known-vector encoding ────────────────────────────────────────────────────
 //
-// ByteStreamSplit is a pure byte permutation, so a valid encoded block always
-// has codec-body size == HEADER_SIZE + uncompressed_size. doDecompressData
-// must reject any source size that violates this invariant, otherwise extra
-// trailing bytes are silently discarded and a truncated source produces
-// out-of-bounds behaviour or partial output.
+// Round-trip tests only check decode(encode(x)) == x, so a coordinated bug in
+// the encoder and decoder (e.g. a swapped band order) would still pass while
+// silently violating the documented ByteStreamSplit layout and ruining the
+// compression downstream. These tests pin the byte-exact output for a few
+// chosen widths.
 
 namespace
 {
@@ -366,9 +366,86 @@ namespace
 //   [9..]  codec body
 constexpr UInt32 kBlockHeaderSize = 9;
 
+// Layout written by CompressionCodecByteStreamSplit::doCompressData inside the
+// codec body:
+//   [0..3] element width                 (LE Int32)
+//   [4]    bytes_to_skip                 (UInt8)
+//   [5..]  transposed bytes
+constexpr UInt32 kCodecHeaderSize = 5;
+
 void overwriteLE(char * p, UInt32 v) { memcpy(p, &v, sizeof(v)); }
 
+// Pattern that gives every (k, b) pair a distinct byte value mod 256, so a
+// misplaced byte shows up as a mismatch regardless of where it lands.
+uint8_t patternByte(UInt32 k, UInt32 b, UInt32 W) { return static_cast<uint8_t>((k * W + b) & 0xFFu); }
+
+void verifyKnownEncoding(const ICompressionCodec & codec, UInt32 W, UInt32 N, const char * label)
+{
+    const UInt32 src_size = W * N;
+    std::vector<char> src(src_size);
+    for (UInt32 k = 0; k < N; ++k)
+        for (UInt32 b = 0; b < W; ++b)
+            src[k * W + b] = static_cast<char>(patternByte(k, b, W));
+
+    PODArray<char> compressed(codec.getCompressedReserveSize(src_size));
+    const UInt32 comp_sz = codec.compress(src.data(), src_size, compressed.data());
+
+    // Aligned input (src_size % W == 0) → no tail, total = headers + body.
+    ASSERT_EQ(src_size % W, 0u) << label;
+    ASSERT_EQ(comp_sz, kBlockHeaderSize + kCodecHeaderSize + src_size) << label;
+
+    const char * codec_body = compressed.data() + kBlockHeaderSize;
+
+    Int32 saved_W = 0;
+    memcpy(&saved_W, codec_body, sizeof(Int32));
+    EXPECT_EQ(saved_W, static_cast<Int32>(W)) << label;
+    EXPECT_EQ(static_cast<uint8_t>(codec_body[4]), 0u) << label;
+
+    const auto * bands = reinterpret_cast<const uint8_t *>(codec_body + kCodecHeaderSize);
+    for (UInt32 b = 0; b < W; ++b)
+    {
+        for (UInt32 k = 0; k < N; ++k)
+        {
+            const uint8_t expected = patternByte(k, b, W);
+            const uint8_t actual = bands[b * N + k];
+            EXPECT_EQ(actual, expected) << label << " band=" << b << " element=" << k;
+        }
+    }
+}
+
 } // namespace
+
+// W=4 is a compile-time-templated path (encodeW<4>). For three elements
+// [A0 A1 A2 A3] [B0 B1 B2 B3] [C0 C1 C2 C3], the body must be
+// [A0 B0 C0] [A1 B1 C1] [A2 B2 C2] [A3 B3 C3].
+TEST(ByteStreamSplitTest, KnownEncoding_W4_N3)
+{
+    auto codec = makeCodec("ByteStreamSplit(4)", std::make_shared<DataTypeFloat32>());
+    verifyKnownEncoding(*codec, /*W=*/4, /*N=*/3, "W=4 N=3 (templated path)");
+}
+
+// W=3 hits the runtime-W fallback (encodeRuntime), which uses a different
+// implementation than the compile-time-templated widths.
+TEST(ByteStreamSplitTest, KnownEncoding_W3_N4_runtime)
+{
+    auto codec = makeCodec("ByteStreamSplit(3)");
+    verifyKnownEncoding(*codec, /*W=*/3, /*N=*/4, "W=3 N=4 (runtime path)");
+}
+
+// W=16 dispatches to AVX2/SSE2 SIMD specializations (with a tiled scalar
+// fallback). N=32 is enough to enter the AVX2 main loop where available.
+TEST(ByteStreamSplitTest, KnownEncoding_W16_N32_simd)
+{
+    auto codec = makeCodec("ByteStreamSplit(16)");
+    verifyKnownEncoding(*codec, /*W=*/16, /*N=*/32, "W=16 N=32 (SIMD path)");
+}
+
+
+// ─── Malformed-input rejection ────────────────────────────────────────────────
+//
+// ByteStreamSplit is a pure byte permutation, so a valid encoded block always
+// has codec-body size == HEADER_SIZE + uncompressed_size. doDecompressData
+// must reject any source size that violates this invariant.
 
 TEST(ByteStreamSplitTest, MalformedExtraTrailingBody)
 {
@@ -421,8 +498,6 @@ TEST(ByteStreamSplitTest, MalformedUncompressedSizeOverflow)
 {
     auto codec = makeCodec("ByteStreamSplit(4)", std::make_shared<DataTypeFloat32>());
 
-    // codec body of 4 bytes: HEADER_SIZE(5) + UINT32_MAX wraps to 4 in UInt32,
-    // matching the codec-body slice size and faking a valid block.
     constexpr UInt32 kBody = 4;
     PODArray<char> tampered(kBlockHeaderSize + kBody);
     tampered.data()[0] = static_cast<char>(codec->getMethodByte());

@@ -775,7 +775,11 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
 {
     /// ByteStreamSplit is a pure byte permutation, so the encoded payload is
     /// always exactly HEADER_SIZE + uncompressed_size bytes. Reject anything
-    /// else up front
+    /// else up front. The expected size is computed in UInt64 because both
+    /// inputs are UInt32 and a malicious uncompressed_size near UINT32_MAX
+    /// would otherwise wrap and match a tiny source_size, bypassing the check
+    /// and letting the subsequent header read run past the source buffer.
+    const UInt64 expected_size = static_cast<UInt64>(HEADER_SIZE) + uncompressed_size;
     if (static_cast<UInt64>(source_size) != expected_size)
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS,
