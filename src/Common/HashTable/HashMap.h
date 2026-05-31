@@ -162,13 +162,13 @@ namespace std
 }
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
-struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
+struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot aggregation/join path we must avoid the redundant store
 {
     using Base = HashMapCell<Key, TMapped, Hash, TState>;
 
-    size_t saved_hash{};
+    size_t saved_hash;
 
-    using Base::Base;
+    using Base::Base; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the cell type above
 
     bool keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
     bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
