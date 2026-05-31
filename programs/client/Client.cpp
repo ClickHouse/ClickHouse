@@ -1067,13 +1067,14 @@ void Client::processConfig()
     }
     else
     {
-        echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    setupEchoAndHighlightSettings();
 
     if (is_interactive || delayed_interactive)
     {

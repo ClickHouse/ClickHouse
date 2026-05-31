@@ -1,0 +1,17 @@
+--- default ---
+2
+--- echo ---
+select 1+1
+2
+--- echo=false ---
+2
+--- echo-formatted ---
+
+SELECT 1 + 1
+
+2
+--- echo --echo-formatted=false ---
+select 1+1
+2
+--- echo-query-id (count) ---
+1
