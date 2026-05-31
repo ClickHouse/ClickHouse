@@ -1,5 +1,4 @@
 #include <optional>
-#include <unordered_set>
 #include "config.h"
 
 #if USE_AVRO
@@ -12,11 +11,8 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/GeoBbox.h>
-#include <Common/WKB.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/logger_useful.h>
-#include <Functions/IFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -33,66 +29,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 using namespace DB;
-
-namespace
-{
-
-/// Extractor callback for the shared conjunctive collection template.
-/// Returns an optional (column_name, bbox) pair when the node is a spatial
-/// predicate with at least one constant geometry argument.
-std::optional<std::pair<String, std::array<double, 4>>>
-tryExtractSpatialPredicateFromNode(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
-        return std::nullopt;
-    if (!node.function_base->isSpatialPredicate() || node.children.size() < 2)
-        return std::nullopt;
-
-    const ActionsDAG::Node * col_node = nullptr;
-    for (const auto * child : node.children)
-        if (child->type == ActionsDAG::ActionType::INPUT && !col_node)
-            col_node = child;
-    if (!col_node)
-        return std::nullopt;
-
-    double xmin = std::numeric_limits<double>::infinity();
-    double ymin = std::numeric_limits<double>::infinity();
-    double xmax = -std::numeric_limits<double>::infinity();
-    double ymax = -std::numeric_limits<double>::infinity();
-    bool found_const = false;
-    bool any_extraction_failed = false;
-
-    for (const auto * child : node.children)
-    {
-        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column
-            || !child->is_deterministic_constant)
-            continue;
-        double cxmin = 0;
-        double cymin = 0;
-        double cxmax = 0;
-        double cymax = 0;
-        if (!tryExtractBboxFromColumn(*child->column, cxmin, cymin, cxmax, cymax))
-        {
-            any_extraction_failed = true;
-            continue;
-        }
-        xmin = std::min(xmin, cxmin);
-        ymin = std::min(ymin, cymin);
-        xmax = std::max(xmax, cxmax);
-        ymax = std::max(ymax, cymax);
-        found_const = true;
-    }
-    /// Fail-closed: if any constant arg could not be converted to a bbox, the union
-    /// bbox is incomplete. Pruning on the partial bbox would incorrectly exclude files
-    /// that match only the geometry that was skipped (unsafe for variadic predicates
-    /// like `pointInPolygon` where polygon args are OR-ed).
-    if (!found_const || any_extraction_failed)
-        return std::nullopt;
-
-    return std::make_pair(col_node->result_name, std::array<double, 4>{xmin, ymin, xmax, ymax});
-}
-
-} // anonymous namespace
 
 namespace DB::Iceberg
 {
@@ -206,56 +142,6 @@ ManifestFilesPruner::ManifestFilesPruner(
         min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
 
-    /// Spatial bbox pruning: for each spatial predicate in the filter DAG, try to find
-    /// covering.bbox columns in the Iceberg schema using the naming convention
-    /// {geo_col}_bbox.{xmin,ymin,xmax,ymax}. If found, register a SpatialBboxPruneInfo
-    /// that can cheaply prune files whose bbox is disjoint from the query bbox.
-    std::vector<std::pair<String, std::array<double, 4>>> spatial_predicates;
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    for (const auto * output : filter_dag->getOutputs())
-        collectSpatialFiltersConjunctive(
-            *output, visited,
-            [](const ActionsDAG::Node & n) { return tryExtractSpatialPredicateFromNode(n); },
-            spatial_predicates);
-
-    for (const auto & [geo_col_name, bbox] : spatial_predicates)
-    {
-        /// Try struct sub-field convention first: {geo_col}_bbox.{xmin,ymin,xmax,ymax}
-        /// (used by GeoParquet writers that store bbox as a Struct column).
-        auto xmin_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox.xmin");
-        auto ymin_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox.ymin");
-        auto xmax_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox.xmax");
-        auto ymax_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox.ymax");
-
-        /// Fall back to flat column convention: {geo_col}_bbox_{xmin,ymin,xmax,ymax}
-        /// (used when bbox columns are written as separate top-level Float64 columns).
-        if (!xmin_id)
-            xmin_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox_xmin");
-        if (!ymin_id)
-            ymin_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox_ymin");
-        if (!xmax_id)
-            xmax_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox_xmax");
-        if (!ymax_id)
-            ymax_id = schema_processor.tryGetColumnIDByName(current_schema_id, geo_col_name + "_bbox_ymax");
-        if (!xmin_id || !ymin_id || !xmax_id || !ymax_id)
-            continue;
-        SpatialBboxPruneInfo pruner;
-        pruner.xmin_col_id = *xmin_id;
-        pruner.ymin_col_id = *ymin_id;
-        pruner.xmax_col_id = *xmax_id;
-        pruner.ymax_col_id = *ymax_id;
-        pruner.query_xmin = bbox[0];
-        pruner.query_ymin = bbox[1];
-        pruner.query_xmax = bbox[2];
-        pruner.query_ymax = bbox[3];
-        spatial_bbox_pruners.push_back(std::move(pruner));
-        LOG_DEBUG(
-            getLogger("ManifestFilesPruner"),
-            "Registered spatial bbox pruner for geometry column '{}': bbox=[{},{},{},{}], "
-            "Iceberg column IDs xmin={} ymin={} xmax={} ymax={}",
-            geo_col_name, bbox[0], bbox[1], bbox[2], bbox[3],
-            *xmin_id, *ymin_id, *xmax_id, *ymax_id);
-    }
 }
 
 PruningReturnStatus ManifestFilesPruner::canBePruned(
@@ -303,69 +189,6 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }
-    }
-
-    /// Spatial bbox pruning via covering.bbox column bounds.
-    /// All spatial bbox pruners here come from conjunctive-only extraction (AND branches only),
-    /// so if ANY single pruner finds the file bbox disjoint from the query bbox, the full
-    /// conjunction cannot be satisfied — the file can be safely pruned.
-    for (const auto & sp : spatial_bbox_pruners)
-    {
-        auto xmin_it = entry_hyperrectangles.find(sp.xmin_col_id);
-        auto ymin_it = entry_hyperrectangles.find(sp.ymin_col_id);
-        auto xmax_it = entry_hyperrectangles.find(sp.xmax_col_id);
-        auto ymax_it = entry_hyperrectangles.find(sp.ymax_col_id);
-        if (xmin_it == entry_hyperrectangles.end() || ymin_it == entry_hyperrectangles.end()
-            || xmax_it == entry_hyperrectangles.end() || ymax_it == entry_hyperrectangles.end())
-            continue;
-
-        /// Gate on zero nulls for all four bbox columns, matching the min/max path above.
-        /// With nullable bbox columns, partial NULL stats can make bounds disjoint from
-        /// the query while matching rows still exist.
-        auto info_it = entry->parsed_entry->columns_infos.find(sp.xmin_col_id);
-        bool xmin_ok = info_it != entry->parsed_entry->columns_infos.end()
-            && info_it->second.nulls_count.has_value()
-            && *info_it->second.nulls_count == 0;
-        info_it = entry->parsed_entry->columns_infos.find(sp.ymin_col_id);
-        bool ymin_ok = info_it != entry->parsed_entry->columns_infos.end()
-            && info_it->second.nulls_count.has_value()
-            && *info_it->second.nulls_count == 0;
-        info_it = entry->parsed_entry->columns_infos.find(sp.xmax_col_id);
-        bool xmax_ok = info_it != entry->parsed_entry->columns_infos.end()
-            && info_it->second.nulls_count.has_value()
-            && *info_it->second.nulls_count == 0;
-        info_it = entry->parsed_entry->columns_infos.find(sp.ymax_col_id);
-        bool ymax_ok = info_it != entry->parsed_entry->columns_infos.end()
-            && info_it->second.nulls_count.has_value()
-            && *info_it->second.nulls_count == 0;
-        if (!xmin_ok || !ymin_ok || !xmax_ok || !ymax_ok)
-            continue;
-
-        const auto & xmin_range = xmin_it->second;
-        const auto & xmax_range = xmax_it->second;
-        const auto & ymin_range = ymin_it->second;
-        const auto & ymax_range = ymax_it->second;
-
-        if (xmin_range.left.getType() != Field::Types::Float64
-            || xmax_range.right.getType() != Field::Types::Float64
-            || ymin_range.left.getType() != Field::Types::Float64
-            || ymax_range.right.getType() != Field::Types::Float64)
-            continue;
-
-        /// Global file bbox:
-        ///   file_xmin = min(xmin_col) = xmin_range.left
-        ///   file_xmax = max(xmax_col) = xmax_range.right
-        ///   file_ymin = min(ymin_col) = ymin_range.left
-        ///   file_ymax = max(ymax_col) = ymax_range.right
-        double file_xmin = xmin_range.left.safeGet<double>();
-        double file_xmax = xmax_range.right.safeGet<double>();
-        double file_ymin = ymin_range.left.safeGet<double>();
-        double file_ymax = ymax_range.right.safeGet<double>();
-
-        bool disjoint = sp.query_xmax < file_xmin || sp.query_xmin > file_xmax
-            || sp.query_ymax < file_ymin || sp.query_ymin > file_ymax;
-        if (disjoint)
-            return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
     }
 
     return PruningReturnStatus::NOT_PRUNED;

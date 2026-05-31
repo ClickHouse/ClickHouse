@@ -30,18 +30,6 @@ namespace DB::Iceberg
 struct ProcessedManifestFileEntry;
 class ManifestFileIterator;
 
-struct SpatialBboxPruneInfo
-{
-    Int32 xmin_col_id = -1;
-    Int32 ymin_col_id = -1;
-    Int32 xmax_col_id = -1;
-    Int32 ymax_col_id = -1;
-    double query_xmin = 0;
-    double query_ymin = 0;
-    double query_xmax = 0;
-    double query_ymax = 0;
-};
-
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
 
 /// Prune specific data files based on manifest content
@@ -55,7 +43,6 @@ private:
     std::optional<DB::KeyCondition> partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
-    std::vector<SpatialBboxPruneInfo> spatial_bbox_pruners;
     /// NOTE: tricky part to support RENAME column.
     /// Takes ActionDAG representation of user's WHERE expression and
     /// rename columns to their original numeric IDs in Iceberg
