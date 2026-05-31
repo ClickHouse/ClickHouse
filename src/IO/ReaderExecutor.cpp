@@ -983,20 +983,17 @@ Rope ReaderExecutor::readFromSource(
         inflight_segment_pin.reset();
     }
 
-    /// `pre_acquired_slot` keyed to a different object: drop it now, otherwise
-    /// the `buffer_limit` fallback below would acquire a SECOND slot and the
-    /// stale one would stay held until executor destruction.
-    releaseStalePreAcquiredSlot(object.remote_path);
+    /// The slot is decided by the caller (ensurePreAcquiredSlot): a held slot
+    /// means an open-ended live buffer continued across windows; no slot means a
+    /// bounded one-shot range read below. readFromSource never acquires one
+    /// itself, so the window size (effectiveWindowSize) and the read shape agree.
+    releaseStalePreAcquiredSlot(object.remote_path); // drop a slot pre-acquired for another object
 
     std::optional<SourceBufferSlot> slot;
     if (pre_acquired_slot && pre_acquired_slot->objectPath() == object.remote_path)
     {
         slot.emplace(std::move(*pre_acquired_slot));
         pre_acquired_slot.reset();
-    }
-    else if (buffer_limit)
-    {
-        slot = acquireSlotCounted(object);
     }
 
     if (slot)
