@@ -6,5 +6,9 @@ exceeded
 1
 --- Test the masked quota key for forwarded IP ---
 1.2.0.0
+--- Test the masked quota key for forwarded IPv6 ---
+2001:db8::
+--- Test /0 prefix masks every forwarded IPv6 to :: ---
+1	::
 --- Test /0 prefix masks every forwarded IP to 0.0.0.0 ---
 1	0.0.0.0

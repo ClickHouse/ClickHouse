@@ -274,6 +274,16 @@ SHOW CREATE QUOTA q1_01297;
 ALTER QUOTA q1_01297 ipv4_prefix_bits 20 ipv6_prefix_bits 80;
 SHOW CREATE QUOTA q1_01297;
 
+SELECT '-- alter prefix bits ON CLUSTER without KEYED BY (round-trips through formatImpl)';
+-- `ON CLUSTER` serializes the query AST via `formatImpl` and re-parses it on each
+-- replica. For `ALTER QUOTA q IPV4_PREFIX_BITS 16` (no `KEYED BY`) the AST has no
+-- `key_type`, so this exercises the `key_type == std::nullopt` formatter branch:
+-- a regression there would silently drop the prefix bits during distribution.
+SET distributed_ddl_output_mode = 'none';
+ALTER QUOTA q1_01297 ON CLUSTER test_shard_localhost ipv4_prefix_bits 16 ipv6_prefix_bits 80;
+SET distributed_ddl_output_mode = 'throw';
+SHOW CREATE QUOTA q1_01297;
+
 SELECT '-- system.quotas prefix bits';
 SELECT name, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name LIKE 'q%\_01297' ORDER BY name;
 

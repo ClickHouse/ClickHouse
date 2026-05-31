@@ -78,6 +78,48 @@ WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
 FORMAT TSV;
 " | grep -o "1.2.0.0"
 
+echo '--- Test the masked quota key for forwarded IPv6 ---'
+
+${CLICKHOUSE_CLIENT} --query "
+DROP QUOTA IF EXISTS quota_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+CREATE QUOTA quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}
+    KEYED BY forwarded_ip_address
+    IPV6_PREFIX_BITS 64
+    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 2
+    TO quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+"
+
+# Executing a query to create the quota key
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 2001:db8::1' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
+
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 2001:db8::1' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "
+SELECT quota_key
+FROM system.quota_usage
+WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
+FORMAT TSV;
+" | grep -o "2001:db8::"
+
+echo '--- Test /0 prefix masks every forwarded IPv6 to :: ---'
+
+${CLICKHOUSE_CLIENT} --query "
+DROP QUOTA IF EXISTS quota_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+CREATE QUOTA quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}
+    KEYED BY forwarded_ip_address
+    IPV6_PREFIX_BITS 0
+    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 100
+    TO quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+"
+
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 2001:db8::1' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: fe80::abcd' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
+
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 2001:db8::1' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "
+SELECT count(DISTINCT quota_key), any(quota_key)
+FROM system.quota_usage
+WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
+FORMAT TSV;
+"
+
 echo '--- Test /0 prefix masks every forwarded IP to 0.0.0.0 ---'
 
 ${CLICKHOUSE_CLIENT} --query "
