@@ -832,13 +832,13 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
-Excessive digits in a fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
 :::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal64(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+When working with Float32/Float64 inputs the value is scaled and rounded to the nearest value using floating point instructions, so the result can still differ from exact decimal rounding because the input float may not exactly represent the decimal literal you wrote.
+For example: `toDecimal64(1.005, 2)` is equal to `1.00` (not `1.01`), because the closest `Float64` to `1.005` is `1.0049999999999999`, so `1.005 * 100` is `100.49999999999999` and rounds down to `100`.
 You can use a String input so the operations use the underlying integer type: `toDecimal64('1.15', 2) = 1.15`
 :::
     )";
@@ -888,13 +888,13 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
-Excessive digits in a fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
 :::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal32(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+When working with Float32/Float64 inputs the value is scaled and rounded to the nearest value using floating point instructions, so the result can still differ from exact decimal rounding because the input float may not exactly represent the decimal literal you wrote.
+For example: `toDecimal32(1.005, 2)` is equal to `1.00` (not `1.01`), because the closest `Float64` to `1.005` is `1.0049999999999999`, so `1.005 * 100` is `100.49999999999999` and rounds down to `100`.
 You can use a String input so the operations use the underlying integer type: `toDecimal32('1.15', 2) = 1.15`
 :::
     )";
@@ -945,13 +945,13 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`.
-Excessive digits in a fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
 :::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal128(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+When working with Float32/Float64 inputs the value is scaled and rounded to the nearest value using floating point instructions, so the result can still differ from exact decimal rounding because the input float may not exactly represent the decimal literal you wrote.
+For example: `toDecimal128(1.005, 2)` is equal to `1.00` (not `1.01`), because the closest `Float64` to `1.005` is `1.0049999999999999`, so `1.005 * 100` is `100.49999999999999` and rounds down to `100`.
 You can use a String input so the operations use the underlying integer type: `toDecimal128('1.15', 2) = 1.15`
 :::
     )";
@@ -1001,13 +1001,13 @@ Unsupported arguments:
 
 :::note
 An overflow can occur if the value of `expr` exceeds the bounds of `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
-Excessive digits in a fraction are discarded (not rounded).
+For `Float32`/`Float64` inputs, the fractional part is rounded to the nearest value (ties are rounded half away from zero); for string inputs, excessive digits in the fraction are discarded (not rounded).
 Excessive digits in the integer part will lead to an exception.
 :::
 
 :::warning
-Conversions drop extra digits and could operate in an unexpected way when working with Float32/Float64 inputs as the operations are performed using floating point instructions.
-For example: `toDecimal256(1.15, 2)` is equal to `1.14` because 1.15 * 100 in floating point is 114.99.
+When working with Float32/Float64 inputs the value is scaled and rounded to the nearest value using floating point instructions, so the result can still differ from exact decimal rounding because the input float may not exactly represent the decimal literal you wrote.
+For example: `toDecimal256(1.005, 2)` is equal to `1.00` (not `1.01`), because the closest `Float64` to `1.005` is `1.0049999999999999`, so `1.005 * 100` is `100.49999999999999` and rounds down to `100`.
 You can use a String input so the operations use the underlying integer type: `toDecimal256('1.15', 2) = 1.15`
 :::
     )";
