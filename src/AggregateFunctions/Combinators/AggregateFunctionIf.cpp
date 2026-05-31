@@ -512,7 +512,10 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumIf`), it adds an extra `UInt8` condition argument; only rows for which the condition is non-zero are aggregated.",
+        .syntax = "<aggregate_function>If",
+        .related = {"Array", "Map"}});
 }
 
 }

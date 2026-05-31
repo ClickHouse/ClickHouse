@@ -175,8 +175,10 @@ void fillDataWithAggregateFunctionCombinatorPair(MutableColumns & res_columns)
     const auto & aggregate_function_combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
     for (const auto & function_name : aggregate_functions)
     {
-        for (const auto & [combinator_name, combinator] : aggregate_function_combinators)
+        for (const auto & combinator_pair : aggregate_function_combinators)
         {
+            const auto & combinator_name = combinator_pair.name;
+            const auto & combinator = combinator_pair.combinator_ptr;
             if (combinator->isForInternalUsageOnly())
                 continue;
             res_columns[0]->insert(function_name + combinator_name);

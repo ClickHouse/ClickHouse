@@ -164,7 +164,10 @@ public:
 
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>(), Documentation{
+        .description = "An internal combinator that adapts an aggregate function to handle `Nullable` arguments and results.",
+        .syntax = "<aggregate_function>",
+        .related = {"OrNull", "OrDefault"}});
 }
 
 }

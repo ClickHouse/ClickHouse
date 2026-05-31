@@ -463,7 +463,10 @@ public:
 
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumMap`), it aggregates `Map` values key-wise.",
+        .syntax = "<aggregate_function>Map",
+        .related = {"Array"}});
 }
 
 }

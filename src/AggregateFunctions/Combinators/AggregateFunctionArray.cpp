@@ -57,7 +57,10 @@ public:
 
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorArray>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorArray>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArray`), it makes the function take array arguments and aggregate over all of their elements.",
+        .syntax = "<aggregate_function>Array",
+        .related = {"ForEach", "Map"}});
 }
 
 }

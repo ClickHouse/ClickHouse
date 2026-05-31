@@ -1,7 +1,12 @@
 CREATE TABLE system.aggregate_function_combinators
 (
     `name` String,
-    `is_internal` UInt8
+    `is_internal` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemAggregateFunctionCombinators
 COMMENT 'Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.'

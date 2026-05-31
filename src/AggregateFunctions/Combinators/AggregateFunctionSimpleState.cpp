@@ -27,7 +27,10 @@ namespace
 
 void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>(), Documentation{
+        .description = "Like the `State` combinator, but returns the state as a `SimpleAggregateFunction` value where possible.",
+        .syntax = "<aggregate_function>SimpleState",
+        .related = {"State"}});
 }
 
 }

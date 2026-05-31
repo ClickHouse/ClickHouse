@@ -131,7 +131,10 @@ public:
 
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMerge>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMerge>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `uniqMerge`), it merges intermediate aggregation states produced by the `State` combinator and returns the final result.",
+        .syntax = "<aggregate_function>Merge",
+        .related = {"State"}});
 }
 
 }

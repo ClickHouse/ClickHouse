@@ -35,7 +35,10 @@ public:
 
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorState>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorState>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `uniqState`), it returns the intermediate aggregation state (an `AggregateFunction` value) instead of the final result, for use with materialized views and `AggregatingMergeTree`.",
+        .syntax = "<aggregate_function>State",
+        .related = {"Merge", "SimpleState"}});
 }
 
 }

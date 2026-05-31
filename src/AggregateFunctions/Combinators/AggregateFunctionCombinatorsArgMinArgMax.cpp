@@ -249,8 +249,14 @@ public:
 
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>());
-    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<false>>());
+    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMin`), it aggregates the first argument's values that correspond to the minimum of the second argument.",
+        .syntax = "<aggregate_function>ArgMin(arg, val)",
+        .related = {"ArgMax"}});
+    factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<false>>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMax`), it aggregates the first argument's values that correspond to the maximum of the second argument.",
+        .syntax = "<aggregate_function>ArgMax(arg, val)",
+        .related = {"ArgMin"}});
 }
 
 }

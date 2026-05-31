@@ -51,7 +51,10 @@ public:
 
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorForEach>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorForEach>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumForEach`), it aggregates arrays element-wise, producing an array of per-position results.",
+        .syntax = "<aggregate_function>ForEach",
+        .related = {"Array"}});
 }
 
 }

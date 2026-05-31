@@ -61,7 +61,10 @@ public:
 
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorDistinct>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorDistinct>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumDistinct`), it aggregates only distinct argument values.",
+        .syntax = "<aggregate_function>Distinct",
+        .related = {}});
 }
 
 }

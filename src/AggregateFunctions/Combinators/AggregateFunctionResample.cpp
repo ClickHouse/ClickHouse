@@ -99,7 +99,10 @@ public:
 
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorResample>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumResample`), it partitions the data into intervals of a key column and aggregates each interval separately, returning an array of results.",
+        .syntax = "<aggregate_function>Resample(start, end, step)",
+        .related = {}});
 }
 
 }
