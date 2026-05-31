@@ -73,13 +73,20 @@ def test_partition_pruning_with_scalar_subquery(started_cluster_iceberg_with_spa
             instance, TABLE_NAME, settings1, settings2, 'IcebergPartitionPrunedFiles', select_expression
         )
 
+    select_query = (
+        f"SELECT * FROM {creation_expression} "
+        f"WHERE id = (SELECT max(id) FROM {creation_expression}) ORDER BY ALL"
+    )
+
+    # Guard against analyzer regressions: the scalar-subquery RHS must still be
+    # wrapped in `_CAST` in the planner-stage DAG, otherwise the pruning assertion
+    # below would silently pass without exercising the fix path.
+    explain = instance.query(
+        f"EXPLAIN actions = 1 {select_query.replace(' ORDER BY ALL', '')}"
+    )
+    assert "_CAST" in explain, "Expected `_CAST` in EXPLAIN actions\n" + explain
+
     # Scalar subquery on the RHS: the analyzer resolves it to a constant wrapped
     # in `_CAST(Const, 'Nullable(Int32)')`. With the fix in place 4 partitions
     # (1, 2, 3, 4) are pruned and only the partition for id = 5 remains.
-    assert (
-        check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} "
-            f"WHERE id = (SELECT max(id) FROM {creation_expression}) ORDER BY ALL"
-        )
-        == 4
-    )
+    assert check_validity_and_get_prunned_files(select_query) == 4
