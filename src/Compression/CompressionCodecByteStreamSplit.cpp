@@ -54,7 +54,7 @@
 //   2   encodeW/decodeW         10.2   10.6      10.5   10.8
 //   4   encodeW/decodeW         10.1   10.2      10.4   10.8
 //   8   encodeW/decodeW          9.8   10.2       9.1   10.3
-//  16   encodeW<16>/SIMD         6.9    7.1       7.4    9.0
+//  16   encodeW<16>/SIMD         6.9    7.1      10.2   10.4
 //  20   runtime                  4.8    5.0       5.1    5.5
 //  32   runtime                  4.4    4.8       4.9    5.4
 //  64   runtime                  4.5    4.7       4.5    5.2
@@ -321,8 +321,44 @@ static void encode16_SSE2(
 }
 
 // =============================================================================
-//  AVX2 decode for W=16: load 256-bit bands, split to 2×butterfly16
+//  AVX2 decode for W=16: fully native 256-bit inverse of encode16_AVX2
+//
+//  encode16_AVX2 applies 4 stages of splitEvenOddBytes (deinterleave even/odd
+//  bytes at increasing strides), then scatters the 16 output YMM registers to
+//  streams via band_of[].  This function inverts every step:
+//
+//    1. Gather the 16 streams in band_of_inv[] order so that in[k] corresponds
+//       exactly to encode's out[k] before the scatter.
+//    2–5. Four inverse stages of mergeEvenOddBytes (re-interleave pairs),
+//       applied in reverse stage order (4→3→2→1).
+//    6. Store the 16 recovered YMM registers directly as 32 consecutive
+//       16-byte elements — no 128-bit extraction needed.
+//
+//  mergeEvenOddBytes(even, odd) → (lo, hi)  is the inverse of splitEvenOddBytes:
+//    split: packus+permute4x64(0xD8) deinterleaves bytes into separate even/odd regs
+//    merge: permute4x64(0xD8) again (self-inverse) undoes the lane reorder,
+//           then unpacklo/hi_epi8 re-interleaves the bytes back.
+//
+//  Processes 32 elements × 16 bytes = 512 bytes per loop iteration,
+//  all arithmetic staying in 256-bit YMM registers throughout.
 // =============================================================================
+
+__attribute__((target("avx2")))
+static inline void mergeEvenOddBytes(
+    __m256i even, __m256i odd,
+    __m256i & lo_out, __m256i & hi_out)
+{
+    // permute4x64(x, 0xD8) maps lanes [0,1,2,3] → [0,2,1,3].
+    // Applied twice it is the identity, so this undoes the permutation
+    // that splitEvenOddBytes applied after packus.
+    even = _mm256_permute4x64_epi64(even, 0xD8);
+    odd  = _mm256_permute4x64_epi64(odd,  0xD8);
+
+    // Re-interleave: lo gets the lower half of each 32-byte lane pair,
+    // hi gets the upper half.
+    lo_out = _mm256_unpacklo_epi8(even, odd);
+    hi_out = _mm256_unpackhi_epi8(even, odd);
+}
 
 __attribute__((target("avx2")))
 static void decode16_AVX2(
@@ -330,6 +366,11 @@ static void decode16_AVX2(
     uint8_t       * __restrict__ dst,
     int64_t N)
 {
+    // band_of[] = {0,4,2,6,1,5,3,7,8,12,10,14,9,13,11,15} is self-inverse:
+    // band_of_inv[p] = k where band_of[k]==p, which yields the same sequence.
+    // Loading stream band_of_inv[k] as in[k] means in[k] == encode's out[k].
+    static const int band_of_inv[16] = {0, 4, 2, 6, 1, 5, 3, 7, 8, 12, 10, 14, 9, 13, 11, 15};
+
     const uint8_t * r[16];
     for (int b = 0; b < 16; ++b)
         r[b] = src + static_cast<int64_t>(b) * N;
@@ -337,18 +378,54 @@ static void decode16_AVX2(
     int64_t i = 0;
     for (; i + 32 <= N; i += 32)
     {
-        // Load 32 bytes from each band, split into low/high halves for butterfly16
-        __m128i Lo[16], Hi[16], VL[16], VH[16];
-        for (int b = 0; b < 16; ++b)
-        {
-            __m256i tmp = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(r[b] + i));
-            Lo[b] = _mm256_castsi256_si128(tmp);
-            Hi[b] = _mm256_extracti128_si256(tmp, 1);
-        }
-        butterfly16(Lo, VL);
-        storeRows(VL, dst + i * 16);
-        butterfly16(Hi, VH);
-        storeRows(VH, dst + (i + 16) * 16);
+        // Step 1: load 32 bytes from each stream in inverse-scatter order
+        __m256i in[16];
+        for (int k = 0; k < 16; ++k)
+            in[k] = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(r[band_of_inv[k]] + i));
+
+        // Step 2: inverse stage 4
+        // encode: splitEvenOddBytes(s3[2g], s3[2g+1]) → out[g], out[g+8]  for g in 0..7
+        // decode: mergeEvenOddBytes(in[g],  in[g+8])  → s3[2g], s3[2g+1]
+        __m256i s3[16];
+        for (int g = 0; g < 8; ++g)
+            mergeEvenOddBytes(in[g], in[g + 8], s3[2 * g], s3[2 * g + 1]);
+
+        // Step 3: inverse stage 3
+        // encode: for k in 0,1: split(s2[2k],    s2[2k+1])    → s3[k],    s3[k+2]
+        //         for k in 0,1: split(s2[4+2k],  s2[4+2k+1])  → s3[4+k],  s3[4+k+2]
+        //         for k in 0,1: split(s2[8+2k],  s2[8+2k+1])  → s3[8+k],  s3[8+k+2]
+        //         for k in 0,1: split(s2[12+2k], s2[12+2k+1]) → s3[12+k], s3[12+k+2]
+        // decode: merge(s3[k], s3[k+2]) → s2[2k], s2[2k+1]  etc.
+        __m256i s2[16];
+        for (int k = 0; k < 2; ++k)
+            mergeEvenOddBytes(s3[k],      s3[k + 2],      s2[2 * k],      s2[2 * k + 1]);
+        for (int k = 0; k < 2; ++k)
+            mergeEvenOddBytes(s3[4 + k],  s3[4 + k + 2],  s2[4 + 2 * k],  s2[4 + 2 * k + 1]);
+        for (int k = 0; k < 2; ++k)
+            mergeEvenOddBytes(s3[8 + k],  s3[8 + k + 2],  s2[8 + 2 * k],  s2[8 + 2 * k + 1]);
+        for (int k = 0; k < 2; ++k)
+            mergeEvenOddBytes(s3[12 + k], s3[12 + k + 2], s2[12 + 2 * k], s2[12 + 2 * k + 1]);
+
+        // Step 4: inverse stage 2
+        // encode: for k in 0..3: split(s1[2k],   s1[2k+1])   → s2[k],   s2[k+4]
+        //         for k in 0..3: split(s1[8+2k], s1[8+2k+1]) → s2[8+k], s2[8+k+4]
+        // decode: merge(s2[k], s2[k+4]) → s1[2k], s1[2k+1]  etc.
+        __m256i s1[16];
+        for (int k = 0; k < 4; ++k)
+            mergeEvenOddBytes(s2[k],     s2[k + 4],     s1[2 * k],     s1[2 * k + 1]);
+        for (int k = 0; k < 4; ++k)
+            mergeEvenOddBytes(s2[8 + k], s2[8 + k + 4], s1[8 + 2 * k], s1[8 + 2 * k + 1]);
+
+        // Step 5: inverse stage 1
+        // encode: for k in 0..7: split(r[2k], r[2k+1]) → s1[k], s1[k+8]
+        // decode: merge(s1[k], s1[k+8]) → rec[2k], rec[2k+1]
+        __m256i rec[16];
+        for (int k = 0; k < 8; ++k)
+            mergeEvenOddBytes(s1[k], s1[k + 8], rec[2 * k], rec[2 * k + 1]);
+
+        // Step 6: store — rec[k] holds elements[i+2k] ++ elements[i+2k+1] (32 bytes each)
+        for (int k = 0; k < 16; ++k)
+            _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst + (i + 2 * k) * 16), rec[k]);
     }
     _mm256_zeroupper();
 
