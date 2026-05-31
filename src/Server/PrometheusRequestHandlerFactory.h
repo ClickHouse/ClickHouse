@@ -75,7 +75,7 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         </handler>
 ///     </my_rule_1>
 ///     <my_rule2>
-///         <url>/write</url>
+///         <url>regex:^/[^/]+/[^/]+/write$</url>
 ///         <handler>
 ///             <type>remote_write</type>
 ///             <!-- The URL is expected to start with /{db}/{table}/... -->
