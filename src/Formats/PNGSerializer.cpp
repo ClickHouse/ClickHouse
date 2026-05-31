@@ -183,6 +183,13 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Image width and height must be greater than zero (got {}x{})", width, height);
 
+    /// The PNG specification stores width and height as 31-bit unsigned integers. Reject larger values here,
+    /// before allocating the buffer, so they cannot be silently truncated when later narrowed to `png_uint_32`.
+    static constexpr size_t MAX_IMAGE_DIMENSION = (size_t(1) << 31) - 1;
+    if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Image width and height must not exceed {} (got {}x{})", MAX_IMAGE_DIMENSION, width, height);
+
     const size_t num_cols = header.columns();
     if (num_cols == 0)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
@@ -424,7 +431,7 @@ void PNGSerializer::writeRow(size_t row_num)
 
 void PNGSerializer::reset()
 {
-    impl->reset();
+    (*impl).reset();
 }
 
 size_t PNGSerializer::getWidth() const
