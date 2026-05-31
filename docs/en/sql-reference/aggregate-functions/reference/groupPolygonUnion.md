@@ -1,5 +1,6 @@
 ---
 description: 'Computes the union of all polygonal geometries in the group, returning a MultiPolygon.'
+sidebar_label: 'groupPolygonUnion'
 slug: /sql-reference/aggregate-functions/reference/groupPolygonUnion
 title: 'groupPolygonUnion'
 doc_type: 'reference'

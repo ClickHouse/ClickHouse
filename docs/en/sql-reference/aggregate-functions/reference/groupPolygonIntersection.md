@@ -1,5 +1,6 @@
 ---
 description: 'Computes the intersection of all polygonal geometries in the group, returning a MultiPolygon.'
+sidebar_label: 'groupPolygonIntersection'
 slug: /sql-reference/aggregate-functions/reference/groupPolygonIntersection
 title: 'groupPolygonIntersection'
 doc_type: 'reference'
