@@ -276,6 +276,12 @@ inline bool check(const PackedStringRef & x)
 
 inline void set(PackedStringRef & x)
 {
+    /// Canonicalize the whole empty value to all-zero bytes, matching the documented
+    /// empty invariant above. `getHash` reads the low word, so leaving `low` with an
+    /// arbitrary byte pattern from uninitialized zero-cell storage would make the stored
+    /// empty key report a non-zero hash and land in a different bucket from subsequent
+    /// empty keys during `convertToTwoLevel`.
+    x.low = 0;
     x.high = 0;
 }
 
