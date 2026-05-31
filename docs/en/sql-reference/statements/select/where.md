@@ -63,6 +63,12 @@ The following [comparison operators](/sql-reference/operators#comparison-operato
 | `a ILIKE s` | `ilike(a, b)` | Pattern matching (case-insensitive) | `name ILIKE '%LAPTOP%'` |
 | `a BETWEEN b AND c` | `a >= b AND a <= c` | Range check (inclusive) | `price BETWEEN 100 AND 500` |
 | `a NOT BETWEEN b AND c` | `a < b OR a > c` | Outside range check | `price NOT BETWEEN 100 AND 500` |
+| `a BETWEEN ASYMMETRIC b AND c` | `a >= b AND a <= c` | Same as `BETWEEN` | `price BETWEEN ASYMMETRIC 100 AND 500` |
+| `a NOT BETWEEN ASYMMETRIC b AND c` | `a < b OR a > c` | Same as `NOT BETWEEN` | `price NOT BETWEEN ASYMMETRIC 100 AND 500` |
+| `a BETWEEN SYMMETRIC b AND c` | `(a >= b AND a <= c) OR (a >= c AND a <= b)` | Range check independent of endpoint order | `price BETWEEN SYMMETRIC 500 AND 100` |
+| `a NOT BETWEEN SYMMETRIC b AND c` | `(a < b OR a > c) AND (a < c OR a > b)` | Outside range check independent of endpoint order | `price NOT BETWEEN SYMMETRIC 500 AND 100` |
+
+When `SYMMETRIC` or `ASYMMETRIC` immediately follows `BETWEEN` or `NOT BETWEEN`, ClickHouse parses it as a range qualifier. To use a column with this name as the lower bound, quote the identifier, for example ``price BETWEEN `symmetric` AND 500``.
 
 ## Pattern matching and conditional expressions {#pattern-matching-and-conditional-expressions}
 

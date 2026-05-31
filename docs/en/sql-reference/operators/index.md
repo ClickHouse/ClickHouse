@@ -81,6 +81,16 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
 
+`a BETWEEN ASYMMETRIC b AND c` – The same as `a BETWEEN b AND c`.
+
+`a BETWEEN SYMMETRIC b AND c` – Checks whether `a` is in the inclusive range whose endpoints are `b` and `c`, regardless of endpoint order.
+
+`a NOT BETWEEN ASYMMETRIC b AND c` – The same as `a NOT BETWEEN b AND c`.
+
+`a NOT BETWEEN SYMMETRIC b AND c` – Checks whether `a` is outside the inclusive range whose endpoints are `b` and `c`, regardless of endpoint order.
+
+When `SYMMETRIC` or `ASYMMETRIC` appears immediately after `BETWEEN` or `NOT BETWEEN`, it is parsed as a range qualifier. To use a column with this name as the lower bound, quote the identifier, for example ``a BETWEEN `symmetric` AND c``.
+
 ### is not distinct from operator (`<=>`) {#is-not-distinct-from}
 
 :::note

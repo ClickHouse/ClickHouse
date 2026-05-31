@@ -292,9 +292,32 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 }
 
 
-ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
+ASTPtr makeBetweenOperator(bool negative, bool symmetric, ASTs arguments)
 {
     // SUBJECT = arguments[0], LEFT = arguments[1], RIGHT = arguments[2]
+
+    if (symmetric)
+    {
+        /// Avoid rewriting through least/greatest, because their NULL handling is setting-dependent.
+        if (negative)
+        {
+            auto f_left_order_expr = makeASTOperator("or",
+                makeASTOperator("less", arguments[0], arguments[1]),
+                makeASTOperator("greater", arguments[0], arguments[2]));
+            auto f_right_order_expr = makeASTOperator("or",
+                makeASTOperator("less", arguments[0], arguments[2]),
+                makeASTOperator("greater", arguments[0], arguments[1]));
+            return makeASTOperator("and", f_left_order_expr, f_right_order_expr);
+        }
+
+        auto f_left_order_expr = makeASTOperator("and",
+            makeASTOperator("greaterOrEquals", arguments[0], arguments[1]),
+            makeASTOperator("lessOrEquals", arguments[0], arguments[2]));
+        auto f_right_order_expr = makeASTOperator("and",
+            makeASTOperator("greaterOrEquals", arguments[0], arguments[2]),
+            makeASTOperator("lessOrEquals", arguments[0], arguments[1]));
+        return makeASTOperator("or", f_left_order_expr, f_right_order_expr);
+    }
 
     if (negative)
     {
@@ -559,6 +582,7 @@ enum class OperatorType : uint8_t
   *  - priority       priority of the operator relative to the other operators
   *  - arity          the amount of arguments that operator will consume
   *  - type           type of the operator that defines its behaviour
+  *  - symmetric      whether BETWEEN / NOT BETWEEN uses symmetric endpoint order
   */
 struct Operator
 {
@@ -567,12 +591,14 @@ struct Operator
     Operator(const std::string & function_name_,
              int priority_,
              int arity_,
-             OperatorType type_ = OperatorType::None)
-        : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
+             OperatorType type_ = OperatorType::None,
+             bool symmetric_ = false)
+        : type(type_), priority(priority_), arity(arity_), symmetric(symmetric_), function_name(function_name_) {}
 
     OperatorType type;
     int priority;
     int arity;
+    bool symmetric = false;
     std::string function_name;
 };
 
@@ -758,7 +784,7 @@ public:
                 if (!popLastNOperands(arguments, 3))
                     return false;
 
-                function = makeBetweenOperator(negative, arguments);
+                function = makeBetweenOperator(negative, tmp_op.symmetric, arguments);
             }
             else
             {
@@ -3194,7 +3220,11 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::IS_TRUE),       Operator("isTruePredicate", 6, 1, OperatorType::IsTruthValue)},
     {toStringView(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
+    {toStringView(Keyword::BETWEEN_SYMMETRIC), Operator("",            7,  0, OperatorType::StartBetween, true)},
+    {toStringView(Keyword::BETWEEN_ASYMMETRIC), Operator("",           7,  0, OperatorType::StartBetween)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
+    {toStringView(Keyword::NOT_BETWEEN_SYMMETRIC), Operator("",        7,  0, OperatorType::StartNotBetween, true)},
+    {toStringView(Keyword::NOT_BETWEEN_ASYMMETRIC), Operator("",       7,  0, OperatorType::StartNotBetween)},
     {toStringView(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
@@ -3680,7 +3710,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
             if (!layers.back()->popLastNOperands(arguments, 3))
                 return Action::NONE;
 
-            function = makeBetweenOperator(negative, arguments);
+            function = makeBetweenOperator(negative, tmp_op.symmetric, arguments);
         }
         else
         {

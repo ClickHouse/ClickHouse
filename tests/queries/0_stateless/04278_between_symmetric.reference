@@ -1,0 +1,51 @@
+BETWEEN SYMMETRIC
+1
+1
+0
+0
+1
+1
+NOT BETWEEN SYMMETRIC
+0
+1
+1
+0
+1
+1
+BETWEEN ASYMMETRIC
+1
+0
+1
+0
+1
+dynamic values
+0
+1
+1
+1
+0
+1
+0
+0
+0
+1
+contextual qualifier vs identifier
+0
+0
+1
+1
+NULL handling
+1
+1
+1
+1
+1
+least/greatest NULL setting
+1
+1
+1
+1
+operator precedence
+0
+1
+1
