@@ -3,14 +3,14 @@ FROM
 (
     SELECT number
     FROM numbers(_CAST(15, \'UInt64\'))
-    WHERE number > 10
+    WHERE greater(number, 10)
 ) AS `04105_pv`
 SELECT *
 FROM
 (
     SELECT number
     FROM numbers(_CAST(20, \'UInt64\'))
-    WHERE number > _CAST(5, \'UInt64\')
+    WHERE greater(number, _CAST(5, \'UInt64\'))
 ) AS `04105_pv_multi`
 SELECT *
 FROM
@@ -21,7 +21,7 @@ FROM
         SELECT number
         FROM numbers(_CAST(5, \'UInt64\'))
     ) AS `04105_pv_nested_inner`
-    WHERE number > 0
+    WHERE greater(number, 0)
 ) AS `04105_pv_nested_outer`
 SELECT *
 FROM `04105_plain_view`
@@ -33,7 +33,7 @@ FROM
     (
         SELECT number
         FROM numbers(_CAST(12, \'UInt64\'))
-        WHERE number > 10
+        WHERE greater(number, 10)
     ) AS `04105_pv`
 )
 SELECT *
@@ -42,25 +42,25 @@ ALL INNER JOIN
 (
     SELECT number
     FROM numbers(_CAST(10, \'UInt64\'))
-    WHERE number > 10
+    WHERE greater(number, 10)
 ) AS `04105_pv` USING (number)
 SELECT t.number
 FROM
 (
     SELECT number
     FROM numbers(_CAST(10, \'UInt64\'))
-    WHERE number > 10
+    WHERE greater(number, 10)
 ) AS t
 SELECT *
 FROM numbers(3)
 SETTINGS allow_experimental_analyzer = 1
 SELECT *
-FROM `04105_modifiers_pv`(n = 1)
+FROM `04105_modifiers_pv`(equals(n, 1))
 FINAL
 SELECT count()
-FROM `04105_modifiers_pv`(n = 1)
+FROM `04105_modifiers_pv`(equals(n, 1))
 SAMPLE 5 / 10
 SELECT *
-FROM `04105_pv_security_none`(n = 1)
+FROM `04105_pv_security_none`(equals(n, 1))
 SELECT *
-FROM `04105_pv_security_definer`(n = 1)
+FROM `04105_pv_security_definer`(equals(n, 1))
