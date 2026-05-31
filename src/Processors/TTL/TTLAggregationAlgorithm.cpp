@@ -192,14 +192,6 @@ void TTLAggregationAlgorithm::execute(Block & block)
             if (where_filter_passed)
                 new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
         }
-
-        /// If every surviving row is also already past the TTL boundary, the
-        /// `GROUP BY` TTL rule has no more work to do on the resulting part.
-        /// Mark it as finished so the merge scheduler does not pick it again
-        /// for the same rule, otherwise the part would be re-merged on every
-        /// scheduler tick (issue #105647).
-        if (!new_ttl_info.ttl_finished.has_value() && isTTLExpired(new_ttl_info.max))
-            new_ttl_info.ttl_finished = true;
     }
 }
 
@@ -281,14 +273,25 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    if (new_ttl_info.finished())
-    {
-        data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
-        data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info.min, new_ttl_info.max);
-        return;
-    }
-    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info.min, old_ttl_info.max);
+    /// Decide `ttl_finished` here, after every block has been processed,
+    /// rather than per-block in `execute`. A per-block decision is unsafe
+    /// because an early all-expired block followed by a later block with
+    /// surviving future rows would otherwise stamp `finished = true` first
+    /// and then promote `max` past `current_time` via
+    /// `MergeTreeDataPartTTLInfo::update`, which never clears the flag
+    /// (issue #105647). Recompute unconditionally from the final
+    /// `new_ttl_info.max` so the persisted state reflects the actual rows
+    /// surviving in the merged part.
+    ///
+    /// When the merge processed no surviving rows touched by this rule
+    /// (`new_ttl_info.max == 0`), persist `old_ttl_info` so the per-part
+    /// watermark does not regress to zero.
+    TTLInfo info_to_write = new_ttl_info;
+    info_to_write.ttl_finished = isTTLExpired(info_to_write.max);
+
+    const TTLInfo & to_persist = info_to_write.max != 0 ? info_to_write : old_ttl_info;
+    data_part->ttl_infos.group_by_ttl[description.result_column] = to_persist;
+    data_part->ttl_infos.updatePartMinMaxTTL(to_persist.min, to_persist.max);
 }
 
 }
