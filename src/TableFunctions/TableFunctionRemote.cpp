@@ -39,9 +39,18 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
+    ASTs & args,
+    ContextPtr context,
+    const std::string & name,
+    bool is_cluster_function,
+    bool secure,
+    const PreformattedMessage & help_message)
 {
-    ASTs & args_func = ast_function->children;
+    ParsedRemoteFunctionArguments result;
+    ClusterPtr & cluster = result.cluster;
+    ASTPtr & sharding_key = result.sharding_key;
+    ASTPtr & remote_table_function_ptr = result.remote_table_function_ptr;
 
     String cluster_name;
     String cluster_description;
@@ -49,11 +58,6 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     String table = "one"; /// The table containing one row is used by default for queries without explicit table specification.
     String username = "default";
     String password;
-
-    if (args_func.size() != 1)
-        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    ASTs & args = args_func.at(0)->children;
 
     /**
      * Number of arguments for remote function is 6.
@@ -332,8 +336,26 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     if (!remote_table_function_ptr && table.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The name of remote table cannot be empty");
 
-    remote_table_id.database_name = database;
-    remote_table_id.table_name = table;
+    result.remote_table_id.database_name = database;
+    result.remote_table_id.table_name = table;
+
+    return result;
+}
+
+void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+{
+    ASTs & args_func = ast_function->children;
+
+    if (args_func.size() != 1)
+        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    ASTs & args = args_func.at(0)->children;
+
+    auto parsed = parseRemoteFunctionArguments(args, context, name, is_cluster_function, secure, help_message);
+    cluster = std::move(parsed.cluster);
+    remote_table_id = std::move(parsed.remote_table_id);
+    sharding_key = std::move(parsed.sharding_key);
+    remote_table_function_ptr = std::move(parsed.remote_table_function_ptr);
 }
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const

@@ -87,6 +87,7 @@
 
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionRemote.h>
 
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
@@ -2151,6 +2152,73 @@ void registerStorageDistributed(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
+}
+
+void registerStorageRemote(StorageFactory & factory)
+{
+    /// The `Remote` and `RemoteSecure` storage engines accept the same arguments as the
+    /// `remote` and `remoteSecure` table functions and create a `StorageDistributed` over a
+    /// cluster built on the fly from the supplied addresses. This is the persistent counterpart
+    /// of `CREATE TABLE ... AS remote(...)`.
+    auto create = [](const StorageFactory::Arguments & args, bool secure) -> StoragePtr
+    {
+        auto help_message = PreformattedMessage::create(
+            "Storage engine '{}' requires from 1 to 6 parameters: "
+            "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]",
+            secure ? "RemoteSecure" : "Remote");
+
+        if (args.engine_args.empty())
+            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        auto parsed = parseRemoteFunctionArguments(
+            args.engine_args,
+            args.getLocalContext(),
+            /* name = */ "remote",
+            /* is_cluster_function = */ false,
+            secure,
+            help_message);
+
+        DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
+        if (args.storage_def->settings)
+            distributed_settings.loadFromQuery(*args.storage_def);
+
+        return std::make_shared<StorageDistributed>(
+            args.table_id,
+            args.columns,
+            args.constraints,
+            args.comment,
+            parsed.remote_table_id.database_name,
+            parsed.remote_table_id.table_name,
+            /* cluster_name_ = */ String{},
+            args.getContext(),
+            parsed.sharding_key,
+            /* storage_policy_name_ = */ "default",
+            args.relative_data_path,
+            distributed_settings,
+            args.mode,
+            std::move(parsed.cluster),
+            std::move(parsed.remote_table_function_ptr),
+            /* is_remote_function_ = */ true);
+    };
+
+    StorageFactory::StorageFeatures features
+    {
+        .supports_settings = true,
+        .supports_parallel_insert = true,
+        .supports_schema_inference = true,
+        .source_access_type = AccessTypeObjects::Source::REMOTE,
+        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
+    };
+
+    factory.registerStorage("Remote", [create](const StorageFactory::Arguments & args)
+    {
+        return create(args, /* secure = */ false);
+    }, features);
+
+    factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
+    {
+        return create(args, /* secure = */ true);
+    }, features);
 }
 
 bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
