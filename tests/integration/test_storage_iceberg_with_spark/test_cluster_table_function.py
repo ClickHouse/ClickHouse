@@ -361,3 +361,69 @@ def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     )
 
     assert select_cluster == ''
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+def test_cluster_table_function_split_by_buckets_with_position_deletes(started_cluster_iceberg_with_spark, storage_type):
+    # Regression test for object slicing in `ObjectIteratorSplitByBuckets::next`.
+    # When a data file is split into buckets, the per-bucket `ObjectInfo` must
+    # preserve the Iceberg-specific metadata (manifest entry, schema id, delete
+    # files). Before the fix the derived `IcebergDataObjectInfo` was sliced to
+    # the base `ObjectInfo`, so position delete files were lost and deleted rows
+    # reappeared (or an exception was thrown in `IcebergSource`).
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    TABLE_NAME = "test_iceberg_cluster_split_deletes_" + storage_type + "_" + get_uuid_str()
+
+    # Small row groups so that a single data file is split into several buckets.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id bigint, data string) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode'='merge-on-read',
+            'write.delete.mode'='merge-on-read',
+            'write.merge.mode'='merge-on-read',
+            'write.parquet.row-group-size-bytes'='1024'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select /*+ COALESCE(1) */ id, char(id % 26 + ascii('a')) from range(0, 10000)")
+    # Create position delete files for some of the rows.
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id % 7 = 0")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
+    )
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+        run_on_cluster=True,
+    )
+
+    expected_ids = [i for i in range(0, 10000) if i % 7 != 0]
+
+    # Reference result without bucket splitting.
+    select_regular = sorted(
+        int(x) for x in instance.query(f"SELECT id FROM {table_function_expr}").strip().split()
+    )
+    assert select_regular == expected_ids
+
+    # Cluster result with bucket splitting must apply the position deletes too.
+    select_cluster = sorted(
+        int(x)
+        for x in instance.query(
+            f"SELECT id FROM {table_function_expr_cluster} SETTINGS cluster_table_function_split_granularity='bucket'"
+        ).strip().split()
+    )
+    assert select_cluster == expected_ids
