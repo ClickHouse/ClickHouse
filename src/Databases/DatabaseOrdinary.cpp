@@ -364,7 +364,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
     const ASTPtr & ast,
     LoadingStrictnessLevel mode)
 {
-    assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
+    chassert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & query = ast->as<const ASTCreateQuery &>();
 
     if (shouldLazyLoad(query, mode))
