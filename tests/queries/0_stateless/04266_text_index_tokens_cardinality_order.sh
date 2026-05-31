@@ -14,7 +14,11 @@ CREATE TABLE t_text_index_tokens_order
 (
     id UInt64,
     s String,
-    INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha')
+    -- 'dictionary_block_size = 1' puts every token into its own dictionary block, so the
+    -- cardinality order of 'tokens_to_read' drives the physical per-block read order (rarest
+    -- block first) instead of collapsing into a single block where 'matchTokens' would read
+    -- the same-block tokens lexicographically regardless of cardinality.
+    INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', dictionary_block_size = 1)
 )
 ENGINE = MergeTree ORDER BY id;
 
