@@ -4,7 +4,9 @@ description: 'Documentation for the PNG image output format'
 input_format: false
 keywords: ['PNG']
 output_format: true
+slug: /interfaces/formats/PNG
 title: 'PNG'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
