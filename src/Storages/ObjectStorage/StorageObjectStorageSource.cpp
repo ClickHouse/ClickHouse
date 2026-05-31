@@ -1453,13 +1453,14 @@ void StorageObjectStorageSource::ReadTaskIterator::resolveIcebergObjectStorageIf
     if (!metadata_path)
         return;
 
-    /// Only files outside the table's base storage need explicit resolution here; for base-storage
-    /// files the coordinator already resolved the key via `IcebergPathResolver`.
-    if (auto external = resolveSecondaryStorageForPath(
-            table_location, *metadata_path, object_storage, secondary_storages, getContext()))
+    /// Only secondary-storage files need resolving here (an ObjectStorage can't be shipped over the
+    /// wire); base-storage files keep the coordinator's key.
+    if (auto resolved = tryResolveObjectStorageForPath(
+            table_location, *metadata_path, object_storage, secondary_storages, getContext());
+        resolved && resolved->first != object_storage)
     {
-        iceberg_info->setResolvedStorage(external->first);
-        iceberg_info->relative_path_with_metadata.relative_path = external->second;
+        iceberg_info->setResolvedStorage(resolved->first);
+        iceberg_info->relative_path_with_metadata.relative_path = resolved->second;
     }
 #endif
 }

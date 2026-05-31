@@ -95,20 +95,18 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
 #if USE_AVRO
 namespace Iceberg { class IcebergPathResolver; }
 
-/// Resolve a metadata path to a SECONDARY object storage (a bucket/account/filesystem different
-/// from `base_storage`). Returns std::nullopt when the path belongs to `base_storage` — in that
-/// case the caller owns the base-storage key (the coordinator resolves it via `IcebergPathResolver`,
-/// workers keep the key the coordinator already resolved).
-std::optional<std::pair<DB::ObjectStoragePtr, std::string>> resolveSecondaryStorageForPath(
+/// Resolve an absolute metadata path directly to its (object storage, key) by parsing the URI.
+/// The storage may be `base_storage` or a secondary one. Returns std::nullopt for paths that must
+/// instead go through `path_resolver`: relative paths and bare local-fs absolute base paths.
+std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStorageForPath(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
     SecondaryStorages & secondary_storages,
     const DB::ContextPtr & context);
 
-/// Resolve a metadata path to (object storage, key) for reading. For base-storage paths the key is
-/// computed via `path_resolver` (handles the table_location -> table_root translation); otherwise a
-/// secondary storage is looked up / created.
+/// Resolve a metadata path to (object storage, key) for reading. Absolute paths resolve directly via
+/// `tryResolveObjectStorageForPath`; relative paths are mapped via `path_resolver`.
 std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const std::string & table_location,
     const std::string & path,

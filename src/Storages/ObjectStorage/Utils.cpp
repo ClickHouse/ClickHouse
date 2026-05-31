@@ -504,11 +504,10 @@ extern const SettingsBool s3_propagate_credentials_to_other_storages;
 }
 
 #if USE_AVRO
-/// Resolve a metadata path to a SECONDARY object storage — a bucket/account/filesystem different
-/// from `base_storage`. Returns std::nullopt when the path belongs to `base_storage`; in that case
-/// the caller owns the base-storage key (the coordinator resolves it via `IcebergPathResolver`,
-/// workers keep the key the coordinator already resolved).
-std::optional<std::pair<DB::ObjectStoragePtr, std::string>> resolveSecondaryStorageForPath(
+/// Resolve an absolute metadata path directly to its (object storage, key) by parsing the URI.
+/// The storage may be `base_storage` or a secondary one. Returns std::nullopt for paths that must
+/// instead go through `path_resolver`: relative paths and bare local-fs absolute base paths.
+std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStorageForPath(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
@@ -606,7 +605,7 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> resolveSecondaryStor
         }
 
         if (use_base_storage)
-            return std::nullopt;
+            return std::make_pair(base_storage, key_to_use);
 
         /// Include credential-propagation flag in the cache key: `configure_fn` runs only on miss,
         /// so different per-query values of `s3_propagate_credentials_to_other_storages` must not share an entry.
@@ -749,13 +748,13 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> resolveSecondaryStor
         }
 
         if (use_base_storage)
-            return std::nullopt;
+            return std::make_pair(base_storage, target_decomposed.key);
     }
     #endif
 
     /// Fallback for schemes not handled above (e.g., abfs, file)
     if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority)
-        return std::nullopt;
+        return std::make_pair(base_storage, target_decomposed.key);
 
     const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);
     if (type_for_factory.empty())
@@ -864,9 +863,9 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const DB::ContextPtr & context,
     const Iceberg::IcebergPathResolver & path_resolver)
 {
-    if (auto external = resolveSecondaryStorageForPath(table_location, path, base_storage, secondary_storages, context))
-        return *external;
-    /// Base-storage key comes from the canonical resolver (handles table_location -> table_root).
+    if (auto resolved = tryResolveObjectStorageForPath(table_location, path, base_storage, secondary_storages, context))
+        return *resolved;
+    /// Relative paths only: map via path_resolver (table_location -> table_root translation).
     return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
 }
 
