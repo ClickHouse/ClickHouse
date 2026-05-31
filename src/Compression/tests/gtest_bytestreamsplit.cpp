@@ -17,6 +17,7 @@
 #include <cmath>
 #include <algorithm>
 #include <initializer_list>
+#include <limits>
 #include <numbers>
 #include <vector>
 #include <random>
@@ -409,6 +410,31 @@ TEST(ByteStreamSplitTest, MalformedTruncatedBody)
     PODArray<char> decoded(src_sz);
     EXPECT_THROW(
         codec->decompress(compressed.data(), truncated_sz, decoded.data()),
+        DB::Exception);
+}
+
+// Regression: HEADER_SIZE + uncompressed_size must be computed in 64 bits,
+// otherwise a malicious uncompressed_size near UINT32_MAX wraps the sum and
+// matches a tiny source_size — bypassing the size check and letting the
+// subsequent header read run past the source buffer.
+TEST(ByteStreamSplitTest, MalformedUncompressedSizeOverflow)
+{
+    auto codec = makeCodec("ByteStreamSplit(4)", std::make_shared<DataTypeFloat32>());
+
+    // codec body of 4 bytes: HEADER_SIZE(5) + UINT32_MAX wraps to 4 in UInt32,
+    // matching the codec-body slice size and faking a valid block.
+    constexpr UInt32 kBody = 4;
+    PODArray<char> tampered(kBlockHeaderSize + kBody);
+    tampered.data()[0] = static_cast<char>(codec->getMethodByte());
+    overwriteLE(tampered.data() + 1, kBlockHeaderSize + kBody);
+    overwriteLE(tampered.data() + 5, std::numeric_limits<UInt32>::max());
+    memset(tampered.data() + kBlockHeaderSize, 0xAA, kBody);
+
+    // Decode buffer is intentionally tiny — the fix must reject before any
+    // pointer arithmetic uses the malicious uncompressed_size.
+    PODArray<char> decoded(64);
+    EXPECT_THROW(
+        codec->decompress(tampered.data(), kBlockHeaderSize + kBody, decoded.data()),
         DB::Exception);
 }
 

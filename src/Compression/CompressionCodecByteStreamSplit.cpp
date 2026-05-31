@@ -775,13 +775,13 @@ UInt32 CompressionCodecByteStreamSplit::doDecompressData(
 {
     /// ByteStreamSplit is a pure byte permutation, so the encoded payload is
     /// always exactly HEADER_SIZE + uncompressed_size bytes. Reject anything
-    /// else up front.
-    if (source_size != static_cast<UInt32>(HEADER_SIZE) + uncompressed_size)
+    /// else up front
+    if (static_cast<UInt64>(source_size) != expected_size)
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS,
             "Cannot decompress ByteStreamSplit-encoded data: source size ({}) "
             "does not match expected size ({} = HEADER_SIZE + uncompressed_size)",
-            source_size, static_cast<UInt32>(HEADER_SIZE) + uncompressed_size);
+            source_size, expected_size);
 
     if (uncompressed_size == 0)
         return 0;
