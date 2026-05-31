@@ -18,6 +18,10 @@
 URL
 1	Hello
 2	World
+--- ENGINE = URL('file://...') without explicit columns persists the inferred structure ---
+2
+2
+2
 --- headers(...) are rejected when dispatching to a non-URL scheme ---
 headers-rejected
 --- reading outside user_files via a relative file:// path is rejected ---

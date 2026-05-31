@@ -98,6 +98,14 @@ public:
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
+    /// The URI of the function for permission checking. Can be an empty string if not applicable.
+    /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
+    virtual const String & getFunctionURI() const
+    {
+        static const String empty;
+        return empty;
+    }
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -118,14 +126,6 @@ private:
     virtual const char * getNonClusteredStorageEngineName() const;
 
 protected:
-    /// The URI of function for permission checking. Can be empty string if not applicable.
-    /// For example for url('https://foo.bar') URI would be 'https://foo.bar'.
-    virtual const String & getFunctionURI() const
-    {
-        static const String empty;
-        return empty;
-    }
-
     String getFunctionURINormalized() const;
 };
 

@@ -2146,7 +2146,12 @@ public:
         : StorageProxy(table_id_), nested(std::move(nested_))
     {
         StorageInMemoryMetadata metadata;
-        metadata.setColumns(columns_);
+        /// `columns_` is empty for a schema-inferred `CREATE TABLE ... ENGINE = URL('file://...')`
+        /// without an explicit column list, because the structure is inferred inside the delegate
+        /// storage constructor (the `URL` engine declares `supports_schema_inference`). Copy the
+        /// inferred columns from the delegate so `SHOW CREATE`, `system.columns` and the materialized
+        /// column list in the persisted metadata reflect the real structure instead of being empty.
+        metadata.setColumns(columns_.empty() ? nested->getInMemoryMetadataPtr(nullptr, false)->getColumns() : columns_);
         metadata.setConstraints(constraints_);
         metadata.setComment(comment_);
         setInMemoryMetadata(metadata);

@@ -44,6 +44,16 @@ ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2 ORDER BY a"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t2"
 
+echo "--- ENGINE = URL('file://...') without explicit columns persists the inferred structure ---"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_t3"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t3 ENGINE = URL('file://${ABS}', 'CSV')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '${CLICKHOUSE_TEST_UNIQUE_NAME}_t3'"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t3"
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t3"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t3"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t3"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t3"
+
 echo "--- headers(...) are rejected when dispatching to a non-URL scheme ---"
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('file://${REL}', 'CSV', 'a UInt32, b String', headers('X-Test'='1'))" 2>&1 \
     | grep -qiE "does not support headers" && echo "headers-rejected" || echo "NOT REJECTED"

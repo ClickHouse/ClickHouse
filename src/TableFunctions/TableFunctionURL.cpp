@@ -132,9 +132,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 void TableFunctionURL::buildDelegate(URLSchemeTarget target, const ContextPtr & context)
 {
     delegate_engine_name = storageEngineNameForURLScheme(target);
-    /// `file` uses no URI for access filtering (its function URI is empty); the object-storage
-    /// functions filter on the raw URL.
-    delegate_function_uri = (target == URLSchemeTarget::File) ? String{} : filename;
 
     auto args_list = make_intrusive<ASTExpressionList>();
 
@@ -179,6 +176,12 @@ void TableFunctionURL::buildDelegate(URLSchemeTarget target, const ContextPtr & 
     delegate_ast->children.push_back(args_list);
 
     delegate = TableFunctionFactory::instance().get(delegate_ast, context);
+
+    /// Use the delegate's own access URI for source-access filtering instead of approximating it
+    /// from `filename`. This keeps filtered source grants consistent with calling the delegate
+    /// directly: e.g. `azureBlobStorage` filters on `blob_path.path` (not the full `az://...` URL),
+    /// `file` reports an empty URI, while `s3`/`hdfs` report the full URL as before.
+    delegate_function_uri = delegate->getFunctionURI();
 
     if (!structure_hint.empty())
         delegate->setStructureHint(structure_hint);
