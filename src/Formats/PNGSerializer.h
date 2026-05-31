@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class PNGWriter;
-
 /** Serializes rows of a result set into an in-memory image of fixed size.
   *
   * The color mode and coordinate mode are determined from the column names and types of the input:
@@ -35,13 +33,20 @@ class PNGWriter;
 class PNGSerializer
 {
 public:
-    PNGSerializer(const Block & header, const FormatSettings & settings, PNGWriter & writer);
+    PNGSerializer(const Block & header, const FormatSettings & settings);
     ~PNGSerializer();
 
     void setColumns(const ColumnPtr * columns, size_t num_columns);
     void writeRow(size_t row_num);
-    void finalizeWrite();
     void reset();
+
+    /// The fixed image dimensions and the number of channels (1, 3, or 4) determined from the input columns.
+    size_t getWidth() const;
+    size_t getHeight() const;
+    size_t getChannels() const;
+
+    /// The rendered image as a tightly packed buffer of `getWidth() * getHeight() * getChannels()` bytes.
+    const UInt8 * getPixels() const;
 
 private:
     class Impl;

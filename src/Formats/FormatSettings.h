@@ -563,6 +563,7 @@ struct FormatSettings
     {
         UInt64 width = 1024;
         UInt64 height = 1024;
+        String terminal_mode;
     } image{};
 
     struct

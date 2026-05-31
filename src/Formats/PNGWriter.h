@@ -23,11 +23,9 @@ class WriteBuffer;
 class PNGWriter : private boost::noncopyable
 {
 public:
-    explicit PNGWriter(WriteBuffer & out);
+    /// `channels` controls the PNG color type and must be 1 (grayscale), 3 (RGB), or 4 (RGBA).
+    PNGWriter(WriteBuffer & out, size_t width, size_t height, size_t channels);
     ~PNGWriter();
-
-    /// Provide image dimensions and color type. Must be called exactly once before `writeImage`.
-    void setImage(size_t width, size_t height, size_t channels);
 
     /// Encode and write the entire image. `pixels` is a tightly packed buffer of width * height * channels bytes.
     void writeImage(const unsigned char * pixels);
@@ -53,9 +51,9 @@ private:
     std::exception_ptr saved_exception;
     std::string error_message;
 
-    size_t width = 0;
-    size_t height = 0;
-    size_t channels = 0;
+    const size_t width;
+    const size_t height;
+    const size_t channels;
     bool initialized = false;
 };
 

@@ -78,9 +78,31 @@ FORMAT PNG
 SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 ```
 
+## Displaying images in the terminal {#terminal-mode}
+
+By default, the `PNG` format writes the raw image bytes. The setting
+[`output_format_image_terminal_mode`](/operations/settings/formats#output_format_image_terminal_mode)
+makes the format render the image directly to the terminal using an inline image protocol instead:
+
+| Value           | Behaviour                                                                                              |
+|-----------------|--------------------------------------------------------------------------------------------------------|
+| `` (empty)      | Write the raw image bytes (the default).                                                                |
+| `iterm`         | Use the iTerm2 inline image protocol.                                                                   |
+| `kitty`         | Use the Kitty graphics protocol.                                                                        |
+| `sixel`         | Use the Sixel protocol. The image is reduced to a fixed 6×6×6 palette and the alpha channel, if any, is composited over a black background. |
+| `auto`          | If the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes. |
+
+```sql
+SELECT toUInt8(x * 25) AS r, toUInt8(y * 25) AS g, toUInt8((x + y) * 12) AS b
+FROM (SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100))
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10, output_format_image_terminal_mode = 'auto';
+```
+
 ## Format settings {#format-settings}
 
-| Setting                       | Description                                       | Default |
-|-------------------------------|---------------------------------------------------|---------|
-| `output_format_image_width`   | Width of the output image in pixels.              | `1024`  |
-| `output_format_image_height`  | Height of the output image in pixels.             | `1024`  |
+| Setting                              | Description                                  | Default    |
+|--------------------------------------|----------------------------------------------|------------|
+| `output_format_image_width`          | Width of the output image in pixels.         | `1024`     |
+| `output_format_image_height`         | Height of the output image in pixels.        | `1024`     |
+| `output_format_image_terminal_mode`  | Inline terminal image protocol (see above).  | `` (empty) |

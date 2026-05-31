@@ -9,7 +9,6 @@ namespace DB
 {
 
 class PNGSerializer;
-class PNGWriter;
 
 /// Output format that renders the result set as a PNG image.
 class PNGOutputFormat final : public IOutputFormat
@@ -23,7 +22,7 @@ private:
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
 
-    std::unique_ptr<PNGWriter> writer;
+    const FormatSettings format_settings;
     std::unique_ptr<PNGSerializer> serializer;
 };
 

@@ -19,9 +19,15 @@ namespace
     constexpr int PNG_COMPRESSION_LEVEL = 6;
 }
 
-PNGWriter::PNGWriter(WriteBuffer & out_)
+PNGWriter::PNGWriter(WriteBuffer & out_, size_t width_, size_t height_, size_t channels_)
     : out(out_)
+    , width(width_)
+    , height(height_)
+    , channels(channels_)
 {
+    if (channels != 1 && channels != 3 && channels != 4)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "PNG writer supports only 1, 3, or 4 channels per pixel, got {}", channels);
 }
 
 PNGWriter::~PNGWriter()
@@ -35,17 +41,6 @@ void PNGWriter::cleanup()
         png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
     png_ptr = nullptr;
     info_ptr = nullptr;
-}
-
-void PNGWriter::setImage(size_t width_, size_t height_, size_t channels_)
-{
-    width = width_;
-    height = height_;
-    channels = channels_;
-
-    if (channels != 1 && channels != 3 && channels != 4)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "PNG writer supports only 1, 3, or 4 channels per pixel, got {}", channels);
 }
 
 void PNGWriter::writeImage(const unsigned char * pixels)

@@ -7,7 +7,6 @@
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Formats/PNGWriter.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/NaNUtils.h>
@@ -118,12 +117,16 @@ namespace
 class PNGSerializer::Impl
 {
 public:
-    Impl(const Block & header, const FormatSettings & format_settings, PNGWriter & writer);
+    Impl(const Block & header, const FormatSettings & format_settings);
 
     void setColumns(const ColumnPtr * columns, size_t num_columns);
     void writeRow(size_t row_num);
-    void finalizeWrite();
     void reset();
+
+    size_t getWidth() const { return width; }
+    size_t getHeight() const { return height; }
+    size_t getChannels() const { return channels; }
+    const UInt8 * getPixels() const { return pixels.data(); }
 
 private:
     enum class Mode : uint8_t
@@ -134,7 +137,6 @@ private:
         Binary,
     };
 
-    PNGWriter & writer;
     size_t width = 0;
     size_t height = 0;
     Mode mode = Mode::RGB;
@@ -173,9 +175,8 @@ private:
     void writePixel(size_t x, size_t y, const UInt8 * components);
 };
 
-PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_settings, PNGWriter & writer_)
-    : writer(writer_)
-    , width(format_settings.image.width)
+PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_settings)
+    : width(format_settings.image.width)
     , height(format_settings.image.height)
 {
     if (width == 0 || height == 0)
@@ -324,8 +325,6 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
             "Image dimensions {}x{} with {} channel(s) overflow the maximum buffer size",
             width, height, channels);
     pixels.assign(total_bytes, 0);
-
-    writer.setImage(width, height, channels);
 }
 
 void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_columns)
@@ -398,12 +397,6 @@ void PNGSerializer::Impl::writeRow(size_t row_num)
     }
 }
 
-void PNGSerializer::Impl::finalizeWrite()
-{
-    writer.writeImage(reinterpret_cast<const unsigned char *>(pixels.data()));
-    writer.finalize();
-}
-
 void PNGSerializer::Impl::reset()
 {
     std::fill(pixels.begin(), pixels.end(), UInt8(0));
@@ -412,8 +405,8 @@ void PNGSerializer::Impl::reset()
     implicit_y = 0;
 }
 
-PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settings, PNGWriter & writer)
-    : impl(std::make_unique<Impl>(header, settings, writer))
+PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settings)
+    : impl(std::make_unique<Impl>(header, settings))
 {
 }
 
@@ -429,14 +422,29 @@ void PNGSerializer::writeRow(size_t row_num)
     impl->writeRow(row_num);
 }
 
-void PNGSerializer::finalizeWrite()
-{
-    impl->finalizeWrite();
-}
-
 void PNGSerializer::reset()
 {
-    (*impl).reset();
+    impl->reset();
+}
+
+size_t PNGSerializer::getWidth() const
+{
+    return impl->getWidth();
+}
+
+size_t PNGSerializer::getHeight() const
+{
+    return impl->getHeight();
+}
+
+size_t PNGSerializer::getChannels() const
+{
+    return impl->getChannels();
+}
+
+const UInt8 * PNGSerializer::getPixels() const
+{
+    return impl->getPixels();
 }
 
 }

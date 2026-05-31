@@ -3,7 +3,9 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/PNGSerializer.h>
+#include <Formats/PNGTerminalOutput.h>
 #include <Formats/PNGWriter.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -11,12 +13,22 @@ namespace DB
 namespace
 {
 constexpr auto FORMAT_NAME = "PNG";
+
+/// Encode the image as a PNG file into a string buffer.
+String encodePNG(const PNGSerializer & serializer)
+{
+    WriteBufferFromOwnString png_buf;
+    PNGWriter writer(png_buf, serializer.getWidth(), serializer.getHeight(), serializer.getChannels());
+    writer.writeImage(reinterpret_cast<const unsigned char *>(serializer.getPixels()));
+    writer.finalize();
+    return png_buf.str();
+}
 }
 
 PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
-    , writer(std::make_unique<PNGWriter>(out_))
-    , serializer(std::make_unique<PNGSerializer>(*header_, settings_, *writer))
+    , format_settings(settings_)
+    , serializer(std::make_unique<PNGSerializer>(*header_, settings_))
 {
 }
 
@@ -34,7 +46,27 @@ void PNGOutputFormat::consume(Chunk chunk)
 
 void PNGOutputFormat::finalizeImpl()
 {
-    serializer->finalizeWrite();
+    const auto mode = parseImageTerminalMode(format_settings.image.terminal_mode, format_settings.is_writing_to_terminal);
+
+    switch (mode)
+    {
+        case ImageTerminalMode::None:
+        {
+            PNGWriter writer(out, serializer->getWidth(), serializer->getHeight(), serializer->getChannels());
+            writer.writeImage(reinterpret_cast<const unsigned char *>(serializer->getPixels()));
+            writer.finalize();
+            break;
+        }
+        case ImageTerminalMode::ITerm:
+            writeImageITerm(out, encodePNG(*serializer));
+            break;
+        case ImageTerminalMode::Kitty:
+            writeImageKitty(out, encodePNG(*serializer));
+            break;
+        case ImageTerminalMode::Sixel:
+            writeImageSixel(out, serializer->getPixels(), serializer->getWidth(), serializer->getHeight(), serializer->getChannels());
+            break;
+    }
 }
 
 void registerOutputFormatPNG(FormatFactory & factory)
