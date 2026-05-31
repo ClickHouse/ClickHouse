@@ -303,6 +303,67 @@ catch (...)
 }
 
 
+TEST(ReadPipeline, UnknownSizeDeniesRandomReadProbes)
+try
+{
+    /// An unknown-size source must NOT advertise random reads or seekability.
+    /// Random-read formats (Parquet/ORC/Arrow) react to a positive answer by
+    /// calling `getFileSizeFromReadBuffer`, which throws `UNKNOWN_FILE_SIZE`
+    /// because `tryGetFileSize` is `nullopt` here — making the object unreadable
+    /// even though the executor can stream it to EOF. So both probes (and the
+    /// file size) must be denied, and the format falls back to streaming.
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator("actually-not-empty"),
+        StoredObjects{testObject(StoredObject::UnknownSize)},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    EXPECT_FALSE(buf->supportsReadAt());
+    EXPECT_FALSE(buf->checkIfActuallySeekable());
+    EXPECT_FALSE(buf->tryGetFileSize().has_value());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, KnownSizeAllowsRandomReadProbes)
+try
+{
+    /// With a known size the executor advertises random reads and seekability,
+    /// so formats can take the fast `readBigAt` path, and reports the real size.
+    std::string data = "known-size-data";
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator(data),
+        StoredObjects{testObject(data.size())},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    EXPECT_TRUE(buf->supportsReadAt());
+    EXPECT_TRUE(buf->checkIfActuallySeekable());
+    ASSERT_TRUE(buf->tryGetFileSize().has_value());
+    EXPECT_EQ(*buf->tryGetFileSize(), data.size());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
 /// -- describe --
 
 TEST(ReadPipeline, DescribeEmpty)

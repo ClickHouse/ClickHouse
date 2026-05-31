@@ -30,6 +30,12 @@ public:
     size_t readBigAt(char * to, size_t n, size_t offset,
                      const std::function<bool(size_t)> & progress_callback) const override;
 
+    /// Random-read / size probes must be denied for unknown-size sources: a
+    /// `true` answer leads formats (Parquet/ORC/Arrow) to call
+    /// `getFileSizeFromReadBuffer`, which throws `UNKNOWN_FILE_SIZE`. Such
+    /// sources are read by streaming through `nextImpl` instead.
+    bool checkIfActuallySeekable() override;
+
 private:
     bool nextImpl() override;
 

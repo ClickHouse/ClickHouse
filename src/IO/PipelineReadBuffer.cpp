@@ -123,7 +123,19 @@ String PipelineReadBuffer::getFileName() const
 
 bool PipelineReadBuffer::supportsReadAt()
 {
-    return executor->canReadAt();
+    /// A `true` answer tells random-read formats (Parquet/ORC/Arrow) the source
+    /// is randomly addressable; their first move is to locate the footer at the
+    /// end via `getFileSizeFromReadBuffer`, which throws `UNKNOWN_FILE_SIZE` when
+    /// the size is unknown. Don't advertise random reads for unknown-size sources
+    /// - they stream through `nextImpl` instead.
+    return !executor->hasUnknownSize() && executor->canReadAt();
+}
+
+bool PipelineReadBuffer::checkIfActuallySeekable()
+{
+    /// Same reason as `supportsReadAt`: a seekable probe also leads formats to
+    /// `getFileSizeFromReadBuffer`. Unknown-size sources are not seekable here.
+    return !executor->hasUnknownSize();
 }
 
 size_t PipelineReadBuffer::readBigAt(
