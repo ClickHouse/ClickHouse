@@ -467,7 +467,15 @@
       -->
     <async_load_databases>true</async_load_databases>
 
-    <!-- On memory constrained environments you may have to set this to value larger than 1.
+    <!-- The maximum amount of memory the server is allowed to use, as a ratio to the available memory.
+
+         Besides capping the hard memory limit at startup, the background memory worker periodically
+         recomputes the limit at runtime as (resident memory + system available memory) * this ratio,
+         so the server leaves room for other processes on the same host. In a cgroup with a finite
+         memory limit, the cgroup's available memory is used instead of the host-wide value.
+
+         On memory constrained environments you may have to set this to a value larger than 1.
+         A value of 0 disables both the startup cap and the runtime adjustment.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
 
