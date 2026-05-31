@@ -136,6 +136,18 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
     total += hashed_data.size(); /// uint8_t
     for (const auto & token : datapoints_by_token)
         total += token.size() * sizeof(uint32_t);
+
+    /// When the live searcher is present, it holds a separate copy of the dataset
+    /// (built in buildIndex/buildIndexFromSerialized) plus an internal hashed dataset.
+    /// Include both to avoid underestimating the cache weight.
+    if (searcher && searcher->inner)
+    {
+        if (const auto * ds = searcher->inner->dataset())
+            total += ds->MemoryUsageExcludingDocids();
+        if (const auto * hds = searcher->inner->hashed_dataset())
+            total += hds->MemoryUsageExcludingDocids();
+    }
+
     return total;
 }
 
