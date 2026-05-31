@@ -1435,32 +1435,33 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
         auto object = object_future.get();
         if (object)
         {
-#if USE_AVRO
-            /// For Iceberg objects, resolve the storage from the raw metadata path
-            if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object))
-            {
-                if (!iceberg_info->getResolvedStorage())
-                {
-                    if (auto metadata_path = iceberg_info->getMetadataPath())
-                    {
-                        auto [storage_to_use, key] = resolveObjectStorageForPath(
-                            table_location, *metadata_path, object_storage, secondary_storages, getContext());
-                        if (!key.empty())
-                        {
-                            iceberg_info->setResolvedStorage(storage_to_use);
-                            /// For base storage, keep the key already resolved by the coordinator
-                            /// via `IcebergPathResolver` — the 5-arg resolver here does not apply
-                            /// `table_location` -> `table_root` translation and can diverge.
-                            if (storage_to_use != object_storage)
-                                iceberg_info->relative_path_with_metadata.relative_path = key;
-                        }
-                    }
-                }
-            }
-#endif
+            resolveIcebergObjectStorageIfNeeded(object);
             buffer.push_back(object);
         }
     }
+}
+
+void StorageObjectStorageSource::ReadTaskIterator::resolveIcebergObjectStorageIfNeeded([[maybe_unused]] const ObjectInfoPtr & object)
+{
+#if USE_AVRO
+    /// For Iceberg objects, resolve the storage from the raw metadata path
+    auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object);
+    if (!iceberg_info || iceberg_info->getResolvedStorage())
+        return;
+
+    auto metadata_path = iceberg_info->getMetadataPath();
+    if (!metadata_path)
+        return;
+
+    /// Only files outside the table's base storage need explicit resolution here; for base-storage
+    /// files the coordinator already resolved the key via `IcebergPathResolver`.
+    if (auto external = resolveSecondaryStorageForPath(
+            table_location, *metadata_path, object_storage, secondary_storages, getContext()))
+    {
+        iceberg_info->setResolvedStorage(external->first);
+        iceberg_info->relative_path_with_metadata.relative_path = external->second;
+    }
+#endif
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
@@ -1475,30 +1476,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
             return nullptr;
 
         object_info = raw->getObjectInfo();
-
-#if USE_AVRO
-        /// For Iceberg objects, resolve the storage from the raw metadata path
-        if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
-        {
-            if (!iceberg_info->getResolvedStorage())
-            {
-                if (auto metadata_path = iceberg_info->getMetadataPath())
-                {
-                    auto [storage_to_use, key] = resolveObjectStorageForPath(
-                        table_location, *metadata_path, object_storage, secondary_storages, getContext());
-                    if (!key.empty())
-                    {
-                        iceberg_info->setResolvedStorage(storage_to_use);
-                        /// For base storage, keep the key already resolved by the coordinator
-                        /// via `IcebergPathResolver` — the 5-arg resolver here does not apply
-                        /// `table_location` -> `table_root` translation and can diverge.
-                        if (storage_to_use != object_storage)
-                            iceberg_info->relative_path_with_metadata.relative_path = key;
-                    }
-                }
-            }
-        }
-#endif
+        resolveIcebergObjectStorageIfNeeded(object_info);
     }
     else
     {

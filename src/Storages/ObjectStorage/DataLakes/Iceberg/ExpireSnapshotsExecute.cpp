@@ -791,7 +791,6 @@ ExpireSnapshotsResult expireSnapshots(
                 hint_path,
                 object_storage,
                 context,
-                metadata_info.compression_method,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
         {
             LOG_WARNING(log, "Metadata commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);

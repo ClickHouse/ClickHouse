@@ -61,7 +61,6 @@ bool writeMetadataFileAndVersionHint(
     const IcebergPathFromMetadata & version_hint_path,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    DB::CompressionMethod compression_method,
     bool try_write_version_hint);
 
 struct TransformAndArgument

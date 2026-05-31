@@ -533,7 +533,6 @@ static bool writeMetadataFiles(
                     hint_path,
                     object_storage,
                     context,
-                    metadata_info.compression_method,
                     data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 cleanup();
@@ -781,7 +780,6 @@ void alter(
                 hint_path,
                 object_storage,
                 context,
-                metadata_info.compression_method,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
         {
             succeeded = true;

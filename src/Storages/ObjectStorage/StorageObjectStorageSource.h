@@ -172,6 +172,10 @@ public:
 private:
     ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
 
+    /// For Iceberg objects: resolve which storage the file lives in (possibly a secondary storage)
+    /// from the raw metadata path and record it on the object. No-op for non-Iceberg objects.
+    void resolveIcebergObjectStorageIfNeeded(const ObjectInfoPtr & object);
+
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;

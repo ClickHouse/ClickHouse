@@ -120,7 +120,6 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     secondary_storages.storages.emplace(cache_key, storage);
     return {storage, key_to_use};
 }
-#endif
 
 bool isAbsolutePath(const std::string & path)
 {
@@ -130,71 +129,7 @@ bool isAbsolutePath(const std::string & path)
     return false;
 }
 
-/// Normalize a path string by removing redundant components and leading slashes.
-std::string normalizePathString(const std::string & path)
-{
-    std::filesystem::path fs_path(path);
-    std::filesystem::path normalized = fs_path.lexically_normal();
-
-    std::string normalized_result = normalized.string();
-
-    while (!normalized_result.empty() && normalized_result.front() == '/')
-        normalized_result = normalized_result.substr(1);
-
-    return normalized_result;
-}
-
-/// Convert a path (relative to table location or absolute path) to a key that will be looked up in the object storage.
-///
-/// - If `table_location` is empty, the path is treated as already relative to storage root.
-/// - If `path` is an absolute path, its key component (without scheme/authority) is returned.
-/// - If `table_location` parses to a URI whose key part is empty, `path` is returned unchanged (exception will be thrown when looking up non-existing object in storage)
-///
-/// - Otherwise, `path` is treated as relative to `table_location`'s key:
-/// leading '/' stripped, concatenated to table_location key, and the result is normalized.
-std::string convertPathToKeyInStorage(const std::string & table_location, const std::string & path)
-{
-    if (table_location.empty())
-    {
-        if (!path.empty() && path.front() == '/')
-            return path.substr(1);
-        return path;
-    }
-
-    if (isAbsolutePath(path))
-        return SchemeAuthorityKey(path).key; // Absolute path, return the key part
-
-    SchemeAuthorityKey base{table_location};
-    if (base.key.empty())
-        return path; // Table location is empty, return the path as is
-
-    std::string base_key_trimmed = base.key;
-    while (!base_key_trimmed.empty() && base_key_trimmed.front() == '/')
-        base_key_trimmed = base_key_trimmed.substr(1);
-    while (!base_key_trimmed.empty() && base_key_trimmed.back() == '/')
-        base_key_trimmed.pop_back();
-
-    std::string rel_path = path;
-    while (!rel_path.empty() && rel_path.front() == '/')
-        rel_path = rel_path.substr(1);
-
-    auto reattach_slash = [&](std::string s) -> std::string
-    {
-        if (base.scheme == "file" && !s.empty() && s.front() != '/')
-            return "/" + s;
-        return s;
-    };
-
-    if (!base_key_trimmed.empty() && (rel_path == base_key_trimmed || rel_path.starts_with(base_key_trimmed + "/")))
-        return reattach_slash(normalizePathString(rel_path));  // Path already includes table location
-
-    std::string result = base.key;
-    if (!result.empty() && result.back() != '/')
-        result += '/';
-    result += rel_path;
-
-    return reattach_slash(normalizePathString(result));
-}
+#endif // USE_AVRO
 
 }
 
@@ -568,26 +503,12 @@ extern const SettingsUInt64 filesystem_cache_boundary_alignment;
 extern const SettingsBool s3_propagate_credentials_to_other_storages;
 }
 
-std::string makeAbsolutePath(const std::string & table_location, const std::string & path)
-{
-    if (isAbsolutePath(path))
-        return path;
-
-    auto table_location_decomposed = SchemeAuthorityKey(table_location);
-
-    std::string normalized_key = convertPathToKeyInStorage(table_location, path);
-
-    if (!table_location_decomposed.scheme.empty())
-    {
-        const std::string sep = (!normalized_key.empty() && normalized_key.front() == '/') ? "" : "/";
-        return table_location_decomposed.scheme + "://" + table_location_decomposed.authority + sep + normalized_key;
-    }
-
-    return normalized_key;
-}
-
 #if USE_AVRO
-std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
+/// Resolve a metadata path to a SECONDARY object storage — a bucket/account/filesystem different
+/// from `base_storage`. Returns std::nullopt when the path belongs to `base_storage`; in that case
+/// the caller owns the base-storage key (the coordinator resolves it via `IcebergPathResolver`,
+/// workers keep the key the coordinator already resolved).
+std::optional<std::pair<DB::ObjectStoragePtr, std::string>> resolveSecondaryStorageForPath(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
@@ -595,7 +516,7 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const DB::ContextPtr & context)
 {
     if (!isAbsolutePath(path))
-        return {base_storage, convertPathToKeyInStorage(table_location, path)}; // Relative path definitely goes to base storage
+        return std::nullopt; // Relative path always belongs to base storage
 
     auto ensure_local_path_inside_user_files = [&](const std::string & local_path)
     {
@@ -618,7 +539,7 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
         if (base_storage->getType() == ObjectStorageType::Local)
             ensure_local_path_inside_user_files(target_decomposed.key);
 
-        return {base_storage, convertPathToKeyInStorage(table_location, target_decomposed.key)};
+        return std::nullopt;
     }
 
     const std::string base_scheme_normalized = normalizeScheme(table_location_decomposed.scheme);
@@ -685,7 +606,7 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
         }
 
         if (use_base_storage)
-            return {base_storage, key_to_use};
+            return std::nullopt;
 
         /// Include credential-propagation flag in the cache key: `configure_fn` runs only on miss,
         /// so different per-query values of `s3_propagate_credentials_to_other_storages` must not share an entry.
@@ -828,13 +749,13 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
         }
 
         if (use_base_storage)
-            return {base_storage, target_decomposed.key};
+            return std::nullopt;
     }
     #endif
 
     /// Fallback for schemes not handled above (e.g., abfs, file)
     if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority)
-        return {base_storage, target_decomposed.key};
+        return std::nullopt;
 
     const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);
     if (type_for_factory.empty())
@@ -943,10 +864,10 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const DB::ContextPtr & context,
     const Iceberg::IcebergPathResolver & path_resolver)
 {
-    auto [storage, key] = resolveObjectStorageForPath(table_location, path, base_storage, secondary_storages, context);
-    if (storage == base_storage)
-        key = path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path));
-    return {storage, key};
+    if (auto external = resolveSecondaryStorageForPath(table_location, path, base_storage, secondary_storages, context))
+        return *external;
+    /// Base-storage key comes from the canonical resolver (handles table_location -> table_root).
+    return {base_storage, path_resolver.resolve(Iceberg::IcebergPathFromMetadata::deserialize(path))};
 }
 
 #endif

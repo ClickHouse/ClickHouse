@@ -92,25 +92,23 @@ struct ParseFromDiskResult
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
 
-std::string makeAbsolutePath(const std::string & table_location, const std::string & path);
-
 #if USE_AVRO
-/// Resolve object storage and key for reading from that storage
-/// If path is relative -- it must be read from base_storage
-/// Otherwise, look for a suitable storage in secondary_storages
-std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
+namespace Iceberg { class IcebergPathResolver; }
+
+/// Resolve a metadata path to a SECONDARY object storage (a bucket/account/filesystem different
+/// from `base_storage`). Returns std::nullopt when the path belongs to `base_storage` — in that
+/// case the caller owns the base-storage key (the coordinator resolves it via `IcebergPathResolver`,
+/// workers keep the key the coordinator already resolved).
+std::optional<std::pair<DB::ObjectStoragePtr, std::string>> resolveSecondaryStorageForPath(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
     SecondaryStorages & secondary_storages,
     const DB::ContextPtr & context);
 
-namespace Iceberg { class IcebergPathResolver; }
-
-/// Same as above, but when the result maps to base_storage, uses path_resolver
-/// to compute the correct storage key. This is needed because the metadata
-/// table_location may differ from the actual storage path (table_root),
-/// e.g. when the table was created by Spark with a different URI scheme.
+/// Resolve a metadata path to (object storage, key) for reading. For base-storage paths the key is
+/// computed via `path_resolver` (handles the table_location -> table_root translation); otherwise a
+/// secondary storage is looked up / created.
 std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
     const std::string & table_location,
     const std::string & path,

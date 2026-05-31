@@ -414,31 +414,24 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 
         if (!object_info->info.requires_external_storage)
         {
-            for (const auto & pos_del : object_info->info.position_deletes_objects)
+            auto resolves_to_external_storage = [&](const String & file_path)
             {
                 auto [del_storage, del_key] = resolveObjectStorageForPath(
-                    persistent_components.table_location, pos_del.file_path, object_storage, *secondary_storages, local_context,
+                    persistent_components.table_location, file_path, object_storage, *secondary_storages, local_context,
                     persistent_components.path_resolver);
-                if (del_storage != object_storage)
-                {
-                    object_info->info.requires_external_storage = true;
-                    break;
-                }
-            }
-        }
-        if (!object_info->info.requires_external_storage)
-        {
-            for (const auto & eq_del : object_info->info.equality_deletes_objects)
+                return del_storage != object_storage;
+            };
+            auto any_external = [&](const auto & delete_objects)
             {
-                auto [del_storage, del_key] = resolveObjectStorageForPath(
-                    persistent_components.table_location, eq_del.file_path, object_storage, *secondary_storages, local_context,
-                    persistent_components.path_resolver);
-                if (del_storage != object_storage)
-                {
-                    object_info->info.requires_external_storage = true;
-                    break;
-                }
-            }
+                for (const auto & del : delete_objects)
+                    if (resolves_to_external_storage(del.file_path))
+                        return true;
+                return false;
+            };
+
+            object_info->info.requires_external_storage =
+                any_external(object_info->info.position_deletes_objects)
+                || any_external(object_info->info.equality_deletes_objects);
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
