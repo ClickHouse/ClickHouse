@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/PODArray.h>
@@ -186,7 +187,7 @@ static std::vector<BSSParam> makeBSSParams()
             "F64_sequential"});
 
         out.push_back({spec, dt,
-            generateBuffer<double>(1000, [](size_t i) { return std::sin(static_cast<double>(i) * i); }),
+            generateBuffer<double>(1000, [](size_t i) { return std::sin(static_cast<double>(i) * static_cast<double>(i)); }),
             "F64_random"});
 
         out.push_back({spec, dt,
@@ -284,7 +285,7 @@ INSTANTIATE_TEST_SUITE_P(
     ByteStreamSplit,
     ByteStreamSplitRoundtripTest,
     ::testing::ValuesIn(makeBSSParams()),
-    [](const ::testing::TestParamInfo<BSSParam> & info) { return info.param.label; }
+    [](const ::testing::TestParamInfo<BSSParam> & param_info) { return param_info.param.label; }
 );
 
 
