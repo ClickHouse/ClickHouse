@@ -17,6 +17,7 @@ SELECT * FROM eval(SELECT CAST('SELECT 6 AS n', 'Nullable(String)'));
 SELECT * FROM eval(SELECT toLowCardinality(CAST('SELECT 7 AS lcn', 'Nullable(String)')));
 
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT * FROM eval('SELECT 8 AS explain_value'));
+WITH 'SELECT 9 AS with_alias_value' AS q SELECT * FROM eval(q);
 
 SELECT n FROM eval(SELECT 'SELECT 2 AS n UNION ALL SELECT 1 AS n') ORDER BY n;
 SELECT * FROM eval(SELECT 'SELECT 1 AS n INTERSECT SELECT 1 AS n');

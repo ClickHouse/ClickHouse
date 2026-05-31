@@ -1,3 +1,4 @@
+#include <Analyzer/TableFunctionNode.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -64,7 +65,7 @@ private:
 
     const char * getStorageEngineName() const override { return "View"; }
 
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {0}; }
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     const ASTSelectWithUnionQuery * getSelectQueryForDistributedRewrite() const override { return create.select; }
 
@@ -74,6 +75,23 @@ private:
 
     ASTCreateQuery create;
 };
+
+VectorWithMemoryTracking<size_t> TableFunctionEval::skipAnalysisForArguments(
+    const QueryTreeNodePtr & query_node_table_function,
+    ContextPtr) const
+{
+    const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    const auto & arguments = table_function_node.getArguments().getNodes();
+
+    if (arguments.size() == 1)
+    {
+        const auto argument_type = arguments[0]->getNodeType();
+        if (argument_type == QueryTreeNodeType::QUERY || argument_type == QueryTreeNodeType::UNION)
+            return {0};
+    }
+
+    return {};
+}
 
 bool isStringFamily(const DataTypePtr & type)
 {
