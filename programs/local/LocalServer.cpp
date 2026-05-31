@@ -208,6 +208,9 @@ namespace ServerSetting
     extern const ServerSettingsString allowed_disks_for_table_engines;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_try;
+    extern const ServerSettingsInt32 max_connections;
+    extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
+    extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
@@ -574,8 +577,17 @@ void LocalServer::startServers(const ServerType & server_type)
         }
     }
 
+    /// Size the connection pool from the same server settings as `Server::main` so that a
+    /// `SYSTEM START LISTEN` in `clickhouse-local` honors `max_connections` (and the global
+    /// profiler periods) instead of a hard-coded limit.
     if (!server_pool)
-        server_pool = std::make_unique<Poco::ThreadPool>(3, 100);
+        server_pool = std::make_unique<Poco::ThreadPool>(
+            /* minCapacity */ 3,
+            /* maxCapacity */ server_settings[ServerSetting::max_connections],
+            /* idleTime */ 60,
+            /* stackSize */ POCO_THREAD_STACK_SIZE,
+            server_settings[ServerSetting::global_profiler_real_time_period_ns],
+            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
     if (!async_metrics)
     {
