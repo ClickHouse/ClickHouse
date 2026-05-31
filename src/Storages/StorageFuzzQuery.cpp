@@ -173,7 +173,12 @@ void registerStorageFuzzQuery(StorageFactory & factory)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "'StorageFuzzQuery' supports only columns of String type, got {}.", col.type->getName());
 
             return std::make_shared<StorageFuzzQuery>(args.table_id, args.columns, args.comment, configuration);
-        });
+        },
+        {},
+        Documentation{
+            .description = "Generates random SQL query strings by mutating a supplied query template. Useful for producing fuzzed queries for testing. The table must consist solely of columns of type `String`.",
+            .syntax = "ENGINE = FuzzQuery(query_template[, max_query_length[, random_seed]])",
+            .related = {"FuzzJSON", "GenerateRandom"}});
 }
 
 }

@@ -1,4 +1,6 @@
 #include <Columns/IColumn.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/StorageFactory.h>
@@ -24,6 +26,11 @@ ColumnsDescription StorageSystemTableEngines::getColumnsDescription()
         {"supports_parallel_insert", std::make_shared<DataTypeUInt8>(),
             "Flag that indicates if table engine supports parallel insert (see max_insert_threads setting)."
         },
+        {"description", std::make_shared<DataTypeString>(), "A high-level description of what the table engine does."},
+        {"syntax", std::make_shared<DataTypeString>(), "How the table engine is specified in the ENGINE clause of a CREATE TABLE query."},
+        {"examples", std::make_shared<DataTypeString>(), "Usage examples."},
+        {"introduced_in", std::make_shared<DataTypeString>(), "The ClickHouse version in which the table engine was first introduced, in the form major.minor."},
+        {"related", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of related table engines."},
     };
 }
 
@@ -31,6 +38,8 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPt
 {
     for (const auto & pair : StorageFactory::instance().getAllStorages())
     {
+        const auto & documentation = pair.second.documentation;
+
         int i = 0;
         res_columns[i++]->insert(pair.first);
         res_columns[i++]->insert(pair.second.features.supports_settings);
@@ -41,6 +50,15 @@ void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPt
         res_columns[i++]->insert(pair.second.features.supports_replication);
         res_columns[i++]->insert(pair.second.features.supports_deduplication);
         res_columns[i++]->insert(pair.second.features.supports_parallel_insert);
+        res_columns[i++]->insert(documentation.description);
+        res_columns[i++]->insert(documentation.syntaxAsString());
+        res_columns[i++]->insert(documentation.examplesAsString());
+        res_columns[i++]->insert(documentation.introducedInAsString());
+
+        Array related;
+        for (const auto & name : documentation.related)
+            related.push_back(name);
+        res_columns[i++]->insert(related);
     }
 }
 

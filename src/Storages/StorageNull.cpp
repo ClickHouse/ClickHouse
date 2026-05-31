@@ -33,7 +33,17 @@ void registerStorageNull(StorageFactory & factory)
     },
     {
         .supports_parallel_insert = true,
-    });
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+When writing data to a `Null` table, data is ignored.
+When reading from a `Null` table, the response is empty.
+
+The `Null` table engine is useful for data transformations where you no longer need the original data after it has been transformed.
+For this purpose you can create a materialized view on a `Null` table.
+The data written to the table will be consumed by the view, but the original raw data will be discarded.
+)DOCS_MD",
+        .syntax = "ENGINE = Null"});
 }
 
 void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const

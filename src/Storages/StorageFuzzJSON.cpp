@@ -747,7 +747,12 @@ void registerStorageFuzzJSON(StorageFactory & factory)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "'StorageFuzzJSON' supports only columns of String type, got {}.", col.type->getName());
 
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
-        });
+        },
+        {},
+        Documentation{
+            .description = "Generates random JSON strings by mutating a supplied JSON template. Useful for producing fuzzed JSON input for testing. The table must consist solely of columns of type `String`.",
+            .syntax = "ENGINE = FuzzJSON(json_template[, random_seed])",
+            .related = {"FuzzQuery", "GenerateRandom"}});
 }
 
 }
