@@ -479,7 +479,7 @@ Bytes at the same position within each element tend to have similar values — f
 
 `ByteStreamSplit` is a data preparation codec, i.e. it cannot be used stand-alone and must be followed by a compression codec such as `LZ4` or `ZSTD`.
 
-The codec supports any fixed-size type with an element size between 2 and 255 bytes, including `Float32`, `Float64`, integer types, `IPv4`, `IPv6`, `UUID`, and `FixedString(N)` for N ≥ 2.
+The codec supports any fixed-size type with an element size between 2 and 255 bytes, including `Float32`, `Float64`, integer types, `IPv4`, `IPv6`, `UUID`, and `FixedString(N)` for N ≥ 2. It is also valid on composite types such as `Array(T)` where `T` has a fixed-size element representation — the transform is applied per substream, so the element data stream is transposed while the offsets stream goes through the chained compressor.
 
 :::note
 This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.

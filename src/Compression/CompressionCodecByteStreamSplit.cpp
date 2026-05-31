@@ -398,11 +398,11 @@ static void decode16_AVX2(
         // decode: merge(s3[k], s3[k+2]) → s2[2k], s2[2k+1]  etc.
         __m256i s2[16];
         for (int k = 0; k < 2; ++k)
-            mergeEvenOddBytes(s3[k],      s3[k + 2],      s2[2 * k],      s2[2 * k + 1]);
+            mergeEvenOddBytes(s3[k], s3[k + 2], s2[2 * k], s2[2 * k + 1]);
         for (int k = 0; k < 2; ++k)
-            mergeEvenOddBytes(s3[4 + k],  s3[4 + k + 2],  s2[4 + 2 * k],  s2[4 + 2 * k + 1]);
+            mergeEvenOddBytes(s3[4 + k], s3[4 + k + 2], s2[4 + 2 * k], s2[4 + 2 * k + 1]);
         for (int k = 0; k < 2; ++k)
-            mergeEvenOddBytes(s3[8 + k],  s3[8 + k + 2],  s2[8 + 2 * k],  s2[8 + 2 * k + 1]);
+            mergeEvenOddBytes(s3[8 + k], s3[8 + k + 2], s2[8 + 2 * k], s2[8 + 2 * k + 1]);
         for (int k = 0; k < 2; ++k)
             mergeEvenOddBytes(s3[12 + k], s3[12 + k + 2], s2[12 + 2 * k], s2[12 + 2 * k + 1]);
 
