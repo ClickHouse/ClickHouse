@@ -1293,12 +1293,18 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Simple);
-        }, false);
+        }, false, true, Documentation{
+        .description = "Stores the dictionary in memory using hashed arrays. This is more memory-efficient than `hashed` for dictionaries that have many attributes.",
+        .syntax = "LAYOUT(HASHED_ARRAY())",
+        .related = {"hashed"}});
     factory.registerLayout("complex_key_hashed_array",
         [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/)
         {
             return create_layout(a, b, c, d, global_context, std::move(e), DictionaryKeyType::Complex);
-        }, true);
+        }, true, true, Documentation{
+        .description = "Like `hashed_array`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_HASHED_ARRAY())",
+        .related = {"hashed_array"}});
 }
 
 }

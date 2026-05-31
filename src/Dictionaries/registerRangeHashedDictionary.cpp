@@ -96,7 +96,10 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
         return createRangeHashedDictionary<DictionaryKeyType::Simple>(full_name, dict_struct, config, config_prefix, global_context, std::move(source_ptr));
     };
 
-    factory.registerLayout("range_hashed", create_layout_simple, false);
+    factory.registerLayout("range_hashed", create_layout_simple, false, true, Documentation{
+        .description = "Stores the dictionary in memory as a hash table with ordered ranges and their values, allowing a key to be looked up together with a value that falls within a range (for example, a date range).",
+        .syntax = "LAYOUT(RANGE_HASHED())",
+        .related = {"complex_key_range_hashed", "hashed"}});
 
     auto create_layout_complex = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
@@ -109,7 +112,10 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
         return createRangeHashedDictionary<DictionaryKeyType::Complex>(full_name, dict_struct, config, config_prefix, global_context, std::move(source_ptr));
     };
 
-    factory.registerLayout("complex_key_range_hashed", create_layout_complex, true);
+    factory.registerLayout("complex_key_range_hashed", create_layout_complex, true, true, Documentation{
+        .description = "Like `range_hashed`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_RANGE_HASHED())",
+        .related = {"range_hashed"}});
 }
 
 }

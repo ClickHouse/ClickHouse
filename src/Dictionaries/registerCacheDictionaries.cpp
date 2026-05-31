@@ -265,7 +265,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Simple, false/* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("cache", create_simple_cache_layout, false);
+    factory.registerLayout("cache", create_simple_cache_layout, false, true, Documentation{
+        .description = "Stores the dictionary in a fixed-size in-memory cache of cells. On a cache miss, the value is requested from the source and cached. Suitable for sources with a high cache hit rate.",
+        .syntax = "LAYOUT(CACHE(SIZE_IN_CELLS n))",
+        .related = {"ssd_cache", "direct"}});
 
     auto create_complex_key_cache_layout = [=](const std::string & full_name,
                                                const DictionaryStructure & dict_struct,
@@ -278,7 +281,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Complex, false /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
+    factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true, true, Documentation{
+        .description = "Like `cache`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS n))",
+        .related = {"cache"}});
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
 
@@ -293,7 +299,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Simple, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false);
+    factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false, true, Documentation{
+        .description = "Like `cache`, but stores the cached cells on a local SSD/disk and keeps only the index in memory.",
+        .syntax = "LAYOUT(SSD_CACHE(PATH '/path/to/cache'))",
+        .related = {"cache"}});
 
     auto create_complex_key_ssd_cache_layout = [=](const std::string & full_name,
                                                    const DictionaryStructure & dict_struct,
@@ -305,7 +314,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Complex, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true);
+    factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true, true, Documentation{
+        .description = "Like `ssd_cache`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_SSD_CACHE(PATH '/path/to/cache'))",
+        .related = {"ssd_cache"}});
 
 #endif
 

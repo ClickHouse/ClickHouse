@@ -1019,7 +1019,10 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
             context->getSettingsRef()[Setting::regexp_dict_flag_dotall]);
     };
 
-    factory.registerLayout("regexp_tree", create_layout, true);
+    factory.registerLayout("regexp_tree", create_layout, true, true, Documentation{
+        .description = "Stores a tree of regular expressions and maps an input string to the attributes of the first matching branch. Useful for tasks such as user-agent parsing.",
+        .syntax = "LAYOUT(REGEXP_TREE())",
+        .related = {}});
 }
 
 }

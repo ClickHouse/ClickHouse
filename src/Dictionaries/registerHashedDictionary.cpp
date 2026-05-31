@@ -122,13 +122,25 @@ void registerDictionaryHashed(DictionaryFactory & factory)
     };
 
     factory.registerLayout("hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ false); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ false); }, false, true, Documentation{
+        .description = "Stores the entire dictionary in memory in a hash table. Suitable for dictionaries with any number of elements keyed by a single numeric key.",
+        .syntax = "LAYOUT(HASHED())",
+        .related = {"sparse_hashed", "complex_key_hashed", "hashed_array", "flat"}});
     factory.registerLayout("sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ true); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Simple, /* sparse = */ true); }, false, true, Documentation{
+        .description = "Like `hashed`, but uses significantly less memory at the cost of slower lookups.",
+        .syntax = "LAYOUT(SPARSE_HASHED())",
+        .related = {"hashed"}});
     factory.registerLayout("complex_key_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Complex, /* sparse = */ false); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Complex, /* sparse = */ false); }, true, true, Documentation{
+        .description = "Like `hashed`, but supports composite keys (a key consisting of several attributes or of a non-integer type).",
+        .syntax = "LAYOUT(COMPLEX_KEY_HASHED())",
+        .related = {"hashed"}});
     factory.registerLayout("complex_key_sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Complex, /* sparse = */ true); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr global_context, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), global_context, DictionaryKeyType::Complex, /* sparse = */ true); }, true, true, Documentation{
+        .description = "Like `sparse_hashed`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_SPARSE_HASHED())",
+        .related = {"sparse_hashed", "complex_key_hashed"}});
 
 }
 

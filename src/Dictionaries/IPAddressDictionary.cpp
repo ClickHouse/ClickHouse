@@ -1258,7 +1258,10 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         // This is specialised dictionary for storing IPv4 and IPv6 prefixes.
         return std::make_unique<IPAddressDictionary>(dict_id, dict_struct, std::move(source_ptr), configuration);
     };
-    factory.registerLayout("ip_trie", create_layout, true);
+    factory.registerLayout("ip_trie", create_layout, true, true, Documentation{
+        .description = "Stores the dictionary as a trie keyed by IP prefixes (CIDR ranges), for mapping IP addresses to attributes such as ASN or country code.",
+        .syntax = "LAYOUT(IP_TRIE())",
+        .related = {}});
 }
 
 }

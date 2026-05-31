@@ -276,12 +276,24 @@ DictionaryPtr createLayout(const std::string & /*name*/,
 
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
-    factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true);
-    factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true);
-    factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true);
+    factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true, true, Documentation{
+        .description = "A polygon dictionary that performs a linear scan over all polygons for each queried point. The simplest but slowest polygon layout.",
+        .syntax = "LAYOUT(POLYGON_SIMPLE())",
+        .related = {"polygon"}});
+    factory.registerLayout("polygon_index_each", createLayout<PolygonDictionaryIndexEach>, true, true, Documentation{
+        .description = "A polygon dictionary that builds a separate grid index for each polygon.",
+        .syntax = "LAYOUT(POLYGON_INDEX_EACH())",
+        .related = {"polygon"}});
+    factory.registerLayout("polygon_index_cell", createLayout<PolygonDictionaryIndexCell>, true, true, Documentation{
+        .description = "A polygon dictionary that builds a single grid index over all polygons.",
+        .syntax = "LAYOUT(POLYGON_INDEX_CELL())",
+        .related = {"polygon"}});
 
     /// Alias to the most performant dictionary type - polygon_index_cell
-    factory.registerLayout("polygon", createLayout<PolygonDictionaryIndexCell>, true);
+    factory.registerLayout("polygon", createLayout<PolygonDictionaryIndexCell>, true, true, Documentation{
+        .description = "Maps points (coordinates) to the polygons that contain them, for geographical lookups. This is an alias for the `polygon_index_cell` layout.",
+        .syntax = "LAYOUT(POLYGON())",
+        .related = {"polygon_simple", "polygon_index_each", "polygon_index_cell"}});
 }
 
 }
