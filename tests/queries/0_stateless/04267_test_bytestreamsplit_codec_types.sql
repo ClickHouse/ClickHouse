@@ -74,20 +74,20 @@ SELECT count() FROM tab;
 DROP TABLE tab;
 
 
--- ── Roundtrip on unaligned (tail) sizes ────────────────────────────────────────
--- BSS must correctly handle source_size not divisible by element_bytes.
--- We do this by inserting N elements so the part has an odd number of bytes
--- via CODEC(ByteStreamSplit) on a FixedString(3) — W=3.
-
+-- ── Runtime-width and W=16 roundtrip over non-standard FixedString widths ──────
+-- These widths (3 and 5) go down the runtime-W path (encodeRuntime/decodeRuntime)
+-- rather than the compile-time encodeW<W> specialisations.
+--
 CREATE TABLE tab (v FixedString(3) CODEC(ByteStreamSplit(3), LZ4)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO tab SELECT toFixedString(leftPad(toString(number), 3, '0'), 3) FROM numbers(101); -- 101×3 = 303 bytes (odd)
-SELECT count() FROM tab;
+INSERT INTO tab SELECT toFixedString(leftPad(toString(number), 3, '0'), 3) FROM numbers(101);
+-- Force a full read of `v` so the codec's decode path actually runs, then verify each byte roundtripped.
+SELECT 'FS3 roundtrip rows / mismatches:', count(), countIf(v != toFixedString(leftPad(toString(toUInt32(v)), 3, '0'), 3)) FROM tab;
 DROP TABLE tab;
 
--- Blob of mixed sizes that produces bytes_to_skip > 0
 CREATE TABLE tab (v FixedString(5) CODEC(ByteStreamSplit(5), LZ4)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO tab SELECT toFixedString(leftPad(toString(number), 5, '0'), 5) FROM numbers(7); -- 7×5 = 35 bytes
-SELECT count() FROM tab;
+INSERT INTO tab SELECT toFixedString(leftPad(toString(number), 5, '0'), 5) FROM numbers(7);
+SELECT 'FS5 roundtrip rows / mismatches:', count(), countIf(v != toFixedString(leftPad(toString(toUInt64(v)), 5, '0'), 5)) FROM tab;
+SELECT v FROM tab ORDER BY v;
 DROP TABLE tab;
 
 

@@ -296,16 +296,23 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(ByteStreamSplitTest, TranscodeRawInput)
 {
-    // (type, element_bytes) pairs to exercise different dispatch paths
+    // (type, element_bytes) pairs to exercise different dispatch paths:
+    //   W=2/4/8        → compile-time encodeW<W>/decodeW<W>
+    //   W=16           → SSE2/AVX2 specialisation in encodeW<16>/decodeW<16>
+    //   W=3 (FS3)      → runtime-width loop in encodeRuntime/decodeRuntime
+    // Combined with the buf_size 1..512 sweep, this drives bytes_to_skip != 0
+    // through every encode/decode path the codec implements.
     const std::vector<std::pair<DataTypePtr, size_t>> kTypes = {
-        {std::make_shared<DataTypeFloat32>(), 4},
-        {std::make_shared<DataTypeFloat64>(), 8},
-        {std::make_shared<DataTypeInt16>(),   2},
-        {std::make_shared<DataTypeInt32>(),   4},
-        {std::make_shared<DataTypeInt64>(),   8},
-        {std::make_shared<DataTypeUInt16>(),  2},
-        {std::make_shared<DataTypeUInt32>(),  4},
-        {std::make_shared<DataTypeUInt64>(),  8},
+        {std::make_shared<DataTypeFloat32>(),     4},
+        {std::make_shared<DataTypeFloat64>(),     8},
+        {std::make_shared<DataTypeInt16>(),       2},
+        {std::make_shared<DataTypeInt32>(),       4},
+        {std::make_shared<DataTypeInt64>(),       8},
+        {std::make_shared<DataTypeUInt16>(),      2},
+        {std::make_shared<DataTypeUInt32>(),      4},
+        {std::make_shared<DataTypeUInt64>(),      8},
+        {std::make_shared<DataTypeFixedString>(3),  3},
+        {std::make_shared<DataTypeFixedString>(16), 16},
     };
 
     for (auto & [type, elem_bytes] : kTypes)

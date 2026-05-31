@@ -8,8 +8,15 @@
 1000
 1000
 1000
-101
-7
+FS3 roundtrip rows / mismatches:	101	0
+FS5 roundtrip rows / mismatches:	7	0
+00000
+00001
+00002
+00003
+00004
+00005
+00006
 F32 spot-check diffs:
 F32 NaN identity:
 1
