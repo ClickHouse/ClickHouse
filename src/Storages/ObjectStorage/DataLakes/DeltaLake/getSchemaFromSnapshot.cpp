@@ -196,7 +196,7 @@ public:
     static void visitPartitionColumns(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         KernelStringSliceIterator partition_columns_iter(ffi::get_partition_columns(snapshot));
-        while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
+        while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitorWrapper<visitPartitionColumn>)) {}
 
         if (data.visitor_exception)
             std::rethrow_exception(data.visitor_exception);
