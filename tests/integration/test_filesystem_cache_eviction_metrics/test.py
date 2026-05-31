@@ -53,9 +53,15 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
         """
     )
 
-    # Snapshot taken before writes so INSERT-driven evictions are counted.
-    evictions_before = sum_dim("filesystem_cache_evictions_total")
-    by_client_before = sum_dim("filesystem_cache_evictions_by_client_total")
+    # Snapshot all eight families before writes.
+    evictions_before        = sum_dim("filesystem_cache_evictions_total")
+    bytes_before            = sum_dim("filesystem_cache_evicted_bytes_total")
+    hits_before             = sum_hist("filesystem_cache_evicted_segment_hits")
+    size_before             = sum_hist("filesystem_cache_evicted_segment_size_bytes")
+    by_client_before        = sum_dim("filesystem_cache_evictions_by_client_total")
+    bytes_by_client_before  = sum_dim("filesystem_cache_evicted_bytes_by_client_total")
+    hits_by_client_before   = sum_hist("filesystem_cache_evicted_segment_hits_by_client")
+    size_by_client_before   = sum_hist("filesystem_cache_evicted_segment_size_bytes_by_client")
 
     # Three batches of 100 rows × 8 KiB = 2.4 MiB total.
     # With cache_on_write_operations=1, each INSERT writes through the 100 KiB
@@ -76,5 +82,25 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
 
     evictions = sum_dim("filesystem_cache_evictions_total") - evictions_before
     assert evictions > 0, f"Aggregate eviction counter did not advance:\n{debug}"
-    assert sum_dim("filesystem_cache_evicted_bytes_total") > 0
+    assert sum_dim("filesystem_cache_evicted_bytes_total") - bytes_before > 0
+
+    # Each eviction fires exactly one observe() on each histogram family, so the
+    # +Inf bucket delta must equal the eviction counter delta.
+    hits_delta = sum_hist("filesystem_cache_evicted_segment_hits") - hits_before
+    size_delta = sum_hist("filesystem_cache_evicted_segment_size_bytes") - size_before
+    assert hits_delta == int(evictions), (
+        f"hits histogram delta {hits_delta} != eviction counter {int(evictions)}:\n{debug}"
+    )
+    assert size_delta == int(evictions), (
+        f"size histogram delta {size_delta} != eviction counter {int(evictions)}:\n{debug}"
+    )
+
+    # Per-client variants (expose_prometheus_eviction_metrics_per_client=1 in config).
     assert sum_dim("filesystem_cache_evictions_by_client_total") - by_client_before > 0
+    assert sum_dim("filesystem_cache_evicted_bytes_by_client_total") - bytes_by_client_before > 0
+    assert sum_hist("filesystem_cache_evicted_segment_hits_by_client") - hits_by_client_before > 0, (
+        f"per-client hits histogram did not advance:\n{debug}"
+    )
+    assert sum_hist("filesystem_cache_evicted_segment_size_bytes_by_client") - size_by_client_before > 0, (
+        f"per-client size histogram did not advance:\n{debug}"
+    )
