@@ -89,6 +89,11 @@ struct BlockIO
     /// Release query slot early to allow client to reuse it for his next query.
     void releaseQuerySlot() const;
 
+    /// Release the admission slot at the same timing as the query slot, so that protocols
+    /// going through `BlockIO` (native TCP, Arrow Flight, ...) do not keep the slot until
+    /// `ProcessListEntry` destruction.
+    void releaseAdmissionSlot() const;
+
     void resetPipeline(bool cancel);
 
 private:

@@ -26,6 +26,7 @@ void BlockIO::reset()
     /// TODO simplify it all
 
     releaseQuerySlot();
+    releaseAdmissionSlot();
     resetPipeline(/*cancel=*/false);
     process_list_entries.clear();
 
@@ -61,6 +62,7 @@ BlockIO::~BlockIO()
 void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
     releaseQuerySlot();
+    releaseAdmissionSlot();
     if (finalize_query_pipeline)
     {
         /// Keep the same teardown order as in resetPipeline:
@@ -76,6 +78,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 void BlockIO::onException(bool log_as_error)
 {
     releaseQuerySlot();
+    releaseAdmissionSlot();
     setAllDataSent();
 
     for (const auto & callback : exception_callbacks)
@@ -87,6 +90,7 @@ void BlockIO::onException(bool log_as_error)
 void BlockIO::onCancelOrConnectionLoss()
 {
     releaseQuerySlot();
+    releaseAdmissionSlot();
     resetPipeline(/*cancel=*/true);
 }
 
@@ -108,6 +112,15 @@ void BlockIO::releaseQuerySlot() const
     {
         if (entry)
             entry->getQueryStatus()->releaseQuerySlot();
+    }
+}
+
+void BlockIO::releaseAdmissionSlot() const
+{
+    for (const auto & entry : process_list_entries)
+    {
+        if (entry)
+            entry->getQueryStatus()->releaseAdmissionSlot();
     }
 }
 
