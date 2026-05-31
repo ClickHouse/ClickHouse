@@ -263,6 +263,12 @@ private:
     /// the handle is non-null.
     std::unique_ptr<PrefetchHandle> prefetch_handle;
     ByteRange prefetch_range;
+    /// `stats.prefetch_issued_*` snapshot taken when the in-flight prefetch was
+    /// submitted. On a discard of a running prefetch, the delta since the snapshot
+    /// is exactly that prefetch's source/cache bytes — attributed to
+    /// `stats.prefetch_wasted_*`. Only meaningful when `prefetch_handle != nullptr`.
+    size_t prefetch_issued_source_at_submit = 0;
+    size_t prefetch_issued_cache_at_submit = 0;
     /// Prefetch-log metadata for the in-flight prefetch. `submit_time` is set
     /// at submit; `execution_watch` is set by the worker around its
     /// `readPhysicalWindow` (read on the foreground thread after `get()`, whose
@@ -378,11 +384,17 @@ private:
         /// All work the worker did is thrown away.
         size_t prefetch_discarded_running = 0;
         UInt64 prefetch_discard_wait_us = 0;
-        /// Bytes a running prefetch materialised into a rope that was then
-        /// discarded (consumer seeked/closed away before consuming it). The
-        /// cache `put` that ran in the same window is NOT counted here — those
-        /// bytes persist in cache for a later read.
-        size_t prefetch_wasted_bytes = 0;
+        /// Bytes a prefetch read, split by where they came from, so a wasted
+        /// prefetch distinguishes a real source/bandwidth cost from a near-free
+        /// cache read. `issued` counts every prefetch read (consumed or not);
+        /// `wasted` is the subset a running prefetch materialised into a rope that
+        /// was then discarded (consumer seeked/closed away before consuming it).
+        /// Cache `put`s made in the same window are not counted here — those bytes
+        /// persist in cache for a later read.
+        size_t prefetch_issued_source_bytes = 0;
+        size_t prefetch_issued_cache_bytes = 0;
+        size_t prefetch_wasted_source_bytes = 0;
+        size_t prefetch_wasted_cache_bytes = 0;
     };
     /// `mutable` so `const` read helpers can accumulate timings. Stats are
     /// observability, not state; worker/foreground writes are serialized by the

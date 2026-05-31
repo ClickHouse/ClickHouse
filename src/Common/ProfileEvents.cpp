@@ -824,7 +824,10 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPrefetchPoolFull, "Number of times PrefetchThreadPool::submit returned nullptr (queue full); fell back to a synchronous read.", ValueType::Number) \
     M(ReaderExecutorPrefetchDiscardedRunning, "Number of times ReaderExecutor's discardPrefetch blocked on a running prefetch's get() because tryCancel lost the race; the work the worker did is wasted.", ValueType::Number) \
     M(ReaderExecutorPrefetchDiscardWaitMicroseconds, "Time blocked in ReaderExecutor's discardPrefetch waiting for a running prefetch to finish before throwing its result away.", ValueType::Microseconds) \
-    M(ReaderExecutorPrefetchWastedBytes, "Bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded (consumer seeked/closed away). Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
+    M(ReaderExecutorPrefetchIssuedSourceBytes, "Bytes ReaderExecutor prefetch reads fetched from the source (a bandwidth cost), whether or not later consumed.", ValueType::Bytes) \
+    M(ReaderExecutorPrefetchIssuedCacheBytes, "Bytes ReaderExecutor prefetch reads served from cache tiers (near-free), whether or not later consumed.", ValueType::Bytes) \
+    M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
+    M(ReaderExecutorPrefetchWastedCacheBytes, "Cache-tier bytes a running ReaderExecutor prefetch materialised into a rope that was then discarded - near-free, unlike wasted source bytes.", ValueType::Bytes) \
     M(ReaderExecutorBufferSlotAcquired, "Number of times ReaderExecutor successfully acquired a SourceBufferLimit slot for a live-buffer read.", ValueType::Number) \
     M(ReaderExecutorBufferSlotFailed, "Number of times ReaderExecutor failed to acquire a SourceBufferLimit slot.", ValueType::Number) \
     \

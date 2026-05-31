@@ -42,7 +42,10 @@ namespace ProfileEvents
     extern const Event ReaderExecutorPrefetchPoolFull;
     extern const Event ReaderExecutorPrefetchDiscardedRunning;
     extern const Event ReaderExecutorPrefetchDiscardWaitMicroseconds;
-    extern const Event ReaderExecutorPrefetchWastedBytes;
+    extern const Event ReaderExecutorPrefetchIssuedSourceBytes;
+    extern const Event ReaderExecutorPrefetchIssuedCacheBytes;
+    extern const Event ReaderExecutorPrefetchWastedSourceBytes;
+    extern const Event ReaderExecutorPrefetchWastedCacheBytes;
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBufferSlotFailed;
 }
@@ -219,7 +222,10 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, stats.prefetch_pool_full);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedRunning, stats.prefetch_discarded_running);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardWaitMicroseconds, stats.prefetch_discard_wait_us);
-    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedBytes, stats.prefetch_wasted_bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchIssuedSourceBytes, stats.prefetch_issued_source_bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchIssuedCacheBytes, stats.prefetch_issued_cache_bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedSourceBytes, stats.prefetch_wasted_source_bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedCacheBytes, stats.prefetch_wasted_cache_bytes);
 
     LOG_DEBUG(log,
         "Destroyed: from_page_cache={} from_filesystem_cache={} from_source={} "
@@ -228,7 +234,9 @@ ReaderExecutor::~ReaderExecutor()
         "get_us={} populate_us={} src_us={} decrypt_us={} "
         "prefetch_wait_us={} sync_read_us={} "
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
-        "prefetch_discarded_running={} prefetch_discard_wait_us={} prefetch_wasted_bytes={}",
+        "prefetch_discarded_running={} prefetch_discard_wait_us={} "
+        "prefetch_issued_source_bytes={} prefetch_issued_cache_bytes={} "
+        "prefetch_wasted_source_bytes={} prefetch_wasted_cache_bytes={}",
         stats.bytes_from_page_cache, stats.bytes_from_filesystem_cache, stats.bytes_from_source,
         stats.bytes_pushed_to_cache_sync, stats.bytes_pushed_to_cache_async,
         stats.cache_get_requests, stats.cache_populate_requests, stats.source_requests,
@@ -236,7 +244,9 @@ ReaderExecutor::~ReaderExecutor()
         stats.source_read_us, stats.decrypt_us,
         stats.prefetch_wait_us, stats.sync_read_us,
         stats.prefetch_hits, stats.prefetch_cancelled, stats.prefetch_pool_full,
-        stats.prefetch_discarded_running, stats.prefetch_discard_wait_us, stats.prefetch_wasted_bytes);
+        stats.prefetch_discarded_running, stats.prefetch_discard_wait_us,
+        stats.prefetch_issued_source_bytes, stats.prefetch_issued_cache_bytes,
+        stats.prefetch_wasted_source_bytes, stats.prefetch_wasted_cache_bytes);
 
     if (reader_executor_log)
     {
@@ -270,7 +280,10 @@ ReaderExecutor::~ReaderExecutor()
         elem.prefetch_pool_full = stats.prefetch_pool_full;
         elem.prefetch_discarded_running = stats.prefetch_discarded_running;
         elem.prefetch_discard_wait_us = stats.prefetch_discard_wait_us;
-        elem.prefetch_wasted_bytes = stats.prefetch_wasted_bytes;
+        elem.prefetch_issued_source_bytes = stats.prefetch_issued_source_bytes;
+        elem.prefetch_issued_cache_bytes = stats.prefetch_issued_cache_bytes;
+        elem.prefetch_wasted_source_bytes = stats.prefetch_wasted_source_bytes;
+        elem.prefetch_wasted_cache_bytes = stats.prefetch_wasted_cache_bytes;
         reader_executor_log->add(std::move(elem));
     }
 }
@@ -338,8 +351,19 @@ void ReaderExecutor::emitPrefetchLog(FilesystemPrefetchState state, Int64 size)
     FilesystemReadPrefetchesLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     elem.query_id = creator_query_id;
-    elem.path = log_file_path;
-    elem.offset = prefetch_range.offset;
+    /// Report the object actually requested from storage, in object-local
+    /// coordinates. `prefetch_range.offset` is the executor-logical offset; add
+    /// `data_start_offset` to reach the physical file offset (encrypted reads
+    /// shift by the header), then resolve the `StoredObject` and subtract its file
+    /// start, so gather reads name the mapped object rather than the executor-wide
+    /// first-object path/logical offset. (A window may span into a later object;
+    /// the row reflects the object under its start, matching legacy per-buffer
+    /// prefetch logging.)
+    const size_t physical_offset = prefetch_range.offset + data_start_offset;
+    size_t object_file_offset = 0;
+    const StoredObject * prefetch_object = offset_map.findObjectAt(physical_offset, &object_file_offset);
+    elem.path = prefetch_object ? prefetch_object->remote_path : log_file_path;
+    elem.offset = prefetch_object ? (physical_offset - object_file_offset) : prefetch_range.offset;
     elem.size = size;
     elem.prefetch_submit_time = prefetch_submit_time;
     elem.execution_watch = prefetch_execution_watch;
@@ -518,6 +542,10 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// Track prefetch_range in logical coordinates — same space as `position`
     /// and as the decrypted rope returned by the handle.
     prefetch_range = ByteRange{next_logical_offset, next_size};
+    /// Snapshot the issued counters so a later discard can attribute exactly this
+    /// prefetch's source/cache bytes (the delta the worker adds) to `wasted`.
+    prefetch_issued_source_at_submit = stats.prefetch_issued_source_bytes;
+    prefetch_issued_cache_at_submit = stats.prefetch_issued_cache_bytes;
 }
 
 void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
@@ -551,7 +579,13 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
         try
         {
             auto rope = local_handle->get();
-            stats.prefetch_wasted_bytes += rope.totalBytes();
+            /// The worker's reads since submit (the delta of the issued counters)
+            /// are exactly this discarded prefetch's bytes; attribute them to
+            /// wasted, split source vs cache (sum == rope.totalBytes()).
+            stats.prefetch_wasted_source_bytes
+                += stats.prefetch_issued_source_bytes - prefetch_issued_source_at_submit;
+            stats.prefetch_wasted_cache_bytes
+                += stats.prefetch_issued_cache_bytes - prefetch_issued_cache_at_submit;
         }
         catch (...)
         {
@@ -1208,6 +1242,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
                         result.append(hit_rope.extract(sub));
                         covered.add(sub);
                         hit_bytes += sub.size;
+                        if (from_prefetch)
+                            stats.prefetch_issued_cache_bytes += sub.size;
                     }
                     any_hit_done = true;
                 }
@@ -1278,6 +1314,8 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
                 static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
             size_t actual = source_rope.totalBytes();
             stats.bytes_from_source += actual;
+            if (from_prefetch)
+                stats.prefetch_issued_source_bytes += actual;
             /// Size-known short reads are fatal (the map promised those bytes;
             /// silently shrinking would shift later logical offsets). Size-unknown
             /// short reads are the only way to learn EOF — latch `reached_eof`.
