@@ -33,11 +33,17 @@ backup_name="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE system.users TO ${backup_name} FORMAT Null"
 
-# The restoring user holds only CREATE TABLE WITH GRANT OPTION, which implicitly
-# includes CREATE VIEW. It has no explicit CREATE VIEW grant option.
+# For the implicit-privilege check, the restoring user holds only CREATE TABLE
+# WITH GRANT OPTION, which implicitly includes CREATE VIEW. It has no explicit
+# CREATE VIEW grant option.
+# It is also granted CREATE USER, CREATE ROLE and ROLE ADMIN so it can restore
+# every access entity captured by "BACKUP TABLE system.users" (the backup is of
+# the whole instance, which may contain users that have roles assigned);
+# otherwise "RESTORE ALL" would fail with ACCESS_DENIED before reaching user_a.
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE USER ${restoring_user};
-GRANT CREATE USER ON *.* TO ${restoring_user};
+GRANT CREATE USER, CREATE ROLE ON *.* TO ${restoring_user};
+GRANT ROLE ADMIN ON *.* TO ${restoring_user};
 GRANT CREATE TABLE ON *.* TO ${restoring_user} WITH GRANT OPTION;
 "
 
