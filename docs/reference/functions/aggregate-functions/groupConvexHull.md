@@ -1,5 +1,6 @@
 ---
 description: 'Computes the convex hull of all geometries in the group, returning a Ring.'
+sidebar_label: 'groupConvexHull'
 slug: /sql-reference/aggregate-functions/reference/groupConvexHull
 title: 'groupConvexHull'
 doc_type: 'reference'
