@@ -2192,33 +2192,40 @@ TEST_F(FileCacheTest, EvictionMetricsTryIncreasePriority)
     const auto & user = FileCache::getCommonOrigin();
     auto key = FileCacheKey::fromPath("eviction_metrics_promotion_key");
 
-    /// A and B land in probationary, then get promoted to fill the protected queue.
-    auto holderA = cache.getOrSet(key, 0, 5, /*file_size=*/20, {}, 0, user);
-    ASSERT_EQ(holderA->size(), 1u);
-    download(*holderA->begin());
+    /// A and B go to probationary, get promoted to protected, then their holders
+    /// are released so they become releasable eviction/downgrade candidates.
+    {
+        auto holderA = cache.getOrSet(key, 0, 5, /*file_size=*/20, {}, 0, user);
+        ASSERT_EQ(holderA->size(), 1u);
+        download(*holderA->begin());
 
-    auto holderB = cache.getOrSet(key, 5, 5, /*file_size=*/20, {}, 0, user);
-    ASSERT_EQ(holderB->size(), 1u);
-    download(*holderB->begin());
+        auto holderB = cache.getOrSet(key, 5, 5, /*file_size=*/20, {}, 0, user);
+        ASSERT_EQ(holderB->size(), 1u);
+        download(*holderB->begin());
 
-    increasePriority(holderA);
-    increasePriority(holderB);
+        increasePriority(holderA);
+        increasePriority(holderB);
+    }
     /// Protected: {A=5, B=5} = 10/10 full. Probationary: empty.
+    /// A and B are releasable: no live holders, so they can be downgraded.
 
-    /// C and D fill probationary. Cache is now 20/20.
+    /// C and D fill probationary. D's holder is released so it is evictable.
     auto holderC = cache.getOrSet(key, 10, 5, /*file_size=*/20, {}, 0, user);
     ASSERT_EQ(holderC->size(), 1u);
     download(*holderC->begin());
 
-    auto holderD = cache.getOrSet(key, 15, 5, /*file_size=*/20, {}, 0, user);
-    ASSERT_EQ(holderD->size(), 1u);
-    download(*holderD->begin());
+    {
+        auto holderD = cache.getOrSet(key, 15, 5, /*file_size=*/20, {}, 0, user);
+        ASSERT_EQ(holderD->size(), 1u);
+        download(*holderD->begin());
+    }
     /// Protected: {A, B} = 10/10. Probationary: {C, D} = 10/10.
+    /// D is releasable: no live holder.
 
     const auto evictions_before = sum_dim("filesystem_cache_evictions_total");
 
-    /// Promote C: protected full → downgrade A → probationary has no room
-    /// (C holds its slot with a Moving flag while the downgrade is prepared) → D evicted.
+    /// Promote C: protected full → downgrade A (releasable) → probationary has no
+    /// room (C holds its slot with a Moving flag) → D (releasable) is evicted.
     increasePriority(holderC);
 
     EXPECT_GT(sum_dim("filesystem_cache_evictions_total") - evictions_before, 0.0)
