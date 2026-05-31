@@ -84,7 +84,7 @@ public:
     }
 };
 
-class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
+class FunctionRandomString final : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
     explicit FunctionRandomString(ContextPtr context) : selector(context)
