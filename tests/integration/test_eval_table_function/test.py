@@ -32,3 +32,27 @@ def test_remote_eval_resolves_generated_query_on_remote():
         )
         == "42\n"
     )
+
+    assert (
+        initiator.query(
+            """
+            WITH 'SELECT x FROM remote_only_eval_table' AS q
+            SELECT *
+            FROM remote('remote', eval(q))
+            SETTINGS allow_experimental_eval_table_function = 1, enable_analyzer = 1
+            """
+        )
+        == "42\n"
+    )
+
+    assert (
+        initiator.query(
+            """
+            WITH 'SELECT x FROM ' AS a, 'remote_only_eval_table' AS b
+            SELECT *
+            FROM remote('remote', eval(a || b))
+            SETTINGS allow_experimental_eval_table_function = 1, enable_analyzer = 1
+            """
+        )
+        == "42\n"
+    )

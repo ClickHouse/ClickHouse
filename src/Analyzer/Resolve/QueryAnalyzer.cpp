@@ -4248,15 +4248,36 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                if (table_function_argument_function_name == "view"
-                    || table_function_argument_function_name == "eval"
+                if (table_function_argument_function_name == "eval")
+                {
+                    auto & eval_arguments = table_function_node_to_resolve_typed->getArguments().getNodes();
+                    if (!(eval_arguments.size() == 1 && isSubqueryNodeType(eval_arguments[0]->getNodeType())))
+                    {
+                        for (auto & eval_argument : eval_arguments)
+                        {
+                            resolveExpressionNode(
+                                eval_argument,
+                                scope,
+                                false /*allow_lambda_expression*/,
+                                false /*allow_table_expression*/,
+                                false /*ignore_alias*/,
+                                false /*allow_niladic_functions*/);
+                        }
+                    }
+
+                    /// The `eval` table function generates a subquery from its argument.
+                    /// The generated query may reference tables not available on the initiator,
+                    /// but expression arguments must still be resolved in the initiator scope
+                    /// before the query is sent to the remote server.
+                    skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                }
+                else if (table_function_argument_function_name == "view"
                     || (table_function_argument_function_name == "merge"
                         && (table_function_name == "remote" || table_function_name == "remoteSecure"
                             || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
                 {
                     /// The `view` table function contains a subquery that may reference tables
-                    /// not available on the initiator. The `eval` table function generates such
-                    /// a subquery from its argument.
+                    /// not available on the initiator.
                     /// The `merge` table function inside remote/cluster should not be resolved
                     /// on the initiator, because it pattern-matches tables that may only exist
                     /// on the remote server.
