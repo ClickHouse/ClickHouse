@@ -2511,13 +2511,19 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            global_context->getSourceBufferLimit()->setCapacity(
-                new_server_settings[ServerSetting::max_remote_read_connections]);
-
+            /// Validate the memory-pressure thresholds before mutating the live
+            /// connection cap. `setThresholds` throws `BAD_ARGUMENTS` on an invalid
+            /// triple before it stores anything, and `setCapacity` does not throw,
+            /// so applying the cap second makes the pair transactional: a reload
+            /// that changes both but carries an invalid threshold leaves neither
+            /// the cap nor the thresholds half-applied.
             memoryPressureMonitor().setThresholds(
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]);
+
+            global_context->getSourceBufferLimit()->setCapacity(
+                new_server_settings[ServerSetting::max_remote_read_connections]);
 
             if (config().has("resources"))
             {
