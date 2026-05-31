@@ -51,7 +51,8 @@ struct CoreAnalysisResult
 static CoreAnalysisResult buildExpressionCoreDAG(
     const ASTPtr & expression_ast,
     const NamesAndTypesList & available_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool build_subquery_sets)
 {
     /// Ensure the AST is an expression list, because QueryNode projection expects a ListNode.
     ASTPtr expr_list_ast = expression_ast;
@@ -128,13 +129,11 @@ static CoreAnalysisResult buildExpressionCoreDAG(
         empty_correlated_columns_set,
         false /* use_column_identifier_as_action_node_name */);
 
-    /// Build subquery sets in place AFTER constructing the DAG.  Building before
-    /// DAG construction would make the sets "ready", causing PlannerActionsVisitor
-    /// to constant-fold expressions like exists((SELECT 1)) — which then fails the
-    /// "key cannot contain constants" check for partition/sorting keys.
-    /// By building after, the DAG sees unready sets and keeps them as function calls.
-    /// The sets are still ready by the time the expression is actually evaluated
-    /// (e.g. during TTL checks, constraint validation, or INSERT).
+    /// Convert each subquery set's query tree into a query plan so the set becomes
+    /// buildable (a `FutureSetFromSubquery` created by `collectSets` only carries a
+    /// query tree; `buildSetInplace` needs a query plan as its `source`).  This must
+    /// always run so the set can be built later, whether eagerly here or lazily by the
+    /// caller.
     for (auto & subquery_set : planner_context->getPreparedSets().getSubqueries())
     {
         auto subquery_tree = subquery_set->detachQueryTree();
@@ -150,24 +149,42 @@ static CoreAnalysisResult buildExpressionCoreDAG(
             auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
             subquery_set->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
         }
-        subquery_set->buildSetInplace(execution_context);
     }
 
-    /// After building subquery sets in place, mark the corresponding DAG column
-    /// nodes as deterministic constants.  The sets have been evaluated and are now
-    /// fixed values, so assertDeterministic() should not reject them (e.g. when
-    /// used in partition key expressions like PARTITION BY exists((SELECT 1))).
-    /// Identify set columns by their data type (`DataTypeSet`), not by name prefix
-    /// alone — a user may legally have a column named `__set_x`, and we must not
-    /// flip its `is_deterministic_constant` flag based on the name.
-    for (const auto & node : actions.getNodes())
+    /// Build subquery sets in place AFTER constructing the DAG.  Building before
+    /// DAG construction would make the sets "ready", causing PlannerActionsVisitor
+    /// to constant-fold expressions like exists((SELECT 1)) — which then fails the
+    /// "key cannot contain constants" check for partition/sorting keys.
+    /// By building after, the DAG sees unready sets and keeps them as function calls.
+    /// The sets are still ready by the time the expression is actually evaluated
+    /// (e.g. during TTL checks, constraint validation, or INSERT).
+    ///
+    /// Skipped when `build_subquery_sets` is false: some callers build the sets
+    /// themselves at the correct time (e.g. constraint checks at insert time via
+    /// `VirtualColumnUtils::buildSetsForDAG`).  Executing the subquery here would run
+    /// a nested pipeline that reports progress on the outer query's context, breaking
+    /// the INSERT protocol handshake (a stray `Progress` packet before the sample block).
+    if (build_subquery_sets)
     {
-        if (node.type == ActionsDAG::ActionType::COLUMN
-            && node.result_type
-            && node.result_type->getTypeId() == TypeIndex::Set
-            && !node.is_deterministic_constant)
+        for (auto & subquery_set : planner_context->getPreparedSets().getSubqueries())
+            subquery_set->buildSetInplace(execution_context);
+
+        /// After building subquery sets in place, mark the corresponding DAG column
+        /// nodes as deterministic constants.  The sets have been evaluated and are now
+        /// fixed values, so assertDeterministic() should not reject them (e.g. when
+        /// used in partition key expressions like PARTITION BY exists((SELECT 1))).
+        /// Identify set columns by their data type (`DataTypeSet`), not by name prefix
+        /// alone — a user may legally have a column named `__set_x`, and we must not
+        /// flip its `is_deterministic_constant` flag based on the name.
+        for (const auto & node : actions.getNodes())
         {
-            const_cast<ActionsDAG::Node &>(node).is_deterministic_constant = true;
+            if (node.type == ActionsDAG::ActionType::COLUMN
+                && node.result_type
+                && node.result_type->getTypeId() == TypeIndex::Set
+                && !node.is_deterministic_constant)
+            {
+                const_cast<ActionsDAG::Node &>(node).is_deterministic_constant = true;
+            }
         }
     }
 
@@ -285,9 +302,10 @@ ActionsDAG analyzeExpressionToActionsDAG(
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
     bool add_aliases,
-    bool project_result)
+    bool project_result,
+    bool build_subquery_sets)
 {
-    auto core = buildExpressionCoreDAG(expression_ast, available_columns, context);
+    auto core = buildExpressionCoreDAG(expression_ast, available_columns, context, build_subquery_sets);
     auto & actions = core.actions;
     auto & ast_column_names = add_aliases ? core.ast_column_names_with_aliases : core.ast_column_names_no_aliases;
 
@@ -381,9 +399,11 @@ ExpressionActionsPtr analyzeExpressionToActions(
     const NamesAndTypesList & available_columns,
     const ContextPtr & context,
     bool add_aliases,
-    CompileExpressions compile_expressions)
+    CompileExpressions compile_expressions,
+    bool build_subquery_sets)
 {
-    auto dag = analyzeExpressionToActionsDAG(expression_ast, available_columns, context, add_aliases);
+    auto dag = analyzeExpressionToActionsDAG(
+        expression_ast, available_columns, context, add_aliases, /* project_result */ true, build_subquery_sets);
     /// Match ExpressionAnalyzer::getActions(add_aliases, remove_unused_result=true) which constructs
     /// ExpressionActions with project_inputs = add_aliases && remove_unused_result. With the default
     /// project_result=true in the DAG, remove_unused_result is effectively true here.
@@ -396,7 +416,7 @@ AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
     const ContextPtr & context,
     CompileExpressions compile_expressions)
 {
-    auto core = buildExpressionCoreDAG(expression_ast, available_columns, context);
+    auto core = buildExpressionCoreDAG(expression_ast, available_columns, context, /* build_subquery_sets */ true);
     auto & actions = core.actions;
 
     if (actions.getOutputs().empty() && core.ast_column_names_no_aliases.empty())

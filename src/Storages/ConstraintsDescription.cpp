@@ -163,7 +163,14 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
             ASTPtr expr = constraint_ptr->expr->clone();
             if (isBareSubquery(expr))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subqueries are not allowed in CHECK constraints");
-            res.push_back(analyzeExpressionToActions(expr, source_columns_, context, false, CompileExpressions::yes));
+            /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
+            /// compiled while the INSERT pipeline is being constructed (in the
+            /// `CheckConstraintsTransform` constructor), before the sample-block handshake.
+            /// Executing the subquery now would emit a stray `Progress` packet to the client.
+            /// `CheckConstraintsTransform::onConsume` builds the sets at the right time via
+            /// `VirtualColumnUtils::buildSetsForDAG`, matching the legacy behavior.
+            res.push_back(analyzeExpressionToActions(
+                expr, source_columns_, context, /* add_aliases */ false, CompileExpressions::yes, /* build_subquery_sets */ false));
         }
     }
     return res;
