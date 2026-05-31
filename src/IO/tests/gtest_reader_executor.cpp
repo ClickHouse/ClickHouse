@@ -8,9 +8,11 @@
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
 #include <IO/PageCacheProvider.h>
+#include <Core/Defines.h>
 #include <Common/PageCache.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -476,6 +478,52 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
 
     auto rope = executor.readNextWindow();
     EXPECT_EQ(rope.range().offset, 400u);
+}
+
+TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
+{
+    /// Read-ahead is speculative, so the prefetch window tracks memory pressure:
+    /// half the synchronous window at Normal/Elevated, suppressed at High/Critical.
+    /// Uses the stateless path (a present-but-zero-capacity buffer_limit, so no
+    /// slot is acquired) and a window much larger than the block, so the half-window
+    /// is observable rather than floored back up to one block.
+    struct Reading { size_t sync_window; bool scheduled; size_t prefetch_window; };
+    auto measure = [](double pressure) -> Reading
+    {
+        FakeMemoryPressureMonitor fake(pressure, /*initial_now_ns=*/1'000'000'000ULL);
+        ScopedMemoryPressureMonitor scope(fake);
+
+        auto source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"obj", String(1u << 20, 'p')}});   // 1 MiB
+        StoredObjects objects;
+        objects.emplace_back("obj", "", 1u << 20);
+
+        auto pool = std::make_shared<PrefetchThreadPool>(2);
+        auto limit = std::make_shared<SourceBufferLimit>(0);   // present but no slots -> stateless window reads
+        ReaderExecutor executor(source, objects, {},
+            /*window_size=*/256u << 10, /*min_bytes_for_seek=*/0, /*block_size=*/32u << 10);
+        executor.setPrefetchPool(pool);
+        executor.setBufferLimit(limit);
+
+        Rope rope = executor.readNextWindow();   // synchronous full-window read, then schedules a prefetch
+        return {rope.range().size, executor.hasInflightPrefetch(), executor.inflightPrefetchSize()};
+    };
+
+    const Reading normal = measure(0.50);
+    EXPECT_TRUE(normal.scheduled);
+    EXPECT_EQ(normal.prefetch_window, normal.sync_window / 2) << "Normal: prefetch half the synchronous window";
+
+    const Reading elevated = measure(0.80);
+    EXPECT_TRUE(elevated.scheduled);
+    EXPECT_EQ(elevated.prefetch_window, elevated.sync_window / 2) << "Elevated: prefetch half the synchronous window";
+
+    const Reading high = measure(0.92);
+    EXPECT_FALSE(high.scheduled) << "High pressure: prefetch suppressed";
+    EXPECT_EQ(high.prefetch_window, 0u);
+
+    const Reading critical = measure(0.99);
+    EXPECT_FALSE(critical.scheduled) << "Critical pressure: prefetch suppressed";
+    EXPECT_EQ(critical.prefetch_window, 0u);
 }
 
 TEST(ReaderExecutor, MergeRangesNoGap)
@@ -1600,7 +1648,7 @@ TEST(ReaderExecutor, TransientReadDoesNotPin)
     caches.push_back(cache);
 
     ReaderExecutor executor(source, objects, caches, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
-    auto transient = executor.makeTransientForReadAt(0);
+    auto transient = executor.makeTransientForReadAt(0, /*read_size=*/4000);
     ASSERT_TRUE(transient != nullptr);
     auto rope = transient->readNextWindow();
     ASSERT_FALSE(rope.empty());
@@ -1609,6 +1657,231 @@ TEST(ReaderExecutor, TransientReadDoesNotPin)
     /// pin is cleared each window. Nothing should survive an eviction sweep.
     cache->evictUnpinned();
     EXPECT_EQ((cache->downloaded.contains(0) ? cache->downloaded[0] : 0u), 0u);
+}
+
+namespace
+{
+
+/// Source whose buffers report right-bounded reads and record (and honor) the
+/// right bound requested via setReadUntilPosition, so a test can assert how the
+/// executor bounds a source read.
+struct BoundLog
+{
+    std::vector<std::optional<size_t>> read_until;   /// per open() (nullopt = open-ended)
+    std::vector<size_t> start_offset;                /// per open() (seek target)
+};
+
+class BoundRecordingBuffer : public ReadBufferFromFileBase
+{
+public:
+    BoundRecordingBuffer(const String & data_, BoundLog & log_, size_t idx_)
+        : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0), data(data_), log(log_), idx(idx_) {}
+
+    String getFileName() const override { return "BoundRecordingBuffer"; }
+    bool supportsRightBoundedReads() const override { return true; }
+    void setReadUntilPosition(size_t p) override { read_until = p; log.read_until[idx] = p; }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (whence == SEEK_SET)
+            file_offset = static_cast<size_t>(off);
+        else if (whence == SEEK_CUR)
+            file_offset += static_cast<size_t>(off);
+        log.start_offset[idx] = file_offset;
+        resetWorkingBuffer();
+        return static_cast<off_t>(file_offset);
+    }
+
+    off_t getPosition() override { return static_cast<off_t>(file_offset); }
+    size_t getFileOffsetOfBufferEnd() const override { return file_offset; }
+
+private:
+    bool nextImpl() override
+    {
+        const size_t end = read_until ? std::min(*read_until, data.size()) : data.size();
+        if (file_offset >= end)
+            return false;
+        const size_t n = std::min(end - file_offset, internal_buffer.size());
+        memcpy(internal_buffer.begin(), data.data() + file_offset, n);
+        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
+        file_offset += n;
+        return true;
+    }
+
+    String data;
+    BoundLog & log;
+    size_t idx;
+    size_t file_offset = 0;
+    std::optional<size_t> read_until;
+};
+
+class BoundRecordingSource : public ISourceReader
+{
+public:
+    BoundRecordingSource(std::unordered_map<String, String> data_, BoundLog & log_)
+        : data(std::move(data_)), log(log_) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    {
+        auto it = data.find(object.remote_path);
+        if (it == data.end())
+            return nullptr;
+        const size_t idx = log.read_until.size();
+        log.read_until.emplace_back(std::nullopt);
+        log.start_offset.emplace_back(0);
+        return std::make_unique<BoundRecordingBuffer>(it->second, log, idx);
+    }
+
+    String name() const override { return "BoundRecordingSource"; }
+
+private:
+    std::unordered_map<String, String> data;
+    BoundLog & log;
+};
+
+}
+
+TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToRequest)
+{
+    /// `readBigAt` drives a `makeTransientForReadAt` transient over a bounded
+    /// extent. Even when a slot is available - so the transient takes the live
+    /// path - it must bound the source connection to the request
+    /// [offset, offset+want) (object-local), so the borrowed HTTP connection is
+    /// fully drained and returned to the pool reusable rather than abandoned
+    /// open-ended after the request's bytes.
+    const size_t offset = 4096;
+    const size_t want = 8192;
+
+    BoundLog log;
+    auto source = std::make_shared<BoundRecordingSource>(
+        std::unordered_map<String, String>{{"obj", String(1u << 20, 'x')}}, log);   // 1 MiB
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 1u << 20);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);   // slot available -> transient takes the live path
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    TestThreadGroup tg;
+    auto transient = executor.makeTransientForReadAt(offset, want);
+
+    size_t total = 0;
+    while (total < want)
+    {
+        auto rope = transient->readNextWindow();
+        if (rope.empty())
+            break;
+        total += rope.range().size;
+    }
+
+    EXPECT_EQ(total, want) << "the transient reads exactly the requested extent";
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1)
+        << "a slot was available, so the transient opened a live connection";
+    ASSERT_FALSE(log.read_until.empty());
+    EXPECT_EQ(log.start_offset[0], offset);
+    ASSERT_TRUE(log.read_until[0].has_value()) << "the live connection must be right-bounded, not open-ended";
+    EXPECT_EQ(*log.read_until[0], offset + want) << "bounded to the request extent (object-local coordinates)";
+}
+
+TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionOnEncryptedFile)
+{
+    /// Encrypted readBigAt over the live path. Inside readFromSource the
+    /// `logical_offset` parameter is a physical (header-inclusive) offset, so the
+    /// live-connection bound must be in object-local physical coordinates and
+    /// include data_start_offset. A bound short by data_start_offset truncates the
+    /// read and throws CANNOT_READ_ALL_DATA - this is the regression test for that
+    /// coordinate-space bug (the unencrypted test cannot catch it).
+    String key(16, 'k');
+    FileEncryption::InitVector iv(UInt128{0x0123456789abcdefULL});
+    const size_t header_size = 64;   // one AES_128_CTR header == data_start_offset
+
+    String plaintext(64u << 10, '\0');
+    for (size_t i = 0; i < plaintext.size(); ++i)
+        plaintext[i] = static_cast<char>((i * 31 + 7) & 0xFF);
+    String file_bytes = makeEncryptedFile(key, iv, plaintext);   // header(64) + ciphertext
+
+    BoundLog log;
+    auto source = std::make_shared<BoundRecordingSource>(
+        std::unordered_map<String, String>{{"obj", file_bytes}}, log);
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);   // slot available -> live path
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/256u << 10, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+    executor.addDecryptionLayer("/test", 0, [&](UInt128, const String &) { return key; });
+    executor.initDecryption();   // parses the header -> data_start_offset = 64
+
+    const size_t offset = 4096;   // logical
+    const size_t want = 8192;     // logical bytes
+    const size_t open_index = log.read_until.size();   // first transient open is the next one
+
+    auto transient = executor.makeTransientForReadAt(offset, want);
+
+    size_t total = 0;
+    String got;
+    while (total < want)
+    {
+        auto rope = transient->readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & n : rope.getNodes())
+        {
+            String chunk(n.data(), n.size);
+            if (transient->needsDecryption())
+                transient->decryptInPlace(chunk.data(), chunk.size(), n.logical_offset);
+            got += chunk;
+            total += n.size;
+        }
+    }
+
+    EXPECT_EQ(total, want) << "the encrypted transient reads the full extent (no short read / CANNOT_READ_ALL_DATA)";
+    EXPECT_EQ(got, plaintext.substr(offset, want)) << "decrypted bytes match the plaintext slice";
+    ASSERT_GT(log.read_until.size(), open_index);
+    EXPECT_EQ(log.start_offset[open_index], offset + header_size);
+    ASSERT_TRUE(log.read_until[open_index].has_value()) << "the live connection must be right-bounded";
+    EXPECT_EQ(*log.read_until[open_index], offset + header_size + want)
+        << "object-local physical bound includes data_start_offset (the encryption header)";
+}
+
+TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
+{
+    /// A readBigAt extent that straddles two objects on the live path: each
+    /// connection is per object, so the non-tail object's connection must be
+    /// bounded to its own end (not past it, which would leave it abandoned),
+    /// while the tail object is bounded to the extent end.
+    const size_t s0 = 100u << 10;   // obj0 = 100 KiB
+    const size_t s1 = 100u << 10;   // obj1 = 100 KiB
+    BoundLog log;
+    auto source = std::make_shared<BoundRecordingSource>(
+        std::unordered_map<String, String>{{"o0", String(s0, 'a')}, {"o1", String(s1, 'b')}}, log);
+    StoredObjects objects;
+    objects.emplace_back("o0", "", s0);
+    objects.emplace_back("o1", "", s1);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);   // slot available -> live path on the first object
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/1u << 20, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    const size_t offset = 90u << 10;   // 90 KiB into o0
+    const size_t want = 50u << 10;     // ends at 140 KiB -> 40 KiB into o1
+    auto transient = executor.makeTransientForReadAt(offset, want);
+
+    size_t total = 0;
+    while (total < want)
+    {
+        auto rope = transient->readNextWindow();
+        if (rope.empty())
+            break;
+        total += rope.range().size;
+    }
+
+    EXPECT_EQ(total, want);
+    ASSERT_GE(log.read_until.size(), 2u) << "one open per object piece";
+    ASSERT_TRUE(log.read_until[0].has_value());
+    EXPECT_EQ(*log.read_until[0], s0) << "o0 connection bounded to its own end, not past it to the extent end";
+    ASSERT_TRUE(log.read_until[1].has_value());
+    EXPECT_EQ(*log.read_until[1], want - (s0 - offset)) << "o1 connection bounded to the extent end (object-local)";
 }
 
 TEST(SourceBufferLimit, MoveAssignReleasesPreviousSlot)

@@ -65,13 +65,16 @@ public:
     /// Seek to a new position. Discards any prefetched data.
     void seek(size_t new_position);
 
-    /// A fresh executor starting at `start_position` that shares immutable state
-    /// (caches, source, objects, decryption) but owns its own position / live
-    /// buffer. Drives `PipelineReadBuffer::readBigAt` as a one-shot read. Shares
-    /// `buffer_limit` (its connection counts against the server budget) but gets
-    /// no `prefetch_pool`/log: a one-shot read can't amortise prefetch and would
-    /// steal slots from a sequential reader.
-    std::unique_ptr<ReaderExecutor> makeTransientForReadAt(size_t start_position) const;
+    /// A fresh executor for the half-open logical range `[start_position,
+    /// start_position + read_size)`, sharing immutable state (caches, source,
+    /// objects, decryption) but owning its own position / live buffer. Drives
+    /// `PipelineReadBuffer::readBigAt` as a one-shot read. Shares `buffer_limit`
+    /// (its connection counts against the server budget) but gets no
+    /// `prefetch_pool`/log: a one-shot read can't amortise prefetch and would
+    /// steal slots from a sequential reader. `read_size` bounds every read (window
+    /// and source range) to the request, so the connection it borrows is fully
+    /// drained and returned to the pool reusable rather than abandoned mid-stream.
+    std::unique_ptr<ReaderExecutor> makeTransientForReadAt(size_t start_position, size_t read_size) const;
 
     /// Whether `makeTransientForReadAt` / `readBigAt` is allowed. All current
     /// `ISourceReader` implementations support concurrent `open()` (each call
@@ -116,6 +119,9 @@ public:
     size_t getSourceRequestsCount() const { return stats.source_requests; }
     /// Test-only: is there a prefetch currently scheduled for the next window?
     bool hasInflightPrefetch() const { return prefetch_handle != nullptr; }
+    /// Test-only: byte size of the in-flight prefetch window, or 0 when no
+    /// prefetch is scheduled (e.g. suppressed under high memory pressure).
+    size_t inflightPrefetchSize() const { return prefetch_handle ? prefetch_range.size : 0; }
     /// Test-only: number of cancelled prefetch handles still awaiting the
     /// destructor's drain (stashed on cancel so the worker can finish
     /// attaching before this executor's state is freed).
@@ -215,6 +221,18 @@ private:
     /// falls when free memory does.
     size_t effectiveBlockSize() const;
 
+    /// Read-ahead window for the next prefetch, derived from `effectiveWindowSize`:
+    /// half the synchronous window (down to one block) at Normal/Elevated, and 0 —
+    /// prefetch suppressed — at High/Critical. Read-ahead is speculative, so it
+    /// reads less ahead than a synchronous read and stops once memory is tight; a
+    /// prefetch wasted by a seek then costs less.
+    size_t effectivePrefetchWindowSize() const;
+
+    /// Shrink `win_size` so the read does not pass `read_extent_end` (a
+    /// `makeTransientForReadAt` one-shot reader). No-op on a sequential reader,
+    /// which has no extent. Saturates to 0 once `position` reaches the extent.
+    size_t clampToExtent(size_t win_size) const;
+
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
     /// (PipelineReadBuffer), so unconsumed read-ahead is never decrypted.
@@ -288,6 +306,13 @@ private:
     /// that read (released here if the open fails). Reserved-for-path is
     /// `pre_acquired_slot->objectPath()`.
     std::optional<SourceBufferSlot> pre_acquired_slot;
+
+    /// Logical end of the permitted read region, set only on a
+    /// `makeTransientForReadAt` one-shot reader. When set, windows and source
+    /// ranges never extend past it, so the borrowed connection is read to a known
+    /// bound and returned to the pool reusable. `nullopt` on a sequential reader —
+    /// it reads to the file end.
+    std::optional<size_t> read_extent_end;
 
     /// Drop `pre_acquired_slot` when it was reserved for an object other than
     /// `target_path`. Must run before a `readFromSource` / `seek` into a

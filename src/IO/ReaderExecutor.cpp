@@ -401,6 +401,13 @@ struct WindowAndBlock
 constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
 constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()]  = {1, 2, 2,  8};
 
+/// Divisor applied to the (already pressure-scaled) synchronous window to size a
+/// prefetch read, indexed by `MemoryPressureLevel`. Prefetch is speculative — a
+/// seek-away wastes both the bytes it read and the memory holding them — so it
+/// reads a smaller window than a synchronous read (half), and 0 suppresses
+/// prefetch entirely once memory is High/Critical.
+constexpr size_t PREFETCH_WINDOW_DIVISOR[memoryPressureLevelCount()] = {2, 2, 0, 0};
+
 /// The configured base is the ceiling; the 128 KiB floor only bounds the
 /// pressure shrink and never raises a base that is itself below it (e.g. a tiny
 /// test/manual window). The block never exceeds the window.
@@ -431,6 +438,25 @@ size_t ReaderExecutor::effectiveWindowSize() const
     return sizes.window_bytes;
 }
 
+size_t ReaderExecutor::effectivePrefetchWindowSize() const
+{
+    const size_t level = static_cast<size_t>(memoryPressureMonitor().currentLevel());
+    const size_t divisor = PREFETCH_WINDOW_DIVISOR[level];
+    if (divisor == 0)
+        return 0;
+    /// Half the synchronous window, but never below one block: prefetch is
+    /// speculative, so it reads less ahead than a synchronous read.
+    return std::max(effectiveWindowSize() / divisor, effectiveBlockSize());
+}
+
+size_t ReaderExecutor::clampToExtent(size_t win_size) const
+{
+    if (!read_extent_end)
+        return win_size;
+    const size_t remaining = *read_extent_end > position ? *read_extent_end - position : 0;
+    return std::min(win_size, remaining);
+}
+
 void ReaderExecutor::maybeTriggerPrefetch()
 {
     if (!prefetch_pool || prefetch_handle || atEnd())
@@ -441,9 +467,14 @@ void ReaderExecutor::maybeTriggerPrefetch()
     size_t logical_size = totalSize();
 
     ensurePreAcquiredSlot();
+
+    const size_t prefetch_window = effectivePrefetchWindowSize();
+    if (prefetch_window == 0)
+        return;   // read-ahead suppressed under High/Critical memory pressure
+
     size_t next_size = offset_map.hasUnknownSize()
-        ? effectiveWindowSize()
-        : std::min(effectiveWindowSize(), logical_size - position);
+        ? prefetch_window
+        : std::min(prefetch_window, logical_size - position);
     ByteRange next_physical_window{position + data_start_offset, next_size};
     size_t next_logical_offset = position;
 
@@ -728,6 +759,7 @@ Rope ReaderExecutor::readNextWindow()
             size_t win_size = offset_map.hasUnknownSize()
                 ? effectiveWindowSize()
                 : std::min(effectiveWindowSize(), logical_size - position);
+            win_size = clampToExtent(win_size);
             ByteRange physical_window{position + data_start_offset, win_size};
             StopwatchAccumulator sync_scope(stats.sync_read_us);
             rope = readWindowLogical(physical_window, /*from_prefetch=*/false);
@@ -770,7 +802,7 @@ Rope ReaderExecutor::readNextWindow()
         }
 
         ensurePreAcquiredSlot();
-        size_t win_size = std::min(effectiveWindowSize(), logical_size - position);
+        size_t win_size = clampToExtent(std::min(effectiveWindowSize(), logical_size - position));
         ByteRange physical_window{position + data_start_offset, win_size};
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
@@ -979,6 +1011,25 @@ Rope ReaderExecutor::readFromSource(
         {
             if (offset > 0)
                 opened->seek(offset, SEEK_SET);
+
+            /// A `readBigAt` transient reads a bounded extent; bound the live
+            /// connection so it is drained and returned to the pool reusable
+            /// instead of abandoned open-ended after the request's bytes.
+            /// `logical_offset` is a physical (map-space) offset that already
+            /// includes `data_start_offset`, so translate the logical extent end
+            /// into that space before subtracting. Clamp to this object's end: a
+            /// connection is per object, and the extent may continue into a later
+            /// one.
+            if (read_extent_end && !hasUnknownSize() && opened->supportsRightBoundedReads())
+            {
+                const size_t physical_extent_end = *read_extent_end + data_start_offset;
+                if (physical_extent_end > logical_offset)
+                {
+                    const size_t to_extent = physical_extent_end - logical_offset;
+                    const size_t to_object_end = object.bytes_size > offset ? object.bytes_size - offset : 0;
+                    opened->setReadUntilPosition(offset + std::min(to_extent, to_object_end));
+                }
+            }
 
             live_buffer.emplace(LiveBuffer{
                 .current_position = offset,
@@ -1318,7 +1369,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
     return sliced;
 }
 
-std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position) const
+std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position, size_t read_size) const
 {
     /// `buffer_limit` is shared so the transient's live connection counts
     /// against the server-wide budget. `prefetch_pool` and
@@ -1338,6 +1389,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     t->decryption_initialized = decryption_initialized;
 #endif
     t->data_start_offset = data_start_offset;
+    t->read_extent_end = start_position + read_size;
     t->seek(start_position);
     return t;
 }

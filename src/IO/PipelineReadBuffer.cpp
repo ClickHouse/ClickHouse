@@ -169,7 +169,7 @@ size_t PipelineReadBuffer::readBigAt(
     /// / prefetch state so concurrent `readBigAt` calls don't interfere with
     /// each other or with the main reader. Reusing the existing pipeline avoids
     /// duplicating the cache-walk + source-read logic.
-    auto sub = executor->makeTransientForReadAt(offset);
+    auto sub = executor->makeTransientForReadAt(offset, want);
 
     size_t total_copied = 0;
     while (total_copied < want)
