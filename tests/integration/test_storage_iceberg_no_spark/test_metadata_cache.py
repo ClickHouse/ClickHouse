@@ -4,7 +4,7 @@ from pyiceberg.catalog import load_catalog
 from helpers.config_cluster import minio_secret_key, minio_access_key
 import uuid
 import pyarrow as pa
-from datetime import date, timedelta
+from datetime import date
 from pyiceberg.schema import Schema, NestedField
 from pyiceberg.types import (
     StringType,
@@ -55,6 +55,14 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
 
+def get_profile_event(instance, query_id, event):
+    return int(
+        instance.query(
+            f"SELECT ProfileEvents['{event}'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        ).strip()
+    )
+
 def test_metadata_cache(started_cluster_iceberg_no_spark):
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     root_namespace = f"clickhouse_{uuid.uuid4()}"
@@ -76,8 +84,9 @@ def test_metadata_cache(started_cluster_iceberg_no_spark):
 
     partition_spec = PartitionSpec()
     sort_order = SortOrder(SortField(source_id=4, transform=IdentityTransform()))
+    table_name = f"{root_namespace}.test_metadata_cache"
     table = catalog.create_table(
-        identifier=f"{root_namespace}.test_metadata_cache",
+        identifier=table_name,
         schema=schema,
         location=f"s3://warehouse-rest/data",
         partition_spec=partition_spec,
@@ -101,79 +110,97 @@ def test_metadata_cache(started_cluster_iceberg_no_spark):
 
     create_clickhouse_iceberg_database(started_cluster_iceberg_no_spark, instance, CATALOG_NAME)
 
-    query_id = f"iceberg-cache-{uuid.uuid4()}"
+    # Phase 1: Cold query.  The REST catalog supplies catalog_uuid_hint, so the metadata cache
+    # is probed with the known UUID before any remote read.  The entry is absent → miss.
+    query_id = f"iceberg-cache-cold-{uuid.uuid4()}"
     instance.query(
-        f"SELECT string_col FROM {CATALOG_NAME}.`{root_namespace}.test_metadata_cache`",
+        f"SELECT string_col FROM {CATALOG_NAME}.`{table_name}`",
         query_id=query_id,
     )
-
     instance.query("SYSTEM FLUSH LOGS")
 
-    # First query: cache miss (metadata fetched from remote storage)
-    cache_misses = int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log "
-            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        ).strip()
+    cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
+    cache_skipped = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheSkipped")
+    assert cache_misses > 0, "First query should have cache misses (cold start)"
+    assert cache_skipped == 0, (
+        "First query must probe the cache (UUID from REST catalog_uuid_hint); "
+        "non-zero skips mean UUID was not propagated"
     )
-    assert cache_misses > 0, "First query should have cache misses"
 
-    # Second query: cache hit (metadata served from cache)
-    query_id = f"iceberg-cache-{uuid.uuid4()}"
+    # Phase 2: Second query on the same IcebergMetadata object — persistent_components already
+    # holds table_uuid from phase 1, so the cache probe uses the known UUID → hit.
+    query_id = f"iceberg-cache-warm-{uuid.uuid4()}"
     instance.query(
-        f"SELECT string_col FROM {CATALOG_NAME}.`{root_namespace}.test_metadata_cache`",
+        f"SELECT string_col FROM {CATALOG_NAME}.`{table_name}`",
         query_id=query_id,
     )
-
     instance.query("SYSTEM FLUSH LOGS")
 
-    cache_hits = int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'] FROM system.query_log "
-            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        ).strip()
-    )
-    cache_misses = int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log "
-            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        ).strip()
-    )
+    cache_hits = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheHits")
+    cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
+    cache_skipped = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheSkipped")
     assert cache_hits > 0, "Second query should have cache hits"
     assert cache_misses == 0, "Second query should have no cache misses"
+    assert cache_skipped == 0, "Second query should not skip the cache probe"
 
-    # Clear cache and verify next query misses again
-    instance.query("SYSTEM CLEAR ICEBERG METADATA CACHE")
+    # Phase 3: Drop and recreate the database to force a fresh IcebergMetadata initialisation.
+    # The REST catalog again supplies catalog_uuid_hint.  Because the cache is still warm the
+    # probe should hit immediately — no remote read.  If catalog_uuid_hint propagation were
+    # removed, getMetadataJSONObject would bypass the probe entirely
+    # (IcebergMetadataFilesCacheSkipped > 0) and perform an unconditional remote read, causing
+    # the assertion below to fail.
+    instance.query(f"DROP DATABASE {CATALOG_NAME}")
+    create_clickhouse_iceberg_database(started_cluster_iceberg_no_spark, instance, CATALOG_NAME)
 
-    query_id = f"iceberg-cache-{uuid.uuid4()}"
+    query_id = f"iceberg-cache-fresh-init-{uuid.uuid4()}"
     instance.query(
-        f"SELECT string_col FROM {CATALOG_NAME}.`{root_namespace}.test_metadata_cache`",
+        f"SELECT string_col FROM {CATALOG_NAME}.`{table_name}`",
         query_id=query_id,
     )
-
     instance.query("SYSTEM FLUSH LOGS")
 
-    cache_misses = int(
-        instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log "
-            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-        ).strip()
+    cache_hits = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheHits")
+    cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
+    cache_skipped = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheSkipped")
+    assert cache_hits > 0, (
+        "Fresh IcebergMetadata init should hit the cache when catalog_uuid_hint is propagated"
     )
+    assert cache_misses == 0, (
+        "Fresh IcebergMetadata init should not miss (cache was warm from phase 1)"
+    )
+    assert cache_skipped == 0, (
+        "Fresh IcebergMetadata init must probe the cache via catalog_uuid_hint; "
+        "non-zero skips prove the UUID was not propagated from the REST catalog"
+    )
+
+    # Phase 4: Clear cache and verify the next query misses again.
+    instance.query("SYSTEM CLEAR ICEBERG METADATA CACHE")
+
+    query_id = f"iceberg-cache-after-clear-{uuid.uuid4()}"
+    instance.query(
+        f"SELECT string_col FROM {CATALOG_NAME}.`{table_name}`",
+        query_id=query_id,
+    )
+    instance.query("SYSTEM FLUSH LOGS")
+
+    cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
     assert cache_misses > 0, "Query after cache clear should have cache misses"
 
-    # Query with cache disabled: neither hits nor misses
-    query_id = f"iceberg-cache-{uuid.uuid4()}"
+    # Phase 5: Cache disabled — neither hits, misses, nor skips.
+    query_id = f"iceberg-cache-disabled-{uuid.uuid4()}"
     instance.query(
-        f"SELECT string_col FROM {CATALOG_NAME}.`{root_namespace}.test_metadata_cache` "
+        f"SELECT string_col FROM {CATALOG_NAME}.`{table_name}` "
         f"SETTINGS use_iceberg_metadata_files_cache='0'",
         query_id=query_id,
     )
-
     instance.query("SYSTEM FLUSH LOGS")
 
     result = instance.query(
         f"SELECT ProfileEvents['IcebergMetadataFilesCacheHits'], "
-        f"ProfileEvents['IcebergMetadataFilesCacheMisses'] FROM system.query_log "
+        f"ProfileEvents['IcebergMetadataFilesCacheMisses'], "
+        f"ProfileEvents['IcebergMetadataFilesCacheSkipped'] FROM system.query_log "
         f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
     ).strip()
-    assert result == "0\t0", f"Cache disabled query should have no hits or misses, got: {result}"
+    assert result == "0\t0\t0", (
+        f"Cache disabled query should have no hits, misses, or skips, got: {result}"
+    )

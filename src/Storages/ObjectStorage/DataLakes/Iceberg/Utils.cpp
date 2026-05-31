@@ -491,7 +491,11 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         metadata_json_str = metadata_cache->getOrSetTableMetadata(
             IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
     else
+    {
+        if (metadata_cache)
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheSkipped);
         metadata_json_str = create_fn();
+    }
 
     raw_json_out = std::move(metadata_json_str);
 
