@@ -2145,6 +2145,86 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
     }
 }
 
+TEST_F(FileCacheTest, EvictionMetricsTryIncreasePriority)
+{
+    /// Regression: when tryIncreasePriority promotes a probationary entry and the
+    /// protected queue is full, some protected entries are downgraded to probationary.
+    /// If probationary is also full at that point (the promoted entry still holds its
+    /// slot with a Moving flag), real probationary entries are evicted to make room.
+    /// Those evictions must fire onSegmentEvicted and advance the metric counter.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    getMutableContext().context->setConfig(new Poco::Util::XMLConfiguration(document));
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("eviction_metrics_promotion_test");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    auto sum_dim = [](const std::string & name)
+    {
+        double total = 0;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() != name) return;
+            f.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m) { total += m.get(); });
+        });
+        return total;
+    };
+
+    /// SLRU: probationary = 10 B, protected = 10 B; five 5-byte segments fit exactly.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 20;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::expose_prometheus_eviction_metrics] = true;
+
+    auto cache = DB::FileCache("eviction_metrics_promotion", settings);
+    cache.initialize();
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("eviction_metrics_promotion_key");
+
+    /// A and B land in probationary, then get promoted to fill the protected queue.
+    auto holderA = cache.getOrSet(key, 0, 5, /*file_size=*/20, {}, 0, user);
+    ASSERT_EQ(holderA->size(), 1u);
+    download(*holderA->begin());
+
+    auto holderB = cache.getOrSet(key, 5, 5, /*file_size=*/20, {}, 0, user);
+    ASSERT_EQ(holderB->size(), 1u);
+    download(*holderB->begin());
+
+    increasePriority(holderA);
+    increasePriority(holderB);
+    /// Protected: {A=5, B=5} = 10/10 full. Probationary: empty.
+
+    /// C and D fill probationary. Cache is now 20/20.
+    auto holderC = cache.getOrSet(key, 10, 5, /*file_size=*/20, {}, 0, user);
+    ASSERT_EQ(holderC->size(), 1u);
+    download(*holderC->begin());
+
+    auto holderD = cache.getOrSet(key, 15, 5, /*file_size=*/20, {}, 0, user);
+    ASSERT_EQ(holderD->size(), 1u);
+    download(*holderD->begin());
+    /// Protected: {A, B} = 10/10. Probationary: {C, D} = 10/10.
+
+    const auto evictions_before = sum_dim("filesystem_cache_evictions_total");
+
+    /// Promote C: protected full → downgrade A → probationary has no room
+    /// (C holds its slot with a Moving flag while the downgrade is prepared) → D evicted.
+    increasePriority(holderC);
+
+    EXPECT_GT(sum_dim("filesystem_cache_evictions_total") - evictions_before, 0.0)
+        << "Promotion-induced probationary eviction must be counted in the metric";
+}
+
 TEST_F(FileCacheTest, ExposeEvictionMetrics)
 {
     /// Verify that filesystem_cache_* metric families update iff the
