@@ -98,7 +98,7 @@ StorageExecutable::StorageExecutable(
     const StorageID & table_id_,
     const String & format,
     const ExecutableSettings & settings_,
-    const std::vector<ASTPtr> & input_queries_,
+    const VectorWithMemoryTracking<ASTPtr> & input_queries_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const String & comment)
@@ -111,6 +111,7 @@ StorageExecutable::StorageExecutable(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     ShellCommandSourceCoordinator::Configuration configuration
@@ -131,7 +132,6 @@ StorageExecutable::StorageExecutable(
     };
 
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageExecutable::createVirtuals()
@@ -240,7 +240,7 @@ void registerStorageExecutable(StorageFactory & factory)
         script_name_with_arguments.erase(script_name_with_arguments.begin());
         auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
 
-        std::vector<ASTPtr> input_queries;
+        VectorWithMemoryTracking<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
             if (args.engine_args[i]->children.empty())

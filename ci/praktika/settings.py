@@ -33,13 +33,13 @@ class _Settings:
     ENABLED_WORKFLOWS: Optional[List[str]] = None
     DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
 
-    ENABLE_ARTIFACTS_REPORT: bool = False
-
     ######################################
     #    Runtime Settings                #
     ######################################
     MAX_RETRIES_S3 = 3
     MAX_RETRIES_GH = 3
+    # PR label that bypasses all job filtering (filter hooks and changed-file filtering)
+    CI_FORCE_ALL_LABEL: str = "ci-force-all"
 
     ######################################
     #   S3 (artifact storage) settings   #
@@ -67,6 +67,13 @@ class _Settings:
     SECRET_GH_APP_PEM_KEY: str = ""
     SECRET_GH_APP_INSTALLATION_ID: str = ""
     SECRET_GH_APP_REGION: str = ""
+    # When set, GHAuth mints the GitHub token by invoking this AWS Lambda
+    # instead of reading the App PEM/id/installation secrets directly. The
+    # lambda returns a scoped installation token whose permissions are
+    # fixed by the lambda itself (see tests/ci/mint_token_*_lambda in
+    # clickhouse-private). Takes precedence over SECRET_GH_APP_* when set.
+    GH_AUTH_LAMBDA_NAME: str = ""
+    GH_AUTH_LAMBDA_REGION: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
@@ -159,6 +166,7 @@ _USER_DEFINED_SETTINGS = [
     "INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS",
     "MAX_RETRIES_S3",
     "MAX_RETRIES_GH",
+    "CI_FORCE_ALL_LABEL",
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
@@ -176,11 +184,12 @@ _USER_DEFINED_SETTINGS = [
     "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_INSTALLATION_ID",
     "SECRET_GH_APP_REGION",
+    "GH_AUTH_LAMBDA_NAME",
+    "GH_AUTH_LAMBDA_REGION",
     "MAIN_BRANCH",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
-    "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "ENABLE_SUBMODULE_CACHE",

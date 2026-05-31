@@ -10,6 +10,7 @@
 #include <Poco/Timestamp.h>
 
 #include <condition_variable>
+#include <Core/UUID.h>
 
 
 namespace DB

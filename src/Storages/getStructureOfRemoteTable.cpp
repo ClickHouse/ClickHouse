@@ -156,7 +156,12 @@ ColumnsDescription getStructureOfRemoteTable(
         if (shard_info.isLocal())
         {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
-            chassert(!res.empty());
+
+            /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
+            /// In that case, fall through to try remote shards.
+            if (res.empty())
+                break;
+
             return res;
         }
     }

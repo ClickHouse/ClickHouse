@@ -279,6 +279,10 @@ static_assert(sizeof(KeeperMemNode) <= 160);
 
 struct KeeperStorageStats
 {
+    KeeperStorageStats() = default;
+    KeeperStorageStats(const KeeperStorageStats & other);
+    KeeperStorageStats & operator=(const KeeperStorageStats & other);
+
     std::atomic<uint64_t> nodes_count = 0;
     std::atomic<uint64_t> approximate_data_size = 0;
     std::atomic<uint64_t> total_watches_count = 0;
@@ -593,10 +597,50 @@ public:
 
     UncommittedState uncommitted_state{*this};
 
-    // Apply uncommitted state to another storage using only transactions
-    // with zxid > last_zxid
+    struct UncommittedStateForSnapshot
+    {
+        UncommittedStateForSnapshot();
+        ~UncommittedStateForSnapshot();
+        UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot & operator=(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot(const UncommittedStateForSnapshot &) = delete;
+        UncommittedStateForSnapshot & operator=(const UncommittedStateForSnapshot &) = delete;
+
+        struct Transaction
+        {
+            int64_t zxid;
+            KeeperDigest nodes_digest;
+            int64_t log_idx = 0;
+        };
+
+        std::vector<Transaction> transactions;
+        std::list<Delta> deltas;
+
+        bool empty() const { return transactions.empty(); }
+    };
+
+    /// Collect uncommitted transactions and deltas with `log_idx > last_log_idx`.
+    UncommittedStateForSnapshot copyUncommittedStateAfter(int64_t last_log_idx) const;
+
+    /// Like `copyUncommittedStateAfter`, but removes the returned transactions
+    /// and deltas from this storage instead of copying them.
+    UncommittedStateForSnapshot detachUncommittedStateAfter(int64_t last_log_idx);
+    void applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot);
+
+    // Compatibility wrapper for the non-low-memory snapshot apply path.
     void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
 
+private:
+    void collectUncommittedTransactionsAfter(
+        int64_t last_log_idx,
+        UncommittedStateForSnapshot & result,
+        std::unordered_set<int64_t> & zxids_to_apply) const;
+    static void detachMatchingDeltasNoexcept(
+        std::list<Delta> & source,
+        std::list<Delta> & destination,
+        const std::unordered_set<int64_t> & zxids_to_apply) noexcept;
+
+public:
     Coordination::Error commit(DeltaRange deltas);
 
     // Create node in the storage
@@ -610,11 +654,7 @@ public:
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    /// 3 modes:
-    ///  * !is_local - we're in the append thread, look at uncommitted state.
-    ///  * is_local && !is_reconfig - we're executing read requests, the caller holds storage_mutex, look at committed state.
-    ///  * is_local && is_reconfig - the callee locks storage_mutex and looks at committed state.
-    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool is_reconfig = false);
+    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
     ~KeeperStorage();

@@ -2,6 +2,7 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
@@ -214,7 +215,12 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
         size_t evict_size_from_probationary = std::min(size, probationary_queue.getSize(lock));
         size_t evict_elements_from_probationary = std::min(elements, probationary_queue.getElementsCount(lock));
 
-        chassert(evict_size_from_probationary || evict_elements_from_probationary);
+        /// It is valid for the probationary queue to be empty here while the protected queue still
+        /// has entries -- e.g. when `keep_free_space_size(elements)_ratio` is high enough for the
+        /// background thread to want to evict everything, but all entries have already been
+        /// promoted to the protected queue. The downstream code below correctly handles this case
+        /// by passing zeroes to `probationary_queue.collectEvictionInfo` and routing the full
+        /// requested amount to the protected queue.
         size -= evict_size_from_probationary;
         elements -= evict_elements_from_probationary;
 
@@ -442,7 +448,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
     const bool requires_eviction = probationary_eviction_info->requiresEviction();
     /// FIXME: const_cast is a bad practice.
-    const_cast<EvictionInfo &>(eviction_info).add(std::move(probationary_eviction_info));
+    const_cast<EvictionInfo &>(eviction_info).addOrUpdate(std::move(probationary_eviction_info));
     if (requires_eviction)
     {
         /// If not enough space - we need to "downgrade" lowest priority entries

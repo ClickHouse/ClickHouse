@@ -174,7 +174,7 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         f"SELECT key, file_segment_range_begin, size FROM system.filesystem_cache WHERE key in ({keys_set}) ORDER BY key, file_segment_range_begin, size"
     )
 
-    assert node.contains_in_log("Loading filesystem cache with 30 threads")
+    assert node.contains_in_log("15 listing thread(s) and 15 loading thread(s)")
     assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
     assert int(node.query("SELECT max(size) FROM system.filesystem_cache")) == 1024
     assert (

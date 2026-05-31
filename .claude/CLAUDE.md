@@ -146,6 +146,8 @@ When writing C++ code, always use Allman-style braces (opening brace on a new li
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
+Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
+
 When writing messages, say ASan, not ASAN, and similar (because there are two words: Address Sanitizer).
 
 When checking the CI status, pay attention to the comment from robot with the links first. Look at the Praktika reports first. The logs of GitHub actions usually contain less info.

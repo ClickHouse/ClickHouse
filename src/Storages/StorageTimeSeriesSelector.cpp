@@ -24,6 +24,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -41,6 +42,7 @@ namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
 }
 
 StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
@@ -107,10 +109,11 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr(context, false);
-    auto id_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
+    DataTypePtr id_data_type = tags_target->getInMemoryMetadataPtr(context, false)->columns.get(TimeSeriesColumnNames::ID).type;
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
@@ -155,8 +158,8 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
@@ -322,7 +325,9 @@ namespace
         ASTs conditions;
 
         /// id IN (SELECT id FROM (select_id_query))
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), select_query_from_tags_table));
+        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
         /// timestamp >= min_time
         conditions.push_back(makeASTFunction(
@@ -383,16 +388,13 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// PREWHERE (id IN (SELECT id FROM (select_query_from_tags_table))) AND (timestamp >= min_time) AND (timestamp <= max_time)
+        /// WHERE (id IN <select_query_from_tags_table>) AND (timestamp >= min_time) AND (timestamp <= max_time)
         ///
-        /// NOTE: We have to use PREWHERE and not WHERE here to make sure that tags are stored in ContextTimeSeriesTagsCollector before we use them.
-        /// Otherwise in case the result of timeSeriesSelector() is passed to timeSeriesIdToGroup() as following:
-        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value FROM timeSeriesSelector(...)
-        /// ClickHouse may decide to parallelize and execute timeSeriesIdToGroup(id) before executing timeSeriesStoreTags()
-        /// which may cause exception "Unknown identifier".
+        /// where <select_query_from_tags_table> is roughly:
+        ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
-            auto prewhere_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
-            select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter));
+            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
@@ -434,18 +436,19 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* num_streams */)
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
-    const auto & time_series_settings = time_series_storage->getStorageSettings();
+    auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    auto data_table_id = time_series_storage->getTargetTableId(ViewTarget::Data);
-    auto tags_table_id = time_series_storage->getTargetTableId(ViewTarget::Tags);
+    auto samples_table_id = time_series_storage->getTargetTableID(ViewTarget::Samples, context);
+    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
-    auto column_name_by_tag_name = makeColumnNameByTagNameMap(time_series_settings);
+    auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 
     std::optional<DateTime64> min_time_to_filter_ids;
     std::optional<DateTime64> max_time_to_filter_ids;
-    if (time_series_settings[TimeSeriesSetting::filter_by_min_time_and_max_time])
+    if ((*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
+        && (*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
     {
         min_time_to_filter_ids = config.min_time;
         max_time_to_filter_ids = config.max_time;
@@ -455,7 +458,7 @@ void StorageTimeSeriesSelector::readImpl(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
-        data_table_id,
+        samples_table_id,
         select_query_from_tags_table,
         config.min_time,
         config.max_time,
