@@ -1440,8 +1440,17 @@ static BlockIO executeQueryImpl(
                 };
 
                 bool target_is_replicated_database = false;
+
+                /// Temporary tables and views are session-local objects that cannot be created or
+                /// dropped `ON CLUSTER`: `InterpreterCreateQuery` and the corresponding DROP path
+                /// reject a non-empty cluster for them with `Temporary objects (tables/views) cannot
+                /// be created ON CLUSTER`. Filling the cluster here would turn an ordinary local
+                /// query into one that throws, so skip auto-fill for temporary objects.
+                bool target_is_temporary = false;
+
                 if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
                 {
+                    target_is_temporary = query_with_table->isTemporary();
                     target_is_replicated_database = is_replicated_database(query_with_table->getDatabase());
                 }
                 else if (const auto * rename_query = out_ast->as<ASTRenameQuery>())
@@ -1457,7 +1466,7 @@ static BlockIO executeQueryImpl(
                     }
                 }
 
-                if (!target_is_replicated_database)
+                if (!target_is_replicated_database && !target_is_temporary)
                 {
                     query_with_on_cluster->cluster = settings[Setting::cluster_for_automatic_fill_mode].toString();
                     query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);

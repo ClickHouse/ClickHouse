@@ -50,3 +50,9 @@ SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabas
   AND type = 'QueryFinish'
   AND query LIKE '%DROP TABLE test_auto_fill_cluster%'
   AND query LIKE '%ON CLUSTER%';
+
+SELECT 'Test 5: CREATE/DROP TEMPORARY TABLE is not rewritten ON CLUSTER';
+-- Temporary objects cannot be created/dropped ON CLUSTER, so auto-fill must skip them.
+-- Both statements must succeed locally instead of throwing.
+CREATE TEMPORARY TABLE test_auto_fill_temp (id UInt32) ENGINE = Memory;
+DROP TEMPORARY TABLE test_auto_fill_temp;
