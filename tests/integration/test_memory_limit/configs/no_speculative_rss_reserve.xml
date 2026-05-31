@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- The test runs many concurrent memory-hungry `GROUP BY` queries under a
+         tight 4 GiB container limit and asserts that the server survives (the
+         final `SELECT 1` must succeed). The default
+         `memory_worker_rss_speculative_reserve_ratio = 1.0` biases the observed
+         RSS upward by the `resident - tracked` gap on every `MemoryWorker` tick.
+         In the `amd_llvm_coverage` build (not a sanitizer build, so the
+         speculation is not disabled at compile time) the coverage-instrumentation
+         overhead inflates that gap, which keeps the biased `rss` above
+         `max_server_memory_usage` even after the queries finish and makes the
+         trailing `SELECT 1` fail with `MEMORY_LIMIT_EXCEEDED`. The PR's mechanism
+         is not under test here. -->
+    <memory_worker_rss_speculative_reserve_ratio>0</memory_worker_rss_speculative_reserve_ratio>
+</clickhouse>
