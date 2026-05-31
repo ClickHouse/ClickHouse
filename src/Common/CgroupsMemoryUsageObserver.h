@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Common/Logger_fwd.h>
 #include <Common/ThreadPool.h>
 
 #include <chrono>
 #include <mutex>
+#include <base/defines.h>
 
 namespace DB
 {

@@ -1,13 +1,18 @@
 #include <chrono>
 #include <variant>
+#include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <IO/Operators.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Context.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Storages/IStorage.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -17,14 +22,47 @@
 #include <Processors/Sinks/NullSink.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/CurrentThread.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace
+{
+
+/// Check if any step in the query plan tree contains correlated expressions (PLACEHOLDER nodes).
+/// Such plans cannot be executed standalone — they require decorrelation first.
+/// We must traverse both `node->children` and any nested plans returned by `step->getChildPlans()`
+/// (e.g. `ReadFromMerge`), otherwise correlated `PLACEHOLDER` actions inside a child plan can be
+/// missed and we may attempt standalone execution and hit `Trying to execute PLACEHOLDER action`.
+bool hasCorrelatedExpressions(QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+
+    if (node->step->hasCorrelatedExpressions())
+        return true;
+
+    for (auto * child : node->children)
+        if (hasCorrelatedExpressions(child))
+            return true;
+
+    for (auto * child_plan : node->step->getChildPlans())
+        if (child_plan && hasCorrelatedExpressions(child_plan->getRootNode()))
+            return true;
+
+    return false;
+}
+
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -108,30 +146,28 @@ FutureSetFromTuple::FutureSetFromTuple(
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
 
-Columns FutureSetFromTuple::getKeyColumns()
+void FutureSetFromTuple::fillSetElementsOnce()
 {
-    if (!set->hasExplicitSetElements())
+    callOnce(fill_set_elements_once, [this]
     {
         set->fillSetElements();
         set->appendSetElements(set_key_columns);
-    }
+    });
+}
 
+Columns FutureSetFromTuple::getKeyColumns()
+{
+    fillSetElementsOnce();
     return set->getSetElements();
 }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
 {
-    if (set->hasExplicitSetElements())
-        return set;
-
     const auto & settings = context->getSettingsRef();
     size_t max_values = settings[Setting::use_index_for_in_with_subqueries_max_values];
     bool too_many_values = max_values && max_values < set->getTotalRowCount();
     if (!too_many_values)
-    {
-        set->fillSetElements();
-        set->appendSetElements(set_key_columns);
-    }
+        fillSetElementsOnce();
 
     return set;
 }
@@ -141,18 +177,20 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
     std::unique_ptr<QueryPlan> source_,
-    StoragePtr external_table_,
+    StoragePtr external_table,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table(std::move(external_table_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
+    : hash(hash_), ast(std::move(ast_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
+
+    set_and_key->external_table = std::move(external_table);
 }
 
 FutureSetFromSubquery::FutureSetFromSubquery(
@@ -171,6 +209,20 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
+void FutureSetFromSubquery::replaceSetAndKey(SetAndKeyPtr set)
+{
+    if (set->key != set_and_key->key)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to exchange sets with different keys: {} vs {}", set->key, set_and_key->key);
+    set_and_key = std::move(set);
+}
+
+SetAndKeyPtr FutureSetFromSubquery::detachSetAndKey()
+{
+    SetAndKeyPtr ret;
+    std::swap(ret, set_and_key);
+    return ret;
+}
+
 SetPtr FutureSetFromSubquery::get() const
 {
     if (set_and_key->set != nullptr && set_and_key->set->isCreated())
@@ -185,7 +237,63 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
-void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_) { external_table = std::move(external_table_); }
+void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
+{
+    const auto & set = *set_and_key->set;
+
+    LOG_TRACE(getLogger("FutureSetFromSubquery"), "Building external table from set of {} elements", set.getTotalRowCount());
+    if (set.empty())
+        return;
+
+    auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    const auto & expected_columns = metadata->getColumns().getAllPhysical();
+
+    Columns set_elements = set.getSetElements();
+    const auto & set_types = set.getElementsTypes();
+
+    /// The Set class may strip Nullable/LowCardinality from types when storing elements
+    /// (depending on transform_null_in setting), so we need to convert the set elements
+    /// to match the external table's expected column types.
+    Columns converted_columns;
+    converted_columns.reserve(set_elements.size());
+
+    size_t idx = 0;
+    for (const auto & expected_col : expected_columns)
+    {
+        if (idx >= set_elements.size())
+            break;
+
+        const auto & set_column = set_elements[idx];
+        const auto & set_type = set_types[idx];
+        const auto & expected_type = expected_col.type;
+
+        if (!set_type->equals(*expected_type))
+            converted_columns.push_back(castColumn({set_column, set_type, ""}, expected_type));
+        else
+            converted_columns.push_back(set_column);
+
+        ++idx;
+    }
+
+    Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
+    auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
+    PushingPipelineExecutor executor(pipeline);
+    executor.push(std::move(set_chunk));
+    executor.finish();
+}
+
+void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
+{
+    if (set_and_key->set->isCreated())
+    {
+        if (!set_and_key->set->hasExplicitSetElements())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a ready set without explicit elements");
+
+        buildExternalTableFromInplaceSet(external_table_);
+    }
+
+    set_and_key->external_table = std::move(external_table_);
+}
 
 DataTypes FutureSetFromSubquery::getTypes() const
 {
@@ -207,7 +315,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     auto creating_set = std::make_unique<CreatingSetStep>(
         plan->getCurrentHeader(),
         set_and_key,
-        external_table,
         network_transfer_limits,
         prepared_sets_cache);
     creating_set->setStepDescription("Create set for subquery");
@@ -219,6 +326,11 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
     if (external_table_set)
         external_table_set->buildSetInplace(context);
+
+    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
+    /// They will be decorrelated and executed as part of the outer query instead.
+    if (source && hasCorrelatedExpressions(source->getRootNode()))
+        return;
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
@@ -234,7 +346,15 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    if (context->hasQueryContext())
+    {
+        if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
     executor.execute();
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -260,6 +380,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
+    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
+    /// They will be decorrelated and executed as part of the outer query instead.
+    if (source && hasCorrelatedExpressions(source->getRootNode()))
+        return nullptr;
+
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
@@ -274,6 +399,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
     CompletedPipelineExecutor executor(pipeline);
+    if (context->hasQueryContext())
+    {
+        if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
+            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+    }
     executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
@@ -283,6 +413,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
 
     logProcessorProfile(context, pipeline.getProcessors());
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 
     return set_and_key->set;
 }

@@ -4,7 +4,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -77,7 +76,7 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        std::unordered_set<size_t> arguments_that_can_be_only_null;
+        UnorderedSetWithMemoryTracking<size_t> arguments_that_can_be_only_null;
         if (nested_function)
             arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
 
@@ -115,7 +114,7 @@ public:
             return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
         }
 
-        assert(nested_function);
+        chassert(nested_function);
 
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
             return adapter;

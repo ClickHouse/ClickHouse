@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
@@ -41,7 +42,7 @@ using TStatus = typename StorageSystemDatabaseReplicas::TPools::StatusPool::TSta
 namespace
 {
 
-class SystemDatabaseReplicasSource : public ISource
+class SystemDatabaseReplicasSource final : public ISource
 {
 public:
     SystemDatabaseReplicasSource(
@@ -188,7 +189,7 @@ void ReadFromSystemDatabaseReplicas::applyFilters(ActionDAGNodes added_filter_no
             {ColumnString::create(), std::make_shared<DataTypeString>(), "database"},
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
@@ -254,28 +255,37 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
 } // anonymous namespace
 
 StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , pools(std::make_shared<TPools>(DEFAULT_THREAD_COUNT))
 {
     ColumnsDescription description
-        = {{"database", std::make_shared<DataTypeString>(), "Database name."},
-           {"is_readonly", std::make_shared<DataTypeUInt8>(), "is_readonly"},
-           {"max_log_ptr", std::make_shared<DataTypeInt32>(), "max_log_ptr"},
-           {"replica_name", std::make_shared<DataTypeString>(), "replica_name"},
-           {"replica_path", std::make_shared<DataTypeString>(), "replica_path"},
-           {"zookeeper_path", std::make_shared<DataTypeString>(), "zookeeper_path"},
-           {"shard_name", std::make_shared<DataTypeString>(), "shard_name"},
-           {"log_ptr", std::make_shared<DataTypeInt32>(), "log_ptr"},
-           {"total_replicas", std::make_shared<DataTypeUInt32>(), "total_replicas"},
-           {"zookeeper_exception", std::make_shared<DataTypeString>(), "zookeeper_exception"},
-           {"is_session_expired", std::make_shared<DataTypeUInt8>(), "is_session_expired"}};
+        = {{"database", std::make_shared<DataTypeString>(), "The name of the Replicated database is in."},
+           {"is_readonly", std::make_shared<DataTypeUInt8>(), "Whether the database replica is in read-only mode."},
+           {"max_log_ptr", std::make_shared<DataTypeInt32>(), "Maximum entry number in the log of general activity."},
+           {"replica_name", std::make_shared<DataTypeString>(), "Replica name in ClickHouse Keeper."},
+           {"replica_path", std::make_shared<DataTypeString>(), "Path to replica data in ClickHouse Keeper."},
+           {"zookeeper_path", std::make_shared<DataTypeString>(), "Path to database data in ClickHouse Keeper."},
+           {"shard_name", std::make_shared<DataTypeString>(), "The name of the shard in the cluster."},
+           {"log_ptr", std::make_shared<DataTypeInt32>(), "Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one."},
+           {"total_replicas", std::make_shared<DataTypeUInt32>(), "The total number of known replicas of this database."},
+           {"zookeeper_exception", std::make_shared<DataTypeString>(), "The last exception message, got if the error happened when fetching the info from ClickHouse Keeper."},
+           {"is_session_expired", std::make_shared<DataTypeUInt8>(), "The session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."}};
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemDatabaseReplicas::read(
+VirtualColumnsDescription StorageSystemDatabaseReplicas::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemDatabaseReplicas::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -291,7 +301,7 @@ void StorageSystemDatabaseReplicas::read(
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     std::map<String, DatabasePtr> replicated_databases;
-    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases())
+    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get()))
             continue;

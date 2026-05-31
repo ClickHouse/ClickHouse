@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 
 /// Find different elements in an array.
-class FunctionArrayDistinct : public IFunction
+class FunctionArrayDistinct final : public IFunction
 {
 public:
     static constexpr auto name = "arrayDistinct";
@@ -200,7 +200,7 @@ bool FunctionArrayDistinct::executeString(
 
     ColumnString & res_data_column_string = typeid_cast<ColumnString &>(res_data_col);
 
-    using Set = ClearableHashSetWithStackMemory<StringRef, StringRefHash,
+    using Set = ClearableHashSetWithStackMemory<std::string_view, StringViewHash,
         INITIAL_SIZE_DEGREE>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
@@ -222,12 +222,12 @@ bool FunctionArrayDistinct::executeString(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            StringRef str_ref = src_data_concrete->getDataAt(j);
+            std::string_view str_ref = src_data_concrete->getDataAt(j);
 
             if (!set.find(str_ref))
             {
                 set.insert(str_ref);
-                res_data_column_string.insertData(str_ref.data, str_ref.size);
+                res_data_column_string.insertData(str_ref.data(), str_ref.size());
             }
         }
 
@@ -298,7 +298,7 @@ REGISTER_FUNCTION(ArrayDistinct)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayDistinct([1, 2, 2, 3, 1]);", "[1,2,3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, argument, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayDistinct>(documentation);
 }

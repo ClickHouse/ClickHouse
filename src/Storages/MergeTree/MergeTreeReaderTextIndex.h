@@ -3,12 +3,21 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <roaring.hh>
+#include <Storages/MergeTree/TextIndexCache.h>
+#include <Interpreters/ExpressionActions.h>
+
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
+#include <roaring/roaring.hh>
 
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<StringRef, const PostingList *>;
+class PostingListCursor;
+using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
+
+using PostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
+using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<size_t, PostingListPtr>>;
 
 /// A part of "direct read from text index" optimization.
 /// This reader fills virtual columns for text search filters
@@ -22,7 +31,8 @@ public:
     MergeTreeReaderTextIndex(
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
-        NamesAndTypesList columns_);
+        NamesAndTypesList columns_,
+        MergeTreeIndexGranulePtr index_granule_);
 
     size_t readRows(
         size_t from_mark,
@@ -32,50 +42,93 @@ public:
         size_t offset,
         Columns & res_columns) override;
 
-    bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 
-private:
-    struct Granule
-    {
-        MergeTreeIndexGranulePtr granule;
-        PostingsMap postings;
-        std::list<PostingList> postings_holders;
-        bool may_be_true = true;
-        bool need_read_postings = true;
-    };
+    /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
+    /// Looks up its own index name in the map.
+    void setPrecomputedGranule(const IndexGranulesMap & granules);
 
-    void updateAllIndexRanges();
+private:
+    void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
+    void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(Columns & columns) const;
-    void readPostingsIfNeeded(Granule & granule);
-    void fillSkippedColumn(IColumn & column, size_t num_rows);
-    void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows);
+    std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
+
+    /// Returns postings for all all tokens required for the given mark.
+    PostingsMap readPostingsIfNeeded(size_t mark);
+    /// Returns postings for all blocks of the given token required for the given range.
+    std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
+    /// Removes blocks with max value less than the given range.
+    void cleanupPostingsBlocks(const RowsRange & range);
+
+    /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
+    /// default expression (the original search predicate) on the physical columns.
+    /// Used when the dictionary scan was cut short and pattern tokens are incomplete.
+    void fillColumnFallback(
+        IColumn & column,
+        const String & column_name,
+        const Block & physical_block,
+        size_t offset,
+        size_t num_rows) const;
+
+    std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
+    MergeTreeDataPartPtr getDataPart() const;
+
+    void readGranule();
+    void analyzeTokensCardinality();
+    void initializePostingStreams();
+    PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
+    void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
+    double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
+
+    using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
-    MarkRanges all_index_ranges;
-    std::optional<MergeTreeIndexReader> index_reader;
+    TextIndexGranulePtr granule;
+    PostingsBlocksMap postings_blocks;
+
+    /// Fallback reader for the physical columns required by the fallback expressions.
+    /// Used when the pattern dictionary scan is cut short.
+    MergeTreeReaderPtr fallback_reader;
+    /// Physical columns that fallback_reader reads (union across all fallback expressions).
+    NamesAndTypesList fallback_columns_list;
+    /// Per-virtual-column compiled expression of the original search predicate.
+    /// Executed on the physical columns when use_fallback[i] is true.
+    absl::flat_hash_map<String, ExpressionActionsPtr> fallback_expressions;
+    /// Per-virtual-column flag: true if this column's query was abandoned during the scan
+    /// and the predicate must be evaluated directly via fallback_expressions.
+    std::vector<bool> use_fallback;
+    /// Small postings stream — kept as a class member because cached lazy cursors
+    /// hold a reference to it for on-demand segment reads.
+    std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
+    /// A separate stream is created for each token to read
+    /// postings blocks continuously without additional seeks.
+    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
     size_t current_mark = 0;
-
-    /// Counts marks remaining to read in index granule.
-    struct RemainingMarks
-    {
-        size_t total = 0;
-        size_t remaining = 0;
-
-        void increment();
-        /// Returns true if granule can be removed.
-        bool decrement(size_t granularity);
-        bool finished(size_t granularity) const;
-    };
-
-    std::map<size_t, Granule> granules;
-    absl::flat_hash_map<size_t, RemainingMarks> remaining_marks;
     PaddedPODArray<UInt32> indices_buffer;
-    roaring::Roaring analyzed_granules;
+
+    bool is_initialized = false;
+    /// Virtual columns that are always true.
+    std::vector<bool> is_always_true;
+    /// Tokens that are useful for analysis and filling virtual columns.
+    absl::flat_hash_set<std::string_view> useful_tokens;
+    std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
+    std::optional<PostingsSerialization> postings_serialization;
+
+    /// Requested in the constructor; enabled per granule in `setIndexGranule` after checking the
+    /// sparse-index header and confirming no virtual column carries pattern predicates.
+    bool lazy_mode_requested = false;
+    bool use_lazy_mode = false;
+    float lazy_density_threshold = 0.2f;
+
+    /// Cached lazy cursors keyed by `(virtual column name, token)`. Cursors are forward-only and
+    /// hold mutable segment/block position, so they must not be shared across columns.
+    /// Cleared on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
+    absl::flat_hash_map<String, absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 };
 
 }

@@ -3,9 +3,8 @@ description: 'Documentation for arrayJoin function'
 sidebar_label: 'arrayJoin'
 slug: /sql-reference/functions/array-join
 title: 'arrayJoin function'
+doc_type: 'reference'
 ---
-
-# arrayJoin function
 
 This is a very unusual function.
 
@@ -89,7 +88,7 @@ In those cases, consider modifying repeated array expressions with extra operati
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT
     arrayJoin(dice) AS first_throw,
     /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
@@ -104,7 +103,7 @@ Note the [`ARRAY JOIN`](../statements/select/array-join.md) syntax in the SELECT
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT
     sum(1) AS impressions,
     city,
@@ -123,7 +122,7 @@ GROUP BY
     3
 ```
 
-```text
+```text title="Response"
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │

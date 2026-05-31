@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/Operators.h>
 #include <Processors/IProcessor.h>
 
@@ -17,7 +19,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     out << "  rankdir=\"LR\";\n";
     out << "  { node [shape = rect]\n";
 
-    std::unordered_map<const void *, std::size_t> pointer_to_id;
+    UnorderedMapWithMemoryTracking<const void *, std::size_t> pointer_to_id;
     auto get_proc_id = [&pointer_to_id](const IProcessor & proc) -> std::size_t
     {
         auto [it, inserted] = pointer_to_id.try_emplace(&proc, pointer_to_id.size());
@@ -42,9 +44,9 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 
         if (with_profile)
         {
-            out << "\\nExecution time: " << processor->getElapsedNs()/1000.0 << " us"
-                << "\\nInput wait time: " << processor->getInputWaitElapsedNs()/1000.0 << " us"
-                << "\\nOutput wait time: " << processor->getOutputWaitElapsedNs()/1000.0 << " us"
+            out << "\\nExecution time: " << static_cast<double>(processor->getElapsedNs()) / 1000.0 << " us"
+                << "\\nInput wait time: " << static_cast<double>(processor->getInputWaitElapsedNs()) / 1000.0 << " us"
+                << "\\nOutput wait time: " << static_cast<double>(processor->getOutputWaitElapsedNs()) / 1000.0 << " us"
                 << "\\nInput rows: " << processor->getProcessorDataStats().input_rows
                 << "\\nInput bytes: " << processor->getProcessorDataStats().input_bytes
                 << "\\nOutput rows: " << processor->getProcessorDataStats().output_rows
@@ -97,7 +99,7 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 template <typename Processors>
 void printPipeline(const Processors & processors, WriteBuffer & out, bool with_profile = false)
 {
-    printPipeline(processors, std::vector<IProcessor::Status>(), out, with_profile);
+    printPipeline(processors, VectorWithMemoryTracking<IProcessor::Status>(), out, with_profile);
 }
 
 /// Prints pipeline in compact representation.

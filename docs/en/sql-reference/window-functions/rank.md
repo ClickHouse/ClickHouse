@@ -4,9 +4,8 @@ sidebar_label: 'rank'
 sidebar_position: 6
 slug: /sql-reference/window-functions/rank
 title: 'rank'
+doc_type: 'reference'
 ---
-
-# rank
 
 Ranks the current row within its partition with gaps. In other words, if the value of any row it encounters is equal to the value of a previous row then it will receive the same rank as that previous row.
 The rank of the next row is then equal to the rank of the previous row plus a gap equal to the number of times the previous rank was given.
@@ -33,9 +32,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE salaries
 (
     `team` String,
@@ -55,15 +52,13 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql
+```sql title="Query"
 SELECT player, salary,
        rank() OVER (ORDER BY salary DESC) AS rank
 FROM salaries;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─player──────────┬─salary─┬─rank─┐
 1. │ Gary Chen       │ 195000 │    1 │
 2. │ Robert George   │ 195000 │    1 │

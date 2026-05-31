@@ -4,7 +4,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -23,6 +22,7 @@
 
 #include <expected>
 #include <optional>
+#include <list>
 
 
 namespace DB
@@ -42,7 +42,7 @@ using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class Pipe;
 class QueryPlan;
@@ -69,6 +69,8 @@ class RestorerFromBackup;
 class ConditionSelectivityEstimator;
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 
+struct RangesInDataParts;
+
 class ActionsDAG;
 
 /** Storage. Describes the table. Responsible for
@@ -94,9 +96,20 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
+    virtual std::vector<StorageID> getInnerStorageIDs() const { return {}; }
+
     virtual bool isMergeTree() const { return false; }
 
     virtual bool isDataLake() const { return false; }
+
+    /// Returns true if the storage is an external database (MySQL, PostgreSQL, MongoDB, etc.)
+    virtual bool isExternalDatabase() const { return false; }
+
+    /// Returns true if the storage is object storage (S3, Azure, GCS, HDFS, etc.)
+    virtual bool isObjectStorage() const { return false; }
+
+    /// Returns true if the storage is a message queue (Kafka, RabbitMQ, NATS)
+    virtual bool isMessageQueue() const { return false; }
 
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
@@ -108,10 +121,13 @@ public:
     virtual bool isDictionary() const { return false; }
 
     /// Returns true if the storage supports queries with the SAMPLE section.
-    virtual bool supportsSampling() const { return getInMemoryMetadataPtr()->hasSamplingKey(); }
+    virtual bool supportsSampling() const;
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
+
+    /// Returns true if the storage supports `SELECT ... FROM t STREAM` continuous reads.
+    virtual bool supportsStreaming() const { return false; }
 
     /// Returns true if the storage supports insert queries with the PARTITION BY section.
     virtual bool supportsPartitionBy() const { return false; }
@@ -122,7 +138,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
+    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -160,11 +176,8 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of data type Object.
-    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
-
-    /// Returns true if the storage supports storing of dynamic subcolumns.
-    virtual bool supportsDynamicSubcolumns() const { return false; }
+    /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
+    virtual bool supportsColumnsWithDynamicStructure() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
@@ -183,20 +196,23 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
     virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
 
-    /// Get mutable version (snapshot) of storage metadata. Metadata object is
-    /// multiversion, so it can be concurrently changed, but returned copy can be
-    /// used without any locks.
-    virtual StorageInMemoryMetadata getInMemoryMetadata() const { return *metadata.get(); }
-
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+    /// Pass query context to enable metadata caching in MergeTree.
+    /// Pass nullptr when no query context is available.
+    virtual StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
+    {
+        return metadata.get();
+    }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -206,37 +222,12 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    void setVirtuals(VirtualColumnsDescription virtuals_)
-    {
-        virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
-    }
-
-    /// Return list of virtual columns (like _part, _table, etc). In the vast
-    /// majority of cases virtual columns are static constant part of Storage
-    /// class and don't depend on Storage object. But sometimes we have fake
-    /// storages, like Merge, which works as proxy for other storages and it's
-    /// virtual columns must contain virtual columns from underlying table.
-    ///
-    /// User can create columns with the same name as virtual column. After that
-    /// virtual column will be overridden and inaccessible.
-    ///
-    /// By default return empty list of columns.
-    VirtualsDescriptionPtr getVirtualsPtr() const { return virtuals.get(); }
-    NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
-    Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
-
-    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
-
     Names getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
-    /// Returns whether the column is virtual - by default all columns are real.
-    /// Initially reserved virtual column name may be shadowed by real column.
-    bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
-
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    virtual void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const;
+    virtual void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const;
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
@@ -252,9 +243,6 @@ public:
     /// the place to kick off that work (and it should be paused when IStorage is created with
     /// is_restore_from_backup = true in StorageFactory::Arguments).
     virtual void finalizeRestoreFromBackup() {}
-
-    /// Return true if there is at least one part containing lightweight deleted mask.
-    virtual bool hasLightweightDeletedMask() const { return false; }
 
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
@@ -281,48 +269,43 @@ public:
     }
 
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
-    virtual SerializationInfoByName getSerializationHints() const { return {}; }
+    virtual SerializationInfoByName getSerializationHints() const { return SerializationInfoByName{{}}; }
+
+    /// Same as getSerializationHints() but may return nullopt in some specific engines like Alias
+    virtual std::optional<SerializationInfoByName> tryGetSerializationHints() const { return getSerializationHints(); }
 
     /// Add engine args that were inferred during storage creation to create query to avoid the same
     /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
     virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(id_mutex);
 
     mutable std::mutex id_mutex;
 
     /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
 
-    /// Description of virtual columns. Optional, may be set in constructor.
-    MultiVersionVirtualsDescriptionPtr virtuals;
-
-    /// Description of common virtual columns.
-    static const VirtualColumnsDescription common_virtuals;
-
-    static VirtualColumnsDescription createCommonVirtuals();
-
 protected:
     RWLockImpl::LockHolder tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const;
 
 public:
     /// Lock table for share. This lock must be acquired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
     /// variety of cases starting from SELECT queries to background merges in
     /// MergeTree.
-    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableLockHolder lockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
 
     /// Similar to lockForShare, but returns a nullptr if the table is dropped while
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
-    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableLockHolder tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
 
     /// Lock table for alter. This lock must be acquired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
-    AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
-    std::optional<AlterLockHolder> tryLockForAlter(const std::chrono::milliseconds & acquire_timeout);
+    AlterLockHolder lockForAlter(const Poco::Timespan & acquire_timeout);
+    std::optional<AlterLockHolder> tryLockForAlter(const Poco::Timespan & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -331,7 +314,7 @@ public:
     ///
     /// NOTE: You have to be 100% sure that you need this lock. It's extremely
     /// heavyweight and makes table irresponsive.
-    TableExclusiveLockHolder lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    TableExclusiveLockHolder lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
@@ -459,9 +442,7 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual std::optional<QueryPipeline> distributedWrite(
-        const ASTInsertQuery & /*query*/,
-        ContextPtr /*context*/);
+    virtual std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/);
 
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).
@@ -472,6 +453,10 @@ public:
     virtual void drop() {}
 
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
+
+    /// Return true if the storage supports TRUNCATE operation.
+    /// Storages without their own data (e.g. View) return false.
+    virtual bool supportsTruncate() const { return true; }
 
     /** Clear the table data and leave it empty.
       * Must be called under exclusive lock (lockExclusively).
@@ -508,7 +493,7 @@ public:
 
     /// Updates metadata that can be changed by other processes
     /// Return true if external metadata exists and was updated.
-    virtual bool updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { return false; }
+    virtual void updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -553,6 +538,8 @@ public:
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, ContextPtr);
+
+    virtual Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context);
 
     /// Cancel a mutation.
     virtual CancellationCode killMutation(const String & /*mutation_id*/);
@@ -670,8 +657,14 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
+    /// Same as getDataPaths() but may return nullopt in some specific engines like Alias
+    virtual std::optional<Strings> tryGetDataPaths() const { return getDataPaths(); }
+
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    /// Same as getStoragePolicy() but may return nullopt in some specific engines like Alias
+    virtual std::optional<StoragePolicyPtr> tryGetStoragePolicy() const { return getStoragePolicy(); }
 
     /// Returns true if all disks of storage are read-only or write-once.
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
@@ -717,21 +710,21 @@ public:
     /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeRows() const { return {}; }
 
+    /// Same as lifetimeRows() but may return nullopt in some specific engines like Alias
+    virtual std::optional<std::optional<UInt64>> tryLifetimeRows() const { return lifetimeRows(); }
+
     /// Number of bytes INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
+    /// Same as lifetimeBytes() but may return nullopt in some specific engines like Alias
+    virtual std::optional<std::optional<UInt64>> tryLifetimeBytes() const { return lifetimeBytes(); }
+
     /// Creates a storage snapshot from given metadata.
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-    }
-
-    /// Creates a storage snapshot from given metadata and columns, which are used in query.
-    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
-    {
-        return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     /// Creates a storage snapshot but without holding a data specific to storage.

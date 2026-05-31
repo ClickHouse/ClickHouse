@@ -37,6 +37,9 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
     if (left.info.isPatch() != right.info.isPatch())
         return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) is patch part and another is regular part", left.name, right.name));
 
+    if (left.is_in_volume_where_merges_avoid || right.is_in_volume_where_merges_avoid)
+        return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
+
     if (left.projection_names != right.projection_names)
     {
         return std::unexpected(PreformattedMessage::create(

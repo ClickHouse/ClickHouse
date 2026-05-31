@@ -8,10 +8,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Functions/Regexps.h>
 
-#include "config.h"
-#include <re2/re2.h>
-
-
 namespace DB
 {
 

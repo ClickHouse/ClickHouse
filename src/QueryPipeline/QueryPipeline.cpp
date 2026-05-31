@@ -1,6 +1,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <queue>
+#include <iterator>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -21,10 +25,14 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/MemoryBoundMerging.h>
+#include <Processors/Transforms/MergingAggregatedTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
@@ -150,9 +158,9 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
-    std::vector<IProcessor *> processors;
-    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
-    std::unordered_set<IProcessor *> visited;
+    VectorWithMemoryTracking<IProcessor *> processors;
+    MapWithMemoryTracking<LimitTransform *, VectorWithMemoryTracking<size_t>> limit_candidates;
+    UnorderedSetWithMemoryTracking<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
@@ -162,7 +170,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ssize_t limit_input_port;
     };
 
-    std::queue<QueuedEntry> queue;
+    QueueWithMemoryTracking<QueuedEntry> queue;
 
     queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);
@@ -178,9 +186,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ///   1. Remote: Set counter on Remote
         ///   2. Limit ... PartialSorting: Set counter on PartialSorting
         ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
-        ///   4. Limit ... Remote: Set counter on Remote
-        ///   5. Limit ... LimitBy: Set counter on LimitBy, as it may not be executed on initiator
-        ///   6. Limit ... : Set counter on the input port of Limit
+        ///   4. Limit ... MergingAggregated ... Remote: Set counter on the input port of Limit
+        ///   5. Limit ... Remote: Set counter on Remote
+        ///   6. Limit ... LimitBy: Set counter on LimitBy, as it may not be executed on initiator
+        ///   7. Limit ... : Set counter on the input port of Limit
 
         /// Case 1.
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_processor)
@@ -218,6 +227,14 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             }
 
             /// Case 4.
+            if (typeid_cast<MergingAggregatedTransform *>(processor) || typeid_cast<MergingAggregatedBucketTransform *>(processor)
+                || typeid_cast<SortingAggregatedTransform *>(processor)
+                || typeid_cast<SortingAggregatedForMemoryBoundMergingTransform *>(processor))
+            {
+                continue;
+            }
+
+            /// Case 5.
             if (typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor))
             {
                 processors.emplace_back(processor);
@@ -225,7 +242,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
                 continue;
             }
 
-            /// Case 5.
+            /// Case 6.
             if (typeid_cast<LimitByTransform *>(processor))
             {
                 processors.emplace_back(processor);
@@ -243,6 +260,10 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 
             continue;
         }
+
+        /// Skip CreatingSetsTransform
+        if (typeid_cast<CreatingSetsTransform *>(processor))
+            continue;
 
         if (limit_processor == processor)
         {
@@ -266,7 +287,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
     }
 
-    /// Case 6.
+    /// Case 7.
     for (auto && [limit, ports] : limit_candidates)
     {
         /// If there are some input ports which don't have the counter, add it to LimitTransform.
@@ -399,7 +420,6 @@ QueryPipeline::QueryPipeline(Chain chain)
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
 {
-    processors->reserve(chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
@@ -480,7 +500,6 @@ void QueryPipeline::complete(Chain chain)
     drop(totals, *processors);
     drop(extremes, *processors);
 
-    processors->reserve(processors->size() + chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
@@ -511,12 +530,12 @@ void QueryPipeline::complete(Pipe pipe)
     processors->insert(processors->end(), pipe_processors.begin(), pipe_processors.end());
 }
 
-static void addMaterializing(OutputPort *& output, Processors & processors)
+static void addMaterializing(OutputPort *& output, Processors & processors, bool remove_special_column_representations)
 {
     if (!output)
         return;
 
-    auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader());
+    auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader(), remove_special_column_representations);
     connect(*output, materializing->getInputPort());
     output = &materializing->getOutputPort();
     processors.emplace_back(std::move(materializing));
@@ -529,9 +548,10 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     if (format->expectMaterializedColumns())
     {
-        addMaterializing(output, *processors);
-        addMaterializing(totals, *processors);
-        addMaterializing(extremes, *processors);
+        bool remove_special_column_representations = !format->supportsSpecialSerializationKinds();
+        addMaterializing(output, *processors, remove_special_column_representations);
+        addMaterializing(totals, *processors, remove_special_column_representations);
+        addMaterializing(extremes, *processors, remove_special_column_representations);
     }
 
     auto & format_main = format->getPort(IOutputFormat::PortKind::Main);
@@ -641,7 +661,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
 {
-    assert(pulling());
+    chassert(pulling());
 
     /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is to write
     /// each chunk into the query result cache. All transforms hold a refcounted reference to the same query result cache writer object.
@@ -668,14 +688,12 @@ void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultC
 
 void QueryPipeline::finalizeWriteInQueryResultCache()
 {
-    auto it = std::find_if(
-        processors->begin(), processors->end(),
-        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); });
-
-    /// The pipeline can contain up to three StreamInQueryResultCacheTransforms which all point to the same query result cache writer
-    /// object. We can call finalize() on any of them.
-    if (it != processors->end())
-        dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();
+    /// QueryPipeline can contain multiple StreamInQueryResultCacheTransforms,
+    /// and all StreamInQueryResultCacheTransforms can point to different QueryResultCacheWriter objects if subqueries are cached.
+    /// We should call finalize() on all of them.
+    for (auto & processor : *processors)
+        if (auto * stream_processor = dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); stream_processor)
+            stream_processor->finalizeWriteInQueryResultCache();
 }
 
 void QueryPipeline::readFromQueryResultCache(
@@ -704,12 +722,21 @@ void QueryPipeline::addStorageHolder(StoragePtr storage)
     resources.storage_holders.emplace_back(std::move(storage));
 }
 
-void QueryPipeline::addCompletedPipeline(QueryPipeline other)
+void QueryPipeline::addCompletedPipeline(QueryPipeline && other)
 {
     if (!other.completed())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
 
-    resources = std::move(other.resources);
+    resources.append(other.resources);
+    processors->insert(processors->end(), std::make_move_iterator(other.processors->begin()), std::make_move_iterator(other.processors->end()));
+}
+
+void QueryPipeline::addCompletedPipeline(const QueryPipeline & other)
+{
+    if (!other.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
+
+    resources.append(other.resources);
     processors->insert(processors->end(), other.processors->begin(), other.processors->end());
 }
 
@@ -740,7 +767,7 @@ static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Proc
     }
 }
 
-void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
+void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context)
 {
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to convert header");
@@ -748,7 +775,8 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns)
     auto converting = ActionsDAG::makeConvertingActions(
         output->getHeader().getColumnsWithTypeAndName(),
         columns,
-        ActionsDAG::MatchColumnsMode::Position);
+        ActionsDAG::MatchColumnsMode::Position,
+        context);
 
     auto actions = std::make_shared<ExpressionActions>(std::move(converting));
     addExpression(output, actions, *processors);

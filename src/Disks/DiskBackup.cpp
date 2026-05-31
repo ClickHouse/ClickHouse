@@ -3,6 +3,7 @@
 #include <Common/logger_useful.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteHelpers.h>
 
 #include <Backups/BackupFactory.h>
@@ -64,6 +65,11 @@ ReservationPtr DiskBackup::reserve(UInt64)
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support reserve method");
 }
 
+ReservationPtr DiskBackup::reserve(UInt64, const ReservationConstraints &)
+{
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support reserve method");
+}
+
 std::optional<UInt64> DiskBackup::getTotalSpace() const
 {
     return backup->getTotalSize();
@@ -117,11 +123,6 @@ void DiskBackup::createDirectories(const String & path)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support createDirectories method");
 }
 
-void DiskBackup::clearDirectory(const String &)
-{
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support clearDirectory method");
-}
-
 void DiskBackup::moveDirectory(const String &, const String &)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support moveDirectory method");
@@ -143,11 +144,20 @@ void DiskBackup::replaceFile(const String &, const String &)
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "DiskBackup does not support replaceFile method");
 }
 
-std::unique_ptr<ReadBufferFromFileBase>
-DiskBackup::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
+void DiskBackup::prepareRead(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> /* read_hint */,
+    ReadPipeline & pipeline) const
 {
-    std::string replaced_path = replacePathPrefix(path);
-    return backup->readFile(replaced_path);
+    auto replaced_path = replacePathPrefix(path);
+    auto file_size = backup->getFileSize(replaced_path);
+    StoredObject obj(replaced_path, replaced_path, file_size);
+
+    /// `read_hint` is intentionally ignored — `IBackup::readFile(file_name)` does
+    /// not accept a hint. This matches the pre-existing behavior of `DiskBackup::readFile`
+    /// (which also took an unnamed `std::optional<size_t>` and discarded it).
+    pipeline.setBackupSource(backup, replaced_path, StoredObjects{obj}, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskBackup::writeFile(const String &, size_t, WriteMode, const WriteSettings &)
@@ -267,10 +277,6 @@ DataSourceDescription DiskBackup::getDataSourceDescription() const
     description.description = "DiskBackup";
 
     return description;
-}
-
-void DiskBackup::shutdown()
-{
 }
 
 String DiskBackup::replacePathPrefix(const String & path) const

@@ -145,7 +145,7 @@ protected:
             map.push_back(std::move(tuple));
         }
 
-        node = std::make_shared<ASTLiteral>(std::move(map));
+        node = make_intrusive<ASTLiteral>(std::move(map));
         return true;
     }
 };
@@ -212,12 +212,16 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     /// for SETTINGS disk=disk(type='s3', path='', ...)
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.name);
-        change.value = createFieldFromAST(function_ast);
+        auto pos_before_func = pos;
+        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+        {
+            tryGetIdentifierNameInto(name, change.name);
+            change.value = createFieldFromAST(function_ast);
 
-        return true;
+            return true;
+        }
+        pos = pos_before_func;
     }
     if (!literal_or_map_p.parse(pos, value, expected))
         return false;
@@ -281,12 +285,16 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         }
 
         /// Setting
-        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
         {
-            change.name = name;
-            change.value = createFieldFromAST(function_ast);
+            auto pos_before_func = pos;
+            if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+            {
+                change.name = name;
+                change.value = createFieldFromAST(function_ast);
 
-            return true;
+                return true;
+            }
+            pos = pos_before_func;
         }
 
         if (!value_p.parse(pos, node, expected))
@@ -298,11 +306,11 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         {
             Field type_test = Settings::castValueUtil(name, true);
             if (type_test.getType() == Field::Types::Which::Bool)
-                node = std::make_shared<ASTLiteral>(Field(true));
+                node = make_intrusive<ASTLiteral>(Field(true));
             else
                 return false;
         }
-        catch (...)
+        catch (const Exception &)
         {
             return false;
         }
@@ -329,6 +337,30 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
         if (ParserKeyword{Keyword::TRANSACTION}.check(pos, expected))
             return false;
+
+        /// Parse SET TIME ZONE 'tz' as an alias for SET session_timezone = 'tz'
+        if (ParserKeyword{Keyword::TIME_ZONE}.ignore(pos, expected))
+        {
+            ParserToken eq(TokenType::Equals);
+            eq.ignore(pos, expected); // optional, for PostgreSQL compatibility
+            ASTPtr value_node;
+            ParserLiteralOrMap literal_parser;
+
+            if (!literal_parser.parse(pos, value_node, expected))
+                return false;
+
+            auto query = make_intrusive<ASTSetQuery>();
+            node = query;
+
+            query->is_standalone = !parse_only_internals;
+
+            SettingChange change;
+            change.name = "session_timezone";
+            change.value = value_node->as<ASTLiteral &>().value;
+            query->changes.push_back(std::move(change));
+
+            return true;
+        }
     }
 
     SettingsChanges changes;
@@ -355,7 +387,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             changes.push_back(std::move(setting));
     }
 
-    auto query = std::make_shared<ASTSetQuery>();
+    auto query = make_intrusive<ASTSetQuery>();
     node = query;
 
     query->is_standalone = !parse_only_internals;

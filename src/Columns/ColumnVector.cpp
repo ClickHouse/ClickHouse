@@ -23,14 +23,11 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
-#include <DataTypes/FieldToDataType.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cstring>
-
-#if defined(__SSE2__)
-#    include <emmintrin.h>
-#endif
 
 #include "config.h"
 
@@ -56,22 +53,29 @@ namespace ErrorCodes
 }
 
 template <typename T>
-const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    data.emplace_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T element;
+    readBinaryLittleEndian<T>(element, in);
+    data.emplace_back(std::move(element));
 }
 
 template <typename T>
-const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
+void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
+}
+
+template <typename T>
+void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
 template <typename T>
@@ -241,6 +245,104 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T>
+void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
+    const typename ColumnVector<T>::Container & data,
+    T value,
+    PaddedPODArray<Int8> & compare_results,
+    int direction,
+    int nan_direction_hint)
+{
+    auto * result_data = compare_results.data();
+    size_t num_rows = data.size();
+    /// 2 independent loops, otherwise the compiler does not vectorize it
+    if (direction < 0)
+    {
+        for (size_t row = 0; row < num_rows; row++)
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+    }
+    else
+    {
+        for (size_t row = 0; row < num_rows; row++)
+            result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+    }
+})
+)
+
+template <typename T>
+void ColumnVector<T>::compareColumn(
+    const IColumn & rhs,
+    size_t rhs_row_num,
+    PaddedPODArray<UInt64> * row_indexes,
+    PaddedPODArray<Int8> & compare_results,
+    int direction,
+    int nan_direction_hint) const
+{
+    size_t num_rows = size();
+    if (compare_results.empty())
+        compare_results.resize(num_rows);
+    else if (compare_results.size() != num_rows)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Size of compare_results: {} doesn't match rows_num: {}", compare_results.size(), num_rows);
+
+    const auto & rhs_derived = static_cast<const ColumnVector<T> &>(rhs);
+    T value = rhs_derived.data[rhs_row_num];
+
+    /// We don't push the row_indexes part into compareColumnImpl because the code is not vectorized as-is, as it needs to
+    /// jump over the different indices to compare them
+    /// It could be rewritten to allow vectorization by reading all memory and then discarding results not in row_indexes
+    /// but I did not expect it to be worth the risk
+    if (row_indexes)
+    {
+        auto * result_data = compare_results.data();
+        UInt64 * next_index = row_indexes->data();
+        if (direction < 0)
+        {
+            for (auto row : *row_indexes)
+            {
+                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(value, data[row], nan_direction_hint));
+                if (result_data[row] == 0)
+                {
+                    *next_index = row;
+                    ++next_index;
+                }
+            }
+        }
+        else
+        {
+            for (auto row : *row_indexes)
+            {
+                result_data[row] = static_cast<Int8>(CompareHelper<T>::compare(data[row], value, nan_direction_hint));
+                if (result_data[row] == 0)
+                {
+                    *next_index = row;
+                    ++next_index;
+                }
+            }
+        }
+
+        size_t equal_row_indexes_size = next_index - row_indexes->data();
+        row_indexes->resize(equal_row_indexes_size);
+        return;
+    }
+
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        compareColumnImpl_x86_64_v3<T>(data, value, compare_results, direction, nan_direction_hint);
+        return;
+    }
+#endif
+    compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
+}
+
 template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
@@ -256,12 +358,15 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T> && !is_floating_point<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
-        /// Disabled for floating point:
-        /// * floating point: We don't deal with nan_direction_hint
-        /// * stability::Stable: We might return any value, not the first
-        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
+        /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
+        /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
+        /// stability::Stable: We might return any value, not the first.
+        const bool nan_direction_ok = !is_floating_point<T>
+            || (direction == IColumn::PermutationSortDirection::Ascending && nan_direction_hint >= 0)
+            || (direction == IColumn::PermutationSortDirection::Descending && nan_direction_hint <= 0);
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable) && nan_direction_ok)
         {
             std::optional<size_t> index;
             if (direction == IColumn::PermutationSortDirection::Ascending)
@@ -422,7 +527,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        std::string_view value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -449,11 +554,11 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
+void ColumnVector<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
-    const auto & val = castToNearestFieldType(data[n]);
-    return {FieldVisitorToString()(val), FieldToDataType()(val)};
+    if (options.notFull(name_buf))
+        name_buf << FieldVisitorToString()(castToNearestFieldType(data[n]));
 }
 
 template <typename T>
@@ -546,7 +651,7 @@ uint8_t prefixToCopy(UInt64 mask)
     /// So the length of the prefix to copy is 64 - #(leading zeroes).
     const UInt64 leading_zeroes = __builtin_clzll(mask);
     if (mask == ((static_cast<UInt64>(-1) << leading_zeroes) >> leading_zeroes))
-        return 64 - leading_zeroes;
+        return static_cast<uint8_t>(64 - leading_zeroes);
     return 0xFF;
 }
 
@@ -556,9 +661,55 @@ uint8_t suffixToCopy(UInt64 mask)
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;
 }
 
+template <typename T>
+class ResultInserter
+{
+private:
+    PaddedPODArray<T> & container;
+
+public:
+    explicit ResultInserter(PaddedPODArray<T> & cont) : container(cont) {}
+
+    void insertSingle(T element)
+    {
+        container.push_back(element);
+    }
+
+    void insertRange(const T * begin, const T * end)
+    {
+        container.insert(begin, end);
+    }
+};
+
+template <typename T>
+class InPlaceResultInserter
+{
+private:
+    T * result_ptr;
+    size_t & container_size;
+
+public:
+    explicit InPlaceResultInserter(T * ptr, size_t & size) : result_ptr(ptr), container_size(size) {}
+
+    void insertSingle(T element)
+    {
+        *result_ptr = element;
+        ++result_ptr;
+        ++container_size;
+    }
+
+    void insertRange(const T * begin, const T * end)
+    {
+        size_t count = end - begin;
+        memmove(result_ptr, begin, count * sizeof(T));
+        result_ptr += count;
+        container_size += count;
+    }
+};
+
 DECLARE_DEFAULT_CODE(
-template <typename T, typename Container, size_t SIMD_ELEMENTS>
-inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Container & res_data)
+template <typename T, typename Inserter, size_t SIMD_ELEMENTS>
+inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_aligned, const T *& data_pos, Inserter & inserter)
 {
     while (filt_pos < filt_end_aligned)
     {
@@ -567,21 +718,21 @@ inline void doFilterAligned(const UInt8 *& filt_pos, const UInt8 *& filt_end_ali
 
         if (0xFF != prefix_to_copy)
         {
-            res_data.insert(data_pos, data_pos + prefix_to_copy);
+            inserter.insertRange(data_pos, data_pos + prefix_to_copy);
         }
         else
         {
             const uint8_t suffix_to_copy = suffixToCopy(mask);
             if (0xFF != suffix_to_copy)
             {
-                res_data.insert(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
+                inserter.insertRange(data_pos + SIMD_ELEMENTS - suffix_to_copy, data_pos + SIMD_ELEMENTS);
             }
             else
             {
                 while (mask)
                 {
                     size_t index = std::countr_zero(mask);
-                    res_data.push_back(data_pos[index]);
+                    inserter.insertSingle(data_pos[index]);
                     mask = blsr(mask);
                 }
             }
@@ -606,7 +757,7 @@ void resize(Container & res_data, size_t reserve_size)
 }
 }
 
-DECLARE_AVX512VBMI2_SPECIFIC_CODE(
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(
 template <size_t ELEMENT_WIDTH>
 inline void compressStoreAVX512(const void *src, void *dst, const UInt64 mask)
 {
@@ -705,11 +856,14 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
 #if USE_MULTITARGET_CODE
     static constexpr bool VBMI2_CAPABLE = sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8;
-    if (VBMI2_CAPABLE && isArchSupported(TargetArch::AVX512VBMI2))
-        TargetSpecific::AVX512VBMI2::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+    if (VBMI2_CAPABLE && isArchSupported(TargetArch::x86_64_icelake))
+        TargetSpecific::x86_64_icelake::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
     else
 #endif
-        TargetSpecific::Default::doFilterAligned<T, Container, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, res_data);
+    {
+        ResultInserter<T> inserter(res_data);
+        TargetSpecific::Default::doFilterAligned<T, ResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+    }
 
     while (filt_pos < filt_end)
     {
@@ -721,6 +875,44 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnVector<T>::filter(const IColumn::Filter & filt)
+{
+    const auto size = data.size();
+    const auto filter_size = filt.size();
+
+    if (size != filter_size)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter_size, size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * data_pos = data.data();
+    T * result_data = data.data();
+    size_t result_size = 0;
+
+    /** A slightly more optimized version.
+      * Based on the assumption that often pieces of consecutive values
+      *  completely pass or do not pass the filter.
+      * Therefore, we will optimistically check the parts of `SIMD_ELEMENTS` values.
+      */
+    static constexpr size_t SIMD_ELEMENTS = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_ELEMENTS * SIMD_ELEMENTS;
+
+    InPlaceResultInserter<T> inserter(result_data, result_size);
+    TargetSpecific::Default::doFilterAligned<T, InPlaceResultInserter<T>, SIMD_ELEMENTS>(filt_pos, filt_end_aligned, data_pos, inserter);
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+            result_data[result_size++] = *data_pos;
+
+        ++filt_pos;
+        ++data_pos;
+    }
+
+    data.resize_assume_reserved(result_size);
 }
 
 template <typename T>
@@ -766,114 +958,53 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
     return selectIndexImpl(*this, indexes, limit);
 }
 
-#ifdef __SSE2__
-
 namespace
 {
-    /** Optimization for ColumnVector replicate using SIMD instructions.
-      * For such optimization it is important that data is right padded with 15 bytes.
-      *
-      * Replicate span size is offsets[i] - offsets[i - 1].
-      *
-      * Split spans into 3 categories.
-      * 1. Span with 0 size. Continue iteration.
-      *
-      * 2. Span with 1 size. Update pointer from which data must be copied into result.
-      * Then if we see span with size 1 or greater than 1 copy data directly into result data and reset pointer.
-      * Example:
-      * Data: 1 2 3 4
-      * Offsets: 1 2 3 4
-      * Result data: 1 2 3 4
-      *
-      * 3. Span with size greater than 1. Save single data element into register and copy it into result data.
-      * Example:
-      * Data: 1 2 3 4
-      * Offsets: 4 4 4 4
-      * Result data: 1 1 1 1
-      *
-      * Additional handling for tail is needed if pointer from which data must be copied from span with size 1 is not null.
-      */
-    template<typename IntType>
-    requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-    void replicateSSE2Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
+
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
+replicateImpl,
+MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
+{
+    auto *it = result;
+
+    if constexpr (use_window && padding_elements >= 2)
     {
-        const IntType * data_copy_begin_ptr = nullptr;
-        size_t offsets_size = offsets.size();
-
-        for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
+        for (size_t i = 0; i < size; ++i)
         {
-            size_t span = offsets[offset_index] - offsets[offset_index - 1];
-            if (span == 1)
-            {
-                if (!data_copy_begin_ptr)
-                    data_copy_begin_ptr = data + offset_index;
-
+            size_t span_size = (offsets[i] - offsets[i - 1]);
+            if (!span_size)
                 continue;
-            }
-
-            /// Copy data
-
-            if (data_copy_begin_ptr)
+            /// We will do block writes of "padding_elements" size from left to write, so writing more bytes than necessary is ok
+            /// as the data will be overwritten by the next offset (or it's part of the padding)
+            size_t iterations = (span_size + padding_elements - 1) / padding_elements;
+            for (size_t copy_iteration = 0; copy_iteration < iterations; copy_iteration++)
             {
-                size_t copy_size = (data + offset_index) - data_copy_begin_ptr;
-                bool remainder = copy_size % 4;
-                size_t sse_copy_counter = (copy_size / 4) + remainder;
-                auto * result_data_copy = result_data;
-
-                while (sse_copy_counter)
-                {
-                    __m128i copy_batch = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data_copy_begin_ptr));
-                    _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data_copy), copy_batch);
-                    result_data_copy += 4;
-                    data_copy_begin_ptr += 4;
-                    --sse_copy_counter;
-                }
-
-                result_data += copy_size;
-                data_copy_begin_ptr = nullptr;
+                std::fill(it + copy_iteration * padding_elements, it + (copy_iteration + 1) * padding_elements, data[i]);
             }
+            it = result + offsets[i];
 
-            if (span == 0)
-                continue;
-
-            /// Copy single data element into result data
-
-            bool span_remainder = span % 4;
-            size_t copy_counter = (span / 4) + span_remainder;
-            auto * result_data_tmp = result_data;
-            __m128i copy_element_data = _mm_set1_epi32(data[offset_index]);
-
-            while (copy_counter)
-            {
-                _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data_tmp), copy_element_data);
-                result_data_tmp += 4;
-                --copy_counter;
-            }
-
-            result_data += span;
-        }
-
-        /// Copy tail if needed
-
-        if (data_copy_begin_ptr)
-        {
-            size_t copy_size = (data + offsets_size) - data_copy_begin_ptr;
-            bool remainder = copy_size % 4;
-            size_t sse_copy_counter = (copy_size / 4) + remainder;
-
-            while (sse_copy_counter)
-            {
-                __m128i copy_batch = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data_copy_begin_ptr));
-                _mm_storeu_si128(reinterpret_cast<__m128i *>(result_data), copy_batch);
-                result_data += 4;
-                data_copy_begin_ptr += 4;
-                --sse_copy_counter;
-            }
+            if constexpr (use_window)
+                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                    i += window_size - 1;
         }
     }
-}
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto * span_end = result + offsets[i];
+            std::fill(it, span_end, data[i]);
+            it = span_end;
+            if constexpr (use_window)
+                if (i + window_size - 1 < size && offsets[i] == offsets[i + window_size - 1])
+                    i += window_size - 1;
+        }
+    }
+})
+)
 
-#endif
+}
 
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
@@ -882,70 +1013,86 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     if (size != offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets {} doesn't match size of column {}", offsets.size(), size);
 
-    if (0 == size)
+    if (size == 0 || offsets.back() == 0)
         return this->create();
 
     auto res = this->create(offsets.back());
 
-#ifdef __SSE2__
-    if constexpr (std::is_same_v<T, UInt32>)
-    {
-        replicateSSE2Int32(getData().data(), res->getData().data(), offsets);
-        return res;
-    }
-#endif
+    /// This formula provides the optimum for a very simplified and probably wrong model for the number of additional checks (offsets[i] == offsets[i + window - 1])
+    /// The threshold of 16 is chosen experimentally, based on the case when all offsets are 0 and we spend no time doing actual copying (i.e. the overhead
+    /// from these additional checks is pronounced the most).
+    const size_t window_size = static_cast<size_t>(sqrt(1 + size / offsets.back()));
+    bool use_window = window_size > 16;
 
-    auto it = res->getData().begin(); // NOLINT
-    for (size_t i = 0; i < size; ++i)
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        if (use_window)
+            replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImpl_x86_64_v4<T, false>(data.data(), size, window_size, offsets, res->getData().data());
+    else if (isArchSupported(TargetArch::x86_64_v3))
+        if (use_window)
+            replicateImpl_x86_64_v3<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImpl_x86_64_v3<T, false>(data.data(), size, window_size, offsets, res->getData().data());
+    else
+#endif
     {
-        const auto span_end = res->getData().begin() + offsets[i]; // NOLINT
-        for (; it != span_end; ++it)
-            *it = data[i];
+        if (use_window)
+            replicateImpl<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImpl<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     }
 
     return res;
 }
 
 template <typename T>
-void ColumnVector<T>::getExtremes(Field & min, Field & max) const
+void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    size_t size = data.size();
-
-    if (size == 0)
+    if (start >= end)
     {
         min = T(0);
         max = T(0);
         return;
     }
 
-    bool has_value = false;
-
     /** Skip all NaNs in extremes calculation.
         * If all values are NaNs, then return NaN.
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
-
-    T cur_min = NaNOrZero<T>();
-    T cur_max = NaNOrZero<T>();
-
-    for (const T & x : data)
+    size_t i = start;
+    if constexpr (is_floating_point<T>)
     {
-        if (isNaN(x))
-            continue;
-
-        if (!has_value)
+        for (; i < end; i++)
         {
-            cur_min = x;
-            cur_max = x;
-            has_value = true;
-            continue;
+            if (!isNaN(data[i]))
+                break;
+        }
+        if (i == end)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+    }
+
+    T cur_min = data.data()[i];
+    T cur_max = data.data()[i];
+
+    i++;
+    for (; i < end; i++)
+    {
+        if constexpr (is_floating_point<T>)
+        {
+            if (isNaN(data[i]))
+                continue;
         }
 
-        if (x < cur_min)
-            cur_min = x;
-        else if (x > cur_max)
-            cur_max = x;
+        const T & x = data.data()[i];
+        cur_min = std::min(x, cur_min);
+        cur_max = std::max(x, cur_max);
     }
 
     min = NearestFieldType<T>(cur_min);
@@ -1012,8 +1159,9 @@ DECLARE_DEFAULT_CODE(
     }
 );
 
-DECLARE_AVX512VBMI_SPECIFIC_CODE(
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(
     template <typename Container, typename Type>
+    __attribute__((no_sanitize("memory"))) /// False positive on _mm512_permutex2var_epi8
     void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
     {
         static constexpr UInt64 MASK64 = 0xffffffffffffffff;
@@ -1137,9 +1285,9 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     if constexpr (sizeof(T) == 1 && sizeof(Type) == 1)
     {
         /// VBMI optimization only applicable for (U)Int8 types
-        if (isArchSupported(TargetArch::AVX512VBMI))
+        if (isArchSupported(TargetArch::x86_64_icelake))
         {
-            TargetSpecific::AVX512VBMI::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
+            TargetSpecific::x86_64_icelake::vectorIndexImpl<Container, Type>(data, indexes, limit, res_data);
             return res;
         }
     }

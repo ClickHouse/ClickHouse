@@ -3,9 +3,8 @@ description: 'Documentation for Hash Functions'
 sidebar_label: 'Hash'
 slug: /sql-reference/functions/hash-functions
 title: 'Hash Functions'
+doc_type: 'reference'
 ---
-
-# Hash functions
 
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 

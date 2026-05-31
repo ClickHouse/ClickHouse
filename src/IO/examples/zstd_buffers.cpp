@@ -19,7 +19,7 @@ extern const int BAD_ARGUMENTS;
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleZstdBuffers(int argc, char ** argv)
 try
 {
     std::cout << std::fixed << std::setprecision(2);
@@ -61,7 +61,7 @@ try
         stopwatch.stop();
 
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-                  << ", " << (zstd_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
+                  << ", " << (static_cast<double>(zstd_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     {
@@ -80,7 +80,7 @@ try
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-                  << ", " << (zstd_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
+                  << ", " << (static_cast<double>(zstd_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     return 0;

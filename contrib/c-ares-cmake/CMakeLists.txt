@@ -92,8 +92,6 @@ SET(SRCS
 )
 
 add_library(_c-ares STATIC ${SRCS})
-target_compile_definitions(_c-ares PUBLIC CARES_STATICLIB)
-
 target_compile_definitions(_c-ares PRIVATE HAVE_CONFIG_H=1)
 
 target_include_directories(_c-ares SYSTEM PUBLIC

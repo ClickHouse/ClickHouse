@@ -1,4 +1,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnTuple.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
@@ -45,10 +47,12 @@ namespace Setting
 {
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool enable_scalar_subquery_optimization;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace
@@ -131,6 +135,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
         subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
+        subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
         subquery_context->setSettings(subquery_settings);
 
         auto query_tree = node->clone();
@@ -142,6 +147,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
+
+        /// Scalar subqueries may reference materialized CTEs that haven't been populated yet.
+        /// Force CTE materialization in the sub-plan so that the pipeline execution
+        /// populates the CTE StorageMemory tables before the scalar subquery reads from them.
+        /// This is analogous to addBuildSubqueriesForSetsStepIfNeeded using forceMaterializeCTE()
+        /// for set subqueries that reference CTEs.
+        options.forceMaterializeCTE();
 
         QueryTreePassManager query_tree_pass_manager(subquery_context);
         addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
@@ -236,6 +248,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
+                if (auto cancel_cb = context->hasQueryContext() ? context->getQueryContext()->getInteractiveCancelCallback() : nullptr)
+                    executor->setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
                 while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }

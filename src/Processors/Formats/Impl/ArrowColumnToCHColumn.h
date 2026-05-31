@@ -7,7 +7,6 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
-#include <DataTypes/IDataType.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <arrow/table.h>
@@ -81,7 +80,7 @@ private:
     const Block & header;
     const std::string format_name;
 
-    const FormatSettings & format_settings;
+    FormatSettings format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;

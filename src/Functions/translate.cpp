@@ -237,7 +237,7 @@ struct TranslateUTF8Impl
                     }
 
                     size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], reinterpret_cast<char *>(dst), 4);
-                    assert(0 < dst_len && dst_len <= 4);
+                    chassert(0 < dst_len && dst_len <= 4);
 
                     src += 1;
                     dst += dst_len;
@@ -246,7 +246,7 @@ struct TranslateUTF8Impl
                 }
 
                 size_t src_len = UTF8::seqLength(*src);
-                assert(0 < src_len && src_len <= 4);
+                chassert(0 < src_len && src_len <= 4);
 
                 if (src + src_len <= src_end)
                 {
@@ -262,7 +262,7 @@ struct TranslateUTF8Impl
                                 continue;
 
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), reinterpret_cast<char *>(dst), 4);
-                            assert(0 < dst_len && dst_len <= 4);
+                            chassert(0 < dst_len && dst_len <= 4);
 
                             dst += dst_len;
                             data_size += dst_len;
@@ -304,7 +304,7 @@ private:
 
 
 template <typename Impl, typename Name>
-class FunctionTranslate : public IFunction
+class FunctionTranslate final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -365,7 +365,7 @@ public:
             map_to_size = map_to.size();
         }
         if (map_from_size < map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from_size, map_to_size);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
@@ -441,7 +441,7 @@ Non-ASCII characters in `s` are not modified by the function.
     };
     FunctionDocumentation::IntroducedIn translate_introduced_in = {22, 7};
     FunctionDocumentation::Category translate_category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation translate_documentation = {translate_description, translate_syntax, translate_arguments, translate_returned_value, translate_examples, translate_introduced_in, translate_category};
+    FunctionDocumentation translate_documentation = {translate_description, translate_syntax, translate_arguments, {}, translate_returned_value, translate_examples, translate_introduced_in, translate_category};
 
     factory.registerFunction<FunctionTranslateASCII>(translate_documentation);
 
@@ -466,7 +466,7 @@ Like [`translate`](#translate) but assumes `s`, `from` and `to` are UTF-8 encode
         )"
     }
     };
-    FunctionDocumentation utf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, utf8_returned_value, utf8_examples, translate_introduced_in, translate_category};
+    FunctionDocumentation utf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, {}, utf8_returned_value, utf8_examples, translate_introduced_in, translate_category};
 
     factory.registerFunction<FunctionTranslateUTF8>(utf8_documentation);
 }

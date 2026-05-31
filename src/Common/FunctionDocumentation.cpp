@@ -15,7 +15,6 @@ namespace ErrorCodes
 
 namespace
 {
-VersionNumber VERSION_UNKNOWN = {0};
 
 /// Example input 'types' vector: {"(U)Int*", "Float*"}
 /// Example output string: [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Float*`](/sql-reference/data-types/float)
@@ -81,6 +80,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/map)";
         else if (type.starts_with("Variant")) /// "Variant(T1, T2, ...)", "Variant(UInt8, String)", ...
             result += "`](/sql-reference/data-types/variant)";
+        else if (type.starts_with("Geometry"))
+            result += "`](/sql-reference/data-types/geo)";
         else if (type.starts_with("LowCardinality")) /// "LowCardinality(T)", "LowCardinality(UInt8)", "LowCardinality(String)", ...
             result += "`](/sql-reference/data-types/lowcardinality)";
         else if (type.starts_with("Nullable")) /// "Nullable(T)", "Nullable(UInt8)", "Nullable(String)", ...
@@ -89,6 +90,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/data-types/aggregatefunction)";
         else if (type.starts_with("SimpleAggregateFunction")) /// "SimpleAggregateFunction(agg_func, T)", "SimpleAggregateFunction(any, UInt8)", ...
             result += "`](/sql-reference/data-types/simpleaggregatefunction)";
+        else if (type == "Geo")
+            result += "`](/sql-reference/data-types/geo)";
         else if (type == "Point")
             result += "`](/sql-reference/data-types/geo#point)";
         else if (type == "Ring")
@@ -102,7 +105,7 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
         else if (type == "MultiPolygon")
             result += "`](/sql-reference/data-types/geo#multipolygon)";
         else if (type == "numericIndexedVector")
-            result += "`](/sql-reference/functions/#create-numeric-indexed-vector-object)";
+            result += "`](/sql-reference/functions/numeric-indexed-vector-functions#create-numeric-indexed-vector-object)";
         else if (type == "Expression")
             result += "`](/sql-reference/data-types/special-data-types/expression)";
         else if (type == "Set")
@@ -121,6 +124,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/sql-reference/functions/overview#arrow-operator-and-lambda)";
         else if (type == "NULL")
             result += "`](/sql-reference/syntax#null)";
+        else if (type.starts_with("QBit")) /// "QBit(T, UInt64)", "QBit(Float64, UInt64)", ...
+            result += "`](/sql-reference/data-types/qbit)";
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected data type in function {}: {}", syntax, type);
     }
@@ -129,10 +134,11 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
 }
 }
 
-String FunctionDocumentation::argumentsAsString() const
+template <typename Type>
+String argumentsOrParametersAsString(const Type & arguments_or_parameters, const FunctionDocumentation::Syntax & syntax)
 {
     String result;
-    for (const auto & [name, description_, types] : arguments)
+    for (const auto & [name, description_, types] : arguments_or_parameters)
     {
         result += "- `" + name + "` — " + description_ + " ";
 
@@ -142,6 +148,16 @@ String FunctionDocumentation::argumentsAsString() const
             result += mapTypesToTypesWithLinks(types, syntax);
     }
     return result;
+}
+
+String FunctionDocumentation::argumentsAsString() const
+{
+    return argumentsOrParametersAsString(arguments, syntax);
+}
+
+String FunctionDocumentation::parametersAsString() const
+{
+    return argumentsOrParametersAsString(parameters, syntax);
 }
 
 /// Documentation is often defined with raw strings, therefore we need to trim leading and trailing whitespace + newlines.
@@ -208,6 +224,8 @@ String FunctionDocumentation::categoryAsString() const
     static const std::unordered_map<Category, std::string> category_to_string =
     {
         {Category::Unknown, ""}, /// Default enum value for default-constructed FunctionDocumentation objects. Be consistent with other default fields (empty).
+
+        {Category::AI, "AI"},
         {Category::Arithmetic, "Arithmetic"},
         {Category::Array, "Arrays"},
         {Category::Bit, "Bit"},
@@ -220,6 +238,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Distance, "Distance"},
         {Category::EmbeddedDictionary, "Embedded Dictionary"},
         {Category::Geo, "Geo"},
+        {Category::GeoPolygon, "Geo Polygon"},
         {Category::Encoding, "Encoding"},
         {Category::Encryption, "Encryption"},
         {Category::Financial, "Financial"},
@@ -235,6 +254,7 @@ String FunctionDocumentation::categoryAsString() const
         {Category::Null, "Null"},
         {Category::NumericIndexedVector, "NumericIndexedVector"},
         {Category::Other, "Other"},
+        {Category::QBit, "QBit"},
         {Category::RandomNumber, "Random Number"},
         {Category::Rounding, "Rounding"},
         {Category::StringReplacement, "String Replacement"},
@@ -249,6 +269,10 @@ String FunctionDocumentation::categoryAsString() const
         {Category::URL, "URL"},
         {Category::UUID, "UUID"},
         {Category::UniqTheta, "UniqTheta"},
+
+        {Category::Internal, "Internal"},
+
+        {Category::AggregateFunction, "Aggregate Functions"},
         {Category::TableFunction, "Table Functions"}
     };
 
@@ -257,5 +281,7 @@ String FunctionDocumentation::categoryAsString() const
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Category has no mapping to string");
 }
+
+FunctionDocumentation FunctionDocumentation::INTERNAL_FUNCTION_DOCS = {"", "", {}, {}, {"", {}}, {}, FunctionDocumentation::VERSION_UNKNOWN, FunctionDocumentation::Category::Internal};
 
 }

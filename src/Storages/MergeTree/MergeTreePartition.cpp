@@ -14,7 +14,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include <base/hex.h>
 #include <Core/Block.h>
 
 
@@ -203,7 +202,7 @@ namespace
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
+    return getID(storage.getInMemoryMetadataPtr(storage.getContext(), false)->getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -241,7 +240,9 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
                 result += '-';
 
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
+                result += toString(
+                    DateLUT::serverTimezoneInstance().toNumYYYYMMDD(
+                        DayNum(static_cast<DayNum::UnderlyingType>(value[i].safeGet<UInt64>()))));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(value[i].safeGet<IPv4>().toUnderType());
             else
@@ -485,7 +486,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     /// calculated according to previous version - `moduloLegacy`.
     if (KeyDescription::moduloToModuloLegacyRecursive(ast_copy))
     {
-        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, context);
+        auto adjusted_partition_key = KeyDescription::getKeyFromAST(ast_copy, metadata_snapshot->columns, metadata_snapshot->virtuals, context);
         return adjusted_partition_key;
     }
 

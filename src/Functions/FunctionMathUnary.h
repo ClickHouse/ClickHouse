@@ -4,7 +4,6 @@
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -30,7 +29,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathUnary : public IFunction
+class FunctionMathUnary final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

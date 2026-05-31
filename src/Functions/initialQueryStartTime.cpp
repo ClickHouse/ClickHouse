@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class FunctionInitialQueryStartTime : public IFunction
+class FunctionInitialQueryStartTime final : public IFunction
 {
     const time_t initial_query_start_time;
 public:
@@ -65,7 +65,7 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionInitialQueryStartTime>(documentation);
     factory.registerAlias("initial_query_start_time", FunctionInitialQueryStartTime::name, FunctionFactory::Case::Insensitive);

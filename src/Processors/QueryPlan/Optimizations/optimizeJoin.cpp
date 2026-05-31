@@ -1,28 +1,38 @@
+#include <Common/logger_useful.h>
+#include <Common/SipHash.h>
+#include <Common/safe_cast.h>
+
+#include <Core/Joins.h>
 #include <Core/Settings.h>
+
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/IJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/TableJoin.h>
+
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#if CLICKHOUSE_CLOUD
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#endif
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Storages/StorageMemory.h>
-
-#include <Processors/QueryPlan/LimitStep.h>
-
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-
-#include <Interpreters/Context.h>
-#include <Interpreters/TableJoin.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 
 #include <algorithm>
 #include <limits>
@@ -30,18 +40,15 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <ranges>
-#include <Core/Joins.h>
-#include <Interpreters/HashTablesStatistics.h>
-#include <Common/logger_useful.h>
-#include <Common/safe_cast.h>
 #include <base/types.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/JoinExpressionActions.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
+namespace ProfileEvents
+{
+    extern const Event JoinOptimizeMicroseconds;
+}
 
 namespace DB
 {
@@ -53,11 +60,13 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool use_statistics;
+    extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
+RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
 {
@@ -99,11 +108,19 @@ NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & acti
 
             auto [_, inserted] = visited_nodes.insert(node);
             if (!inserted)
+            {
+                /// Node was already visited, check if it was an input or if it was already remapped to and input
+                if (input_nodes.contains(node))
+                    output_names.insert(out_node->result_name);
                 break;
+            }
 
             if (input_nodes.contains(node))
             {
+                /// We reached an input node so add the current output node name to list of remapped
                 output_names.insert(out_node->result_name);
+                /// Also add this output node to the list of inputs to handle more aliases pointing to it
+                input_nodes.insert(out_node);
                 break;
             }
 
@@ -141,7 +158,21 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
 
 struct RuntimeHashStatisticsContext
 {
+    /// `HashTablesStatistics` keys identify a specific hash table BUILT from a subtree AND
+    /// keyed by specific columns — both pieces are needed: the same right-side subtree
+    /// joined on `t2.a` and joined on `t2.b` produces two physically different hash tables
+    /// with different sizes/NDVs, so they must NOT share a cache entry. The key encoding is:
+    ///     cache_keys[N]  =  raw_hashes[N]  XOR  <per-side contribution of N's parent join>
+    /// where the contribution hashes the parent join's equi-key columns on the side N sits on.
+    /// Populated for every node by `calculateHashTableCacheKeys`; mutated during join reorder
+    /// to reflect the post-reorder parent of each node.
     std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
+    /// Bottom-up hash of the subtree rooted at the node — does NOT include any parent-join
+    /// contribution, so it identifies "what data" but not "what hash table keyed how". Used
+    /// by join-reorder code in `chooseJoinOrder` to derive cache keys for sub-join nodes
+    /// built during reorder, where the post-reorder parent's contribution differs from
+    /// whatever was originally stamped into `cache_keys` during the pre-reorder walk.
+    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
     StatsCollectingParams params;
 
     RuntimeHashStatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
@@ -153,13 +184,20 @@ struct RuntimeHashStatisticsContext
     {
         if (optimization_settings.collect_hash_table_stats_during_joins)
         {
-            cache_keys = calculateHashTableCacheKeys(root_node);
+            calculateHashTableCacheKeys(root_node, cache_keys, raw_hashes);
         }
     }
 
     UInt64 getCachedKey(const QueryPlan::Node * node)
     {
         if (auto it = cache_keys.find(node); it != cache_keys.end())
+            return it->second;
+        return 0;
+    }
+
+    UInt64 getRawHash(const QueryPlan::Node * node) const
+    {
+        if (auto it = raw_hashes.find(node); it != raw_hashes.end())
             return it->second;
         return 0;
     }
@@ -174,7 +212,87 @@ struct RuntimeHashStatisticsContext
         }
         return {};
     }
+
+    /// Mirror what `calculateHashTableCacheKeys` would have produced for an equivalent join in
+    /// the original tree, but for `new_node` that the join-reorder pass is emitting on top of
+    /// `left_child_node` and `right_child_node` (which can themselves be original leaves or
+    /// sub-joins built earlier in the same reorder loop). Returns the derived right-side key,
+    /// suitable for `JoinStepLogical::setRightHashTableCacheKey`.
+    ///
+    /// Each child's final cache key combines its parent-independent subtree hash with the
+    /// parent join's per-side contribution (see `cache_keys` doc above for why both are
+    /// needed). We start from `raw_hashes[child]` rather than the previously-xored value in
+    /// `cache_keys[child]`, because under reorder the new parent's contribution can differ
+    /// from the original tree's parent contribution that was stamped into `cache_keys`.
+    UInt64 deriveCacheKeysForNewJoin(
+        const QueryPlan::Node * left_child_node,
+        const QueryPlan::Node * right_child_node,
+        const QueryPlan::Node & new_node,
+        const JoinStepLogical & join_step)
+    {
+        if (cache_keys.empty())
+            return 0;
+
+        UInt64 raw_left = getRawHash(left_child_node);
+        UInt64 raw_right = getRawHash(right_child_node);
+        UInt64 left_key = raw_left ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Left);
+        UInt64 right_key = raw_right ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Right);
+
+        /// Update cache_keys to reflect the new parent for these children (in case any
+        /// downstream code reads them back via getCachedKey).
+        cache_keys[left_child_node] = left_key;
+        cache_keys[right_child_node] = right_key;
+
+        /// Record this join's own raw hash so any outer reorder iteration can derive its key
+        /// the same way; cache_keys gets the same value initially and may later be xored when
+        /// new_node becomes a child of yet another reorder-built join.
+        SipHash node_hash;
+        node_hash.update(left_key);
+        node_hash.update(right_key);
+        UInt64 raw_new = node_hash.get64();
+        raw_hashes[&new_node] = raw_new;
+        cache_keys[&new_node] = raw_new;
+
+        return right_key;
+    }
 };
+
+RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
+{
+    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
+    std::optional<Float64> total_number_of_distinct_values = 1;
+    RelationStats aggregation_stats;
+    for (const auto & key : aggregator_params.keys)
+    {
+        auto key_stats = input_stats.column_stats.find(key);
+        if (key_stats == input_stats.column_stats.end())
+        {
+            /// Cannot calculate total number of groups if we don't know NDV of any of the aggregation columns
+            total_number_of_distinct_values.reset();
+            continue;
+        }
+
+        UInt64 key_number_of_distinct_values = key_stats->second.num_distinct_values;
+
+        if (input_stats.estimated_rows)
+            key_number_of_distinct_values = std::min(key_number_of_distinct_values, *input_stats.estimated_rows);
+
+        aggregation_stats.column_stats[key].num_distinct_values = key_number_of_distinct_values;
+
+        /// For now assume that aggregation columns are independent, so multiply their NDVs
+        if (total_number_of_distinct_values)
+            *total_number_of_distinct_values *= static_cast<Float64>(key_number_of_distinct_values);
+    }
+
+    if (total_number_of_distinct_values && input_stats.estimated_rows)
+        total_number_of_distinct_values = std::min(*total_number_of_distinct_values, Float64(*input_stats.estimated_rows));
+    else
+        total_number_of_distinct_values = input_stats.estimated_rows;
+
+    aggregation_stats.estimated_rows = total_number_of_distinct_values;
+
+    return aggregation_stats;
+}
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
 {
@@ -183,15 +301,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+        if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
         {
-            if (auto estimator_ = reading->getConditionSelectivityEstimator())
+            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames()))
             {
                 auto prewhere_info = reading->getPrewhereInfo();
                 const ActionsDAG::Node * prewhere_node = prewhere_info
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
+                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
@@ -244,6 +362,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
     }
 
+    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
+    {
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
+    }
+
     if (node.children.size() != 1)
         return {};
 
@@ -272,19 +395,41 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return stats;
     }
 
+    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
+        return aggregation_stats;
+    }
+
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
     {
         return RelationStats{
             .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = {},
+            .column_stats = join_step->getResultColumnStats(),
             .table_name = join_step->getReadableRelationName()};
     }
+
+    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
+    {
+        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        if (sorting_step->getLimit())
+        {
+            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
+                stats.estimated_rows = sorting_step->getLimit();
+        }
+        return stats;
+    }
+#if CLICKHOUSE_CLOUD
+    if (dynamic_cast<LogicalExchangeStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), filter);
+#endif
 
     return {};
 }
 
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -293,6 +438,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     const auto & join = join_step->getJoin();
     if (join->pipelineType() != JoinPipelineType::FillRightFirst || !join->isCloneSupported())
         return true;
+
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
 
     const auto & table_join = join->getTableJoin();
 
@@ -336,7 +483,21 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
     auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
+
+    /// After swapping, the join output may lose columns because TableJoin::swapSides
+    /// swaps result_columns_from_left_table with columns_added_by_join, and the join
+    /// algorithm may filter different columns from the (now swapped) left input.
+    /// If any column required by downstream steps would be missing, skip the swap.
+    auto original_output = join_step->getOutputHeader();
+    auto swapped_algorithm_header = JoiningTransform::transformHeader(*right_stream_input_header, updated_join);
+    for (const auto & col : *original_output)
+    {
+        if (!swapped_algorithm_header.has(col.name))
+            return true;
+    }
+
     join_step->setJoin(std::move(updated_join), /* swap_streams= */ true);
+
     return true;
 }
 
@@ -367,9 +528,13 @@ struct QueryGraphBuilder
 
     std::vector<JoinActionRef> join_edges;
 
-    std::unordered_map<size_t, std::pair<BitSet, JoinKind>> join_kinds;
+    /// Outer-joined relation (null-supplying) should be joined after all other relations involved in its join expressions.
+    /// It is joined with specified join kind.
+    /// The `join_kinds` maps (join relation index) -> (set of relations it depends on, join kind)
+
+    std::unordered_map<size_t, QueryGraph::OuterJoinRestriction> join_kinds;
     std::unordered_map<size_t, ActionsDAG::NodeRawConstPtrs> type_changes;
-    std::unordered_map<JoinActionRef, size_t> pinned;
+    std::unordered_map<JoinActionRef, BitSet> pinned;
 
     struct BuilderContext
     {
@@ -378,6 +543,7 @@ struct QueryGraphBuilder
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
         String dummy_stats;
+        UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -388,7 +554,9 @@ struct QueryGraphBuilder
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
-        {}
+            , effective_randomize_seed(optimization_settings_.query_plan_optimize_join_order_randomize)
+        {
+        }
     };
 
     std::shared_ptr<BuilderContext> context;
@@ -426,17 +594,21 @@ void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 
     lhs.join_edges.append_range(rhs_edges_raw | std::views::transform([&](auto p) { return JoinActionRef(p, lhs.expression_actions); }));
 
-    for (auto [id, restriction] : rhs.join_kinds)
+    for (auto & [id, restriction] : rhs.join_kinds)
     {
-        restriction.first.shift(shift);
-        lhs.join_kinds[id + shift] = restriction;
+        restriction.required_partners.shift(shift);
+        restriction.forbidden_partners.shift(shift);
+        lhs.join_kinds[id + shift] = std::move(restriction);
     }
 
     for (auto && [sources, nodes] : rhs.type_changes)
         lhs.type_changes[sources + shift] = std::move(nodes);
 
-    for (auto [action, pin] : rhs_pinned_raw)
-        lhs.pinned[JoinActionRef(action, lhs.expression_actions)] = pin + shift;
+    for (auto & [action, pin] : rhs_pinned_raw)
+    {
+        pin.shift(shift);
+        lhs.pinned[JoinActionRef(action, lhs.expression_actions)] = std::move(pin);
+    }
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
@@ -466,7 +638,7 @@ static bool isTrivialStep(const QueryPlan::Node * node)
     return isPassthroughActions(expression_step->getExpression());
 }
 
-void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 constexpr bool isInnerOrCross(JoinKind kind)
 {
@@ -478,39 +650,61 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     if (isTrivialStep(node))
         node = node->children[0];
 
-    auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (child_join_step && !child_join_step->isOptimized())
     {
-        auto child_join_kind = child_join_step->getJoinOperator().kind;
-        bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
-        allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
-        if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
+        auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+        if (child_join_step && !child_join_step->isOptimized())
         {
-            QueryGraphBuilder child_graph(graph.context);
-            buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
-            size_t count = child_graph.inputs.size();
-            uniteGraphs(graph, std::move(child_graph));
-            return count;
+            auto child_join_kind = child_join_step->getJoinOperator().kind;
+            bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
+            allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+            /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
+            /// with `join_use_nulls` making right-side columns Nullable). Flattening
+            /// such joins allows the optimizer to reorder them, which can separate
+            /// a relation from the join that causes its type change, leading to
+            /// type changes being applied at the wrong step and the exception
+            /// "Cannot fold actions for projection".
+            allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
+            if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
+            {
+                QueryGraphBuilder child_graph(graph.context);
+                buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
+                size_t count = child_graph.inputs.size();
+                uniteGraphs(graph, std::move(child_graph));
+                return count;
+            }
+            /// Optimize child subplan before continuing to get size estimation
+            optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
         }
-        /// Optimize child subplan before continuing to get size estimation
-        optimizeJoinLogical(*node, nodes, graph.context->optimization_settings);
+    }
+
+    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
+    /// those child Join to get proper statistics to use in the parent Join reordering.
+    {
+        auto * child_node = node;
+        while (child_node->children.size() == 1)
+        {
+            child_node = child_node->children[0];
+        }
+
+        auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
+        if (child_join_step && !child_join_step->isOptimized())
+        {
+            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
+        }
     }
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
-    if (!label.empty() && !graph.context->dummy_stats.empty())
-    {
-        auto dummy_stats = getDummyStats(graph.context->dummy_stats, label);
-        if (!dummy_stats.table_name.empty())
-            stats = std::move(dummy_stats);
-    }
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (num_rows_from_cache)
+    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
         stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
 
     if (!label.empty())
         stats.table_name = label;
+
+    if (UInt64 seed = graph.context->effective_randomize_seed)
+        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
@@ -536,29 +730,11 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
     size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0);
     bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
-    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? join_steps_limit - lhs_count : 0);
+    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0);
 
     size_t total_inputs = query_graph.inputs.size();
-    if (isRightOrFull(join_kind))
-    {
-        if (lhs_count != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
-        BitSet join_expression_sources;
-        for (const auto & expr : join_step->getJoinOperator().expression)
-            join_expression_sources |= expr.getSourceRelations();
-        join_expression_sources.set(0, false);
-        query_graph.join_kinds[0] = std::make_pair(std::move(join_expression_sources), join_kind);
-    }
-    if (isLeftOrFull(join_kind))
-    {
-        if (rhs_count != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
-        BitSet join_expression_sources;
-        for (const auto & expr : join_step->getJoinOperator().expression)
-            join_expression_sources |= expr.getSourceRelations();
-        join_expression_sources.set(total_inputs - 1, false);
-        query_graph.join_kinds[total_inputs - 1] = std::make_pair(std::move(join_expression_sources), join_kind);
-    }
+    if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
+        query_graph.join_kinds[0] = QueryGraph::OuterJoinRestriction{BitSet{}, BitSet{}, JoinKind::Cross};
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 
@@ -569,6 +745,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     auto residual_filter = std::ranges::to<std::vector>(join_operator.residual_filter | get_raw_nodes);
 
     auto [expression_actions_dag, expression_actions_sources] = expression_actions.detachActionsDAG();
+
+    auto existing_outputs = std::ranges::to<std::unordered_set>(query_graph.expression_actions.getActionsDAG()->getOutputs());
 
     ActionsDAG::NodeMapping node_mapping;
     query_graph.expression_actions.getActionsDAG()->mergeInplace(std::move(expression_actions_dag), node_mapping, true);
@@ -598,7 +776,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     for (const auto * out_node : join_outputs)
     {
         if (out_node->type == ActionsDAG::ActionType::INPUT ||
-            out_node->type == ActionsDAG::ActionType::COLUMN)
+            out_node->type == ActionsDAG::ActionType::COLUMN ||
+            existing_outputs.contains(out_node))
             continue;
 
         auto source = JoinActionRef(out_node, query_graph.expression_actions).getSourceRelations();
@@ -619,37 +798,94 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
 
     /// During-join predicates cannot be pushed past preserved-row tables;
     /// After-join predicates (those in WHERE) cannot be pushed past null-supplying tables.
+    BitSet join_expression_sources;
     for (const auto * old_node : join_expression)
     {
         const auto & new_node_entry = node_mapping.try_emplace(old_node, old_node);
         const auto * new_node = new_node_entry.first->second;
         auto & edge = query_graph.join_edges.emplace_back(new_node, query_graph.expression_actions);
 
+        /// Collect all sources from join expressions
+        join_expression_sources |= edge.getSourceRelations();
+
         if (isRightOrFull(join_kind))
         {
-            query_graph.pinned[edge] = 0;
+            query_graph.pinned[edge] = BitSet().set(0);
         }
         else if (isLeftOrFull(join_kind))
         {
-            query_graph.pinned[edge] = total_inputs - 1;
+            query_graph.pinned[edge] = BitSet().set(total_inputs - 1);
         }
         else
         {
             auto sources = edge.getSourceRelations();
+            bool should_pin = false;
+
             for (auto rel_id : sources)
             {
                 auto it = query_graph.join_kinds.find(rel_id);
                 if (it != query_graph.join_kinds.end())
                 {
-                    query_graph.pinned[edge] = total_inputs - 1;
+                    should_pin = true;
                     break;
+                }
+            }
+
+            /// If a condition references only the preserved side of an outer join,
+            /// it must not be placed in that outer join's ON clause, because
+            /// ON-clause conditions on the preserved side only affect matching,
+            /// not filtering — rows from the preserved side are kept regardless.
+            should_pin = should_pin || std::ranges::any_of(query_graph.join_kinds | std::views::values,
+                [&sources](const auto & restriction) { return isSubsetOf(sources, restriction.required_partners); });
+
+            if (should_pin)
+                query_graph.pinned[edge] = BitSet().set(total_inputs - 1);
+
+            for (auto & [null_rel, restriction] : query_graph.join_kinds)
+            {
+                if (!sources.test(null_rel))
+                    continue;
+                for (auto rel : sources)
+                {
+                    if (rel != null_rel && !restriction.required_partners.test(rel))
+                        restriction.forbidden_partners.set(rel);
                 }
             }
         }
     }
 
+    if (isRightOrFull(join_kind))
+    {
+        if (lhs_count != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with RIGHT or FULL join must have exactly one left input, but has {}", lhs_count);
+        join_expression_sources.set(0, false);
+        query_graph.join_kinds[0] = QueryGraph::OuterJoinRestriction{join_expression_sources, BitSet{}, join_kind};
+    }
+    if (isLeftOrFull(join_kind))
+    {
+        if (rhs_count != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical with LEFT or FULL join must have exactly one right input, but has {}", rhs_count);
+        join_expression_sources.set(total_inputs - 1, false);
+        query_graph.join_kinds[total_inputs - 1] = QueryGraph::OuterJoinRestriction{join_expression_sources, BitSet{}, join_kind};
+    }
+
     if (!residual_filter.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
+
+    for (auto & [null_rel, restriction] : query_graph.join_kinds)
+    {
+        for (auto tainted_rel : restriction.forbidden_partners)
+        {
+            for (auto & graph_edge : query_graph.join_edges)
+            {
+                if (!graph_edge)
+                    continue;
+                auto edge_sources = graph_edge.getSourceRelations();
+                if (edge_sources.test(tainted_rel) && !edge_sources.test(null_rel))
+                    query_graph.pinned[graph_edge].set(null_rel);
+            }
+        }
+    }
 }
 
 static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
@@ -715,6 +951,16 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
     return node;
 }
 
+constexpr bool isSwapOnlyJoinKind(JoinKind kind)
+{
+    return kind == JoinKind::Full;
+}
+
+constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
+{
+    return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
+}
+
 QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     QueryGraph query_graph;
@@ -742,7 +988,9 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     if (!global_actions_dag)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
-    auto optimized = optimizeJoinOrder(std::move(query_graph));
+    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
+
+    auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
 
     if (sequence.empty())
@@ -815,7 +1063,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
         input_node_map[input] = input_idx;
     }
 
-    const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     for (size_t entry_idx = 0; entry_idx < sequence.size(); ++entry_idx)
     {
         auto * entry = sequence[entry_idx];
@@ -854,8 +1101,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
             /// fixme: USING clause handled specially in join algorithm, so swap breaks it
-            /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
-            /// At the time of writing, we're not able to swap inputs for ANY partial merge join, because it only supports ANY inner or left joins, but not right.
+            /// At the time of writing, we're not able to swap inputs for ANY or SEMI partial merge join, because it only supports inner or left joins, but not right
+            /// ANTI partial merge join is not supported for any join kind
             const bool partial_merge_join_can_be_selected = std::ranges::any_of(
                 join_settings.join_algorithms,
                 [](JoinAlgorithm alg)
@@ -863,8 +1110,8 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             const bool should_worry_about_partial_merge_join = partial_merge_join_can_be_selected
                 && (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness)
                     || !MergeJoin::isSupported(reverseJoinKind(join_operator.kind), join_operator.strictness));
-            const bool suitable_any_join = join_operator.strictness == JoinStrictness::Any && !should_worry_about_partial_merge_join;
-            if (join_operator.strictness != JoinStrictness::All && !suitable_any_join)
+            const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness) && !should_worry_about_partial_merge_join;
+            if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join)
                 flip_join = false;
 
             if (flip_join)
@@ -883,10 +1130,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             const auto & right_header = *right_header_ptr;
 
             ActionsDAG::NodeRawConstPtrs required_output_nodes;
-            for (const auto & action : join_operator.expression)
-                required_output_nodes.push_back(action.getNode());
-            for (const auto & action : join_operator.residual_filter)
-                required_output_nodes.push_back(action.getNode());
 
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
@@ -922,6 +1165,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 /// add input (possibly which changed type) to required output
                 required_output_nodes.push_back(out_node);
             }
+
+            for (const auto & action : join_operator.expression)
+                required_output_nodes.push_back(action.getNode());
+            for (const auto & action : join_operator.residual_filter)
+                required_output_nodes.push_back(action.getNode());
 
             if (entry_idx == sequence.size() - 1)
             {
@@ -1024,9 +1272,15 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation);
+            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats);
 
             auto & new_node = nodes.emplace_back();
+
+            UInt64 right_table_key = query_graph_builder.context->statistics_context
+                .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
+            if (right_table_key)
+                join_step->setRightHashTableCacheKey(right_table_key);
+
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
             nodeStack.push(&new_node);
@@ -1053,6 +1307,12 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
+    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+}
+
+void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
     for (auto * child : node.children)
     {
         if (auto * lookup_step = typeid_cast<JoinStepLogicalLookup *>(child->step.get()))
@@ -1063,23 +1323,45 @@ void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     auto strictness = join_operator.strictness;
     auto kind = join_operator.kind;
     auto locality = join_operator.locality;
-    if (!optimization_settings.query_plan_optimize_join_order_limit ||
-        (strictness != JoinStrictness::All && strictness != JoinStrictness::Any) ||
-        locality != JoinLocality::Unspecified ||
-        kind == JoinKind::Paste ||
-        kind == JoinKind::Full ||
-        !join_operator.residual_filter.empty())
+    if (!optimization_settings.query_plan_optimize_join_order_limit
+        || (strictness != JoinStrictness::All && !isSwapOnlyJoinStrictness(strictness))
+        || locality != JoinLocality::Unspecified
+        || kind == JoinKind::Paste
+        || !join_operator.residual_filter.empty()
+    )
     {
         join_step->setOptimized();
         return;
+    }
+
+    /// Skip join order optimization if children's output headers have overlapping column names.
+    /// The `JoinExpressionActions` constructor used during join reconstruction requires unique column names
+    /// across left and right sides. Overlapping names can occur when scalar subquery results and join
+    /// table aliases collide (e.g. both sides produce `__table2`).
+    {
+        auto left_header = node.children[0]->step->getOutputHeader();
+        auto right_header = node.children[1]->step->getOutputHeader();
+
+        std::unordered_set<std::string_view> left_names;
+        for (const auto & col : *left_header)
+            left_names.insert(col.name);
+
+        for (const auto & col : *right_header)
+        {
+            if (left_names.contains(col.name))
+            {
+                join_step->setOptimized();
+                return;
+            }
+        }
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->dummy_stats = join_step->getDummyStats();
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if (strictness == JoinStrictness::Any)
-        /// Do not reorder ANY joins, only allow swap
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2)
+        /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);

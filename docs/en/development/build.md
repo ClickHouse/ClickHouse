@@ -4,12 +4,11 @@ sidebar_label: 'Build on Linux'
 sidebar_position: 10
 slug: /development/build
 title: 'How to Build ClickHouse on Linux'
+doc_type: 'guide'
 ---
 
-# How to Build ClickHouse on Linux
-
-:::info You don't have to build ClickHouse yourself!
-You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
+:::info This build guide is for contributors modifying ClickHouse itself.
+If you are not changing ClickHouse source code, you can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/docs/get-started/quick-start).
 :::
 
 ClickHouse can be build on the following platforms:
@@ -37,7 +36,7 @@ You can optionally install ccache to let the build reuse already compiled object
 
 ```bash
 sudo apt-get update
-sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
 ## Install the Clang compiler {#install-the-clang-compiler}
@@ -45,12 +44,14 @@ sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-rel
 To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from [here](https://apt.llvm.org/).
 
 ```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 21
 ```
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of March 2025, Clang 19 or higher is required.
+As of February 2026, Clang 21 or higher is required.
 GCC or other compilers are not supported.
 
 ## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}
@@ -67,8 +68,8 @@ As with C++ dependencies, ClickHouse uses vendoring to control exactly what's in
 Although in release mode any rust modern rustup toolchain version should work with these dependencies, if you plan to enable sanitizers you must use a version that matches the exact same `std` as the one used in CI (for which we vendor the crates):
 
 ```bash
-rustup toolchain install nightly-2025-07-07
-rustup default nightly-2025-07-07
+rustup toolchain install nightly-2026-03-22
+rustup default nightly-2026-03-22
 rustup component add rust-src
 ```
 ## Build ClickHouse {#build-clickhouse}
@@ -85,8 +86,8 @@ You can have several different directories (e.g. `build_release`, `build_debug`,
 Optional: If you have multiple compiler versions installed, you can optionally specify the exact compiler to use.
 
 ```sh
-export CC=clang-19
-export CXX=clang++-19
+export CC=clang-21
+export CXX=clang++-21
 ```
 
 For development purposes, debug builds are recommended.
@@ -116,8 +117,11 @@ ninja
 You can control the number of parallel build jobs using parameter `-j`:
 
 ```sh
-ninja -j 1 clickhouse-server clickhouse-client
+ninja -j 1 clickhouse
 ```
+
+:::note
+`clickhouse-server`, `clickhouse-client`, and similar binaries are symbolic links in the `programs/` directory that point to the `clickhouse` executable after the build is completed.
 
 :::tip
 CMake provides shortcuts for above commands:
@@ -210,7 +214,7 @@ cmake --build build
 You can run any build locally in an environment similar to CI using:
 
 ```bash
-python -m ci.praktika "BUILD_JOB_NAME"
+python -m ci.praktika run "BUILD_JOB_NAME"
 ```
 where BUILD_JOB_NAME is the job name as shown in the CI report, e.g., "Build (arm_release)", "Build (amd_debug)"
 
@@ -219,4 +223,4 @@ and runs the build script inside it: `./ci/jobs/build_clickhouse.py`
 
 The build output will be placed in `./ci/tmp/`.
 
-It works on both AMD and ARM architectures and requires no additional dependencies other than Docker.
+It works on both AMD and ARM architectures and requires no additional dependencies other than Python with `requests` module available and Docker.

@@ -13,6 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 // Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-class FunctionSeriesDecomposeSTL : public IFunction
+class FunctionSeriesDecomposeSTL final : public IFunction
 {
 public:
     static constexpr auto name = "seriesDecomposeSTL";
@@ -96,9 +97,9 @@ public:
                     getName());
 
 
-            std::vector<Float32> seasonal;
-            std::vector<Float32> trend;
-            std::vector<Float32> residue;
+            VectorWithMemoryTracking<Float32> seasonal;
+            VectorWithMemoryTracking<Float32> trend;
+            VectorWithMemoryTracking<Float32> residue;
 
             ColumnArray::Offset curr_offset = src_offsets[i];
 
@@ -147,9 +148,9 @@ public:
         UInt64 period,
         ColumnArray::Offset start,
         ColumnArray::Offset end,
-        std::vector<Float32> & seasonal,
-        std::vector<Float32> & trend,
-        std::vector<Float32> & residue) const
+        VectorWithMemoryTracking<Float32> & seasonal,
+        VectorWithMemoryTracking<Float32> & trend,
+        VectorWithMemoryTracking<Float32> & residue) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -165,7 +166,7 @@ public:
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "The series should have data of at least two period lengths for function {}", getName());
 
-        std::vector<float> src(src_vec.begin() + start, src_vec.begin() + end);
+        VectorWithMemoryTracking<float> src(src_vec.begin() + start, src_vec.begin() + end);
 
         auto res = stl::params().fit(src, period);
 
@@ -219,7 +220,7 @@ Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Base
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSeriesDecomposeSTL>(documentation);
 }

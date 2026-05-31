@@ -5,9 +5,6 @@
 
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
-
 DROP TABLE IF EXISTS tab_compact_full;
 DROP TABLE IF EXISTS tab_wide_full;
 

@@ -2,6 +2,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <base/types.h>
+#include <Core/Types.h>
 #include <functional>
 #include <memory>
 
@@ -60,8 +61,8 @@ public:
     virtual std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) = 0;
     virtual std::unique_ptr<FileEnumerator> currentFile(std::unique_ptr<ReadBuffer> read_buffer) = 0;
 
-    virtual std::vector<std::string> getAllFiles() = 0;
-    virtual std::vector<std::string> getAllFiles(NameFilter filter) = 0;
+    virtual Strings getAllFiles() = 0;
+    virtual Strings getAllFiles(NameFilter filter) = 0;
 
     /// Sets password used to decrypt files in the archive.
     virtual void setPassword(const String & /* password */) {}

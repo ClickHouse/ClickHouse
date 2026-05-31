@@ -163,8 +163,8 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
 
     const auto & date_lut = DateLUT::serverTimezoneInstance();
 
-    min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
-    max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
+    min_date = static_cast<DayNum::UnderlyingType>(date_lut.YYYYMMDDToDayNum(min_yyyymmdd));
+    max_date = static_cast<DayNum::UnderlyingType>(date_lut.YYYYMMDDToDayNum(max_yyyymmdd));
 
     auto min_month = date_lut.toNumYYYYMM(min_date);
     auto max_month = date_lut.toNumYYYYMM(max_date);
@@ -216,7 +216,7 @@ String MergeTreePartInfo::getPartNameV1() const
     writeChar('_', wb);
     if (use_legacy_max_level)
     {
-        assert(level == MAX_LEVEL);
+        chassert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
     }
     else
@@ -255,7 +255,7 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     writeChar('_', wb);
     if (use_legacy_max_level)
     {
-        assert(level == MAX_LEVEL);
+        chassert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
     }
     else

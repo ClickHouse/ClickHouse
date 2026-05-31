@@ -1,3 +1,5 @@
+#include <memory>
+#include <thread>
 #include <Interpreters/TraceCollector.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -7,10 +9,12 @@
 #include <Interpreters/TraceLog.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
+#include <Common/VariableContext.h>
 #include <Common/setThreadName.h>
+#include <base/errnoToString.h>
 #include <Common/logger_useful.h>
 #include <Common/SymbolIndex.h>
 
@@ -33,7 +37,13 @@ TraceCollector::TraceCollector()
     TraceSender::pipe.setNonBlockingWrite();
     TraceSender::pipe.tryIncreaseSize(1 << 20);
 
-    thread = ThreadFromGlobalPool(&TraceCollector::run, this);
+    /// Re-arm the shutdown gate in case a previous TraceCollector ran in this
+    /// process. The previous destructor left it set to true to drain senders
+    /// before closing the pipe; on a fresh start, senders should be allowed
+    /// through again.
+    TraceSender::shutdown.store(false);
+
+    thread = ThreadFromGlobalPoolWithoutTraceCollector(&TraceCollector::run, this);
 }
 
 void TraceCollector::initialize(std::shared_ptr<TraceLog> trace_log_)
@@ -89,20 +99,39 @@ TraceCollector::~TraceCollector()
         }
     }
 
-    tryClosePipe();
+    /// Close the gate first so no new sender writes to the pipe, then wait for
+    /// any sender already past the gate to finish its `write()`. After this
+    /// the write fd has no concurrent users and we can safely close it.
+    TraceSender::shutdown.store(true);
+    while (TraceSender::in_flight.load() > 0)
+        std::this_thread::yield();
+
+    /// Guaranteed fallback to unblock the worker even if the in-band stop byte
+    /// above failed to deliver (e.g. EAGAIN on the non-blocking write end):
+    /// closing the write end makes the worker's `read()` return EOF, so
+    /// `thread.join()` below cannot wait indefinitely on a missed stop byte.
+    if (TraceSender::pipe.fds_rw[1] >= 0)
+    {
+        if (0 != ::close(TraceSender::pipe.fds_rw[1]))
+            LOG_ERROR(getLogger("TraceCollector"), "Cannot close write end of trace pipe: {}", errnoToString());
+        TraceSender::pipe.fds_rw[1] = -1;
+    }
 
     if (thread.joinable())
         thread.join();
     else
         LOG_ERROR(getLogger("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+
+    /// Worker has exited; close the read end (the write end is already closed).
+    tryClosePipe();
 }
 
 
 void TraceCollector::run()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
-    setThreadName("TraceCollector");
+    DB::setThreadName(ThreadName::TRACE_COLLECTOR);
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
@@ -150,14 +179,25 @@ void TraceCollector::run()
             TraceType trace_type;
             readPODBinary(trace_type, in);
 
+            UInt64 cpu_id;
+            readPODBinary(cpu_id, in);
+
             UInt64 thread_id;
             readPODBinary(thread_id, in);
+
+            UInt8 thread_name_id = 0;
+            readPODBinary(thread_name_id, in);
 
             Int64 size;
             readPODBinary(size, in);
 
             UInt64 ptr;
             readPODBinary(ptr, in);
+
+            Int8 memory_context;
+            readPODBinary(memory_context, in);
+            Int8 memory_blocked_context;
+            readPODBinary(memory_blocked_context, in);
 
             ProfileEvents::Event event;
             readPODBinary(event, in);
@@ -172,10 +212,33 @@ void TraceCollector::run()
                 struct timespec ts;
                 clock_gettime(CLOCK_REALTIME, &ts); /// NOLINT(cert-err33-c)
 
-                UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+                UInt64 timestamp_ns = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
                 UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
 
-                TraceLogElement element{symbolize, time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, std::move(trace), size, ptr, event, increment};
+                TraceLogElement element{
+                    .symbolize = symbolize,
+                    .event_time = time_t(timestamp_ns / 1000000000),
+                    .event_time_microseconds = time_in_microseconds,
+                    .timestamp_ns = timestamp_ns,
+                    .trace_type = trace_type,
+                    .cpu_id = cpu_id,
+                    .thread_id = thread_id,
+                    .thread_name = static_cast<ThreadName>(thread_name_id),
+                    .query_id = query_id,
+                    .trace = std::move(trace),
+                    .size = size,
+                    .ptr = ptr,
+                    .memory_context = memory_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_context)),
+                    .memory_blocked_context = memory_blocked_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_blocked_context)),
+                    .event = event,
+                    .increment = increment,
+                    .instrumented_point_id = 0,
+                    .function_id = -1,
+                    .function_name = "",
+                    .handler = "",
+                    .entry_type = std::nullopt,
+                    .duration_nanoseconds = std::nullopt,
+                };
                 trace_log->add(std::move(element));
             }
         }
@@ -183,7 +246,6 @@ void TraceCollector::run()
     catch (...)
     {
         tryLogCurrentException("TraceCollector");
-        tryClosePipe();
         throw;
     }
 }

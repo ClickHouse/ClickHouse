@@ -88,7 +88,7 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
     if (col->lowCardinality())
     {
         /// Currently only `LowCardinality(Nullable(T))` is possible, but not `Nullable(LowCardinality(T))`
-        assert(!col->canBeInsideNullable());
+        chassert(!col->canBeInsideNullable());
         const auto * col_as_lc = assert_cast<const ColumnLowCardinality *>(col.get());
         return {true, col_as_lc->nestedIsNullable()};
     }
@@ -148,8 +148,7 @@ DataTypePtr convertTypeToNullable(const DataTypePtr & type)
 /// Returns nullptr if conversion cannot be performed.
 static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
 {
-    if (col->isSparse())
-        col = recursiveRemoveSparse(col);
+    col = removeSpecialRepresentations(col);
 
     if (isColumnNullable(*col) || col->canBeInsideNullable())
         return makeNullable(col);
@@ -235,7 +234,7 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
-            column.column = column.column->convertToFullColumnIfConst();
+            column.column = column.column->convertToFullIfNeeded();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(column.column.get());
             if (!nullable_col)
             {
@@ -301,7 +300,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
 
 ColumnPtr materializeColumn(const ColumnPtr & column)
 {
-    return recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+    return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
 }
 
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
@@ -485,8 +484,7 @@ ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
     {
-        auto casted_column = ColumnUInt8::create();
-        casted_column->getData().resize(column->size());
+        auto casted_column = ColumnUInt8::create(column->size());
         if (!tryConvertAnyColumnToBool(*column, casted_column->getData()))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Illegal type {} of column for JOIN filter. Must be Number or Nullable(Number).", column->getName());
@@ -522,7 +520,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(*nested_column);
         const auto & null_map = nullable_col->getNullMapColumn();
 
-        auto res = ColumnUInt8::create(nullable_col->size(), 0);
+        auto res = ColumnUInt8::create(nullable_col->size(), static_cast<UInt8>(0));
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
         return JoinMask(std::move(res));
@@ -546,18 +544,6 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
             block_others.erase(column_name);
         }
     }
-}
-
-template <Fn<size_t(size_t)> Sharder>
-static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
-{
-    const auto & hashes = hash.getData();
-    size_t num_rows = hashes.size();
-
-    IColumn::Selector selector(num_rows);
-    for (size_t i = 0; i < num_rows; ++i)
-        selector[i] = sharder(intHashCRC32(hashes[i]));
-    return selector;
 }
 
 template <Fn<size_t(size_t)> Sharder>
@@ -585,7 +571,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     for (size_t i = 0; i < num_cols; ++i)
     {
         auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
-        assert(result.size() == dispatched_columns.size());
+        chassert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
             result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);
@@ -602,7 +588,9 @@ static Blocks scatterBlockByHashPow2(const Strings & key_columns_names, const Bl
 
 static Blocks scatterBlockByHashGeneric(const Strings & key_columns_names, const Block & block, size_t num_shards)
 {
-    return scatterBlockByHashImpl(key_columns_names, block, num_shards, [num_shards](size_t hash) { return hash % num_shards; });
+    /// Use the "fastrange" method from Daniel Lemire:
+    return scatterBlockByHashImpl(key_columns_names, block, num_shards,
+        [num_shards](size_t hash) { return ((hash & 0xFFFFFFFF) * num_shards) >> 32; });
 }
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards)

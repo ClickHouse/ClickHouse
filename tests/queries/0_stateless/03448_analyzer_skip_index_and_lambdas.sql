@@ -1,8 +1,5 @@
 -- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel-replicas
 
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
-
 DROP TABLE IF EXISTS index_test;
 CREATE TABLE index_test
 (

@@ -98,7 +98,11 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 {
     checkStateCorrect();
 
-    assert(checkpoint);
+    chassert(checkpoint);
+
+    /// Reset canceled flag since the purpose of rollback is to retry reading from the beginning.
+    /// This is important for schema detection where we try multiple formats and expect some to fail.
+    canceled = false;
 
     if (recursive_checkpoints_offsets.empty())
     {
@@ -110,7 +114,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         else
         {
             /// Checkpoint is in own memory and position is not.
-            assert(checkpointInOwnMemory());
+            chassert(checkpointInOwnMemory());
 
             char * memory_data = getMemoryData();
             /// Switch to reading from own memory.
@@ -128,7 +132,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         else
         {
             /// Checkpoint is in own memory and position is not.
-            assert(checkpointInOwnMemory());
+            chassert(checkpointInOwnMemory());
 
             size_t offset_from_checkpoint_in_own_memory = offsetFromCheckpointInOwnMemory();
             if (offset_from_checkpoint >= offset_from_checkpoint_in_own_memory)
