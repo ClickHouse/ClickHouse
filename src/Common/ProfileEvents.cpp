@@ -1574,12 +1574,11 @@ void Counters::setTraceProfileEvent(Event event)
     {
         /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
         auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
-        auto * fresh_raw = fresh.get();
         std::atomic_bool * expected = nullptr;
-        if (should_trace_array.compare_exchange_strong(expected, fresh_raw, std::memory_order_release, std::memory_order_relaxed))
+        if (should_trace_array.compare_exchange_strong(expected, fresh.get(), std::memory_order_release, std::memory_order_relaxed))
         {
             should_trace_holder = std::move(fresh);
-            trace_array = fresh_raw;
+            trace_array = should_trace_holder.get();
         }
         else
             trace_array = expected;
