@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/optimizeUsePartAggregationCache.h>
 
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Cache/PartAggregationCachePopulator.h>
 #include <Interpreters/Context.h>
@@ -114,6 +115,21 @@ void optimizeUsePartAggregationCache(
     if (!cache)
         return;
 
+    /// Apply the same `ReadFromMergeTree` eligibility gates as aggregate projections. The
+    /// populator reads raw per-part rows with `createMergeTreeSequentialSource` and therefore
+    /// cannot preserve read semantics such as `FINAL`, `SAMPLE`, read-in-order, parallel-replica
+    /// constraints, or pending mutations/patch parts. Caching under those modes would store
+    /// pre-`FINAL` (or otherwise incomplete) aggregate states and return incorrect results.
+    if (!canUseProjectionForReadingStep(reading))
+        return;
+
+    /// Row-level security filters are not part of the cache key and are not applied by the
+    /// populator, while the cache is global. Without this guard a query running under a
+    /// permissive row policy could populate entries that a later query under a restrictive
+    /// policy reuses, bypassing the policy. Reject such queries (fail-closed).
+    if (reading->getRowLevelFilter())
+        return;
+
     const auto & parts = reading->getParts();
     if (parts.empty())
         return;
@@ -134,6 +150,16 @@ void optimizeUsePartAggregationCache(
             prewhere->prewhere_column_name,
             prewhere->remove_prewhere_column});
     }
+
+    /// Skip when any key/filter expression is non-deterministic across queries (e.g. `rand`,
+    /// `now`, `nowInBlock`, `rowNumberInAllBlocks`). The cache hashes only the function graph,
+    /// not per-execution values, so the first execution's states would be cached and incorrectly
+    /// reused by every later execution that hashes to the same key. `hasNonDeterministic` uses
+    /// `IFunction::isDeterministic` (deterministic across queries), which is the notion the
+    /// cross-query cache requires.
+    for (const auto & action : intermediate_actions)
+        if (action.actions->getActionsDAG().hasNonDeterministic())
+            return;
 
     IASTHash query_hash = PartAggregationCache::calculateQueryHash(
         params.keys, params.aggregates, filter_dag_for_hash);
@@ -157,7 +183,15 @@ void optimizeUsePartAggregationCache(
     }
 
     auto storage_id = reading->getMergeTreeData().getStorageID();
-    String table_id = storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName();
+
+    /// Require a stable table identity. `MergeTree` part names restart from `all_1_1_0` after
+    /// `DROP TABLE` + `CREATE TABLE`, and this cache is global and not invalidated on drop, so a
+    /// recreated table could hit stale states from the previous instance and return incorrect
+    /// results. The table `UUID` is stable across drop/recreate; the full table name is not.
+    /// Fall back to skipping the optimization (fail-closed) when no `UUID` is available.
+    if (!storage_id.hasUUID())
+        return;
+    String table_id = toString(storage_id.uuid);
 
     bool enable_reads = settings[Setting::enable_reads_from_part_aggregation_cache];
 
