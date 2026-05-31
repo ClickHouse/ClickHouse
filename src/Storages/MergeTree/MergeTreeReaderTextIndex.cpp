@@ -600,6 +600,9 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
 
 void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
 {
+    if (!granule)
+        return;
+
     const auto & analyzer = granule->getAnalyzer();
     const auto & token_infos = analyzer.getAllTokenInfos();
 

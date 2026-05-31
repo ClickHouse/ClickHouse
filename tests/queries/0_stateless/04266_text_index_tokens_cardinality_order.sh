@@ -17,6 +17,10 @@ CREATE TABLE t_text_index_tokens_order
     INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree ORDER BY id;
+
+-- Keep the three inserts as three separate parts (all_1_1_0, all_2_2_0, all_3_3_0).
+-- A background merge would collapse them and break the deterministic 'Reading tokens' sequence.
+SYSTEM STOP MERGES t_text_index_tokens_order;
 "
 
 # Insert three separate parts so the cardinality cache is populated after the first part.
