@@ -3139,6 +3139,12 @@ bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected
 bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto start = std::make_unique<ArrayLayer>();
+    /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+    {
+        auto pos_copy = pos;
+        if (parseOperator(pos_copy, "ARRAY", expected) && pos_copy->type == TokenType::OpeningSquareBracket)
+            pos = pos_copy;
+    }
     return ParserToken(TokenType::OpeningSquareBracket).ignore(pos, expected)
         && ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }

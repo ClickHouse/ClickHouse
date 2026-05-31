@@ -1627,6 +1627,16 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
 }
 
 
+bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+    Pos pos_copy = pos;
+    if (ParserKeyword::createDeprecated("ARRAY").ignore(pos_copy, expected)
+        && pos_copy->type == TokenType::OpeningSquareBracket)
+        pos = pos_copy;
+    return array_parser.parse(pos, node, expected);
+}
+
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserNull null_p;

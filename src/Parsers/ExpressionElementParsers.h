@@ -367,7 +367,7 @@ public:
 
 protected:
     const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override { return array_parser.parse(pos, node, expected); }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 /** Parses all collections of literals and their various combinations
