@@ -55,6 +55,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
+            {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -84,8 +86,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
             {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
-            {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting"},
-            {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting"},
             {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
             {"dynamic_disk_allow_include", false, false, "New setting to allow `include` in dynamic disk configuration (the `disk()` function). Disabled by default."},
             {"dynamic_disk_allow_from_zk", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."},
