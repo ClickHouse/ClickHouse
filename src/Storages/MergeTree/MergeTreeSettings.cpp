@@ -1534,6 +1534,10 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
+    DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup, false, R"(
+    If enabled all the replicas try to fetch part in memory data (like primary
+    key, partition info and so on) on startup from other replicas where it already exists.
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
@@ -1863,7 +1867,14 @@ namespace ErrorCodes
     Enable persisting column _block_number for each row.
     )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
-    Persists virtual column `_block_number` on merges.
+    Persists virtual column `_block_offset` on merges.
+    )", 0) \
+    DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
+    Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
+
+    Possible values:
+    - `partition_key_only` — only the partition-key columns are tracked.
+    - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all numeric columns
@@ -1875,9 +1886,19 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
+    DECLARE(Bool, add_minmax_index_for_block_number_column, false, R"(
+    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_number`.
+    Requires `enable_block_number_column = 1` to take effect. The index is built only during merges,
+    not during inserts: at insert time the block number is provisional and would index a constant.
+    )", 0) \
+    DECLARE(Bool, add_minmax_index_for_block_offset_column, false, R"(
+    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_offset`.
+    Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
+    not during inserts.
+    )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
+    Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -2527,6 +2548,15 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value,
                 (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock].value);
     }
+
+    if ((*this)[MergeTreeSetting::part_minmax_index_columns] >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
+    {
+        if (!(*this)[MergeTreeSetting::enable_block_number_column])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_number_column' to be enabled");
+
+        if (!(*this)[MergeTreeSetting::enable_block_offset_column])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
+    }
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -2819,6 +2849,8 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_numeric_columns"
         || name == "add_minmax_index_for_string_columns"
         || name == "add_minmax_index_for_temporal_columns"
+        || name == "add_minmax_index_for_block_number_column"
+        || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
         || name == "share_nested_offsets"
     ;

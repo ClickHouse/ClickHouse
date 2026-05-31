@@ -85,7 +85,6 @@ set (SRCS
     src/Logger.cpp
     src/LoggingFactory.cpp
     src/LoggingRegistry.cpp
-    src/LogStream.cpp
     src/MD5Engine.cpp
     src/MemoryStream.cpp
     src/Message.cpp
