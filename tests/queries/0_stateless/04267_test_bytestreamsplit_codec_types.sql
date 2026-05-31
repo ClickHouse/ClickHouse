@@ -162,8 +162,17 @@ CREATE TABLE tab (v String CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY t
 -- LowCardinality(String) is not fixed-size, must be rejected
 CREATE TABLE tab (v LowCardinality(String) CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
--- Array is not fixed-size
-CREATE TABLE tab (v Array(Float32) CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
 -- Too many codec arguments (accepts at most 1)
 CREATE TABLE tab (v Float32 CODEC(ByteStreamSplit(4, 4))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
+
+
+-- ── Array(fixed-size) round-trip ──────────────────────────────────────────────
+-- ByteStreamSplit is applied per substream: the inner Float32 element stream
+-- is transposed (W=4) and the offsets substream goes through the chained
+-- compressor. Arrays of fixed-size elements are supported.
+
+CREATE TABLE tab (v Array(Float32) CODEC(ByteStreamSplit, LZ4)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO tab VALUES ([1.0, 2.0, 3.0]), ([4.0, 5.0]), ([6.0]), ([]);
+SELECT 'Array(Float32) round-trip:';
+SELECT v FROM tab ORDER BY length(v), v;
+DROP TABLE tab;
