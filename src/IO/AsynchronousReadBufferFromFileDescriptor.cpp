@@ -1,6 +1,7 @@
 #include <ctime>
 #include <optional>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -97,7 +98,7 @@ void AsynchronousReadBufferFromFileDescriptor::appendToPrefetchLog(FilesystemPre
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
-    assert(!internal_buffer.empty());
+    chassert(!internal_buffer.empty());
 
     IAsynchronousReader::Result result;
     if (prefetch_future.valid())
@@ -178,7 +179,7 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     , required_alignment(alignment)
     , fd(fd_)
     , throttler(throttler_)
-    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
+    , query_id(CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
     , prefetches_log(prefetches_log_)
 {
@@ -206,12 +207,12 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     size_t new_pos;
     if (whence == SEEK_SET)
     {
-        assert(offset >= 0);
+        chassert(offset >= 0);
         new_pos = offset;
     }
     else if (whence == SEEK_CUR)
     {
-        new_pos = file_offset_of_buffer_end - (working_buffer.end() - pos) + offset;
+        new_pos = static_cast<size_t>(getPosition()) + offset;
     }
     else
     {
@@ -219,20 +220,22 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
 
     /// Position is unchanged.
-    if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
+    if (new_pos == static_cast<size_t>(getPosition()))
         return new_pos;
 
     bool read_from_prefetch = false;
     while (true)
     {
-        if (file_offset_of_buffer_end - working_buffer.size() <= new_pos && new_pos <= file_offset_of_buffer_end)
+        if (bytes_to_ignore == 0
+            && file_offset_of_buffer_end - working_buffer.size() <= new_pos
+            && new_pos <= file_offset_of_buffer_end)
         {
             /// Position is still inside the buffer.
             /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
 
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            assert(pos >= working_buffer.begin());
-            assert(pos <= working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos <= working_buffer.end());
 
             return new_pos;
         }
@@ -255,7 +258,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         break;
     }
 
-    assert(!prefetch_future.valid());
+    chassert(!prefetch_future.valid());
 
     /// Position is out of the buffer, we need to do real seek.
     off_t seek_pos = required_alignment > 1
@@ -291,6 +294,11 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     working_buffer.resize(0);
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
+    bytes_to_ignore = 0;
+
+    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
+    /// Reset so the next read cycle can proceed normally after rewind.
+    canceled = false;
 }
 
 std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()

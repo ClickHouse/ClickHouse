@@ -16,7 +16,7 @@
  *   --all            Show all test results (not just summary)
  *   --links          Show artifact links
  *   --cidb           Show CIDB links for failed tests
- *   --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
+ *   --download-logs [path]  Download logs to given path (default: /tmp/ci_logs.tar.gz or .tar.zst)
  *   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
  *   --credentials <user,password>  HTTP Basic Auth credentials (comma-separated). Only for ClickHouse_private repository
  *
@@ -34,7 +34,7 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const zlib = require('zlib');
 
 /**
@@ -177,6 +177,14 @@ function constructJsonUrl(baseUrl, suffix, sha, taskName) {
 }
 
 /**
+ * Check if a status represents a failure
+ */
+function isFailureStatus(status) {
+  return status === 'failed' || status === 'FAIL' || status === 'failure' ||
+         status === 'error' || status === 'ERROR';
+}
+
+/**
  * Parse test results from the JSON data
  */
 function parseTestResults(jsonData) {
@@ -192,19 +200,38 @@ function parseTestResults(jsonData) {
         // Nested results
         extractTests(result.results, prefix ? `${prefix}/${result.name}` : result.name);
       } else {
-        // Leaf result - this is a test
+        // Leaf result - this is a test or build step
         const test = {
           name: prefix ? `${prefix}/${result.name}` : result.name,
           status: result.status || 'UNKNOWN',
           duration: result.duration || 0
         };
 
-        // Extract CIDB links from ext.hlabels
-        if (result.ext && result.ext.hlabels) {
+        // Include info field (contains build log tail for build failures)
+        if (result.info) {
+          test.info = result.info;
+        }
+
+        // Include links from this result
+        if (result.links && result.links.length > 0) {
+          test.links = result.links;
+        }
+
+        // Extract CIDB links from unified ext.labels (or legacy ext.hlabels).
+        if (result.ext) {
           const cidbLinks = [];
-          for (const hlabel of result.ext.hlabels) {
-            if (Array.isArray(hlabel) && hlabel[0] === 'cidb' && hlabel[1]) {
-              cidbLinks.push(hlabel[1]);
+          if (Array.isArray(result.ext.labels)) {
+            for (const label of result.ext.labels) {
+              if (label && typeof label === 'object' && label.name === 'cidb' && label.link) {
+                cidbLinks.push(label.link);
+              }
+            }
+          }
+          if (Array.isArray(result.ext.hlabels)) {
+            for (const hlabel of result.ext.hlabels) {
+              if (Array.isArray(hlabel) && hlabel[0] === 'cidb' && hlabel[1]) {
+                cidbLinks.push(hlabel[1]);
+              }
             }
           }
           if (cidbLinks.length > 0) {
@@ -260,12 +287,21 @@ function extractArtifactLinks(jsonData) {
 
   extractFromResults(jsonData.results);
 
-  // Filter to only artifact links
-  return links.filter(link =>
-    link.href.includes('.tar.gz') ||
-    link.href.includes('.log') ||
-    link.href.includes('configs')
-  );
+  // Filter to artifact/log links; exclude json.html navigation links and raw binaries
+  return links.filter(link => {
+    const h = link.href;
+    // Exclude CI navigation/report links
+    if (h.includes('json.html')) return false;
+    // Include all log and archive formats
+    if (h.includes('.log') || h.includes('.log.zst')) return true;
+    if (h.includes('.tar.gz') || h.includes('.tar.zst') || h.includes('.tgz')) return true;
+    if (h.includes('.zst')) return true;
+    if (h.includes('.html') && !h.includes('json.html')) return true;
+    if (h.includes('.tsv')) return true;
+    if (h.includes('configs')) return true;
+    if (h.includes('artifact_report')) return true;
+    return false;
+  });
 }
 
 /**
@@ -283,25 +319,28 @@ async function getCIReportsFromPR(prUrl) {
 
   // Fetch PR comments to find CI bot comment
   try {
-    const commentsJson = execSync(`gh api repos/ClickHouse/ClickHouse/issues/${prNumber}/comments --jq '[.[] | select(.user.login == "clickhouse-gh[bot]") | {body, created_at}] | sort_by(.created_at) | reverse | .[0]'`, {
+    const commentsJson = execSync(`gh api repos/ClickHouse/ClickHouse/issues/${prNumber}/comments --paginate --jq '.[] | select(.user.login == "clickhouse-gh[bot]") | {body, created_at}'`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    const comment = JSON.parse(commentsJson);
-    if (!comment || !comment.body) {
+    const comments = commentsJson.trim().split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+    comments.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    if (!comments || comments.length === 0) {
       throw new Error('No CI bot comment found');
     }
 
-    // Extract CI report URLs from comment
+    // Search through all bot comments for CI report URLs (not just the latest)
     const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/clickhouse-test-reports\/json\.html\?[^\s)]+/g;
-    const urls = comment.body.match(reportUrlPattern);
-
-    if (!urls || urls.length === 0) {
-      throw new Error('No CI report URLs found in bot comment');
+    for (const comment of comments) {
+      if (!comment.body) continue;
+      const urls = comment.body.match(reportUrlPattern);
+      if (urls && urls.length > 0) {
+        return urls;
+      }
     }
 
-    return urls;
+    throw new Error('No CI report URLs found in bot comments');
   } catch (error) {
     if (error.message.includes('No CI bot comment found') || error.message.includes('No CI report URLs found')) {
       throw error;
@@ -391,7 +430,7 @@ async function fetchReport(inputUrl, options = {}) {
           }
 
           const { testResults = [] } = result;
-          const failed = testResults.filter(t => t.status === 'failed' || t.status === 'FAIL');
+          const failed = testResults.filter(t => isFailureStatus(t.status));
           const passed = testResults.filter(t => t.status === 'success' || t.status === 'OK');
           const skipped = testResults.filter(t => t.status === 'skipped' || t.status === 'SKIPPED');
 
@@ -417,6 +456,20 @@ async function fetchReport(inputUrl, options = {}) {
                 for (const cidbLink of test.cidbLinks) {
                   console.log(`         📊 CIDB: ${cidbLink}`);
                 }
+              }
+              if (test.links && test.links.length > 0) {
+                for (const link of test.links) {
+                  console.log(`         🔗 ${link}`);
+                }
+              }
+              if (test.info) {
+                const lines = test.info.split('\n').filter(l => l.trim());
+                const tail = lines.slice(-30);
+                console.log('         --- log tail ---');
+                for (const line of tail) {
+                  console.log(`         ${line}`);
+                }
+                console.log('         --- end ---');
               }
             }
           }
@@ -516,7 +569,7 @@ async function fetchReport(inputUrl, options = {}) {
     // For multi-report mode, don't filter by failed here - we'll show all in summary
     if (options.failedOnly && !options.isSingleReport) {
       filteredResults = filteredResults.filter(t =>
-        t.status === 'failed' || t.status === 'FAIL'
+        isFailureStatus(t.status)
       );
     }
 
@@ -528,20 +581,35 @@ async function fetchReport(inputUrl, options = {}) {
     // Print results for standalone report
     console.log('=== Test Results ===\n');
 
-    const failed = filteredResults.filter(t => t.status === 'failed' || t.status === 'FAIL');
+    const failed = filteredResults.filter(t => isFailureStatus(t.status));
     const passed = filteredResults.filter(t => t.status === 'success' || t.status === 'OK');
     const skipped = filteredResults.filter(t => t.status === 'skipped' || t.status === 'SKIPPED');
 
     console.log(`Total: ${filteredResults.length} | ✅ Passed: ${passed.length} | ❌ Failed: ${failed.length} | ⏭️  Skipped: ${skipped.length}\n`);
 
     if (failed.length > 0) {
-      console.log('--- Failed Tests ---');
+      console.log('--- Failures ---');
       for (const test of failed) {
         console.log(`❌ FAIL  ${test.name}  (${test.duration}s)`);
         if (options.showCidb && test.cidbLinks && test.cidbLinks.length > 0) {
           for (const cidbLink of test.cidbLinks) {
             console.log(`   📊 CIDB: ${cidbLink}`);
           }
+        }
+        if (test.links && test.links.length > 0) {
+          for (const link of test.links) {
+            console.log(`   🔗 ${link}`);
+          }
+        }
+        if (test.info) {
+          // Show last 30 non-empty lines of info (build log tail with actual errors)
+          const lines = test.info.split('\n').filter(l => l.trim());
+          const tail = lines.slice(-30);
+          console.log('   --- log tail ---');
+          for (const line of tail) {
+            console.log(`   ${line}`);
+          }
+          console.log('   --- end ---');
         }
       }
       console.log('');
@@ -568,17 +636,19 @@ async function fetchReport(inputUrl, options = {}) {
 
     // Download logs if requested
     if (options.downloadLogs) {
-      const logsLink = artifactLinks.find(l => l.href.includes('logs.tar.gz'));
+      const logsLink = artifactLinks.find(l => l.href.includes('logs.tar.gz') || l.href.includes('logs.tar.zst'));
       if (logsLink) {
         console.log(`\nDownloading logs from: ${logsLink.href}`);
-        const logsPath = '/tmp/ci_logs.tar.gz';
-        execSync(`curl -sL "${logsLink.href}" -o ${logsPath}`);
+        const ext = logsLink.href.endsWith('.zst') ? '.tar.zst' : '.tar.gz';
+        const logsPath = options.downloadLogs !== true ? options.downloadLogs : `/tmp/ci_logs${ext}`;
+        execFileSync('curl', ['-sL', logsLink.href, '-o', logsPath]);
         console.log(`Logs saved to: ${logsPath}`);
 
-        // List contents
+        // List contents (tar auto-detects compression format with -tf)
         try {
           console.log('\nLogs archive contents (pytest logs):');
-          const contents = execSync(`tar -tzf ${logsPath} | grep -E "pytest.*\\.log$|pytest.*\\.jsonl$" | head -20`).toString();
+          const listing = execFileSync('tar', ['-tf', logsPath]).toString();
+          const contents = listing.split('\n').filter(l => /pytest.*\.(log|jsonl)$/.test(l)).slice(0, 20).join('\n');
           console.log(contents || '(no pytest logs found)');
         } catch (e) {
           // Ignore errors from grep/head
@@ -614,7 +684,7 @@ Options:
   --all            Show all test results (not just summary)
   --links          Show artifact links
   --cidb           Show CIDB links for failed tests
-  --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
+  --download-logs [path]  Download logs to path (default: /tmp/ci_logs.tar.{gz,zst})
   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
   --credentials <user,password>  HTTP Basic Auth credentials
 
@@ -659,7 +729,12 @@ Examples:
         options.showCidb = true;
         break;
       case '--download-logs':
-        options.downloadLogs = true;
+        // Optional path argument: if next arg doesn't start with -- and isn't a URL, use it as path
+        if (i + 1 < args.length && !args[i + 1].startsWith('--') && !args[i + 1].startsWith('http')) {
+          options.downloadLogs = args[++i];
+        } else {
+          options.downloadLogs = true;
+        }
         break;
       case '--report':
         options.reportIndex = args[++i];

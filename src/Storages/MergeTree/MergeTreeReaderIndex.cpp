@@ -10,6 +10,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool MergeTreeReaderIndex::canSkipAnyMark() const
+{
+    /// `canSkipMark` only ever returns true when a skip-index or projection-index read result is present.
+    /// `lazy_materializing_rows` alone affects row-level filtering inside a granule and never returns
+    /// true from `canSkipMark`, so a reader configured only for lazy materialization does not skip
+    /// whole marks.
+    return index_read_result
+        && (index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+}
+
 MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,
@@ -21,9 +31,9 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
           nullptr,
           main_reader_->all_mark_ranges,
           main_reader_->settings)
-    , main_reader(main_reader_)
     , index_read_result(std::move(index_read_result_))
     , lazy_materializing_rows(lazy_materializing_rows_)
+    , main_reader(main_reader_)
 {
     chassert(lazy_materializing_rows || index_read_result);
     chassert(lazy_materializing_rows || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);

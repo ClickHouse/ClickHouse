@@ -6,6 +6,10 @@
 #include <Core/ProtocolDefines.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
+#endif
+
 namespace DB
 {
 
@@ -26,6 +30,20 @@ void serializeDataLakeTableStateSnapshot(DataLakeTableStateSnapshot state, Write
         writeVarInt(ICEBERG_TABLE_STATE_SNAPSHOT, out);
         std::get<Iceberg::TableStateSnapshot>(state).serialize(out);
     }
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+    else if (std::holds_alternative<DeltaLake::TableStateSnapshot>(state))
+    {
+        writeVarInt(DELTA_LAKE_TABLE_STATE_SNAPSHOT, out);
+        std::get<DeltaLake::TableStateSnapshot>(state).serialize(out);
+    }
+#endif
+#if USE_AVRO
+    else if (std::holds_alternative<Paimon::TableStateSnapshot>(state))
+    {
+        writeVarInt(PAIMON_TABLE_STATE_SNAPSHOT, out);
+        std::get<Paimon::TableStateSnapshot>(state).serialize(out);
+    }
+#endif
     else
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization for this DataLakeTableStateSnapshot type is not implemented");
@@ -50,6 +68,18 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
         {
             return Iceberg::TableStateSnapshot::deserialize(in, protocol_version);
         }
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+        else if (type == DELTA_LAKE_TABLE_STATE_SNAPSHOT)
+        {
+            return DeltaLake::TableStateSnapshot::deserialize(in, protocol_version);
+        }
+#endif
+#if USE_AVRO
+        else if (type == PAIMON_TABLE_STATE_SNAPSHOT)
+        {
+            return Paimon::TableStateSnapshot::deserialize(in, protocol_version);
+        }
+#endif
         else
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization for this DataLakeTableStateSnapshot type is not implemented");

@@ -8,6 +8,8 @@
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
@@ -17,6 +19,7 @@
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
@@ -125,7 +128,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    tokenizer->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
+                    forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), granule->bloom_filters[col]);
                 }
 
                 current_position += 1;
@@ -136,7 +139,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                tokenizer->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
+                forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), granule->bloom_filters[col]);
             }
         }
     }
@@ -350,6 +353,28 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         auto function_name = function_node.getFunctionName();
 
         size_t arguments_size = function_node.getArgumentsSize();
+
+        /// Handle isNotNull for JSON subcolumns: isNotNull(json.some.path)
+        /// When a JSON path is absent, the value is NULL (for Dynamic/Nullable types),
+        /// so isNotNull(NULL) = false — always safe to skip granules where path is absent.
+        if (function_name == "isNotNull" && arguments_size == 1)
+        {
+            auto arg = function_node.getArgumentAt(0);
+            if (auto json_info = tryMatchNodeToJSONIndex(arg, index_columns, "JSONAllPaths"))
+            {
+                auto arg_type = arg.getDAGNode()->result_type;
+                /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
+                if (!canContainNull(*arg_type))
+                    return false;
+
+                out.key_column = json_info->header_position;
+                out.function = RPNElement::FUNCTION_EQUALS;
+                out.bloom_filter = std::make_unique<BloomFilter>(params);
+                tokenizer->stringToBloomFilter(json_info->path.data(), json_info->path.size(), *out.bloom_filter);
+                return true;
+            }
+        }
+
         if (arguments_size != 2)
             return false;
 
@@ -417,6 +442,25 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const Field & value_field,
     RPNElement & out)
 {
+    /// Try JSON subcolumn detection early, before the string-type check.
+    /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
+    /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
+    if (function_name == "equals")
+    {
+        if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
+        {
+            auto key_type = key_node.getDAGNode()->result_type;
+            if (!isJSONPathFilterSafe(key_type, value_field))
+                return false;
+
+            out.key_column = json_info->header_position;
+            out.function = RPNElement::FUNCTION_EQUALS;
+            out.bloom_filter = std::make_unique<BloomFilter>(params);
+            tokenizer->stringToBloomFilter(json_info->path.data(), json_info->path.size(), *out.bloom_filter);
+            return true;
+        }
+    }
+
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
@@ -468,6 +512,34 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
                 key_index = map_values_exists;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+
+    /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
+    if (!key_index)
+    {
+        if (auto parsed = tryParseMapSubcolumnName(column_name))
+        {
+            auto & [map_column_name, serialized_key] = *parsed;
+
+            /// Same as arrayElement: skip when comparing with default value because
+            /// the subcolumn returns default for keys that don't exist in the map.
+            if (value_field == value_type->getDefault())
+                return false;
+
+            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            {
+                key_index = map_keys_index;
+                const_value = serialized_key;
+            }
+            else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
+            {
+                key_index = map_values_idx;
             }
             else
             {
@@ -748,7 +820,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
-            tokenizer->stringPaddedToBloomFilter(ref.data(), ref.size(), bloom_filters.back().back());
+            forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
 

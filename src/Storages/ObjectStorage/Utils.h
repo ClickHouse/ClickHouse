@@ -1,8 +1,8 @@
 #pragma once
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Parsers/IAST_fwd.h>
-#include <Core/NamesAndTypes.h>
-#include <Common/Logger.h>
 
 namespace DB
 {
@@ -25,17 +25,9 @@ void resolveSchemaAndFormat(
     std::string & sample_path,
     const ContextPtr & context);
 
-void validateColumns(
-    const ColumnsDescription & columns,
-    StorageObjectStorageConfigurationPtr configuration = nullptr,
-    bool validate_schema_with_remote = false,
-    ObjectStoragePtr object_storage = nullptr,
-    const std::optional<FormatSettings> * format_settings = nullptr,
-    const std::string * sample_path = nullptr,
-    ContextPtr context = nullptr,
-    const NamesAndTypesList * hive_partition_columns_to_read_from_file_path = nullptr,
-    const ColumnsDescription * columns_in_table_or_function_definition = nullptr,
-    LoggerPtr log = nullptr);
+void validateSupportedColumns(
+    ColumnsDescription & columns,
+    const StorageObjectStorageConfiguration & configuration);
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
@@ -72,6 +64,10 @@ struct ParseFromDiskResult
 };
 
 ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr context, const fs::path & prefix);
+
+void expandPaimonKeeperMacrosIfNeeded(
+    const StorageFactory::Arguments & args,
+    const DataLakeStorageSettingsPtr & storage_settings);
 
 
 }

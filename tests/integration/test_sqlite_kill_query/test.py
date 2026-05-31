@@ -81,15 +81,6 @@ ENGINE = SQLite('{SQLITE_DB_FILE_NAME}', 'big_data_table');
         cluster.shutdown()
 
 
-# Stop clickhouse-client by SIGINT signal that is the same as pressing Ctrl+C
-def stop_clickhouse_client():
-    client_pid = node1.get_process_pid("clickhouse client")
-    node1.exec_in_container(
-        ["bash", "-c", f"kill -INT {client_pid}"],
-        user="root",
-    )
-
-
 def test_kill_query(started_cluster):
     query_id = str(uuid.uuid4())
 
@@ -103,7 +94,7 @@ def test_kill_query(started_cluster):
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Generate a chuck")
+    node1.wait_for_log_line("Generate a chunk")
     time.sleep(1)
 
     node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
@@ -112,7 +103,7 @@ def test_kill_query(started_cluster):
 
     # Verify that query was successfully cancelled in ClickHouse server
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 
@@ -131,11 +122,13 @@ def test_cancel_query(started_cluster):
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    node1.wait_for_log_line("Generate a chuck")
+    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
+    # from the preceding test_kill_query which also produces "Generate a chunk".
+    node1.wait_for_log_line("Generate a chunk", look_behind_lines=0)
     time.sleep(1)
 
-    stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.stop_clickhouse_client()
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()

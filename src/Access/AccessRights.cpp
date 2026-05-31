@@ -1358,8 +1358,8 @@ void AccessRights::grantImpl(const AccessFlags & flags, const Args &... args)
 template <bool with_grant_option, bool wildcard>
 void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
-    assert(!element.is_partial_revoke);
-    assert(!element.grant_option || with_grant_option);
+    chassert(!element.is_partial_revoke);
+    chassert(!element.grant_option || with_grant_option);
 
     if (element.isGlobalWithParameter())
     {
@@ -1461,7 +1461,7 @@ void AccessRights::revokeImpl(const AccessFlags & flags, const Args &... args)
 template <bool grant_option, bool wildcard>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())
@@ -1553,6 +1553,23 @@ String AccessRights::toString() const
 }
 
 
+AccessRights AccessRights::getGrantableRights() const
+{
+    AccessRights result;
+    for (auto & element : getElements())
+    {
+        if (!element.grant_option && !element.is_partial_revoke)
+            continue;
+
+        if (element.is_partial_revoke)
+            result.revoke(element);
+        else
+            result.grant(element);
+    }
+    return result;
+}
+
+
 template <bool grant_option, bool wildcard, typename... Args>
 bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args) const
 {
@@ -1589,7 +1606,7 @@ bool AccessRights::containsImpl(const AccessRights & other) const
 template <bool grant_option, bool wildcard>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())

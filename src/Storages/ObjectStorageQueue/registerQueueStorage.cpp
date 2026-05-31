@@ -2,6 +2,7 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -64,8 +65,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
             const String database_engine = database ? database->getEngineName() : "";
 
-            bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-            bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+            bool is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+            bool is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal() &&
                 database_engine == "Replicated";
 
             /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries
@@ -79,8 +80,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             if (!allow_uuid_macro)
                 info.table_id.uuid = UUIDHelpers::Nil;
 
-            /// Make sure that {uuid} macro is allowed, if present.
-            args.getContext()->getMacros()->expand(path, info);
+            {
+                /// Some fields (e.g.: level) in MacroExpansionInfo are modified during macro expansion.
+                /// Let's make a copy, so the next call won't interfere with this one.
+                auto info_copy = info;
+                /// Make sure that {uuid} macro is allowed, if present.
+                args.getContext()->getMacros()->expand(path, info_copy);
+            }
 
             /// Actually expand all the macros except {uuid} macro.
             info.expand_special_macros_only = true;

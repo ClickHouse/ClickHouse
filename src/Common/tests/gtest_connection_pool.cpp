@@ -1,4 +1,5 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
 
 #include <Poco/URI.h>

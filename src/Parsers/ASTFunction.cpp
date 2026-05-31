@@ -35,6 +35,30 @@ namespace ErrorCodes
 }
 
 
+boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body)
+{
+    auto tuple = makeASTFunction("tuple");
+    auto & tuple_args = tuple->arguments->children;
+    tuple_args.reserve(param_names.size());
+    for (const auto & param_name : param_names)
+        tuple_args.emplace_back(make_intrusive<ASTIdentifier>(param_name));
+    return makeASTFunction("lambda", std::move(tuple), std::move(body));
+}
+
+
+void ASTFunction::setNoEmptyArgs(bool value)
+{
+    flags<ASTFunctionFlags>().no_empty_args = value;
+    /// Also clear the empty arguments node to keep formatting round-trip consistent:
+    /// `MergeTree()` with noEmptyArgs formats as `MergeTree`, which re-parses without arguments.
+    if (value && arguments && arguments->children.empty())
+    {
+        children.erase(std::remove(children.begin(), children.end(), arguments), children.end());
+        arguments.reset();
+    }
+}
+
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
@@ -148,7 +172,6 @@ ASTPtr ASTFunction::clone() const
 
     return res;
 }
-
 
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -345,18 +368,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
-                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
-                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
+                /// Also extra parentheses are needed for subqueries with NOT, because NOT (SELECT 1) is ambiguous.
+                /// Note: Tuples no longer need inside_parens for NOT because NOT is now always parsed as a
+                /// unary prefix operator (not a function call), so NOT (1, 2, 3) correctly produces NOT(tuple(1,2,3)).
                 /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
                 bool inside_parens = !has_alias
                     && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                        || (subquery && name == "not") || (is_tuple && name == "not"));
+                        || (subquery && name == "not"));
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && (!frame.allow_moving_operators_before_parens || !inside_parens);
+                /// Only negate (-) can safely move before parentheses: -(x + y) is unambiguous.
+                /// NOT cannot: NOT (subquery) NOT LIKE x would be parsed as NOT ((subquery) NOT LIKE x),
+                /// because boolean NOT has lower precedence than comparison operators.
+                bool can_move_before_parens = frame.allow_moving_operators_before_parens && (name == "negate");
+                bool outside_parens = frame.need_parens && (!can_move_before_parens || !inside_parens);
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
@@ -368,13 +395,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 ostr << func_symbol;
 
                 if (inside_parens)
+                {
                     ostr << '(';
-
-                arguments->format(ostr, settings, state, nested_need_parens);
-                written = true;
-
-                if (inside_parens)
+                    /// We have just emitted `(` around the single argument, so suppress the
+                    /// argument's own `parenthesized` parens (which would otherwise duplicate ours).
+                    /// We bypass ASTExpressionList::format here to ensure the flag reaches the
+                    /// argument node directly (the flag is consumed at the first IAST::format call).
+                    FormatStateStacked inner_frame = nested_need_parens;
+                    inner_frame.wrapped_in_parens = true;
+                    arguments->children[0]->format(ostr, settings, state, inner_frame);
                     ostr << ')';
+                }
+                else
+                {
+                    arguments->format(ostr, settings, state, nested_need_parens);
+                }
+                written = true;
 
                 if (outside_parens)
                     ostr << ')';
@@ -407,7 +443,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        if (!written && arguments->children.size() == 2)
+        bool is_like_with_escape = false;
+        if (arguments->children.size() == 3
+            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
+        {
+            if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
+                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
+        }
+        if (!written && (arguments->children.size() == 2 || is_like_with_escape))
         {
             static constexpr std::array<FunctionOperatorMapping, 21> operators =
             {{
@@ -444,6 +487,21 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool need_parens_around_in = frame.need_parens || (is_in_operator && in_function_args);
                 if (need_parens_around_in)
                     ostr << '(';
+                /// Our wrapping `(...)` (either from need_parens_around_in here, or from the
+                /// `parenthesized` flag handled in IAST::format) already isolates this IN from
+                /// the enclosing function-argument list, so descendants must not add another
+                /// layer of parens for the same reason. Clear `current_function` for the
+                /// children so a nested IN sees `in_function_args == false`. Without this, a
+                /// query like `f(1, 2 IN ((3 IN (4, 5)) AS x))` formats as
+                /// `f(1, (2 IN ((3 IN (4, 5)) AS x)))`, the re-parse sets `parenthesized=true`
+                /// on the outer IN (so `IAST::format` emits the outer parens and resets
+                /// `current_function`), and the second format drops the inner `(3 IN (4, 5))`,
+                /// breaking the format-parse-format round-trip check.
+                if (need_parens_around_in)
+                {
+                    nested_need_parens.current_function = nullptr;
+                    nested_dont_need_parens.current_function = nullptr;
+                }
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << it->operator_name;
 
@@ -468,12 +526,23 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (extra_parents_around_in_rhs)
                 {
                     ostr << '(';
-                    arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                    /// We have just emitted `(` around the right-hand side, so suppress the
+                    /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+                    FormatStateStacked inner_frame = nested_dont_need_parens;
+                    inner_frame.wrapped_in_parens = true;
+                    arguments->children[1]->format(ostr, settings, state, inner_frame);
                     ostr << ')';
                 }
 
                 if (!extra_parents_around_in_rhs)
                     arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+
+                /// LIKE/ILIKE with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
+                if (is_like_with_escape)
+                {
+                    ostr << " ESCAPE ";
+                    arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
+                }
 
                 if (need_parens_around_in)
                     ostr << ')';
@@ -498,7 +567,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
             }
 
-            if (!written && name == "tupleElement"sv)
+            if (!written && name == "tupleElement"sv && arguments->children.size() == 2)
             {
                 // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
@@ -513,6 +582,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 //
                 // So instead of printing it as regular tuple,
                 // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                //
+                // Only use dot-syntax for 2-argument tupleElement (expr.field).
+                // The 3-argument form tupleElement(expr, field, default) cannot use
+                // dot-syntax because the default value would be lost during formatting.
                 bool tuple_arguments_valid = true;
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
@@ -555,6 +628,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (left_needs_parens)
                         {
                             nested_need_parens.need_parens = false; /// Don't want duplicate parens
+                            /// We have just emitted `(` around the child, so suppress the
+                            /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+                            nested_need_parens.wrapped_in_parens = true;
                             ostr << '(';
                         }
 
@@ -637,7 +713,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
         }
 
-        if (!written && name == "array"sv)
+        if (!written && name == "array"sv && isOperator())
         {
             ostr << '[';
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -653,7 +729,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && !(frame.need_parens && !alias.empty()))
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator() && !(frame.need_parens && !alias.empty()))
         {
             ostr << '(';
 
@@ -783,6 +859,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_dont_need_parens.current_function = this;
             argument->format(ostr, settings, state, nested_dont_need_parens);
         }
+
     }
 
     if (need_parens)

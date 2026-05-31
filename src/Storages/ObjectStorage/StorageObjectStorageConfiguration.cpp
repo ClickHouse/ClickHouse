@@ -6,8 +6,12 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 namespace DB
 {
@@ -24,13 +28,24 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace Setting
+{
+    extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
+}
+
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
-    ContextPtr context,
-    bool /* if_not_updated_before */)
+    ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+}
+
+void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
+    ObjectStoragePtr object_storage_ptr,
+    ContextPtr context)
+{
+    update(object_storage_ptr, context);
 }
 
 void StorageObjectStorageConfiguration::create( ///NOLINT
@@ -62,9 +77,20 @@ std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTable
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
-StorageInMemoryMetadata StorageObjectStorageConfiguration::getStorageSnapshotMetadata(ContextPtr) const
+std::optional<DataLakeTableStateSnapshot> StorageObjectStorageConfiguration::getTableStateSnapshot(ContextPtr) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for basic configuration");
+    return std::nullopt;
+}
+
+std::unique_ptr<StorageInMemoryMetadata> StorageObjectStorageConfiguration::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot &, ContextPtr) const
+{
+    return nullptr;
+}
+
+bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(ContextPtr) const
+{
+    return false;
 }
 
 
@@ -135,15 +161,66 @@ void StorageObjectStorageConfiguration::initialize(
     configuration_to_initialize.initialized = true;
 }
 
+String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescription & columns)
+{
+    SipHash hash;
+    auto columns_str = columns.getAllPhysical().toString();
+    hash.update(columns_str.data(), columns_str.size());
+    return getSipHash128AsHexString(hash);
+}
+
+void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
+{
+    schema_hash = hash;
+    boost::replace_all(read_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
+    if (getPaths().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPaths().size());
+    auto path = getRawPath();
+    boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+    setRawPath(path);
+    setPaths({path});
+}
+
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    /// Data lake engines (Iceberg, Delta Lake, etc.) implement their own partitioning and
+    /// do not use the file-like `partition_strategy`. Skip applying a default strategy here.
+    /// Also skip when there is no `PARTITION BY` - there is no strategy to apply, but we still
+    /// fall through to `PartitionStrategyFactory::get` so that consistency checks (e.g. explicit
+    /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
+    if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
+    {
+        switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+        {
+            case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+            {
+                /// Set the strategy unconditionally; `PartitionStrategyFactory::get` will raise
+                /// `BAD_ARGUMENTS` if the path is missing the `{_partition_id}` placeholder.
+                partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                break;
+            }
+            case FileLikeEngineDefaultPartitionStrategy::HIVE:
+            {
+                partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                break;
+            }
+        }
+
+        /// The default for `partition_columns_in_data_file` was computed at parse time against
+        /// `partition_strategy_type == NONE`. Recompute it now that the effective strategy is known,
+        /// unless the user provided an explicit value.
+        if (!partition_columns_in_data_file_was_set)
+            partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
+    }
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
         columns.getOrdinary(),
         context,
         format,
-        getRawPath().hasGlobs(),
+        getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
         partition_columns_in_data_file);
 
@@ -163,6 +240,9 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
 {
     auto raw_path = getRawPath();
 
+    if (!schema_hash.empty())
+        boost::replace_all(raw_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
     if (!partition_strategy)
     {
         return raw_path;
@@ -177,11 +257,18 @@ bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
     return path.find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePartitionWildcard() const
+bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
 {
-    if (!hasPartitionWildcard())
+    return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
+}
+
+bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
+{
+    if (!hasPartitionWildcard() && !hasSchemaHashWildcard())
         return hasGlobs();
-    return PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos;
+    String cleaned = PartitionedSink::replaceWildcards(path, "");
+    boost::replace_all(cleaned, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, "");
+    return cleaned.find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorageConfiguration::Path::hasGlobs() const
@@ -247,6 +334,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
+    partition_columns_in_data_file_was_set = parsed_arguments.partition_columns_in_data_file_was_set;
     partition_strategy = parsed_arguments.partition_strategy;
 }
 }
