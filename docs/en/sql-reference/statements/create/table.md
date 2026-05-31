@@ -462,6 +462,8 @@ ENGINE = MergeTree()
 
 #### ByteStreamSplit {#bytestreamsplit}
 
+<ExperimentalBadge/>
+
 `ByteStreamSplit(element_bytes)` — A preprocessing transform that improves compression of fixed-width columnar data by transposing the byte layout. Given N elements of W bytes each, all first bytes are grouped together, then all second bytes, and so on — producing W streams of N bytes each.
 
 For example, with W=4 (Float32) and 3 elements:
@@ -480,10 +482,12 @@ Bytes at the same position within each element tend to have similar values — f
 The codec supports any fixed-size type with an element size between 2 and 255 bytes, including `Float32`, `Float64`, integer types, `IPv4`, `IPv6`, `UUID`, and `FixedString(N)` for N ≥ 2.
 
 :::note
-`ByteStreamSplit` is marked as experimental. It can be used freely, but its behavior may change in future releases.
+This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
 :::
 
 ```sql
+SET allow_experimental_codecs = 1;
+
 CREATE TABLE split_example
 (
     timestamp   DateTime,

@@ -3,6 +3,8 @@
 -- Test for ByteStreamSplit codec — type compatibility, explicit width parameter,
 -- codec chaining, unaligned input sizes, and invalid parameter rejection.
 
+SET allow_experimental_codecs = 1;
+
 DROP TABLE IF EXISTS tab;
 
 
@@ -15,7 +17,7 @@ SELECT count() FROM tab;
 DROP TABLE tab;
 
 -- Explicit width 8 (Float64/Int64/UInt64)
-CREATE TABLE tab (v Float64 CODEC(ByteStreamSplit(8))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (v Float64 CODEC(ByteStreamSplit(8), LZ4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab VALUES (1.0), (1e100), (-1e-100);
 SELECT count() FROM tab;
 DROP TABLE tab;
@@ -27,25 +29,25 @@ SELECT count() FROM tab;
 DROP TABLE tab;
 
 -- Width inferred from UInt16 → W=2
-CREATE TABLE tab (v UInt16 CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (v UInt16 CODEC(ByteStreamSplit, LZ4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab SELECT number FROM numbers(500);
 SELECT count() FROM tab;
 DROP TABLE tab;
 
 -- Width inferred from Int32 → W=4
-CREATE TABLE tab (v Int32 CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (v Int32 CODEC(ByteStreamSplit, LZ4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab SELECT number FROM numbers(500);
 SELECT count() FROM tab;
 DROP TABLE tab;
 
 -- Width inferred from UInt64 → W=8
-CREATE TABLE tab (v UInt64 CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (v UInt64 CODEC(ByteStreamSplit, LZ4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab SELECT number FROM numbers(500);
 SELECT count() FROM tab;
 DROP TABLE tab;
 
 -- FixedString with explicit width matching size
-CREATE TABLE tab (v FixedString(4) CODEC(ByteStreamSplit(4))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (v FixedString(4) CODEC(ByteStreamSplit(4), LZ4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab VALUES ('ABCD'), ('1234'), ('....');
 SELECT count() FROM tab;
 DROP TABLE tab;
@@ -77,13 +79,13 @@ DROP TABLE tab;
 -- We do this by inserting N elements so the part has an odd number of bytes
 -- via CODEC(ByteStreamSplit) on a FixedString(3) — W=3.
 
-CREATE TABLE tab (v FixedString(3) CODEC(ByteStreamSplit(3))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (v FixedString(3) CODEC(ByteStreamSplit(3), LZ4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab SELECT reinterpretAsFixedString(toUInt32(number)) FROM numbers(101); -- 101×3 = 303 bytes (odd)
 SELECT count() FROM tab;
 DROP TABLE tab;
 
 -- Blob of mixed sizes that produces bytes_to_skip > 0
-CREATE TABLE tab (v FixedString(5) CODEC(ByteStreamSplit(5))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tab (v FixedString(5) CODEC(ByteStreamSplit(5), LZ4)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab SELECT reinterpretAsFixedString(toUInt64(number)) FROM numbers(7); -- 7×5 = 35 bytes
 SELECT count() FROM tab;
 DROP TABLE tab;
@@ -121,7 +123,7 @@ DROP TABLE tab;
 CREATE TABLE tab
 (
     ref  Float64,
-    bss  Float64 CODEC(ByteStreamSplit)
+    bss  Float64 CODEC(ByteStreamSplit, LZ4)
 ) ENGINE = MergeTree ORDER BY ref;
 
 INSERT INTO tab (ref, bss) VALUES
