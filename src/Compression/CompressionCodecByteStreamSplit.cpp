@@ -664,33 +664,36 @@ ALWAYS_INLINE void decodeRuntime(
 
     int64_t i = 0;
 
-    for (; i + 16 <= num_elements; i += 16)
+    if constexpr (std::endian::native == std::endian::little)
     {
-        /// NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
-        uint64_t s[MAX_ELEMENT_WIDTH][2];
-        for (int b = 0; b < W; ++b)
+        for (; i + 16 <= num_elements; i += 16)
         {
-            memcpy(&s[b][0], src + b * num_elements + i,     8);
-            memcpy(&s[b][1], src + b * num_elements + i + 8, 8);
-        }
-
-        for (int chunk = 0; chunk < 16; chunk += 4)
-        {
-            int qword = chunk / 8;
-            int shift  = (chunk % 8) * 8;
-
-            uint8_t * e0 = dst + (i + chunk + 0) * W;
-            uint8_t * e1 = dst + (i + chunk + 1) * W;
-            uint8_t * e2 = dst + (i + chunk + 2) * W;
-            uint8_t * e3 = dst + (i + chunk + 3) * W;
-
+            /// NOTE: stack-allocated, sized by MAX_ELEMENT_WIDTH. Must heap-allocate if MAX_ELEMENT_WIDTH grows large.
+            uint64_t s[MAX_ELEMENT_WIDTH][2];
             for (int b = 0; b < W; ++b)
             {
-                uint32_t four = static_cast<uint32_t>(s[b][qword] >> shift);
-                e0[b] = static_cast<uint8_t>(four);
-                e1[b] = static_cast<uint8_t>(four >> 8);
-                e2[b] = static_cast<uint8_t>(four >> 16);
-                e3[b] = static_cast<uint8_t>(four >> 24);
+                memcpy(&s[b][0], src + b * num_elements + i,     8);
+                memcpy(&s[b][1], src + b * num_elements + i + 8, 8);
+            }
+
+            for (int chunk = 0; chunk < 16; chunk += 4)
+            {
+                int qword = chunk / 8;
+                int shift  = (chunk % 8) * 8;
+
+                uint8_t * e0 = dst + (i + chunk + 0) * W;
+                uint8_t * e1 = dst + (i + chunk + 1) * W;
+                uint8_t * e2 = dst + (i + chunk + 2) * W;
+                uint8_t * e3 = dst + (i + chunk + 3) * W;
+
+                for (int b = 0; b < W; ++b)
+                {
+                    uint32_t four = static_cast<uint32_t>(s[b][qword] >> shift);
+                    e0[b] = static_cast<uint8_t>(four);
+                    e1[b] = static_cast<uint8_t>(four >> 8);
+                    e2[b] = static_cast<uint8_t>(four >> 16);
+                    e3[b] = static_cast<uint8_t>(four >> 24);
+                }
             }
         }
     }
