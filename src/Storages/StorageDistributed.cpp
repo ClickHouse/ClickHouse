@@ -114,7 +114,6 @@
 
 #include <memory>
 #include <filesystem>
-#include <cassert>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
@@ -1953,7 +1952,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(relative_data_path != new_path_to_table_data);
+    chassert(relative_data_path != new_path_to_table_data);
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
@@ -1967,7 +1966,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
     for (const auto & shard : shards)
         total_weight += shard.weight;
 
-    assert(total_weight > 0);
+    chassert(total_weight > 0);
 
     size_t res;
     {

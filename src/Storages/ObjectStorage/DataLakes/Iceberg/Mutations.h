@@ -24,6 +24,7 @@ namespace DB::Iceberg
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
+    StoragePtr storage_ptr,
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
