@@ -376,6 +376,9 @@ ExpressionActionsPtr tryBuildMinMaxActions(
     /// (2) even if deserialization worked, `less(Nullable(T), Nullable-literal)` returns
     ///     `Nullable(UInt8)` and the final `and` of those stays Nullable, while the caller
     ///     asserts a plain `ColumnUInt8` on the output.
+    /// This also covers `LowCardinality(Nullable(T))`: a comparison over it still yields
+    /// `Nullable(UInt8)`, so checking `isNullable` alone would let such a type slip through
+    /// and trip the `ColumnUInt8` assertion at evaluation time.
     /// Falling back to the generic per-granule path is correct and preserves NULL semantics.
     std::vector<std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>> inputs;
     inputs.reserve(index_data_types.size());
@@ -383,7 +386,7 @@ ExpressionActionsPtr tryBuildMinMaxActions(
     minmax_input_names_out.reserve(index_data_types.size());
     for (size_t i = 0; i < index_data_types.size(); ++i)
     {
-        if (index_data_types[i]->isNullable())
+        if (isNullableOrLowCardinalityNullable(index_data_types[i]))
             return nullptr;
         String min_name = minMaxInputName(false, i);
         String max_name = minMaxInputName(true, i);
