@@ -675,6 +675,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 }
 
 /// TODO support ttl
+void registerStorageRedis(StorageFactory & factory);
 void registerStorageRedis(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

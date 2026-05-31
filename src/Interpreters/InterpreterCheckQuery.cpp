@@ -513,6 +513,7 @@ BlockIO InterpreterCheckQuery::execute()
     return res;
 }
 
+void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

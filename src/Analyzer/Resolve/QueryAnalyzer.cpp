@@ -339,7 +339,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     validateCorrelatedSubqueries(node);
 }
 
-bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
+static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
 {
     if (node_source == tree_node)
         return true;
@@ -1765,41 +1765,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     return matched_column_nodes_with_names;
 }
 
-bool hasTableExpressionInJoinTree(const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression)
-{
-    QueryTreeNodes nodes_to_process;
-    nodes_to_process.push_back(join_tree_node);
-
-    while (!nodes_to_process.empty())
-    {
-        auto node_to_process = std::move(nodes_to_process.back());
-        nodes_to_process.pop_back();
-        if (node_to_process == table_expression)
-            return true;
-
-        auto node_type = node_to_process->getNodeType();
-
-        if (node_type == QueryTreeNodeType::JOIN)
-        {
-            const auto & join_node = node_to_process->as<JoinNode &>();
-            nodes_to_process.push_back(join_node.getLeftTableExpression());
-            nodes_to_process.push_back(join_node.getRightTableExpression());
-        }
-        else if (node_type == QueryTreeNodeType::CROSS_JOIN)
-        {
-            const auto & join_node = node_to_process->as<CrossJoinNode &>();
-            for (const auto & expr : join_node.getTableExpressions())
-                nodes_to_process.push_back(expr);
-        }
-        else if (node_type == QueryTreeNodeType::ARRAY_JOIN)
-        {
-            const auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
-            nodes_to_process.push_back(array_join_node.getTableExpression());
-        }
-
-    }
-    return false;
-}
 
 /// Columns that resolved from matcher can also match columns from JOIN USING.
 /// In that case we update type to type of column in USING section.
@@ -4094,7 +4059,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
 }
 
-bool findIdentifier(const FunctionNode & function)
+static bool findIdentifier(const FunctionNode & function)
 {
     for (const auto & argument : function.getArguments())
     {

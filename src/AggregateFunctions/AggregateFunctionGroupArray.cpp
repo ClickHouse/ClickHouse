@@ -843,6 +843,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 }
 
 
+void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };

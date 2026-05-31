@@ -69,6 +69,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
 
 }
 
+int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv)
 {
     using namespace DB;

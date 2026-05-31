@@ -660,7 +660,7 @@ Chunk SystemZooKeeperSource::generate()
         if (zookeeper == zookeepers.end() || zookeeper->second->expired())
         {
             zookeepers[name] = ZooKeeperWithFaultInjection::createInstance(
-                settings[Setting::insert_keeper_fault_injection_probability],
+                static_cast<double>(settings[Setting::insert_keeper_fault_injection_probability]),
                 settings[Setting::insert_keeper_fault_injection_seed],
                 context->getDefaultOrAuxiliaryZooKeeper(name),
                 "",

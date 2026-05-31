@@ -159,6 +159,7 @@ createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_anyHeavy = R"(

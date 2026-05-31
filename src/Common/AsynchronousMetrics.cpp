@@ -881,7 +881,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
         };
 }
 
-void readPressureFile(
+static void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
     std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
 {

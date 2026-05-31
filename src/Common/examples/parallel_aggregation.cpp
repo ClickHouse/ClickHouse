@@ -3,6 +3,7 @@
 #include <mutex>
 #include <atomic>
 #include <cmath>
+#include <Examples/clickhouse_examples.h>
 
 #if defined(__x86_64__)
 #include <immintrin.h>

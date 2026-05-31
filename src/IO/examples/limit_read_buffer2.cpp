@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <Examples/clickhouse_examples.h>
 
 namespace DB
 {

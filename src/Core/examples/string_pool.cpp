@@ -13,6 +13,7 @@
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #include <Common/HashTable/HashMap.h>
+#include <Examples/clickhouse_examples.h>
 
 int mainEntryExampleStringPool(int argc, char ** argv)
 {

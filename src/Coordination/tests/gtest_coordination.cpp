@@ -217,7 +217,7 @@ struct SimpliestRaftServer
 
 using SummingRaftServer = SimpliestRaftServer<DB::SummingStateMachine>;
 
-nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
+static nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 {
     nuraft::ptr<nuraft::buffer> ret = nuraft::buffer::alloc(sizeof(number));
     nuraft::buffer_serializer bs(ret);

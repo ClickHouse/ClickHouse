@@ -995,6 +995,7 @@ NamesAndTypesList DWARFSchemaReader::readSchema()
     return getHeaderForDWARF();
 }
 
+void registerDWARFSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -1006,6 +1007,7 @@ void registerDWARFSchemaReader(FormatFactory & factory)
     );
 }
 
+void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -1031,6 +1033,8 @@ void registerInputFormatDWARF(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatDWARF(FormatFactory &);
+void registerDWARFSchemaReader(FormatFactory &);
 void registerInputFormatDWARF(FormatFactory &)
 {
 }

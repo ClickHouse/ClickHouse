@@ -712,7 +712,7 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
             false,
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
@@ -726,7 +726,7 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
             false,
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
@@ -1271,7 +1271,7 @@ static void processStatisticsChanges(
 }
 
 /// Initialize and write to disk new part fields like checksums, columns, etc.
-void finalizeMutatedPart(
+static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,

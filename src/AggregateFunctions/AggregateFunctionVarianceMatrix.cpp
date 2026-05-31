@@ -175,6 +175,7 @@ AggregateFunctionPtr createAggregateFunctionVarianceMatrix(
 
 }
 
+void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description covarSampMatrix_description = R"(
