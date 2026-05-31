@@ -203,6 +203,12 @@ ReaderExecutor::~ReaderExecutor()
     drainAbandonedPrefetches(/*wait_finished=*/true);
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
+    /// A transient `readBigAt` executor rolls its stats into the parent via
+    /// mergeTransientStats; emitting ProfileEvents / a reader_executor_log row
+    /// here too would double-count. The parent's destructor reports the aggregate.
+    if (is_transient)
+        return;
+
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromPageCache, stats.bytes_from_page_cache);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromFilesystemCache, stats.bytes_from_filesystem_cache);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, stats.bytes_from_source);
@@ -517,6 +523,12 @@ void ReaderExecutor::maybeTriggerPrefetch()
     prefetch_submit_time = std::chrono::system_clock::now();
     prefetch_execution_watch.reset();
 
+    /// Snapshot the issued counters BEFORE submit (the worker may start the moment
+    /// submit returns), so a later discard attributes exactly this prefetch's
+    /// source/cache bytes - the delta the worker adds - to wasted.
+    prefetch_issued_source_at_submit = stats.prefetch_issued_source_bytes;
+    prefetch_issued_cache_at_submit = stats.prefetch_issued_cache_bytes;
+
     auto handle = prefetch_pool->submit([this, next_physical_window]()
     {
         Stopwatch watch;
@@ -542,10 +554,6 @@ void ReaderExecutor::maybeTriggerPrefetch()
     /// Track prefetch_range in logical coordinates — same space as `position`
     /// and as the decrypted rope returned by the handle.
     prefetch_range = ByteRange{next_logical_offset, next_size};
-    /// Snapshot the issued counters so a later discard can attribute exactly this
-    /// prefetch's source/cache bytes (the delta the worker adds) to `wasted`.
-    prefetch_issued_source_at_submit = stats.prefetch_issued_source_bytes;
-    prefetch_issued_cache_at_submit = stats.prefetch_issued_cache_bytes;
 }
 
 void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
@@ -1446,8 +1454,16 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
 #endif
     t->data_start_offset = data_start_offset;
     t->read_extent_end = start_position + read_size;
+    t->is_transient = true;
     t->seek(start_position);
     return t;
+}
+
+void ReaderExecutor::mergeTransientStats(const ReaderExecutor & transient)
+{
+    /// `readBigAt` fans out concurrently over one parent; serialize the roll-up.
+    std::lock_guard lock(transient_stats_mutex);
+    stats += transient.stats;
 }
 
 }

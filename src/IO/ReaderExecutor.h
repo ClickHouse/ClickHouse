@@ -14,6 +14,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -75,6 +76,12 @@ public:
     /// and source range) to the request, so the connection it borrows is fully
     /// drained and returned to the pool reusable rather than abandoned mid-stream.
     std::unique_ptr<ReaderExecutor> makeTransientForReadAt(size_t start_position, size_t read_size) const;
+
+    /// Roll a drained `makeTransientForReadAt` executor's stats into this (parent)
+    /// executor, so the parent's `reader_executor_log` row and ProfileEvents
+    /// account for the random-access (`readBigAt`) read. Thread-safe: concurrent
+    /// `readBigAt` calls share one parent.
+    void mergeTransientStats(const ReaderExecutor & transient);
 
     /// Whether `makeTransientForReadAt` / `readBigAt` is allowed. All current
     /// `ISourceReader` implementations support concurrent `open()` (each call
@@ -325,6 +332,15 @@ private:
     /// it reads to the file end.
     std::optional<size_t> read_extent_end;
 
+    /// True on a `makeTransientForReadAt` executor. Such an executor does not emit
+    /// its own ProfileEvents / `reader_executor_log` row in the destructor — its
+    /// stats are rolled into the parent via `mergeTransientStats`, so they would
+    /// otherwise be double-counted.
+    bool is_transient = false;
+    /// Serializes `mergeTransientStats`: concurrent `readBigAt` calls roll their
+    /// transients' stats into this one parent.
+    std::mutex transient_stats_mutex;
+
     /// Drop `pre_acquired_slot` when it was reserved for an object other than
     /// `target_path`. Must run before a `readFromSource` / `seek` into a
     /// different object, else the stale slot leaks while `readFromSource`'s
@@ -395,6 +411,37 @@ private:
         size_t prefetch_issued_cache_bytes = 0;
         size_t prefetch_wasted_source_bytes = 0;
         size_t prefetch_wasted_cache_bytes = 0;
+
+        /// Roll a transient `readBigAt` executor's stats into the parent, so the
+        /// parent's `reader_executor_log` row and ProfileEvents account for
+        /// random-access (Parquet/ORC) reads instead of leaving them invisible.
+        Stats & operator+=(const Stats & o)
+        {
+            bytes_from_page_cache += o.bytes_from_page_cache;
+            bytes_from_filesystem_cache += o.bytes_from_filesystem_cache;
+            bytes_from_source += o.bytes_from_source;
+            bytes_pushed_to_cache_sync += o.bytes_pushed_to_cache_sync;
+            bytes_pushed_to_cache_async += o.bytes_pushed_to_cache_async;
+            cache_get_requests += o.cache_get_requests;
+            cache_populate_requests += o.cache_populate_requests;
+            source_requests += o.source_requests;
+            cache_get_us += o.cache_get_us;
+            cache_populate_us += o.cache_populate_us;
+            source_read_us += o.source_read_us;
+            decrypt_us += o.decrypt_us;
+            prefetch_wait_us += o.prefetch_wait_us;
+            sync_read_us += o.sync_read_us;
+            prefetch_hits += o.prefetch_hits;
+            prefetch_cancelled += o.prefetch_cancelled;
+            prefetch_pool_full += o.prefetch_pool_full;
+            prefetch_discarded_running += o.prefetch_discarded_running;
+            prefetch_discard_wait_us += o.prefetch_discard_wait_us;
+            prefetch_issued_source_bytes += o.prefetch_issued_source_bytes;
+            prefetch_issued_cache_bytes += o.prefetch_issued_cache_bytes;
+            prefetch_wasted_source_bytes += o.prefetch_wasted_source_bytes;
+            prefetch_wasted_cache_bytes += o.prefetch_wasted_cache_bytes;
+            return *this;
+        }
     };
     /// `mutable` so `const` read helpers can accumulate timings. Stats are
     /// observability, not state; worker/foreground writes are serialized by the

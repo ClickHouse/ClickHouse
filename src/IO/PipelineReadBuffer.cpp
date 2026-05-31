@@ -2,6 +2,7 @@
 #include <IO/ReaderExecutor.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <cstring>
 
 namespace DB
@@ -174,6 +175,11 @@ size_t PipelineReadBuffer::readBigAt(
     /// each other or with the main reader. Reusing the existing pipeline avoids
     /// duplicating the cache-walk + source-read logic.
     auto sub = executor->makeTransientForReadAt(offset, want);
+    /// Roll the transient's I/O stats into the parent on every exit path so the
+    /// random-access read shows up in the parent's reader_executor_log row /
+    /// ProfileEvents (the transient does not emit its own). Runs before `sub` is
+    /// destroyed (reverse declaration order).
+    SCOPE_EXIT_SAFE(executor->mergeTransientStats(*sub));
 
     size_t total_copied = 0;
     while (total_copied < want)

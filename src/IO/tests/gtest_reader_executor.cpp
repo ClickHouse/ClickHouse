@@ -967,6 +967,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBufferSlotAcquired;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
     extern const Event ReaderExecutorBytesPushedToCacheAsync;
+    extern const Event ReaderExecutorBytesFromSource;
 }
 
 namespace CurrentMetrics
@@ -1882,6 +1883,47 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
     EXPECT_EQ(*log.read_until[0], s0) << "o0 connection bounded to its own end, not past it to the extent end";
     ASSERT_TRUE(log.read_until[1].has_value());
     EXPECT_EQ(*log.read_until[1], want - (s0 - offset)) << "o1 connection bounded to the extent end (object-local)";
+}
+
+TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
+{
+    /// A `readBigAt` transient must not emit its own ProfileEvents /
+    /// reader_executor_log row (that would double-count); instead its stats roll
+    /// up to the parent via mergeTransientStats, so random-access reads are not
+    /// invisible in the parent's observability.
+    TestThreadGroup tg;
+    String content(4000, 'B');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 4000);
+
+    auto parent = std::make_unique<ReaderExecutor>(
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{},
+        /*window_size=*/1000, /*min_bytes_for_seek=*/0);
+
+    {
+        auto transient = parent->makeTransientForReadAt(0, /*read_size=*/4000);
+        while (true)
+        {
+            auto rope = transient->readNextWindow();
+            if (rope.empty())
+                break;
+        }
+        const size_t transient_src = transient->getSourceRequestsCount();
+        EXPECT_GT(transient_src, 0u) << "the transient performed source reads";
+        EXPECT_EQ(parent->getSourceRequestsCount(), 0u) << "parent has not read directly";
+        parent->mergeTransientStats(*transient);
+        EXPECT_EQ(parent->getSourceRequestsCount(), transient_src)
+            << "the transient's source reads roll up to the parent";
+        /// `transient` is destroyed here.
+    }
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0)
+        << "a transient must not emit its own ProfileEvents (would double-count)";
+
+    parent.reset();   /// parent destructor emits the rolled-up stats
+    EXPECT_GT(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0u)
+        << "the parent emits the rolled-up source bytes";
 }
 
 TEST(SourceBufferLimit, MoveAssignReleasesPreviousSlot)
