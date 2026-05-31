@@ -1092,9 +1092,20 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
     if (src_distributed.remote_table_function_ptr)
     {
-        const TableFunctionPtr src_table_function =
-            TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
-        if (const ASTSelectWithUnionQuery * select_query = src_table_function->getSelectQueryForDistributedRewrite())
+        const ASTSelectWithUnionQuery * select_query = nullptr;
+
+        const auto * table_function_ast = src_distributed.remote_table_function_ptr->as<const ASTFunction>();
+        TableFunctionPtr src_table_function;
+        if (table_function_ast)
+            src_table_function = TableFunctionFactory::instance().tryGet(table_function_ast->name, local_context);
+
+        if (src_table_function && src_table_function->supportsInitiatorSideDistributedRewrite())
+        {
+            src_table_function->parseArguments(src_distributed.remote_table_function_ptr, local_context);
+            select_query = src_table_function->getSelectQueryForDistributedRewrite();
+        }
+
+        if (select_query)
         {
             new_query->setOrReplace(new_query->select, select_query->clone());
         }

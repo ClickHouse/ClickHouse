@@ -62,6 +62,9 @@ public:
     /// Return a query represented by a table function when it can be used directly in distributed rewrites.
     virtual const ASTSelectWithUnionQuery * getSelectQueryForDistributedRewrite() const { return nullptr; }
 
+    /// Returns true if this table function can be parsed on the initiator to check distributed rewrites.
+    virtual bool supportsInitiatorSideDistributedRewrite() const { return true; }
+
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail
