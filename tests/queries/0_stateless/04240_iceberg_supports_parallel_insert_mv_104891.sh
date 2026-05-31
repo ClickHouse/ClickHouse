@@ -6,11 +6,12 @@
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/104891
 # (dependent-sink path).
 #
-# Companion to 04238: when an INSERT lands on a non-datalake source table that
-# has a `MATERIALIZED VIEW` whose target is a freshly attached data lake table
-# with uninitialized `current_metadata`, the dependency builder hits
-# `StorageObjectStorage::supportsParallelInsert` on the target before any
-# call site refreshes the data lake metadata.
+# Companion to `04230_iceberg_optimize_metadata_not_initialized_104711` (the
+# parent regression test for ClickHouse#104711). When an INSERT lands on a
+# non-datalake source table that has a `MATERIALIZED VIEW` whose target is a
+# freshly attached data lake table with uninitialized `current_metadata`, the
+# dependency builder hits `StorageObjectStorage::supportsParallelInsert` on the
+# target before any call site refreshes the data lake metadata.
 #
 # Direct `INSERT INTO <datalake>` is gated by
 # `InterpreterInsertQuery::execute` calling
