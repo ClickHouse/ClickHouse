@@ -38,6 +38,11 @@ private:
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns columns_for_aggregator;
     bool no_more_keys = false;
+    /// Whether at least one surviving row was ever observed by `execute`.
+    /// `finalize` consults this to distinguish "no rows remain for this rule
+    /// on this part" from "watermark was never calculated" — see issue
+    /// #105647 for the empty-part-loops-forever case.
+    bool any_surviving_row_seen = false;
 };
 
 }

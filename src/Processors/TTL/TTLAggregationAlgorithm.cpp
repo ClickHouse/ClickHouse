@@ -183,6 +183,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
     auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
     for (size_t i = 0; i < block.rows(); ++i)
     {
+        any_surviving_row_seen = true;
         bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
         if (where_filter_passed)
             new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
@@ -277,15 +278,51 @@ void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) con
     /// `new_ttl_info.max` so the persisted state reflects the actual rows
     /// surviving in the merged part.
     ///
-    /// When the merge processed no surviving rows touched by this rule
-    /// (`new_ttl_info.max == 0`), persist `old_ttl_info` so the per-part
-    /// watermark does not regress to zero.
+    /// Three cases for what to persist:
+    ///
+    ///  (1) `new_ttl_info.max != 0` — at least one surviving row contributed
+    ///      a fresh watermark. Persist `new_ttl_info`, computing `finished`
+    ///      from the watermark.
+    ///
+    ///  (2) `new_ttl_info.max == 0` and `execute` observed no surviving rows
+    ///      at all (`!any_surviving_row_seen`, e.g., a sibling `TTL ... DELETE`
+    ///      removed every row while `remove_empty_parts = 0` keeps the empty
+    ///      part around, or `execute` was only ever called with empty
+    ///      blocks). The `GROUP BY` rule has no more inputs on this part, so
+    ///      persist a finished zero entry — otherwise the old non-finished,
+    ///      still-expired entry would survive and `TTLPartDropMergeSelector`
+    ///      would re-pick the empty part on every scheduler tick (also issue
+    ///      #105647). We track this via `any_surviving_row_seen` rather than
+    ///      `data_part->rows_count` because `rows_count` is set by
+    ///      `MergedBlockOutputStream::finalizePart` AFTER the TTL pipeline
+    ///      runs, so it is still zero at this point.
+    ///
+    ///  (3) `new_ttl_info.max == 0` but `any_surviving_row_seen` is true —
+    ///      rows survived but none updated the watermark (e.g., the TTL
+    ///      expression evaluated to null/0 for every surviving row, or the
+    ///      `WHERE` filter rejected all of them in the recalc loop). Fall
+    ///      back to `old_ttl_info` to preserve the per-part watermark across
+    ///      the merge.
     TTLInfo info_to_write = new_ttl_info;
     info_to_write.ttl_finished = isTTLExpired(info_to_write.max);
 
-    const TTLInfo & to_persist = info_to_write.max != 0 ? info_to_write : old_ttl_info;
-    data_part->ttl_infos.group_by_ttl[description.result_column] = to_persist;
-    data_part->ttl_infos.updatePartMinMaxTTL(to_persist.min, to_persist.max);
+    if (info_to_write.max != 0)
+    {
+        data_part->ttl_infos.group_by_ttl[description.result_column] = info_to_write;
+        data_part->ttl_infos.updatePartMinMaxTTL(info_to_write.min, info_to_write.max);
+        return;
+    }
+
+    if (!any_surviving_row_seen)
+    {
+        info_to_write.ttl_finished = true;
+        data_part->ttl_infos.group_by_ttl[description.result_column] = info_to_write;
+        data_part->ttl_infos.updatePartMinMaxTTL(info_to_write.min, info_to_write.max);
+        return;
+    }
+
+    data_part->ttl_infos.group_by_ttl[description.result_column] = old_ttl_info;
+    data_part->ttl_infos.updatePartMinMaxTTL(old_ttl_info.min, old_ttl_info.max);
 }
 
 }
