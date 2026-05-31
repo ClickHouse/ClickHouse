@@ -658,7 +658,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 #endif
     }
 
-    EvictionCandidates downgrade_candidates;
+    EvictionCandidates downgrade_candidates(getOnEvictCallback());
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 
