@@ -715,6 +715,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
                     connections->dumpAddresses(),
                     packet.exception->displayText());
 
+                /// The shard is skipped: the server has already terminated the query with this
+                /// exception and will not send `EndOfStream`, so mark the executor finished to
+                /// signal end of data and avoid waiting for more packets.
+                finished = true;
                 return ReadResult(Block{});
             }
 
@@ -884,6 +888,8 @@ void RemoteQueryExecutor::finish()
                         connections->dumpAddresses(),
                         packet.exception->displayText());
 
+                    /// Stop draining: the server terminated the query with this exception.
+                    finished = true;
                     break;
                 }
 
