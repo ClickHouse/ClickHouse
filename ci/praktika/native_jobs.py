@@ -371,16 +371,140 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
 
     def _check_yaml_up_to_date():
+        # Workflow YAML files under .github/workflows are generated from the
+        # Python definitions in ci/workflows by `praktika yaml`. They must never
+        # be edited by hand. Here we regenerate them and check whether the result
+        # differs from what is committed. A difference means the source definitions
+        # (or the generator itself) changed without the generated YAML being
+        # updated - or the YAML was edited manually.
+        #
+        # When that happens on a pull request, the robot commits the regenerated
+        # files and pushes them back to the PR head branch. That push starts a fresh
+        # CI run which picks up the new workflows, so the current (now stale) run is
+        # stopped by reporting this check as failed. This works for internal PRs and
+        # for fork PRs whose author allowed edits from maintainers; when the push is
+        # not permitted we fall back to failing the check and asking the contributor
+        # to regenerate and commit the files themselves.
         print("Check workflows are up to date")
-        commands = [
-            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
-        ]
+        stop_watch = Utils.Stopwatch()
 
-        return Result.from_commands_run(
-            name="Check Workflows",
-            command=commands,
-            fail_fast=True,
+        Shell.check(
+            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
+            verbose=True,
+            strict=True,
+        )
+
+        changed = Shell.get_output(
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            verbose=True,
+        ).strip()
+
+        def _result(status, info):
+            return Result(
+                name="Check Workflows",
+                status=status,
+                start_time=stop_watch.start_time,
+                duration=stop_watch.duration,
+                info=info,
+            )
+
+        if not changed:
+            return _result(Result.Status.OK, "")
+
+        print("Workflows are outdated. Changed files:")
+        print(changed)
+
+        info = Info()
+        is_pr = info.pr_number and info.pr_number > 0
+        is_fork = info.repo_name != info.fork_name
+        branch = info.git_branch
+
+        if not (is_pr and branch):
+            # Not a pull request - nothing to push back to.
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows are outdated - regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), "
+                f"commit and push the following files:\n{changed}",
+            )
+
+        if is_fork:
+            # We can only push to a fork's branch if its author allowed edits from
+            # maintainers; otherwise the contributor has to regenerate themselves.
+            maintainer_can_modify = (
+                Shell.get_output(
+                    f"gh pr view {info.pr_number} --json maintainerCanModify --jq .maintainerCanModify",
+                    verbose=True,
+                ).strip()
+                == "true"
+            )
+            if not maintainer_can_modify:
+                return _result(
+                    Result.Status.FAIL,
+                    f"Workflows are outdated and the fork does not allow edits from maintainers - "
+                    f"regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), commit and push "
+                    f"the following files:\n{changed}",
+                )
+
+        head_sha = info.sha
+        # The head branch lives in the head repository, which is the fork for fork PRs
+        # and the base repository (== fork_name here) for internal PRs.
+        repo = info.fork_name
+        temp_index = f"{Settings.TEMP_DIR}/regenerate_workflows.index"
+        commit_message = "Automatically regenerate workflow YAML files"
+
+        # Assemble the fixup commit on top of the real PR head SHA (env.SHA) through a
+        # temporary index, so neither HEAD nor the working tree of this job is disturbed
+        # and the ephemeral PR merge commit (the checked-out ref by default) is never
+        # pushed to the branch. Only the regenerated workflow files are taken from the
+        # working tree; everything else comes from the head tree.
+        build_commit = [
+            "git config user.name 'robot-clickhouse'",
+            "git config user.email 'robot-clickhouse@users.noreply.github.com'",
+            f"git fetch --no-recurse-submodules origin {head_sha} ||:",
+            f"rm -f {temp_index}",
+            f"GIT_INDEX_FILE={temp_index} git read-tree {head_sha}",
+            f"GIT_INDEX_FILE={temp_index} git add -A {Settings.WORKFLOW_PATH_PREFIX}",
+        ]
+        new_commit = ""
+        if Shell.check(" && ".join(build_commit), verbose=True):
+            new_tree = Shell.get_output(
+                f"GIT_INDEX_FILE={temp_index} git write-tree", verbose=True
+            ).strip()
+            if new_tree:
+                new_commit = Shell.get_output(
+                    f"git commit-tree {new_tree} -p {head_sha} -m '{commit_message}'",
+                    verbose=True,
+                ).strip()
+        Shell.check(f"rm -f {temp_index}", verbose=True)
+
+        pushed = False
+        if new_commit:
+            # Push with the GitHub App token rather than the default GITHUB_TOKEN that
+            # the checkout action persists: only a push authenticated as the App (or a
+            # PAT) re-triggers workflows, so the regenerated YAML is actually picked up
+            # by a fresh CI run. The token is read from the gh auth session and kept out
+            # of the logs (verbose=False), and the inherited http extraheader is cleared
+            # so the tokenized URL is the one that authenticates.
+            push_cmd = (
+                'token="$(gh auth token)" && '
+                "git -c http.https://github.com/.extraheader= push "
+                f'"https://x-access-token:${{token}}@github.com/{repo}.git" '
+                f'"{new_commit}:refs/heads/{branch}"'
+            )
+            pushed = Shell.check(push_cmd, verbose=False)
+
+        if pushed:
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows were outdated. Regenerated them and pushed a commit to branch "
+                f"'{branch}'. A new CI run will start on that commit. Changed files:\n{changed}",
+            )
+
+        return _result(
+            Result.Status.FAIL,
+            f"Workflows are outdated and could not be pushed automatically to branch "
+            f"'{branch}' - regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), "
+            f"commit and push the following files:\n{changed}",
         )
 
     def _check_secrets(secrets):
@@ -529,7 +653,10 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.OK:
-            print("ERROR: yaml files are outdated - regenerate, commit and push")
+            print(
+                "ERROR: yaml files are outdated - the robot regenerates and pushes "
+                "them on internal PRs; on fork PRs regenerate, commit and push manually"
+            )
         results.append(result_)
 
     # TODO: commented out to decrease risk of throttling:
