@@ -80,13 +80,13 @@ DROP TABLE tab;
 -- via CODEC(ByteStreamSplit) on a FixedString(3) — W=3.
 
 CREATE TABLE tab (v FixedString(3) CODEC(ByteStreamSplit(3), LZ4)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO tab SELECT reinterpretAsFixedString(toUInt32(number)) FROM numbers(101); -- 101×3 = 303 bytes (odd)
+INSERT INTO tab SELECT toFixedString(leftPad(toString(number), 3, '0'), 3) FROM numbers(101); -- 101×3 = 303 bytes (odd)
 SELECT count() FROM tab;
 DROP TABLE tab;
 
 -- Blob of mixed sizes that produces bytes_to_skip > 0
 CREATE TABLE tab (v FixedString(5) CODEC(ByteStreamSplit(5), LZ4)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO tab SELECT reinterpretAsFixedString(toUInt64(number)) FROM numbers(7); -- 7×5 = 35 bytes
+INSERT INTO tab SELECT toFixedString(leftPad(toString(number), 5, '0'), 5) FROM numbers(7); -- 7×5 = 35 bytes
 SELECT count() FROM tab;
 DROP TABLE tab;
 
