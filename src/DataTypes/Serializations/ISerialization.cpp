@@ -775,7 +775,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
-    assert(prefix_len <= path.size());
+    chassert(prefix_len <= path.size());
     if (prefix_len == 0)
         return {};
 

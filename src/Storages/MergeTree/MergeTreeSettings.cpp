@@ -1539,6 +1539,10 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
+    DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup, false, R"(
+    If enabled all the replicas try to fetch part in memory data (like primary
+    key, partition info and so on) on startup from other replicas where it already exists.
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \

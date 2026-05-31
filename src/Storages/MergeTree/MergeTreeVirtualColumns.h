@@ -34,6 +34,12 @@ struct PartDataVersionColumn
     static const DataTypePtr type;
 };
 
+struct PartitionIdColumn
+{
+    static const String name;
+    static const DataTypePtr type;
+};
+
 /// Whether a column is a persistent virtual column that is physically stored
 /// inside data parts (as opposed to computed on the fly).  These columns are
 /// NOT managed by the column ID mapping and should be passed through
