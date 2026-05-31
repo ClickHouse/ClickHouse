@@ -3,13 +3,8 @@
 
 #if USE_AVRO
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/logger_useful.h>
@@ -17,7 +12,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <Common/quoteString.h>
 #include <fmt/ranges.h>
@@ -141,7 +135,6 @@ ManifestFilesPruner::ManifestFilesPruner(
         ActionsDAGWithInversionPushDown inverted_dag(transformed_dag->getOutputs().front(), context);
         min_max_key_conditions.emplace(used_column_id, KeyCondition(inverted_dag, context, {name_and_type->name}, expression));
     }
-
 }
 
 PruningReturnStatus ManifestFilesPruner::canBePruned(
