@@ -55,6 +55,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"allow_experimental_part_aggregation_cache", false, false, "New setting to enable experimental per-part aggregation cache for GROUP BY."},
+            {"enable_reads_from_part_aggregation_cache", true, true, "New setting."},
+            {"enable_writes_to_part_aggregation_cache", true, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -112,9 +115,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
             {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
             {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
-            {"allow_experimental_part_aggregation_cache", false, false, "New setting to enable experimental per-part aggregation cache for GROUP BY."},
-            {"enable_reads_from_part_aggregation_cache", true, true, "New setting."},
-            {"enable_writes_to_part_aggregation_cache", true, true, "New setting."},
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
