@@ -101,6 +101,16 @@ public:
     /// ClickHouse is built without SSL.
     void initDecryption();
 
+    /// Reads carry encryption layers whose payload must be decrypted on consume
+    /// (by PipelineReadBuffer via decryptInPlace). False in builds without SSL.
+    bool needsDecryption() const { return data_start_offset > 0; }
+
+    /// Decrypt `size` bytes in place at logical file offset `logical_offset` using
+    /// persistent per-layer CTR encryptors (built lazily from the parsed headers).
+    /// CTR is position-addressable, so the consumer decrypts only the chunk it
+    /// serves. Single-threaded per executor (no-op without SSL / no layers).
+    void decryptInPlace(char * data, size_t size, size_t logical_offset);
+
     size_t getPosition() const { return position; }
 
     size_t getSourceRequestsCount() const { return stats.source_requests; }
@@ -200,17 +210,15 @@ private:
     size_t effectiveWindowSize() const;
 
     /// Effective per-block allocation size: the configured `block_size` at
-    /// normal memory, shrinks under pressure (see `MemoryPressureMonitor`). Used for both the
-    /// `allocateBlocks` source-read tile and `decryptRope`'s output blocks so
-    /// the in-flight allocation per call falls when free memory does.
+    /// normal memory, shrinks under pressure (see `MemoryPressureMonitor`). Sizes
+    /// the `allocateBlocks` source-read tile so the in-flight allocation per call
+    /// falls when free memory does.
     size_t effectiveBlockSize() const;
 
-    /// Decrypt rope data; returns the input unchanged when no decryption layers
-    /// are configured (which is always the case in builds without SSL).
-    /// `const` because decryption_layers/decryption_headers are immutable after
-    /// `initDecryption`; thread-safe for parallel calls (each creates its own
-    /// Encryptor instance).
-    Rope decryptRope(Rope rope, size_t logical_offset) const;
+    /// readPhysicalWindow + remap the window's offsets to logical (subtract the
+    /// encryption header). Payload decryption is deferred to the consumer
+    /// (PipelineReadBuffer), so unconsumed read-ahead is never decrypted.
+    Rope readWindowLogical(ByteRange physical_window, bool from_prefetch);
 
     std::shared_ptr<ISourceReader> source;
     StoredObjects stored_objects;  /// retained for makeTransientForReadAt
@@ -301,6 +309,10 @@ private:
     VectorWithMemoryTracking<DecryptionLayer> decryption_layers;
     VectorWithMemoryTracking<FileEncryption::Header> decryption_headers;
     bool decryption_initialized = false;
+    /// Persistent per-layer CTR encryptors, built lazily by decryptInPlace from
+    /// the parsed headers and reused across served chunks. Single-threaded per
+    /// executor (consumer's nextImpl, or one transient per readBigAt).
+    VectorWithMemoryTracking<FileEncryption::Encryptor> payload_encryptors;
 #endif
     size_t data_start_offset = 0;  /// N * Header::kSize (0 when no encryption)
 
@@ -342,7 +354,7 @@ private:
         /// bytes persist in cache for a later read.
         size_t prefetch_wasted_bytes = 0;
     };
-    /// `mutable` so the `const` `decryptRope` can accumulate timings. Stats are
+    /// `mutable` so `const` read helpers can accumulate timings. Stats are
     /// observability, not state; worker/foreground writes are serialized by the
     /// prefetch future's `get()` happens-before edge.
     mutable Stats stats;

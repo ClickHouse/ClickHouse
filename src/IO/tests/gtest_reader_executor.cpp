@@ -602,14 +602,37 @@ namespace
         file_bytes += aesCtrEncrypt(key, iv, plaintext);
         return file_bytes;
     }
+
+    /// Read the whole file through the executor and decrypt each served node via
+    /// decryptInPlace - mirrors how PipelineReadBuffer consumes encrypted reads
+    /// now that the executor returns ciphertext (logical offsets) and decryption
+    /// is deferred to the consumer.
+    String readAllDecrypted(ReaderExecutor & executor)
+    {
+        String result;
+        while (true)
+        {
+            auto w = executor.readNextWindow();
+            if (w.empty())
+                break;
+            for (const auto & n : w.getNodes())
+            {
+                String chunk(n.data(), n.size);
+                if (executor.needsDecryption())
+                    executor.decryptInPlace(chunk.data(), chunk.size(), n.logical_offset);
+                result += chunk;
+            }
+        }
+        return result;
+    }
 }
 
-TEST(ReaderExecutor, DecryptRopeStreamsBlockByBlock)
+TEST(ReaderExecutor, DecryptInPlaceAcrossMultipleNodes)
 {
-    /// End-to-end exercise of the block-by-block iteration in `decryptRope`.
-    /// Plaintext is intentionally larger than ROPE_BLOCK_SIZE so the
-    /// function must allocate and decrypt multiple output blocks. A
-    /// non-multiple total ensures the final partial block is handled.
+    /// End-to-end exercise of `decryptInPlace` over a multi-node window: the
+    /// executor returns ciphertext (logical offsets) and the consumer decrypts
+    /// each served node. Plaintext is larger than ROPE_BLOCK_SIZE (and a
+    /// non-multiple total) so several nodes, including a partial tail, are decrypted.
 
     String key(16, 'k');
     FileEncryption::InitVector iv(UInt128{0x0123456789abcdefULL});
@@ -627,8 +650,8 @@ TEST(ReaderExecutor, DecryptRopeStreamsBlockByBlock)
     objects.emplace_back("obj", "", file_bytes.size());
 
     /// Window larger than the plaintext so the entire file is read in one
-    /// readNextWindow call — decryptRope sees a rope of >3 MiB and must
-    /// produce 4 output blocks (3 full + 1 partial).
+    /// readNextWindow call — the >3 MiB ciphertext is served as several nodes,
+    /// each decrypted by decryptInPlace (3 full blocks + 1 partial).
     ReaderExecutor executor(source, objects, {},
         /*window_size=*/plaintext_size + ReaderExecutor::ROPE_BLOCK_SIZE);
     executor.addDecryptionLayer(
@@ -640,15 +663,7 @@ TEST(ReaderExecutor, DecryptRopeStreamsBlockByBlock)
         });
     executor.initDecryption();
 
-    String result;
-    while (true)
-    {
-        auto w = executor.readNextWindow();
-        if (w.empty())
-            break;
-        for (const auto & n : w.getNodes())
-            result.append(n.data(), n.size);
-    }
+    String result = readAllDecrypted(executor);
 
     ASSERT_EQ(result.size(), plaintext.size());
     EXPECT_EQ(result, plaintext);
@@ -692,7 +707,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesBufferLimitSlot)
     EXPECT_EQ(buffer_limit->getActive().size(), 0u);
 }
 
-TEST(ReaderExecutor, DecryptRopeRoundtripsSmallPayload)
+TEST(ReaderExecutor, DecryptInPlaceSmallPayload)
 {
     /// Same path but payload smaller than ROPE_BLOCK_SIZE — exercises the
     /// single-iteration loop.
@@ -712,14 +727,11 @@ TEST(ReaderExecutor, DecryptRopeRoundtripsSmallPayload)
         [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
-    auto w = executor.readNextWindow();
-    String result;
-    for (const auto & n : w.getNodes())
-        result.append(n.data(), n.size);
+    String result = readAllDecrypted(executor);
     EXPECT_EQ(result, plaintext);
 }
 
-TEST(ReaderExecutor, DecryptRopeMultiLayer)
+TEST(ReaderExecutor, DecryptInPlaceMultiLayer)
 {
     /// Two encryption layers stacked, in the layout that a legacy
     /// `DiskEncrypted`-over-`DiskEncrypted` configuration actually
@@ -730,7 +742,7 @@ TEST(ReaderExecutor, DecryptRopeMultiLayer)
     /// The outer encryption keystream covers the inner header AND payload
     /// — i.e. outer's keystream offset for user-byte P is `P + 64`, while
     /// inner's is `P`. `initDecryption` must peel the outer layer off the
-    /// inner header bytes before parsing them; `decryptRope` must apply
+    /// inner header bytes before parsing them; `decryptInPlace` must apply
     /// per-layer keystream offsets to recover the plaintext.
 
     String key_inner(16, 'i');
@@ -801,15 +813,7 @@ TEST(ReaderExecutor, DecryptRopeMultiLayer)
         [&](UInt128, const String &) { return key_inner; });
     executor.initDecryption();
 
-    String result;
-    while (true)
-    {
-        auto w = executor.readNextWindow();
-        if (w.empty())
-            break;
-        for (const auto & n : w.getNodes())
-            result.append(n.data(), n.size);
-    }
+    String result = readAllDecrypted(executor);
     ASSERT_EQ(result.size(), plaintext.size());
     EXPECT_EQ(result, plaintext);
 }
@@ -2524,12 +2528,13 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     EXPECT_EQ(tracker->log[1].range_in_file.size, 200u);
 }
 
-TEST(ReaderExecutor, FallbackSlotAcquireIsCounted)
+TEST(ReaderExecutor, MultiObjectWindowAcquiresOneSlotThenFallsBack)
 {
-    /// A gather window that spans two objects pre-acquires a slot for the first
-    /// object (counted in ensurePreAcquiredSlot) and then acquires a second
-    /// slot for the next object via the fallback tryAcquire in readFromSource.
-    /// Both acquisitions must be reflected in ReaderExecutorBufferSlotAcquired.
+    /// A gather window that spans two objects pre-acquires exactly one slot - for
+    /// the object under the window start ("a"), which becomes a live connection.
+    /// `readFromSource` never acquires a slot itself, so the second object ("b")
+    /// takes the non-live one-shot path. The next window (starting in "b") would
+    /// pre-acquire its own slot for "b".
     TestThreadGroup tg;
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"a", String(500, 'A')}, {"b", String(500, 'B')}});
@@ -2541,12 +2546,14 @@ TEST(ReaderExecutor, FallbackSlotAcquireIsCounted)
     ReaderExecutor executor(source, objects, {}, /*window_size=*/1000, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
-    /// One window [0, 1000) spans both objects: piece "a" consumes the
-    /// pre-acquired slot, piece "b" goes through the fallback acquisition.
+    /// One window [0, 1000) spans both objects: "a" consumes the pre-acquired slot
+    /// (live), "b" falls back to a non-live one-shot read.
     auto rope = executor.readNextWindow();
     ASSERT_EQ(rope.range().size, 1000u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBufferSlotAcquired), 2)
-        << "both the pre-acquired and the fallback slot acquisitions must be counted";
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBufferSlotAcquired), 1)
+        << "only the window-start object pre-acquires a slot; readFromSource never acquires one";
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1) << "object \"a\" opened a live connection";
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 1) << "object \"b\" took the non-live path";
 }
 
 TEST(ReaderExecutor, PreAcquiredSlotMatchesObjectAtCursor)
@@ -2999,4 +3006,3 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsConnection)
     EXPECT_EQ(executor.getSourceRequestsCount(), 1u);
     EXPECT_EQ(profile_events[ProfileEvents::LiveSourceBufferCreated].load() - created_before, 1);
 }
-

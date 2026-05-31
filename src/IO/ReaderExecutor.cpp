@@ -455,10 +455,10 @@ void ReaderExecutor::maybeTriggerPrefetch()
     prefetch_submit_time = std::chrono::system_clock::now();
     prefetch_execution_watch.reset();
 
-    auto handle = prefetch_pool->submit([this, next_physical_window, next_logical_offset]()
+    auto handle = prefetch_pool->submit([this, next_physical_window]()
     {
         Stopwatch watch;
-        auto rope = decryptRope(readPhysicalWindow(next_physical_window, /*from_prefetch=*/true), next_logical_offset);
+        auto rope = readWindowLogical(next_physical_window, /*from_prefetch=*/true);
         watch.stop();
         prefetch_execution_watch = watch;
         return rope;
@@ -603,7 +603,7 @@ void ReaderExecutor::initDecryption()
     /// Stacked encryption layout: only `h0` is plaintext; every later header
     /// is wrapped by all layers above it (`[h0, enc0(h1), enc0(enc1(h2)), ...]`).
     /// Parsing `hi` peels layers `0..i-1` at their current keystream offsets —
-    /// same per-layer stepping as the payload path; see `decryptRope`.
+    /// same per-layer stepping as the payload path; see `decryptInPlace`.
     VectorWithMemoryTracking<FileEncryption::Encryptor> initialized_encryptors;
     initialized_encryptors.reserve(decryption_layers.size());
     size_t offset = 0;
@@ -649,75 +649,51 @@ void ReaderExecutor::initDecryption()
 #endif
 }
 
-Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offset) const
+Rope ReaderExecutor::readWindowLogical(ByteRange physical_window, bool from_prefetch)
+{
+    Rope rope = readPhysicalWindow(physical_window, from_prefetch);
+    /// Physical offsets include the encryption header prefix; the consumer works
+    /// in logical (post-header) offsets. Shift once here. No-op when not encrypted.
+    if (data_start_offset)
+        rope.shift(-static_cast<ssize_t>(data_start_offset));
+    return rope;
+}
+
+void ReaderExecutor::decryptInPlace(
+    [[maybe_unused]] char * data, [[maybe_unused]] size_t size, [[maybe_unused]] size_t logical_offset)
 {
 #if USE_SSL
-    if (decryption_layers.empty())
-        return rope;
-
-    const size_t total = rope.totalBytes();
-    if (total == 0)
-        return {};
+    if (decryption_layers.empty() || size == 0)
+        return;
 
     StopwatchAccumulator decrypt_scope(stats.decrypt_us);
 
-    /// Stream block-by-block: decrypting the whole rope at once would hold
-    /// every output buffer live simultaneously, doubling peak memory. CTR
-    /// mode is position-addressable, so per-block `setOffset` gives the same
-    /// keystream as a single-shot decrypt.
-    ///
-    /// Encryptors are constructed once and reused across blocks.
-    VectorWithMemoryTracking<FileEncryption::Encryptor> encryptors;
-    encryptors.reserve(decryption_layers.size());
-    for (size_t i = 0; i < decryption_layers.size(); ++i)
-        encryptors.emplace_back(
-            decryption_headers[i].algorithm,
-            decryption_layers[i].key,
-            decryption_headers[i].init_vector);
-
-    Rope result;
-    const size_t block = effectiveBlockSize();
-    size_t pos = 0;
-    while (pos < total)
+    /// Build the per-layer CTR encryptors once and reuse them across served
+    /// chunks. CTR is position-addressable, so each call just re-seeks the
+    /// keystream. (Lazy: also covers the transient made by makeTransientForReadAt,
+    /// which copies the parsed headers but not the encryptors.)
+    if (payload_encryptors.empty())
     {
-        const size_t chunk = std::min(block, total - pos);
-        auto buf = std::make_shared<OwnedRopeBuffer>(chunk);
-
-        /// Drain by peek/advance from the rope's front: the cursor walks the
-        /// encrypted bytes in order, so the physical-vs-logical header offset
-        /// (`data_start_offset`) never needs to be reasoned about here.
-        size_t out_pos = 0;
-        while (out_pos < chunk)
-        {
-            auto span = rope.peek();
-            chassert(span.size > 0);
-            const size_t take = std::min(span.size, chunk - out_pos);
-            std::memcpy(buf->data() + out_pos, span.data, take);
-            rope.advance(take);
-            out_pos += take;
-        }
-
-        /// Per-layer keystream offset: with `N` layers (0 = outermost,
-        /// N-1 = innermost), layer `i`'s stream contains the inner layers'
-        /// headers ahead of the payload, so its CTR offset for `user_offset`
-        /// is `user_offset + (N - 1 - i) * Header::kSize`. The innermost
-        /// layer uses `user_offset` directly. See
-        /// `ReadBufferFromEncryptedFile::nextImpl` for the same formula
-        /// expressed across nested buffers.
-        for (size_t i = 0; i < encryptors.size(); ++i)
-        {
-            const size_t layer_keystream_offset = logical_offset + pos
-                + (encryptors.size() - 1 - i) * FileEncryption::Header::kSize;
-            encryptors[i].setOffset(layer_keystream_offset);
-            encryptors[i].decrypt(buf->data(), chunk, buf->data());
-        }
-
-        result.append(RopeNode{buf, 0, chunk, logical_offset + pos});
-        pos += chunk;
+        payload_encryptors.reserve(decryption_layers.size());
+        for (size_t i = 0; i < decryption_layers.size(); ++i)
+            payload_encryptors.emplace_back(
+                decryption_headers[i].algorithm,
+                decryption_layers[i].key,
+                decryption_headers[i].init_vector);
     }
-    return result;
-#else
-    return rope;
+
+    /// Per-layer keystream offset: with `N` layers (0 = outermost, N-1 =
+    /// innermost), layer `i`'s stream carries the inner layers' headers ahead of
+    /// the payload, so its CTR offset for `logical_offset` is
+    /// `logical_offset + (N - 1 - i) * Header::kSize`; the innermost uses
+    /// `logical_offset`. See `ReadBufferFromEncryptedFile::nextImpl`.
+    for (size_t i = 0; i < payload_encryptors.size(); ++i)
+    {
+        const size_t layer_keystream_offset = logical_offset
+            + (payload_encryptors.size() - 1 - i) * FileEncryption::Header::kSize;
+        payload_encryptors[i].setOffset(layer_keystream_offset);
+        payload_encryptors[i].decrypt(data, size, data);
+    }
 #endif
 }
 
@@ -754,7 +730,7 @@ Rope ReaderExecutor::readNextWindow()
                 : std::min(effectiveWindowSize(), logical_size - position);
             ByteRange physical_window{position + data_start_offset, win_size};
             StopwatchAccumulator sync_scope(stats.sync_read_us);
-            rope = decryptRope(readPhysicalWindow(physical_window, /*from_prefetch=*/false), position);
+            rope = readWindowLogical(physical_window, /*from_prefetch=*/false);
             HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
                 static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
         }
@@ -799,7 +775,7 @@ Rope ReaderExecutor::readNextWindow()
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
         StopwatchAccumulator sync_scope(stats.sync_read_us);
-        rope = decryptRope(readPhysicalWindow(physical_window, /*from_prefetch=*/false), position);
+        rope = readWindowLogical(physical_window, /*from_prefetch=*/false);
         HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
             static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
     }
