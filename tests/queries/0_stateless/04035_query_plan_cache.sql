@@ -61,11 +61,14 @@ WHERE event_date >= yesterday()
 ORDER BY event_time_microseconds;
 
 -- Test 4: Non-deterministic exclusion
+-- The queries reference `t_plan_cache` so they pass the single-table eligibility check
+-- inside tryBuildQueryPlanCacheKey; they should then be rejected by
+-- astContainsNonDeterministicFunctions, leaving QueryPlanCacheHits/Misses untouched.
 SYSTEM DROP QUERY PLAN CACHE;
-SELECT now() SETTINGS log_comment = 'plan_cache_test4_now' FORMAT Null;
-SELECT now() SETTINGS log_comment = 'plan_cache_test4_now' FORMAT Null;
-SELECT rand() SETTINGS log_comment = 'plan_cache_test4_rand' FORMAT Null;
-SELECT rand() SETTINGS log_comment = 'plan_cache_test4_rand' FORMAT Null;
+SELECT now() FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test4_now' FORMAT Null;
+SELECT now() FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test4_now' FORMAT Null;
+SELECT rand() FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test4_rand' FORMAT Null;
+SELECT rand() FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test4_rand' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
 SELECT 'Test 4: Non-deterministic exclusion';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
@@ -237,6 +240,39 @@ WHERE event_date >= yesterday()
   AND type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND log_comment IN ('plan_cache_test15a', 'plan_cache_test15b')
+ORDER BY event_time_microseconds;
+
+-- Test 15: Views are not eligible for the query plan cache
+SYSTEM DROP QUERY PLAN CACHE;
+DROP VIEW IF EXISTS v_plan_cache;
+CREATE VIEW v_plan_cache AS SELECT a FROM t_plan_cache;
+SELECT a FROM v_plan_cache SETTINGS log_comment = 'plan_cache_test16' FORMAT Null;
+SELECT a FROM v_plan_cache SETTINGS log_comment = 'plan_cache_test16' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 15: View exclusion';
+SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND event_time >= (SELECT ts FROM test_start)
+  AND type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment = 'plan_cache_test16'
+ORDER BY event_time_microseconds;
+DROP VIEW v_plan_cache;
+
+-- Test 16: `max_rows_to_sort` is part of the cache key (baked into `SortingStep`)
+SYSTEM DROP QUERY PLAN CACHE;
+SELECT a FROM t_plan_cache ORDER BY a SETTINGS max_rows_to_sort = 1000, log_comment = 'plan_cache_test_sort1' FORMAT Null;
+SELECT a FROM t_plan_cache ORDER BY a SETTINGS max_rows_to_sort = 2000, log_comment = 'plan_cache_test_sort2' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 16: max_rows_to_sort sensitivity';
+SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
+FROM system.query_log
+WHERE event_date >= yesterday()
+  AND event_time >= (SELECT ts FROM test_start)
+  AND type = 'QueryFinish'
+  AND current_database = currentDatabase()
+  AND log_comment IN ('plan_cache_test_sort1', 'plan_cache_test_sort2')
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_plan_cache;

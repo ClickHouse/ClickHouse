@@ -26,6 +26,9 @@ struct Settings;
 /// but the outer query context may not have the flag set.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
 
+/// Does AST contain non-deterministic functions like rand() and now()?
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
+
 /// Does AST contain subqueries (e.g. IN (SELECT ...), scalar subqueries)?
 bool astContainsSubqueries(ASTPtr ast);
 

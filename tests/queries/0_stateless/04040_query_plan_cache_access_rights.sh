@@ -4,6 +4,8 @@
 # Test: query plan cache respects access rights revocation.
 # A cached plan must not bypass checkAccess when SELECT privilege is revoked.
 
+set -eo pipefail
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh

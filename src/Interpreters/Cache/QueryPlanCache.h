@@ -10,10 +10,12 @@
 #include <base/UUID.h>
 
 #include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -47,8 +49,9 @@ struct QueryPlanCacheKey
     std::map<String, Int64> table_metadata_versions;
 
     /// StorageID of the queried table; used for access rights revalidation on cache hit.
-    /// Not part of the cache key identity (not included in hash/equality) — it is metadata
-    /// carried alongside the key for the hit path to call checkAccess.
+    /// Only its `uuid` (when present) participates in hash/equality — this distinguishes
+    /// `DROP TABLE` + `CREATE TABLE` of the same name in an Atomic database from the
+    /// original table, even when their schemas are identical.
     StorageID storage_id = StorageID::createEmpty();
 
     /// Hash of the applicable row policy expression AST. Different row policies produce
@@ -81,6 +84,11 @@ struct QueryPlanCacheEntry
     /// Row policy names applied when the plan was originally built.
     /// Persisted so that cache-hit paths can propagate them to system.query_log.
     std::set<String> used_row_policies;
+
+    /// User who inserted this entry. Stamped by `QueryPlanCache::set` so that the
+    /// eviction callback can decrement the right per-user accounting bucket.
+    /// Not part of the cache key and never serialized.
+    std::optional<UUID> inserter_user_id;
 };
 
 /// Hasher for QueryPlanCacheKey. Uses SipHash over all identifying fields.
@@ -106,17 +114,22 @@ struct QueryPlanCacheEntryWeight
 
 /// Thread-safe LRU/SLRU cache mapping QueryPlanCacheKey -> QueryPlanCacheEntry.
 /// Follows the same design pattern as QueryResultCache (both use CacheBase).
-class QueryPlanCache
+class QueryPlanCache : private CacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>
 {
+private:
+    using Base = CacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>;
+
 public:
-    using Cache = CacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>;
+    using Cache = Base;
+    using typename Base::KeyMapped;
+    using typename Base::MappedPtr;
 
     QueryPlanCache(size_t max_size_in_bytes, size_t max_entries);
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries);
 
     /// Looks up an entry. Returns nullptr on miss or version mismatch.
-    Cache::MappedPtr get(const QueryPlanCacheKey & key);
+    MappedPtr get(const QueryPlanCacheKey & key);
 
     /// Stores an entry. Takes ownership by value to allow move-construction and avoid copying
     /// the serialized_plan string (which may be several kilobytes).
@@ -132,14 +145,20 @@ public:
     size_t count() const;
 
     /// Exposes the underlying cache for system table introspection
-    std::vector<Cache::KeyMapped> dump() const;
+    std::vector<KeyMapped> dump() const;
+
+protected:
+    /// Called by CacheBase whenever an entry is removed (replacement or LRU eviction).
+    /// Used to keep `per_user_bytes` in sync without scanning the whole cache.
+    void onEntryRemoval(size_t weight_loss, const MappedPtr & mapped_ptr) override;
 
 private:
     /// Best-effort admission check against the current query's quota.
-    /// This intentionally does not maintain per-user quota state inside the cache.
+    /// O(1): reads the cached per-user byte count rather than scanning the cache.
     bool canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const;
 
-    Cache cache;
+    mutable std::mutex per_user_mutex;
+    std::unordered_map<UUID, size_t> per_user_bytes TSA_GUARDED_BY(per_user_mutex);
 };
 
 using QueryPlanCachePtr = std::shared_ptr<QueryPlanCache>;

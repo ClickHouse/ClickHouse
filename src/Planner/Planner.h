@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/Logger.h>
 
 #include <Interpreters/IInterpreter.h>
@@ -10,6 +11,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class ActionsDAG;
 class QueryNode;
@@ -69,7 +75,8 @@ public:
     ///     nodes which are not present in universalized (cached) plans.
     void setQueryPlan(QueryPlan && plan)
     {
-        chassert(!query_plan.isInitialized() && "setQueryPlan called on an already-initialized plan");
+        if (query_plan.isInitialized())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "setQueryPlan called on an already-initialized plan");
         query_plan = std::move(plan);
     }
 

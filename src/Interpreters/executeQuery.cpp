@@ -228,8 +228,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
-    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
@@ -244,6 +242,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int INCORRECT_DATA;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -1824,7 +1823,8 @@ static BlockIO executeQueryImpl(
                         try
                         {
                             /// Revalidate access rights: permissions may have been revoked after the plan
-                            /// was cached. checkAccess throws ACCESS_DENIED on failure.
+                            /// was cached. checkAccess throws ACCESS_DENIED on failure, which propagates
+                            /// to the user without falling through to normal planning.
                             checkAccessForQueryPlanCacheHit(context, query_plan_cache_key->storage_id, cached_entry->selected_columns);
 
                             auto plan = materializePlan(cached_entry->serialized_plan, context);
@@ -1832,15 +1832,15 @@ static BlockIO executeQueryImpl(
                             interpreter_with_analyzer->getPlanner().setUsedRowPolicies(cached_entry->used_row_policies);
                             query_plan_cache_hit = true;
                         }
-                        catch (...)
+                        catch (const Exception & e)
                         {
-                            /// Materialization may fail after a schema change that is not yet reflected
-                            /// in the metadata version (e.g. non-replicated MergeTree ALTER). Fall through
-                            /// to normal planning so the query never fails due to a stale cached plan.
-                            /// Access denial also falls through here — the normal planning path will
-                            /// perform its own access check and produce a proper error message.
+                            /// Only stale/corrupt cache state is silently recovered by re-planning.
+                            /// Anything else (access denial, logical error, cancellation, OOM, ...) must
+                            /// propagate so that incidents stay observable.
+                            if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
+                                throw;
                             tryLogCurrentException("QueryPlanCache",
-                                "Failed to use cached plan, falling back to normal planning");
+                                "Stale or corrupt cached plan, falling back to normal planning");
                         }
                     }
                 }
@@ -1874,8 +1874,13 @@ static BlockIO executeQueryImpl(
                             const size_t plan_cache_quota = settings[Setting::query_plan_cache_size_in_bytes_quota];
                             query_plan_cache->set(*query_plan_cache_key, std::move(entry), plan_cache_quota);
                         }
-                        catch (...)
+                        catch (const Exception & e)
                         {
+                            /// Only swallow failures that mean "this plan cannot be cached but is still
+                            /// executable" (e.g. a step type that does not implement serialization yet).
+                            /// Other errors must propagate so we do not mask real bugs in the planner.
+                            if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
+                                throw;
                             tryLogCurrentException("QueryPlanCache", "Failed to insert plan into cache");
                         }
                     }

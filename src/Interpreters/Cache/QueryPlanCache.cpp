@@ -25,40 +25,43 @@ namespace DB
 
 bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
 {
+    /// Cache control: settings that select or sidestep the cache itself.
     return setting_name == "allow_experimental_query_plan_cache"
         || setting_name == "enable_query_plan_cache"
         || setting_name == "query_plan_cache_size_in_bytes_quota"
-        || setting_name == "log_comment"
-        || setting_name == "http_response_headers"
         || setting_name.starts_with("query_cache_")
         || setting_name.ends_with("_query_cache")
+        /// Output formatting: applied after the plan and never baked into a plan step.
         || setting_name.starts_with("output_format_")
-        /// Resource limits: do not affect plan shape.
+        || setting_name == "send_progress_in_http_headers"
+        || setting_name == "http_response_headers"
+        /// Generic resource limits: enforced by execution-time guards, not stored on any plan step.
         || setting_name == "max_execution_time"
         || setting_name == "max_memory_usage"
         || setting_name == "max_rows_to_read"
         || setting_name == "max_bytes_to_read"
         || setting_name == "max_result_rows"
         || setting_name == "max_result_bytes"
-        || setting_name == "max_rows_to_sort"
-        || setting_name == "max_bytes_to_sort"
         || setting_name == "max_rows_in_set"
         || setting_name == "max_bytes_in_set"
-        /// Thread control: do not affect plan structure.
+        /// Thread fan-out is decided when the pipeline is built from the plan, not stored
+        /// on the plan itself, so different thread counts can safely share a cached plan.
         || setting_name == "max_threads"
         || setting_name == "max_insert_threads"
-        /// Output: do not affect plan structure.
-        || setting_name == "extremes"
-        || setting_name == "send_progress_in_http_headers"
-        /// Logging / profiling: do not affect plan structure.
+        /// Logging and profiling: orthogonal to plan structure.
+        || setting_name == "log_comment"
         || setting_name.starts_with("log_queries")
         || setting_name == "log_profile_events";
+    /// Sort-related limits (`max_rows_to_sort`, `max_bytes_to_sort`) and `extremes` are
+    /// intentionally NOT ignored: they are baked into `SortingStep` / `ExtremesStep`,
+    /// so two queries with different values of these settings must not share a plan.
 }
 bool QueryPlanCacheKey::operator==(const QueryPlanCacheKey & other) const
 {
     return ast_hash == other.ast_hash
         && semantic_settings_hash == other.semantic_settings_hash
         && table_metadata_versions == other.table_metadata_versions
+        && storage_id.uuid == other.storage_id.uuid
         && row_policy_hash == other.row_policy_hash
         && user_id == other.user_id
         && current_user_roles == other.current_user_roles;
@@ -81,6 +84,10 @@ size_t QueryPlanCacheKeyHasher::operator()(const QueryPlanCacheKey & key) const
         hash.update(version);
     }
 
+    /// Hash storage UUID so that DROP+CREATE of the same name in an Atomic database
+    /// does not collide with cached entries from the previous table.
+    hash.update(key.storage_id.uuid);
+
     /// Hash row policy expression as two 64-bit words.
     hash.update(key.row_policy_hash.low64);
     hash.update(key.row_policy_hash.high64);
@@ -96,29 +103,29 @@ size_t QueryPlanCacheKeyHasher::operator()(const QueryPlanCacheKey & key) const
 }
 
 QueryPlanCache::QueryPlanCache(size_t max_size_in_bytes, size_t max_entries)
-    : cache(CurrentMetrics::QueryPlanCacheBytes, CurrentMetrics::QueryPlanCacheEntries, max_size_in_bytes, max_entries)
+    : Base(CurrentMetrics::QueryPlanCacheBytes, CurrentMetrics::QueryPlanCacheEntries, max_size_in_bytes, max_entries)
 {
 }
 
 void QueryPlanCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries)
 {
-    cache.setMaxSizeInBytes(max_size_in_bytes);
-    cache.setMaxCount(max_entries);
+    setMaxSizeInBytes(max_size_in_bytes);
+    setMaxCount(max_entries);
     /// max_count=0 means "unlimited" in LRUCachePolicy, but for query plan cache
     /// we treat 0 as "disabled" -- clear all existing entries.
     if (max_size_in_bytes == 0 || max_entries == 0)
-        cache.clear();
+        Base::clear();
 }
 
-QueryPlanCache::Cache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
+QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
 {
-    auto result = cache.get(key);
+    auto result = Base::get(key);
     if (result)
     {
         /// Reject entries with incompatible format version.
         if (result->format_version != QUERY_PLAN_CACHE_FORMAT_VERSION)
         {
-            cache.remove(key);
+            Base::remove(key);
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheMisses);
             return nullptr;
         }
@@ -135,36 +142,49 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
 {
     /// CacheBase treats max_count=0 as "unlimited", but for query plan cache
     /// we treat 0 as "disabled". Guard against inserting into a disabled cache.
-    if (cache.maxSizeInBytes() == 0 || cache.maxCount() == 0)
+    if (maxSizeInBytes() == 0 || maxCount() == 0)
         return;
 
-    /// The quota is evaluated using the current query context only.
-    /// We do not remember any per-user quota inside the shared cache because that would make
-    /// one query with quota=0 permanently disable quota checks for the same user.
     if (!canStoreForUser(key, entry, max_size_in_bytes_for_user))
         return;
 
-    cache.set(key, std::make_shared<QueryPlanCacheEntry>(std::move(entry)));
+    /// Stamp the inserter so that `onEntryRemoval` can decrement the right user counter
+    /// when this entry is later replaced or evicted.
+    entry.inserter_user_id = key.user_id;
+    const size_t entry_weight = QueryPlanCacheEntryWeight{}(entry);
+
+    /// `Base::set` may trigger `onEntryRemoval` synchronously for a same-key replacement
+    /// or for LRU eviction. That callback decrements `per_user_bytes` for the evicted
+    /// entries, so it is safe to add the new weight afterwards.
+    Base::set(key, std::make_shared<QueryPlanCacheEntry>(std::move(entry)));
+
+    if (key.user_id.has_value())
+    {
+        std::lock_guard lock(per_user_mutex);
+        per_user_bytes[*key.user_id] += entry_weight;
+    }
 }
 
 void QueryPlanCache::clear()
 {
-    cache.clear();
+    Base::clear();
+    std::lock_guard lock(per_user_mutex);
+    per_user_bytes.clear();
 }
 
 size_t QueryPlanCache::sizeInBytes() const
 {
-    return cache.sizeInBytes();
+    return Base::sizeInBytes();
 }
 
 size_t QueryPlanCache::count() const
 {
-    return cache.count();
+    return Base::count();
 }
 
-std::vector<QueryPlanCache::Cache::KeyMapped> QueryPlanCache::dump() const
+std::vector<QueryPlanCache::KeyMapped> QueryPlanCache::dump() const
 {
-    return cache.dump();
+    return Base::dump();
 }
 
 bool QueryPlanCache::canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const
@@ -172,32 +192,35 @@ bool QueryPlanCache::canStoreForUser(const QueryPlanCacheKey & key, const QueryP
     if (!key.user_id.has_value() || max_size_in_bytes_for_user == 0)
         return true;
 
-    /// This is an admission check, not durable accounting.
-    /// Existing entries inserted by previous queries remain valid even if the current query
-    /// now uses a smaller quota.
     const size_t new_entry_size = QueryPlanCacheEntryWeight{}(entry);
 
     /// Early rejection: a single entry larger than the quota can never fit.
     if (new_entry_size > max_size_in_bytes_for_user)
         return false;
 
-    size_t current_size_for_user = 0;
-    for (const auto & [existing_key, existing_entry] : cache.dump())
-    {
-        if (existing_key.user_id != key.user_id)
-            continue;
-
-        if (existing_key == key)
-            continue;
-
-        current_size_for_user += QueryPlanCacheEntryWeight{}(*existing_entry);
-
-        /// Early break: once we know the quota is exceeded, no need to keep summing.
-        if (current_size_for_user + new_entry_size > max_size_in_bytes_for_user)
-            return false;
-    }
-
+    /// O(1) admission: read the cached per-user byte count maintained by `set` and
+    /// `onEntryRemoval`. The check is best-effort — concurrent inserts may race past
+    /// it, just like in `QueryResultCache`.
+    std::lock_guard lock(per_user_mutex);
+    auto it = per_user_bytes.find(*key.user_id);
+    const size_t current_size_for_user = it == per_user_bytes.end() ? 0 : it->second;
     return current_size_for_user + new_entry_size <= max_size_in_bytes_for_user;
+}
+
+void QueryPlanCache::onEntryRemoval(size_t weight_loss, const MappedPtr & mapped_ptr)
+{
+    if (!mapped_ptr || !mapped_ptr->inserter_user_id.has_value())
+        return;
+
+    std::lock_guard lock(per_user_mutex);
+    auto it = per_user_bytes.find(*mapped_ptr->inserter_user_id);
+    if (it == per_user_bytes.end())
+        return;
+
+    if (it->second <= weight_loss)
+        per_user_bytes.erase(it);
+    else
+        it->second -= weight_loss;
 }
 
 UInt64 SemanticSettings::computeHash(const Settings & settings)

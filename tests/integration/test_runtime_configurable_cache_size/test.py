@@ -109,6 +109,52 @@ def test_query_cache_size_is_runtime_configurable(start_cluster):
     )
     assert res == "1\n"
 
+    # switch to a config with a maximum query cache size of _0_
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "empty_query_cache.xml"),
+        "/etc/clickhouse-server/config.d/default.xml",
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "1\n"
+    # "Why not 0?", I hear you say. Reason is that QC uses the TTLCachePolicy that evicts lazily only upon insert.
+    # Not a real issue, can be changed later, at least there's a test now.
+
+    # The next SELECT will find a single stale entry which is one entry too much according to the new config.
+    # This triggers the eviction of all stale entries, in this case the 'SELECT 1' result.
+    # Then, it tries to insert the 'SELECT 2' result but it also cannot be added according to the config.
+    node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "0\n"
+
+    # The new maximum cache size is respected when more queries run
+    node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "0\n"
+
+    # Restore the original config
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "default.xml"),
+        "/etc/clickhouse-server/config.d/default.xml",
+    )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    # It is possible to insert entries again
+    node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "1\n"
+
 
 def test_query_plan_cache_size_is_runtime_configurable(start_cluster):
     node.query("SYSTEM DROP QUERY PLAN CACHE")
@@ -118,10 +164,10 @@ def test_query_plan_cache_size_is_runtime_configurable(start_cluster):
     node.query("INSERT INTO test_query_plan_cache VALUES (1), (2), (3)")
 
     node.query(
-        "SELECT * FROM test_query_plan_cache WHERE id = 1 SETTINGS allow_experimental_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+        "SELECT * FROM test_query_plan_cache WHERE id = 1 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
     )
     node.query(
-        "SELECT * FROM test_query_plan_cache WHERE id = 2 SETTINGS allow_experimental_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+        "SELECT * FROM test_query_plan_cache WHERE id = 2 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
     )
 
     res = node.query(
@@ -142,7 +188,7 @@ def test_query_plan_cache_size_is_runtime_configurable(start_cluster):
     assert res == "0\n"
 
     node.query(
-        "SELECT * FROM test_query_plan_cache WHERE id = 3 SETTINGS allow_experimental_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+        "SELECT * FROM test_query_plan_cache WHERE id = 3 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
     )
     res = node.query(
         "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheEntries'",
@@ -157,7 +203,7 @@ def test_query_plan_cache_size_is_runtime_configurable(start_cluster):
     node.query("SYSTEM RELOAD CONFIG")
 
     node.query(
-        "SELECT * FROM test_query_plan_cache WHERE id = 1 SETTINGS allow_experimental_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
+        "SELECT * FROM test_query_plan_cache WHERE id = 1 SETTINGS allow_experimental_query_plan_cache = 1, enable_query_plan_cache = 1, allow_experimental_analyzer = 1 FORMAT Null"
     )
     res = node.query(
         "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheEntries'",

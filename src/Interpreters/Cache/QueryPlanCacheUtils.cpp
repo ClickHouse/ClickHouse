@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -106,7 +107,7 @@ std::optional<QueryPlanCacheKey> tryBuildQueryPlanCacheKey(
     storage_id = context->resolveStorageID(storage_id);
 
     auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-    if (!storage || storage->isRemote())
+    if (!storage || storage->isRemote() || storage->isView())
         return {};
 
     if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
@@ -146,8 +147,12 @@ Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner
         return {};
 
     const auto & table_expression_data = planner_context->getTableExpressionNodeToData();
+    /// `tryBuildQueryPlanCacheKey` only admits single-table queries, so this branch is never
+    /// reached today. Throw rather than silently return an empty Names list so that any future
+    /// extension to multi-table caching is forced to also extend the column-level access check.
     if (table_expression_data.size() != 1)
-        return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Query plan cache: expected exactly one table expression, got {}", table_expression_data.size());
 
     return table_expression_data.begin()->second.getSelectedColumnsNames();
 }
