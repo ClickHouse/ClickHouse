@@ -44,7 +44,6 @@
 #include <IO/Operators.h>
 
 #include <algorithm>
-#include <cassert>
 #include <stack>
 
 #include <boost/geometry.hpp>
@@ -1043,7 +1042,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 else if (name == "or")
                     function_builder = FunctionFactory::instance().get("and", context);
 
-                assert(function_builder);
+                chassert(function_builder);
 
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
@@ -3876,18 +3875,18 @@ KeyCondition::Description KeyCondition::getDescription() const
                 break;
             }
             case RPNElement::FUNCTION_NOT:
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
                 break;
             case RPNElement::FUNCTION_AND:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg1 = std::move(rpn_stack.back());
 
                 rpn_stack.pop_back();
 
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg2 = std::move(rpn_stack.back());
 
                 Frame frame;
@@ -3899,12 +3898,12 @@ KeyCondition::Description KeyCondition::getDescription() const
             }
             case RPNElement::FUNCTION_OR:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg1 = std::move(rpn_stack.back());
 
                 rpn_stack.pop_back();
 
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg2 = std::move(rpn_stack.back());
 
                 Frame frame;
@@ -4829,7 +4828,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             current_intersection = current_intersection & BoolMask(intersects, !contains);
                         }
 
-                        mask = mask | current_intersection;
+                        mask = BoolMask::combine(mask, current_intersection);
                     };
 
                     switch (curve_type(key_column))
@@ -5033,13 +5032,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
-            assert(!rpn_stack.empty());
+            chassert(!rpn_stack.empty());
 
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
-            assert(!rpn_stack.empty());
+            chassert(!rpn_stack.empty());
 
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
@@ -5048,7 +5047,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
-            assert(!rpn_stack.empty());
+            chassert(!rpn_stack.empty());
 
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
@@ -5363,7 +5362,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
                 break;
             case RPNElement::FUNCTION_AND:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5373,7 +5372,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             }
             case RPNElement::FUNCTION_OR:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5428,7 +5427,7 @@ bool KeyCondition::alwaysFalse() const
             }
             case RPNElement::FUNCTION_AND:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5444,7 +5443,7 @@ bool KeyCondition::alwaysFalse() const
             }
             case RPNElement::FUNCTION_OR:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
