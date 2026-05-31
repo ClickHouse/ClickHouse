@@ -841,31 +841,25 @@ public:
     }
 
 private:
-    /// Estimate the RowBinary-serialized byte size of one row across all argument columns.
+    /// Estimate total serialized byte size of argument columns for an entire block.
     /// Used for dynamic block splitting when webassembly_udf_max_input_block_size = 0.
-    /// Only handles String and fixed-width types; other types fall back to a 256-byte estimate.
-    size_t estimateRowSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_idx) const
+    /// ColumnConst columns are excluded: they are serialized once per batch (COL_IS_CONST),
+    /// so they contribute a fixed overhead regardless of batch size and must not drive splits.
+    /// Runs in O(1) — reads column metadata, no per-row scanning.
+    size_t estimateTotalSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_count) const
     {
         size_t total = 0;
         for (const auto & arg : arguments)
         {
             const IColumn * col = arg.column.get();
-            if (const auto * c = typeid_cast<const ColumnConst *>(col))
-                col = &c->getDataColumn();
-
+            if (typeid_cast<const ColumnConst *>(col))
+                continue; // fixed per-batch cost, not per-row
             if (const auto * s = typeid_cast<const ColumnString *>(col))
-            {
-                size_t len = s->getDataAt(std::min(row_idx, s->size() - 1)).size();
-                total += len + getLengthOfVarUInt(len);
-            }
+                total += s->getChars().size(); // raw bytes including null terminators
             else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-            {
-                total += arg.type->getSizeOfValueInMemory();
-            }
+                total += arg.type->getSizeOfValueInMemory() * row_count;
             else
-            {
-                total += 256; // conservative fallback for unknown variable-length types
-            }
+                total += 256 * row_count; // conservative fallback
         }
         return total;
     }
@@ -876,9 +870,9 @@ private:
 
         const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
 
-        // When no explicit block size is given, split input dynamically: accumulate rows
-        // and flush to WASM when the estimated serialized size would exceed 50% of the
-        // WASM module's actual linear memory. Using actual memory (not the CH-side limit)
+        // When no explicit block size is given, split input dynamically: estimate the total
+        // serialized size once (O(1)) and split only if it would exceed 50% of the WASM
+        // module's actual linear memory. Using actual memory (not the CH-side limit)
         // prevents OOM when a constant large geometry is materialized N times in the buffer.
         const size_t wasm_linear_memory = compartment->getLinearMemorySize();
         const size_t input_budget = (fixed_block_size == 0 && wasm_linear_memory > 0)
@@ -886,7 +880,6 @@ private:
             : 0;
 
         size_t batch_start = 0;
-        size_t batch_bytes = 0;
 
         // Buffers format handles const columns natively; RowBinary/MsgPack need them materialized.
         const bool buffers_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>() == "Buffers";
@@ -914,23 +907,26 @@ private:
                 result_column->insertRangeFrom(*col, 0, col->size());
 
             batch_start = end_idx;
-            batch_bytes = 0;
         };
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        if (input_budget > 0)
         {
-            // Fixed block size: flush when the batch is full
-            if (fixed_block_size > 0 && row > batch_start && (row - batch_start) >= fixed_block_size)
-                flush_batch(row);
-
-            // Dynamic budget: flush before adding this row if it would exceed the budget
-            if (input_budget > 0)
+            // O(1) block-level check: only scan per-row when splits are actually needed.
+            // The common case (block fits in budget) pays zero per-row overhead.
+            // When splits are required, use a fixed stride derived from the average row size.
+            size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count);
+            if (total_bytes > input_budget)
             {
-                size_t row_bytes = estimateRowSerializedSize(arguments, row);
-                if (batch_bytes > 0 && batch_bytes + row_bytes > input_budget)
+                size_t avg_row_bytes = std::max(size_t(1), total_bytes / input_rows_count);
+                size_t stride = std::max(size_t(1), input_budget / avg_row_bytes);
+                for (size_t row = stride; row < input_rows_count; row += stride)
                     flush_batch(row);
-                batch_bytes += row_bytes;
             }
+        }
+        else if (fixed_block_size > 0)
+        {
+            for (size_t row = fixed_block_size; row < input_rows_count; row += fixed_block_size)
+                flush_batch(row);
         }
 
         flush_batch(input_rows_count);
