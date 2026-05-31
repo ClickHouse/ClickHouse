@@ -374,9 +374,24 @@ bool LDAPClient::openConnection(BindMode mode)
             {
                 const auto rc = ldap_sasl_bind_s(handle, bind_dn_to_use.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
 
-                // Handle invalid credentials gracefully.
                 if (rc == LDAP_INVALID_CREDENTIALS)
+                {
+                    /// In `User` mode the user supplied the password, so invalid credentials
+                    /// is the canonical authentication-failed outcome and is returned to the
+                    /// caller as `false`.
+                    ///
+                    /// In `Service` mode the credentials come from the server-side
+                    /// `lookup_bind_dn` / `lookup_password` configuration. Invalid credentials
+                    /// here mean the lookup service account is mistyped, rotated, or revoked
+                    /// - a configuration error, not a "user not found" signal. Surfacing it
+                    /// as an exception keeps `EXECUTE AS <ldap_user>` from collapsing into
+                    /// `UNKNOWN_USER` and points the operator at the real problem.
+                    if (mode == BindMode::Service)
+                        throw Exception(ErrorCodes::LDAP_ERROR,
+                            "LDAP service-bind for lookup failed with invalid credentials; "
+                            "check the LDAP server's `lookup_bind_dn` and `lookup_password`");
                     return false;
+                }
 
                 handleError(rc);
             }

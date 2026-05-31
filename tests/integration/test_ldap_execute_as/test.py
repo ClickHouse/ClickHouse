@@ -15,15 +15,23 @@ The fix exposes `IAccessStorage::find(..., force_external_lookup=true)`, which
 user via `user_dn_detection` before materializing the in-memory entry with the
 resolved role mapping.
 
-The tests in this file rely on test execution order: `cluster.start` runs once for
-the module, leaving the LDAP storage's in-memory cache empty, so the first test
-exercises the not-yet-logged-in path before any subsequent test materializes those
-users.
+The tests on `node` rely on test execution order: `cluster.start` runs once for the
+module, leaving the LDAP storage's in-memory cache empty, so the first test exercises
+the not-yet-logged-in path before any subsequent test materializes those users. The
+tests on `node_with_role_mapping` and `node_bad_lookup_password` exercise the
+role-mapping and misconfiguration variants on instances that no other test logs
+into, so their LDAP cache stays empty for the duration of the module.
 """
+
+import logging
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
+
+LDAP_ADMIN_BIND_DN = "cn=admin,dc=example,dc=org"
+LDAP_ADMIN_PASSWORD = "clickhouse"
 
 cluster = ClickHouseCluster(__file__)
 
@@ -35,6 +43,25 @@ node = cluster.add_instance(
     with_ldap=True,
 )
 
+# Instance with `role_mapping` configured under the LDAP user-directory. Used to
+# verify that the forced-lookup path applies role mappings before first login.
+node_with_role_mapping = cluster.add_instance(
+    "node_with_role_mapping",
+    main_configs=["configs/ldap_with_role_mapping.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
+# Instance whose `lookup_password` is deliberately wrong (but non-empty). Used to
+# verify that an invalid service-bind credential surfaces as an LDAP configuration
+# error instead of silently falling through to `UNKNOWN_USER`.
+node_bad_lookup_password = cluster.add_instance(
+    "node_bad_lookup_password",
+    main_configs=["configs/ldap_wrong_lookup_password.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -43,6 +70,59 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def add_ldap_group(ldap_cluster, group_cn, member_cn):
+    """Add a `groupOfNames` entry to the LDAP fixture with the given group CN and a
+    single member referenced by their user CN under `ou=users,dc=example,dc=org`.
+    Mirrors the helper used by `test_ldap_external_user_directory`.
+    """
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """echo "dn: cn={group_cn},dc=example,dc=org
+objectClass: top
+objectClass: groupOfNames
+member: cn={member_cn},ou=users,dc=example,dc=org" | \
+ldapadd -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password}
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                group_cn=group_cn,
+                member_cn=member_cn,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_execute_as add_ldap_group code:{code} stdout:{stdout} stderr:{stderr}"
+    )
+    assert code == 0
+
+
+def delete_ldap_group(ldap_cluster, group_cn):
+    code, (stdout, stderr) = ldap_cluster.ldap_container.exec_run(
+        [
+            "sh",
+            "-c",
+            """ldapdelete -H ldap://{host}:{port} -D "{admin_bind_dn}" -x -w {admin_password} "cn={group_cn},dc=example,dc=org"
+    """.format(
+                host=ldap_cluster.ldap_host,
+                port=ldap_cluster.ldap_port,
+                admin_bind_dn=LDAP_ADMIN_BIND_DN,
+                admin_password=LDAP_ADMIN_PASSWORD,
+                group_cn=group_cn,
+            ),
+        ],
+        demux=True,
+    )
+    logging.debug(
+        f"test_ldap_execute_as delete_ldap_group code:{code} stdout:{stdout} stderr:{stderr}"
+    )
+    assert code == 0
 
 
 def test_execute_as_ldap_user_without_prior_login(started_cluster):
@@ -112,3 +192,80 @@ def test_execute_as_unknown_ldap_user_throws(started_cluster):
         password="qwerty",
     )
     assert "UNKNOWN_USER" in error or "no user" in error
+
+
+def test_execute_as_ldap_user_with_role_mapping_without_prior_login(started_cluster):
+    """Verifies that the forced-lookup path applies `role_mapping` from the LDAP
+    user-directory configuration. Without this, the EXECUTE AS target would be
+    materialized with only the common roles instead of the privileges it would gain
+    from a real LDAP login (the property the bot's review on
+    `tests/integration/test_ldap_execute_as/test.py` asked us to cover).
+
+    Strategy:
+      1. Create a local role on the impersonator instance with a non-trivial
+         privilege (read on a specific table) and revoke that privilege at user
+         scope so only the role can grant it.
+      2. Add a `clickhouse-pre_login_role` group to LDAP with `janedoe` as a
+         member. The `role_mapping` strips the `clickhouse-` prefix, so the LDAP
+         group maps to the local `pre_login_role` role.
+      3. Run `EXECUTE AS janedoe` from `admin` on `node_with_role_mapping`, where
+         `janedoe` has never authenticated. The forced lookup must materialize
+         `janedoe` with `pre_login_role` granted via `role_mapping`.
+      4. Confirm the impersonated session reports `pre_login_role` as a current
+         role; the role grant is the only thing that makes that visible without a
+         login.
+    """
+    node_with_role_mapping.query(
+        "CREATE ROLE IF NOT EXISTS pre_login_role",
+        user="admin",
+        password="qwerty",
+    )
+    try:
+        add_ldap_group(
+            started_cluster,
+            group_cn="clickhouse-pre_login_role",
+            member_cn="janedoe",
+        )
+
+        # `janedoe` has never authenticated on `node_with_role_mapping`. Before the
+        # fix, `AccessControl::find<User>("janedoe")` returned nothing and EXECUTE AS
+        # raised `UNKNOWN_USER`. After the fix, the forced-lookup path materializes
+        # `janedoe` with `pre_login_role` granted via `role_mapping`.
+        current_roles = node_with_role_mapping.query(
+            "EXECUTE AS janedoe SELECT role_name FROM system.current_roles ORDER BY role_name",
+            user="admin",
+            password="qwerty",
+        )
+        assert current_roles.strip() == "pre_login_role", current_roles
+    finally:
+        delete_ldap_group(started_cluster, group_cn="clickhouse-pre_login_role")
+        node_with_role_mapping.query(
+            "DROP ROLE IF EXISTS pre_login_role",
+            user="admin",
+            password="qwerty",
+        )
+
+
+def test_execute_as_wrong_lookup_password_throws_ldap_error(started_cluster):
+    """Bot concern on `src/Access/LDAPClient.cpp`: when the service-bind fails with
+    `LDAP_INVALID_CREDENTIALS` (e.g. mistyped or rotated `lookup_password`), the
+    caller used to receive the same `false` that signals "the user does not exist
+    in the directory", and EXECUTE AS would collapse to the canonical
+    `UNKNOWN_USER` path. That fails the feature open diagnostically and hides the
+    actual operator error.
+
+    After the fix, an invalid service-bind credential throws an LDAP configuration
+    error from `openConnection(BindMode::Service)`. EXECUTE AS surfaces that error
+    so the operator can identify the broken `lookup_bind_dn` /
+    `lookup_password`. The target user (`janedoe`) is genuinely present in LDAP, so
+    `UNKNOWN_USER` is specifically the wrong answer here.
+    """
+    error = node_bad_lookup_password.query_and_get_error(
+        "EXECUTE AS janedoe SELECT 1",
+        user="admin",
+        password="qwerty",
+    )
+    # The exception should mention the LDAP service-bind problem and must NOT
+    # collapse to `UNKNOWN_USER`. The exact text comes from `LDAPClient::openConnection`.
+    assert "LDAP_ERROR" in error or "lookup" in error.lower(), error
+    assert "UNKNOWN_USER" not in error, error

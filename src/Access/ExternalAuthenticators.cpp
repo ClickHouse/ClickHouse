@@ -134,6 +134,16 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (params.lookup_bind_dn.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_bind_dn' entry");
 
+        /// Fail closed: an empty `lookup_password` with a non-empty `lookup_bind_dn` would
+        /// issue an LDAP unauthenticated simple bind, which directories may accept as an
+        /// anonymous bind. That would let the service-bind path resolve users without
+        /// actually authenticating the lookup service account, defeating the purpose of
+        /// the service credentials and silently widening who can be impersonated. Mirror
+        /// the same fail-closed check that the user-mode bind already applies to
+        /// `params.password`.
+        if (params.lookup_password.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_password' entry");
+
         if (!params.user_dn_detection)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'lookup_bind_dn' requires 'user_dn_detection' to be configured");
