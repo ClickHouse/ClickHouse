@@ -14,9 +14,15 @@
 -- empty part, reproducing the exact infinite loop the issue describes.
 --
 -- The fix in `finalize` distinguishes the two `new_ttl_info.max == 0`
--- cases by inspecting `data_part->rows_count`: if the merged part is
--- empty, write a finished zero entry; otherwise fall back to
--- `old_ttl_info`.
+-- cases by inspecting a new `any_surviving_row_seen` flag on
+-- `TTLAggregationAlgorithm`. The flag is set inside the per-block
+-- post-aggregation recalc loop in `execute`. If no block ever produced
+-- a surviving row for this rule on this part, the rule has no more
+-- inputs and `finalize` writes a finished zero entry; otherwise it
+-- falls back to `old_ttl_info`. `data_part->rows_count` cannot be
+-- used here because `MergedBlockOutputStream::finalizePart` only sets
+-- it AFTER the TTL pipeline has already run, so it is still zero at
+-- `finalize` time and would force the always-finished branch.
 
 DROP TABLE IF EXISTS t_ttl_delete_groupby_empty_part_no_reloop;
 
