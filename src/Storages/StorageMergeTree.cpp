@@ -737,7 +737,7 @@ void StorageMergeTree::alter(
         auto ast_cmd = make_intrusive<ASTAlterCommand>();
         ast_cmd->type = ASTAlterCommand::DROP_COLUMN;
         ast_cmd->column = ast_cmd->children.emplace_back(make_intrusive<ASTIdentifier>(col_name)).get();
-        cmd.ast = std::move(ast_cmd);
+        cmd.ast_text = ast_cmd->formatWithSecretsOneLine();
 
         maybe_mutation_commands.push_back(std::move(cmd));
     }

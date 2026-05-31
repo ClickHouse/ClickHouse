@@ -488,8 +488,10 @@ OPTIMIZE TABLE t_phys_nested_multi FINAL;
 SELECT a, `m.x`, `m.y` FROM t_phys_nested_multi ORDER BY a;
 DROP TABLE t_phys_nested_multi;
 
--- Test 19: ATTACH PARTITION FROM with compatible column IDs (same
--- logical-to-physical mapping, different next_column_id) should succeed.
+-- Test 19: ATTACH PARTITION FROM with same logical-to-physical mapping and
+-- equal (or destination-ahead) counters should succeed.  A source-ahead
+-- counter is now rejected to prevent later ADD COLUMN on the destination
+-- from reusing an orphan ID carried by transferred parts.
 SELECT 'Test 19: partition transfer compatible mappings';
 DROP TABLE IF EXISTS t_phys_part_src;
 DROP TABLE IF EXISTS t_phys_part_dst;
@@ -503,14 +505,38 @@ ENGINE = MergeTree ORDER BY a PARTITION BY a
 SETTINGS min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_column_ids',
     activate_column_ids_for_existing_tables = 1;
--- Make the counters differ: add and drop a column only in src.
+-- Push both counters in lock-step so logical mappings AND counters match.
 ALTER TABLE t_phys_part_src ADD COLUMN c UInt64;
 ALTER TABLE t_phys_part_src DROP COLUMN c;
+ALTER TABLE t_phys_part_dst ADD COLUMN c UInt64;
+ALTER TABLE t_phys_part_dst DROP COLUMN c;
 INSERT INTO t_phys_part_src VALUES (1, 'hello');
 ALTER TABLE t_phys_part_dst ATTACH PARTITION 1 FROM t_phys_part_src;
 SELECT a, b FROM t_phys_part_dst;
 DROP TABLE t_phys_part_src;
 DROP TABLE t_phys_part_dst;
+
+-- Test 19b: source counter ahead of destination must be rejected (orphan
+-- IDs would later be reused by ADD COLUMN on the destination).
+SELECT 'Test 19b: partition transfer source counter ahead';
+DROP TABLE IF EXISTS t_phys_part_src_b;
+DROP TABLE IF EXISTS t_phys_part_dst_b;
+CREATE TABLE t_phys_part_src_b (a UInt64, b String)
+ENGINE = MergeTree ORDER BY a PARTITION BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
+CREATE TABLE t_phys_part_dst_b (a UInt64, b String)
+ENGINE = MergeTree ORDER BY a PARTITION BY a
+SETTINGS min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
+ALTER TABLE t_phys_part_src_b ADD COLUMN c UInt64;
+ALTER TABLE t_phys_part_src_b DROP COLUMN c;
+INSERT INTO t_phys_part_src_b VALUES (1, 'hello');
+ALTER TABLE t_phys_part_dst_b ATTACH PARTITION 1 FROM t_phys_part_src_b; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_phys_part_src_b;
+DROP TABLE t_phys_part_dst_b;
 
 -- Test 20: ATTACH PARTITION FROM with incompatible column IDs
 -- (different logical-to-physical mapping after rename) should be rejected.
