@@ -388,6 +388,61 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
+### AT TIME ZONE and AT LOCAL {#at-time-zone}
+
+The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `DateTime64` value to a different timezone. They are syntactic sugar for the existing [`toTimeZone`](/sql-reference/functions/date-time-functions#totimezone) function:
+
+| Syntax | Equivalent |
+|---|---|
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)` |
+| `expr AT LOCAL` | `toTimeZone(expr, timeZone())` |
+
+`zone` can be any string expression that evaluates to a valid timezone name (e.g. `'America/Denver'`, `'UTC'`).
+
+`AT LOCAL` uses the current [session timezone](../../operations/settings/settings.md#session_timezone) (or the server default if no session timezone is set).
+
+:::note
+Unlike PostgreSQL, where `timestamp without time zone AT TIME ZONE zone` re-interprets the wall-clock value as being in the given zone before converting, ClickHouse always keeps the same absolute point in time and only changes the timezone label used for display. Both forms are equivalent to `toTimeZone` and do not alter the underlying timestamp.
+:::
+
+`AT TIME ZONE` and `AT LOCAL` have the same operator precedence as `||`, which is lower than arithmetic operators. This means arithmetic on the left-hand side is fully evaluated first:
+
+```sql
+-- '+' is applied before 'AT TIME ZONE'
+SELECT TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+Examples:
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [`toTimeZone`](/sql-reference/functions/date-time-functions#totimezone)
+- [`timeZone`](/sql-reference/functions/date-time-functions#timezone)
+
 ## Logical AND Operator {#logical-and-operator}
 
 Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](/sql-reference/functions/logical-functions#and).
