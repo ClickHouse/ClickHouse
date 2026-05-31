@@ -69,10 +69,12 @@ public:
 
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
+        const std::optional<TableExpressionModifiers> & table_expression_modifiers,
         const ContextPtr & context);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
+        const std::optional<TableExpressionModifiers> & table_expression_modifiers,
         const ContextPtr & context);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(

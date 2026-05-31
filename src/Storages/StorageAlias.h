@@ -107,13 +107,14 @@ public:
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
 
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
+    /// NOLINTNEXTLINE(google-default-arguments)
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers = nullptr) const override
     {
         auto target = tryGetTargetTable();
         if (!target)
             return std::make_shared<const StorageInMemoryMetadata>();
 
-        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache, modifiers);
     }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;

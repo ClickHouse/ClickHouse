@@ -1140,7 +1140,8 @@ public:
     /// When `settings_changes` is provided, apply the overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
+    /// NOLINTNEXTLINE(google-default-arguments)
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache, const TableExpressionModifiers * modifiers = nullptr) const override;
 
     String getRelativeDataPath() const { return relative_data_path; }
 

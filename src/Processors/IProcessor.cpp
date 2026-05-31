@@ -63,12 +63,10 @@ int IProcessor::schedule()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
 }
 
-#ifdef OS_LINUX
-std::pair<int, uint32_t> IProcessor::scheduleForEvent()
+std::tuple<int, uint32_t, Int64> IProcessor::scheduleForEvent()
 {
-    return {schedule(), EPOLLIN | EPOLLERR};
+    return {schedule(), EPOLLIN | EPOLLERR, -1};
 }
-#endif
 
 IProcessor::PipelineUpdate IProcessor::updatePipeline()
 {

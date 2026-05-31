@@ -37,7 +37,9 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+
 #include <Core/Settings.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -54,6 +56,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -823,6 +826,36 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
         applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 
+static void validateWatermarkSettings(
+    const WatermarkSettings & watermark,
+    const StorageSnapshotPtr & storage_snapshot,
+    IdentifierResolveScope & scope)
+{
+    const auto & columns = storage_snapshot->metadata->getColumns();
+
+    /// Watermark target column must exist in table.
+    const auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, watermark.column);
+    if (!column)
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' not found in table {}", watermark.column, storage_snapshot->storage.getStorageID().getFullNameNotQuoted());
+
+    if (!isDateOrDate32OrDateTimeOrDateTime64(column->type))
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' must be of Date, Date32, DateTime or DateTime64 type, got {}", watermark.column, column->type->getName());
+
+    for (auto reserved : {TimeAttributeColumn::name, WatermarkColumn::name})
+        if (columns.tryGetColumn(GetColumnsOptions::All, std::string(reserved)))
+            throw Exception(ErrorCodes::ILLEGAL_STREAM, "Column name '{}' is reserved for the streaming watermark pipeline and cannot be a user column in table {}", reserved, storage_snapshot->storage.getStorageID().getFullNameNotQuoted());
+
+    /// Watermark expression's result type must match the column type.
+    auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, storage_snapshot->metadata->getColumns());
+    auto dummy_table_node = std::make_shared<TableNode>(std::move(dummy_storage), scope.context);
+    auto expression_clone = watermark.expression->clone();
+    QueryAnalyzer(/*only_analyze=*/true).resolve(expression_clone, dummy_table_node, scope.context);
+
+    auto expression_type = expression_clone->getResultType();
+    if (!expression_type->equals(*column->type))
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK expression result type {} does not match column '{}' type {}", expression_type->getName(), watermark.column, column->type->getName());
+}
+
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     auto * table_node = table_expression_node->as<TableNode>();
@@ -858,24 +891,20 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 #ifndef OS_LINUX
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux.");
                 #else
-                    if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
+                    if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio() || table_expression_modifiers->hasSampleOffsetRatio())
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
 
-                    if (storage->isSystemStorage())
-                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
-                            "STREAM is not supported for system tables");
+                    if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
 
                     if (!storage->supportsStreaming())
-                        throw Exception(ErrorCodes::ILLEGAL_STREAM,
-                            "Storage {} doesn't support STREAM",
-                            storage->getName());
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM, "Storage {} doesn't support STREAM", storage->getName());
 
-                    if (table_expression_modifiers->hasFinal()
-                        || table_expression_modifiers->hasSampleSizeRatio()
-                        || table_expression_modifiers->hasSampleOffsetRatio())
-                        throw Exception(ErrorCodes::SYNTAX_ERROR,
-                            "STREAM is not compatible with other table expression modifiers (FINAL or SAMPLE)");
+                    const auto & stream_settings = table_expression_modifiers->getStreamingSettings();
+                    const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+
+                    if (stream_settings->watermark)
+                        validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
                 #endif
             }
         }
@@ -1583,7 +1612,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve table identifier from database catalog
     if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
-        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
+        resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, identifier_lookup.table_expression_modifiers, scope.context);
     }
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
@@ -3797,6 +3826,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
             {
                 auto & from_table_identifier = current_join_tree_node->as<IdentifierNode &>();
                 auto table_identifier_lookup = IdentifierLookup{from_table_identifier.getIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
+                table_identifier_lookup.table_expression_modifiers = from_table_identifier.getTableExpressionModifiers();
                 if (current_join_tree_node->hasOriginalAST())
                     table_identifier_lookup.original_ast_node = current_join_tree_node->getOriginalAST();
 

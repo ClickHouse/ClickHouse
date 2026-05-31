@@ -2,7 +2,10 @@
 
 #include <Parsers/ASTSampleRatio.h>
 
+#include <Analyzer/IQueryTreeNode.h>
+
 #include <Core/Streaming/CursorTree_fwd.h>
+#include <Core/Streaming/Settings.h>
 
 namespace DB
 {
@@ -16,17 +19,11 @@ class TableExpressionModifiers
 public:
     using Rational = ASTSampleRatio::Rational;
 
-    struct StreamSettings
-    {
-        /// Null means "no cursor" (read from the beginning of the table).
-        CursorTreeNodePtr cursor_tree;
-    };
-
     TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
         std::optional<Rational> sample_offset_ratio_,
-        std::optional<StreamSettings> stream_settings_ = {})
+        std::optional<StreamingSettings> stream_settings_ = {})
         : has_final(has_final_)
         , sample_size_ratio(sample_size_ratio_)
         , sample_offset_ratio(sample_offset_ratio_)
@@ -76,7 +73,7 @@ public:
     }
 
     /// Get stream settings
-    const std::optional<StreamSettings> & getStreamSettings() const
+    const std::optional<StreamingSettings> & getStreamingSettings() const
     {
         return stream_settings;
     }
@@ -94,18 +91,46 @@ private:
     bool has_final = false;
     std::optional<Rational> sample_size_ratio;
     std::optional<Rational> sample_offset_ratio;
-    std::optional<StreamSettings> stream_settings;
+    std::optional<StreamingSettings> stream_settings;
 };
 
-inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
+inline bool operator==(const WatermarkSettings & lhs, const WatermarkSettings & rhs)
 {
-    if ((lhs.cursor_tree == nullptr) != (rhs.cursor_tree == nullptr))
+    if (lhs.column != rhs.column)
         return false;
 
-    if (lhs.cursor_tree == nullptr)
-        return true;
+    if (lhs.idle_timeout != rhs.idle_timeout)
+        return false;
 
-    return cursorTreeToMap(lhs.cursor_tree) == cursorTreeToMap(rhs.cursor_tree);
+    if ((lhs.expression == nullptr) != (rhs.expression == nullptr))
+        return false;
+
+    return !lhs.expression || lhs.expression->isEqual(*rhs.expression);
+}
+
+inline bool operator==(const StreamingSettings & lhs, const StreamingSettings & rhs)
+{
+    /// Compare cursors
+    {
+        if ((lhs.cursor == nullptr) != (rhs.cursor == nullptr))
+            return false;
+
+        if (lhs.cursor)
+            if (cursorTreeToMap(lhs.cursor) != cursorTreeToMap(rhs.cursor))
+                return false;
+    }
+
+    /// Compare watermarks
+    {
+        if ((lhs.watermark == nullptr) != (rhs.watermark == nullptr))
+            return false;
+
+        if (lhs.watermark)
+            if (*lhs.watermark != *rhs.watermark)
+                return false;
+    }
+
+    return true;
 }
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
@@ -113,7 +138,7 @@ inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressi
     return lhs.hasFinal() == rhs.hasFinal()
         && lhs.getSampleSizeRatio() == rhs.getSampleSizeRatio()
         && lhs.getSampleOffsetRatio() == rhs.getSampleOffsetRatio()
-        && lhs.getStreamSettings() == rhs.getStreamSettings();
+        && lhs.getStreamingSettings() == rhs.getStreamingSettings();
 }
 
 inline bool operator!=(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)

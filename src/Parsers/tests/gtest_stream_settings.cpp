@@ -67,7 +67,8 @@ TEST(ParserStreamSettings, PlainStreamParses)
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
-    ASSERT_FALSE(stream_ast->settings.cursor_tree.has_value());
+    ASSERT_FALSE(stream_ast->cursor.has_value());
+    ASSERT_FALSE(stream_ast->watermark.has_value());
 }
 
 TEST(ParserStreamSettings, StreamCursorParses)
@@ -92,10 +93,10 @@ TEST(ParserStreamSettings, StreamCursorParses)
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
     ASSERT_NE(stream_ast, nullptr);
-    ASSERT_TRUE(stream_ast->settings.cursor_tree.has_value());
+    ASSERT_TRUE(stream_ast->cursor.has_value());
 
     /// Six distinct (path, value) leaves in the collapsed form.
-    const auto & cursor = stream_ast->settings.cursor_tree.value();
+    const auto & cursor = stream_ast->cursor.value();
     ASSERT_EQ(cursor.size(), 6u);
 
     /// Reconstruct the tree and walk it manually to confirm structure and values.
@@ -153,8 +154,8 @@ TEST(ParserStreamSettings, FormatRoundTripPreservesCursor)
     ASSERT_NE(table_expr->stream_settings, nullptr);
 
     const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
-    ASSERT_TRUE(stream_ast->settings.cursor_tree.has_value());
-    ASSERT_EQ(stream_ast->settings.cursor_tree->size(), 1u);
+    ASSERT_TRUE(stream_ast->cursor.has_value());
+    ASSERT_EQ(stream_ast->cursor->size(), 1u);
 }
 
 TEST(ParserStreamSettings, StreamAfterSampleIsAccepted)
@@ -193,4 +194,54 @@ TEST(ParserStreamSettings, CursorRejectsMalformedInput)
 
     for (const auto & query : bad_queries)
         EXPECT_THROW(parse(query), Exception) << "Expected parse failure for: " << query;
+}
+
+TEST(ParserStreamSettings, WatermarkOnlyParses)
+{
+    auto ast = parse("SELECT * FROM t STREAM WATERMARK FOR event_time AS event_time - INTERVAL 5 SECOND");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+    ASSERT_NE(table_expr->stream_settings, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_FALSE(stream_ast->cursor.has_value());
+    ASSERT_TRUE(stream_ast->watermark.has_value());
+    ASSERT_EQ(stream_ast->watermark->column, "event_time");
+    ASSERT_NE(stream_ast->watermark->expression, nullptr);
+}
+
+TEST(ParserStreamSettings, CursorAndWatermarkParses)
+{
+    auto ast = parse(
+        "SELECT * FROM t STREAM "
+        "CURSOR {'partition_a': {'block_number': 10}} "
+        "WATERMARK FOR event_time AS event_time - INTERVAL 5 SECOND");
+
+    const auto * table_expr = extractTableExpression(ast);
+    ASSERT_NE(table_expr, nullptr);
+    ASSERT_NE(table_expr->stream_settings, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_TRUE(stream_ast->cursor.has_value());
+    ASSERT_TRUE(stream_ast->watermark.has_value());
+    ASSERT_EQ(stream_ast->watermark->column, "event_time");
+}
+
+TEST(ParserStreamSettings, FormatRoundTripPreservesWatermark)
+{
+    auto ast = parse("SELECT * FROM t STREAM WATERMARK FOR event_time AS event_time - 1");
+    auto formatted = format(ast);
+
+    auto ast2 = parse(formatted);
+    const auto * table_expr = extractTableExpression(ast2);
+    ASSERT_NE(table_expr, nullptr);
+    ASSERT_NE(table_expr->stream_settings, nullptr);
+
+    const auto * stream_ast = table_expr->stream_settings->as<ASTStreamSettings>();
+    ASSERT_NE(stream_ast, nullptr);
+    ASSERT_TRUE(stream_ast->watermark.has_value());
+    ASSERT_EQ(stream_ast->watermark->column, "event_time");
 }

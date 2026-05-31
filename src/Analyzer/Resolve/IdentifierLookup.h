@@ -5,6 +5,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Analyzer/TableExpressionModifiers.h>
 
 namespace DB
 {
@@ -45,6 +46,7 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
+    std::optional<TableExpressionModifiers> table_expression_modifiers = {};
 
     bool isExpressionLookup() const
     {

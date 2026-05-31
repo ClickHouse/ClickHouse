@@ -22,6 +22,56 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void PollingQueue::Deadlines::arm(Key key, int64_t timeout_ms)
+{
+    cancel(key);
+    index[key] = queue.emplace(Clock::now() + std::chrono::milliseconds(timeout_ms), key);
+}
+
+void PollingQueue::Deadlines::cancel(Key key)
+{
+    if (auto it = index.find(key); it != index.end())
+    {
+        queue.erase(it->second);
+        index.erase(it);
+    }
+}
+
+std::optional<PollingQueue::Clock::time_point> PollingQueue::Deadlines::nextDeadline() const
+{
+    if (queue.empty())
+        return std::nullopt;
+
+    return queue.begin()->first;
+}
+
+std::optional<PollingQueue::Key> PollingQueue::Deadlines::popExpired()
+{
+    if (queue.empty())
+        return std::nullopt;
+
+    auto it = queue.begin();
+    auto [deadline, key] = *it;
+
+    if (deadline > Clock::now())
+        return std::nullopt;
+
+    queue.erase(it);
+    index.erase(key);
+    return key;
+}
+
+std::optional<PollingQueue::Key> PollingQueue::Deadlines::popMin()
+{
+    if (queue.empty())
+        return std::nullopt;
+
+    auto it = queue.begin();
+    auto key = it->second;
+    queue.erase(it);
+    index.erase(key);
+    return key;
+}
 
 PollingQueue::PollingQueue()
 {
@@ -40,17 +90,52 @@ PollingQueue::~PollingQueue()
     chassert(!err || errno == EINTR);
 }
 
-void PollingQueue::addTask(size_t thread_number, void * data, int fd, uint32_t events)
+void PollingQueue::addTask(size_t thread_number, void * data, int fd, uint32_t events, Int64 timeout_ms)
 {
-    std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
+    Key key = reinterpret_cast<Key>(data);
     if (tasks.contains(key))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};
     epoll.add(fd, data, events);
+
+    if (timeout_ms >= 0)
+        deadlines.arm(key, timeout_ms);
 }
 
-static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
+PollingQueue::TaskData PollingQueue::popExpiredDeadlineTask()
+{
+    auto expired_key = deadlines.popExpired();
+    if (!expired_key)
+        return {};
+
+    auto task_it = tasks.find(expired_key.value());
+    if (task_it == tasks.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expired-deadline task {} missing from task map", *expired_key);
+
+    auto res = task_it->second;
+    tasks.erase(task_it);
+    epoll.remove(res.fd);
+    return res;
+}
+
+PollingQueue::TaskData PollingQueue::popMinDeadlineTask()
+{
+    auto min_key = deadlines.popMin();
+    if (!min_key)
+        return {};
+
+    auto task_it = tasks.find(min_key.value());
+    if (task_it == tasks.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Min-deadline task {} missing from task map", *min_key);
+
+    auto res = task_it->second;
+    tasks.erase(task_it);
+    epoll.remove(res.fd);
+    return res;
+}
+
+static std::string dumpTasks(const std::unordered_map<PollingQueue::Key, PollingQueue::TaskData> & tasks)
 {
     WriteBufferFromOwnString res;
     res << "Tasks = [";
@@ -71,22 +156,39 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
     if (is_finished)
         return {};
 
+    if (auto expired_task = popExpiredDeadlineTask())
+        return expired_task;
+
+    /// We need to wait until next task with deadline will be ready.
+    int effective_timeout = timeout;
+    if (auto next = deadlines.nextDeadline())
+    {
+        auto ms_until_deadline = std::max<Int64>(0, std::chrono::duration_cast<std::chrono::milliseconds>(*next - Clock::now()).count());
+        if (timeout < 0 || ms_until_deadline < static_cast<Int64>(timeout))
+            effective_timeout = static_cast<int>(ms_until_deadline);
+    }
+
     lock.unlock();
 
     epoll_event event;
     event.data.ptr = nullptr;
-    size_t num_events = epoll.getManyReady(1, &event, timeout);
+    size_t num_events = epoll.getManyReady(1, &event, effective_timeout);
 
     lock.lock();
 
     if (num_events == 0)
+    {
+        if (effective_timeout != timeout)
+            return popMinDeadlineTask();
+
         return {};
+    }
 
     if (event.data.ptr == pipe_fd)
         return {};
 
     void * ptr = event.data.ptr;
-    std::uintptr_t key = reinterpret_cast<uintptr_t>(ptr);
+    Key key = reinterpret_cast<Key>(ptr);
     auto it = tasks.find(key);
     if (it == tasks.end())
     {
@@ -96,6 +198,7 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
     auto res = it->second;
     tasks.erase(it);
+    deadlines.cancel(key);
     epoll.remove(res.fd);
 
     return res;
