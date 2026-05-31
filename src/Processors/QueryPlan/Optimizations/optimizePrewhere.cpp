@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
@@ -9,6 +10,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
+#include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -28,7 +30,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -109,7 +111,15 @@ ActionsDAG splitAndFillPrewhereInfo(
     {
         prewhere_info->prewhere_column_name = conditions.front()->result_name;
         if (prewhere_info->remove_prewhere_column)
-            prewhere_info->prewhere_actions.getOutputs().push_back(conditions.front());
+        {
+            /// If the prewhere column is removed, then let's add it back. If it is already in the outputs,
+            /// that means the prewhere column is needed later, so let's keep it.
+            auto & outputs = prewhere_info->prewhere_actions.getOutputs();
+            if (std::find(outputs.begin(), outputs.end(), conditions.front()) == outputs.end())
+                outputs.push_back(conditions.front());
+            else
+                prewhere_info->remove_prewhere_column = false;
+        }
     }
     else
     {
@@ -287,34 +297,51 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (source_step_with_filter->canRemoveUnusedColumns() && source_step_with_filter->canRemoveColumnsFromOutput()
         && parent_step->canRemoveUnusedColumns())
     {
-        NameMultiSet required_outputs;
+        /// Pass all output positions (we want to keep the same outputs, just prune inputs).
+        const auto & parent_output = parent_step->getOutputHeader();
+        std::vector<size_t> all_positions;
+        all_positions.reserve(parent_output->columns());
+        for (size_t i = 0; i < parent_output->columns(); ++i)
+            all_positions.push_back(i);
 
-        for (const auto & column_name_and_type : *parent_step->getOutputHeader())
-            required_outputs.insert(column_name_and_type.name);
+        const auto unused_column_removal_result = parent_step->removeUnusedColumns(all_positions, true);
 
-        const auto result = parent_step->removeUnusedColumns(required_outputs, true);
-
-        if (result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput)
+        if (unused_column_removal_result.changed && !unused_column_removal_result.required_input_positions.empty())
         {
-            required_outputs.clear();
-            for (const auto & column_name_and_type : *parent_step->getInputHeaders().at(0))
-                required_outputs.insert(column_name_and_type.name);
+            /// The parent step returned the positions it needs from its child (child 0).
+            /// Pass them directly to the source step.
+            chassert(unused_column_removal_result.required_input_positions.size() == 1);
+            const auto & required_positions = unused_column_removal_result.required_input_positions[0];
+            auto source_removal_result = source_step_with_filter->removeUnusedColumns(required_positions, true);
 
-            source_step_with_filter->removeUnusedColumns(required_outputs, true);
+            const auto effective_kept_positions = effectiveKeptOutputPositions(
+                source_removal_result.changed,
+                std::move(source_removal_result.kept_output_positions),
+                source_step_with_filter->getOutputHeader()->columns());
 
-            // Here the output of the source step should match the input of the parent step, even though that is not
-            // generally true after unused column removal. There might be outputs that are not removed in some step
-            // (e.g. JoinLogicalStep). However as currently the only source that implements unused column removal is
-            // ReadFromMergeTree, which can remove any columns, therefore let's throw a logical error in case this is
-            // not true.
+            /// The source step might keep extra columns it cannot remove (e.g., `ReadFromMergeTree` with
+            /// FINAL must keep sort key columns for merging). If so, absorb them into the parent's DAG.
+            /// The parent step is always an ExpressionStep or FilterStep (created above), so absorption
+            /// must succeed.
             if (!blocksHaveEqualStructure(*parent_step->getInputHeaders().at(0), *source_step_with_filter->getOutputHeader()))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Input-output header mismatch after removing unused columns after pushing down filters to prewhere. Input header: {}, "
-                    "output header: {}",
-                    parent_step->getInputHeaders().at(0)->dumpStructure(),
-                    source_step_with_filter->getOutputHeader()->dumpStructure());
+            {
+                if (!absorbExtraChildColumns(parent_node, 0, required_positions, effective_kept_positions))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Input-output header mismatch after removing unused columns after pushing down filters to prewhere "
+                        "and failed to absorb extra columns. Input header: {}, output header: {}",
+                        parent_step->getInputHeaders().at(0)->dumpStructure(),
+                        source_step_with_filter->getOutputHeader()->dumpStructure());
+            }
         }
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        {
+            assertBlocksHaveEqualStructure(
+                *source_step_with_filter->getOutputHeader(),
+                *parent_step->getInputHeaders()[0],
+                "after removing unused columns in optimizePrewhere");
+        }
+#endif
     }
 }
 

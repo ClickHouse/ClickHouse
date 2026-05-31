@@ -1,6 +1,5 @@
 #include <Compression/ICompressionCodec.h>
 
-#include <cassert>
 
 #include <Parsers/ASTFunction.h>
 #include <base/unaligned.h>
@@ -85,7 +84,7 @@ UInt64 ICompressionCodec::getHash() const
 
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {
-    assert(source != nullptr && dest != nullptr);
+    chassert(source != nullptr && dest != nullptr);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
 
@@ -100,7 +99,7 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
-    assert(source != nullptr && dest != nullptr);
+    chassert(source != nullptr && dest != nullptr);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Decompressing);
 

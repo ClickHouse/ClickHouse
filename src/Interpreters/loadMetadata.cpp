@@ -21,6 +21,7 @@
 
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -398,7 +399,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     }
 
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
-    assert(tmp_database->getEngineName() == "Atomic");
+    chassert(tmp_database->getEngineName() == "Atomic");
 
     size_t num_tables = 0;
     std::unordered_set<String> inner_mv_tables;
@@ -603,7 +604,7 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
     // Wait for all table to be loaded and started
     waitLoad(TablesLoaderForegroundPoolId, load_metadata);
 
-    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & [name, _] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
         if (name != DatabaseCatalog::SYSTEM_DATABASE)
             maybeConvertOrdinaryDatabaseToAtomic(context, name);
 

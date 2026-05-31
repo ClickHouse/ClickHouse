@@ -26,6 +26,7 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
