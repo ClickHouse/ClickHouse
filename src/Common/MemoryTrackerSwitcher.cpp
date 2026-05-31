@@ -16,6 +16,7 @@ MemoryTrackerSwitcher::MemoryTrackerSwitcher(MemoryTracker * new_tracker)
     prev_memory_tracker = current_thread->memory_tracker;
 
     current_thread->untracked_memory = 0;
+    chassert(new_tracker);
     current_thread->memory_tracker = new_tracker;
 }
 
