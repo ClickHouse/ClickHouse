@@ -1709,6 +1709,16 @@ public:
         statements.erase(it);
     }
 
+    /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
+    /// statement or portal is not an error — it is a silent no-op that still
+    /// responds with `CloseComplete`. Use this instead of `deleteStatement`
+    /// from the extended-query `Close` handler so a stray `Close` does not
+    /// terminate the connection.
+    void tryDeleteStatement(const String & function_name)
+    {
+        statements.erase(function_name);
+    }
+
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
         /// We only support the unnamed portal (an empty `portal_name`).
