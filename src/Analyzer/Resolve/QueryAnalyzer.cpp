@@ -182,6 +182,37 @@ void verifyMaterializedCTESubqueryMatchesStorage(
     }
 }
 
+/// Recursively clears aliases from `node` and all of its descendants, stopping at
+/// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
+///
+/// Background: during identifier resolution, when an identifier resolves to an alias
+/// (e.g. `cond` in `PREWHERE cond` resolves to the projection alias `cond`), the alias
+/// body is deep-cloned and the clone replaces the identifier. Only the clone's root is
+/// registered for later alias removal; the clone's descendants — which carry the
+/// original inner aliases (clone preserves aliases) — are not. A plain non-recursive
+/// `removeAlias` on each registered node therefore leaks inner aliases when the alias
+/// body itself contains alias-bearing nodes.
+///
+/// This walk catches those inner aliases. Nested subqueries / lambdas live in separate
+/// scopes that are responsible for their own alias cleanup, so the walk stops at their
+/// boundary.
+void removeAliasesRecursive(QueryTreeNodePtr & node)
+{
+    if (!node)
+        return;
+
+    node->removeAlias();
+
+    auto node_type = node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY
+        || node_type == QueryTreeNodeType::UNION
+        || node_type == QueryTreeNodeType::LAMBDA)
+        return;
+
+    for (auto & child : node->getChildren())
+        removeAliasesRecursive(child);
+}
+
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -1849,7 +1880,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
-    assert(matcher_node_typed.isQualified());
+    chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
@@ -1970,7 +2001,7 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
-    assert(matcher_node_typed.isUnqualified());
+    chassert(matcher_node_typed.isUnqualified());
 
     /** There can be edge case if matcher is inside lambda expression.
       * Try to find parent query expression using parent scopes.
@@ -5678,6 +5709,19 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         prewhere_node = prewhere_node->clone();
         ReplaceColumnsVisitor replace_visitor(scope.join_columns_with_changed_types, scope.context);
         replace_visitor.visit(prewhere_node);
+
+        /// `prewhere_node` was registered for alias removal at line ~1135 when the
+        /// identifier was resolved, but the registered pointer is the pre-clone tree
+        /// — it is no longer in the query after the clone above. Register the new
+        /// clone so the recursive alias removal below reaches its inner aliases.
+        /// Without this, `PREWHERE cond` (where `cond` is a projection alias built
+        /// from inner aliases like `cond1`, `cond2`) emits an AST where the
+        /// projection has `cond1`/`cond2` aliases stripped but `PREWHERE`'s body
+        /// retains them — the same alias appearing on two different bodies trips
+        /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` on the remote replica's re-analysis when
+        /// the tree is dispatched via `parallel_replicas_local_plan = 0`.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/74324.
+        scope.aliases.node_to_remove_aliases.push_back(prewhere_node);
     }
 
     if (query_node_typed.getWhere())
@@ -5854,10 +5898,16 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       */
     query_node_typed.getWindow().getNodes().clear();
 
-    /// Remove aliases from expression and lambda nodes
+    /// Remove aliases from expression and lambda nodes.
+    ///
+    /// `node_to_remove_aliases` holds nodes that were registered during identifier
+    /// resolution as alias references (deep clones of alias bodies) plus nodes that
+    /// directly carry aliases. The recursive walk clears aliases on the descendants
+    /// of clones too — those descendants are themselves clones of nested alias
+    /// references and are not separately registered.
 
     for (auto & node : scope.aliases.node_to_remove_aliases)
-        node->removeAlias();
+        removeAliasesRecursive(node);
 
     for (auto & [_, node] : scope.aliases.alias_name_to_expression_node)
         node->removeAlias();
