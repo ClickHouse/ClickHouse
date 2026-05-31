@@ -925,6 +925,11 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
 
+void FormatFactory::setDocumentation(const String & name, Documentation documentation)
+{
+    getOrCreateCreators(name).documentation = std::move(documentation);
+}
+
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
 {
     file_extension_formats[boost::to_lower_copy(extension)] = format_name;

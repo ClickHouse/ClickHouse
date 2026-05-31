@@ -156,6 +156,8 @@ void registerFormSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
+void registerFormatDocumentations(FormatFactory & factory);
+
 void registerFormats()
 {
     auto & factory = FormatFactory::instance();
@@ -301,6 +303,8 @@ void registerFormats()
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
+
+    registerFormatDocumentations(factory);
 }
 
 }

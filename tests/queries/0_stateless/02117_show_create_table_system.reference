@@ -300,7 +300,11 @@ CREATE TABLE system.formats
     `has_external_schema` UInt8,
     `prefers_large_blocks` UInt8,
     `supports_append` UInt8,
-    `supports_subsets_of_columns` UInt8
+    `supports_subsets_of_columns` UInt8,
+    `description` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
