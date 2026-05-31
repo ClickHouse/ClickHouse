@@ -350,7 +350,12 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
 
     UUID default_database_uuid;
 
-    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
+    /// Look up the persisted UUID via the per-database metadata symlink that
+    /// `DatabaseAtomic` creates at `metadata/<escapeForFileName(name)>`.
+    /// Using a hardcoded `"default"` here means a non-default `default_database`
+    /// (e.g. `--default_database=mydb`) silently loses data on restart because
+    /// the lookup misses the previous run's symlink and a fresh UUID is picked.
+    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / DatabaseCatalog::getMetadataDirPath(name_);
     if (FS::isSymlinkNoThrow(existing_path_symlink))
     {
         auto symlink_path = FS::readSymlink(existing_path_symlink);

@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"http_allow_table_as_file", false, false, "New setting to recognize a table name in the URL path of HTTP requests, with optional format/compression extensions."},
             {"http_allow_filters_as_path", false, false, "New setting to recognize hive-style `name=value` filters in the URL path of HTTP requests."},
             {"http_allow_filters_as_unrecognized_url_parameters", false, false, "New setting to treat unrecognized URL parameters as filter expressions in HTTP requests."},
+            {"file_like_engine_default_partition_strategy", "wildcard", "hive", "Change the default partition strategy for file-like table engines (S3, AzureBlobStorage, etc.) from `wildcard` to `hive` when no `partition_strategy` is provided."},
             {"allow_limit_by_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `LIMIT BY` when the partition expression is a deterministic function of the `LIMIT BY` columns."},
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
