@@ -354,15 +354,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<UInt16>(src, type);
         }
 
-        if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of DateTime and Time
+            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
             return src;
+        }
+
+        if (which_type.isTime() && src.getType() == Field::Types::UInt64)
+        {
+            /// `Time` stores `Int32` under the hood; convert through `Int32` to produce the canonical
+            /// `Int64` `Field` matching what `Time` part loading produces, and to range-check the input.
+            return convertNumericType<Int32>(src, type);
         }
 
         if (which_type.isTime() && src.getType() == Field::Types::Int64)
         {
-            /// We don't need any conversion Int64 is under type of Date32
+            /// `Time` stores `Int32` under the hood, so `Int64` is the canonical `Field` type and no conversion is needed.
             return src;
         }
 
