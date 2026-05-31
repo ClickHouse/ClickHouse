@@ -282,6 +282,85 @@ def test_run_keeps_server_died_when_tests_failed(tmp_path):
     assert "CIDB log cluster unresponsive" not in leaf_names
 
 
+def test_run_keeps_server_died_when_test_run_was_incomplete(tmp_path):
+    # Blocker from clickhouse-gh[bot] correctness review on PR #106176:
+    # if the harness wall-clock fires mid-suite, `test_result.txt` lacks
+    # the `All tests have finished` marker and `success_finish` is False.
+    # Even with an `err.log` dominated by staging-shipping retries, the
+    # run is incomplete — not all selected tests ran, so the result must
+    # stay `Server died` and CI must stay red.
+    _empty_test_results_file(tmp_path, success_finish=False)
+    err_log = _write_err_log(
+        tmp_path, [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    )
+    processor = FTResultsProcessor(
+        wd=str(tmp_path),
+        server_err_log_path=str(err_log),
+    )
+    result = processor.run(runner_exit_code=-signal.SIGTERM)
+
+    assert result.status == Result.Status.FAIL
+    leaf_names = [r.name for r in result.results]
+    assert "Server died" in leaf_names
+    assert "CIDB log cluster unresponsive" not in leaf_names
+
+
+def test_overload_classifier_scans_full_file_for_late_fatal_marker(tmp_path):
+    # Blocker from clickhouse-gh[bot] correctness review on PR #106176:
+    # under chronic staging overload `err.log` can grow to hundreds of
+    # MiB. A `<Fatal>` appended after the first 64 MiB of shipping noise
+    # — the cap an earlier revision used — must still disqualify the run
+    # from being reclassified. The classifier now streams the full file
+    # line by line so no byte cap can hide a late marker.
+    target_size = 65 * 1024 * 1024  # 65 MiB — past the old 64 MiB cap
+    line_with_newline = _SHIPPING_ERROR_LINE_TOO_MANY_PARTS + "\n"
+    n_lines = max(
+        _STAGING_OVERLOAD_MIN_ERRORS * 5,
+        target_size // len(line_with_newline) + 1,
+    )
+    err_log = tmp_path / "clickhouse-server.err.log"
+    with err_log.open("w", encoding="utf-8") as f:
+        for _ in range(n_lines):
+            f.write(line_with_newline)
+        f.write(_REAL_FATAL_LINE + "\n")
+
+    # Sanity-check that the file actually exceeds the old scan window —
+    # otherwise this test would not exercise the fix.
+    assert err_log.stat().st_size > 64 * 1024 * 1024
+    assert is_ci_logs_cluster_overload(err_log) is False
+
+
+def test_run_keeps_server_died_when_oversized_log_has_late_logical_error(tmp_path):
+    # Same shape as the late-`<Fatal>` test but for `LOGICAL_ERROR`, and
+    # exercised end-to-end through `FTResultsProcessor.run`. Confirms the
+    # full integration path keeps the `Server died` leaf when a real
+    # marker hides past the first 64 MiB of shipping noise.
+    _empty_test_results_file(tmp_path)
+    target_size = 65 * 1024 * 1024  # 65 MiB — past the old 64 MiB cap
+    line_with_newline = _SHIPPING_ERROR_LINE_TOO_MANY_PARTS + "\n"
+    n_lines = max(
+        _STAGING_OVERLOAD_MIN_ERRORS * 5,
+        target_size // len(line_with_newline) + 1,
+    )
+    err_log = tmp_path / "clickhouse-server.err.log"
+    with err_log.open("w", encoding="utf-8") as f:
+        for _ in range(n_lines):
+            f.write(line_with_newline)
+        f.write(_REAL_LOGICAL_ERROR_LINE + "\n")
+
+    assert err_log.stat().st_size > 64 * 1024 * 1024
+    processor = FTResultsProcessor(
+        wd=str(tmp_path),
+        server_err_log_path=str(err_log),
+    )
+    result = processor.run(runner_exit_code=-signal.SIGTERM)
+
+    assert result.status == Result.Status.FAIL
+    leaf_names = [r.name for r in result.results]
+    assert "Server died" in leaf_names
+    assert "CIDB log cluster unresponsive" not in leaf_names
+
+
 def test_aborted_run_exit_codes_set_includes_expected_codes():
     # Sanity-check that the constants the heuristic branches on are the
     # ones documented in PR #106154's investigation.

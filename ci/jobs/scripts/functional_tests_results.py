@@ -100,11 +100,6 @@ _STAGING_OVERLOAD_MIN_ERRORS = 100
 # failure — keeps us on the `Server died` path.
 _STAGING_OVERLOAD_MIN_FRACTION = 0.95
 
-# Cap on how much of `clickhouse-server.err.log` we scan when classifying.
-# Under chronic staging-cluster overload the file can grow to hundreds of
-# MiB; we only need enough to decide dominance.
-_STAGING_OVERLOAD_SCAN_BYTES = 64 * 1024 * 1024
-
 
 def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
     """Return ``True`` iff `clickhouse-server.err.log` looks like the CIDB
@@ -113,11 +108,17 @@ def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
 
     The classifier requires:
 
-    * no real-crash markers (`<Fatal>`, sanitizer report, `LOGICAL_ERROR`);
+    * no real-crash markers (`<Fatal>`, sanitizer report, `LOGICAL_ERROR`)
+      anywhere in the file;
     * at least `_STAGING_OVERLOAD_MIN_ERRORS` `<Error>` lines in the file;
     * at least `_STAGING_OVERLOAD_MIN_FRACTION` of those `<Error>` lines
       naming a Distributed-shipping logger (`DistributedAsyncInsertQueue`,
       `BgDistSchPool`, `system.<table>_sender`, ...).
+
+    The file is streamed line by line because under chronic staging
+    overload it can grow to hundreds of MiB; any fixed byte cap on the
+    scan window could hide a real-crash marker appended after a large
+    initial block of shipping noise.
 
     This is the heuristic @alexey-milovidov asked for on PR #106154: when
     the only thing wrong is a flaky CIDB log staging cluster, the harness
@@ -128,23 +129,23 @@ def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
     if not server_err_log.exists():
         return False
 
-    try:
-        with server_err_log.open("r", encoding="utf-8", errors="replace") as f:
-            content = f.read(_STAGING_OVERLOAD_SCAN_BYTES)
-    except OSError:
-        return False
-
-    if _REAL_CRASH_PATTERN.search(content):
-        return False
-
     error_lines = 0
     shipping_lines = 0
-    for line in content.splitlines():
-        if "<Error>" not in line:
-            continue
-        error_lines += 1
-        if _STAGING_SHIPPING_LOGGER_PATTERN.search(line):
-            shipping_lines += 1
+    try:
+        with server_err_log.open("r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                # A real-crash marker anywhere in the file disqualifies
+                # the run, so scan the full stream — never bail early on
+                # the dominance counts before the whole file is read.
+                if _REAL_CRASH_PATTERN.search(line):
+                    return False
+                if "<Error>" not in line:
+                    continue
+                error_lines += 1
+                if _STAGING_SHIPPING_LOGGER_PATTERN.search(line):
+                    shipping_lines += 1
+    except OSError:
+        return False
 
     if error_lines < _STAGING_OVERLOAD_MIN_ERRORS:
         return False
@@ -331,7 +332,16 @@ class FTResultsProcessor:
             # logs to the unresponsive staging cluster piled up. Treat
             # this as an infrastructure outage, not a server crash, and
             # don't paint the check red.
-            if not failed_results and is_ci_logs_cluster_overload(self.server_err_log_path):
+            #
+            # `s.success_finish` is required so an incomplete run is
+            # never reclassified: if the wall-clock fires mid-suite, no
+            # test may have emitted `FAIL` yet, but not all selected
+            # tests ran either — the result must stay `Server died`.
+            if (
+                s.success_finish
+                and not failed_results
+                and is_ci_logs_cluster_overload(self.server_err_log_path)
+            ):
                 ci_logs_cluster_overload = True
                 test_results.append(
                     Result(
