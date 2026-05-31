@@ -418,7 +418,7 @@ void verifyKnownEncoding(const ICompressionCodec & codec, UInt32 W, UInt32 N, co
 // W=4 is a compile-time-templated path (encodeW<4>). For three elements
 // [A0 A1 A2 A3] [B0 B1 B2 B3] [C0 C1 C2 C3], the body must be
 // [A0 B0 C0] [A1 B1 C1] [A2 B2 C2] [A3 B3 C3].
-TEST(ByteStreamSplitTest, KnownEncoding_W4_N3)
+TEST(ByteStreamSplitTest, KnownEncodingW4N3)
 {
     auto codec = makeCodec("ByteStreamSplit(4)", std::make_shared<DataTypeFloat32>());
     verifyKnownEncoding(*codec, /*W=*/4, /*N=*/3, "W=4 N=3 (templated path)");
@@ -426,7 +426,7 @@ TEST(ByteStreamSplitTest, KnownEncoding_W4_N3)
 
 // W=3 hits the runtime-W fallback (encodeRuntime), which uses a different
 // implementation than the compile-time-templated widths.
-TEST(ByteStreamSplitTest, KnownEncoding_W3_N4_runtime)
+TEST(ByteStreamSplitTest, KnownEncodingW3N4Runtime)
 {
     auto codec = makeCodec("ByteStreamSplit(3)");
     verifyKnownEncoding(*codec, /*W=*/3, /*N=*/4, "W=3 N=4 (runtime path)");
@@ -434,7 +434,7 @@ TEST(ByteStreamSplitTest, KnownEncoding_W3_N4_runtime)
 
 // W=16 dispatches to AVX2/SSE2 SIMD specializations (with a tiled scalar
 // fallback). N=32 is enough to enter the AVX2 main loop where available.
-TEST(ByteStreamSplitTest, KnownEncoding_W16_N32_simd)
+TEST(ByteStreamSplitTest, KnownEncodingW16N32Simd)
 {
     auto codec = makeCodec("ByteStreamSplit(16)");
     verifyKnownEncoding(*codec, /*W=*/16, /*N=*/32, "W=16 N=32 (SIMD path)");
