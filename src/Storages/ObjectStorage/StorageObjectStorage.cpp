@@ -363,11 +363,11 @@ IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 
 bool StorageObjectStorage::supportsDelete() const
 {
-    /// For data lake configurations the answer depends on `current_metadata`, which is loaded
-    /// lazily. `InterpreterDeleteQuery::execute` calls `supportsDelete()` BEFORE
-    /// `checkMutationIsPossible` (which performs lazy-init), so without forcing init here we
-    /// would hit `assertInitialized()` and raise a logical error for a freshly-attached table
-    /// whose metadata has not been loaded yet.
+    /// Defense in depth. `InterpreterDeleteQuery::execute` now calls
+    /// `updateExternalDynamicMetadataIfExists` before `supportsDelete`, so this lazy-init
+    /// is no longer the path preventing `assertInitialized` for the `DELETE FROM` shape.
+    /// Kept to mirror `supportsParallelInsert` below and to protect any other caller that
+    /// reaches `supportsDelete` with `current_metadata == nullptr`.
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsDelete();
@@ -375,9 +375,10 @@ bool StorageObjectStorage::supportsDelete() const
 
 bool StorageObjectStorage::supportsParallelInsert() const
 {
-    /// Same lazy-init concern as `supportsDelete()`. `InsertDependenciesBuilder` queries this
-    /// while building the INSERT pipeline, which may run before any other code path on the
-    /// storage has loaded the data lake metadata.
+    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
+    /// INSERT pipeline. Only the root insert table is pre-initialised by
+    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
+    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsParallelInsert();
