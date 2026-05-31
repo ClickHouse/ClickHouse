@@ -94,6 +94,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_column_ids;
+    extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -150,6 +151,7 @@ namespace ErrorCodes
     extern const int PART_IS_LOCKED;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int FAULT_INJECTED;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 namespace ActionLocks
@@ -723,6 +725,18 @@ void StorageMergeTree::alter(
     auto maybe_mutation_commands = commands.getMutationCommands(
         old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,
         /*with_alters=*/false, /*column_ids_active=*/pn_plan.column_ids_active);
+
+    /// `checkAlterIsPossible` already gates `allow_non_metadata_alters = 0`
+    /// against `getMutationCommands`'s output, but the forced DROP+re-ADD
+    /// mutation we append below was synthesized AFTER that gate ran.  Re-check
+    /// here so a user with the setting disabled cannot smuggle a data-rewrite
+    /// through the column-IDs planning path.
+    if (!pn_plan.force_mutation_columns.empty()
+        && !query_settings[Setting::allow_non_metadata_alters])
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+            "ALTER on column IDs: forced DROP+re-ADD for column(s) '{}' would "
+            "rewrite data, but setting `allow_non_metadata_alters` is disabled",
+            fmt::join(pn_plan.force_mutation_columns, ", "));
 
     /// DROP + re-ADD same column cannot be made crash-safe as metadata-only,
     /// so force a DROP mutation for those columns even when column IDs
