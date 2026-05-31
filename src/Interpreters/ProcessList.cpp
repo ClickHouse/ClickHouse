@@ -265,6 +265,10 @@ ProcessList::EntryPtr ProcessList::insert(
             {
                 releaseAdmissionSlotLocked(lock);
                 got_admission_slot = false;
+                /// If `QueryStatus` was already constructed, also clear its flag so that a
+                /// destructing `ProcessListEntry` does not release the same slot a second time.
+                if (query)
+                    query->holds_admission_slot = false;
             }
         });
 
@@ -464,9 +468,6 @@ ProcessList::EntryPtr ProcessList::insert(
             watch_start_nanoseconds,
             is_internal);
 
-        /// QueryStatus now owns the admission slot — dismiss the rollback guard.
-        admission_rollback.release();
-
         auto process_it = processes.emplace(
             processes.end(),
             query);
@@ -516,6 +517,13 @@ ProcessList::EntryPtr ProcessList::insert(
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
+
+        /// The query is now fully registered: from here on the admission slot is owned by the
+        /// constructed `ProcessListEntry` (released in its destructor, or earlier in `executeQuery`).
+        /// Only now is it safe to dismiss the rollback guard — if any step above threw after the
+        /// guard was armed (e.g. an allocation failure in `processes.emplace`, `appendTask`, or the
+        /// `Entry` construction), the guard releases the slot and prevents it from leaking.
+        admission_rollback.release();
     }
 
     return res;
