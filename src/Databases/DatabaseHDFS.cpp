@@ -266,7 +266,10 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,
-    });
+    }, Documentation{
+        .description = "A read-only database that exposes files in HDFS as tables.",
+        .syntax = "ENGINE = HDFS([hdfs_host_and_root_path])",
+        .related = {"S3", "Filesystem"}});
 }
 } // DB
 

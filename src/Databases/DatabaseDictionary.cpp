@@ -167,6 +167,9 @@ void registerDatabaseDictionary(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Dictionary", create_fn);
+    factory.registerDatabase("Dictionary", create_fn, {}, Documentation{
+        .description = "A read-only database that automatically exposes every configured dictionary as a table.",
+        .syntax = "ENGINE = Dictionary",
+        .related = {}});
 }
 }
