@@ -17,6 +17,7 @@
 #include <cmath>
 #include <algorithm>
 #include <initializer_list>
+#include <numbers>
 #include <vector>
 #include <random>
 
@@ -133,7 +134,7 @@ static std::vector<BSSParam> makeBSSParams()
 
         // constant value
         out.push_back({spec, dt,
-            generateBuffer<float>(1000, [](size_t) { return 2.718281828f; }),
+            generateBuffer<float>(1000, [](size_t) { return std::numbers::e_v<float>; }),
             "F32_constant"});
 
         // sequential (slowly growing — exponent bytes stay the same)
@@ -179,7 +180,7 @@ static std::vector<BSSParam> makeBSSParams()
         const std::string spec = "ByteStreamSplit(8)";
 
         out.push_back({spec, dt,
-            generateBuffer<double>(1000, [](size_t) { return 2.718281828459045; }),
+            generateBuffer<double>(1000, [](size_t) { return std::numbers::e; }),
             "F64_constant"});
 
         out.push_back({spec, dt,
@@ -252,7 +253,7 @@ static std::vector<BSSParam> makeBSSParams()
         const std::string spec = "ByteStreamSplit(16)";
 
         // 64 elements → exactly 2 SIMD blocks of 32 elements each (AVX2)
-        std::mt19937 rng(42);
+        std::mt19937 rng(std::random_device{}());
         auto randBuf = generateBuffer<uint8_t>(64 * 16,
             [&rng](size_t) -> uint8_t { return static_cast<uint8_t>(rng()); });
         out.push_back({spec, dt, randBuf, "FS16_aligned_64"});
@@ -315,7 +316,7 @@ TEST(ByteStreamSplitTest, TranscodeRawInput)
         {std::make_shared<DataTypeFixedString>(16), 16},
     };
 
-    for (auto & [type, elem_bytes] : kTypes)
+    for (const auto & [type, elem_bytes] : kTypes)
     {
         auto codec = makeCodec("ByteStreamSplit", type);
 

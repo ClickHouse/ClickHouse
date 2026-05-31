@@ -86,7 +86,7 @@ namespace ErrorCodes
 namespace
 {
 
-static constexpr int MAX_ELEMENT_WIDTH = 255;
+constexpr int MAX_ELEMENT_WIDTH = 255;
 
 // =============================================================================
 //  W=16 SSE2 butterfly: 16×16 byte transpose using three unpack stages
