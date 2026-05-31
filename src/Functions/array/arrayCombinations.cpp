@@ -100,9 +100,12 @@ public:
                 continue;
             }
 
-            /// Check total output elements (rows * k) to prevent OOM
+            /// Cap total output elements (rows * k) to prevent OOM.
+            /// The budget is over the whole output block, not per row, so subtract the
+            /// elements already produced for previous rows before computing the per-row count.
             size_t uk = static_cast<size_t>(k);
-            size_t num_results = combinationCountCapped(n, uk, MAX_COMBINATION_RESULT_ELEMENTS / uk);
+            size_t remaining_budget = MAX_COMBINATION_RESULT_ELEMENTS - inner_pos;
+            size_t num_results = combinationCountCapped(n, uk, remaining_budget / uk);
             if (num_results == 0)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                     "Result of function {} would exceed {} total elements for array of length {} with k={}",

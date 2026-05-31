@@ -123,8 +123,11 @@ public:
                 continue;
             }
 
-            /// Check total output elements (rows * k) to prevent OOM
-            size_t max_rows = MAX_PERMUTATION_RESULT_ELEMENTS / k;
+            /// Cap total output elements (rows * k) to prevent OOM.
+            /// The budget is over the whole output block, not per row, so subtract the
+            /// elements already produced for previous rows before computing the per-row count.
+            size_t remaining_budget = MAX_PERMUTATION_RESULT_ELEMENTS - inner_pos;
+            size_t max_rows = remaining_budget / k;
             size_t num_results = IsPartial || k < n
                 ? partialPermCountCapped(n, k, max_rows)
                 : factorialCapped(n, max_rows);

@@ -41,3 +41,12 @@ SELECT arrayPermutations(range(toUInt8(15))); -- {serverError TOO_LARGE_ARRAY_SI
 
 -- size limit: should fail — P(9,9)=362880 rows but 362880*9 = 3265920 total elements > 1M
 SELECT arrayPermutations(range(toUInt8(9))); -- {serverError TOO_LARGE_ARRAY_SIZE}
+
+-- size limit is over the whole output block, not per row: many non-constant rows that each fit
+-- below the per-row budget must together still be rejected once the shared 1M budget is exhausted.
+-- arrayCombinations: C(18,9)=48620, 48620*9 = 437580 elements per row; 3 rows = 1312740 > 1M.
+SELECT arrayCombinations(arrayMap(x -> x + number, range(18)), 9) FROM numbers(3) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+-- arrayPermutations: 8!=40320, 40320*8 = 322560 elements per row; 4 rows = 1290240 > 1M.
+SELECT arrayPermutations(arrayMap(x -> x + number, range(8))) FROM numbers(4) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
+-- arrayPartialPermutations: P(10,6)=151200, 151200*6 = 907200 elements per row; 2 rows = 1814400 > 1M.
+SELECT arrayPartialPermutations(arrayMap(x -> x + number, range(10)), 6) FROM numbers(2) FORMAT Null; -- {serverError TOO_LARGE_ARRAY_SIZE}
