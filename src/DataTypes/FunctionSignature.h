@@ -77,8 +77,13 @@ public:
     /** Check if the arguments match function signature.
       * If match, return the function return type.
       * Otherwise, return nullptr and set out_reason explaining why.
+      *
+      * `types_only` indicates that the arguments carry no column information (the
+      * legacy `getReturnTypeImpl(DataTypes)` path), so the constness of `const`
+      * positions cannot be decided. When false (the normal path) a missing column
+      * means a genuinely non-constant argument.
       */
-    DataTypePtr check(const ColumnsWithTypeAndName & args, std::string & out_reason) const;
+    DataTypePtr check(const ColumnsWithTypeAndName & args, std::string & out_reason, bool types_only = false) const;
 
     std::string toString() const;
 

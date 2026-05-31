@@ -138,6 +138,10 @@ struct Variables
     /// must surface a clean user-facing error rather than an internal `BAD_FUNCTION_SIGNATURE`.
     std::set<Key> const_value_unavailable;
 
+    /// True when matching against argument types without columns. In that mode a missing
+    /// column does not imply a non-constant argument, so `const` positions are not rejected.
+    bool types_only = false;
+
     bool has(const Key & key) const
     {
         return container.contains(key);
@@ -339,31 +343,39 @@ struct ArgumentDescription
     bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars, size_t iteration,
         size_t arg_num, std::string & out_reason) const
     {
-        /// `column == nullptr` means the caller has no column information (e.g.
-        /// `getReturnTypeImpl(DataTypes)` reached us through the legacy types-only
-        /// path). In that mode we can't decide constness, so skip the check and
-        /// the const-value capture — both would reject every const-constrained
-        /// signature on this path otherwise.
-        if (is_const && column && !isColumnConst(*column))
+        /// Constness handling. A `const` position requires a constant argument. The
+        /// column is null both for a genuinely non-constant argument (the normal
+        /// `getReturnTypeImpl(ColumnsWithTypeAndName)` path) and for every argument on
+        /// the column-less types-only path, so `vars.types_only` tells them apart.
+        /// Rejecting a non-constant argument here lets `OR` alternatives fall through to
+        /// a non-const variant (e.g. the `allow_nonconst_timezone_arguments` fallback).
+        if (is_const)
         {
-            out_reason = "argument " + DB::toString(arg_num + 1) + (argument_name.name.empty() ? "" : " (" + argument_name.name + ")")
-                + " must be " + toString() + ", but it is not constant";
-            return false;
+            const bool known_non_const = column ? !isColumnConst(*column) : !vars.types_only;
+            if (known_non_const)
+            {
+                out_reason = "argument " + DB::toString(arg_num + 1) + (argument_name.name.empty() ? "" : " (" + argument_name.name + ")")
+                    + " must be " + toString() + ", but it is not constant";
+                return false;
+            }
         }
 
         if (!argument_name.name.empty())
         {
             auto key = argument_name.incrementIndex(iteration);
-            if (is_const && column && !vars.assignOrCheck(key, typeid_cast<const ColumnConst &>(*column).getField(), arg_num, out_reason))
+            if (is_const && column)
             {
-                return false;
+                if (!vars.assignOrCheck(key, typeid_cast<const ColumnConst &>(*column).getField(), arg_num, out_reason))
+                    return false;
             }
-
-            /// On the types-only path we have no column, so the const value cannot be
-            /// captured. Remember this: if the result type turns out to depend on it,
-            /// `Variables::get` will raise a clean `ILLEGAL_COLUMN` instead of an internal error.
-            if (is_const && !column)
+            else if (is_const)
+            {
+                /// Types-only path (a non-const argument would have been rejected above):
+                /// the const value cannot be captured. Remember this so that, if the result
+                /// type depends on it, `Variables::get` raises a clean `ILLEGAL_COLUMN`
+                /// instead of an internal `BAD_FUNCTION_SIGNATURE`.
                 vars.const_value_unavailable.insert(key);
+            }
         }
 
         if (!type_matcher->match(type, vars, iteration, arg_num, out_reason))
@@ -1470,9 +1482,10 @@ FunctionSignature::FunctionSignature(const std::string & str)
     }
 }
 
-DataTypePtr FunctionSignature::check(const ColumnsWithTypeAndName & args, std::string & out_reason) const
+DataTypePtr FunctionSignature::check(const ColumnsWithTypeAndName & args, std::string & out_reason, bool types_only) const
 {
     FunctionSignatures::Variables vars;
+    vars.types_only = types_only;
     return impl->check(args, vars, out_reason);
 }
 

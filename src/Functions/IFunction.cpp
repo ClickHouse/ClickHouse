@@ -832,7 +832,7 @@ FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndNam
 namespace
 {
     /// Parse and cache function signatures globally.
-    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments)
+    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments, bool types_only = false)
     {
         static std::mutex cache_mutex;
         static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache; // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -851,7 +851,7 @@ namespace
         }
 
         std::string reason;
-        DataTypePtr result = sig->check(arguments, reason);
+        DataTypePtr result = sig->check(arguments, reason, types_only);
         if (!result)
         {
             /// Surface the legacy `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` code when every
@@ -935,7 +935,7 @@ DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
         columns.reserve(arguments.size());
         for (const auto & type : arguments)
             columns.emplace_back(nullptr, type, String{});
-        return applyFunctionSignature(signature_str, getName(), columns);
+        return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true);
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
 }
