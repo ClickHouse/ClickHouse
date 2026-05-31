@@ -419,6 +419,12 @@ void WriteBufferFromS3::createMultipartUpload()
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 
+    /// The storage class of an object uploaded in multiple parts is determined by the CreateMultipartUpload request;
+    /// it cannot be set on UploadPart or CompleteMultipartUpload. Without this, multipart uploads always end up with
+    /// the default STANDARD storage class regardless of the configured value. See https://github.com/ClickHouse/ClickHouse/issues/68551
+    if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
+        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+
     client_ptr->setKMSHeaders(req);
 
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
