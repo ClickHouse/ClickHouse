@@ -30,9 +30,11 @@ MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_BODY((const ResultType * __restrict data_x, const ResultType * __restrict data_y, size_t count) {
         /// Manual unrolling with independent accumulators to break FP dependency chains.
         /// With FMA latency ~4 cycles and throughput 1/cycle, we need >= 4 independent
-        /// chains to saturate the pipeline. We use more (32 for Float32, 16 for Float64)
-        /// so the compiler can map them to multiple SIMD registers across all targets.
-        constexpr size_t unroll_count = 128 / sizeof(ResultType);
+        /// chains to saturate the pipeline. 16 accumulators is enough to do that while
+        /// keeping the per-row reduction and scalar remainder small: a wider unroll
+        /// (e.g. 128/sizeof = 32 for Float32) only pays off for very long arrays and
+        /// noticeably regresses the short (~150-element) arrays typical of vector search.
+        constexpr size_t unroll_count = 16;
         ResultType partial_sums[unroll_count]{};
 
         size_t i = 0;
