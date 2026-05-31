@@ -378,14 +378,16 @@ The id-generator expression for an external tags target is resolved at INSERT ti
 
 ## Altering settings {#altering-settings}
 
-Two settings can be changed after `CREATE`:
+Three settings can be changed after `CREATE`:
 
 - `id_generator`
 - `filter_by_min_time_and_max_time`
+- `prometheus_remote_write_dynamic_routing_enabled`
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1;
 ```
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.

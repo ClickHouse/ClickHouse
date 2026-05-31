@@ -57,10 +57,12 @@ namespace
         return copy;
     }
 
-    /// We allow altering only two settings: `id_generator` and `filter_by_min_time_and_max_time`.
+    /// We allow altering only settings that do not affect inner-table schemas.
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
-        if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
+        if ((setting_name != "id_generator")
+            && (setting_name != "filter_by_min_time_and_max_time")
+            && (setting_name != "prometheus_remote_write_dynamic_routing_enabled"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }

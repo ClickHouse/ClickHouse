@@ -378,8 +378,7 @@ def test_data_keyword():
     assert node.query("DESCRIBE timeSeriesData(prometheus)") == node.query("DESCRIBE timeSeriesSamples(prometheus)")
 
 
-# Checks that ALTER TABLE works and can modify settings
-# `id_generator` and `filter_by_min_time_and_max_time`.
+# Checks that ALTER TABLE works and can modify settings which do not affect inner-table schemas.
 def test_alter_modify_settings():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -398,6 +397,14 @@ def test_alter_modify_settings():
         node.query("SHOW CREATE TABLE prometheus"),
     )
     node.query("ALTER TABLE prometheus RESET SETTING filter_by_min_time_and_max_time")
+
+    # `prometheus_remote_write_dynamic_routing_enabled` is checked at INSERT time, so it can be altered.
+    node.query("ALTER TABLE prometheus MODIFY SETTING prometheus_remote_write_dynamic_routing_enabled = 1")
+    assert re.search(
+        r"\bprometheus_remote_write_dynamic_routing_enabled\s*=\s*true",
+        node.query("SHOW CREATE TABLE prometheus"),
+    )
+    node.query("ALTER TABLE prometheus RESET SETTING prometheus_remote_write_dynamic_routing_enabled")
 
     # Settings which can't be altered because they affect inner-table schemas.
     bound_settings = [

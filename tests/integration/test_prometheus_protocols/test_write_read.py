@@ -199,3 +199,67 @@ def test_remote_write_dynamic_routing_disabled_for_table():
         ).strip()
         == "0"
     )
+
+
+def test_remote_write_dynamic_routing_setting_can_be_altered():
+    table_name = "prometheus_dynamic_alter"
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node.query(f"CREATE TABLE {table_name} ENGINE=TimeSeries")
+
+    try:
+        timestamp = time.time()
+        write_request = convert_time_series_to_protobuf(
+            [({"__name__": "alter_dynamic_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+        )
+
+        response = get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            f"default/{table_name}/write",
+            write_request,
+        )
+        assert response.status_code == requests.codes.internal_server_error
+        assert "Prometheus remote write dynamic routing is disabled" in response.text
+        assert f"default.{table_name}" in response.text
+
+        node.query(
+            f"ALTER TABLE {table_name} MODIFY SETTING "
+            "prometheus_remote_write_dynamic_routing_enabled = 1"
+        )
+        send_protobuf_to_remote_write(
+            node.ip_address,
+            9093,
+            f"default/{table_name}/write",
+            write_request,
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM timeSeriesTags({table_name}) "
+            "WHERE metric_name = 'alter_dynamic_metric'",
+            "1",
+        )
+
+        node.query(
+            f"ALTER TABLE {table_name} RESET SETTING "
+            "prometheus_remote_write_dynamic_routing_enabled"
+        )
+        disabled_write_request = convert_time_series_to_protobuf(
+            [({"__name__": "alter_dynamic_metric_after_reset", "job": "dynamic_test"}, {time.time(): 1.0})]
+        )
+        response = get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            f"default/{table_name}/write",
+            disabled_write_request,
+        )
+        assert response.status_code == requests.codes.internal_server_error
+        assert "Prometheus remote write dynamic routing is disabled" in response.text
+        assert (
+            node.query(
+                f"SELECT count() FROM timeSeriesTags({table_name}) "
+                "WHERE metric_name = 'alter_dynamic_metric_after_reset'"
+            ).strip()
+            == "0"
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
