@@ -571,6 +571,11 @@ void MergeTreeIndexAggregatorVectorSimilarityScann::update(
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "vector_similarity('scann', ...) index supports only Array(Float32) and Array(Float64)");
         }
+
+        for (size_t d = 0; d < dims; ++d)
+            if (!std::isfinite(dst[d]))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Vector for vector_similarity('scann', ...) index must not contain non-finite values (NaN or Inf)");
     }
 
     granule->num_vectors += rows_read;
@@ -671,7 +676,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     /// Build padded query vector.
     std::vector<float> query(pd, 0.0f);
     for (size_t i = 0; i < orig_dims; ++i)
+    {
+        if (!std::isfinite(ref[i]))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Query vector for vector_similarity('scann', ...) must not contain non-finite values (NaN or Inf)");
         query[i] = static_cast<float>(ref[i]);
+    }
 
     /// Normalize for cosine distance (same as build-time normalization).
     if (index_params.distance_name == "cosineDistance")
@@ -691,9 +701,19 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     /// num_candidates: rows returned to ClickHouse for its own exact reranking.
     /// candidate_pool: AH candidate pool fed into ScaNN's internal exact reranker.
     const size_t num_candidates = std::min(topk, granule->num_vectors);
-    const size_t candidate_pool = (scann_candidate_pool_size > 0)
-        ? std::min(scann_candidate_pool_size, granule->num_vectors)
-        : std::min(num_candidates * 1000, granule->num_vectors);
+    const size_t candidate_pool = std::max(
+        num_candidates,
+        (scann_candidate_pool_size > 0)
+            ? std::min(scann_candidate_pool_size, granule->num_vectors)
+            : std::min(num_candidates * 1000, granule->num_vectors));
+
+    static constexpr size_t MAX_INT32 = static_cast<size_t>(std::numeric_limits<int32_t>::max());
+    if (candidate_pool > MAX_INT32)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN candidate pool size {} exceeds int32_t limit", candidate_pool);
+    if (num_candidates > MAX_INT32)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ScaNN num_candidates {} exceeds int32_t limit", num_candidates);
 
     std::vector<research_scann::SearchParameters> search_params(1);
     search_params[0].set_pre_reordering_num_neighbors(static_cast<int32_t>(candidate_pool));

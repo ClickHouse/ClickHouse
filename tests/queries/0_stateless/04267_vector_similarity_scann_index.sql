@@ -238,8 +238,27 @@ CREATE TABLE tab_scann_dim_ins (id Int32, vec Array(Float32), INDEX idx vec TYPE
 INSERT INTO tab_scann_dim_ins VALUES (0, [1.0, 2.0, 3.0]); -- { serverError INCORRECT_DATA }
 DROP TABLE tab_scann_dim_ins;
 
--- Test 11: index survives DETACH/ATTACH (serialization round-trip).
-SELECT '11. Serialization round-trip (DETACH/ATTACH)';
+SELECT '12. non-finite values rejected at insert (NaN/Inf)';
+DROP TABLE IF EXISTS tab_scann_nonfinite;
+CREATE TABLE tab_scann_nonfinite (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_nonfinite VALUES (0, [nan, 1.0]); -- { serverError INCORRECT_DATA }
+INSERT INTO tab_scann_nonfinite VALUES (0, [inf, 1.0]); -- { serverError INCORRECT_DATA }
+INSERT INTO tab_scann_nonfinite VALUES (0, [-inf, 1.0]); -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_nonfinite;
+
+SELECT '13. non-finite values rejected in query vector';
+DROP TABLE IF EXISTS tab_scann_nonfinite_q;
+CREATE TABLE tab_scann_nonfinite_q (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_nonfinite_q SELECT toInt32(number), [toFloat32(number), toFloat32(number + 1)] FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_nonfinite_q FINAL;
+WITH [nan, 0.0] AS ref SELECT id FROM tab_scann_nonfinite_q ORDER BY L2Distance(vec, ref) LIMIT 1 SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+WITH [inf, 0.0] AS ref SELECT id FROM tab_scann_nonfinite_q ORDER BY L2Distance(vec, ref) LIMIT 1 SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_nonfinite_q;
+
+-- Test 14: index survives DETACH/ATTACH (serialization round-trip).
+SELECT '14. Serialization round-trip (DETACH/ATTACH)';
 DROP TABLE IF EXISTS tab_scann_detach;
 CREATE TABLE tab_scann_detach (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;

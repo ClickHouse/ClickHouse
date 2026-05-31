@@ -28,6 +28,8 @@
 8. dimensions must be > 0
 9. must be created on Array(Float32) or Array(Float64) column
 10. dimension mismatch at insert
-11. Serialization round-trip (DETACH/ATTACH)
+12. non-finite values rejected at insert (NaN/Inf)
+13. non-finite values rejected in query vector
+14. Serialization round-trip (DETACH/ATTACH)
 1
 0
