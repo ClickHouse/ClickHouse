@@ -138,6 +138,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_pretty_max_rows;
     extern const SettingsUInt64 output_format_pretty_max_value_width;
+    extern const SettingsString output_format_pretty_grid_charset;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
@@ -966,6 +967,19 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
             settings[Setting::output_format_pretty_max_value_width].changed = false;
         }
 
+        context->setSettings(settings);
+    }
+
+    /// If we are writing to a terminal that does not support UTF-8 (e.g. with LANG=C),
+    /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
+    /// would corrupt the terminal. Respect an explicit choice of the charset by the user.
+    if (stdout_is_a_tty
+        && !context->getSettingsRef()[Setting::output_format_pretty_grid_charset].changed
+        && !terminalSupportsUTF8())
+    {
+        Settings settings = context->getSettingsCopy();
+        settings[Setting::output_format_pretty_grid_charset] = "ASCII";
+        settings[Setting::output_format_pretty_grid_charset].changed = false;
         context->setSettings(settings);
     }
 }
