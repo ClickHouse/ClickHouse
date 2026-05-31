@@ -64,7 +64,7 @@ private:
 
     const char * getStorageEngineName() const override { return "View"; }
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {0}; }
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {0}; }
 
     const ASTSelectWithUnionQuery * getSelectQueryForDistributedRewrite() const override { return create.select; }
 

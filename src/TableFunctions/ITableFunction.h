@@ -5,6 +5,9 @@
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/Names.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
@@ -54,7 +57,7 @@ public:
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
       */
-    virtual std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
+    virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
     /// Return a query represented by a table function when it can be used directly in distributed rewrites.
     virtual const ASTSelectWithUnionQuery * getSelectQueryForDistributedRewrite() const { return nullptr; }
@@ -78,7 +81,7 @@ public:
     /// It returns possible virtual column names of corresponding storage. If select query contains
     /// one of these columns, the structure from insertion table won't be used as a structure hint,
     /// because we cannot determine which column from table correspond to this virtual column.
-    virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
+    virtual NameSet getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
