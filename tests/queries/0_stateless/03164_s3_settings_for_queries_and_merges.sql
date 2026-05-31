@@ -1,10 +1,8 @@
--- Tags: no-random-settings, no-fasttest, no-parallel
-
--- Pin the legacy reader: this test asserts the S3 seek-coalescing governed by
--- remote_read_min_bytes_for_seek, which the ReaderExecutor does not honor on
--- remote reads. The executor's own read/cache behavior is covered separately by
+-- Tags: no-random-settings, no-fasttest, no-parallel, no-reader-executor
+-- no-reader-executor: asserts legacy S3 read accounting, including the OPTIMIZE
+-- merge read, which a session setting cannot redirect to the legacy reader; the
+-- executor's read/cache behavior on this scenario is covered by
 -- 04302_reader_executor_s3_read_introspection.
-SET use_reader_executor = 0;
 
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET allow_prefetched_read_pool_for_local_filesystem=0;

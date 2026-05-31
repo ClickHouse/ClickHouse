@@ -1230,6 +1230,7 @@ class FailureReason(enum.Enum):
     SHARED_CATALOG = "no-shared-catalog"
     SHARED_CATALOG_ONLY = "shared-catalog"
     DISTRIBUTED_CACHE = "distributed-cache"
+    READER_EXECUTOR = "reader-executor"
     NO_SHARED_OR_REPLICATED_MERGE_TREE = "no-shared-or-replicated-merge-tree"
     NO_STATELESS = "no-stateless"
     NO_STATEFUL = "no-stateful"
@@ -2664,6 +2665,12 @@ class TestCase:
 
         if tags and ("no-distributed-cache" in tags) and args.distributed_cache:
             return FailureReason.DISTRIBUTED_CACHE
+
+        # Skip tests that assert legacy-reader behavior when the ReaderExecutor is
+        # forced on (tests/config/users.d/use_reader_executor.xml). Auto-detected
+        # from the server default in `args.reader_executor`.
+        if tags and ("no-reader-executor" in tags) and args.reader_executor:
+            return FailureReason.READER_EXECUTOR
 
         if (
             tags
@@ -5280,6 +5287,15 @@ def main(args):
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
 
+    # The ReaderExecutor is forced on in CI via a user-default config, not a CLI
+    # flag, so detect it from the server default to gate `no-reader-executor`.
+    args.reader_executor = args.reader_executor or (
+        clickhouse_execute(
+            args, "SELECT value FROM system.settings WHERE name = 'use_reader_executor'"
+        )
+        == b"1"
+    )
+
     print(
         f"build_flags={args.build_flags} "
         f"collect_per_test_coverage={args.collect_per_test_coverage} "
@@ -6001,6 +6017,13 @@ def parse_args():
         action="store_true",
         default=False,
         help="Run tests with enabled distributed cache",
+    )
+    parser.add_argument(
+        "--reader-executor",
+        action="store_true",
+        default=False,
+        help="Tests run with the ReaderExecutor (use_reader_executor) forced on; "
+        "auto-detected from the server default at startup",
     )
     parser.add_argument(
         "--azure-blob-storage",

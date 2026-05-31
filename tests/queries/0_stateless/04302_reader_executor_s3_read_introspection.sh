@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings
 
-# Companion to 03164_s3_settings_for_queries_and_merges, but for the
-# ReaderExecutor. The legacy test asserts S3 read efficiency through per-query
-# ProfileEvents; the executor reads remote data through a different path, so
-# here the same compact-part-on-S3 scan is asserted via the executor's own
-# introspection in system.reader_executor_log.
+# Executor coverage of an S3 read through its own introspection in
+# system.reader_executor_log. A cold scan after dropping the filesystem cache
+# must read column data from the source and populate the cache; a warm re-scan
+# of the same columns must then be served entirely from the filesystem cache,
+# doing zero source I/O.
 #
-# A cold scan after dropping the filesystem cache must read from the source and
-# populate the cache. A warm re-scan of the same columns must then be served
-# entirely from the filesystem cache, doing zero source I/O — that is the
-# executor's "no over-read" guarantee. The window/seek knobs are set large so
-# the cold scan coalesces instead of fanning out into many small source reads.
+# remote_filesystem_read_prefetch=0 keeps cache population synchronous: without
+# read-ahead the executor fills the cache on the read path itself, so by the
+# time the cold query returns the data is cached and the warm read is
+# deterministic (no race with a background prefetch writing the cache).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,50 +29,41 @@ $CLICKHOUSE_CLIENT --query "
 COLD_ID="04302_re_cold_${CLICKHOUSE_DATABASE}"
 WARM_ID="04302_re_warm_${CLICKHOUSE_DATABASE}"
 
-# Executor on, with the read-ahead window and the seek-coalescing threshold set
-# large so a full scan does not split into many small source reads.
-RE_SETTINGS=(--use_reader_executor=1 --enable_reader_executor_log=1
-    --reader_executor_window_size=16777216 --reader_executor_min_bytes_for_seek=16777216)
+# Executor on, prefetch off so cache population is synchronous.
+RE_SETTINGS=(--use_reader_executor=1 --enable_reader_executor_log=1 --remote_filesystem_read_prefetch=0)
 
-# Cold scan: cache dropped, so c2/c4 must be fetched from the source and pushed
-# into the filesystem cache.
+# Cold scan: cache dropped, so c2/c4 are fetched from the source and synchronously
+# written into the filesystem cache.
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 $CLICKHOUSE_CLIENT "${RE_SETTINGS[@]}" --query_id "$COLD_ID" \
     --query "SELECT count() FROM t_re_s3_introspect WHERE NOT ignore(c2, c4) FORMAT Null"
 
-# Warm scan: same columns, cache now populated, so it must be served from the
-# filesystem cache with no source reads.
+# Warm scan: same columns, now served from the filesystem cache.
 $CLICKHOUSE_CLIENT "${RE_SETTINGS[@]}" --query_id "$WARM_ID" \
     --query "SELECT count() FROM t_re_s3_introspect WHERE NOT ignore(c2, c4) FORMAT Null"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS reader_executor_log"
 
-# Cold: the executor ran and had to fetch column data from the source. (Some
-# filesystem-cache bytes are expected too — s3_cache write-through from the
-# INSERT and prefetch overlap leave part of the data cached even after the
-# drop — so only the source read is asserted here.)
+# Cold: the executor ran, read from the source, and populated the cache.
+#   expected: 1  1  1
 $CLICKHOUSE_CLIENT --query "
-    SELECT throwIf(
-        count() = 0
-        OR sum(bytes_from_source) = 0,
-        'cold scan: the executor did not read column data from the source')
+    SELECT
+        count() > 0,
+        sum(bytes_from_source) > 0,
+        sum(bytes_pushed_to_cache_sync + bytes_pushed_to_cache_async) > 0
     FROM system.reader_executor_log
     WHERE query_id = '$COLD_ID'
-    FORMAT Null
 "
 
-# Warm: the same scan is now served entirely from the filesystem cache with zero
-# source bytes — the executor does no redundant source I/O on a repeat read.
+# Warm: served from the filesystem cache, zero source bytes.
+#   expected: 1  1  0
 $CLICKHOUSE_CLIENT --query "
-    SELECT throwIf(
-        count() = 0
-        OR sum(bytes_from_filesystem_cache) = 0
-        OR sum(bytes_from_source) != 0,
-        'warm scan: expected cache-only reads, but the executor went to the source')
+    SELECT
+        count() > 0,
+        sum(bytes_from_filesystem_cache) > 0,
+        sum(bytes_from_source)
     FROM system.reader_executor_log
     WHERE query_id = '$WARM_ID'
-    FORMAT Null
 "
-echo OK
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_re_s3_introspect"
