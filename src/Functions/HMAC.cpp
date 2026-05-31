@@ -7,7 +7,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -36,16 +39,16 @@ class FunctionHMAC final : public IFunction
 {
 private:
     inline static std::once_flag supported_algorithms_flag;
-    inline static std::map<std::string, std::set<std::string>> grouped_algorithms;
+    inline static MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> grouped_algorithms;
 
     static void fetchAndGroupSupportedAlgorithms()
     {
-        std::map<std::string, std::set<std::string>> algorithms_map;
+        MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> algorithms_map;
 
         EVP_MD_do_all_sorted(
             [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg)
             {
-                auto * algos_map = static_cast<std::map<std::string, std::set<std::string>> *>(arg);
+                auto * algos_map = static_cast<MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> *>(arg);
                 std::string primary_name = md_name;
                 (*algos_map)[primary_name].insert(primary_name);
                 if (alias)
@@ -70,7 +73,7 @@ private:
         grouped_algorithms = std::move(algorithms_map);
     }
 
-    static const std::map<std::string, std::set<std::string>> & getGroupedAlgorithms()
+    static const MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> & getGroupedAlgorithms()
     {
         std::call_once(supported_algorithms_flag, [] { fetchAndGroupSupportedAlgorithms(); });
         return grouped_algorithms;
@@ -167,7 +170,7 @@ public:
     static std::string getSupportedAlgorithmsAsString(bool by_lines = false)
     {
         const auto & algorithms = getGroupedAlgorithms();
-        std::vector<std::string> formatted_algorithms;
+        VectorWithMemoryTracking<std::string> formatted_algorithms;
 
         for (const auto & [primary, aliases] : algorithms)
         {
