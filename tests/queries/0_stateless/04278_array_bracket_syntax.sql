@@ -18,6 +18,9 @@ SELECT ARRAY[ARRAY[1, 2], ARRAY[3, 4]];
 -- Mixed with regular bracket syntax
 SELECT ARRAY[1, 2] = [1, 2];
 
+-- Chained subscript: array constructor result can be directly subscripted
+SELECT ARRAY[1, 2, 3][2];
+
 -- ARRAY as identifier should still work
 SELECT [1, 2, 3] AS ARRAY;
 
