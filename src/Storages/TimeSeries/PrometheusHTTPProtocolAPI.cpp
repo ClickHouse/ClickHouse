@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -351,9 +352,9 @@ void PrometheusHTTPProtocolAPI::getSeries(
     {
         /// Simple metric name matching: match[] parameter can be a metric name or {label=value} selector.
         /// For now, support plain metric name matching.
-        query += fmt::format(" WHERE {} = '{}'",
+        query += fmt::format(" WHERE {} = {}",
             TimeSeriesColumnNames::MetricName,
-            match_param);
+            quoteString(match_param));
     }
 
     query += " LIMIT 10000";
@@ -382,9 +383,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
                 writeString(",", response);
             first_row = false;
 
-            writeString("{\"__name__\":\"", response);
-            writeString(metric_name_col->getDataAt(i), response);
-            writeString("\"", response);
+            writeString(R"({"__name__":)", response);
+            writeJSONString(metric_name_col->getDataAt(i), response, format_settings);
 
             /// Write tags from the Map column
             if (const auto * array_column = typeid_cast<const ColumnArray *>(tags_col.get()))
@@ -400,11 +400,10 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
                     for (size_t j = start; j < end; ++j)
                     {
-                        writeString(",\"", response);
-                        writeString(key_column.getDataAt(j), response);
-                        writeString("\":\"", response);
-                        writeString(value_column.getDataAt(j), response);
-                        writeString("\"", response);
+                        writeString(",", response);
+                        writeJSONString(key_column.getDataAt(j), response, format_settings);
+                        writeString(":", response);
+                        writeJSONString(value_column.getDataAt(j), response, format_settings);
                     }
                 }
             }
@@ -436,9 +435,9 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
     if (!match_param.empty())
     {
-        query += fmt::format(" WHERE {} = '{}'",
+        query += fmt::format(" WHERE {} = {}",
             TimeSeriesColumnNames::MetricName,
-            match_param);
+            quoteString(match_param));
     }
 
     query += " ORDER BY label_key";
@@ -465,9 +464,8 @@ void PrometheusHTTPProtocolAPI::getLabels(
             /// Skip __name__ since we already included it
             if (label == "__name__")
                 continue;
-            writeString(",\"", response);
-            writeString(label, response);
-            writeString("\"", response);
+            writeString(",", response);
+            writeJSONString(label, response, format_settings);
         }
     }
 
@@ -487,6 +485,8 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     auto tags_table_id = tags_table->getStorageID();
 
     String query;
+    /// Collect WHERE conditions and join them, so the query stays valid regardless of which branch is taken.
+    std::vector<String> conditions;
 
     if (label_name == "__name__")
     {
@@ -500,20 +500,24 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     {
         /// Extract distinct values for a specific key from the tags Map
         query = fmt::format(
-            "SELECT DISTINCT {}['{}'] AS label_value FROM {} WHERE mapContains({}, '{}')",
+            "SELECT DISTINCT {}[{}] AS label_value FROM {}",
             TimeSeriesColumnNames::Tags,
-            label_name,
-            tags_table_id.getFullTableName(),
+            quoteString(label_name),
+            tags_table_id.getFullTableName());
+        conditions.push_back(fmt::format("mapContains({}, {})",
             TimeSeriesColumnNames::Tags,
-            label_name);
+            quoteString(label_name)));
     }
 
     if (!match_param.empty())
     {
-        query += fmt::format(" AND {} = '{}'",
+        conditions.push_back(fmt::format("{} = {}",
             TimeSeriesColumnNames::MetricName,
-            match_param);
+            quoteString(match_param)));
     }
+
+    for (size_t i = 0; i < conditions.size(); ++i)
+        query += (i == 0 ? " WHERE " : " AND ") + conditions[i];
 
     query += " ORDER BY label_value";
 
@@ -542,9 +546,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
             if (!first)
                 writeString(",", response);
             first = false;
-            writeString("\"", response);
-            writeString(value, response);
-            writeString("\"", response);
+            writeJSONString(value, response, format_settings);
         }
     }
 
