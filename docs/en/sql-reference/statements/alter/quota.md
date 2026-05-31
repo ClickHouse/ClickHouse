@@ -14,7 +14,7 @@ Syntax:
 ```sql
 ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]
-    [KEYED BY {user_name | ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
     [IPV4_PREFIX_BITS number]
     [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
@@ -22,7 +22,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
         NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
-Keys `user_name`, `ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](../../../operations/system-tables/quotas.md) table.
+Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, and `normalized_query_hash` correspond to the fields in the [system.quotas](../../../operations/system-tables/quotas.md) table.
 
 `IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](../../../operations/system-tables/quotas.md) table.
 
