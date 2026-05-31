@@ -40,13 +40,13 @@ public:
         if (enable_extended_results_for_datetime_functions)
         {
             return
-                "(Date | DateTime) -> DateTime"
+                "(T : Date | DateTime) -> DateTime(timezoneOf(T))"
                 " OR (Date | DateTime, const tz String) -> DateTime(tz)"
-                " OR (T : Date32 | DateTime64) -> DateTime64(scaleOf(T))"
+                " OR (T : Date32 | DateTime64) -> DateTime64(scaleOf(T), timezoneOf(T))"
                 " OR (T : Date32 | DateTime64, const tz String) -> DateTime64(scaleOf(T), tz)";
         }
         return
-            "(DateOrDateTime) -> DateTime"
+            "(T : DateOrDateTime) -> DateTime(timezoneOf(T))"
             " OR (DateOrDateTime, const tz String) -> DateTime(tz)";
     }
 
