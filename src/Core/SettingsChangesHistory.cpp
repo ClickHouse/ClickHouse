@@ -58,9 +58,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
+            {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
             {"optimize_prewhere_after_pushdown", false, false, "New setting that enables a second PREWHERE promotion pass to merge filters deposited above a MergeTree read step by later optimizations (predicate pushdown through JOIN, projection rewrites) into the existing PREWHERE chain."},
-            {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -120,9 +121,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
             {"is_aggregate", false, false, "New setting to register a WebAssembly UDF as an aggregate function."},
-            {"is_spatial_predicate", false, false, "New setting to mark a WebAssembly UDF as a spatial predicate for pruning."},
-            {"input_format_parquet_spatial_filter_push_down", true, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
-            {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups based on spatial predicates and bounding box statistics"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -1243,10 +1241,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
             {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
-        });
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
-        {
-
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
