@@ -47,8 +47,8 @@ MULTITARGET_FUNCTION_X86_V4_V3(
 
         /// Reduce partial sums
         ResultType sum = 0;
-        for (size_t s = 0; s < unroll_count; ++s)
-            sum += partial_sums[s];
+        for (auto & partial_sum : partial_sums)
+            sum += partial_sum;
 
         /// Tail: process remaining elements that don't fill a full unroll block
         for (; i < count; ++i)
