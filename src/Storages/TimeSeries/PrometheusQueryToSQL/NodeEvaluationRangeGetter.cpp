@@ -81,6 +81,9 @@ NodeEvaluationRangeGetter::NodeEvaluationRangeGetter(std::shared_ptr<const Prome
         range.step = (*settings_.start_time < *settings_.end_time) ? *settings_.step : DurationType{0};
     }
 
+    query_start_time = range.start_time;
+    query_end_time = range.end_time;
+
     visitNode(root, range);
     setWindows();
 }
@@ -102,10 +105,23 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
             const auto * offset_node = static_cast<const PQT::Offset *>(node);
             const auto * expression = offset_node->getExpression();
             NodeEvaluationRange expression_range = range;
-            if (auto timestamp = offset_node->at_timestamp)
+            switch (offset_node->at_modifier)
             {
-                expression_range.start_time = *timestamp;
-                expression_range.end_time = *timestamp;
+                case PQT::Offset::AtModifier::None:
+                    break;
+                case PQT::Offset::AtModifier::Timestamp:
+                    chassert(offset_node->at_timestamp);
+                    expression_range.start_time = *offset_node->at_timestamp;
+                    expression_range.end_time = *offset_node->at_timestamp;
+                    break;
+                case PQT::Offset::AtModifier::Start:
+                    expression_range.start_time = query_start_time;
+                    expression_range.end_time = query_start_time;
+                    break;
+                case PQT::Offset::AtModifier::End:
+                    expression_range.start_time = query_end_time;
+                    expression_range.end_time = query_end_time;
+                    break;
             }
             if (auto offset_value = offset_node->offset_value)
             {
