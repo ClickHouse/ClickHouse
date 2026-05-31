@@ -319,7 +319,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         /// TODO maybe use hostname if {replica} is not defined?
 
         /// Modify query, so default values will be written to metadata
-        assert(arg_num == 0);
+        chassert(arg_num == 0);
         ASTs old_args;
         std::swap(engine_args, old_args);
         auto path_arg = make_intrusive<ASTLiteral>("");
