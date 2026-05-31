@@ -765,7 +765,13 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
 
 static bool isTrivialCast(const ActionsDAG::Node & node)
 {
-    if (node.function_base->getName() != "CAST" || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
+    /// Recognize both the user-facing `CAST` and the analyzer-internal `_CAST` here; they
+    /// produce the same node shape and our caller treats them identically. Without `_CAST`
+    /// in this check, scalar subquery results wrapped by the analyzer (e.g. `_CAST(Const,
+    /// 'Nullable(Type)')` with matching source/target types) survive into `KeyCondition`
+    /// as un-stripped FUNCTION nodes and block partition pruning (issue #105291).
+    const auto & name = node.function_base->getName();
+    if ((name != "CAST" && name != "_CAST") || node.children.size() != 2 || node.children[1]->type != ActionsDAG::ActionType::COLUMN)
         return false;
 
     const auto * column_const = typeid_cast<const ColumnConst *>(node.children[1]->column.get());
