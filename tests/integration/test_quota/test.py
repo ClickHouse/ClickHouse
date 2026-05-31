@@ -1792,3 +1792,21 @@ def test_consumption_of_show_privileges():
         "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
         instance.query("SHOW QUOTA"),
     )
+
+
+def test_quota_with_ip_prefix_bits_from_users_xml():
+    # A valid quota keyed by ip_address with prefix bits must load and expose
+    # the masking settings via system.quotas.
+    copy_quota_xml("keyed_by_ip_with_prefix.xml")
+    assert instance.query(
+        "SELECT keys, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'myQuota'"
+    ) == "['ip_address']\t24\t64\n"
+
+    # Prefix bits on a non-IP key must be rejected on config load instead of
+    # being silently ignored, mirroring the SQL path.
+    copy_quota_xml("keyed_with_prefix_invalid.xml", reload_immediately=False)
+    error = instance.query_and_get_error("SYSTEM RELOAD CONFIG", user="user_with_no_quota")
+    assert "keyed_by_ip or keyed_by_forwarded_ip" in error
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")

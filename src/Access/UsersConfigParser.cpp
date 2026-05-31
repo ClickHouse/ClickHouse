@@ -674,6 +674,16 @@ namespace
         else
             quota->key_type = QuotaKeyType::USER_NAME;
 
+        /// Prefix bits are only meaningful for IP-based keys. Reject the config instead of
+        /// silently ignoring them, mirroring the SQL path which rejects the same mismatch.
+        if ((config.has(quota_config + ".ipv4_prefix_bits") || config.has(quota_config + ".ipv6_prefix_bits"))
+            && quota->key_type != QuotaKeyType::IP_ADDRESS
+            && quota->key_type != QuotaKeyType::FORWARDED_IP_ADDRESS)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Quota {}: ipv4_prefix_bits and ipv6_prefix_bits can only be used with keyed_by_ip or keyed_by_forwarded_ip",
+                quota_name);
+
         Poco::Util::AbstractConfiguration::Keys interval_keys;
         config.keys(quota_config, interval_keys);
 
