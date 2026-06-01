@@ -656,6 +656,36 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
         setColumnIdMapping(std::move(reconciled));
         writeColumnIdMappingToDisk();
     }
+
+    /// Fail loud on duplicate-physical-ID corruption.  Two-phase rename
+    /// produces a transient state where the old and new logical names map
+    /// to the same physical ID, but after the metadata-vs-mapping trim
+    /// above either the old name is gone (single survivor) or both are
+    /// still in metadata, which is true corruption.  Without this check a
+    /// hand-edited or torn `column_ids.json` could silently let two SQL
+    /// columns share one on-disk stream.
+    auto final_mapping = getColumnIdMapping();
+    if (final_mapping)
+    {
+        std::unordered_map<String, std::vector<String>> physical_to_logicals;
+        for (const auto & [logical, physical] : final_mapping->getLogicalToId())
+            physical_to_logicals[physical].push_back(logical);
+
+        for (const auto & [physical, logicals] : physical_to_logicals)
+        {
+            if (logicals.size() > 1)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Column ID mapping for table {} has multiple logical columns "
+                    "mapped to the same physical ID '{}': {}.  All of them are "
+                    "still present in the schema, which indicates a corrupted "
+                    "`column_ids.json` (not a transient two-phase-rename state). "
+                    "Restore from backup or repair the file manually.",
+                    getStorageID().getNameForLogs(),
+                    physical,
+                    fmt::join(logicals, ", "));
+        }
+    }
 }
 
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
