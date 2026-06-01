@@ -54,7 +54,7 @@ namespace ErrorCodes
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
-bool isSplittableErrorCode(int code, bool remote)
+static bool isSplittableErrorCode(int code, bool remote)
 {
     return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
         /// FunctionRange::max_elements and similar

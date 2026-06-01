@@ -21,7 +21,9 @@
 #include <thread>
 #include <unistd.h>
 
+#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -737,3 +739,5 @@ void HandledSignals::setupCommonTerminateRequestSignalHandlers()
 {
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, true);
 }
+
+#pragma clang diagnostic pop

@@ -43,6 +43,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheLoadMetadataMicroseconds;
     extern const Event FilesystemCacheReserveMicroseconds;
     extern const Event FilesystemCacheReserveAttempts;
+    extern const Event FilesystemCacheFailedReserveAttempts;
     extern const Event FilesystemCacheGetOrSetMicroseconds;
     extern const Event FilesystemCacheGetMicroseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadRun;
@@ -74,6 +75,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_cache_stall_free_space_ratio_keeping_thread[];
+    extern const char file_cache_pause_before_do_eviction[];
 }
 
 namespace FileCacheSetting
@@ -170,11 +172,13 @@ std::string FileCacheReserveStat::Stat::toString() const
     wb << "non-releasable count: " << non_releasable_count << ", ";
     wb << "evicting count: " << evicting_count << ", ";
     wb << "moving count: " << moving_count << ", ";
-    wb << "invalidated count: " << invalidated_count;
+    wb << "invalidated count: " << invalidated_count << ", ";
+    wb << "candidates iteration steps: " << candidates_iteration_steps << ", ";
+    wb << "clients iterated: " << clients_iterated;
     return wb.str();
 }
 
-double normalizeProbability(double probability)
+static double normalizeProbability(double probability)
 {
     if (probability < 0.0)
         probability = .0;
@@ -1097,9 +1101,12 @@ bool FileCache::tryReserve(
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
-    return doTryReserve(
+    const bool success = doTryReserve(
         file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
         failure_reason);
+    if (!success)
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedReserveAttempts);
+    return success;
 }
 
 bool FileCache::doTryReserve(
@@ -1192,6 +1199,8 @@ bool FileCache::doTryReserve(
 
     EvictionCandidates eviction_candidates;
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+
+    FailPointInjection::pauseFailPoint(FailPoints::file_cache_pause_before_do_eviction);
 
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.

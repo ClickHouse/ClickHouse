@@ -26,7 +26,6 @@
 #    include <simsimd/simsimd.h>
 #endif
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -78,7 +77,7 @@ struct L2DistanceTransposed
             AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
             d2 += (xi - yi) * (xi - yi);
         }
-        *result = static_cast<Float64>(sqrt(d2));
+        *result = static_cast<Float64>(std::sqrt(d2));
     }
 };
 
@@ -132,8 +131,8 @@ struct CosineDistanceTransposed
         }
         else
         {
-            const auto unclipped_result = AccumulatorType(1) - ab / (sqrt(a2) * sqrt(b2));
-            *result = unclipped_result > 0 ? unclipped_result : 0;
+            const auto unclipped_result = AccumulatorType(1) - ab / (std::sqrt(a2) * std::sqrt(b2));
+            *result = unclipped_result > 0 ? static_cast<Float64>(unclipped_result) : Float64{0};
         }
     }
 };
@@ -500,6 +499,9 @@ private:
 };
 
 /// Used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
+FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
+
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<L2DistanceTransposed>::create(context_);

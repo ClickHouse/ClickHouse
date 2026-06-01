@@ -151,7 +151,7 @@ protected:
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 

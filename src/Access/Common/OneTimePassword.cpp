@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 /// Checks if the secret contains only valid base32 characters.
 /// The secret may contain spaces, which are ignored and lower-case characters, which are converted to upper-case.
-String normalizeOneTimePasswordSecret(const String & secret)
+static String normalizeOneTimePasswordSecret(const String & secret)
 {
     static const UInt8 b32_alphabet[] = u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     static const UInt8 b32_lower_alphabet[] = u8"abcdefghijklmnopqrstuvwxyz";
@@ -125,7 +125,7 @@ String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret)
 
 struct CStringDeleter { void operator()(char * ptr) const { std::free(ptr); } };
 
-String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
+static String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
 #if USE_SSL && USE_LIBCOTP
     int sha_algo = config.algorithm == OneTimePasswordParams::Algorithm::SHA512 ? TOTP_SHA512

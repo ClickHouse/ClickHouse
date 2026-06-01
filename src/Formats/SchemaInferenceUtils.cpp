@@ -1448,7 +1448,7 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
     transformInferredJSONTypesIfNeeded(first, second, settings, &json_info);
 }
 
-void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
+static void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
 {
     if (!data_type)
         return;
