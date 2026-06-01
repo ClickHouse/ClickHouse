@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-random-merge-tree-settings
+# Tags: no-replicated-database
 # no-replicated-database: hypothetical indexes are session-scoped and not replicated
-# no-random-merge-tree-settings: needs fixed index_granularity
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
