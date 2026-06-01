@@ -892,7 +892,7 @@ That is why whenever inserting into table with multiple subjects, setting `strea
 You can select one of the subjects the table reads from and publish your data there. For example:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     key UInt64,
     value UInt64
   ) ENGINE = NATS
@@ -900,9 +900,9 @@ You can select one of the subjects the table reads from and publish your data th
              nats_subjects = 'subject1,subject2',
              nats_format = 'JSONEachRow';
 
-  INSERT INTO queue
-  SETTINGS stream_like_engine_insert_queue = 'subject2'
-  VALUES (1, 1);
+INSERT INTO queue
+SETTINGS stream_like_engine_insert_queue = 'subject2'
+VALUES (1, 1);
 ```
 
 Also format settings can be added along with nats-related settings.
@@ -910,7 +910,7 @@ Also format settings can be added along with nats-related settings.
 Example:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     key UInt64,
     value UInt64,
     date DateTime
@@ -946,7 +946,7 @@ One NATS table can have as many materialized views as you like, they do not read
 Example:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     key UInt64,
     value UInt64
   ) ENGINE = NATS
@@ -955,20 +955,20 @@ Example:
              nats_format = 'JSONEachRow',
              date_time_input_format = 'best_effort';
 
-  CREATE TABLE daily (key UInt64, value UInt64)
+CREATE TABLE daily (key UInt64, value UInt64)
     ENGINE = MergeTree() ORDER BY key;
 
-  CREATE MATERIALIZED VIEW consumer TO daily
+CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT key, value FROM queue;
 
-  SELECT key, value FROM daily ORDER BY key;
+SELECT key, value FROM daily ORDER BY key;
 ```
 
 To stop receiving streams data or to change the conversion logic, detach the materialized view:
 
 ```sql
-  DETACH TABLE consumer;
-  ATTACH TABLE consumer;
+DETACH TABLE consumer;
+ATTACH TABLE consumer;
 ```
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
@@ -1032,7 +1032,7 @@ Options:
               Direct Get: true
        Allows Msg Delete: true
             Allows Purge: true
-  Allows Per-Message TTL: false
+Allows Per-Message TTL: false
           Allows Rollups: false
 
 Limits:
@@ -1061,11 +1061,11 @@ State:
 $ nats consumer add
 ? Select a Stream stream_name
 ? Consumer name consumer_name
-? Delivery target (empty for Pull Consumers) 
+? Delivery target (empty for Pull Consumers)
 ? Start policy (all, new, last, subject, 1h, msg sequence) all
 ? Acknowledgment policy explicit
 ? Replay policy instant
-? Filter Stream by subjects (blank for all) 
+? Filter Stream by subjects (blank for all)
 ? Maximum Allowed Deliveries -1
 ? Maximum Acknowledgments Pending 0
 ? Deliver headers only without bodies No
@@ -1085,7 +1085,7 @@ Configuration:
 
 State:
 
-  Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
+Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
     Acknowledgment Floor: Consumer sequence: 0 Stream sequence: 0
         Outstanding Acks: 0 out of maximum 1,000
     Redelivered Messages: 0
@@ -1100,7 +1100,7 @@ After creating stream and durable pull consumer, we can create a table with NATS
 CREATE TABLE nats_jet_stream (
     key UInt64,
     value UInt64
-  ) ENGINE NATS 
+  ) ENGINE NATS
     SETTINGS  nats_url = 'localhost:4222',
               nats_stream = 'stream_name',
               nats_consumer_name = 'consumer_name',

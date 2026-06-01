@@ -1171,34 +1171,34 @@ Before using cache, add it to `config.xml`
 
 ```text
 hive > CREATE TABLE `test`.`test_orc`(
-  `f_tinyint` tinyint,
-  `f_smallint` smallint,
-  `f_int` int,
-  `f_integer` int,
-  `f_bigint` bigint,
-  `f_float` float,
-  `f_double` double,
-  `f_decimal` decimal(10,0),
-  `f_timestamp` timestamp,
-  `f_date` date,
-  `f_string` string,
-  `f_varchar` varchar(100),
-  `f_bool` boolean,
-  `f_binary` binary,
-  `f_array_int` array<int>,
-  `f_array_string` array<string>,
-  `f_array_float` array<float>,
-  `f_array_array_int` array<array<int>>,
-  `f_array_array_string` array<array<string>>,
-  `f_array_array_float` array<array<float>>)
+`f_tinyint` tinyint,
+`f_smallint` smallint,
+`f_int` int,
+`f_integer` int,
+`f_bigint` bigint,
+`f_float` float,
+`f_double` double,
+`f_decimal` decimal(10,0),
+`f_timestamp` timestamp,
+`f_date` date,
+`f_string` string,
+`f_varchar` varchar(100),
+`f_bool` boolean,
+`f_binary` binary,
+`f_array_int` array<int>,
+`f_array_string` array<string>,
+`f_array_float` array<float>,
+`f_array_array_int` array<array<int>>,
+`f_array_array_string` array<array<string>>,
+`f_array_array_float` array<array<float>>)
 PARTITIONED BY (
-  `day` string)
+`day` string)
 ROW FORMAT SERDE
-  'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
+'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
 STORED AS INPUTFORMAT
-  'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
 OUTPUTFORMAT
-  'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
 LOCATION
   'hdfs://testcluster/data/hive/test.db/test_orc'
 
@@ -1294,35 +1294,35 @@ day:                  2021-09-18
 ```text
 hive >
 CREATE TABLE `test`.`test_parquet`(
-  `f_tinyint` tinyint,
-  `f_smallint` smallint,
-  `f_int` int,
-  `f_integer` int,
-  `f_bigint` bigint,
-  `f_float` float,
-  `f_double` double,
-  `f_decimal` decimal(10,0),
-  `f_timestamp` timestamp,
-  `f_date` date,
-  `f_string` string,
-  `f_varchar` varchar(100),
-  `f_char` char(100),
-  `f_bool` boolean,
-  `f_binary` binary,
-  `f_array_int` array<int>,
-  `f_array_string` array<string>,
-  `f_array_float` array<float>,
-  `f_array_array_int` array<array<int>>,
-  `f_array_array_string` array<array<string>>,
-  `f_array_array_float` array<array<float>>)
+`f_tinyint` tinyint,
+`f_smallint` smallint,
+`f_int` int,
+`f_integer` int,
+`f_bigint` bigint,
+`f_float` float,
+`f_double` double,
+`f_decimal` decimal(10,0),
+`f_timestamp` timestamp,
+`f_date` date,
+`f_string` string,
+`f_varchar` varchar(100),
+`f_char` char(100),
+`f_bool` boolean,
+`f_binary` binary,
+`f_array_int` array<int>,
+`f_array_string` array<string>,
+`f_array_float` array<float>,
+`f_array_array_int` array<array<int>>,
+`f_array_array_string` array<array<string>>,
+`f_array_array_float` array<array<float>>)
 PARTITIONED BY (
-  `day` string)
+`day` string)
 ROW FORMAT SERDE
-  'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
+'org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe'
 STORED AS INPUTFORMAT
-  'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat'
+'org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat'
 OUTPUTFORMAT
-  'org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat'
+'org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat'
 LOCATION
   'hdfs://testcluster/data/hive/test.db/test_parquet'
 OK
@@ -1417,35 +1417,35 @@ day:                  2021-09-18
 ```text
 hive >
 CREATE TABLE `test`.`test_text`(
-  `f_tinyint` tinyint,
-  `f_smallint` smallint,
-  `f_int` int,
-  `f_integer` int,
-  `f_bigint` bigint,
-  `f_float` float,
-  `f_double` double,
-  `f_decimal` decimal(10,0),
-  `f_timestamp` timestamp,
-  `f_date` date,
-  `f_string` string,
-  `f_varchar` varchar(100),
-  `f_char` char(100),
-  `f_bool` boolean,
-  `f_binary` binary,
-  `f_array_int` array<int>,
-  `f_array_string` array<string>,
-  `f_array_float` array<float>,
-  `f_array_array_int` array<array<int>>,
-  `f_array_array_string` array<array<string>>,
-  `f_array_array_float` array<array<float>>)
+`f_tinyint` tinyint,
+`f_smallint` smallint,
+`f_int` int,
+`f_integer` int,
+`f_bigint` bigint,
+`f_float` float,
+`f_double` double,
+`f_decimal` decimal(10,0),
+`f_timestamp` timestamp,
+`f_date` date,
+`f_string` string,
+`f_varchar` varchar(100),
+`f_char` char(100),
+`f_bool` boolean,
+`f_binary` binary,
+`f_array_int` array<int>,
+`f_array_string` array<string>,
+`f_array_float` array<float>,
+`f_array_array_int` array<array<int>>,
+`f_array_array_string` array<array<string>>,
+`f_array_array_float` array<array<float>>)
 PARTITIONED BY (
-  `day` string)
+`day` string)
 ROW FORMAT SERDE
-  'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
+'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
 STORED AS INPUTFORMAT
-  'org.apache.hadoop.mapred.TextInputFormat'
+'org.apache.hadoop.mapred.TextInputFormat'
 OUTPUTFORMAT
-  'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
 LOCATION
   'hdfs://testcluster/data/hive/test.db/test_text'
 Time taken: 0.1 seconds, Fetched: 34 row(s)

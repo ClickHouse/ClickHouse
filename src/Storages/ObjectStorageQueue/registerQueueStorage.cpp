@@ -534,15 +534,15 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 Example:
 
 ```sql
-  CREATE TABLE s3queue_engine_table (name String, value UInt32)
+CREATE TABLE s3queue_engine_table (name String, value UInt32)
     ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
     SETTINGS
         mode = 'unordered';
 
-  CREATE TABLE stats (name String, value UInt32)
+CREATE TABLE stats (name String, value UInt32)
     ENGINE = MergeTree() ORDER BY name;
 
-  CREATE MATERIALIZED VIEW consumer TO stats
+CREATE MATERIALIZED VIEW consumer TO stats
     AS SELECT name, value FROM s3queue_engine_table;
 
   SELECT * FROM stats ORDER BY name;
@@ -800,15 +800,15 @@ Example:
 
 ```sql
 CREATE TABLE azure_queue_engine_table (key UInt64, data String)
-  ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
-  SETTINGS
+ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
+SETTINGS
       mode = 'unordered';
 
 CREATE TABLE stats (key UInt64, data String)
-  ENGINE = MergeTree() ORDER BY key;
+ENGINE = MergeTree() ORDER BY key;
 
 CREATE MATERIALIZED VIEW consumer TO stats
-  AS SELECT key, data FROM azure_queue_engine_table;
+AS SELECT key, data FROM azure_queue_engine_table;
 
 SELECT * FROM stats ORDER BY key;
 ```
@@ -829,12 +829,12 @@ Introspection capabilities are the same as the [S3Queue table engine](/engines/t
 1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
 2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
-  ```xml
-  <azure_queue_log>
+```xml
+<azure_queue_log>
     <database>system</database>
     <table>azure_queue_log</table>
-  </azure_queue_log>
-  ```
+</azure_queue_log>
+```
 
 This persistent table has the same information as `system.s3queue_metadata_cache`, but for processed and failed files.
 

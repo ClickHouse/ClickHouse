@@ -2154,11 +2154,11 @@ void registerStorageDistributed(StorageFactory & factory)
     Documentation{
         .description = R"DOCS_MD(
 :::warning Distributed engine in Cloud
-To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions. 
+To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions.
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 :::
 
-Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. 
+Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers.
 Reading is automatically parallelized. During a read, the table indexes on remote servers are used if they exist.
 
 ## Creating a table {#distributed-creating-a-table}
@@ -2257,10 +2257,10 @@ Clusters are configured in the [server configuration file](../../../operations/c
              be used as current user for the query.
         -->
         <!-- <secret></secret> -->
-        
-        <!-- Optional. Whether distributed DDL queries (ON CLUSTER clause) are allowed for this cluster. Default: true (allowed). -->        
+
+        <!-- Optional. Whether distributed DDL queries (ON CLUSTER clause) are allowed for this cluster. Default: true (allowed). -->
         <!-- <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries> -->
-        
+
         <shard>
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>

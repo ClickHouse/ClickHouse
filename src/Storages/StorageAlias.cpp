@@ -448,7 +448,7 @@ When `target_db` is omitted and `target_table` is not fully qualified (e.g., `Al
 
 ## Supported Operations {#supported-operations}
 
-The `Alias` table engine supports all major operations. 
+The `Alias` table engine supports all major operations.
 ### Operations on Target Table {#operations-on-target}
 
 These operations are proxied to the target table:
@@ -550,14 +550,14 @@ ORDER BY ts;
 CREATE TABLE metrics_alias ENGINE = Alias('metrics');
 
 -- Insert through alias
-INSERT INTO metrics_alias VALUES 
+INSERT INTO metrics_alias VALUES
     (now(), 'cpu_usage', 45.2),
     (now(), 'memory_usage', 78.5);
 
 -- Insert with SELECT
-INSERT INTO metrics_alias 
-SELECT now(), 'disk_usage', number * 10 
-FROM system.numbers 
+INSERT INTO metrics_alias
+SELECT now(), 'disk_usage', number * 10
+FROM system.numbers
 LIMIT 5;
 
 -- Verify data is in the target table
@@ -608,7 +608,7 @@ ORDER BY id;
 
 CREATE TABLE products_alias ENGINE = Alias('products');
 
-INSERT INTO products_alias VALUES 
+INSERT INTO products_alias VALUES
     (1, 'item_one', 100.0, 'active'),
     (2, 'item_two', 200.0, 'active'),
     (3, 'item_three', 300.0, 'inactive');
@@ -645,7 +645,7 @@ ORDER BY date;
 
 CREATE TABLE logs_alias ENGINE = Alias('logs');
 
-INSERT INTO logs_alias VALUES 
+INSERT INTO logs_alias VALUES
     ('2024-01-15', 'INFO', 'message1'),
     ('2024-02-15', 'ERROR', 'message2'),
     ('2024-03-15', 'INFO', 'message3');
@@ -680,19 +680,19 @@ INSERT INTO events_alias VALUES (2, 'data2');
 INSERT INTO events_alias VALUES (3, 'data3');
 
 -- Check parts count
-SELECT count() FROM system.parts 
-WHERE database = currentDatabase() 
-  AND table = 'events' 
-  AND active;
+SELECT count() FROM system.parts
+WHERE database = currentDatabase()
+AND table = 'events'
+AND active;
 
 -- Optimize through alias
 OPTIMIZE TABLE events_alias FINAL;
 
 -- Parts are merged in target table
-SELECT count() FROM system.parts 
-WHERE database = currentDatabase() 
-  AND table = 'events' 
-  AND active;  -- Returns 1
+SELECT count() FROM system.parts
+WHERE database = currentDatabase()
+AND table = 'events'
+AND active;  -- Returns 1
 ```
 
 ### Alias Management {#alias-management}

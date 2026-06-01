@@ -1092,7 +1092,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # MergeTree table engine
 
-The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree` ) are the most commonly used and most robust table engines in ClickHouse.
+The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree`) are the most commonly used and most robust table engines in ClickHouse.
 
 `MergeTree`-family table engines are designed for high data ingest rates and huge data volumes.
 Insert operations create table parts which are merged by a background process with other table parts.
@@ -1571,7 +1571,7 @@ AS
 
 CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
 AS
-(total_number_of_all_grams,  probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+(total_number_of_all_grams, probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
 
 CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
 AS
@@ -2460,10 +2460,10 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 
 The `CollapsingMergeTree` engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
 and adds logic for collapsing rows during the merge process.
-The `CollapsingMergeTree` table engine asynchronously deletes (collapses) 
-pairs of rows if all the fields in a sorting key (`ORDER BY`) are equivalent except for the special field `Sign`, 
-which can have values of either `1` or `-1`. 
-Rows without a pair of opposite valued `Sign` are kept. 
+The `CollapsingMergeTree` table engine asynchronously deletes (collapses)
+pairs of rows if all the fields in a sorting key (`ORDER BY`) are equivalent except for the special field `Sign`,
+which can have values of either `1` or `-1`.
+Rows without a pair of opposite valued `Sign` are kept.
 
 For more details, see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
@@ -2487,7 +2487,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) 
+)
 ENGINE = CollapsingMergeTree(Sign)
 [PARTITION BY expr]
 [ORDER BY expr]
@@ -2500,7 +2500,7 @@ ENGINE = CollapsingMergeTree(Sign)
 <summary>Deprecated Method for Creating a Table</summary>
 
 :::note
-The method below is not recommended for use in new projects. 
+The method below is not recommended for use in new projects.
 We advise, if possible, to update old projects to use the new method.
 :::
 
@@ -2510,7 +2510,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) 
+)
 ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, Sign)
 ```
 
@@ -2527,15 +2527,15 @@ ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, ke
 
 Consider the situation where you need to save continually changing data for some given object.
 It may sound logical to have one row per object and update it anytime something changes,
-however, update operations are expensive and slow for the DBMS because they require rewriting the data in storage. 
+however, update operations are expensive and slow for the DBMS because they require rewriting the data in storage.
 If we need to write data quickly, performing large numbers of updates is not an acceptable approach,
 but we can always write the changes of an object sequentially.
 To do so, we make use of the special column `Sign`.
 
-- If `Sign` = `1` it means that the row is a "state" row: _a row containing fields which represent a current valid state_. 
+- If `Sign` = `1` it means that the row is a "state" row: _a row containing fields which represent a current valid state_.
 - If `Sign` = `-1` it means that the row is a "cancel" row: _a row used for the cancellation of state of an object with the same attributes_.
 
-For example, we want to calculate how many pages users checked on some website and how long they visited them for. 
+For example, we want to calculate how many pages users checked on some website and how long they visited them for.
 At some given moment in time, we write the following row with the state of user activity:
 
 ```text
@@ -2553,11 +2553,11 @@ At a later moment in time, we register the change of user activity and write it 
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-The first row cancels the previous state of the object (representing a user in this case). 
-It should copy all the sorting key fields for the "canceled" row except for `Sign`. 
+The first row cancels the previous state of the object (representing a user in this case).
+It should copy all the sorting key fields for the "canceled" row except for `Sign`.
 The second row above contains the current state.
 
-As we need only the last state of user activity, the original "state" row and the "cancel" 
+As we need only the last state of user activity, the original "state" row and the "cancel"
 row that we inserted can be deleted as shown below, collapsing the invalid (old) state of an object:
 
 ```text
@@ -2571,7 +2571,7 @@ row that we inserted can be deleted as shown below, collapsing the invalid (old)
 `CollapsingMergeTree` carries out precisely this _collapsing_ behavior while merging of the data parts takes place.
 
 :::note
-The reason for why two rows are needed for each change 
+The reason for why two rows are needed for each change
 is further discussed in the [Algorithm](#table_engine-collapsingmergetree-collapsing-algorithm) paragraph.
 :::
 
@@ -2583,9 +2583,9 @@ is further discussed in the [Algorithm](#table_engine-collapsingmergetree-collap
 
 ### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
 
-When ClickHouse merges data [parts](/concepts/glossary#parts), 
+When ClickHouse merges data [parts](/concepts/glossary#parts),
 each group of consecutive rows with the same sorting key (`ORDER BY`) is reduced to no more than two rows,
-the "state" row with `Sign` = `1` and the "cancel" row with `Sign` = `-1`. 
+the "state" row with `Sign` = `1` and the "cancel" row with `Sign` = `-1`.
 In other words, in ClickHouse entries collapse.
 
 For each resulting data part ClickHouse saves:
@@ -2597,31 +2597,31 @@ For each resulting data part ClickHouse saves:
 |3.| The first "cancel" row, if there are more "cancel" rows than "state" rows.                                                          |
 |4.| None of the rows, in all other cases.                                                                                               |
 
-Additionally, when there are at least two more "state" rows than "cancel" 
+Additionally, when there are at least two more "state" rows than "cancel"
 rows, or at least two more "cancel" rows than "state" rows, the merge continues.
-ClickHouse, however, treats this situation as a logical error and records it in the server log. 
-This error can occur if the same data is inserted more than once. 
+ClickHouse, however, treats this situation as a logical error and records it in the server log.
+This error can occur if the same data is inserted more than once.
 Thus, collapsing should not change the results of calculating statistics.
 Changes are gradually collapsed so that in the end only the last state of almost every object is left.
 
-The `Sign` column is required because the merging algorithm does not guarantee 
-that all the rows with the same sorting key will be in the same resulting data part and even on the same physical server. 
-ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. 
+The `Sign` column is required because the merging algorithm does not guarantee
+that all the rows with the same sorting key will be in the same resulting data part and even on the same physical server.
+ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result.
 
 Aggregation is required if there is a need to get completely "collapsed" data from the `CollapsingMergeTree` table.
-To finalize collapsing, write a query with the `GROUP BY` clause and aggregate functions that account for the sign. 
-For example, to calculate quantity, use `sum(Sign)` instead of `count()`. 
+To finalize collapsing, write a query with the `GROUP BY` clause and aggregate functions that account for the sign.
+For example, to calculate quantity, use `sum(Sign)` instead of `count()`.
 To calculate the sum of something, use `sum(Sign * x)` together `HAVING sum(Sign) > 0` instead of `sum(x)`
 as in the [example](#example-of-use) below.
 
-The aggregates `count`, `sum` and `avg` could be calculated this way. 
-The aggregate `uniq` could be calculated if an object has at least one non-collapsed state. 
-The aggregates `min` and `max` could not be calculated 
+The aggregates `count`, `sum` and `avg` could be calculated this way.
+The aggregate `uniq` could be calculated if an object has at least one non-collapsed state.
+The aggregates `min` and `max` could not be calculated
 because `CollapsingMergeTree` does not save the history of the collapsed states.
 
 :::note
-If you need to extract data without aggregation 
-(for example, to check whether rows whose newest values match certain conditions are present), 
+If you need to extract data without aggregation
+(for example, to check whether rows whose newest values match certain conditions are present),
 you can use the [`FINAL`](../../../sql-reference/statements/select/from.md#final-modifier) modifier for the `FROM` clause. It will merge the data before returning the result.
 For CollapsingMergeTree, only the latest state row for each key is returned.
 :::
@@ -2664,7 +2664,7 @@ INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1)
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 6, 185, 1)
 ```
 
-We use two `INSERT` queries to create two different data parts. 
+We use two `INSERT` queries to create two different data parts.
 
 :::note
 If we insert the data with a single query, ClickHouse creates only one data part and will not perform any merge ever.
@@ -2687,13 +2687,13 @@ SELECT * FROM UAct
 ```
 
 Let's take a look at the returned data above and see if collapsing occurred...
-With two `INSERT` queries, we created two data parts. 
-The `SELECT` query was performed in two threads, and we got a random order of rows. 
-However, collapsing **did not occur** because there was no merge of the data parts yet 
+With two `INSERT` queries, we created two data parts.
+The `SELECT` query was performed in two threads, and we got a random order of rows.
+However, collapsing **did not occur** because there was no merge of the data parts yet
 and ClickHouse merges data parts in the background at an unknown moment which we cannot predict.
 
-We therefore need an aggregation 
-which we perform with the [`sum`](/sql-reference/aggregate-functions/reference/sum) 
+We therefore need an aggregation
+which we perform with the [`sum`](/sql-reference/aggregate-functions/reference/sum)
 aggregate function and the [`HAVING`](/sql-reference/statements/select/having) clause:
 
 ```sql
@@ -2743,7 +2743,7 @@ For this example, we will make use of the sample data below:
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-For this approach, it is necessary to change the data types of `PageViews` and `Duration` to store negative values. 
+For this approach, it is necessary to change the data types of `PageViews` and `Duration` to store negative values.
 We therefore change the values of these columns from `UInt8` to `Int16` when we create our table `UAct` using the
 `collapsingMergeTree`:
 
@@ -2759,7 +2759,7 @@ ENGINE = CollapsingMergeTree(Sign)
 ORDER BY UserID
 ```
 
-Let's test the approach by inserting data into our table. 
+Let's test the approach by inserting data into our table.
 
 For examples or small tables, it is, however, acceptable:
 
@@ -2909,7 +2909,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
-  Column data type — `UInt8`.
+Column data type — `UInt8`.
 
 :::note
 `is_deleted` can only be enabled when `ver` is used.
@@ -3254,7 +3254,7 @@ CREATE TABLE test.visits
 ) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
 ```
 
-Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
+Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users.
 
 Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the [`AggregateFunction`](/sql-reference/data-types/aggregatefunction) type:
 
@@ -3285,7 +3285,7 @@ Insert data into the `test.visits` table:
 
 ```sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
- VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
 ```
 
 The data is inserted in both `test.visits` and `test.agg_visits`.
@@ -3312,7 +3312,7 @@ Add another couple of records to `test.visits`, but this time try using a differ
 
 ```sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
- VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
 ```
 
 Run the `SELECT` query again, which will return the following output:
@@ -3325,9 +3325,9 @@ Run the `SELECT` query again, which will return the following output:
 ```
 
 In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
-to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
-clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeAggregation) 
-function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
+to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY`
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeAggregation)
+function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY`
 is no longer required in this case:
 
 ```sql
@@ -3383,7 +3383,7 @@ For a description of request parameters, see [request description](../../../sql-
 `columns` - a tuple with the names of columns where values will be summed. Optional parameter.
     The columns must be of a numeric type and must not be in the partition or sorting key.
 
- If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the sorting key.
+If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the sorting key.
 
 ### Query clauses {#query-clauses}
 
@@ -3497,7 +3497,7 @@ INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['Chrome', 'Firefox'], [20, 1],
 INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['IE'], [22], [0]);
 INSERT INTO nested_sum VALUES ('2020-01-01', 10, ['Chrome'], [4], [3]);
 
-OPTIMIZE TABLE nested_sum FINAL; -- emulate merge 
+OPTIMIZE TABLE nested_sum FINAL; -- emulate merge
 
 SELECT * FROM nested_sum;
 ┌───────date─┬─site─┬─hitsMap.browser───────────────────┬─hitsMap.imps─┬─hitsMap.clicks─┐
@@ -4148,7 +4148,7 @@ To store table metadata in an auxiliary ZooKeeper cluster instead of the default
 ReplicatedMergeTree engine as follows:
 
 ```sql
-CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
+CREATE TABLE table_name (...) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 

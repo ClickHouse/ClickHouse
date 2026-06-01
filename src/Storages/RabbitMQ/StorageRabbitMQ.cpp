@@ -1442,7 +1442,7 @@ Also format settings can be added along with rabbitmq-related settings.
 Example:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     key UInt64,
     value UInt64,
     date DateTime
@@ -1458,18 +1458,18 @@ The RabbitMQ server configuration should be added using the ClickHouse config fi
 Required configuration:
 
 ```xml
- <rabbitmq>
+<rabbitmq>
     <username>root</username>
     <password>clickhouse</password>
- </rabbitmq>
+</rabbitmq>
 ```
 
 Additional configuration:
 
 ```xml
- <rabbitmq>
+<rabbitmq>
     <vhost>clickhouse</vhost>
- </rabbitmq>
+</rabbitmq>
 ```
 
 ## Description {#description}
@@ -1514,7 +1514,7 @@ Do not use the same table for inserts and materialized views.
 Example:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     key UInt64,
     value UInt64
   ) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'localhost:5672',
@@ -1524,13 +1524,13 @@ Example:
                             rabbitmq_format = 'JSONEachRow',
                             rabbitmq_num_consumers = 5;
 
-  CREATE TABLE daily (key UInt64, value UInt64)
+CREATE TABLE daily (key UInt64, value UInt64)
     ENGINE = MergeTree() ORDER BY key;
 
-  CREATE MATERIALIZED VIEW consumer TO daily
+CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT key, value FROM queue;
 
-  SELECT key, value FROM daily ORDER BY key;
+SELECT key, value FROM daily ORDER BY key;
 ```
 
 ## Virtual columns {#virtual-columns}

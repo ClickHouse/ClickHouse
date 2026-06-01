@@ -967,30 +967,30 @@ One FileLog table can have as many materialized views as you like, they do not r
 Example:
 
 ```sql
-  CREATE TABLE logs (
+CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
   ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
 
-  CREATE TABLE daily (
+CREATE TABLE daily (
     day Date,
     level String,
     total UInt64
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
-  CREATE MATERIALIZED VIEW consumer TO daily
+CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
     FROM queue GROUP BY day, level;
 
-  SELECT level, sum(total) FROM daily GROUP BY level;
+SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
 To stop receiving streams data or to change the conversion logic, detach the materialized view:
 
 ```sql
-  DETACH TABLE consumer;
-  ATTACH TABLE consumer;
+DETACH TABLE consumer;
+ATTACH TABLE consumer;
 ```
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.

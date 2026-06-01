@@ -1802,14 +1802,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine parameters:
 
-- `root_path` - ZooKeeper path where the `table_name` will be stored.  
-This path should not contain the prefix defined by `<keeper_map_path_prefix>` config because the prefix will be automatically appended to the `root_path`.  
-Additionally, format of `auxiliary_zookeeper_cluster_name:/some/path` is also supported where `auxiliary_zookeeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.  
+- `root_path` - ZooKeeper path where the `table_name` will be stored.
+This path should not contain the prefix defined by `<keeper_map_path_prefix>` config because the prefix will be automatically appended to the `root_path`.
+Additionally, format of `auxiliary_zookeeper_cluster_name:/some/path` is also supported where `auxiliary_zookeeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.
 By default, ZooKeeper cluster defined inside `<zookeeper>` config is used.
-- `keys_limit` - number of keys allowed inside the table.  
+- `keys_limit` - number of keys allowed inside the table.
 This limit is a soft limit and it can be possible that more keys will end up in the table for some edge cases.
 - `primary_key_name` – any column name in the column list.
-- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `node name` inside ZooKeeper. 
+- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `node name` inside ZooKeeper.
 - columns other than the primary key will be serialized to binary in corresponding order and stored as a value of the resulting node defined by the serialized key.
 - queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `Keeper`, otherwise all values will be fetched.
 
@@ -1838,8 +1838,8 @@ with
 Each value, which is binary serialization of `(v1, v2, v3)`, will be stored inside `/keeper_map_tables/keeper_map_table/data/serialized_key` in `Keeper`.
 Additionally, number of keys will have a soft limit of 4 for the number of keys.
 
-If multiple tables are created on the same ZooKeeper path, the values are persisted until there exists at least 1 table using it.  
-As a result, it is possible to use `ON CLUSTER` clause when creating the table and sharing the data from multiple ClickHouse instances.  
+If multiple tables are created on the same ZooKeeper path, the values are persisted until there exists at least 1 table using it.
+As a result, it is possible to use `ON CLUSTER` clause when creating the table and sharing the data from multiple ClickHouse instances.
 Of course, it's possible to manually run `CREATE TABLE` with same path on unrelated ClickHouse instances to have same data sharing effect.
 
 ## Supported operations {#supported-operations}
@@ -1857,7 +1857,7 @@ INSERT INTO keeper_map_table VALUES ('some key', 1, 'value', 3.2);
 
 ### Deletes {#deletes}
 
-Rows can be deleted using `DELETE` query or `TRUNCATE`. 
+Rows can be deleted using `DELETE` query or `TRUNCATE`.
 If the key exists, and setting `keeper_map_strict_mode` is set to `true`, fetching and deleting data will succeed only if it can be executed atomically.
 
 ```sql

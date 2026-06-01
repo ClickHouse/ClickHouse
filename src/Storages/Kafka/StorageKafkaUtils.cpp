@@ -409,15 +409,15 @@ Optional parameters:
 - `kafka_consumer_acquire_timeout_ms` — Timeout in milliseconds for acquiring a Kafka consumer during direct `SELECT` queries on a `Kafka2` table (with Keeper-based offset storage). When multiple concurrent direct `SELECT` queries run on the same table, each must wait for consumers to become available. The timeout prevents deadlocks when queries hold different subsets of consumers. Default: `30000`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
 - `kafka_autodetect_client_rack` — Automatically sets the `client.rack` parameter for `librdkafka` to prefer the nearest Kafka replicas.
-  Supported sources:
-  `AWS_ZONE_ID` for the AWS IMDSv2 availability zone ID, for example `euc1-az1`;
-  `AWS_ZONE_NAME` for the AWS IMDSv2 availability zone name, for example `eu-central-1a`;
-  `GCP_ZONE` for the GCP metadata service zone, for example `europe-central2-a`;
-  `CLICKHOUSE` to use ClickHouse internal detection, which may rely on cloud metadata or configuration;
-  `AWS_ZONE_NAME_THEN_GCP_ZONE` to try `AWS_ZONE_NAME` and then `GCP_ZONE`.
-  Default: empty string, disabled.
-  Tip: different environments use different availability zone formats. Amazon MSK typically uses zone IDs, so prefer `AWS_ZONE_ID`. Confluent Cloud typically uses zone names, so prefer `AWS_ZONE_NAME`. If unsure, use `AWS_ZONE_NAME_THEN_GCP_ZONE` or check the `broker.rack` value on your cluster.
-  Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.class=org.apache.kafka.common.replica.RackAwareReplicaSelector`.
+Supported sources:
+`AWS_ZONE_ID` for the AWS IMDSv2 availability zone ID, for example `euc1-az1`;
+`AWS_ZONE_NAME` for the AWS IMDSv2 availability zone name, for example `eu-central-1a`;
+`GCP_ZONE` for the GCP metadata service zone, for example `europe-central2-a`;
+`CLICKHOUSE` to use ClickHouse internal detection, which may rely on cloud metadata or configuration;
+`AWS_ZONE_NAME_THEN_GCP_ZONE` to try `AWS_ZONE_NAME` and then `GCP_ZONE`.
+Default: empty string, disabled.
+Tip: different environments use different availability zone formats. Amazon MSK typically uses zone IDs, so prefer `AWS_ZONE_ID`. Confluent Cloud typically uses zone names, so prefer `AWS_ZONE_NAME`. If unsure, use `AWS_ZONE_NAME_THEN_GCP_ZONE` or check the `broker.rack` value on your cluster.
+Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.class=org.apache.kafka.common.replica.RackAwareReplicaSelector`.
 - `kafka_compression_codec` — Compression codec used for producing messages. Supported: empty string, `none`, `gzip`, `snappy`, `lz4`, `zstd`. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used. Default: empty string.
 - `kafka_compression_level` — Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: `[0-9]` for `gzip`; `[0-12]` for `lz4`; only `0` for `snappy`; `[0-12]` for `zstd`; `-1` = codec-dependent default compression level. Default: `-1`.
 - `kafka_map_virtual_columns_on_write` — If enabled, columns with special names `_key`, `_timestamp`, `_headers.name` and `_headers.value` in the table schema are mapped to the corresponding Kafka message metadata on `INSERT` and are excluded from the message payload. See [Mapping columns to Kafka message metadata](#mapping-columns-to-kafka-message-metadata). Default: `false`.
@@ -425,7 +425,7 @@ Optional parameters:
 Examples:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     timestamp UInt64,
     level String,
     message String
@@ -433,7 +433,7 @@ Examples:
 
   SELECT * FROM queue LIMIT 5;
 
-  CREATE TABLE queue2 (
+CREATE TABLE queue2 (
     timestamp UInt64,
     level String,
     message String
@@ -443,7 +443,7 @@ Examples:
                             kafka_format = 'JSONEachRow',
                             kafka_num_consumers = 4;
 
-  CREATE TABLE queue3 (
+CREATE TABLE queue3 (
     timestamp UInt64,
     level String,
     message String
@@ -462,7 +462,7 @@ Do not use this method in new projects. If possible, switch old projects to the 
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size, kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
 ```
 
 </details>
@@ -491,31 +491,31 @@ One kafka table can have as many materialized views as you like, they do not rea
 Example:
 
 ```sql
-  CREATE TABLE queue (
+CREATE TABLE queue (
     timestamp UInt64,
     level String,
     message String
   ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
 
-  CREATE TABLE daily (
+CREATE TABLE daily (
     day Date,
     level String,
     total UInt64
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
 
-  CREATE MATERIALIZED VIEW consumer TO daily
+CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
     FROM queue GROUP BY day, level;
 
-  SELECT level, sum(total) FROM daily GROUP BY level;
+SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
 ```sql
-  DETACH TABLE consumer;
-  ATTACH TABLE consumer;
+DETACH TABLE consumer;
+ATTACH TABLE consumer;
 ```
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
@@ -525,7 +525,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ```xml
-  <kafka>
+<kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <statistics_interval_ms>3000</statistics_interval_ms>
@@ -561,7 +561,7 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
             <retry_backoff_ms>400</retry_backoff_ms>
         </kafka_topic>
     </producer>
-  </kafka>
+</kafka>
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
@@ -576,9 +576,9 @@ Example:
 ```xml
 <!-- Kerberos-aware Kafka -->
 <kafka>
-  <security_protocol>SASL_PLAINTEXT</security_protocol>
-  <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
-  <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+<security_protocol>SASL_PLAINTEXT</security_protocol>
+<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
 </kafka>
 ```
 
@@ -661,8 +661,8 @@ Example:
 CREATE TABLE experimental_kafka (key UInt64, value UInt64)
 ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
-  kafka_keeper_path = '/clickhouse/{database}/{uuid}',
-  kafka_replica_name = '{replica}'
+kafka_keeper_path = '/clickhouse/{database}/{uuid}',
+kafka_replica_name = '{replica}'
 SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ```
 

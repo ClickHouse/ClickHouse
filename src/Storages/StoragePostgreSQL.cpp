@@ -802,10 +802,10 @@ postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
 postgresql> SELECT * FROM test;
-  int_id | int_nullable | float | str  | float_nullable
- --------+--------------+-------+------+----------------
+int_id | int_nullable | float | str  | float_nullable
+--------+--------------+-------+------+----------------
        1 |              |     2 | test |
- (1 row)
+(1 row)
 ```
 
 ### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
