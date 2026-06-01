@@ -447,7 +447,14 @@ void MemoryWorker::updateResidentMemoryThread()
             /// Using the inflated `resident - tracked` gap here would publish a too-high `rss`
             /// for one tick and could trigger false `MEMORY_LIMIT_EXCEEDED` decisions.
             Int64 speculative_rss = resident;
-            if (!first_run && rss_speculative_reserve_ratio > 0.0)
+            /// Speculation only influences the global hard-limit check in
+            /// `MemoryTracker::allocImpl` (the `will_be_rss > current_hard_limit` branch),
+            /// so it is only meaningful when a global hard limit is configured. When the
+            /// hard limit is `0` (unlimited) we skip speculation entirely: biasing `rss`
+            /// upward would change no limit decision and could only publish a misleadingly
+            /// large value.
+            const Int64 current_hard_limit = total_memory_tracker.getHardLimit();
+            if (!first_run && rss_speculative_reserve_ratio > 0.0 && current_hard_limit > 0)
             {
                 /// `total_memory_tracker.get()` can legitimately go negative (the lazy
                 /// correction below handles this via `MemoryTracker::updateAllocated`).
@@ -460,15 +467,21 @@ void MemoryWorker::updateResidentMemoryThread()
                 Int64 delta = resident - tracked;
                 if (delta > 0)
                 {
-                    /// Clamp the speculative reservation so that the float multiplication
-                    /// and the subsequent `Int64` addition cannot overflow even if the
-                    /// configured ratio is very large.
+                    /// Clamp the reservation to the hard limit so the float multiplication
+                    /// cannot overflow even if the configured ratio is very large.
                     double reserve_double = static_cast<double>(delta) * rss_speculative_reserve_ratio;
-                    Int64 max_reserve = std::numeric_limits<Int64>::max() - resident;
-                    Int64 reserve = (reserve_double >= static_cast<double>(max_reserve))
-                        ? max_reserve
+                    Int64 reserve = (reserve_double >= static_cast<double>(current_hard_limit))
+                        ? current_hard_limit
                         : static_cast<Int64>(reserve_double);
                     speculative_rss += reserve;
+                    /// Cap the published RSS at the hard limit (but never below the real
+                    /// `resident`). Once `speculative_rss` reaches the hard limit, the next
+                    /// allocation of any positive size already trips the
+                    /// `will_be_rss > current_hard_limit` branch and throws
+                    /// `MEMORY_LIMIT_EXCEEDED`, so reserving beyond the limit gains nothing
+                    /// while risking an `Int64` overflow in the `size + rss.fetch_add(size)`
+                    /// computation in `MemoryTracker::allocImpl` when the ratio is very large.
+                    speculative_rss = std::min(speculative_rss, std::max(resident, current_hard_limit));
                 }
             }
             MemoryTracker::updateRSS(speculative_rss);
