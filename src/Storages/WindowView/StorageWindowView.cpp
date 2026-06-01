@@ -1822,7 +1822,7 @@ void registerStorageWindowView(StorageFactory & factory)
             .description = "Aggregates data over time windows and emits the results of a `SELECT` query once each window closes. "
                 "It is an experimental feature that maintains incremental aggregation grouped by time windows and can push the "
                 "results to a target table. Enable it with the `allow_experimental_window_view` setting.",
-            .syntax = "ENGINE = WindowView(target_table) AS SELECT ... GROUP BY tumble(...)/hop(...)",
+            .syntax = "CREATE WINDOW VIEW name [TO target] AS SELECT ... GROUP BY tumble(...)/hop(...)",
             .related = {"MaterializedView"}});
 }
 

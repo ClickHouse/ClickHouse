@@ -33,7 +33,15 @@ This table contains the following columns (the column type is shown in brackets)
 ## Example {#example}
 
 ```sql title="Query"
-SELECT *
+SELECT
+    name,
+    supports_settings,
+    supports_skipping_indices,
+    supports_sort_order,
+    supports_ttl,
+    supports_replication,
+    supports_deduplication,
+    supports_parallel_insert
 FROM system.table_engines
 WHERE name IN ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 ```

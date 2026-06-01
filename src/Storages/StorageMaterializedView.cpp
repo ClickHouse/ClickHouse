@@ -1039,7 +1039,7 @@ void registerStorageMaterializedView(StorageFactory & factory)
         .description = "Stores the result of a `SELECT` query and keeps it up to date. "
             "When data is inserted into the source table referenced in the query, the materialized view applies the query to the new rows "
             "and stores the result in its target table. A MaterializedView is normally created with the `CREATE MATERIALIZED VIEW` statement.",
-        .syntax = "ENGINE = MaterializedView() AS SELECT ...",
+        .syntax = "CREATE MATERIALIZED VIEW name [TO target] AS SELECT ...",
         .related = {"View"}});
 }
 

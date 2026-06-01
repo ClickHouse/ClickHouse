@@ -59,6 +59,6 @@ namespace DB
         Documentation{
             .description = "Reads from an inner table or table function repeatedly, returning its rows in an infinite loop. "
                 "It is the backing engine for the `loop` table function and is mainly useful for testing and generating continuous streams of data.",
-            .syntax = "ENGINE = Loop(database, table)"});
+            .syntax = "SELECT * FROM loop(database, table)"});
     }
 }
