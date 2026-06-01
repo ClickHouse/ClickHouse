@@ -272,6 +272,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiClassify",
     "aiExtract",
     "aiTranslate",
+    "aiEmbed",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -1158,7 +1159,7 @@ thread_local FunctionsStressTestThread constinit * current_stress_thread = nullp
 
 struct FunctionsStressTestThread
 {
-    size_t thread_idx;
+    size_t thread_idx{};
     std::thread thread;
     std::condition_variable thread_stop_cv;
     std::atomic<bool> thread_should_stop {false};
@@ -1452,6 +1453,10 @@ struct FunctionsStressTestThread
             }
         }
 
+        /// We mutate `context->setCurrentQueryId()` per iteration but never refresh
+        /// `ThreadStatus::query_id`, so detach before destroying `thread_status` to
+        /// keep the destructor's id-vs-context invariant happy.
+        CurrentThread::detachFromGroupIfNotDetached();
         thread_status.reset(); // must be done from this thread
 
         {
@@ -2227,6 +2232,7 @@ struct FunctionsStressTestThread
 
 extern "C" {
 #pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 {
