@@ -1125,18 +1125,31 @@ Rope ReaderExecutor::readFromSource(
             /// over-read past the extent still completes. `offset`/blocks are
             /// physical (map-space) offsets.
             std::optional<size_t> read_until;
-            if (!hasUnknownSize() && opened->supportsRightBoundedReads())
+            if (opened->supportsRightBoundedReads())
             {
                 if (is_transient)
                 {
-                    read_until = offset + want;
+                    /// A `readBigAt` transient only runs on known-size sources.
+                    if (!hasUnknownSize())
+                        read_until = offset + want;
                 }
                 else if (read_extent_end)
                 {
+                    /// The advertised extent is a concrete position even when the
+                    /// total size is unknown, so bound to it regardless - otherwise
+                    /// the live connection (and its slot) would stay open-ended and
+                    /// pinned after the consumer stops at the extent. Only the
+                    /// object-end clamp needs a known size; an unknown-size object
+                    /// has no end to clamp against, the extent is the only bound.
                     const size_t physical_extent_end = *read_extent_end + data_start_offset;
                     const size_t to_extent = physical_extent_end > logical_offset ? physical_extent_end - logical_offset : 0;
-                    const size_t to_object_end = object.bytes_size > offset ? object.bytes_size - offset : 0;
-                    read_until = offset + std::max(want, std::min(to_extent, to_object_end));
+                    size_t bound_size = to_extent;
+                    if (!hasUnknownSize())
+                    {
+                        const size_t to_object_end = object.bytes_size > offset ? object.bytes_size - offset : 0;
+                        bound_size = std::min(to_extent, to_object_end);
+                    }
+                    read_until = offset + std::max(want, bound_size);
                 }
                 if (read_until)
                     opened->setReadUntilPosition(*read_until);
