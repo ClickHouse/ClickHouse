@@ -11,7 +11,7 @@ namespace DB
 class ReadFromLocalParallelReplicaStep : public ISourceStep
 {
 public:
-    explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_ = nullptr);
+    explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_);
 
     String getName() const override { return "ReadFromLocalReplica"; }
 
