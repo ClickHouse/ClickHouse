@@ -82,6 +82,20 @@ void MergeTreeReaderCompact::fillColumnPositions()
         if (position.has_value() && isColumnDroppedByPendingMutation(i))
             position.reset();
 
+        /// Stale-slot guard for column-IDs tables.  After a DROP COLUMN b /
+        /// ADD COLUMN b cycle (across two ALTERs), the table mapping points
+        /// `b` to a fresh column ID, but in-memory part objects keep their
+        /// original column at logical name "b" with the OLD column ID.
+        /// Reading by logical name would hand back the old bytes through the
+        /// new column.  Reject the slot when the part's column ID at that
+        /// position no longer matches what the current mapping expects.
+        if (position.has_value() && !column_to_read.column_id.empty())
+        {
+            auto part_col = part_columns.getColumn(GetColumnsOptions::All, column_to_read.getNameInStorage());
+            if (!part_col.column_id.empty() && part_col.column_id != column_to_read.column_id)
+                position.reset();
+        }
+
         if (position.has_value() && column_to_read.isSubcolumn())
         {
             auto name_in_storage = column_to_read.getNameInStorage();
