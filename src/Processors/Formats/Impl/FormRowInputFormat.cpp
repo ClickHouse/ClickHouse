@@ -132,7 +132,7 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
-NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
+static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
     String value;
@@ -159,6 +159,7 @@ NamesAndTypesList FormSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     return readRowAndGetNamesAndDataTypesForFormRow(in, format_settings);
 }
 
+void registerInputFormatForm(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory)
 {
     factory.registerInputFormat("Form", [](
@@ -171,6 +172,7 @@ void registerInputFormatForm(FormatFactory & factory)
     });
 }
 
+void registerFormSchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Form", [](ReadBuffer & buffer, const FormatSettings & settings)

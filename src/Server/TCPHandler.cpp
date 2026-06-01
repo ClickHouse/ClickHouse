@@ -907,7 +907,7 @@ void TCPHandler::runImpl()
         {
             exception = std::make_unique<DB::Exception>(Exception::CreateFromPocoTag{}, e);
         }
-// Server should die on std logic errors in debug, like with assert()
+// Server should die on std logic errors in debug, like with chassert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in tests.
 #ifdef DEBUG_OR_SANITIZER_BUILD
         catch (const std::logic_error & e)
@@ -1209,7 +1209,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
             {
-                bool empty_block;
+                bool empty_block = false;
                 if (state.skipping_data)
                     empty_block = !processUnexpectedData();
                 else
@@ -1557,7 +1557,7 @@ void TCPHandler::processTablesStatusRequest()
     }
     else
     {
-        assert(session);
+        chassert(session);
         context_to_resolve_table_names = session->sessionContext();
     }
 
@@ -2085,7 +2085,7 @@ void TCPHandler::receiveAddendum()
 
 void TCPHandler::processUnexpectedHello()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
@@ -2406,7 +2406,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         data += received_extra_roles;
 
         std::string calculated_hash = encodeSHA256(data);
-        assert(calculated_hash.size() == 32);
+        chassert(calculated_hash.size() == 32);
 
         /// TODO maybe also check that peer address actually belongs to the cluster?
         if (calculated_hash != received_hash)
@@ -2556,7 +2556,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
 void TCPHandler::processUnexpectedQuery()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in);

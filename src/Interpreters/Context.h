@@ -301,7 +301,6 @@ using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHold
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
@@ -351,7 +350,7 @@ private:
 class ContextData
 {
 protected:
-    ContextSharedPart * shared;
+    ContextSharedPart * shared{};
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -1248,6 +1247,9 @@ public:
 
     bool getS3QueueDisableStreaming() const;
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
+
+    bool getMessageQueueDisableInsertion() const;
+    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
