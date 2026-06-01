@@ -17,4 +17,5 @@ select 1+1
 1
 --- local: fixed query_id is preserved with echo-query-id ---
 Query id: 04308_fixed_id
+
 04308_fixed_id
