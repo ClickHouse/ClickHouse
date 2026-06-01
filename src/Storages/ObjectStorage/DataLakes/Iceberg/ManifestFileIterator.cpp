@@ -391,9 +391,6 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         return nullptr;
     }
 
-    /// Compute absolute path from the metadata key; storage resolution happens at read time
-    const auto absolute_file_path = path_resolver.resolve(parsed_entry->file_path_key);
-
     Int64 resolved_snapshot_id;
     if (parsed_entry->parsed_snapshot_id.has_value())
     {
@@ -450,7 +447,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
-        parsed_entry, common_partition_specification, absolute_file_path, resolved_sequence_number, resolved_schema_id);
+        parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
 
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;

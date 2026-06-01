@@ -136,9 +136,6 @@ struct ProcessedManifestFileEntry
     std::shared_ptr<const ParsedManifestFileEntry> parsed_entry;
     std::shared_ptr<const PartitionSpecification> common_partition_specification;
 
-    /// Absolute file path resolved from parsed_entry->file_path_key via IcebergPathResolver
-    String absolute_file_path;
-
     // Always zero in case of format version 1
     Int64 sequence_number;
     Int32 resolved_schema_id;
