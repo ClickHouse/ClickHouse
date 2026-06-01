@@ -13,8 +13,6 @@
 #include <cstdint>
 
 #include <poll.h>
-#include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/uio.h>
 
 
@@ -24,19 +22,16 @@ namespace Silk
 namespace
 {
 
-uint64_t readSocketTimeoutNs(int fd, int optname)
+uint64_t timeoutNs(const Poco::Timespan & timeout)
 {
-    timeval tv{};
-    socklen_t opt_len = sizeof(tv);
-    getsockopt(fd, SOL_SOCKET, optname, &tv, &opt_len);
-    return (static_cast<uint64_t>(tv.tv_sec) * 1'000'000ULL + tv.tv_usec) * 1000ULL;
+    return static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000ULL;
 }
 
 int silkBioRead(BIO * bio, char * buf, int len)
 {
-    const intptr_t fd_p = reinterpret_cast<intptr_t>(BIO_get_data(bio));
-    const int fd = static_cast<int>(fd_p);
-    const uint64_t timeout_ns = readSocketTimeoutNs(fd, SO_RCVTIMEO);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
+    const int fd = socket_impl->sockfd();
+    const uint64_t timeout_ns = timeoutNs(socket_impl->getReceiveTimeout());
 
     uint64_t bytes_read = 0;
     silk::FiberScheduler::IoFuture future;
@@ -70,9 +65,9 @@ int silkBioRead(BIO * bio, char * buf, int len)
 
 int silkBioWrite(BIO * bio, const char * buf, int len)
 {
-    const intptr_t fd_p = reinterpret_cast<intptr_t>(BIO_get_data(bio));
-    const int fd = static_cast<int>(fd_p);
-    const uint64_t timeout_ns = readSocketTimeoutNs(fd, SO_SNDTIMEO);
+    auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
+    const int fd = socket_impl->sockfd();
+    const uint64_t timeout_ns = timeoutNs(socket_impl->getSendTimeout());
 
     uint64_t bytes_written = 0;
     silk::FiberScheduler::IoFuture future;
@@ -105,14 +100,17 @@ long silkBioCtrl(BIO * bio, int cmd, [[maybe_unused]] long larg, void * parg)
     switch (cmd)
     {
         case BIO_C_SET_FD:
-            BIO_set_data(bio, reinterpret_cast<void *>(static_cast<intptr_t>(*static_cast<int *>(parg))));
+            // The fd is not stored here.
+            // BIO data holds the underlying SocketImpl,
+            // and the fd is read from it.
             BIO_set_init(bio, 1);
             return 1;
         case BIO_C_GET_FD:
         {
-            const intptr_t fd = reinterpret_cast<intptr_t>(BIO_get_data(bio));
+            auto * socket_impl = static_cast<Poco::Net::SocketImpl *>(BIO_get_data(bio));
+            const int fd = socket_impl->sockfd();
             if (parg)
-                *static_cast<int *>(parg) = static_cast<int>(fd);
+                *static_cast<int *>(parg) = fd;
             return fd;
         }
         case BIO_CTRL_FLUSH:

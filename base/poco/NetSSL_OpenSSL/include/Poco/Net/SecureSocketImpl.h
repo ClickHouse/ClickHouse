@@ -257,6 +257,7 @@ namespace Net
         std::string _peerHostName;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;
+        /// Contract: when set, store the `SocketImpl *` in the BIO's data.
 
         friend class SecureStreamSocketImpl;
 

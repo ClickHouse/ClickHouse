@@ -119,6 +119,9 @@ void SecureSocketImpl::acceptSSL()
 	if (!pBIO) throw SSLException("Cannot create BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
 
+	if (_bioMethod)
+		BIO_set_data(pBIO, _pSocket.get());
+
 	_pSSL = SSL_new(_pContext->sslContext());
 	if (!_pSSL)
 	{
@@ -184,6 +187,9 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 	BIO* pBIO = BIO_new(getBioMethod());
 	if (!pBIO) throw SSLException("Cannot create SSL BIO object");
 	BIO_set_fd(pBIO, static_cast<int>(_pSocket->sockfd()), BIO_NOCLOSE);
+
+	if (_bioMethod)
+		BIO_set_data(pBIO, _pSocket.get());
 
 	_pSSL = SSL_new(_pContext->sslContext());
 	if (!_pSSL)
