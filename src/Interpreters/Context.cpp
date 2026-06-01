@@ -81,6 +81,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
+#include <Core/UUID.h>
 #include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
@@ -153,6 +154,7 @@
 #include <base/defines.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace fs = std::filesystem;
 
@@ -3518,7 +3520,7 @@ void Context::makeSessionContext()
 
 void Context::makeGlobalContext()
 {
-    assert(!global_context_instance);
+    chassert(!global_context_instance);
     global_context_instance = shared_from_this();
     DatabaseCatalog::init(shared_from_this());
     EventNotifier::init();
@@ -3528,7 +3530,7 @@ void Context::makeGlobalContext()
 
 void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & config)
 {
-    assert(!background_context_instance);
+    chassert(!background_context_instance);
     static constexpr std::string background_profile_name_setting = "background_profile";
     static constexpr std::string background_profile_default_name = "background";
 
@@ -4763,7 +4765,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
 {
     size_t max_parallel_tasks_per_type = static_cast<size_t>(
         static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
-        * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
+        * static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]));
     callOnce(
         shared->schedule_pool_initialized,
         [&]
@@ -5272,7 +5274,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
         bool is_standalone_app = config.getBool("keeper_server.standalone_keeper", getApplicationType() == ApplicationType::KEEPER);
         if (start_async)
         {
-            assert(!is_standalone_app);
+            chassert(!is_standalone_app);
             LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster, "
                      "will wait for Keeper asynchronously");
         }
@@ -7241,14 +7243,14 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 
 void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
 {
-    assert(!metadata_transaction);
-    assert(attach_existing || query_context.lock().get() == this);
+    chassert(!metadata_transaction);
+    chassert(attach_existing || query_context.lock().get() == this);
     metadata_transaction = std::move(txn);
 }
 
 ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
 {
-    assert(!metadata_transaction || hasQueryContext());
+    chassert(!metadata_transaction || hasQueryContext());
     return metadata_transaction;
 }
 
@@ -7306,8 +7308,8 @@ void Context::initCurrentTransaction(MergeTreeTransactionPtr txn)
 
 void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
 {
-    assert(!merge_tree_transaction || !txn);
-    assert(this == session_context.lock().get() || this == query_context.lock().get());
+    chassert(!merge_tree_transaction || !txn);
+    chassert(this == session_context.lock().get() || this == query_context.lock().get());
     merge_tree_transaction = std::move(txn);
     if (!merge_tree_transaction)
         merge_tree_transaction_holder = {};
@@ -7321,7 +7323,7 @@ MergeTreeTransactionPtr Context::getCurrentTransaction() const
 bool Context::isServerCompletelyStarted() const
 {
     SharedLockGuard lock(shared->mutex);
-    assert(getApplicationType() == ApplicationType::SERVER);
+    chassert(getApplicationType() == ApplicationType::SERVER);
     return shared->is_server_completely_started;
 }
 
@@ -7342,9 +7344,9 @@ void Context::setServerCompletelyStarted()
     }
 
     std::lock_guard lock(shared->mutex);
-    assert(global_context.lock().get() == this);
-    assert(!shared->is_server_completely_started);
-    assert(getApplicationType() == ApplicationType::SERVER);
+    chassert(global_context.lock().get() == this);
+    chassert(!shared->is_server_completely_started);
+    chassert(getApplicationType() == ApplicationType::SERVER);
     shared->is_server_completely_started = true;
 }
 
@@ -7502,7 +7504,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
             }
         }
     }
-    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * background_merges_mutations_concurrency_ratio);
+    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * static_cast<double>(background_merges_mutations_concurrency_ratio));
     /// After auto-lowering, a small `background_pool_size` combined with a user-configured
     /// fractional `background_merges_mutations_concurrency_ratio` (e.g. `1 * 0.5 = 0`) can
     /// produce zero task count, which fails the `MergeTreeBackgroundExecutor` startup check.
@@ -7670,55 +7672,55 @@ ReadSettings Context::getReadSettings() const
     std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
 
     if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
-        res.local_fs_method = *opt_method;
+        res.local_fs_settings.method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
 
     read_method_str = getSettingsRef()[Setting::remote_filesystem_read_method].value;
 
     if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
-        res.remote_fs_method = *opt_method;
+        res.remote_fs_settings.method = *opt_method;
     else
         throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
 
-    res.local_fs_prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
-    res.remote_fs_prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
+    res.local_fs_settings.prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
+    res.remote_fs_settings.prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
 
     res.enable_filesystem_read_prefetches_log = settings_ref[Setting::enable_filesystem_read_prefetches_log];
 
-    res.remote_fs_read_max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
-    res.remote_fs_read_backoff_max_tries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
+    res.remote_fs_settings.max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
+    res.remote_fs_settings.max_retries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
     res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
-    res.filesystem_cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+    res.filesystem_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
-    res.filesystem_cache_settings.enable_filesystem_cache_log = settings_ref[Setting::enable_filesystem_cache_log];
-    res.filesystem_cache_settings.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
-    res.filesystem_cache_settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
+    res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
+    res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
+    res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
-    res.filesystem_cache_settings.filesystem_cache_allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
-    res.filesystem_cache_settings.filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage
+    res.filesystem_cache_settings.allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
+    res.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
-    res.filesystem_cache_settings.filesystem_cache_allow_background_download_during_fetch
+    res.filesystem_cache_settings.allow_background_download_during_fetch
         = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
-    res.filesystem_cache_settings.filesystem_cache_prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
+    res.filesystem_cache_settings.prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
 
-    res.filesystem_cache_settings.filesystem_cache_max_download_size = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_settings.filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit
+    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
+    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
         = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
 
-    res.page_cache = getPageCache();
+    res.page_cache_settings.cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
     res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
-    res.page_cache_settings.read_from_page_cache_if_exists_otherwise_bypass_cache
+    res.page_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
-    res.page_cache_settings.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
-    res.page_cache_settings.page_cache_block_size = settings_ref[Setting::page_cache_block_size];
-    res.page_cache_settings.page_cache_lookahead_blocks = settings_ref[Setting::page_cache_lookahead_blocks];
-    res.page_cache_settings.page_cache_max_coalesced_bytes = settings_ref[Setting::page_cache_max_coalesced_bytes];
+    res.page_cache_settings.random_eviction_for_tests = settings_ref[Setting::page_cache_inject_eviction];
+    res.page_cache_settings.block_size = settings_ref[Setting::page_cache_block_size];
+    res.page_cache_settings.lookahead_blocks = settings_ref[Setting::page_cache_lookahead_blocks];
+    res.page_cache_settings.max_coalesced_bytes = settings_ref[Setting::page_cache_max_coalesced_bytes];
 
-    res.remote_read_min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
+    res.remote_fs_settings.min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
 
     /// Zero read buffer will not make progress.
     if (!getSettingsRef()[Setting::max_read_buffer_size])
@@ -7727,27 +7729,27 @@ ReadSettings Context::getReadSettings() const
             ErrorCodes::INVALID_SETTING_VALUE, "Invalid value '{}' for max_read_buffer_size", getSettingsRef()[Setting::max_read_buffer_size].value);
     }
 
-    res.local_fs_buffer_size
+    res.local_fs_settings.buffer_size
         = settings_ref[Setting::max_read_buffer_size_local_fs] ? settings_ref[Setting::max_read_buffer_size_local_fs] : settings_ref[Setting::max_read_buffer_size];
-    res.remote_fs_buffer_size
+    res.remote_fs_settings.buffer_size
         = settings_ref[Setting::max_read_buffer_size_remote_fs] ? settings_ref[Setting::max_read_buffer_size_remote_fs] : settings_ref[Setting::max_read_buffer_size];
-    res.prefetch_buffer_size = settings_ref[Setting::prefetch_buffer_size];
-    res.direct_io_threshold = settings_ref[Setting::min_bytes_to_use_direct_io];
-    res.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
+    res.remote_fs_settings.large_buffer_size = settings_ref[Setting::prefetch_buffer_size];
+    res.local_fs_settings.direct_io_threshold = settings_ref[Setting::min_bytes_to_use_direct_io];
+    res.local_fs_settings.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
     res.priority = Priority{settings_ref[Setting::read_priority]};
 
     res.remote_throttler = getRemoteReadThrottler();
     res.local_throttler = getLocalReadThrottler();
 
-    res.http_max_tries = settings_ref[Setting::http_max_tries];
-    res.http_retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
-    res.http_retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
-    res.http_skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
-    res.http_make_head_request = settings_ref[Setting::http_make_head_request];
+    res.http_settings.max_tries = settings_ref[Setting::http_max_tries];
+    res.http_settings.retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
+    res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
+    res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
+    res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
 
-    res.mmap_cache = getMMappedFileCache().get();
-    res.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
-    res.enable_blob_storage_log_for_read_operations = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
+    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
+    res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
+    res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
     return res;
 }

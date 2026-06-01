@@ -264,7 +264,7 @@ bool LDAPClient::openConnection(BindMode mode)
 
 #ifdef LDAP_OPT_TIMEOUT
     {
-        ::timeval operation_timeout;
+        ::timeval operation_timeout{};
         operation_timeout.tv_sec = params.operation_timeout.count();
         operation_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
@@ -273,7 +273,7 @@ bool LDAPClient::openConnection(BindMode mode)
 
 #ifdef LDAP_OPT_NETWORK_TIMEOUT
     {
-        ::timeval network_timeout;
+        ::timeval network_timeout{};
         network_timeout.tv_sec = params.network_timeout.count();
         network_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
@@ -367,7 +367,7 @@ bool LDAPClient::openConnection(BindMode mode)
     {
         case LDAPClient::Params::SASLMechanism::SIMPLE:
         {
-            ::berval cred;
+            ::berval cred{};
             cred.bv_val = const_cast<char *>(password_to_use.c_str());
             cred.bv_len = password_to_use.size();
 
@@ -503,7 +503,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         }
                     });
 
-                    ::berval bv;
+                    ::berval bv{};
 
                     handleError(ldap_get_dn_ber(handle, msg, &ber, &bv));
 

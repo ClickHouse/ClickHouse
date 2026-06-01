@@ -243,7 +243,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
 
 std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists, bool throw_if_exists)
 {
-    assert(ids.empty() || (multiple_entities.size() == ids.size()));
+    chassert(ids.empty() || (multiple_entities.size() == ids.size()));
 
     if (multiple_entities.empty())
         return {};

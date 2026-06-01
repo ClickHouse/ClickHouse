@@ -131,6 +131,7 @@ BlockIO InterpreterExecuteAsQuery::execute()
 }
 
 
+void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
 void registerInterpreterExecuteAsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
