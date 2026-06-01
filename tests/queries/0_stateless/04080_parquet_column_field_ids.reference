@@ -47,6 +47,12 @@ b.s	200
 b.i	3
 -- values --
 [1,2,3]	('hi',7)
+== geo explicit override (Point as WKB) ==
+-- field_ids --
+point	7
+== geo auto-assign (Point as WKB) ==
+-- field_ids --
+point	1
 == error: unknown column ==
 BAD_ARGUMENTS
 references unknown column

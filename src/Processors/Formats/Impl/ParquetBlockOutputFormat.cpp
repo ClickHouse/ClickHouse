@@ -6,6 +6,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Columns/IColumn.h>
+#include <Common/WKB.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -39,6 +40,25 @@ namespace ErrorCodes
 
 namespace
 {
+
+    /// Whether `prepareGeoColumn` will collapse this top-level column into a single WKB `String`
+    /// field. That happens, when `output_format_parquet_geometadata` is enabled, for the recognized
+    /// geo custom types. In that case the emitted Parquet schema has only the top-level field, so we
+    /// must treat the column as a scalar and not enumerate its nested `Tuple` / `Array` structure.
+    bool isGeoColumnWrittenAsWKBScalar(const DataTypePtr & type)
+    {
+        const auto * custom_name = type->getCustomName();
+        if (!custom_name)
+            return false;
+
+        const auto & name = custom_name->getName();
+        return name == "Geometry"
+            || name == WKBPointTransform::name
+            || name == WKBLineStringTransform::name
+            || name == WKBPolygonTransform::name
+            || name == WKBMultiLineStringTransform::name
+            || name == WKBMultiPolygonTransform::name;
+    }
 
     /// Enumerate, in the same DFS order that `prepareColumnRecursive` visits them, the dotted
     /// `field_id`-bearing paths under a column named `name` of type `type`. `Nullable` and
@@ -98,14 +118,24 @@ namespace
     std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
         const Block & header,
         const std::vector<std::pair<String, Int32>> & overrides,
-        bool auto_assign)
+        bool auto_assign,
+        bool write_geometadata)
     {
         if (overrides.empty() && !auto_assign)
             return std::nullopt;
 
         std::vector<String> all_paths;
         for (const auto & col : header)
-            enumerateFieldPaths(col.name, col.type, all_paths);
+        {
+            /// A geo column collapses to a single WKB `String` field when GeoParquet output is on,
+            /// so the schema has only the top-level path — enumerating the ClickHouse-side nested
+            /// shape here would assign ids to fields that are never written and reject valid
+            /// top-level overrides as non-covering.
+            if (write_geometadata && isGeoColumnWrittenAsWKBScalar(col.type))
+                all_paths.push_back(col.name);
+            else
+                enumerateFieldPaths(col.name, col.type, all_paths);
+        }
 
         /// Path identity is a dotted string, so a top-level column literally named `a.b` and the
         /// nested field `b` under `a Tuple(b ...)` would flatten to the same key. Letting that slide
@@ -191,7 +221,8 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     column_field_ids = buildColumnFieldIds(
         *header_,
         format_settings.parquet.column_field_ids,
-        format_settings.parquet.auto_assign_field_ids);
+        format_settings.parquet.auto_assign_field_ids,
+        format_settings.parquet.write_geometadata);
 
     if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
         pool = std::make_unique<ThreadPool>(

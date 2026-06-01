@@ -115,6 +115,33 @@ SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a.element': '100', 'b.s': '200'};
 " "a, b"
 
+# 7. Geo column with GeoParquet output (default output_format_parquet_geometadata = 1): the geo
+#    type collapses to a single WKB `String` field, so `field_id`s apply to that one top-level
+#    field only. The nested `Tuple` / `Array` shape of `Point` must not be enumerated (it is never
+#    written), otherwise a top-level override is wrongly rejected as non-covering and auto-assign
+#    assigns ids to fields that don't exist in the file.
+F="$WORKDIR/04080_field_ids_geo_override.parquet"
+echo "== geo explicit override (Point as WKB) =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$F', 'Parquet')
+SELECT (1.0, 2.0)::Point AS point
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'point': '7'};
+"
+echo "-- field_ids --"
+dump_field_ids "$F"
+
+F="$WORKDIR/04080_field_ids_geo_auto.parquet"
+echo "== geo auto-assign (Point as WKB) =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$F', 'Parquet')
+SELECT (1.0, 2.0)::Point AS point
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_auto_assign_field_ids = 1;
+"
+echo "-- field_ids --"
+dump_field_ids "$F"
+
 echo "== error: unknown column =="
 ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04080_err1.parquet', 'Parquet')
