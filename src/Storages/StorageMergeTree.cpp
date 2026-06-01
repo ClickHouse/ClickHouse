@@ -478,6 +478,38 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
     else if (auto current = getColumnIdMapping())
         local_mapping = *current;
 
+    /// Pre-pass: detect rename / drop chains where the rename target is the
+    /// source of another rename or a drop in the same ALTER (e.g.
+    /// `RENAME b TO tmp, RENAME c TO b` or `DROP COLUMN b, RENAME COLUMN c TO b`).
+    /// Two-phase rename keeps the old name in the mapping during phase 1,
+    /// so the second command would trip the duplicate-logical-name check
+    /// in `beginRename` and throw `LOGICAL_ERROR`.  Reject these patterns
+    /// explicitly so the user gets a clear message; the workaround is to
+    /// split into two ALTERs.
+    {
+        std::set<String> sources_freed_in_this_alter;
+        for (const auto & c : commands)
+        {
+            if (c.ignore)
+                continue;
+            if (c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN)
+                sources_freed_in_this_alter.insert(c.column_name);
+        }
+        for (const auto & c : commands)
+        {
+            if (c.ignore || c.type != AlterCommand::RENAME_COLUMN)
+                continue;
+            if (sources_freed_in_this_alter.contains(c.rename_to))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "ALTER on column-IDs table: cannot rename '{}' to '{}' in the "
+                    "same ALTER that frees '{}' (via another RENAME or DROP).  "
+                    "Two-phase rename cannot represent this safely; split into "
+                    "two ALTER statements.",
+                    c.column_name, c.rename_to, c.rename_to);
+        }
+    }
+
     /// Two-phase rename: `beginRename` keeps both old and new logical names
     /// in the mapping so the persisted state is crash-safe.  After metadata
     /// commit, `finishRename` removes the old entry.
