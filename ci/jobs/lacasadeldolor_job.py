@@ -436,6 +436,27 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             else:
                 print(f"WARNING: File {cont_log} already gone!")
 
+    # Copy rotated server logs (clickhouse-server.log.0.gz, etc.) and
+    # rotated error logs (clickhouse-server.err.log.0.gz, etc.) into
+    # workspace_path so the glob at server_logs collection finds them.
+    for i in range(number_of_nodes):
+        container_log_dir = Path(
+            f"{_dolor_instances_dir()}/node{i}/logs"
+        )
+        if not container_log_dir.exists():
+            continue
+        for base, dst_base in (
+            ("clickhouse-server.log", f"server{i}.log"),
+            ("clickhouse-server.err.log", f"server{i}.err.log"),
+        ):
+            for rotated in container_log_dir.glob(f"{base}.*"):
+                if not rotated.is_file():
+                    continue
+                suffix = rotated.name[len(base) :]
+                dst = workspace_path / f"{dst_base}{suffix}"
+                shutil.copy2(rotated, dst)
+                paths.append(dst)
+
     # Safety net: detect Python-level crashes in the fuzzer log even if the
     # exit code was somehow swallowed (e.g. future command changes drop pipefail)
     if fuzzer_log.exists():
