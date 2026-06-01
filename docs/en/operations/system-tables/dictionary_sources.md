@@ -40,4 +40,4 @@ ORDER BY name
 
 ## See also {#see-also}
 
-- [Dictionaries](/sql-reference/dictionaries) — Information about dictionaries and their sources.
+- [Dictionary sources](/sql-reference/statements/create/dictionary/sources) — Information about dictionaries and their sources.
