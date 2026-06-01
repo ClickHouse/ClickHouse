@@ -417,11 +417,7 @@ void optimizeTreeSecondPass(
             /// announced to the shared coordinator — everything else stays local (each replica announces its
             /// own ranges and the coordinator reconciles them). That mode is a pure function of
             /// `query_info.input_order_info`, which is produced solely by the read-in-order optimizations.
-            ///
-            /// The remote replicas plan the subquery as a standalone query, so they derive the read-in-order
-            /// decision from the subquery's own SETTINGS; the initiator's local plan, being optimized as part
-            /// of the outer plan, would otherwise use the top-level query's settings and could pick a
-            /// different mode. So keep the outer `optimization_settings` (it carries the contracts this local
+            /// So keep the outer `optimization_settings` (it carries the contracts this local
             /// plan must be optimized under — deferred set building, reused index/PK analysis, etc.) and
             /// override only the settings that feed `input_order_info` with the subquery's values.
             auto local_optimization_settings = optimization_settings;
