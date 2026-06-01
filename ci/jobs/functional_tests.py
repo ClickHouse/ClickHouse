@@ -151,20 +151,31 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
     one arch (e.g. an x86-only fix validated on aarch64 where the bug never
     existed) must not block the PR — another arch can still validate it.
 
-    When the run ended in `Result.Status.ERROR` (runner did not finish,
-    e.g. server crash without proper exit code, Python exception,
-    infrastructure outage) the per-test list is empty or partial and the
-    pre-inversion `ERROR` already tells the truth. Preserve it instead of
-    overwriting with a validation verdict — an infra-induced failure is
-    never counted as a validation. See #105789.
+    Infrastructure failures make the run inconclusive and must never be
+    counted as a validation. Two shapes occur:
+      * top-level `Result.Status.ERROR` — the runner did not finish (server
+        crash without a proper exit code, Python exception, infrastructure
+        outage); the per-test list is empty or partial. See #105789.
+      * a top-level `FAIL` that carries an `ERROR` sub-result — the sequential
+        "server died" path marks the culprit test `ERROR` and appends a
+        "Server died" `FAIL` leaf (see `functional_tests_results.py`).
+    In both cases the pre-inversion status already tells the truth, so it is
+    preserved rather than flipped to a validation verdict. This mirrors the
+    `had_infra_or_error` guard in `integration_test_job.py`. Note this is
+    distinct from a synthetic "Server died" `FAIL` leaf with no `ERROR`
+    sub-result (e.g. a crash-bug regression test whose bug IS the crash):
+    that has no `ERROR` sub-result, so it is correctly counted as reproduced.
     """
-    if test_result.status == Result.Status.ERROR:
+    had_infra_or_error = test_result.is_error() or any(
+        r.is_error() for r in test_result.results
+    )
+    if had_infra_or_error:
         for r in test_result.results:
             r.set_label(Result.Label.XFAIL)
         print(
-            "Bugfix validation inconclusive: the test runner did not "
-            "finish; preserving ERROR rather than reporting a validation "
-            "verdict."
+            "Bugfix validation inconclusive: the test runner did not finish "
+            "or an infrastructure error occurred; preserving the pre-inversion "
+            "status rather than reporting a validation verdict."
         )
         return False
 
