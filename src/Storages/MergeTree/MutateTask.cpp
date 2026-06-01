@@ -1598,7 +1598,11 @@ private:
 
     /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
     /// Shared across all projections since they all consume the same source blocks.
+    /// Only the columns required by at least one projection (plus `_row_exists` when
+    /// present) are squashed, so wide source columns no projection reads are not
+    /// retained in memory until the squash boundary.
     std::optional<Squashing> pre_calculate_squash;
+    NameSet pre_calculate_required_columns;
     UInt64 pre_calculate_starting_offset{0};
 
     /// Post-calculate squash: accumulates calculated projection blocks before writing
@@ -1627,10 +1631,19 @@ void PartMergerWriter::prepare()
     /// tree merge overhead from 4 levels / 390 merge rounds to 1 level / 3 rounds.
     if (!ctx->projections_to_build.empty())
     {
+        /// The header is set lazily from the slim block computed on the first call to
+        /// `calculateProjection`, so we do not need to pass `ctx->updated_header` here.
         pre_calculate_squash.emplace(
-            std::make_shared<const Block>(ctx->updated_header),
+            std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
             settings[Setting::min_insert_block_size_bytes]);
+
+        /// Collect the union of columns required by all projections. Only these columns
+        /// (plus `_row_exists` when present in the source block) are pushed into the
+        /// squash buffer.
+        for (const auto * projection : ctx->projections_to_build)
+            for (const auto & name : projection->required_columns)
+                pre_calculate_required_columns.insert(name);
     }
 
     for (size_t i = 0; i < ctx->projections_to_build.size(); ++i)
@@ -1689,14 +1702,24 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         UInt64 starting_offset = (*ctx->mutate_entry)->rows_written;
         if (!ctx->projections_to_build.empty())
         {
+            /// Build a slim block containing only the columns required by at least one
+            /// projection (plus `_row_exists` when present). This avoids retaining
+            /// unrelated wide source columns in the pre-calculate squash buffer.
+            Block slim_block;
+            for (const auto & name : pre_calculate_required_columns)
+                if (cur_block.has(name))
+                    slim_block.insert(cur_block.getByName(name));
+            if (cur_block.has(RowExistsColumn::name))
+                slim_block.insert(cur_block.getByName(RowExistsColumn::name));
+
             auto & pre_squash = *pre_calculate_squash;
-            pre_squash.setHeader(cur_block.cloneEmpty());
+            pre_squash.setHeader(slim_block.cloneEmpty());
 
             /// Record the starting offset when the accumulator is empty (new batch starts).
             if (pre_squash.empty())
                 pre_calculate_starting_offset = starting_offset;
 
-            pre_squash.add({cur_block.getColumns(), cur_block.rows()});
+            pre_squash.add({slim_block.getColumns(), slim_block.rows()});
             Chunk squashed = Squashing::squash(
                 pre_squash.generate(),
                 pre_squash.getHeader());

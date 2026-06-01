@@ -318,7 +318,11 @@ private:
 
         /// Pre-calculate squash: accumulates raw source blocks before calling calculate().
         /// Shared across all projections since they all consume the same source blocks.
+        /// Only the columns required by at least one projection (plus _row_exists when
+        /// present) are squashed, so wide source columns no projection reads are not
+        /// retained in memory until the squash boundary.
         std::optional<Squashing> pre_calculate_squash;
+        NameSet pre_calculate_required_columns;
         UInt64 pre_calculate_starting_offset{0};
 
         /// Post-calculate squash: accumulates calculated projection blocks before writing.

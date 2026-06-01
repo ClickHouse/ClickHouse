@@ -1214,11 +1214,19 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     {
         /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
         /// projection calculation. Shared across all projections since they all consume
-        /// the same source blocks. The header will be set dynamically from the first block.
+        /// the same source blocks. The header will be set lazily on the first block.
         ctx->pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
             settings[Setting::min_insert_block_size_bytes]);
+
+        /// Collect the union of columns required by all projections. Only these columns
+        /// (plus `_row_exists` when present in the source block) are pushed into the
+        /// squash buffer, so unrelated wide source columns are not retained until the
+        /// squash boundary is reached.
+        for (const auto * projection : global_ctx->projections_to_rebuild)
+            for (const auto & name : projection->required_columns)
+                ctx->pre_calculate_required_columns.insert(name);
     }
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
@@ -1235,14 +1243,24 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
     if (global_ctx->projections_to_rebuild.empty())
         return;
 
+    /// Build a slim block containing only the columns required by at least one
+    /// projection (plus `_row_exists` when present). This avoids retaining unrelated
+    /// wide source columns in the pre-calculate squash buffer.
+    Block slim_block;
+    for (const auto & name : ctx->pre_calculate_required_columns)
+        if (block.has(name))
+            slim_block.insert(block.getByName(name));
+    if (block.has(RowExistsColumn::name))
+        slim_block.insert(block.getByName(RowExistsColumn::name));
+
     auto & pre_squash = *ctx->pre_calculate_squash;
-    pre_squash.setHeader(block.cloneEmpty());
+    pre_squash.setHeader(slim_block.cloneEmpty());
 
     /// Record the starting offset when the accumulator is empty (new batch starts).
     if (pre_squash.empty())
         ctx->pre_calculate_starting_offset = starting_offset;
 
-    pre_squash.add({block.getColumns(), block.rows()});
+    pre_squash.add({slim_block.getColumns(), slim_block.rows()});
     Chunk squashed = Squashing::squash(
         pre_squash.generate(),
         pre_squash.getHeader());
@@ -1300,7 +1318,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
 {
     /// First, flush the shared pre-calculate squash buffer.
-    if (ctx->pre_calculate_squash)
+    /// Skip the flush when the merge has been cancelled: starting a fresh
+    /// `projection.calculate` and temp-part write here only to throw the part away in
+    /// `checkOperationIsNotCanceled` below wastes work proportional to the squash size.
+    if (ctx->pre_calculate_squash
+        && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
     {
         auto & pre_squash = *ctx->pre_calculate_squash;
         Chunk remaining = Squashing::squash(pre_squash.flush(), pre_squash.getHeader());
