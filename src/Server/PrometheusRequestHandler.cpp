@@ -373,7 +373,7 @@ public:
 
         /// Some parameters (database, default_format, everything used in the code above) do not
         /// belong to the Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]"};
         return !reserved_param_names.contains(name);
     }
 
@@ -383,13 +383,17 @@ public:
         PrometheusHTTPProtocolAPI protocol{table, context};
 
         const String & uri = request.getURI();
+        /// `getURI` includes the query string (e.g. `/api/v1/label/host/values?match[]=...`). Route on the
+        /// path component only, otherwise endpoints that accept query parameters fail to match (`/values`
+        /// would no longer be the suffix) and fall through to a 404.
+        const String path = uri.substr(0, uri.find('?'));
         LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
 
         try
         {
-            if (uri.starts_with("/api/v1/query_range"))
+            if (path.starts_with("/api/v1/query_range"))
             {
                 String query = params->get("query", "");
                 String start = params->get("start", "");
@@ -413,7 +417,7 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params);
             }
-            else if (uri.starts_with("/api/v1/query"))
+            else if (path.starts_with("/api/v1/query"))
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
@@ -432,15 +436,15 @@ public:
 
                 protocol.executePromQLQuery(getOutputStream(response), params);
             }
-            else if (uri.starts_with("/api/v1/format_query"))
+            else if (path.starts_with("/api/v1/format_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The format_query endpoint is not implemented");
             }
-            else if (uri.starts_with("/api/v1/parse_query"))
+            else if (path.starts_with("/api/v1/parse_query"))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The parse_query endpoint is not implemented");
             }
-            else if (uri.starts_with("/api/v1/series"))
+            else if (path.starts_with("/api/v1/series"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -450,7 +454,7 @@ public:
 
                 protocol.getSeries(getOutputStream(response), match, start, end);
             }
-            else if (uri.starts_with("/api/v1/labels"))
+            else if (path.starts_with("/api/v1/labels"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
@@ -458,12 +462,12 @@ public:
 
                 protocol.getLabels(getOutputStream(response), match, start, end);
             }
-            else if (uri.find("/api/v1/label/") != String::npos && uri.ends_with("/values"))
+            else if (path.find("/api/v1/label/") != String::npos && path.ends_with("/values"))
             {
-                // Extract label name from URI: /api/v1/label/<name>/values
-                size_t start_pos = uri.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
-                size_t end_pos = uri.find("/values");
-                String label_name = uri.substr(start_pos, end_pos - start_pos);
+                // Extract label name from path: /api/v1/label/<name>/values
+                size_t start_pos = path.find("/api/v1/label/") + 14; // length of "/api/v1/label/"
+                size_t end_pos = path.find("/values");
+                String label_name = path.substr(start_pos, end_pos - start_pos);
 
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
