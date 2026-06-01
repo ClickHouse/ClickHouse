@@ -84,15 +84,15 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
         /// default; otherwise leave the group tracker at -1 so `getResolvedSampleConfig` falls
         /// through to `total_memory_tracker_sample_probability`.
         if (settings[Setting::memory_profiler_sample_probability].changed)
-            memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+            memory_tracker.setSampleProbability(static_cast<double>(settings[Setting::memory_profiler_sample_probability]));
         if (settings[Setting::memory_profiler_sample_min_allocation_size].changed)
             memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
         if (settings[Setting::memory_profiler_sample_max_allocation_size].changed)
             memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
     }
 
-    if (settings[Setting::memory_tracker_fault_probability] > 0.0)
-        memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+    if (settings[Setting::memory_tracker_fault_probability] > 0.0f)
+        memory_tracker.setFaultProbability(static_cast<double>(settings[Setting::memory_tracker_fault_probability]));
 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 }
