@@ -160,7 +160,7 @@ struct OrderByLimitRewriteVisitor : public InDepthQueryTreeVisitorWithContext<Or
 };
 }
 
-bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const StoragePtr & table_storage, ContextPtr context)
+static bool rewriteOrderByLimit(QueryTreeNodePtr & original_query, const StoragePtr & table_storage, ContextPtr context)
 {
     auto * main_query_node = original_query->as<QueryNode>();
     if (!main_query_node)
