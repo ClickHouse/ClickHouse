@@ -139,7 +139,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
     , nested_table_id(nested_storage_->getStorageID())
 {
-    setInMemoryMetadata(*nested_storage_->getInMemoryMetadataPtr(context_, false));
+    auto nested_metadata = nested_storage_->getInMemoryMetadataPtr(context_, false);
+    setInMemoryMetadata(*nested_metadata);
 }
 
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()
@@ -243,7 +244,8 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
     nested_table_id = nested_storage->getStorageID();
-    setInMemoryMetadata(*nested_storage->getInMemoryMetadataPtr(getContext(), false));
+    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(getContext(), false);
+    setInMemoryMetadata(*nested_metadata);
     has_nested.store(true);
 }
 

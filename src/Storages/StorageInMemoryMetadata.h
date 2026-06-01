@@ -352,7 +352,8 @@ class [[nodiscard]] StorageMetadataHandle
 public:
     StorageMetadataHandle() = default;
     StorageMetadataHandle(std::nullptr_t) {} /// NOLINT(google-explicit-constructor)
-    StorageMetadataHandle(StorageMetadataPtr metadata_); /// NOLINT(google-explicit-constructor)
+    StorageMetadataHandle(std::shared_ptr<StorageInMemoryMetadata> metadata_); /// NOLINT(google-explicit-constructor)
+    StorageMetadataHandle(std::shared_ptr<const StorageInMemoryMetadata> metadata_); /// NOLINT(google-explicit-constructor)
 
     const StorageInMemoryMetadata * operator->() const &;
     const StorageInMemoryMetadata & operator*() const &;

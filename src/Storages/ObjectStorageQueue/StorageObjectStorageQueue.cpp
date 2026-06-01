@@ -1285,7 +1285,8 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         }
     }
 
-    StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata old_metadata(*metadata_snapshot);
     SettingsChanges * old_settings = nullptr;
     if (old_metadata.settings_changes)
     {
@@ -1358,7 +1359,8 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
-        StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
+        auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+        StorageInMemoryMetadata old_metadata(*metadata_snapshot);
         SettingsChanges * old_settings = nullptr;
         if (old_metadata.settings_changes)
         {
@@ -1578,6 +1580,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         enable_hash_ring_filtering_copy = enable_hash_ring_filtering;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     return std::make_shared<FileIterator>(
         files_metadata,
         object_storage,
@@ -1585,7 +1588,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         getStorageID(),
         list_objects_batch_size_copy,
         predicate,
-        getInMemoryMetadataPtr(local_context, false)->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         local_context,
         log,

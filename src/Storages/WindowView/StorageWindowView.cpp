@@ -478,8 +478,9 @@ void StorageWindowView::alter(
 {
     throwIfWindowViewIsDisabled(local_context);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto current_metadata = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *current_metadata;
+    StorageInMemoryMetadata old_metadata = *current_metadata;
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
@@ -725,10 +726,11 @@ inline void StorageWindowView::fire(UInt32 watermark)
 
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, std::make_shared<const Block>(std::move(header))));
 
+        auto target_metadata_snapshot = getTargetTable()->getInMemoryMetadataPtr(context, false);
         auto adding_missing_defaults_dag = addMissingDefaults(
             pipe.getHeader(),
             block_io.pipeline.getHeader().getNamesAndTypesList(),
-            getTargetTable()->getInMemoryMetadataPtr(context, false)->getColumns(),
+            target_metadata_snapshot->getColumns(),
             context,
             context->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));

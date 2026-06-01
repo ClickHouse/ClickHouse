@@ -10748,9 +10748,9 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     return data_settings;
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    auto base = [&]()
+    auto base = [&]() -> StorageMetadataPtr
     {
         if (bypass_metadata_cache)
             return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);

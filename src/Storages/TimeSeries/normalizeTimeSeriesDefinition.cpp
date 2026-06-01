@@ -245,7 +245,8 @@ namespace
             auto external_table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(external_table_id), context);
             if (!external_table)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", external_table_id.getNameForLogs());
-            return {external_table_id, external_table->getInMemoryMetadataPtr(context, false)->columns};
+            auto external_metadata = external_table->getInMemoryMetadataPtr(context, false);
+            return {external_table_id, external_metadata->columns};
         };
 
         auto [samples_id, samples_columns] = resolve_external(ViewTarget::Samples);

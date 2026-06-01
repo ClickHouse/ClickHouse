@@ -1788,7 +1788,8 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
     ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
 {
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata old_metadata = *metadata_snapshot;
 
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, old_metadata.virtuals, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);
@@ -6181,11 +6182,12 @@ void StorageReplicatedMergeTree::read(
         {
             auto modified_query_info = query_info;
             modified_query_info.cluster = std::move(cluster);
+            auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                 query_plan,
                 getStorageID(),
                 std::move(modified_query_info),
-                getInMemoryMetadataPtr(local_context, false)->getColumns(),
+                metadata_snapshot->getColumns(),
                 storage_snapshot,
                 processed_stage,
                 query_info.query,
@@ -6403,7 +6405,8 @@ bool StorageReplicatedMergeTree::optimize(
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    if (deduplicate && getInMemoryMetadataPtr(query_context, false)->hasProjections()
+    auto projections_metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    if (deduplicate && projections_metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
@@ -6672,7 +6675,8 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
-        LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", getInMemoryMetadataPtr(getContext(), true)->getMetadataVersion());
+        auto applied_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
+        LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", applied_metadata_snapshot->getMetadataVersion());
     }
 
     {
@@ -6743,7 +6747,8 @@ void StorageReplicatedMergeTree::alter(
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 
-    StorageInMemoryMetadata future_metadata = *getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    StorageInMemoryMetadata future_metadata = *metadata_snapshot;
 
     removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);

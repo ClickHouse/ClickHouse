@@ -231,7 +231,8 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
             return false;
 
         access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
-        auto structure = t->getInMemoryMetadataPtr(query_context, false)->getColumns();
+        auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
+        auto structure = table_metadata->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
@@ -423,7 +424,7 @@ VirtualColumnsDescription StorageMerge::createVirtuals()
     return desc;
 }
 
-StorageMetadataPtr StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
     auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
     if (!query_context)
@@ -1539,7 +1540,8 @@ void StorageMerge::alter(
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata storage_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata storage_metadata = *metadata_snapshot;
     params.apply(storage_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata, /*validate_new_create_query=*/true);
     storage_metadata.setVirtuals(createVirtuals());

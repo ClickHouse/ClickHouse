@@ -177,7 +177,8 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr(context_, false)->getColumns());
+        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
+        storage_metadata.setColumns(dest_table_metadata->getColumns());
     }
     else
         storage_metadata.setColumns(columns_);

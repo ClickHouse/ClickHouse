@@ -1001,7 +1001,12 @@ std::shared_ptr<StorageInMemoryMetadata> StorageInMemoryMetadata::clone(std::sha
     return copy;
 }
 
-StorageMetadataHandle::StorageMetadataHandle(StorageMetadataPtr metadata_)
+StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<StorageInMemoryMetadata> metadata_)
+    : metadata(std::move(metadata_))
+{
+}
+
+StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<const StorageInMemoryMetadata> metadata_)
     : metadata(std::move(metadata_))
 {
 }

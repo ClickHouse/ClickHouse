@@ -209,7 +209,8 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     if (context->hasInsertionTable())
         return nullptr;
 
-    auto inner_query_ast = getInMemoryMetadataPtr(context, false)->getSelectQuery().inner_query;
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
 
     QueryTreeNodePtr inner_query_tree;
     try
@@ -390,7 +391,8 @@ void StorageView::drop()
 {
     auto table_id = getStorageID();
 
-    if (getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
@@ -400,8 +402,9 @@ void StorageView::alter(
     AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    StorageInMemoryMetadata old_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()

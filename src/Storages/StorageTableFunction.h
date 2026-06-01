@@ -128,7 +128,8 @@ public:
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
-        auto actual_structure = storage->getInMemoryMetadataPtr(context, false)->getSampleBlock();
+        auto nested_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto actual_structure = nested_metadata_snapshot->getSampleBlock();
         if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");

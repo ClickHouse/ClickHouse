@@ -270,7 +270,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
         fs::create_directories(rocksdb_dir);
     }
 
-    const auto sample_block = getInMemoryMetadataPtr(context_, false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    const auto sample_block = metadata_snapshot->getSampleBlock();
     primary_key_pos.reserve(primary_keys.size());
     primary_key_types.reserve(primary_keys.size());
     std::vector<bool> is_pk(sample_block.columns());
@@ -949,13 +950,15 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         wb.finalize();
     }
 
-    auto block = getBySerializedKeys(raw_keys, &null_map, getInMemoryMetadataPtr(getContext(), false)->getSampleBlock());
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto block = getBySerializedKeys(raw_keys, &null_map, metadata_snapshot->getSampleBlock());
     return Chunk(block.getColumns(), block.rows());
 }
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return metadata_snapshot->getSampleBlock();
 }
 
 Block StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const
