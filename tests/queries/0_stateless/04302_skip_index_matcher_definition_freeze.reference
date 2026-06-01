@@ -1,0 +1,6 @@
+INDEX idx (a) TYPE minmax GRANULARITY 1
+INDEX idx (a) TYPE minmax GRANULARITY 1
+INDEX idx (a) TYPE minmax GRANULARITY 1
+INDEX idx (a) TYPE minmax GRANULARITY 1
+INDEX idx (a1, a2) TYPE minmax GRANULARITY 1
+INDEX idx (a1, a2) TYPE minmax GRANULARITY 1

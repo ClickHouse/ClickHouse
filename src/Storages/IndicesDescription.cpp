@@ -94,6 +94,34 @@ void normalizeIndexExpressionList(ASTPtr & expression_list, const ColumnsDescrip
     replaceAliasesInIndexExpression(expression_list, columns, context, alias_stack);
 }
 
+ASTPtr makePersistedIndexDefinitionAST(
+    const String & name,
+    const ASTPtr & expression_list_ast,
+    const ASTFunction & index_type,
+    UInt64 granularity)
+{
+    chassert(expression_list_ast != nullptr);
+
+    ASTPtr persisted_expression;
+    if (expression_list_ast->children.size() == 1)
+    {
+        persisted_expression = expression_list_ast->children.front()->clone();
+        persisted_expression->setParenthesized(true);
+    }
+    else
+    {
+        auto tuple_function = makeASTOperator("tuple");
+        for (const auto & child : expression_list_ast->children)
+            tuple_function->arguments->children.push_back(child->clone());
+        persisted_expression = std::move(tuple_function);
+    }
+
+    auto persisted_definition = make_intrusive<ASTIndexDeclaration>(
+        std::move(persisted_expression), index_type.clone(), name);
+    persisted_definition->granularity = granularity;
+    return persisted_definition;
+}
+
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
@@ -173,7 +201,6 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
     IndexDescription result;
-    result.definition_ast = index_definition->clone();
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
@@ -197,6 +224,9 @@ IndexDescription IndexDescription::getIndexFromAST(
 
     if (index_type && index_type->arguments)
         result.arguments = index_type->arguments->clone();
+
+    result.definition_ast = makePersistedIndexDefinitionAST(
+        result.name, result.expression_list_ast, *index_type, result.granularity);
 
     return result;
 }

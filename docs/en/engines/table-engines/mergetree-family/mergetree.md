@@ -346,7 +346,7 @@ INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value]
 
 For tables from the `*MergeTree` family, data skipping indices can be specified.
 
-Index expressions can use column matchers such as `*`, `COLUMNS('regexp')`, and `COLUMNS(column_name, ...)`, and the column transformer modifiers `EXCEPT`, `APPLY`, and `REPLACE`. Matchers are expanded before index expression validation.
+Index expressions can use column matchers such as `*`, `COLUMNS('regexp')`, and `COLUMNS(column_name, ...)`, and the column transformer modifiers `EXCEPT`, `APPLY`, and `REPLACE`. Matchers are expanded before index expression validation. For data skipping indices, matchers are expanded at definition time and persisted as the normalized expression for both `CREATE TABLE` and `ALTER TABLE ... ADD INDEX`. Later `ALTER ADD COLUMN` statements do not change the indexed expression; recreate and materialize the index if newly added columns should be included.
 
 These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (the size of the granule is specified using the `index_granularity` setting in the table engine). Then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where the `where` query cannot be satisfied.
 
