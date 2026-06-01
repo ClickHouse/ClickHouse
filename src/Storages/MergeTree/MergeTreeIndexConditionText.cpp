@@ -533,6 +533,45 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(
     return tokenizer->compactTokens(tokens);
 }
 
+std::vector<VectorWithMemoryTracking<String>> MergeTreeIndexConditionText::regexpToTokensForQueries(const String & regexp_string) const
+{
+    RegexpAnalysisResult result = OptimizedRegularExpression::analyze(regexp_string);
+
+    /// required_substring is a literal that lies outside any alternation, so it must appear on
+    /// every matching path. Extract its tokens once and fold them into every alternative below:
+    /// `req AND (alt1 OR alt2 OR ...)` is equivalent to `(req AND alt1) OR (req AND alt2) OR ...`
+    VectorWithMemoryTracking<String> required_tokens;
+    if (!result.required_substring.empty())
+        required_tokens = substringToTokens(result.required_substring, false, false);
+
+    std::vector<VectorWithMemoryTracking<String>> tokens_for_queries;
+    tokens_for_queries.reserve(result.alternatives.size() + 1);
+
+    if (result.alternatives.empty())
+    {
+        tokens_for_queries.push_back(std::move(required_tokens));
+    }
+    else
+    {
+        for (const auto & alternative : result.alternatives)
+        {
+            auto tokens = substringToTokens(alternative, false, false);
+            tokens.insert(tokens.end(), required_tokens.begin(), required_tokens.end());
+            tokens_for_queries.push_back(std::move(tokens));
+        }
+    }
+
+    for (const auto & tokens : tokens_for_queries)
+    {
+        /// An element that tokenizes to nothing cannot be proven present by the index.
+        /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
+        if (tokens.empty())
+            return {};
+    }
+
+    return tokens_for_queries;
+}
+
 VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
 {
     VectorWithMemoryTracking<String> tokens;
@@ -948,26 +987,15 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "match" && tokenizer->supportsStringLike())
     {
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
+        auto tokens_for_queries = regexpToTokensForQueries(value_field.safeGet<String>());
 
-        const auto & value = value_field.safeGet<String>();
-        RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
+        if (tokens_for_queries.empty())
+            return false;
 
-        if (!result.alternatives.empty())
-        {
-            for (const auto & alternative : result.alternatives)
-            {
-                auto tokens = substringToTokens(alternative, false, false);
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-            }
-            return true;
-        }
-        if (!result.required_substring.empty())
-        {
-            auto tokens = substringToTokens(result.required_substring, false, false);
+        for (auto & tokens : tokens_for_queries)
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-            return true;
-        }
-        return false;
+
+        return true;
     }
     if ((function_name == "multiSearchAny" || function_name == "multiSearchAnyUTF8") && tokenizer->supportsStringLike())
     {
@@ -983,9 +1011,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         }
 
-        /// multiSearchAny is an OR over literal substrings, so each needle becomes a separate query
-        /// and the granule passes if any of them may be present.
+        /// multiSearchAny is an OR over literal substrings, so each needle becomes a separate query and the granule passes if any of them may be present.
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
+
         for (const auto & needle : needles)
         {
             if (needle.getType() != Field::Types::String)
@@ -994,10 +1022,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            /// A needle from which no complete token can be extracted (e.g. too short for the tokenizer)
-            /// yields an empty token vector. The granule evaluator treats an empty query as "present"
-            /// (hasAllQueryTokensOrEmpty), so such a needle disables pruning instead of pruning incorrectly.
             auto tokens = substringToTokens(needle, false, false);
+
+            if (tokens.empty())
+            {
+                out.text_search_queries.clear();
+                return false;
+            }
+
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         }
         return true;
@@ -1016,9 +1048,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         }
 
-        /// multiMatchAny is an OR over regular expressions. Analyze each pattern like `match` does and
-        /// fold the resulting per-pattern queries into a single OR.
+        /// multiMatchAny is an OR over regular expressions.
+        /// Analyze each pattern like `match` does and fold the resulting per-pattern queries into a single OR.
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
+
         for (const auto & pattern : patterns)
         {
             if (pattern.getType() != Field::Types::String)
@@ -1027,29 +1060,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            RegexpAnalysisResult result = OptimizedRegularExpression::analyze(pattern.safeGet<String>());
+            auto tokens_for_queries = regexpToTokensForQueries(pattern.safeGet<String>());
 
-            if (!result.alternatives.empty())
+            if (tokens_for_queries.empty())
             {
-                for (const auto & alternative : result.alternatives)
-                {
-                    auto tokens = substringToTokens(alternative, false, false);
-                    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-                }
-            }
-            else if (!result.required_substring.empty())
-            {
-                auto tokens = substringToTokens(result.required_substring, false, false);
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-            }
-            else
-            {
-                /// This pattern has no extractable token requirement (e.g. ".*") and can match any
-                /// document. Because multiMatchAny is an OR, the whole predicate could then be true on
-                /// any granule, so we must not prune: bail out and keep the original condition.
                 out.text_search_queries.clear();
                 return false;
             }
+
+            for (auto & tokens : tokens_for_queries)
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         }
         return true;
     }

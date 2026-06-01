@@ -1,0 +1,10 @@
+-- match returns the same rows with and without the index
+1
+2
+1
+2
+-- the required substring is folded into every alternative (tokens: delta, one)
+Condition: (mode: Any; tokens: ["delta", "one"])
+-- so the text index prunes to the 2 matching granules (out of 5)
+Granules: 5/5
+Granules: 2/5
