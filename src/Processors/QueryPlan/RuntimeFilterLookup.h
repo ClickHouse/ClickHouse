@@ -325,4 +325,6 @@ struct IRuntimeFilterLookup : boost::noncopyable
 
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
+RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
 }
