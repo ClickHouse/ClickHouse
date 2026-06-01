@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 
 #if USE_AVRO
@@ -17,57 +18,89 @@ namespace DB::ErrorCodes
 namespace DB::Iceberg
 {
 
-void SnapshotSummary::finalize(std::optional<SnapshotSummary> parent)
+SnapshotSummaryOperation SnapshotSummary::getOperation() const
 {
-    if (finalized)
+    return std::visit(
+        [&]<typename T>(const T &)
+        {
+            if constexpr (std::is_same_v<SnapshotSummaryUpdateAppend, T>)
+                return SnapshotSummaryOperation::APPEND;
+            else if constexpr (std::is_same_v<SnapshotSummaryUpdateOverwrite, T>)
+                return SnapshotSummaryOperation::OVERWRITE;
+            else if constexpr (std::is_same_v<SnapshotSummaryUpdateDelete, T>)
+                return SnapshotSummaryOperation::DELETE;
+            else if constexpr (std::is_same_v<SnapshotSummaryUpdateReplace, T>)
+                return SnapshotSummaryOperation::REPLACE;
+            else
+                return SnapshotSummaryOperation::UNKNOWN;
+        },
+        update);
+}
+
+void SnapshotSummary::applyTotals(std::optional<SnapshotSummaryTotals> other_totals)
+{
+    if (totals)
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR,
-            "SnapshotSummary::finalize called twice -- totals would be double-applied");
+            "SnapshotSummary::applyTotals called twice -- totals would be double-applied");
 
-    if (parent)
-    {
-        total_records = parent->total_records;
-        total_files_size = parent->total_files_size;
-        total_data_files = parent->total_data_files;
-        total_delete_files = parent->total_delete_files;
-        total_position_deletes = parent->total_position_deletes;
-        total_equality_deletes = parent->total_equality_deletes;
-    }
-    else if (operation == Operation::DELETE || operation == Operation::OVERWRITE)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No parent snapshot for DELETE/OVERWRITE");
+    if (other_totals)
+        totals = other_totals.value();
+    else if (getOperation() == SnapshotSummaryOperation::APPEND)
+        totals.emplace();
+    else
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No parent snapshot for DELETE/OVERWRITE/REPLACE");
 
-    switch (operation)
+    switch (getOperation())
     {
-        case Operation::APPEND:
-        case Operation::OVERWRITE:
-            total_records += added_records;
-            total_files_size += added_files_size;
-            total_data_files += added_files;
-            total_delete_files += added_delete_files;
-            /// FIXME: this is correct only while we don't support equality deletes
-            total_position_deletes += num_deleted_rows;
-            total_equality_deletes = 0;
+        case SnapshotSummaryOperation::APPEND:
+        {
+            const auto & u = std::get<SnapshotSummaryUpdateAppend>(update);
+            totals->records += u.added_records;
+            totals->files_size += u.added_files_size;
+            totals->data_files += u.added_files;
+            totals->equality_deletes = 0;
             break;
-        case Operation::DELETE:
-            total_records -= removed_records;
-            total_files_size -= removed_files_size;
-            total_data_files -= removed_data_files;
-            total_delete_files -= removed_position_delete_files;
-            /// FIXME: this is correct only while we don't support equality deletes
-            total_position_deletes -= removed_position_deletes;
-            total_equality_deletes = 0;
+        }
+        case SnapshotSummaryOperation::OVERWRITE:
+        {
+            const auto & u = std::get<SnapshotSummaryUpdateOverwrite>(update);
+            totals->files_size += u.added_files_size;
+            totals->delete_files += u.added_delete_files;
+            /// FI->ME: this is correct only while we don't support equality deletes
+            totals->position_deletes += u.num_deleted_rows;
+            totals->equality_deletes = 0;
             break;
+        }
+        case SnapshotSummaryOperation::DELETE:
+        {
+            const auto & u = std::get<SnapshotSummaryUpdateDelete>(update);
+            totals->records -= u.removed_records;
+            totals->files_size -= u.removed_files_size;
+            totals->data_files -= u.removed_data_files;
+            totals->delete_files -= u.removed_position_delete_files;
+            /// FI->ME: this is correct only while we don't support equality deletes
+            totals->position_deletes -= u.removed_position_deletes;
+            totals->equality_deletes = 0;
+            break;
+        }
+        case SnapshotSummaryOperation::REPLACE:
+        {
+            const auto & u = std::get<SnapshotSummaryUpdateReplace>(update);
+            totals->records += u.added_records - u.removed_records;
+            totals->files_size += u.added_files_size - u.removed_files_size;
+            totals->data_files += u.added_files - u.removed_data_files;
+            break;
+        }
         default:
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected operation enum {}", operation);
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected operation enum {}", getOperation());
     }
-
-    finalized = true;
 }
 
 Poco::JSON::Object::Ptr SnapshotSummary::toJSON() const
 {
-    if (!finalized)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "SnapshotSummary wasn't finalized");
+    if (!totals)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "SnapshotSummary doesn't have totals");
 
     Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
 
@@ -79,121 +112,79 @@ Poco::JSON::Object::Ptr SnapshotSummary::toJSON() const
         obj->set(field, std::to_string(val));
     };
 
-    switch (operation)
+    switch (getOperation())
     {
-        case Operation::APPEND:
+        case SnapshotSummaryOperation::APPEND:
         {
-            if (num_deleted_rows != 0)
-                throw DB::Exception(
-                    DB::ErrorCodes::LOGICAL_ERROR,
-                    "SnapshotSummary with operation=APPEND must have num_deleted_rows=0, got {}",
-                    num_deleted_rows);
+            const auto & u = std::get<SnapshotSummaryUpdateAppend>(update);
             obj->set(Iceberg::f_operation, Iceberg::f_append);
-            set_as_string(Iceberg::f_added_data_files, added_files);
-            set_as_string(Iceberg::f_added_records, added_records);
-            set_as_string(Iceberg::f_added_files_size, added_files_size);
-            set_as_string(Iceberg::f_changed_partition_count, num_partitions);
+            set_as_string(Iceberg::f_added_data_files, u.added_files);
+            set_as_string(Iceberg::f_added_records, u.added_records);
+            set_as_string(Iceberg::f_added_files_size, u.added_files_size);
+            set_as_string(Iceberg::f_changed_partition_count, u.num_partitions);
             break;
         }
-        case Operation::OVERWRITE:
+        case SnapshotSummaryOperation::OVERWRITE:
         {
-            if (num_deleted_rows == 0)
+            const auto & u = std::get<SnapshotSummaryUpdateOverwrite>(update);
+            if (u.num_deleted_rows == 0)
                 throw DB::Exception(
                     DB::ErrorCodes::LOGICAL_ERROR,
                     "SnapshotSummary with operation=OVERWRITE must have num_deleted_rows>0, got 0");
             obj->set(Iceberg::f_operation, Iceberg::f_overwrite);
-            set_as_string(Iceberg::f_added_delete_files, added_delete_files);
-            set_as_string(Iceberg::f_added_position_delete_files, added_delete_files);
-            set_as_string(Iceberg::f_added_files_size, added_files_size);
-            set_as_string(Iceberg::f_added_position_deletes, num_deleted_rows);
-            set_as_string(Iceberg::f_changed_partition_count, num_partitions);
+            set_as_string(Iceberg::f_added_delete_files, u.added_delete_files);
+            set_as_string(Iceberg::f_added_position_delete_files, u.added_delete_files);
+            set_as_string(Iceberg::f_added_files_size, u.added_files_size);
+            set_as_string(Iceberg::f_added_position_deletes, u.num_deleted_rows);
+            set_as_string(Iceberg::f_changed_partition_count, u.num_partitions);
             break;
         }
-        case Operation::DELETE:
+        case SnapshotSummaryOperation::DELETE:
         {
+            const auto & u = std::get<SnapshotSummaryUpdateDelete>(update);
             obj->set(Iceberg::f_operation, Iceberg::f_delete);
-            set_as_string(Iceberg::f_removed_data_files, removed_data_files);
-            set_as_string(Iceberg::f_deleted_data_files, removed_data_files);
-            set_as_string(Iceberg::f_deleted_records, removed_records);
-            set_as_string(Iceberg::f_removed_files_size, removed_files_size);
-            if (removed_position_delete_files > 0)
-                set_as_string(Iceberg::f_removed_position_delete_files, removed_position_delete_files);
-            set_as_string(Iceberg::f_changed_partition_count, num_partitions);
+            set_as_string(Iceberg::f_removed_data_files, u.removed_data_files);
+            set_as_string(Iceberg::f_deleted_data_files, u.removed_data_files);
+            set_as_string(Iceberg::f_deleted_records, u.removed_records);
+            set_as_string(Iceberg::f_removed_files_size, u.removed_files_size);
+            if (u.removed_position_delete_files > 0)
+                set_as_string(Iceberg::f_removed_position_delete_files, u.removed_position_delete_files);
+            if (u.removed_position_deletes > 0)
+                set_as_string(Iceberg::f_removed_position_deletes, u.removed_position_deletes);
+            set_as_string(Iceberg::f_changed_partition_count, u.num_partitions);
+            break;
+        }
+        case SnapshotSummaryOperation::REPLACE:
+        {
+            const auto & u = std::get<SnapshotSummaryUpdateReplace>(update);
+            obj->set(Iceberg::f_operation, Iceberg::f_replace);
+            set_as_string(Iceberg::f_added_data_files, u.added_files);
+            set_as_string(Iceberg::f_added_records, u.added_records);
+            set_as_string(Iceberg::f_added_files_size, u.added_files_size);
+            set_as_string(Iceberg::f_removed_data_files, u.removed_data_files);
+            set_as_string(Iceberg::f_deleted_data_files, u.removed_data_files);
+            set_as_string(Iceberg::f_deleted_records, u.removed_records);
+            set_as_string(Iceberg::f_removed_files_size, u.removed_files_size);
+            set_as_string(Iceberg::f_changed_partition_count, u.num_partitions);
             break;
         }
         default:
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected operation enum {}", operation);
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected operation enum {}", getOperation());
     }
 
-    set_as_string(Iceberg::f_total_records, total_records);
-    set_as_string(Iceberg::f_total_files_size, total_files_size);
-    set_as_string(Iceberg::f_total_data_files, total_data_files);
-    set_as_string(Iceberg::f_total_delete_files, total_delete_files);
-    set_as_string(Iceberg::f_total_position_deletes, total_position_deletes);
-    set_as_string(Iceberg::f_total_equality_deletes, total_equality_deletes);
+    set_as_string(Iceberg::f_total_records, totals->records);
+    set_as_string(Iceberg::f_total_files_size, totals->files_size);
+    set_as_string(Iceberg::f_total_data_files, totals->data_files);
+    set_as_string(Iceberg::f_total_delete_files, totals->delete_files);
+    set_as_string(Iceberg::f_total_position_deletes, totals->position_deletes);
+    set_as_string(Iceberg::f_total_equality_deletes, totals->equality_deletes);
 
     return obj;
-}
-
-SnapshotSummary SnapshotSummary::createAppend(
-    Int64 added_files, Int64 added_records, Int64 added_files_size, Int64 num_partitions)
-{
-    SnapshotSummary result;
-    result.operation = Operation::APPEND;
-    result.added_files = added_files;
-    result.added_records = added_records;
-    result.added_files_size = added_files_size;
-    result.num_partitions = num_partitions;
-    return result;
-}
-
-SnapshotSummary SnapshotSummary::createOverwrite(
-    Int64 added_delete_files, Int64 added_files_size, Int64 num_partitions, Int64 num_deleted_rows)
-{
-    SnapshotSummary result;
-    result.operation = Operation::OVERWRITE;
-    result.added_delete_files = added_delete_files;
-    result.added_files_size = added_files_size;
-    result.num_partitions = num_partitions;
-    result.num_deleted_rows = num_deleted_rows;
-    return result;
-}
-
-SnapshotSummary SnapshotSummary::createDelete(
-    Int64 removed_data_files,
-    Int64 removed_records,
-    Int64 removed_files_size,
-    Int64 removed_position_delete_files,
-    Int64 removed_position_deletes,
-    Int64 num_partitions)
-{
-    SnapshotSummary result;
-    result.operation = Operation::DELETE;
-    result.removed_data_files = removed_data_files;
-    result.removed_records = removed_records;
-    result.removed_files_size = removed_files_size;
-    result.removed_position_delete_files = removed_position_delete_files;
-    result.removed_position_deletes = removed_position_deletes;
-    result.num_partitions = num_partitions;
-    return result;
 }
 
 SnapshotSummary SnapshotSummary::fromJSON(const Poco::JSON::Object & obj)
 {
     SnapshotSummary result;
-
-    const auto operation_str = obj.getValue<String>(Iceberg::f_operation);
-    if (operation_str == Iceberg::f_append)
-        result.operation = Operation::APPEND;
-    else if (operation_str == Iceberg::f_overwrite)
-        result.operation = Operation::OVERWRITE;
-    else if (operation_str == Iceberg::f_delete)
-        result.operation = Operation::DELETE;
-    else
-        /// Other Iceberg engines may write operations we don't model (e.g. "replace").
-        /// We don't reject them — `system.iceberg_history` needs to read them, and
-        /// `MetadataGenerator::finalize` only consults parent `total_*` fields.
-        result.operation = Operation::UNKNOWN;
 
     /// Iceberg spec stores all summary metric values as strings (e.g., "120").
     auto get_optional_int = [&](const char * field) -> Int64
@@ -203,23 +194,52 @@ SnapshotSummary SnapshotSummary::fromJSON(const Poco::JSON::Object & obj)
         return DB::parse<Int64>(obj.getValue<String>(field));
     };
 
-    result.added_files = get_optional_int(Iceberg::f_added_data_files);
-    result.added_records = get_optional_int(Iceberg::f_added_records);
-    result.added_files_size = get_optional_int(Iceberg::f_added_files_size);
-    result.num_partitions = get_optional_int(Iceberg::f_changed_partition_count);
-    result.added_delete_files = get_optional_int(Iceberg::f_added_delete_files);
-    result.num_deleted_rows = get_optional_int(Iceberg::f_added_position_deletes);
-    result.removed_data_files = get_optional_int(Iceberg::f_removed_data_files);
-    result.removed_records = get_optional_int(Iceberg::f_deleted_records);
-    result.removed_files_size = get_optional_int(Iceberg::f_removed_files_size);
-    result.removed_position_delete_files = get_optional_int(Iceberg::f_removed_position_delete_files);
+    const auto operation_str = obj.getValue<String>(Iceberg::f_operation);
+    if (operation_str == Iceberg::f_append)
+        result.update = SnapshotSummaryUpdateAppend{
+            .added_files = get_optional_int(Iceberg::f_added_data_files),
+            .added_records = get_optional_int(Iceberg::f_added_records),
+            .added_files_size = get_optional_int(Iceberg::f_added_files_size),
+            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+        };
+    else if (operation_str == Iceberg::f_overwrite)
+        result.update = SnapshotSummaryUpdateOverwrite{
+            .added_delete_files = get_optional_int(Iceberg::f_added_delete_files),
+            .added_files_size = get_optional_int(Iceberg::f_added_files_size),
+            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+            .num_deleted_rows = get_optional_int(Iceberg::f_added_position_deletes),
+        };
+    else if (operation_str == Iceberg::f_delete)
+        result.update = SnapshotSummaryUpdateDelete{
+            .removed_data_files = get_optional_int(Iceberg::f_removed_data_files),
+            .removed_records = get_optional_int(Iceberg::f_deleted_records),
+            .removed_files_size = get_optional_int(Iceberg::f_removed_files_size),
+            .removed_position_delete_files = get_optional_int(Iceberg::f_removed_position_delete_files),
+            .removed_position_deletes = get_optional_int(Iceberg::f_removed_position_deletes),
+            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+        };
+    else if (operation_str == Iceberg::f_replace)
+        result.update = SnapshotSummaryUpdateReplace{
+            .added_files = get_optional_int(Iceberg::f_added_data_files),
+            .added_records = get_optional_int(Iceberg::f_added_records),
+            .added_files_size = get_optional_int(Iceberg::f_added_files_size),
+            .removed_data_files = get_optional_int(Iceberg::f_removed_data_files),
+            .removed_records = get_optional_int(Iceberg::f_deleted_records),
+            .removed_files_size = get_optional_int(Iceberg::f_removed_files_size),
+            .num_partitions = get_optional_int(Iceberg::f_changed_partition_count),
+        };
+    else
+        /// Other Iceberg engines may write operations we don't model.
+        /// We don't reject them — `system.iceberg_history` needs to read them, and
+        /// `MetadataGenerator::finalize` only consults parent `total_*` fields.
+        result.update = std::monostate{};
 
-    result.total_records = get_optional_int(Iceberg::f_total_records);
-    result.total_files_size = get_optional_int(Iceberg::f_total_files_size);
-    result.total_data_files = get_optional_int(Iceberg::f_total_data_files);
-    result.total_delete_files = get_optional_int(Iceberg::f_total_delete_files);
-    result.total_position_deletes = get_optional_int(Iceberg::f_total_position_deletes);
-    result.total_equality_deletes = get_optional_int(Iceberg::f_total_equality_deletes);
+    result.totals.records = get_optional_int(Iceberg::f_total_records);
+    result.totals.files_size = get_optional_int(Iceberg::f_total_files_size);
+    result.totals.data_files = get_optional_int(Iceberg::f_total_data_files);
+    result.totals.delete_files = get_optional_int(Iceberg::f_total_delete_files);
+    result.totals.position_deletes = get_optional_int(Iceberg::f_total_position_deletes);
+    result.totals.equality_deletes = get_optional_int(Iceberg::f_total_equality_deletes);
 
     result.finalized = true;
 

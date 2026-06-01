@@ -90,10 +90,10 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
 
                     const auto & snapshot_summary = iceberg_history_item.snapshot_summary;
-                    res_columns[column_index++]->insert(fmt::format("{}", snapshot_summary.operation));
+                    res_columns[column_index++]->insert(fmt::format("{}", snapshot_summary.getOperation()));
 
                     Map summary_map;
-                    if (snapshot_summary.operation != Iceberg::SnapshotSummary::Operation::UNKNOWN)
+                    if (snapshot_summary.getOperation() != Iceberg::SnapshotSummaryOperation::UNKNOWN)
                     {
                         auto summary_json = snapshot_summary.toJSON();
                         for (const auto & [key, value] : *summary_json)

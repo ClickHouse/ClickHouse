@@ -85,6 +85,7 @@ DEFINE_ICEBERG_FIELD(lower_bounds);
 DEFINE_ICEBERG_FIELD(upper_bounds);
 DEFINE_ICEBERG_FIELD(partitions);
 DEFINE_ICEBERG_FIELD(key_metadata);
+DEFINE_ICEBERG_FIELD(replace);
 
 
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
@@ -131,6 +132,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(total_data_files, total-data-files);
 DEFINE_ICEBERG_FIELD_ALIAS(changed_partition_count, changed-partition-count);
 DEFINE_ICEBERG_FIELD_ALIAS(removed_data_files, removed-data-files);
 DEFINE_ICEBERG_FIELD_ALIAS(removed_position_delete_files, removed-position-delete-files);
+DEFINE_ICEBERG_FIELD_ALIAS(removed_position_deletes, removed-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(removed_files_size, removed-files-size);
 DEFINE_ICEBERG_FIELD_ALIAS(deleted_data_files, deleted-data-files);
 DEFINE_ICEBERG_FIELD_ALIAS(deleted_records, deleted-records);
