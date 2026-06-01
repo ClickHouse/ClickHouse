@@ -11,10 +11,10 @@ trap 'rm -f "$DB"' EXIT
 sqlite3 "$DB" "CREATE TABLE first_table (id INTEGER NOT NULL, name TEXT);"
 sqlite3 "$DB" "CREATE TABLE second_table (value REAL NOT NULL, payload TEXT);"
 
+# Empty `input_format_sqlite_table_name` means infer schema from the first SQLite table
 ${CLICKHOUSE_LOCAL} --multiquery --query "
     SET schema_inference_use_cache_for_file = 1;
 
-    -- Empty `input_format_sqlite_table_name` means infer schema from the first SQLite table.
     SELECT 'Default table schema';
     DESC file('$DB', 'SQLite');
 
