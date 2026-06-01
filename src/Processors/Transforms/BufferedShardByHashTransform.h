@@ -43,9 +43,19 @@ public:
 private:
     void generateOutputChunks();
 
-    /// Once any queue hits this length the transform stops pulling new input until
-    /// the slow consumer drains it. Otherwise, we can have very high memory usage.
+    /// Soft cap. Once any queue hits this length the transform stops pulling new input
+    /// until the slow consumer drains it. The soft cap can be temporarily bypassed when
+    /// a sibling output port has an empty queue and downstream demand on it - otherwise
+    /// a sequential downstream consumer (e.g. `ConcatProcessor`) would deadlock waiting
+    /// for data on the empty path while we back-pressure here.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
+
+    /// Hard cap. Bounds worst-case memory under pathological skew: when all rows hash
+    /// to a single shard while a sibling port is asking for data, the soft-cap bypass
+    /// would otherwise buffer the whole input on that one shard. This is unconditional -
+    /// even an asking empty port does not bypass it. Worst-case per-shard buffering is
+    /// `MAX_QUEUE_HARD_LIMIT` chunks; worst-case total is `MAX_QUEUE_HARD_LIMIT * num_shards`.
+    static constexpr size_t MAX_QUEUE_HARD_LIMIT = 2 * MAX_QUEUE_LENGTH;
 
     size_t num_shards;
     ColumnNumbers key_columns;
