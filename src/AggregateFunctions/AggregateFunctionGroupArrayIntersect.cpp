@@ -431,6 +431,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayIntersect(
 
 }
 
+void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

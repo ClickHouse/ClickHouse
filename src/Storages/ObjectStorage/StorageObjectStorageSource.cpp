@@ -98,7 +98,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
+static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
     if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
@@ -580,7 +580,7 @@ Chunk StorageObjectStorageSource::generate()
 
         total_rows_in_file = 0;
 
-        assert(reader_future.valid());
+        chassert(reader_future.valid());
         reader = reader_future.get();
 
         if (!reader)

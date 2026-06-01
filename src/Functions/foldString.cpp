@@ -10,6 +10,8 @@
 #include <unicode/ustring.h>
 #include <unicode/utypes.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -257,6 +259,8 @@ stripping combining marks (Unicode category Mn), then recomposing via NFC.
     factory.registerFunction<FunctionRemoveDiacriticsUTF8>({accent_desc, accent_syntax, accent_args, {}, accent_ret, accent_examples, intro, cat});
     factory.registerAlias("removeAccentsUTF8", "removeDiacriticsUTF8");
 }
+
+#pragma clang diagnostic pop
 
 }
 

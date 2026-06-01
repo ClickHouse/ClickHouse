@@ -15,6 +15,9 @@
 
 #    include <algorithm>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 namespace DB
 {
 
@@ -151,5 +154,7 @@ struct LowerUpperUTF8Impl
 };
 
 }
+
+#pragma clang diagnostic pop
 
 #endif

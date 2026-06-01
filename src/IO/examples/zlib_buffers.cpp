@@ -10,6 +10,7 @@
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleZlibBuffers(int, char **)

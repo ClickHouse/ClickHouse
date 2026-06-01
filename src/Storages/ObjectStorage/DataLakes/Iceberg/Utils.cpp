@@ -627,7 +627,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
     }
 }
 
-Poco::JSON::Object::Ptr getPartitionField(
+static Poco::JSON::Object::Ptr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
     Int32 & partition_iter)
@@ -729,7 +729,7 @@ Poco::JSON::Object::Ptr getPartitionField(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function for iceberg partitioning {}", partition_function->name);
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
+static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     ASTPtr partition_by,
     const std::unordered_map<String, Int32> & column_name_to_source_id)
 {

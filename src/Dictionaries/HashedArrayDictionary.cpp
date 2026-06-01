@@ -88,7 +88,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
     DefaultsOrFilter defaults_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -641,7 +641,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     KeysProvider && keys_object) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -1225,6 +1225,7 @@ template class HashedArrayDictionary<DictionaryKeyType::Simple, /* sharded */ tr
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ false>;
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ true>;
 
+void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryArrayHashed(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & full_name,

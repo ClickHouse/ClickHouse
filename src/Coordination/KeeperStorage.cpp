@@ -629,6 +629,7 @@ struct KeeperStorageBase::Delta
     Operation operation;
 };
 
+std::string_view deltaTypeToString(const Operation & operation);
 std::string_view deltaTypeToString(const Operation & operation)
 {
     /// Using std::visit ensures compile-time exhaustiveness checking -
@@ -3452,7 +3453,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     return {};
 }
 
-KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
+static KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
 {
     std::list<KeeperStorageBase::Delta> subdeltas;
     auto it = deltas.begin();

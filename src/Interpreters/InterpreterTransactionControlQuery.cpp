@@ -148,6 +148,7 @@ BlockIO InterpreterTransactionControlQuery::executeSetSnapshot(ContextMutablePtr
     return {};
 }
 
+void registerInterpreterTransactionControlQuery(InterpreterFactory & factory);
 void registerInterpreterTransactionControlQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
