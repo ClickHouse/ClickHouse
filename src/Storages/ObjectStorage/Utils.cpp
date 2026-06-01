@@ -95,6 +95,29 @@ bool sameEndpoint(const std::string & a, const std::string & b)
     return pa.scheme == pb.scheme && pa.authority == pb.authority;
 }
 #endif
+
+#if USE_AZURE_BLOB_STORAGE
+/// Storage account in an Azure service URL: the first host label for a `*.core.*` endpoint
+/// (`acc.blob.core.windows.net` -> `acc`), otherwise the first path segment (Azurite `host:port/acc` -> `acc`).
+std::string azureAccountFromServiceUrl(const std::string & url)
+{
+    auto scheme_end = url.find("://");
+    if (scheme_end == std::string::npos)
+        return "";
+    auto host_begin = scheme_end + 3;
+    auto path_begin = url.find('/', host_begin);
+    std::string host = url.substr(host_begin, path_begin == std::string::npos ? std::string::npos : path_begin - host_begin);
+
+    if (host.find(".core.") != std::string::npos)
+        return Poco::toLower(host.substr(0, host.find('.')));
+
+    if (path_begin == std::string::npos)
+        return "";
+    auto seg_end = url.find('/', path_begin + 1);
+    return Poco::toLower(url.substr(path_begin + 1, seg_end == std::string::npos ? std::string::npos : seg_end - path_begin - 1));
+}
+#endif
+
 std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     const std::string & cache_key,
     const std::string & key_to_use,
@@ -784,17 +807,6 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
             file_dir_path += '/';
         cache_key = "file://" + file_dir_path;
     }
-    else if (target_scheme_normalized == "abfs")
-    {
-        /// Whether the base Azure credentials may be reused for this account depends on
-        /// `object_storage_propagate_credentials_to_other_storages` (see the lambda below).
-        /// `configure_fn` runs only on a cache miss, so include the flag in the cache key to keep
-        /// queries with different values of the setting from sharing an entry.
-        const bool propagate_credentials
-            = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
-        cache_key = target_scheme_normalized + "://" + target_decomposed.authority
-            + "#propagate=" + (propagate_credentials ? "1" : "0");
-    }
     else
     {
         cache_key = target_scheme_normalized + "://" + target_decomposed.authority;
@@ -845,28 +857,20 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                         const auto & conn_params = azure_storage->getConnectionParameters();
                         const auto & auth_method = azure_storage->getAzureBlobStorageAuthMethod();
 
-                        /// The base storage's `connection_string`/`storage_account_url` identify the base
-                        /// account, so copying them is only correct when the target URI names that same
-                        /// account. Doing it for a different account would point the secondary storage at the
-                        /// base account and silently serve the same container/key from the wrong account.
-                        /// Refuse that unless the user explicitly opts into propagating the base credentials.
-                        /// The base account is read from `account_name`, which is populated for
-                        /// `storage_account_url`/`account_name` auth. When it is unknown (for example, a base
-                        /// authenticated via `connection_string`), the check stays passive rather than risk
-                        /// rejecting a legitimate same-account read.
-                        const std::string & base_account_name = conn_params.endpoint.account_name;
-                        const bool different_account = !account_name.empty() && !base_account_name.empty()
-                            && account_name != base_account_name;
-                        const bool propagate_credentials
-                            = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
+                        /// The base credentials/endpoint identify the base account and cannot authenticate a
+                        /// different one, so reject cross-account paths instead of silently serving them from
+                        /// the base account. The base account comes from the base service URL, so this works
+                        /// regardless of how the base was authenticated.
+                        const std::string target_account = Poco::toLower(account_name);
+                        const std::string base_account = azureAccountFromServiceUrl(conn_params.getConnectionURL());
 
-                        if (different_account && !propagate_credentials)
+                        if (!target_account.empty() && !base_account.empty() && target_account != base_account)
                             throw DB::Exception(
                                 DB::ErrorCodes::BAD_ARGUMENTS,
                                 "Iceberg metadata references Azure storage account '{}', which differs from the table's "
-                                "base account '{}'. Enable setting `object_storage_propagate_credentials_to_other_storages` "
-                                "to reuse the base credentials for it, or configure access to account '{}'.",
-                                account_name, base_account_name, account_name);
+                                "base account '{}'. Reading across Azure accounts is not supported; configure access to "
+                                "account '{}'.",
+                                account_name, base_account, account_name);
 
                         if (std::holds_alternative<AzureBlobStorage::ConnectionString>(auth_method))
                         {
