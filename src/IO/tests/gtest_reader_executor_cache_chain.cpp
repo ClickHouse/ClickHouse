@@ -41,11 +41,14 @@
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>
 
+#include <Core/Defines.h>
+
 #include <gtest/gtest.h>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -112,6 +115,96 @@ private:
     size_t file_counter = 0;
     std::vector<fs::path> temp_files;
 };
+
+/// In-memory source whose buffer honors `setReadUntilPosition` and advertises
+/// `supportsRightBoundedReads`, mirroring `ReadBufferFromS3`. The file-backed
+/// source above does not (local file descriptors return `false`), so it cannot
+/// exercise the executor's connection-draining right bound. Needed to reproduce
+/// the cache-expanded `readBigAt` short read.
+class BoundedMemorySource : public ISourceReader
+{
+public:
+    explicit BoundedMemorySource(std::unordered_map<String, String> data_) : data(std::move(data_)) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    {
+        auto it = data.find(object.remote_path);
+        if (it == data.end())
+            return nullptr;
+        return std::make_unique<BoundedBuffer>(it->second);
+    }
+
+    String name() const override { return "BoundedMemorySource"; }
+
+private:
+    class BoundedBuffer : public ReadBufferFromFileBase
+    {
+    public:
+        explicit BoundedBuffer(String data_)
+            : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0), data(std::move(data_)) {}
+
+        String getFileName() const override { return "BoundedBuffer"; }
+        bool supportsRightBoundedReads() const override { return true; }
+        void setReadUntilPosition(size_t p) override { read_until = p; }
+
+        off_t seek(off_t off, int whence) override
+        {
+            if (whence == SEEK_SET)
+                file_offset = static_cast<size_t>(off);
+            else if (whence == SEEK_CUR)
+                file_offset += static_cast<size_t>(off);
+            resetWorkingBuffer();
+            return static_cast<off_t>(file_offset);
+        }
+
+        off_t getPosition() override { return static_cast<off_t>(file_offset); }
+        size_t getFileOffsetOfBufferEnd() const override { return file_offset; }
+
+    private:
+        bool nextImpl() override
+        {
+            const size_t end = read_until ? std::min(*read_until, data.size()) : data.size();
+            if (file_offset >= end)
+                return false;
+            const size_t n = std::min(end - file_offset, internal_buffer.size());
+            memcpy(internal_buffer.begin(), data.data() + file_offset, n);
+            working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
+            file_offset += n;
+            return true;
+        }
+
+        String data;
+        size_t file_offset = 0;
+        std::optional<size_t> read_until;
+    };
+
+    std::unordered_map<String, String> data;
+};
+
+/// Drive a `readBigAt`-style transient over `[offset, offset + want)`, mirroring
+/// `PipelineReadBuffer::readBigAt`, and roll its stats into the parent.
+String readBigAtViaTransient(ReaderExecutor & parent, size_t offset, size_t want)
+{
+    auto t = parent.makeTransientForReadAt(offset, want);
+    String out;
+    size_t total = 0;
+    while (total < want)
+    {
+        auto rope = t->readNextWindow();
+        if (rope.empty())
+            break;
+        for (const auto & node : rope.getNodes())
+        {
+            if (total >= want)
+                break;
+            const size_t copy = std::min(node.size, want - total);
+            out.append(node.data(), copy);
+            total += copy;
+        }
+    }
+    parent.mergeTransientStats(*t);
+    return out;
+}
 
 /// Distinct per-offset byte pattern so a short or mis-served read is detectable
 /// (a uniform fill would hide off-by-one / wrong-block bugs).
@@ -295,6 +388,50 @@ TEST_F(ReaderExecutorCacheChain, ColdPopulatesAllLayers)
         EXPECT_EQ(executor.getSourceRequestsCount(), 0u)
             << "warm chain must serve everything without touching the source";
     }
+}
+
+/// Regression: a cold `readBigAt` of a small range strictly inside a page-cache
+/// block. The page-cache miss legitimately expands to the whole block (larger
+/// than the requested extent), so the transient must read the full block from
+/// the source - bounding the connection to what it actually reads (the block),
+/// drained and reusable - and populate the block. The earlier code bounded the
+/// connection to the smaller requested extent, so the size-known source read
+/// came up short and threw `CANNOT_READ_ALL_DATA`. A bound-honoring source is
+/// required: the local-file source cannot trigger the truncating bound.
+TEST_F(ReaderExecutorCacheChain, ReadBigAtInsidePageCacheBlock)
+{
+    constexpr size_t block_size = 64;
+    constexpr size_t file_size = 4 * block_size;   // 256 bytes, four page-cache blocks
+    const String content = makePattern(file_size);
+
+    auto source = std::make_shared<BoundedMemorySource>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(page_provider);
+
+    ReaderExecutor executor(source, objects, caches, /*window_size=*/4 * block_size, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));   // slot available -> live path
+
+    /// [70, 80): a 10-byte slice strictly inside page-cache block [64, 128).
+    const size_t off = block_size + 6;
+    const size_t want = 10;
+    const String got = readBigAtViaTransient(executor, off, want);
+    EXPECT_EQ(got, content.substr(off, want)) << "cold readBigAt inside a block returns the exact slice";
+    const size_t src_after_first = executor.getSourceRequestsCount();
+    EXPECT_GT(src_after_first, 0u) << "a cold readBigAt must hit the source";
+
+    /// The over-read populated the whole block: a second readBigAt elsewhere in
+    /// the same block [64, 128) is served from the page cache with no new source
+    /// request.
+    const String got2 = readBigAtViaTransient(executor, block_size + 40, 8);   // [104, 112)
+    EXPECT_EQ(got2, content.substr(block_size + 40, 8));
+    EXPECT_EQ(executor.getSourceRequestsCount(), src_after_first)
+        << "the cold readBigAt over-read and populated the full page-cache block";
 }
 
 

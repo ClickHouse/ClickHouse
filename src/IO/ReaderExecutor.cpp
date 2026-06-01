@@ -1072,23 +1072,20 @@ Rope ReaderExecutor::readFromSource(
             if (offset > 0)
                 opened->seek(offset, SEEK_SET);
 
-            /// A `readBigAt` transient reads a bounded extent; bound the live
-            /// connection so it is drained and returned to the pool reusable
-            /// instead of abandoned open-ended after the request's bytes.
-            /// `logical_offset` is a physical (map-space) offset that already
-            /// includes `data_start_offset`, so translate the logical extent end
-            /// into that space before subtracting. Clamp to this object's end: a
-            /// connection is per object, and the extent may continue into a later
-            /// one.
+            /// A `readBigAt` transient reads a bounded extent, but a cache miss
+            /// may legitimately expand this source read past the requested extent
+            /// to fill a whole cache block/segment. Bound the connection to the
+            /// bytes this call actually reads (the block total), so it is fully
+            /// consumed and returned to the pool reusable rather than abandoned
+            /// open-ended. `offset`/blocks are physical (map-space) offsets, so no
+            /// `data_start_offset` shift is needed.
             if (read_extent_end && !hasUnknownSize() && opened->supportsRightBoundedReads())
             {
-                const size_t physical_extent_end = *read_extent_end + data_start_offset;
-                if (physical_extent_end > logical_offset)
-                {
-                    const size_t to_extent = physical_extent_end - logical_offset;
-                    const size_t to_object_end = object.bytes_size > offset ? object.bytes_size - offset : 0;
-                    opened->setReadUntilPosition(offset + std::min(to_extent, to_object_end));
-                }
+                size_t want = 0;
+                for (const auto & block : blocks)
+                    want += block->size();
+                if (want > 0)
+                    opened->setReadUntilPosition(offset + want);
             }
 
             live_buffer.emplace(LiveBuffer{
@@ -1108,6 +1105,12 @@ Rope ReaderExecutor::readFromSource(
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
             LOG_TRACE(log, "readFromSource: opened live buffer for {}, read {} bytes, position={}",
                 object.remote_path, total_read, live_buffer->current_position);
+
+            /// Transient one-shot: the connection is bounded to this read, so a
+            /// contiguous next window could not continue past the bound. Drop it
+            /// now - fully read => returned to the pool drained and reusable.
+            if (read_extent_end)
+                live_buffer.reset();
             return rope;
         }
     }
