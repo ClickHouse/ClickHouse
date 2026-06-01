@@ -344,16 +344,34 @@ std::pair<std::set<Int64>, Strings> applyRetentionPolicy(
 // File collection helpers
 // ---------------------------------------------------------------------------
 
+/// Resolve a metadata path to the identity of the object it points at, so files spelled
+/// differently (s3:// vs s3a:// vs https) but pointing at the same object compare equal.
+Iceberg::IcebergPathFromMetadata resolveFileIdentity(
+    const Iceberg::IcebergPathFromMetadata & path,
+    const ObjectStoragePtr & object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    const ContextPtr & context,
+    SecondaryStorages & secondary_storages)
+{
+    auto [storage, key] = resolveObjectStorageForPath(
+        persistent_table_components.path_resolver.getTableLocation(),
+        path.serialize(), object_storage, secondary_storages, context,
+        persistent_table_components.path_resolver);
+    return Iceberg::IcebergPathFromMetadata::makeStorageIdentity(storage, key);
+}
+
 void collectAllFilePaths(
     const Iceberg::ManifestFileIterator::ManifestFileEntriesHandle & entries_handle,
+    const ObjectStoragePtr & object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    const ContextPtr & context,
+    SecondaryStorages & secondary_storages,
     std::set<Iceberg::IcebergPathFromMetadata> & out)
 {
-    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
-        out.insert(entry->parsed_entry->file_path_key);
-    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-        out.insert(entry->parsed_entry->file_path_key);
-    for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
-        out.insert(entry->parsed_entry->file_path_key);
+    for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
+        for (const auto & entry : entries_handle.getFilesWithoutDeleted(content_type))
+            out.insert(resolveFileIdentity(
+                entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, secondary_storages));
 }
 
 void collectRetainedFiles(
@@ -375,18 +393,21 @@ void collectRetainedFiles(
             continue;
 
         auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
-        retained_manifest_list_paths.insert(manifest_list_path);
+        retained_manifest_list_paths.insert(
+            resolveFileIdentity(manifest_list_path, object_storage, persistent_table_components, context, secondary_storages));
 
         auto manifest_keys = getManifestList(
             object_storage, persistent_table_components, context, manifest_list_path, log, secondary_storages);
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            retained_manifest_paths.insert(manifest_entry.manifest_file_path);
+            retained_manifest_paths.insert(
+                resolveFileIdentity(manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, secondary_storages));
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log,
                 manifest_entry, current_schema_id, secondary_storages);
-            collectAllFilePaths(entries_handle, retained_data_file_paths);
+            collectAllFilePaths(
+                entries_handle, object_storage, persistent_table_components, context, secondary_storages, retained_data_file_paths);
         }
     }
 }
@@ -418,10 +439,20 @@ ExpiredFiles collectExpiredFiles(
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_paths;
     for (const auto & manifest_list_path : expired_manifest_list_paths)
     {
-        if (retained_manifest_list_paths.contains(manifest_list_path))
+        Iceberg::IcebergPathFromMetadata manifest_list_id;
+        try
+        {
+            manifest_list_id = resolveFileIdentity(manifest_list_path, object_storage, persistent_table_components, context, secondary_storages);
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Failed to resolve manifest list {}, skipping", manifest_list_path);
+            continue;
+        }
+        if (retained_manifest_list_paths.contains(manifest_list_id))
             continue;
 
-        if (seen_expired_manifest_list_paths.contains(manifest_list_path))
+        if (seen_expired_manifest_list_paths.contains(manifest_list_id))
             continue;
 
         ManifestFileCacheKeys manifest_keys;
@@ -437,10 +468,20 @@ ExpiredFiles collectExpiredFiles(
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            if (retained_manifest_paths.contains(manifest_entry.manifest_file_path))
+            Iceberg::IcebergPathFromMetadata manifest_id;
+            try
+            {
+                manifest_id = resolveFileIdentity(manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, secondary_storages);
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Failed to resolve manifest file {}, skipping", manifest_entry.manifest_file_path);
+                continue;
+            }
+            if (retained_manifest_paths.contains(manifest_id))
                 continue;
 
-            if (seen_expired_manifest_paths.contains(manifest_entry.manifest_file_path))
+            if (seen_expired_manifest_paths.contains(manifest_id))
                 continue;
 
             try
@@ -450,19 +491,19 @@ ExpiredFiles collectExpiredFiles(
                     manifest_entry, current_schema_id, secondary_storages);
 
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
-                    if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
+                    if (!retained_data_file_paths.contains(resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, secondary_storages)))
                     {
                         result.all_paths.push_back(entry->parsed_entry->file_path_key);
                         ++result.data_files;
                     }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                    if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
+                    if (!retained_data_file_paths.contains(resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, secondary_storages)))
                     {
                         result.all_paths.push_back(entry->parsed_entry->file_path_key);
                         ++result.position_delete_files;
                     }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
-                    if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
+                    if (!retained_data_file_paths.contains(resolveFileIdentity(entry->parsed_entry->file_path_key, object_storage, persistent_table_components, context, secondary_storages)))
                     {
                         result.all_paths.push_back(entry->parsed_entry->file_path_key);
                         ++result.equality_delete_files;
@@ -474,12 +515,12 @@ ExpiredFiles collectExpiredFiles(
                 continue;
             }
 
-            seen_expired_manifest_paths.insert(manifest_entry.manifest_file_path);
+            seen_expired_manifest_paths.insert(manifest_id);
             result.all_paths.push_back(manifest_entry.manifest_file_path);
             ++result.manifest_files;
         }
 
-        seen_expired_manifest_list_paths.insert(manifest_list_path);
+        seen_expired_manifest_list_paths.insert(manifest_list_id);
         result.all_paths.push_back(manifest_list_path);
         ++result.manifest_lists;
     }

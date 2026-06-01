@@ -202,8 +202,7 @@ Plan getPlan(
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file, raw_metadata_path, 0, resolved_storage, resolved_key);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                auto path_identifier = Iceberg::IcebergPathFromMetadata::deserialize(
-                    resolved_storage->getDescription() + '\0' + resolved_storage->getObjectsNamespace() + '\0' + resolved_key);
+                auto path_identifier = Iceberg::IcebergPathFromMetadata::makeStorageIdentity(resolved_storage, resolved_key);
                 if (!plan.path_to_data_file.contains(path_identifier))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
