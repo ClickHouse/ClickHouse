@@ -1262,7 +1262,12 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
             /// We have no idea how long the strings are. Use some made up number (not chosen carefully).
             avg_string_length = 20;
         }
-        column_chunk_bytes = avg_string_length * static_cast<double>(column.meta->meta_data.num_values);
+        /// Null values don't contribute to string data. Subtract null_count when available
+        /// to avoid massive overestimation for columns with high null rates and large dictionary entries.
+        double non_null_values = static_cast<double>(column.meta->meta_data.num_values);
+        if (column.meta->meta_data.statistics.__isset.null_count)
+            non_null_values = std::max(0., non_null_values - static_cast<double>(column.meta->meta_data.statistics.null_count));
+        column_chunk_bytes = avg_string_length * non_null_values;
     }
     else
     {

@@ -4685,4 +4685,13 @@ FunctionBasePtr createFunctionBaseCast(
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
 
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+
 }

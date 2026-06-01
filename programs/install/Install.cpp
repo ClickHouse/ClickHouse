@@ -206,6 +206,7 @@ static std::string formatWithSudo(std::string command, bool needed = true)
 }
 
 
+int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseInstall(int argc, char ** argv)
 {
     try
@@ -1243,6 +1244,7 @@ namespace
 }
 
 
+int mainEntryClickHouseStart(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv)
 {
     try
@@ -1304,6 +1306,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
 }
 
 
+int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStop(int argc, char ** argv)
 {
     try
@@ -1344,6 +1347,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
 }
 
 
+int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv)
 {
     try
@@ -1380,6 +1384,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
 }
 
 
+int mainEntryClickHouseRestart(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv)
 {
     try

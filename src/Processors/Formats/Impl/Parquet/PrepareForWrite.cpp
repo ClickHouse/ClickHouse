@@ -738,7 +738,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
     return schema;
 }
 
-void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
+static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return;

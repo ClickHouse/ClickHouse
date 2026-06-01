@@ -159,6 +159,7 @@ AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, 
 
 }
 
+void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("retention", {createAggregateFunctionRetention, {}});

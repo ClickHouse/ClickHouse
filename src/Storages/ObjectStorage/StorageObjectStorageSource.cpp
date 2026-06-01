@@ -98,7 +98,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
+static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
     if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))

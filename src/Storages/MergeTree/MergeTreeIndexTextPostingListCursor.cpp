@@ -1219,7 +1219,7 @@ void lazyIntersectPostingLists(
         min_density = std::min(min_density, cursors[i]->density());
 
     /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
-    if (n < 256 && min_density >= density_threshold)
+    if (n < 256 && min_density >= static_cast<double>(density_threshold))
     {
         ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections);
         intersectBruteForce(out, cursors, row_offset, num_rows);

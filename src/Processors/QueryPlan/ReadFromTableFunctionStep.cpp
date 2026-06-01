@@ -99,6 +99,7 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
 }
 
+void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromTableFunction", &ReadFromTableFunctionStep::deserialize);

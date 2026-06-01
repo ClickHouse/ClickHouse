@@ -763,7 +763,7 @@ bool initClickHouseDB(
 
 } // anonymous namespace
 
-
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseDockerInit(int argc, char ** argv)
 {
     g_clickhouse_binary = (argc > 0 && argv[0][0] != '\0') ? argv[0] : "clickhouse";
@@ -1034,7 +1034,10 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv)
     /// As PID 1, signals without a handler are silently dropped by the kernel.
     {
         struct sigaction sa{};
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sa.sa_handler = shutdownHandler;
+#pragma clang diagnostic pop
         sigemptyset(&sa.sa_mask);
         sa.sa_flags = SA_RESTART;
         sigaction(SIGTERM, &sa, nullptr);

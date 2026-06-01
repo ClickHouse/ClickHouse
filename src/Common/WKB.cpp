@@ -113,7 +113,7 @@ inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endia
 
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count);
 
-MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
+static MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     MultiLineString<CartesianPoint> multiline;
 
@@ -132,7 +132,7 @@ MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, s
     return multiline;
 }
 
-MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
+static MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     MultiPolygon<CartesianPoint> multipolygon;
 

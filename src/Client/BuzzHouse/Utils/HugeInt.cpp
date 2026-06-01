@@ -99,12 +99,12 @@ static HugeInt divModPositive(HugeInt lhs, uint64_t rhs, uint64_t & remainder)
     return div_result;
 }
 
-int sign(HugeInt n)
+static int sign(HugeInt n)
 {
     return ((n > HugeInt(0)) - (n < HugeInt(0)));
 }
 
-HugeInt abs(HugeInt n)
+static HugeInt abs(HugeInt n)
 {
     chassert(n != NumericLimits<HugeInt>::minimum());
     return (n * static_cast<HugeInt>(sign(n)));

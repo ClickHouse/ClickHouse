@@ -1802,6 +1802,7 @@ void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) co
                         "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 }
 
+void registerStorageWindowView(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage(
