@@ -482,11 +482,10 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
 
 TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
 {
-    /// Read-ahead is speculative, so the prefetch window tracks memory pressure:
-    /// half the synchronous window at Normal/Elevated, suppressed at High/Critical.
-    /// Uses the stateless path (a present-but-zero-capacity buffer_limit, so no
-    /// slot is acquired) and a window much larger than the block, so the half-window
-    /// is observable rather than floored back up to one block.
+    /// Read-ahead is speculative, so the prefetch window tracks memory pressure: it
+    /// uses the full synchronous window at Normal/Elevated and is suppressed at
+    /// High/Critical. Uses the stateless path (a present-but-zero-capacity
+    /// buffer_limit, so no slot is acquired) so the window read is observable.
     struct Reading { size_t sync_window; bool scheduled; size_t prefetch_window; };
     auto measure = [](double pressure) -> Reading
     {
@@ -511,11 +510,11 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
 
     const Reading normal = measure(0.50);
     EXPECT_TRUE(normal.scheduled);
-    EXPECT_EQ(normal.prefetch_window, normal.sync_window / 2) << "Normal: prefetch half the synchronous window";
+    EXPECT_EQ(normal.prefetch_window, normal.sync_window) << "Normal: prefetch uses the full synchronous window";
 
     const Reading elevated = measure(0.80);
     EXPECT_TRUE(elevated.scheduled);
-    EXPECT_EQ(elevated.prefetch_window, elevated.sync_window / 2) << "Elevated: prefetch half the synchronous window";
+    EXPECT_EQ(elevated.prefetch_window, elevated.sync_window) << "Elevated: prefetch uses the full synchronous window";
 
     const Reading high = measure(0.92);
     EXPECT_FALSE(high.scheduled) << "High pressure: prefetch suppressed";

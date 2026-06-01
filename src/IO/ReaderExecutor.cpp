@@ -431,12 +431,11 @@ struct WindowAndBlock
 constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
 constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()]  = {1, 2, 2,  8};
 
-/// Divisor applied to the (already pressure-scaled) synchronous window to size a
-/// prefetch read, indexed by `MemoryPressureLevel`. Prefetch is speculative — a
-/// seek-away wastes both the bytes it read and the memory holding them — so it
-/// reads a smaller window than a synchronous read (half), and 0 suppresses
-/// prefetch entirely once memory is High/Critical.
-constexpr size_t PREFETCH_WINDOW_DIVISOR[memoryPressureLevelCount()] = {2, 2, 0, 0};
+/// Whether read-ahead runs at each `MemoryPressureLevel`. Prefetch is speculative —
+/// a seek-away wastes both the bytes it read and the memory holding them — so it is
+/// suppressed entirely once memory is High/Critical. When it runs it reads the same
+/// window as a synchronous read (no prefetch-specific reduction).
+constexpr bool PREFETCH_ENABLED[memoryPressureLevelCount()] = {true, true, false, false};
 
 /// The configured base is the ceiling; the 128 KiB floor only bounds the
 /// pressure shrink and never raises a base that is itself below it (e.g. a tiny
@@ -471,12 +470,11 @@ size_t ReaderExecutor::effectiveWindowSize() const
 size_t ReaderExecutor::effectivePrefetchWindowSize() const
 {
     const size_t level = static_cast<size_t>(memoryPressureMonitor().currentLevel());
-    const size_t divisor = PREFETCH_WINDOW_DIVISOR[level];
-    if (divisor == 0)
+    if (!PREFETCH_ENABLED[level])
         return 0;
-    /// Half the synchronous window, but never below one block: prefetch is
-    /// speculative, so it reads less ahead than a synchronous read.
-    return std::max(effectiveWindowSize() / divisor, effectiveBlockSize());
+    /// Prefetch reads the same window as a synchronous read; under High/Critical it
+    /// is suppressed entirely (above) rather than shrunk.
+    return effectiveWindowSize();
 }
 
 size_t ReaderExecutor::clampToExtent(size_t win_size) const

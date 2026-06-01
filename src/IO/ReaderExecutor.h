@@ -246,11 +246,10 @@ private:
     /// falls when free memory does.
     size_t effectiveBlockSize() const;
 
-    /// Read-ahead window for the next prefetch, derived from `effectiveWindowSize`:
-    /// half the synchronous window (down to one block) at Normal/Elevated, and 0 —
-    /// prefetch suppressed — at High/Critical. Read-ahead is speculative, so it
-    /// reads less ahead than a synchronous read and stops once memory is tight; a
-    /// prefetch wasted by a seek then costs less.
+    /// Read-ahead window for the next prefetch: the full `effectiveWindowSize` (the
+    /// same window a synchronous read uses) at Normal/Elevated, and 0 — prefetch
+    /// suppressed — at High/Critical. Read-ahead is speculative, so once memory is
+    /// tight it stops entirely rather than reading a shrunken window.
     size_t effectivePrefetchWindowSize() const;
 
     /// Shrink `win_size` so the read does not pass `read_extent_end` (the
