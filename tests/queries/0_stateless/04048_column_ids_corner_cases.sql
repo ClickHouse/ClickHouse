@@ -467,9 +467,11 @@ ALTER TABLE t_phys_nested_single RENAME COLUMN `n.x` TO `m.x`; -- { serverError 
 SELECT a, `n.x` FROM t_phys_nested_single;
 DROP TABLE t_phys_nested_single;
 
--- Test 18: Multi-child flattened Nested rename across parents works fine
--- because compound column IDs (e.g. "5.x", "5.y") keep the offset
--- stream stable.
+-- Test 18: Partial cross-parent Nested rename is rejected.  Renaming a
+-- single child to a different parent leaves its sibling under the old
+-- parent while both still share the physical Nested offsets stream;
+-- inserts to the two logical parents would race on that stream.
+-- Workaround: all siblings must move together in the same ALTER.
 SELECT 'Test 18: multi-child Nested rename across parents';
 DROP TABLE IF EXISTS t_phys_nested_multi;
 CREATE TABLE t_phys_nested_multi
@@ -483,8 +485,8 @@ SETTINGS min_bytes_for_wide_part = 0,
     serialization_info_version = 'with_column_ids',
     activate_column_ids_for_existing_tables = 1;
 INSERT INTO t_phys_nested_multi VALUES (1, [10, 20], ['aa', 'bb']);
-ALTER TABLE t_phys_nested_multi RENAME COLUMN `n.x` TO `m.x`;
-ALTER TABLE t_phys_nested_multi RENAME COLUMN `n.y` TO `m.y`;
+ALTER TABLE t_phys_nested_multi RENAME COLUMN `n.x` TO `m.x`; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_phys_nested_multi RENAME COLUMN `n.x` TO `m.x`, RENAME COLUMN `n.y` TO `m.y`;
 INSERT INTO t_phys_nested_multi VALUES (2, [30], ['cc']);
 SELECT a, `m.x`, `m.y` FROM t_phys_nested_multi ORDER BY a;
 OPTIMIZE TABLE t_phys_nested_multi FINAL;

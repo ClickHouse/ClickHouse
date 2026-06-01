@@ -527,6 +527,52 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
                         physical);
                 }
 
+                /// Partial cross-parent Nested move is unsafe: the writer
+                /// folds the offset stream by the physical Nested prefix
+                /// (either the compound counter "5" in "5.x"/"5.y" or the
+                /// identity prefix "n" in "n.x"/"n.y"), so leaving any
+                /// sibling behind under the old logical parent makes two
+                /// logical parents read/write through one offsets stream.
+                /// Require all siblings sharing this physical prefix to be
+                /// renamed to the same new parent in the same ALTER.
+                if (is_nested && changes_prefix && physical_has_dot)
+                {
+                    const String old_logical_prefix = old_parent + ".";
+                    const String new_logical_prefix = new_parent + ".";
+                    for (const auto & [other_logical, other_physical] : local_mapping.getLogicalToId())
+                    {
+                        if (other_logical == command.column_name)
+                            continue;
+                        if (!other_logical.starts_with(old_logical_prefix))
+                            continue;
+                        auto [other_phys_parent, other_phys_child] = Nested::splitName(other_physical);
+                        if (other_phys_parent != phys_parent)
+                            continue;
+                        bool other_renamed = false;
+                        for (const auto & other_cmd : commands)
+                        {
+                            if (other_cmd.ignore || other_cmd.type != AlterCommand::RENAME_COLUMN)
+                                continue;
+                            if (other_cmd.column_name == other_logical
+                                && other_cmd.rename_to.starts_with(new_logical_prefix))
+                            {
+                                other_renamed = true;
+                                break;
+                            }
+                        }
+                        if (!other_renamed)
+                            throw Exception(
+                                ErrorCodes::NOT_IMPLEMENTED,
+                                "Cross-parent Nested rename of '{}' to '{}' requires "
+                                "sibling column '{}' (sharing physical prefix '{}') "
+                                "to also be renamed to a child of '{}' in the same "
+                                "ALTER. Partial cross-parent moves are unsafe "
+                                "because the shared offset stream cannot be split.",
+                                command.column_name, command.rename_to,
+                                other_logical, phys_parent, new_parent);
+                    }
+                }
+
                 local_mapping.beginRename(command.column_name, command.rename_to);
                 plan.rename_old_names.push_back(command.column_name);
             }
