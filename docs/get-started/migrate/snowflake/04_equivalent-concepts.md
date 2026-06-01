@@ -17,7 +17,7 @@ The tables below map each Snowflake concept to its ClickHouse equivalent. For fu
 | Account | [Warehouse](/cloud/reference/warehouses) | Each service scales compute independently; storage is shared at the warehouse level. Tier and billing are set at the organization level, not per warehouse. |
 | Database | [Database](/sql-reference/statements/create/database) | Logical container for tables. Snowflake uses a Database → Schema → Table hierarchy; ClickHouse flattens this to Database → Table. See [Schemas](#schemas) below. |
 
-:::note Warehouse terminology
+:::note[Warehouse terminology]
 A **ClickHouse warehouse** is a grouping of services that share
 storage and scale compute independently, not a compute cluster as
 in Snowflake.
@@ -34,8 +34,8 @@ A Snowflake schema serves multiple roles and has no single equivalent in ClickHo
 | Permission boundary | [SQL grants](/sql-reference/statements/grant) at the database, table, or column level | Database-wide grants cover the schema-level grant footprint; per-table grants are also available for finer-grained control. |
 | Future grants | Database wildcards (`GRANT … ON db.* TO role`) apply to current and future tables | Can't scope future grants to a subset of tables within a database. |
 | Schema `OWNERSHIP` and `MANAGED ACCESS` | — | ClickHouse has no object-ownership model, so grants are always explicit. |
-| Cloning unit (`CREATE SCHEMA … CLONE`) | No copy-on-write at any granularity; see the [Storage and tables](#storage-tables) section for the zero-copy clone row | Every copy reads source data fully in ClickHouse. |
-| Time Travel and replication boundary | Handled at the table level ([TTL](/sql-reference/statements/create/table#ttl-expression)) or service level ([backups](/cloud/manage/backups/overview), [database replication](#operations)) | No intermediate per-schema boundary. |
+| Cloning unit (`CREATE SCHEMA … CLONE`) | Per-table [`CREATE TABLE ... CLONE AS`](/sql-reference/statements/create/table#with-a-schema-and-data-cloned-from-another-table), not per-schema; see the [Storage and tables](#storage-tables) section | No single-statement clone of a whole schema or database. Clone each table individually. |
+| Time Travel and replication boundary | Service level — point-in-time recovery via [backups](/cloud/manage/backups/overview); replication via managed replicas, see [Operations and ecosystem](#operations) | No per-schema boundary: recovery and replication are scoped per service. TTL controls data expiry, not point-in-time recovery. See the [Data retention](#storage-tables) row. |
 | Tagging and classification scope | Apply at the table or column level | No intermediate namespace inherits down. |
 
 ## Roles and access control {#roles-access}
@@ -46,17 +46,21 @@ ClickHouse Cloud's access layer splits into [console roles](/cloud/security/cons
 |---|---|---|
 | Account-level system roles (`ACCOUNTADMIN`, `SYSADMIN`, `SECURITYADMIN`, `USERADMIN`, `PUBLIC`) | [Organization roles](/cloud/security/console-roles#organization-roles) (Admin, Billing, Org API reader, Member) and [service roles](/cloud/security/console-roles#service-roles) (Service admin, Service reader, Service API admin/reader) in the console; SQL roles inside each service | Org-scoped console roles cover billing, org admin, and user management; service-scoped roles cover service config, scaling, and backups. |
 | Custom account roles | [`CREATE ROLE`](/sql-reference/statements/create/role) in SQL | Same pattern: create a role, grant privileges to it, grant the role to users. |
-| Database roles | — | ClickHouse has only one tier of SQL roles, all service-scoped. No equivalent to Snowflake's two-tier account/database role split. |
+| Database roles | — | ClickHouse has only one tier of SQL roles, all service-scoped. No equivalent to Snowflake's two-tier account/database role split. For per-user scoped SQL console access, see the callout below. |
 | Role hierarchy (`GRANT ROLE … TO ROLE …`) | [`GRANT role1 TO role2`](/sql-reference/statements/grant) | — |
 | Privilege grants on objects (`GRANT … ON … TO ROLE …`) | [`GRANT … ON db.table TO role`](/sql-reference/statements/grant) | — |
 | Object ownership and ownership transfer | — | Access in ClickHouse is controlled entirely through explicit grants. Snowflake patterns that rely on owners delegating access need to be rebuilt as explicit role-based grants. |
 | `USE ROLE` | [`SET ROLE`](/sql-reference/statements/set-role) | — |
 
+:::note[Per-user SQL console access]
+ClickHouse has no separate database-role tier, but ClickHouse Cloud can still grant per-user, scoped access to the SQL console. Create a role matching the `sql-console-role:<email>` naming convention and grant it the privileges that user should have; the console assigns it in place of the default `sql_console_admin` / `sql_console_read_only` roles. These are ordinary service-scoped SQL roles — the namespace is just a mapping convention. See [granular access control](/cloud/security/common-access-management-queries#granular-access-control).
+:::
+
 ## Compute and capacity {#compute-capacity}
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Virtual warehouse | Service (one or more replicas) | A ClickHouse service runs across one or more replicas (typically 3 by default on Scale/Enterprise); queries [parallelize](/optimize/query-parallelism) across them. |
+| Virtual warehouse | Service (one or more replicas) | [Basic](/cloud/manage/cloud-tiers#basic) tier services are single-replica; [Scale and Enterprise](/cloud/manage/cloud-tiers#scale) support multi-replica (2+) deployments for higher SLAs. Queries [parallelize](/optimize/query-parallelism) across replicas. |
 | Warehouse size (XS through 6X-Large) | Vertical [autoscaling](/cloud/features/autoscaling/vertical) bounds | Sizing is configured as min/max memory and CPU bounds rather than discrete t-shirt sizes; setting min = max effectively fixes the size. |
 | Multi-cluster warehouse | Manual [horizontal scaling](/cloud/features/autoscaling/horizontal) | ClickHouse scales replica count rather than cluster count. There's no direct equivalent to Snowflake's auto-scaling policies (`Standard`/`Economy`); horizontal replica count is set manually. |
 | Auto-suspend / auto-resume | Service [idling](/cloud/features/autoscaling/idling) | Compute stops when there's no work, restarts on the next query. |
@@ -90,19 +94,19 @@ In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree
 | Data retention (table / database default) | [`TTL` clause](/sql-reference/statements/create/table#ttl-expression) on the table, column, or partition | `TTL` automatically deletes data older than a configured window. Set at table creation or via [`ALTER TABLE ... MODIFY TTL`](/sql-reference/statements/alter/ttl). |
 | Time Travel | Point-in-time [backup](/cloud/manage/backups/overview) restore into a new service | Granularity differs significantly; see the callout below. |
 | Fail-safe | — | Recovery beyond the backup window goes through ClickHouse Cloud support, not a self-service tier. |
-| Zero-copy clone | [`CREATE TABLE ... AS SELECT`](/sql-reference/statements/create/table) copy, or [backup](/cloud/manage/backups/overview) restore into a new service | ClickHouse has no copy-on-write primitive; every copy reads the source data fully. |
+| Zero-copy clone | [`CREATE TABLE ... CLONE AS`](/sql-reference/statements/create/table#with-a-schema-and-data-cloned-from-another-table) within a service, or [backup](/cloud/manage/backups/overview) restore into a new service | `CLONE AS` hardlinks the source table's parts (part-level copy-on-write), so no data is physically copied. Copying across services still reads the source fully. |
 | Secure view | [View](/sql-reference/statements/create/view) with `SQL SECURITY DEFINER` (runs with the view-owner's privileges) | See [CREATE VIEW](/sql-reference/statements/create/view) for the syntax and the `INVOKER` / `DEFINER` / `NONE` modes. |
 | Row access policy | [Row policy](/sql-reference/statements/create/row-policy) — a `WHERE`-style expression evaluated per user | Row policies apply transparently to every query against the table. |
 | Sequence | No direct equivalent — use [`generateSnowflakeID`](/sql-reference/functions/uuid-functions#generateSnowflakeID), [`generateUUIDv7`](/sql-reference/functions/uuid-functions#generateUUIDv7), or an external generator | ClickHouse has no auto-incrementing sequence object; generated IDs are produced per row at insert time. |
 
-:::note Time Travel and backups
+:::note[Time Travel and backups]
 ClickHouse Cloud backups are per-service rather than per-table.
 Restoring creates a new service, historical state isn't queryable
 inline, and a single table can't be restored back into the original
 service.
 :::
 
-:::note Updates and deletes
+:::note[Updates and deletes]
 ClickHouse is append-optimized. There's no SQL `MERGE` statement
 (unrelated to the `Merge` and `MergeTree` engines), and
 [`ALTER TABLE … UPDATE`](/sql-reference/statements/alter/update) /
