@@ -1,10 +1,11 @@
-"""Regression tests for the enabled `/webterminal` WebSocket endpoint.
+"""Regression tests for the `/webterminal` WebSocket endpoint.
 
-These tests complement the stateless test `04141_webterminal_disabled.sh`,
-which only covers the disabled-by-default gate. The endpoint is
-security-sensitive (browser-facing, auth-in-band), so the enabled flow is
-exercised here to guard against future regressions in the WebSocket
-handshake and authentication paths.
+The endpoint is enabled by default; the stateless test
+`04141_webterminal_enabled_by_default.sh` covers that default. The opt-out
+gate (`enable_webterminal` set to `false`) is exercised here, alongside the
+enabled flow, because the endpoint is security-sensitive (browser-facing,
+auth-in-band) and these guard against future regressions in the WebSocket
+handshake, authentication, and gating paths.
 """
 
 import base64
@@ -38,6 +39,13 @@ instance_http_handlers = cluster.add_instance(
 instance_allowed_origins = cluster.add_instance(
     "node_allowed_origins",
     main_configs=["configs/webterminal_allowed_origins.xml"],
+)
+# A fourth instance exercises the explicit opt-out: with `enable_webterminal`
+# set to `false`, every request to `/webterminal` must be rejected with `403`
+# before any WebSocket upgrade or HTML page is served.
+instance_disabled = cluster.add_instance(
+    "node_disabled",
+    main_configs=["configs/webterminal_disabled.xml"],
 )
 
 
@@ -167,10 +175,32 @@ def _attempt_ws(host, port, origin=None):
 
 
 def test_enabled_endpoint_serves_html():
-    """When the experimental gate is open, plain `GET /webterminal` returns the HTML page."""
+    """When the endpoint is enabled, plain `GET /webterminal` returns the HTML page."""
     response = instance.http_request("webterminal", method="GET")
     assert response.status_code == 200
     assert "ClickHouse" in response.text or "webterminal" in response.text.lower()
+
+
+def test_disabled_endpoint_returns_403():
+    """With `enable_webterminal` set to `false`, `/webterminal` must return `403`.
+
+    Both `GET` (HTML page) and a WebSocket upgrade must be rejected before the
+    handler does any work, and the body must point at the `enable_webterminal`
+    setting.
+    """
+    response = instance_disabled.http_request("webterminal", method="GET")
+    assert response.status_code == 403
+    assert "enable_webterminal" in response.text
+
+    head = instance_disabled.http_request("webterminal", method="HEAD")
+    assert head.status_code == 403
+
+    sock = socket.create_connection((instance_disabled.ip_address, 8123), timeout=10)
+    try:
+        response = _ws_handshake(sock, instance_disabled.ip_address)
+        assert response.startswith(b"HTTP/1.1 403"), response
+    finally:
+        sock.close()
 
 
 def test_successful_auth_handshake():
