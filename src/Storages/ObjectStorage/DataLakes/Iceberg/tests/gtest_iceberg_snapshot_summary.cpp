@@ -14,105 +14,118 @@
 namespace
 {
 using SnapshotSummary = DB::Iceberg::SnapshotSummary;
-using Operation = SnapshotSummary::Operation;
+using Operation = DB::Iceberg::SnapshotSummaryOperation;
 }
 
 TEST(IcebergSnapshotSummary, AppendFirstSnapshotTotalsEqualDeltas)
 {
     /// Regression: when a fresh table has no parent snapshot, the totals must
     /// equal the deltas, not zero and not 2 x deltas.
-    auto summary = SnapshotSummary::createAppend(
-        /*added_files=*/ 2,
-        /*added_records=*/ 3,
-        /*added_files_size=*/ 1638,
-        /*num_partitions=*/ 2);
+    SnapshotSummary summary(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 2,
+        .added_records = 3,
+        .added_files_size = 1638,
+        .num_partitions = 2});
+    summary.applyTotals(std::nullopt);
 
-    summary.finalize(/*parent=*/ std::nullopt);
-
-    EXPECT_EQ(summary.total_records, 3);
-    EXPECT_EQ(summary.total_data_files, 2);
-    EXPECT_EQ(summary.total_files_size, 1638);
-    EXPECT_EQ(summary.total_delete_files, 0);
-    EXPECT_EQ(summary.total_position_deletes, 0);
-    EXPECT_EQ(summary.total_equality_deletes, 0);
+    EXPECT_EQ(summary.totals.records, 3);
+    EXPECT_EQ(summary.totals.data_files, 2);
+    EXPECT_EQ(summary.totals.files_size, 1638);
+    EXPECT_EQ(summary.totals.delete_files, 0);
+    EXPECT_EQ(summary.totals.position_deletes, 0);
+    EXPECT_EQ(summary.totals.equality_deletes, 0);
 }
 
 TEST(IcebergSnapshotSummary, AppendAccumulatesOnParent)
 {
-    auto parent = SnapshotSummary::createAppend(2, 3, 1638, 2);
-    parent.finalize(std::nullopt);
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 2, .added_records = 3, .added_files_size = 1638, .num_partitions = 2});
+    parent.applyTotals(std::nullopt);
 
-    auto next = SnapshotSummary::createAppend(
-        /*added_files=*/ 1,
-        /*added_records=*/ 2,
-        /*added_files_size=*/ 823,
-        /*num_partitions=*/ 1);
-    next.finalize(parent);
+    SnapshotSummary next(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 1,
+        .added_records = 2,
+        .added_files_size = 823,
+        .num_partitions = 1});
+    next.applyTotals(parent.totals);
 
-    EXPECT_EQ(next.total_records, 5);
-    EXPECT_EQ(next.total_data_files, 3);
-    EXPECT_EQ(next.total_files_size, 2461);
+    EXPECT_EQ(next.totals.records, 5);
+    EXPECT_EQ(next.totals.data_files, 3);
+    EXPECT_EQ(next.totals.files_size, 2461);
 }
 
 TEST(IcebergSnapshotSummary, DeleteSubtractsFromParent)
 {
-    auto parent = SnapshotSummary::createAppend(3, 5, 2461, 3);
-    parent.finalize(std::nullopt);
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 3, .added_records = 5, .added_files_size = 2461, .num_partitions = 3});
+    parent.applyTotals(std::nullopt);
 
-    auto del = SnapshotSummary::createDelete(
-        /*removed_data_files=*/ 1,
-        /*removed_records=*/ 2,
-        /*removed_files_size=*/ 823,
-        /*removed_position_delete_files=*/ 0,
-        /*removed_position_deletes=*/ 0,
-        /*num_partitions=*/ 1);
-    del.finalize(parent);
+    SnapshotSummary del(DB::Iceberg::SnapshotSummaryUpdateDelete{
+        .removed_data_files = 1,
+        .removed_records = 2,
+        .removed_files_size = 823,
+        .removed_position_delete_files = 0,
+        .removed_position_deletes = 0,
+        .num_partitions = 1});
+    del.applyTotals(parent.totals);
 
-    EXPECT_EQ(del.total_records, 3);
-    EXPECT_EQ(del.total_data_files, 2);
-    EXPECT_EQ(del.total_files_size, 1638);
+    EXPECT_EQ(del.totals.records, 3);
+    EXPECT_EQ(del.totals.data_files, 2);
+    EXPECT_EQ(del.totals.files_size, 1638);
 }
 
 TEST(IcebergSnapshotSummary, OverwriteAddsDeleteCounts)
 {
-    auto parent = SnapshotSummary::createAppend(3, 5, 2461, 3);
-    parent.finalize(std::nullopt);
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 3, .added_records = 5, .added_files_size = 2461, .num_partitions = 3});
+    parent.applyTotals(std::nullopt);
 
-    auto ow = SnapshotSummary::createOverwrite(
-        /*added_delete_files=*/ 1,
-        /*added_files_size=*/ 100,
-        /*num_partitions=*/ 1,
-        /*num_deleted_rows=*/ 4);
-    ow.finalize(parent);
+    SnapshotSummary ow(DB::Iceberg::SnapshotSummaryUpdateOverwrite{
+        .added_delete_files = 1,
+        .added_files_size = 100,
+        .num_partitions = 1,
+        .num_deleted_rows = 4});
+    ow.applyTotals(parent.totals);
 
-    EXPECT_EQ(ow.total_delete_files, 1);
-    EXPECT_EQ(ow.total_position_deletes, 4);
-    EXPECT_EQ(ow.total_data_files, 3);  // unchanged: overwrite doesn't touch data file count
-    EXPECT_EQ(ow.total_records, 5);     // unchanged: overwrite doesn't add data records
-    EXPECT_EQ(ow.total_files_size, 2561);
+    EXPECT_EQ(ow.totals.delete_files, 1);
+    EXPECT_EQ(ow.totals.position_deletes, 4);
+    EXPECT_EQ(ow.totals.data_files, 3);  // unchanged: overwrite doesn't touch data file count
+    EXPECT_EQ(ow.totals.records, 5);     // unchanged: overwrite doesn't add data records
+    EXPECT_EQ(ow.totals.files_size, 2561);
 }
 
 #ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(IcebergSnapshotSummary, DeleteWithoutParentThrows)
 {
-    auto del = SnapshotSummary::createDelete(1, 1, 100, 0, 0, 1);
-    EXPECT_THROW(del.finalize(std::nullopt), DB::Exception);
+    SnapshotSummary del(DB::Iceberg::SnapshotSummaryUpdateDelete{
+        .removed_data_files = 1,
+        .removed_records = 1,
+        .removed_files_size = 100,
+        .removed_position_delete_files = 0,
+        .removed_position_deletes = 0,
+        .num_partitions = 1});
+    EXPECT_THROW(del.applyTotals(std::nullopt), DB::Exception);
 }
 #endif
 
 #ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(IcebergSnapshotSummary, OverwriteWithoutParentThrows)
 {
-    auto ow = SnapshotSummary::createOverwrite(1, 100, 1, 1);
-    EXPECT_THROW(ow.finalize(std::nullopt), DB::Exception);
+    SnapshotSummary ow(DB::Iceberg::SnapshotSummaryUpdateOverwrite{
+        .added_delete_files = 1,
+        .added_files_size = 100,
+        .num_partitions = 1,
+        .num_deleted_rows = 1});
+    EXPECT_THROW(ow.applyTotals(std::nullopt), DB::Exception);
 }
 #endif
 
 #ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(IcebergSnapshotSummary, DoubleFinalizeThrows)
 {
-    auto summary = SnapshotSummary::createAppend(1, 1, 100, 1);
-    summary.finalize(std::nullopt);
+    SnapshotSummary summary(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 1,
+        .added_records = 1,
+        .added_files_size = 100,
+        .num_partitions = 1});
+    summary.applyTotals(std::nullopt);
     EXPECT_THROW(summary.finalize(std::nullopt), DB::Exception);
 }
 #endif
@@ -120,15 +133,15 @@ TEST(IcebergSnapshotSummary, DoubleFinalizeThrows)
 #ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(IcebergSnapshotSummary, ToJSONBeforeFinalizeThrows)
 {
-    auto summary = SnapshotSummary::createAppend(1, 1, 100, 1);
+    SnapshotSummary summary;
     EXPECT_THROW((void)summary.toJSON(), DB::Exception);
 }
 #endif
 
 TEST(IcebergSnapshotSummary, ToJSONAppendFields)
 {
-    auto summary = SnapshotSummary::createAppend(2, 3, 1638, 2);
-    summary.finalize(std::nullopt);
+    SnapshotSummary summary(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 2, .added_records = 3, .added_files_size = 1638, .num_partitions = 2});
+    summary.applyTotals(std::nullopt);
 
     auto obj = summary.toJSON();
     ASSERT_TRUE(obj);
@@ -144,11 +157,17 @@ TEST(IcebergSnapshotSummary, ToJSONAppendFields)
 
 TEST(IcebergSnapshotSummary, ToJSONDeleteFields)
 {
-    auto parent = SnapshotSummary::createAppend(3, 5, 2461, 3);
-    parent.finalize(std::nullopt);
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 3, .added_records = 5, .added_files_size = 2461, .num_partitions = 3});
+    parent.applyTotals(std::nullopt);
 
-    auto del = SnapshotSummary::createDelete(1, 2, 823, 0, 0, 1);
-    del.finalize(parent);
+    SnapshotSummary del(DB::Iceberg::SnapshotSummaryUpdateDelete{
+        .removed_data_files = 1,
+        .removed_records = 2,
+        .removed_files_size = 823,
+        .removed_position_delete_files = 0,
+        .removed_position_deletes = 0,
+        .num_partitions = 1});
+    del.applyTotals(parent.totals);
 
     auto obj = del.toJSON();
     ASSERT_TRUE(obj);
@@ -164,22 +183,152 @@ TEST(IcebergSnapshotSummary, ToJSONDeleteFields)
 
 TEST(IcebergSnapshotSummary, RoundTripThroughJSON)
 {
-    auto original = SnapshotSummary::createAppend(2, 3, 1638, 2);
-    original.finalize(std::nullopt);
+    SnapshotSummary original(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 2, .added_records = 3, .added_files_size = 1638, .num_partitions = 2});
+    original.applyTotals(std::nullopt);
 
     auto obj = original.toJSON();
     auto parsed = SnapshotSummary::fromJSON(*obj);
 
-    EXPECT_EQ(parsed.operation, Operation::APPEND);
-    EXPECT_EQ(parsed.total_records, original.total_records);
-    EXPECT_EQ(parsed.total_data_files, original.total_data_files);
-    EXPECT_EQ(parsed.total_files_size, original.total_files_size);
+    EXPECT_EQ(parsed.getOperation(), Operation::APPEND);
+    EXPECT_EQ(parsed.totals.records, original.totals.records);
+    EXPECT_EQ(parsed.totals.data_files, original.totals.data_files);
+    EXPECT_EQ(parsed.totals.files_size, original.totals.files_size);
 
     /// The parsed summary can drive the next snapshot's totals.
-    auto next = SnapshotSummary::createAppend(1, 2, 823, 1);
-    next.finalize(parsed);
-    EXPECT_EQ(next.total_records, 5);
-    EXPECT_EQ(next.total_data_files, 3);
+    SnapshotSummary next(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 1,
+        .added_records = 2,
+        .added_files_size = 823,
+        .num_partitions = 1});
+    next.applyTotals(parsed.totals);
+    EXPECT_EQ(next.totals.records, 5);
+    EXPECT_EQ(next.totals.data_files, 3);
+}
+
+TEST(IcebergSnapshotSummary, DeletePositionDeletesRoundTrip)
+{
+    /// Regression: `removed_position_deletes` was consumed by finalize but neither
+    /// written nor read back, so it was silently lost on round-trip (read as 0).
+    SnapshotSummary grandparent(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 3,
+        .added_records = 50,
+        .added_files_size = 1000,
+        .num_partitions = 1});
+    grandparent.applyTotals(std::nullopt);
+
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateOverwrite{
+        .added_delete_files = 2,
+        .added_files_size = 100,
+        .num_partitions = 1,
+        .num_deleted_rows = 10});
+    parent.applyTotals(grandparent.totals);
+    EXPECT_EQ(parent.totals.position_deletes, 10);
+
+    SnapshotSummary del(DB::Iceberg::SnapshotSummaryUpdateDelete{
+        .removed_data_files = 0,
+        .removed_records = 0,
+        .removed_files_size = 50,
+        .removed_position_delete_files = 1,
+        .removed_position_deletes = 4,
+        .num_partitions = 1});
+    del.applyTotals(parent.totals);
+    EXPECT_EQ(del.totals.position_deletes, 6);
+
+    auto obj = del.toJSON();
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_removed_position_delete_files), "1");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_removed_position_deletes), "4");
+
+    auto parsed = SnapshotSummary::fromJSON(*obj);
+    const auto & parsed_delete = std::get<DB::Iceberg::SnapshotSummaryUpdateDelete>(parsed.update);
+    EXPECT_EQ(parsed_delete.removed_position_delete_files, 1);
+    EXPECT_EQ(parsed_delete.removed_position_deletes, 4);
+}
+
+TEST(IcebergSnapshotSummary, ReplaceAdjustsDataTotals)
+{
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 5, .added_records = 100, .added_files_size = 5000, .num_partitions = 3});
+    parent.applyTotals(std::nullopt);
+
+    /// Compaction: 5 small files (100 records, 5000 bytes) rewritten into
+    /// 1 larger file with the same data but a different on-disk size.
+    SnapshotSummary replace(DB::Iceberg::SnapshotSummaryUpdateReplace{
+        .added_files = 1,
+        .added_records = 100,
+        .added_files_size = 4000,
+        .removed_data_files = 5,
+        .removed_records = 100,
+        .removed_files_size = 5000,
+        .num_partitions = 3});
+    replace.applyTotals(parent.totals);
+
+    EXPECT_EQ(replace.totals.records, 100);     // unchanged: same data
+    EXPECT_EQ(replace.totals.data_files, 1);    // 5 - 5 + 1
+    EXPECT_EQ(replace.totals.files_size, 4000); // 5000 - 5000 + 4000
+}
+
+#ifndef DEBUG_OR_SANITIZER_BUILD
+TEST(IcebergSnapshotSummary, ReplaceWithoutParentThrows)
+{
+    SnapshotSummary replace(DB::Iceberg::SnapshotSummaryUpdateReplace{
+        .added_files = 1,
+        .added_records = 100,
+        .added_files_size = 4000,
+        .removed_data_files = 5,
+        .removed_records = 100,
+        .removed_files_size = 5000,
+        .num_partitions = 3});
+    EXPECT_THROW(replace.applyTotals(std::nullopt), DB::Exception);
+}
+#endif
+
+TEST(IcebergSnapshotSummary, ToJSONReplaceFields)
+{
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 5, .added_records = 100, .added_files_size = 5000, .num_partitions = 3});
+    parent.applyTotals(std::nullopt);
+
+    SnapshotSummary replace(DB::Iceberg::SnapshotSummaryUpdateReplace{
+        .added_files = 1,
+        .added_records = 100,
+        .added_files_size = 4000,
+        .removed_data_files = 5,
+        .removed_records = 100,
+        .removed_files_size = 5000,
+        .num_partitions = 3});
+    replace.applyTotals(parent.totals);
+
+    auto obj = replace.toJSON();
+    ASSERT_TRUE(obj);
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_operation), DB::Iceberg::f_replace);
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_added_data_files), "1");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_added_records), "100");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_added_files_size), "4000");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_removed_data_files), "5");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_deleted_data_files), "5");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_deleted_records), "100");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_removed_files_size), "5000");
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_total_data_files), "1");
+}
+
+TEST(IcebergSnapshotSummary, ReplaceRoundTripThroughJSON)
+{
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{.added_files = 5, .added_records = 100, .added_files_size = 5000, .num_partitions = 3});
+    parent.applyTotals(std::nullopt);
+
+    SnapshotSummary replace(DB::Iceberg::SnapshotSummaryUpdateReplace{
+        .added_files = 1,
+        .added_records = 100,
+        .added_files_size = 4000,
+        .removed_data_files = 5,
+        .removed_records = 100,
+        .removed_files_size = 5000,
+        .num_partitions = 3});
+    replace.applyTotals(parent.totals);
+
+    auto parsed = SnapshotSummary::fromJSON(*replace.toJSON());
+    EXPECT_EQ(parsed.getOperation(), Operation::REPLACE);
+    EXPECT_EQ(parsed.totals.records, replace.totals.records);
+    EXPECT_EQ(parsed.totals.data_files, replace.totals.data_files);
+    EXPECT_EQ(parsed.totals.files_size, replace.totals.files_size);
 }
 
 #endif

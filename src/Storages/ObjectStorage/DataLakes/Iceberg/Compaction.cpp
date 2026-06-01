@@ -353,7 +353,9 @@ static void writeMetadataFiles(
 
     for (const auto & history_record : plan.history)
     {
-        if (history_record.snapshot_summary.added_files == 0)
+        /// Compaction rewrites the data snapshots, which are appends. Skip everything else.
+        const auto * append = history_record.snapshot_summary.asUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
+        if (!append || append->added_files == 0)
         {
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
             continue;
@@ -366,10 +368,10 @@ static void writeMetadataFiles(
             plan.generator,
             generated_metadata_info.path,
             history_record.parent_id,
-            history_record.snapshot_summary.added_files,
+            append->added_files,
             total_records_count,
-            history_record.snapshot_summary.added_files_size,
-            history_record.snapshot_summary.num_partitions,
+            append->added_files_size,
+            append->num_partitions,
             0,
             0,
             history_record.snapshot_id,
@@ -488,7 +490,8 @@ static void writeMetadataFiles(
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_list_renamings;
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].snapshot_summary.added_files == 0)
+        const auto * append = plan.history[i].snapshot_summary.asUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
+        if (!append || append->added_files == 0)
             continue;
 
         manifest_list_renamings[plan.history[i].manifest_list_path] = new_snapshots[i].manifest_list_path;
@@ -496,7 +499,8 @@ static void writeMetadataFiles(
 
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        if (plan.history[i].snapshot_summary.added_files == 0)
+        const auto * append = plan.history[i].snapshot_summary.asUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
+        if (!append || append->added_files == 0)
             continue;
 
         auto initial_manifest_list_name = plan.history[i].manifest_list_path;
