@@ -145,6 +145,10 @@ This modifier can be combined with the [`ORDER BY ... WITH FILL`](/sql-reference
 
 ## LIMIT ... AFTER ... UNTIL (range by conditions) {#limit-after-until}
 
+:::note
+This feature is experimental. Enable it with `SET allow_experimental_limit_after = 1`.
+:::
+
 You can limit the result to a *range* of rows between two boundary conditions:
 
 ```sql
@@ -156,11 +160,11 @@ LIMIT [n] UNTIL end_expr
 - `AFTER start_expr`: Start output from the first row where `start_expr` is true (that row is included).
 - `AFTER start_expr ALL`: Output the union of all matching ranges that start where `start_expr` is true, without duplicating rows when ranges overlap.
 - `UNTIL end_expr`: Stop before the first row where `end_expr` is true (that row is excluded).
-- `n`: Maximum number of rows to return (optional; when present, caps the range).
+- `n`: Optional row count. Without `ALL` it is the maximum length of the single opened range. With `AFTER ... ALL` it is the length of *each* opened range, so the total result can exceed `n` (for example, `LIMIT 2 AFTER number IN (2, 6) ALL` can return up to four rows). To cap the total number of result rows, use the `limit` setting, which is applied as a global limit after the range.
 
 Stream order (the order rows are read) defines “first” match; use `ORDER BY` to control it.
 
-If the first `UNTIL` match appears before the first `AFTER` match, the result is empty.
+Without `ALL`, if the first `UNTIL` match appears before the first `AFTER` match, the result is empty. With `AFTER ... ALL`, later `AFTER` matches can still open new ranges.
 
 **Examples:**
 

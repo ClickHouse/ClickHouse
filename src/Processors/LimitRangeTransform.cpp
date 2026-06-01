@@ -30,7 +30,8 @@ LimitRangeTransform::LimitRangeTransform(
     ExpressionActionsPtr end_expression_,
     const String & end_column_name_,
     bool start_all_,
-    std::optional<UInt64> limit_)
+    std::optional<UInt64> limit_,
+    bool always_read_till_end_)
     : ISimpleTransform(header_, header_, true)
     , start_expression(std::move(start_expression_))
     , start_column_name(start_column_name_)
@@ -38,14 +39,18 @@ LimitRangeTransform::LimitRangeTransform(
     , end_column_name(end_column_name_)
     , start_all(start_all_)
     , limit(limit_)
+    , always_read_till_end(always_read_till_end_)
 {
     if (limit && *limit == 0)
-        stopReading();
+    {
+        setDone();
+        return;
+    }
 
     if (start_expression)
     {
         Block block = getInputPort().getHeader().cloneEmpty();
-        start_expression->execute(block);
+        start_expression->execute(block, /*dry_run=*/true);
         const auto & col = block.getByName(start_column_name);
         if (!col.type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
@@ -55,7 +60,7 @@ LimitRangeTransform::LimitRangeTransform(
     if (end_expression)
     {
         Block block = getInputPort().getHeader().cloneEmpty();
-        end_expression->execute(block);
+        end_expression->execute(block, /*dry_run=*/true);
         const auto & col = block.getByName(end_column_name);
         if (!col.type->canBeUsedInBooleanContext())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
@@ -170,14 +175,31 @@ void LimitRangeTransform::transformAll(Chunk & chunk, const ColumnPtr & start_co
         filterChunk(chunk, filter, filtered_rows);
 }
 
+void LimitRangeTransform::setDone()
+{
+    if (always_read_till_end)
+        done_outputting = true;
+    else
+        stopReading();
+}
+
 void LimitRangeTransform::transform(Chunk & chunk)
 {
     if (chunk.empty())
         return;
 
+    if (rows_before_limit_at_least)
+        rows_before_limit_at_least->add(chunk.getNumRows());
+
+    if (done_outputting)
+    {
+        chunk.clear();
+        return;
+    }
+
     if (limit && rows_output >= *limit)
     {
-        stopReading();
+        setDone();
         chunk.clear();
         return;
     }
@@ -228,7 +250,7 @@ void LimitRangeTransform::transform(Chunk & chunk)
                 if (end_in_chunk <= first_start)
                 {
                     if (end_in_chunk < num_rows)
-                        stopReading();
+                        setDone();
                     chunk.clear();
                     return;
                 }
@@ -259,7 +281,7 @@ void LimitRangeTransform::transform(Chunk & chunk)
     if (output_end <= output_start)
     {
         if (end_col && output_end < num_rows)
-            stopReading();
+            setDone();
 
         chunk.clear();
         return;
@@ -270,7 +292,7 @@ void LimitRangeTransform::transform(Chunk & chunk)
         UInt64 remaining = *limit - rows_output;
         if (remaining == 0)
         {
-            stopReading();
+            setDone();
             chunk.clear();
             return;
         }
@@ -284,9 +306,9 @@ void LimitRangeTransform::transform(Chunk & chunk)
     rows_output += chunk.getNumRows();
 
     if (limit && rows_output >= *limit)
-        stopReading();
+        setDone();
     else if (end_col && output_end < num_rows)
-        stopReading();
+        setDone();
 }
 
 }

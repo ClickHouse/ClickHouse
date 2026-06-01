@@ -513,7 +513,23 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     ///
     /// offset = offset + of_expr
     auto select_limit = select_query_typed.limitLength();
-    if (select_limit)
+    auto select_offset = select_query_typed.limitOffset();
+
+    if (select_limit_after || select_limit_until)
+    {
+        /// With LIMIT AFTER/UNTIL the explicit LIMIT is a per-window length, so the `limit`/`offset`
+        /// settings must not be folded into it. They were stripped from the context above (to keep child
+        /// queries clean) and are stored on the node, so the planner can apply them as an outer global
+        /// cap after the range step. The explicit LIMIT/OFFSET expressions are kept verbatim.
+        if (select_limit)
+            current_query_tree->getLimit() = buildExpression(select_limit, current_context);
+        if (select_offset)
+            current_query_tree->getOffset() = buildExpression(select_offset, current_context);
+
+        current_query_tree->setSettingsLimit(limit);
+        current_query_tree->setSettingsOffset(offset);
+    }
+    else if (select_limit)
     {
         /// Shortcut
         if (offset == 0 && limit == 0)
@@ -554,18 +570,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
 
     /// Combine offset expression with offset setting into final offset expression
-    auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset)
+    if (!select_limit_after && !select_limit_until)
     {
-        auto function_node = std::make_shared<FunctionNode>("plus");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-        current_query_tree->getOffset() = std::move(function_node);
+        if (select_offset && offset)
+        {
+            auto function_node = std::make_shared<FunctionNode>("plus");
+            function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
+            function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+            current_query_tree->getOffset() = std::move(function_node);
+        }
+        else if (offset)
+            current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
+        else if (select_offset)
+            current_query_tree->getOffset() = buildExpression(select_offset, current_context);
     }
-    else if (offset)
-        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
-    else if (select_offset)
-        current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
     return current_query_tree;
 }

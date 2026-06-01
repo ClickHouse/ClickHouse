@@ -14,6 +14,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/LimitRangeTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -195,6 +196,18 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_processor)
         {
             processors.emplace_back(processor);
+            continue;
+        }
+
+        if (typeid_cast<LimitRangeTransform *>(processor))
+        {
+            has_limit = true;
+            if (!limit_processor)
+            {
+                /// LimitRangeTransform is a single-input simple transform; always use Case 7
+                /// (attach counter to the transform itself rather than searching upstream).
+                processors.emplace_back(processor);
+            }
             continue;
         }
 

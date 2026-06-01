@@ -250,6 +250,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || query_node.hasLimitByLimit() || query_node.hasLimitByOffset()
                         || query_node.hasLimitBy()
                         || query_node.hasLimit() || query_node.hasOffset()
+                        || query_node.hasLimitAfter() || query_node.hasLimitUntil()
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 

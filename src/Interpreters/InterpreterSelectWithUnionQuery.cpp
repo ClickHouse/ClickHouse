@@ -116,7 +116,11 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         if (!select_query)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
 
-        if (!select_query->withFill() && !select_query->limit_with_ties)
+        /// With LIMIT AFTER/UNTIL the explicit LIMIT is a per-window length, so the `limit`/`offset`
+        /// settings must not be folded into it. They are applied below as an outer LIMIT/OFFSET step
+        /// (the "for SETTINGS" step) after the range step, acting as a global cap on the whole result.
+        if (!select_query->withFill() && !select_query->limit_with_ties
+            && !select_query->limitAfter() && !select_query->limitUntil())
         {
             UInt64 limit_length = 0;
             UInt64 limit_offset = 0;

@@ -4,6 +4,7 @@
 
 #include <Columns/IColumn.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/RowsBeforeStepCounter.h>
 
 namespace DB
 {
@@ -29,11 +30,17 @@ public:
         ExpressionActionsPtr end_expression_,
         const String & end_column_name_,
         bool start_all_,
-        std::optional<UInt64> limit_);
+        std::optional<UInt64> limit_,
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "LimitRange"; }
 
     void transform(Chunk & chunk) override;
+
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override
+    {
+        rows_before_limit_at_least.swap(counter);
+    }
 
 private:
     /// Find first row where condition column is true (non-zero). Returns num_rows if none.
@@ -56,6 +63,11 @@ private:
     bool start_all = false;
     std::optional<UInt64> limit;
 
+    RowsBeforeStepCounterPtr rows_before_limit_at_least;
+
+    bool always_read_till_end = false;
+    bool done_outputting = false;
+
     bool started = false;
     UInt64 rows_output = 0;
     UInt64 rows_read = 0;
@@ -64,6 +76,9 @@ private:
 
     size_t start_column_position = 0;
     size_t end_column_position = 0;
+
+    /// Stops emitting rows. If always_read_till_end, keeps draining input to preserve row counts.
+    void setDone();
 };
 
 }

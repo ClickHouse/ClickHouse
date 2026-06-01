@@ -628,6 +628,57 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     return LimitByAnalysisResult{std::move(before_limit_by_actions), std::move(limit_by_column_names)};
 }
 
+/** Construct LIMIT AFTER/UNTIL analysis result.
+  * The boundary expressions may reference columns that are not in the SELECT list. The LimitRangeStep runs
+  * before "Project names" in the plan, but those columns would otherwise be pruned during chain finalize
+  * (the step is not part of the chain). This adds a pass-through step that keeps the referenced columns alive
+  * up to the LimitRangeStep, which rebuilds its conditions from the header.
+  */
+LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    ActionsChain & actions_chain)
+{
+    NameSet required_column_names;
+
+    auto collect_required_columns = [&](const QueryTreeNodePtr & boundary_node)
+    {
+        if (!boundary_node)
+            return;
+
+        auto [boundary_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            boundary_node,
+            input_columns,
+            planner_context,
+            correlated_columns_set);
+        correlated_subtrees.assertEmpty("in LIMIT AFTER/UNTIL expression");
+
+        for (const auto & required_column_name : boundary_actions_dag.getRequiredColumnsNames())
+            required_column_names.insert(required_column_name);
+    };
+
+    collect_required_columns(query_node.getLimitAfter());
+    collect_required_columns(query_node.getLimitUntil());
+
+    auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_limit_range_actions->dag = ActionsDAG(input_columns);
+    auto & before_limit_range_outputs = before_limit_range_actions->dag.getOutputs();
+    before_limit_range_outputs.clear();
+
+    NameSet added_output_names;
+    for (const auto * input_node : before_limit_range_actions->dag.getInputs())
+    {
+        if (required_column_names.contains(input_node->result_name) && added_output_names.insert(input_node->result_name).second)
+            before_limit_range_outputs.push_back(input_node);
+    }
+
+    auto actions_step_before_limit_range = std::make_unique<ActionsChainStep>(before_limit_range_actions);
+    actions_chain.addStep(std::move(actions_step_before_limit_range));
+
+    return LimitRangeAnalysisResult{std::move(before_limit_range_actions)};
+}
+
 }
 
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
@@ -786,6 +837,23 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
+    /** LIMIT AFTER/UNTIL boundary columns may not be in the SELECT list. The LimitRangeStep runs before
+      * "Project names" in the plan, so keep its referenced columns alive past the projection by adding a
+      * dedicated step here (only when the range limit is actually applied at this stage, i.e. not when
+      * producing a mergeable aggregation state, where "Project names" is not applied either).
+      */
+    std::optional<LimitRangeAnalysisResult> limit_range_analysis_result_optional;
+    if ((query_node.hasLimitAfter() || query_node.hasLimitUntil()) && !planner_query_processing_info.isToAggregationState())
+    {
+        limit_range_analysis_result_optional = analyzeLimitRange(
+            query_node,
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
 
@@ -894,6 +962,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (limit_by_analysis_result_optional)
         expressions_analysis_result.addLimitBy(std::move(*limit_by_analysis_result_optional));
+
+    if (limit_range_analysis_result_optional)
+        expressions_analysis_result.addLimitRange(std::move(*limit_range_analysis_result_optional));
 
     return expressions_analysis_result;
 }

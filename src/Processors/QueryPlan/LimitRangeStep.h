@@ -17,7 +17,8 @@ public:
         std::optional<std::pair<ActionsDAG, String>> start_condition_,
         std::optional<std::pair<ActionsDAG, String>> end_condition_,
         bool start_all_,
-        std::optional<UInt64> limit_);
+        std::optional<UInt64> limit_,
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "LimitRange"; }
 
@@ -47,6 +48,7 @@ private:
     std::optional<std::pair<ActionsDAG, String>> end_condition;
     bool start_all = false;
     std::optional<UInt64> limit;
+    bool always_read_till_end = false;
 };
 
 }

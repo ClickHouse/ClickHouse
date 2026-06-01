@@ -2295,9 +2295,17 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
             executeWithFill(query_plan);
 
-            /// If we have 'WITH TIES', we need execute limit before projection,
-            /// because in that case columns from 'ORDER BY' are used.
-            if (query.limit_with_ties && apply_limit && apply_offset)
+            const bool has_limit_range = query.limitAfter() || query.limitUntil();
+
+            /// AFTER/UNTIL: extremes must be computed on the pre-range stream to match normal LIMIT
+            /// semantics. Since the range limit runs before projection (it may reference non-selected
+            /// columns), extremes are computed here, before both, mirroring the analyzer path.
+            if (has_limit_range && apply_limit && apply_offset)
+                executeExtremes(query_plan);
+
+            /// WITH TIES needs ORDER BY columns removed by projection.
+            /// AFTER/UNTIL conditions may reference non-selected columns, so both must run before projection.
+            if ((query.limit_with_ties || has_limit_range) && apply_limit && apply_offset)
             {
                 executeLimit(query_plan);
             }
@@ -2311,9 +2319,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             }
 
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
-            executeExtremes(query_plan);
+            /// For AFTER/UNTIL the extremes were already computed above, before the range limit.
+            if (!(has_limit_range && apply_limit && apply_offset))
+                executeExtremes(query_plan);
 
-            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset);
+            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset)
+                || (has_limit_range && apply_offset);
             /// Limit is no longer needed if there is prelimit.
             ///
             /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
@@ -3548,6 +3559,13 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             limit_length = lim_info.limit_length;
         }
 
+        const Settings & range_settings = context->getSettingsRef();
+        bool always_read_till_end = range_settings[Setting::exact_rows_before_limit];
+        if (query.group_by_with_totals && !query.orderBy())
+            always_read_till_end = true;
+        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
+            always_read_till_end = true;
+
         const auto & header = query_plan.getCurrentHeader();
         auto start_condition = buildLimitConditionDAG(*header, query.limitAfter(), context, prepared_sets);
         auto end_condition = buildLimitConditionDAG(*header, query.limitUntil(), context, prepared_sets);
@@ -3556,7 +3574,8 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
             std::move(start_condition),
             std::move(end_condition),
             query.limit_after_all,
-            limit_length);
+            limit_length,
+            always_read_till_end);
         limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
         query_plan.addStep(std::move(limit_range_step));
         return;

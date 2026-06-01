@@ -200,6 +200,29 @@ public:
         is_limit_after_all = is_limit_after_all_value;
     }
 
+    /// Global `limit`/`offset` settings carried as an outer cap on the whole result.
+    /// Used only with LIMIT AFTER/UNTIL, where they must not be folded into the per-window length;
+    /// the planner applies them as an outer step after the range step. Zero means "not set".
+    UInt64 getSettingsLimit() const
+    {
+        return settings_limit;
+    }
+
+    void setSettingsLimit(UInt64 settings_limit_value)
+    {
+        settings_limit = settings_limit_value;
+    }
+
+    UInt64 getSettingsOffset() const
+    {
+        return settings_offset;
+    }
+
+    void setSettingsOffset(UInt64 settings_offset_value)
+    {
+        settings_offset = settings_offset_value;
+    }
+
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
     bool isLimitWithTies() const
     {
@@ -756,6 +779,9 @@ private:
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
     bool is_limit_after_all = false;
+
+    UInt64 settings_limit = 0;
+    UInt64 settings_offset = 0;
 
     std::string cte_name;
     NamesAndTypes projection_columns;

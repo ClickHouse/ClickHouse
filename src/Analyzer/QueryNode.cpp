@@ -211,6 +211,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_limit_after_all)
         buffer << ", is_limit_after_all: " << is_limit_after_all;
 
+    if (settings_limit)
+        buffer << ", settings_limit: " << settings_limit;
+
+    if (settings_offset)
+        buffer << ", settings_offset: " << settings_offset;
+
     std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
@@ -377,6 +383,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         is_limit_after_all == rhs_typed.is_limit_after_all &&
+        settings_limit == rhs_typed.settings_limit &&
+        settings_offset == rhs_typed.settings_offset &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
@@ -425,6 +433,8 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
     state.update(is_limit_after_all);
+    state.update(settings_limit);
+    state.update(settings_offset);
 
     state.update(settings_changes.size());
 
@@ -457,6 +467,8 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->is_limit_after_all = is_limit_after_all;
+    result_query_node->settings_limit = settings_limit;
+    result_query_node->settings_offset = settings_offset;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
@@ -586,10 +598,18 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (hasOffset())
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, getOffset()->toAST(options));
 
-    if (hasSettingsChanges())
+    /// The global `limit`/`offset` settings were stripped from the context and carried separately
+    /// (see QueryTreeBuilder), so re-emit them here as a SETTINGS clause to keep the AST equivalent.
+    SettingsChanges result_settings_changes = settings_changes;
+    if (settings_limit)
+        result_settings_changes.setSetting("limit", settings_limit);
+    if (settings_offset)
+        result_settings_changes.setSetting("offset", settings_offset);
+
+    if (!result_settings_changes.empty())
     {
         auto settings_query = make_intrusive<ASTSetQuery>();
-        settings_query->changes = settings_changes;
+        settings_query->changes = std::move(result_settings_changes);
         settings_query->is_standalone = false;
         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     }

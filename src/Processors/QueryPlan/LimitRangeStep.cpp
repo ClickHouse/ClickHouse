@@ -36,12 +36,14 @@ LimitRangeStep::LimitRangeStep(
     std::optional<std::pair<ActionsDAG, String>> start_condition_,
     std::optional<std::pair<ActionsDAG, String>> end_condition_,
     bool start_all_,
-    std::optional<UInt64> limit_)
+    std::optional<UInt64> limit_,
+    bool always_read_till_end_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , start_condition(std::move(start_condition_))
     , end_condition(std::move(end_condition_))
     , start_all(start_all_)
     , limit(limit_)
+    , always_read_till_end(always_read_till_end_)
 {
 }
 
@@ -68,7 +70,7 @@ void LimitRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     pipeline.addSimpleTransform(
-        [start_expression, start_column_name, end_expression, end_column_name, start_all_value = start_all, limit_value = limit]
+        [start_expression, start_column_name, end_expression, end_column_name, start_all_value = start_all, limit_value = limit, always_read_till_end_value = always_read_till_end]
         (const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -81,7 +83,8 @@ void LimitRangeStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
             end_expression,
             end_column_name,
             start_all_value,
-            limit_value);
+            limit_value,
+            always_read_till_end_value);
     });
 }
 
@@ -113,6 +116,7 @@ void LimitRangeStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Has After", start_condition.has_value());
     map.add("After All", start_all);
     map.add("Has Until", end_condition.has_value());
+    map.add("Reads All Data", always_read_till_end);
 }
 
 void LimitRangeStep::serialize(Serialization & ctx) const
@@ -126,6 +130,8 @@ void LimitRangeStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (start_all)
         flags |= 8;
+    if (always_read_till_end)
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
 
@@ -150,13 +156,13 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "LimitRangeStep must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     std::optional<UInt64> limit_value;
     if (flags & 4)
     {
-        UInt64 limit;
+        UInt64 limit = 0;
         readVarUInt(limit, ctx.in);
         limit_value = limit;
     }
@@ -177,7 +183,8 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
         read_condition(flags & 1),
         read_condition(flags & 2),
         flags & 8,
-        limit_value);
+        limit_value,
+        bool(flags & 16));
 }
 
 void registerLimitRangeStep(QueryPlanStepRegistry & registry);

@@ -1222,12 +1222,21 @@ void addLimitRangeStep(
     if (end_condition)
         appendSetsFromActionsDAG(end_condition->first, useful_sets);
 
+    const auto & query_context = planner_context->getQueryContext();
+    const Settings & settings = query_context->getSettingsRef();
+    bool always_read_till_end = settings[Setting::exact_rows_before_limit];
+    if (query_node.isGroupByWithTotals() && !query_node.hasOrderBy())
+        always_read_till_end = true;
+    if (!query_node.isGroupByWithTotals() && query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree)
+        always_read_till_end = true;
+
     auto limit_range_step = std::make_unique<LimitRangeStep>(
         query_plan.getCurrentHeader(),
         std::move(start_condition),
         std::move(end_condition),
         query_node.isLimitAfterAll(),
-        limit_length);
+        limit_length,
+        always_read_till_end);
     limit_range_step->setStepDescription("LIMIT range (AFTER/UNTIL)");
     query_plan.addStep(std::move(limit_range_step));
 }
@@ -2663,11 +2672,12 @@ void Planner::buildPlanForQueryNode()
         /// shard individually.
         const bool apply_offset = !query_processing_info.isToAggregationState();
         const bool has_limit_range = query_node.hasLimitAfter() || query_node.hasLimitUntil();
-        if (has_limit_range && apply_limit && apply_offset)
-            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
-        else if (query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
+
+        /// WITH TIES needs ORDER BY columns that are removed by projection, so it must run before extremes.
+        if (!has_limit_range && query_node.hasLimit() && query_node.isLimitWithTies() && apply_limit && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
 
+        /// Extremes are computed before the final LIMIT, matching normal LIMIT semantics.
         addExtremesStepIfNeeded(query_plan, planner_context);
 
         bool limit_applied = applied_prelimit || (has_limit_range && apply_limit && apply_offset) || (query_node.isLimitWithTies() && apply_offset);
@@ -2678,7 +2688,43 @@ void Planner::buildPlanForQueryNode()
           * This is the case for various optimizations for distributed queries,
           * and when LIMIT cannot be applied it will be applied on the initiator anyway.
           */
-        if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
+        if (has_limit_range && apply_limit && apply_offset)
+        {
+            /// Keep the AFTER/UNTIL boundary columns (which may not be selected) available for the range
+            /// step, since it runs before "Project names" would drop them.
+            if (expression_analysis_result.hasLimitRange())
+                addExpressionStep(
+                    planner_context,
+                    query_plan,
+                    expression_analysis_result.getLimitRange().before_limit_range_actions,
+                    /*correlated_subtrees=*/{},
+                    select_query_options,
+                    "Before LIMIT range (AFTER/UNTIL)",
+                    useful_sets);
+
+            addLimitRangeStep(query_plan, query_analysis_result, planner_context, query_node, useful_sets);
+
+            /// The `limit`/`offset` settings are a global cap on the whole result, not a per-window
+            /// length. They are intentionally kept out of the range window length and off the query
+            /// context (see QueryTreeBuilder), carried on the node, and applied here as an outer step
+            /// after the range step.
+            const UInt64 settings_limit = query_node.getSettingsLimit();
+            const UInt64 settings_offset = query_node.getSettingsOffset();
+            if (settings_limit > 0)
+            {
+                auto step = std::make_unique<LimitStep>(
+                    query_plan.getCurrentHeader(), settings_limit, settings_offset, settings[Setting::exact_rows_before_limit]);
+                step->setStepDescription("LIMIT OFFSET for SETTINGS");
+                query_plan.addStep(std::move(step));
+            }
+            else if (settings_offset > 0)
+            {
+                auto step = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), settings_offset);
+                step->setStepDescription("OFFSET for SETTINGS");
+                query_plan.addStep(std::move(step));
+            }
+        }
+        else if (query_node.hasLimit() && !has_limit_range && apply_limit && !limit_applied && apply_offset)
             addLimitStep(query_plan, query_analysis_result, planner_context, query_node);
         else if (!limit_applied && apply_offset && query_node.hasOffset())
             addOffsetStep(query_plan, query_analysis_result);
