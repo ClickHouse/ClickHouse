@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|src/Formats/registerFormatDocumentations\.cpp'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # Pre-compute file lists to avoid repeated find+grep
@@ -28,7 +28,7 @@ grep -v '/base/' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/nobase_excluded"
 # Without base dir, headers only, with EXCLUDE filter
 grep '\.h$' "$STYLE_TMPDIR/nobase_excluded" > "$STYLE_TMPDIR/nobase_headers_excluded"
 # Without base dir, h+cpp, without EXCLUDE filter
-find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null > "$STYLE_TMPDIR/nobase_all"
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null | grep -vF 'src/Formats/registerFormatDocumentations.cpp' > "$STYLE_TMPDIR/nobase_all"
 # src+base only, h+cpp, with EXCLUDE filter
 grep -v -e '/programs/' -e '/utils/' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/srcbase_excluded"
 
@@ -45,6 +45,7 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
+    --glob '!**/registerFormatDocumentations.cpp' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
     $ROOT_PATH/{src,base,programs,utils} |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces

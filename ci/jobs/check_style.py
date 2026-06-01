@@ -488,6 +488,10 @@ if __name__ == "__main__":
             "./base/glibc-compatibility",
             "./contrib/consistent-hashing",
             "./base/widechar_width",
+            # Auto-generated file embedding verbatim Markdown documentation of every
+            # format (including tab-separated examples that must contain literal tabs);
+            # the heuristic C++ style checks do not apply to it.
+            "./src/Formats/registerFormatDocumentations.cpp",
         ],
         file_suffixes=[".h", ".cpp"],
     )
